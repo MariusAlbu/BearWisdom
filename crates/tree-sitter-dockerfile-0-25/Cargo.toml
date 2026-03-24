@@ -1,0 +1,18 @@
+[package]
+name = "tree-sitter-dockerfile-0-25"
+version = "0.2.0"
+edition = "2021"
+description = "Dockerfile grammar for tree-sitter, compatible with tree-sitter 0.25"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+tree-sitter-language = "0.1"
+
+[dev-dependencies]
+tree-sitter = { workspace = true }
+
+[build-dependencies]
+cc = "1"
