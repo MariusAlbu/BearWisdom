@@ -1,0 +1,13 @@
+pub mod django;
+pub mod dotnet_di;
+pub mod dotnet_events;
+pub mod ef_core;
+pub mod electron_ipc;
+pub mod frontend_http;
+pub mod graphql;
+pub mod grpc;
+pub mod http_api;
+pub mod message_queue;
+pub mod react_patterns;
+pub mod spring;
+pub mod tauri_ipc;

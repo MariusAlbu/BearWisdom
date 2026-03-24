@@ -1,0 +1,23 @@
+[package]
+name    = "bearwisdom-cli"
+version = "0.1.0"
+edition = "2021"
+description = "BearWisdom CLI — structural code intelligence for agents and IDEs"
+license = "MIT OR Apache-2.0"
+
+[[bin]]
+name = "bw"
+path = "src/main.rs"
+
+[dependencies]
+bearwisdom         = { path = "../bearwisdom" }
+anyhow             = { workspace = true }
+clap               = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio              = { workspace = true }
+sha2               = { workspace = true }
+rusqlite           = { workspace = true }
+dirs               = "5"

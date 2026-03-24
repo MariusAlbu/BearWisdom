@@ -1,0 +1,559 @@
+// =============================================================================
+// db/schema.rs  —  DDL for all tables and indexes
+//
+// Key design choices vs. v1:
+//   • `symbols.scope_path`    — the parent scope chain (dot-separated)
+//   • `symbols.qualified_name` — full dotted path, indexed for fast lookup
+//   • `imports` table         — explicit import records for resolution
+//   • `routes` table          — HTTP route/handler mapping for ASP.NET
+//   • `db_mappings` table     — EF Core DbSet<T> → table name mapping
+//
+// PRAGMA notes (important for rusqlite 0.33+):
+//   In rusqlite 0.33, PRAGMA statements return result rows.  You MUST use
+//   `query_row` (not `execute`) to consume them, otherwise you get an error.
+//   See the `pragma` helper below.
+// =============================================================================
+
+use rusqlite::Connection;
+
+/// Apply performance and correctness PRAGMAs.
+/// `is_new`: true on first-ever open (needed for page_size).
+pub fn apply_pragmas(conn: &Connection, is_new: bool) -> rusqlite::Result<()> {
+    // Helper that tolerates "query returned no rows" (some PRAGMAs return
+    // nothing on certain SQLite versions).
+    fn pragma(conn: &Connection, sql: &str) -> rusqlite::Result<()> {
+        conn.query_row(sql, [], |_| Ok(()))
+            .or_else(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => Ok(()),
+                other => Err(other),
+            })
+    }
+
+    // page_size must be set BEFORE the first page is written.
+    if is_new {
+        pragma(conn, "PRAGMA page_size = 8192")?;
+    }
+
+    // Write-Ahead Logging: concurrent readers + one writer, no lock contention.
+    pragma(conn, "PRAGMA journal_mode = WAL")?;
+
+    // NORMAL: fsync only at checkpoints (safe enough for an index that can be rebuilt).
+    pragma(conn, "PRAGMA synchronous = NORMAL")?;
+
+    // Wait up to 5 s before returning SQLITE_BUSY.
+    pragma(conn, "PRAGMA busy_timeout = 5000")?;
+
+    // 16 MB cache (negative value = kibibytes).
+    pragma(conn, "PRAGMA cache_size = -16000")?;
+
+    // Enforce FK constraints — catches bugs where we insert an edge whose
+    // source_id or target_id does not exist in symbols.
+    pragma(conn, "PRAGMA foreign_keys = ON")?;
+
+    Ok(())
+}
+
+/// Create all tables and indexes (idempotent — uses IF NOT EXISTS).
+pub fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
+    conn.execute_batch(SCHEMA_SQL)
+}
+
+const SCHEMA_SQL: &str = "
+-- ============================================================
+-- FILE TRACKING
+-- ============================================================
+
+-- One row per indexed file.
+-- `hash` is the SHA-256 of the file contents.  A changed hash
+-- means the file must be re-indexed; an unchanged hash is skipped.
+CREATE TABLE IF NOT EXISTS files (
+    id           INTEGER PRIMARY KEY,
+    path         TEXT    NOT NULL UNIQUE,
+    hash         TEXT    NOT NULL,
+    language     TEXT    NOT NULL,
+    last_indexed INTEGER NOT NULL   -- Unix timestamp (seconds since epoch)
+);
+
+CREATE INDEX IF NOT EXISTS idx_files_language ON files(language);
+CREATE INDEX IF NOT EXISTS idx_files_hash     ON files(hash);
+
+-- ============================================================
+-- CODE GRAPH: SYMBOLS
+-- ============================================================
+
+-- One row per named symbol (class, method, property, …).
+-- `qualified_name` is the full dotted path:
+--   e.g. 'Microsoft.eShop.Catalog.CatalogDbContext.OnModelCreating'
+-- `scope_path` is the parent chain:
+--   e.g. 'Microsoft.eShop.Catalog.CatalogDbContext'
+CREATE TABLE IF NOT EXISTS symbols (
+    id             INTEGER PRIMARY KEY,
+    file_id        INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    name           TEXT    NOT NULL,
+    qualified_name TEXT    NOT NULL,
+    kind           TEXT    NOT NULL,
+    line           INTEGER NOT NULL,
+    col            INTEGER NOT NULL,
+    end_line       INTEGER,
+    end_col        INTEGER,
+    scope_path     TEXT,
+    signature      TEXT,
+    doc_comment    TEXT,   -- XML doc comment (C#) or JSDoc (TS), used by FTS5
+    visibility     TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);
+CREATE INDEX IF NOT EXISTS idx_symbols_qualified ON symbols(qualified_name);
+CREATE INDEX IF NOT EXISTS idx_symbols_file      ON symbols(file_id);
+-- Covering index for the most common query pattern: 'find me a symbol by name
+-- and tell me where it lives' — avoids a table lookup.
+CREATE INDEX IF NOT EXISTS idx_symbols_name_cov
+    ON symbols(name, file_id, kind, line, col);
+
+-- ============================================================
+-- CODE GRAPH: EDGES
+-- ============================================================
+
+-- A directed edge from source_id → target_id with a relationship kind.
+-- `confidence` is 0–1; values < 1.0 come from heuristic resolution.
+-- The UNIQUE constraint prevents duplicate edges from being inserted twice
+-- during resolution passes.
+CREATE TABLE IF NOT EXISTS edges (
+    source_id   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    target_id   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    kind        TEXT    NOT NULL,
+    source_line INTEGER,
+    confidence  REAL    NOT NULL DEFAULT 1.0,
+    UNIQUE(source_id, target_id, kind, source_line)
+);
+
+CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id, kind);
+CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id, kind);
+
+-- ============================================================
+-- UNRESOLVED REFERENCES
+-- ============================================================
+
+-- References that could not be resolved to a symbol ID at index time.
+-- Kept for diagnostics and for re-resolution when more files are indexed.
+CREATE TABLE IF NOT EXISTS unresolved_refs (
+    id          INTEGER PRIMARY KEY,
+    source_id   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    target_name TEXT    NOT NULL,
+    kind        TEXT    NOT NULL,
+    source_line INTEGER,
+    module      TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_unresolved_name ON unresolved_refs(target_name);
+
+-- ============================================================
+-- IMPORTS
+-- ============================================================
+
+-- One row per `using` directive (C#) or `import` statement (TS).
+-- Used by the 4-priority resolver to boost confidence when
+-- a reference name matches an imported symbol from a known file.
+CREATE TABLE IF NOT EXISTS imports (
+    id             INTEGER PRIMARY KEY,
+    file_id        INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    imported_name  TEXT    NOT NULL,
+    module_path    TEXT,   -- 'System.Linq' | './catalog-api'
+    alias          TEXT,   -- 'using Db = Microsoft.EntityFrameworkCore'
+    line           INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_imports_file ON imports(file_id);
+CREATE INDEX IF NOT EXISTS idx_imports_name ON imports(imported_name);
+
+-- ============================================================
+-- HTTP ROUTES  (ASP.NET connector)
+-- ============================================================
+
+-- One row per route endpoint, extracted from [HttpGet/Post/Put/Delete/Patch],
+-- [Route], or minimal-API app.MapGet/MapPost calls.
+CREATE TABLE IF NOT EXISTS routes (
+    id             INTEGER PRIMARY KEY,
+    file_id        INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    symbol_id      INTEGER REFERENCES symbols(id),
+    http_method    TEXT    NOT NULL,   -- 'GET' | 'POST' | 'PUT' | 'DELETE' | 'PATCH'
+    route_template TEXT    NOT NULL,   -- '/api/catalog/items/{id}'
+    resolved_route TEXT,               -- fully qualified including controller prefix
+    line           INTEGER
+);
+
+CREATE INDEX IF NOT EXISTS idx_routes_template ON routes(route_template);
+CREATE INDEX IF NOT EXISTS idx_routes_method   ON routes(http_method, route_template);
+
+-- ============================================================
+-- EF CORE DB MAPPINGS  (EF Core connector)
+-- ============================================================
+
+-- Maps a C# entity class to its database table name.
+-- `source`: how the table name was determined:
+--   'convention' — plural of the entity class name (EF default)
+--   'attribute'  — Table attribute override
+--   'fluent'     — entity.ToTable call in OnModelCreating
+CREATE TABLE IF NOT EXISTS db_mappings (
+    id          INTEGER PRIMARY KEY,
+    symbol_id   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    table_name  TEXT    NOT NULL,
+    entity_type TEXT    NOT NULL,
+    source      TEXT    NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_db_mappings_table  ON db_mappings(table_name);
+CREATE INDEX IF NOT EXISTS idx_db_mappings_entity ON db_mappings(entity_type);
+
+-- ============================================================
+-- FULL-TEXT SEARCH: FTS5 on symbols
+-- ============================================================
+-- FTS5 is a content table backed by `symbols`.
+-- `content='symbols'` tells SQLite to read from that table when
+-- displaying results; `content_rowid='id'` links the FTS row IDs
+-- to symbols.id.
+-- Because it is a content table (not a copy of the data), we need
+-- triggers to keep the FTS index up-to-date whenever symbols change.
+
+CREATE VIRTUAL TABLE IF NOT EXISTS symbols_fts USING fts5(
+    name, qualified_name, signature, doc_comment,
+    content='symbols',
+    content_rowid='id'
+);
+
+-- Triggered after INSERT into symbols: add a new FTS row.
+CREATE TRIGGER IF NOT EXISTS symbols_ai AFTER INSERT ON symbols BEGIN
+    INSERT INTO symbols_fts(rowid, name, qualified_name, signature, doc_comment)
+    VALUES (new.id, new.name, new.qualified_name, new.signature, new.doc_comment);
+END;
+
+-- Triggered after DELETE from symbols: remove the FTS row.
+CREATE TRIGGER IF NOT EXISTS symbols_ad AFTER DELETE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, qualified_name, signature, doc_comment)
+    VALUES ('delete', old.id, old.name, old.qualified_name, old.signature, old.doc_comment);
+END;
+
+-- Triggered after UPDATE on symbols: delete the old FTS row, insert new.
+CREATE TRIGGER IF NOT EXISTS symbols_au AFTER UPDATE ON symbols BEGIN
+    INSERT INTO symbols_fts(symbols_fts, rowid, name, qualified_name, signature, doc_comment)
+    VALUES ('delete', old.id, old.name, old.qualified_name, old.signature, old.doc_comment);
+    INSERT INTO symbols_fts(rowid, name, qualified_name, signature, doc_comment)
+    VALUES (new.id, new.name, new.qualified_name, new.signature, new.doc_comment);
+END;
+
+-- ============================================================
+-- KNOWLEDGE TREE: ANNOTATIONS
+-- ============================================================
+-- Free-form markdown notes attached to a symbol.
+-- `concept` is an optional label that can group annotations
+-- without requiring full concept membership (lightweight tagging).
+
+CREATE TABLE IF NOT EXISTS annotations (
+    id         INTEGER PRIMARY KEY,
+    symbol_id  INTEGER REFERENCES symbols(id) ON DELETE CASCADE,
+    concept    TEXT,           -- optional label, e.g. 'authentication'
+    content    TEXT    NOT NULL,
+    author     TEXT    NOT NULL DEFAULT 'user',
+    created_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    updated_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_annotations_symbol  ON annotations(symbol_id);
+CREATE INDEX IF NOT EXISTS idx_annotations_concept ON annotations(concept);
+
+-- ============================================================
+-- KNOWLEDGE TREE: CONCEPTS
+-- ============================================================
+-- A concept is a named domain grouping (e.g. 'catalog-management').
+-- Symbols can be assigned to concepts manually or automatically
+-- via the `auto_pattern` glob that matches qualified_name prefixes.
+
+CREATE TABLE IF NOT EXISTS concepts (
+    id           INTEGER PRIMARY KEY,
+    name         TEXT    NOT NULL UNIQUE,
+    description  TEXT,
+    auto_pattern TEXT,          -- e.g. 'eShop.Catalog.*' or 'src/Catalog/**'
+    parent_id    INTEGER REFERENCES concepts(id) ON DELETE SET NULL,
+    created_at   INTEGER NOT NULL DEFAULT (strftime('%s', 'now'))
+);
+
+-- Members of a concept — many-to-many between concepts and symbols.
+CREATE TABLE IF NOT EXISTS concept_members (
+    concept_id    INTEGER NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
+    symbol_id     INTEGER NOT NULL REFERENCES symbols(id)  ON DELETE CASCADE,
+    auto_assigned INTEGER NOT NULL DEFAULT 0,  -- 1 = matched by auto_pattern
+    UNIQUE(concept_id, symbol_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_concept_members_concept ON concept_members(concept_id);
+CREATE INDEX IF NOT EXISTS idx_concept_members_symbol  ON concept_members(symbol_id);
+
+-- ============================================================
+-- LSP EDGE PROVENANCE
+-- ============================================================
+-- Tracks which edges were produced or confirmed by an LSP server.
+-- The edge_rowid references the implicit rowid of the edges table.
+-- When a file changes, all lsp_edge_meta rows for edges belonging
+-- to symbols in that file are deleted, resetting those edges to
+-- tree-sitter confidence.
+
+CREATE TABLE IF NOT EXISTS lsp_edge_meta (
+    edge_rowid  INTEGER NOT NULL,
+    source      TEXT    NOT NULL DEFAULT 'lsp',
+    server      TEXT,
+    resolved_at INTEGER NOT NULL,
+    UNIQUE(edge_rowid)
+);
+
+CREATE INDEX IF NOT EXISTS idx_lsp_meta_edge ON lsp_edge_meta(edge_rowid);
+
+-- ============================================================
+-- FULL-TEXT SEARCH: FTS5 on file content (trigram)
+-- ============================================================
+-- Contentless FTS5 table indexed with trigrams for instant
+-- substring search across all file content.
+-- `content = ''` means no original text stored (saves space).
+-- `contentless_delete = 1` allows row deletion without the
+-- original text (requires SQLite 3.43+).
+
+CREATE VIRTUAL TABLE IF NOT EXISTS fts_content USING fts5(
+    path,
+    content,
+    tokenize = 'trigram case_sensitive 0',
+    content = '',
+    contentless_delete = 1
+);
+
+-- ============================================================
+-- CODE CHUNKS  (for embeddings)
+-- ============================================================
+-- AST-aware chunks of source code, aligned to symbol boundaries.
+-- Each chunk is at most 512 tokens (CodeRankEmbed context window).
+-- Chunks are the unit of embedding and vector search.
+
+CREATE TABLE IF NOT EXISTS code_chunks (
+    id           INTEGER PRIMARY KEY,
+    file_id      INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    symbol_id    INTEGER REFERENCES symbols(id) ON DELETE SET NULL,
+    content_hash TEXT    NOT NULL,
+    content      TEXT    NOT NULL,
+    start_line   INTEGER NOT NULL,
+    end_line     INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_chunk_file ON code_chunks(file_id);
+CREATE INDEX IF NOT EXISTS idx_chunk_hash ON code_chunks(content_hash);
+
+-- ============================================================
+-- CROSS-LANGUAGE FLOW EDGES
+-- ============================================================
+-- Directed edges between symbols across language boundaries.
+-- Examples: TS fetch() -> C# controller, C# service -> SQL table,
+-- gRPC client -> server, React component -> API endpoint.
+
+CREATE TABLE IF NOT EXISTS flow_edges (
+    id               INTEGER PRIMARY KEY,
+    source_file_id   INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    source_line      INTEGER,
+    source_symbol    TEXT,
+    source_language  TEXT,
+    target_file_id   INTEGER REFERENCES files(id) ON DELETE SET NULL,
+    target_line      INTEGER,
+    target_symbol    TEXT,
+    target_language  TEXT,
+    edge_type        TEXT    NOT NULL,
+    protocol         TEXT,
+    http_method      TEXT,
+    url_pattern      TEXT,
+    confidence       REAL    NOT NULL DEFAULT 0.5,
+    metadata         TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_flow_source ON flow_edges(source_file_id);
+CREATE INDEX IF NOT EXISTS idx_flow_target ON flow_edges(target_file_id);
+CREATE INDEX IF NOT EXISTS idx_flow_type   ON flow_edges(edge_type);
+CREATE INDEX IF NOT EXISTS idx_flow_url    ON flow_edges(url_pattern);
+
+-- ============================================================
+-- SEARCH HISTORY
+-- ============================================================
+-- Tracks recent and saved searches for quick recall.
+
+CREATE TABLE IF NOT EXISTS search_history (
+    id           INTEGER PRIMARY KEY,
+    query        TEXT    NOT NULL,
+    query_type   TEXT    NOT NULL,
+    scope        TEXT,
+    is_saved     INTEGER NOT NULL DEFAULT 0,
+    last_used_at INTEGER NOT NULL DEFAULT (strftime('%s', 'now')),
+    use_count    INTEGER NOT NULL DEFAULT 1
+);
+
+CREATE INDEX IF NOT EXISTS idx_history_type  ON search_history(query_type);
+CREATE INDEX IF NOT EXISTS idx_history_saved ON search_history(is_saved);
+";
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rusqlite::Connection;
+
+    fn make_db() -> Connection {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_pragmas(&conn, true).unwrap();
+        create_schema(&conn).unwrap();
+        conn
+    }
+
+    #[test]
+    fn schema_creates_all_tables() {
+        let conn = make_db();
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        for expected in &[
+            "files", "symbols", "edges", "unresolved_refs", "imports",
+            "routes", "db_mappings", "annotations", "concepts", "concept_members",
+            "lsp_edge_meta", "code_chunks", "flow_edges", "search_history",
+        ] {
+            assert!(
+                tables.contains(&expected.to_string()),
+                "Missing table: {expected}. Found: {tables:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn schema_is_idempotent() {
+        let conn = Connection::open_in_memory().unwrap();
+        apply_pragmas(&conn, true).unwrap();
+        // Apply twice — should not error.
+        create_schema(&conn).unwrap();
+        create_schema(&conn).unwrap();
+    }
+
+    #[test]
+    fn cascade_delete_removes_symbols_when_file_deleted() {
+        let conn = make_db();
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h1', 'csharp', 0)",
+            [],
+        ).unwrap();
+        let file_id: i64 = conn.last_insert_rowid();
+
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'Foo', 'NS.Foo', 'class', 1, 0)",
+            [file_id],
+        ).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
+
+        conn.execute("DELETE FROM files WHERE id = ?1", [file_id]).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0, "Symbols should cascade-delete with file");
+    }
+
+    #[test]
+    fn fts5_trigger_indexes_new_symbols() {
+        let conn = make_db();
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed) VALUES ('x.cs', 'h', 'csharp', 0)",
+            [],
+        ).unwrap();
+        let file_id: i64 = conn.last_insert_rowid();
+
+        // Insert a symbol — the symbols_ai trigger should add it to FTS.
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'MyService', 'App.MyService', 'class', 1, 0)",
+            [file_id],
+        ).unwrap();
+
+        // FTS5 MATCH query should find it.
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM symbols_fts WHERE symbols_fts MATCH 'MyService'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(count, 1, "FTS5 trigger should have indexed the symbol");
+    }
+
+    #[test]
+    fn fts5_trigger_removes_deleted_symbols() {
+        let conn = make_db();
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed) VALUES ('x.cs', 'h', 'csharp', 0)",
+            [],
+        ).unwrap();
+        let file_id: i64 = conn.last_insert_rowid();
+
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, 'DeleteMe', 'App.DeleteMe', 'class', 1, 0)",
+            [file_id],
+        ).unwrap();
+        let sym_id: i64 = conn.last_insert_rowid();
+
+        // Confirm it is findable.
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM symbols_fts WHERE symbols_fts MATCH 'DeleteMe'",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 1);
+
+        // Delete the symbol — the symbols_ad trigger should remove from FTS.
+        conn.execute("DELETE FROM symbols WHERE id = ?1", [sym_id]).unwrap();
+
+        let count: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM symbols_fts WHERE symbols_fts MATCH 'DeleteMe'",
+            [], |r| r.get(0),
+        ).unwrap();
+        assert_eq!(count, 0, "FTS5 trigger should have removed the deleted symbol");
+    }
+
+    #[test]
+    fn unique_edge_constraint_prevents_duplicates() {
+        let conn = make_db();
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h1', 'csharp', 0)",
+            [],
+        ).unwrap();
+        let file_id: i64 = conn.last_insert_rowid();
+
+        for (name, qname) in [("Foo", "NS.Foo"), ("Bar", "NS.Bar")] {
+            conn.execute(
+                "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+                 VALUES (?1, ?2, ?3, 'class', 1, 0)",
+                rusqlite::params![file_id, name, qname],
+            ).unwrap();
+        }
+
+        let src: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Foo'", [], |r| r.get(0)).unwrap();
+        let tgt: i64 = conn.query_row("SELECT id FROM symbols WHERE name='Bar'", [], |r| r.get(0)).unwrap();
+
+        conn.execute(
+            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 5, 1.0)",
+            rusqlite::params![src, tgt],
+        ).unwrap();
+
+        let result = conn.execute(
+            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence) VALUES (?1, ?2, 'calls', 5, 1.0)",
+            rusqlite::params![src, tgt],
+        );
+        assert!(result.is_err(), "Duplicate edge should fail UNIQUE constraint");
+    }
+}
