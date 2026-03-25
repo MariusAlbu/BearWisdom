@@ -207,9 +207,13 @@ pub fn semantic_search(
         return Ok(vec![]);
     }
 
-    let query_vec = embedder
-        .embed_query(query)
-        .context("embed_query failed in semantic_search")?;
+    let query_vec = match embedder.embed_query(query) {
+        Ok(v) => v,
+        Err(e) => {
+            debug!("semantic_search: embedder unavailable ({e:#}), returning empty");
+            return Ok(vec![]);
+        }
+    };
 
     let knn = knn_search(&db.conn, &query_vec, limit)?;
 

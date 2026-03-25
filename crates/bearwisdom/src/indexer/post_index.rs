@@ -39,9 +39,6 @@ pub fn embed_chunks(
         }
     }
 
-    // Load the model before querying chunks (fail fast).
-    embedder.ensure_loaded()?;
-
     // Find chunks that have no vector yet.
     let mut stmt = conn.prepare(
         "SELECT c.id, c.content
@@ -60,6 +57,9 @@ pub fn embed_chunks(
         info!("All chunks already embedded, nothing to do");
         return Ok((0, total));
     }
+
+    // Load the model only when there are chunks to embed.
+    embedder.ensure_loaded()?;
 
     info!("Embedding {total} un-embedded chunks (batch_size={batch_size})");
 

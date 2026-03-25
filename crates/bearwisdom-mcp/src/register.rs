@@ -7,7 +7,7 @@ fn settings_path(project_root: &Path) -> PathBuf {
     project_root.join(".mcp.json")
 }
 
-/// Register this MCP server in `.claude/settings.local.json`.
+/// Register this MCP server in `.mcp.json`.
 ///
 /// Performs a JSON merge — only touches `mcpServers.bearwisdom`, preserving
 /// all other keys and existing MCP servers.
@@ -71,7 +71,7 @@ pub fn register(project_root: &Path) -> Result<()> {
     Ok(())
 }
 
-/// Unregister this MCP server from `.claude/settings.local.json`.
+/// Unregister this MCP server from `.mcp.json`.
 ///
 /// Removes only the `mcpServers.bearwisdom` key, preserving everything else.
 pub fn unregister(project_root: &Path) -> Result<()> {
@@ -122,7 +122,7 @@ mod tests {
         let dir = TempDir::new().unwrap();
         register(dir.path()).unwrap();
 
-        let settings_file = dir.path().join(".claude").join("settings.local.json");
+        let settings_file = dir.path().join(".mcp.json");
         assert!(settings_file.exists());
 
         let content: serde_json::Value =
@@ -134,8 +134,6 @@ mod tests {
     #[test]
     fn test_register_preserves_existing_keys() {
         let dir = TempDir::new().unwrap();
-        let claude_dir = dir.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
 
         let existing = serde_json::json!({
             "mcpServers": {
@@ -144,7 +142,7 @@ mod tests {
             "someOtherSetting": true
         });
         std::fs::write(
-            claude_dir.join("settings.local.json"),
+            dir.path().join(".mcp.json"),
             serde_json::to_string_pretty(&existing).unwrap(),
         )
         .unwrap();
@@ -152,7 +150,7 @@ mod tests {
         register(dir.path()).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap(),
+            &std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap(),
         )
         .unwrap();
 
@@ -167,7 +165,7 @@ mod tests {
         register(dir.path()).unwrap();
         register(dir.path()).unwrap();
 
-        let settings_file = dir.path().join(".claude").join("settings.local.json");
+        let settings_file = dir.path().join(".mcp.json");
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_file).unwrap()).unwrap();
         assert!(content["mcpServers"]["bearwisdom"].is_object());
@@ -179,7 +177,7 @@ mod tests {
         register(dir.path()).unwrap();
         unregister(dir.path()).unwrap();
 
-        let settings_file = dir.path().join(".claude").join("settings.local.json");
+        let settings_file = dir.path().join(".mcp.json");
         let content: serde_json::Value =
             serde_json::from_str(&std::fs::read_to_string(&settings_file).unwrap()).unwrap();
         assert!(content["mcpServers"].get("bearwisdom").is_none());
@@ -188,8 +186,6 @@ mod tests {
     #[test]
     fn test_unregister_preserves_other_servers() {
         let dir = TempDir::new().unwrap();
-        let claude_dir = dir.path().join(".claude");
-        std::fs::create_dir_all(&claude_dir).unwrap();
 
         let existing = serde_json::json!({
             "mcpServers": {
@@ -198,7 +194,7 @@ mod tests {
             }
         });
         std::fs::write(
-            claude_dir.join("settings.local.json"),
+            dir.path().join(".mcp.json"),
             serde_json::to_string_pretty(&existing).unwrap(),
         )
         .unwrap();
@@ -206,7 +202,7 @@ mod tests {
         unregister(dir.path()).unwrap();
 
         let content: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(claude_dir.join("settings.local.json")).unwrap(),
+            &std::fs::read_to_string(dir.path().join(".mcp.json")).unwrap(),
         )
         .unwrap();
 

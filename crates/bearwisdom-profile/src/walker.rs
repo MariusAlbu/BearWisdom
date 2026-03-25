@@ -23,7 +23,7 @@ use std::path::Path;
 /// `std::fs::canonicalize()` on Windows always returns a UNC path like
 /// `\\?\F:\Work\Projects\...`.  The `ignore` crate walker, however, yields
 /// entries under the *original* root (no UNC prefix).  This mismatch causes
-/// `strip_prefix(root_canonical)` to fail silently, storing the full absolute
+/// `strip_prefix(root_normalized)` to fail silently, storing the full absolute
 /// path instead of the relative path.
 fn strip_unc_prefix(s: &str) -> &str {
     s.strip_prefix(r"\\?\")
@@ -37,10 +37,12 @@ fn strip_unc_prefix(s: &str) -> &str {
 pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
     let mut files = Vec::new();
 
-    // Canonicalize and strip UNC prefix so strip_prefix succeeds on Windows.
-    let root_canonical = {
-        let canonical = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
-        let s = canonical.to_string_lossy();
+    // Use the original root (UNC-stripped) for prefix stripping.
+    // The `ignore` crate walker returns entries based on the original root,
+    // so using canonicalize() here would introduce mismatches on Windows
+    // (e.g., 8.3 short names like RUNNER~1 vs. long names from canonicalize).
+    let root_normalized = {
+        let s = root.to_string_lossy();
         let stripped = strip_unc_prefix(&s);
         std::path::PathBuf::from(stripped)
     };
@@ -83,7 +85,7 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
 
         // entry.path() may return a Windows UNC path when the walker was
         // initialized with a UNC-prefixed root. Strip the prefix so it matches
-        // root_canonical (which was already stripped).
+        // root_normalized (which was already stripped).
         let abs_path = {
             let raw = entry.path().to_string_lossy();
             let stripped = strip_unc_prefix(&raw);
@@ -93,18 +95,10 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
         // Belt-and-suspenders: check path components against should_exclude
         // even though the OverrideBuilder rules should have caught most cases.
         let should_skip = {
-            let rel = abs_path.strip_prefix(&root_canonical).unwrap_or(&abs_path);
+            let rel = abs_path.strip_prefix(&root_normalized).unwrap_or(&abs_path);
             rel.components().any(|c| {
                 c.as_os_str()
                     .to_str()
-                    .is_some_and(should_exclude)
-            })
-        } || {
-            // Fallback: check each ancestor directory name directly.
-            abs_path.ancestors().any(|ancestor| {
-                ancestor
-                    .file_name()
-                    .and_then(|n| n.to_str())
                     .is_some_and(should_exclude)
             })
         };
@@ -120,7 +114,7 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
 
         // Build relative path with forward-slash normalization.
         let relative_path = abs_path
-            .strip_prefix(&root_canonical)
+            .strip_prefix(&root_normalized)
             .unwrap_or(&abs_path)
             .to_string_lossy()
             .replace('\\', "/");
