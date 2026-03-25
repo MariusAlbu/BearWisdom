@@ -1,0 +1,67 @@
+/* ================================================================
+   BearWisdom Design System — "Scholar's Workshop"
+   Warm copper, teal, sage on dark leather-brown.
+   ================================================================ */
+
+:root {
+  /* Backgrounds */
+  --bg-deepest:    #100D09;
+  --bg-base:       #1A1410;
+  --bg-surface:    #242019;
+  --bg-elevated:   #2E2820;
+  --bg-hover:      #38302A;
+  --bg-active:     #443A30;
+
+  /* Copper — primary accent */
+  --copper-dim:    #8B6B3E;
+  --copper:        #C8915C;
+  --copper-bright: #E4AD74;
+  --copper-glow:   #C8915C33;
+
+  /* Teal — interactive / links */
+  --teal-dim:      #1E6B6B;
+  --teal:          #2D8F8F;
+  --teal-bright:   #3CB8B8;
+  --teal-glow:     #2D8F8F33;
+
+  /* Sage — success */
+  --sage:          #4A7C59;
+  --sage-bright:   #62A578;
+
+  /* Text */
+  --text-primary:  #F0E6D6;
+  --text-secondary:#B8A892;
+  --text-muted:    #8B7D6B;
+  --text-faint:    #5C5044;
+
+  /* Borders */
+  --border:        #3D3226;
+  --border-subtle: #2E2820;
+
+  /* Kind colors (graph nodes) */
+  --kind-class:     #58a6ff;
+  --kind-interface: #bc8cff;
+  --kind-method:    #3fb950;
+  --kind-function:  #3fb950;
+  --kind-enum:      #d29922;
+  --kind-struct:    #58a6ff;
+  --kind-module:    #39c5cf;
+  --kind-field:     #8b949e;
+
+  /* Shadows */
+  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+  --shadow-glow-copper: 0 0 20px var(--copper-glow);
+  --shadow-glow-teal: 0 0 20px var(--teal-glow);
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Transitions */
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+}

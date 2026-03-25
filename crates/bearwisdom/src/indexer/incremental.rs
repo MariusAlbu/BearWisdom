@@ -13,9 +13,9 @@
 // =============================================================================
 
 use crate::db::Database;
-use crate::indexer::full::{self, read_stats};
+use crate::indexer::full;
 use crate::indexer::resolve;
-use crate::types::{IndexStats, ParsedFile};
+use crate::types::ParsedFile;
 use crate::walker::{self, WalkedFile};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
@@ -131,6 +131,7 @@ pub struct IncrementalStats {
     pub files_unchanged: u32,
     pub symbols_written: u32,
     pub edges_written: u32,
+    pub files_reresolved: u32,
     pub duration_ms: u64,
 }
 
@@ -185,6 +186,9 @@ pub fn incremental_index(
 
     // Step 2: Delete removed files (CASCADE removes symbols, edges, chunks, etc.)
     for (file_id, path) in &files_to_delete {
+        // Clean up vec_chunks (virtual table — not covered by CASCADE).
+        let _ = crate::search::vector_store::delete_file_vectors(&db.conn, *file_id);
+
         db.conn
             .execute("DELETE FROM files WHERE id = ?1", [file_id])
             .with_context(|| format!("Failed to delete file {path}"))?;
@@ -308,7 +312,8 @@ pub fn incremental_index(
             );
         }
 
-        // Update code chunks.
+        // Update code chunks (delete old vectors first — virtual table, no CASCADE).
+        let _ = crate::search::vector_store::delete_file_vectors(&tx, file_id);
         let _ = tx.execute("DELETE FROM code_chunks WHERE file_id = ?1", [file_id]);
         if let Some(content) = &pf.content {
             if let Err(e) = crate::search::chunker::chunk_and_store(&tx, file_id, content) {
@@ -380,6 +385,82 @@ pub enum ChangeKind {
     Deleted,
 }
 
+// ---------------------------------------------------------------------------
+// Blast-radius helpers
+// ---------------------------------------------------------------------------
+
+/// Find files that depend on the given source files via the edges table.
+///
+/// Returns file paths (not in `source_paths`) whose symbols have outgoing
+/// edges pointing TO symbols in the source files.  These dependents need
+/// re-resolution when source files are modified or deleted, because CASCADE
+/// will delete the edges when the target symbols are replaced.
+fn find_dependent_files(
+    db: &Database,
+    source_paths: &HashSet<String>,
+) -> Result<HashSet<String>> {
+    if source_paths.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let mut dependents = HashSet::new();
+
+    for path in source_paths {
+        let mut stmt = db.conn.prepare(
+            "SELECT DISTINCT f_dep.path
+             FROM edges e
+             JOIN symbols s_target ON e.target_id = s_target.id
+             JOIN files   f_target ON s_target.file_id = f_target.id
+             JOIN symbols s_dep    ON e.source_id = s_dep.id
+             JOIN files   f_dep    ON s_dep.file_id = f_dep.id
+             WHERE f_target.path = ?1",
+        )?;
+        let rows = stmt.query_map([path], |r| r.get::<_, String>(0))?;
+        for row in rows {
+            let dep_path = row?;
+            if !source_paths.contains(&dep_path) {
+                dependents.insert(dep_path);
+            }
+        }
+    }
+
+    Ok(dependents)
+}
+
+/// Find files with unresolved references whose `target_name` matches any of
+/// the given symbol names.  These files may now be resolvable because the
+/// target symbols have been added or restored.
+fn find_newly_resolvable_files(
+    db: &Database,
+    symbol_names: &HashSet<String>,
+    exclude_paths: &HashSet<String>,
+) -> Result<HashSet<String>> {
+    if symbol_names.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    let mut resolvable = HashSet::new();
+
+    for name in symbol_names {
+        let mut stmt = db.conn.prepare(
+            "SELECT DISTINCT f.path
+             FROM unresolved_refs ur
+             JOIN symbols s ON ur.source_id = s.id
+             JOIN files   f ON s.file_id = f.id
+             WHERE ur.target_name = ?1",
+        )?;
+        let rows = stmt.query_map([name.as_str()], |r| r.get::<_, String>(0))?;
+        for row in rows {
+            let path = row?;
+            if !exclude_paths.contains(&path) {
+                resolvable.insert(path);
+            }
+        }
+    }
+
+    Ok(resolvable)
+}
+
 /// Re-index specific files that changed, without walking the project tree.
 ///
 /// This is the fast path for file watcher events.  Instead of walking the
@@ -444,6 +525,22 @@ pub fn reindex_files(
         }
     }
 
+    // ── Blast radius: find dependents BEFORE modifications ──────────
+    // We must query edges before CASCADE deletes them when symbols are
+    // replaced or files are removed.
+    let changed_paths: HashSet<String> = files_to_parse
+        .iter()
+        .map(|w| w.relative_path.clone())
+        .chain(files_to_delete.iter().cloned())
+        .collect();
+    let dependent_paths = find_dependent_files(db, &changed_paths)?;
+    if !dependent_paths.is_empty() {
+        debug!(
+            "Blast radius: {} files depend on changed files",
+            dependent_paths.len()
+        );
+    }
+
     // Handle deletions.
     for rel_path in &files_to_delete {
         let file_id: Option<i64> = db
@@ -456,6 +553,9 @@ pub fn reindex_files(
             .ok();
 
         if let Some(file_id) = file_id {
+            // Clean up vec_chunks (virtual table — not covered by CASCADE).
+            let _ = crate::search::vector_store::delete_file_vectors(&db.conn, file_id);
+
             db.conn
                 .execute("DELETE FROM files WHERE id = ?1", [file_id])?;
             let _ = db
@@ -486,6 +586,7 @@ pub fn reindex_files(
         }
     }
 
+    // ── Step 1: Write changed files to DB ──────────────────────────
     if !parsed.is_empty() {
         let conn = &db.conn;
         let now = std::time::SystemTime::now()
@@ -496,9 +597,6 @@ pub fn reindex_files(
         let tx = conn
             .unchecked_transaction()
             .context("Failed to begin transaction")?;
-
-        let mut file_id_map: HashMap<String, i64> = HashMap::new();
-        let mut symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
 
         for pf in &parsed {
             tx.execute(
@@ -516,8 +614,6 @@ pub fn reindex_files(
                 [&pf.path],
                 |r| r.get(0),
             )?;
-
-            file_id_map.insert(pf.path.clone(), file_id);
 
             tx.execute("DELETE FROM symbols WHERE file_id = ?1", [file_id])?;
             tx.execute("DELETE FROM imports WHERE file_id = ?1", [file_id])?;
@@ -544,9 +640,6 @@ pub fn reindex_files(
                     ],
                 )?;
 
-                let sym_id = tx.last_insert_rowid();
-                symbol_id_map
-                    .insert((pf.path.clone(), sym.qualified_name.clone()), sym_id);
                 stats.symbols_written += 1;
             }
 
@@ -575,6 +668,7 @@ pub fn reindex_files(
                 );
             }
 
+            let _ = crate::search::vector_store::delete_file_vectors(&tx, file_id);
             let _ = tx.execute("DELETE FROM code_chunks WHERE file_id = ?1", [file_id]);
             if let Some(content) = &pf.content {
                 if let Err(e) =
@@ -586,9 +680,13 @@ pub fn reindex_files(
         }
 
         tx.commit().context("Failed to commit targeted reindex")?;
+    }
 
-        // Cross-file resolution: load the full symbol map (including unchanged
-        // files) so the resolver can match references that span file boundaries.
+    // ── Step 2: Blast-radius resolution ─────────────────────────────
+    // Runs when there are changed files OR dependents from deletions.
+    if !parsed.is_empty() || !dependent_paths.is_empty() {
+        // Load full symbol map (post-commit, DB has all current symbols).
+        let mut symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
         {
             let mut stmt = db.conn.prepare(
                 "SELECT f.path, s.qualified_name, s.id
@@ -604,8 +702,79 @@ pub fn reindex_files(
             })?;
             for row in rows {
                 let (path, qname, id) = row?;
-                symbol_id_map.entry((path, qname)).or_insert(id);
+                symbol_id_map.insert((path, qname), id);
             }
+        }
+
+        // Find files with unresolved refs matching symbols from changed files.
+        let new_symbol_names: HashSet<String> = parsed
+            .iter()
+            .flat_map(|pf| pf.symbols.iter().map(|s| s.name.clone()))
+            .collect();
+        let newly_resolvable =
+            find_newly_resolvable_files(db, &new_symbol_names, &changed_paths)?;
+
+        // Combine all affected files (edge dependents + newly resolvable).
+        let all_affected: HashSet<String> = dependent_paths
+            .into_iter()
+            .chain(newly_resolvable)
+            .collect();
+
+        if !all_affected.is_empty() {
+            info!(
+                "Blast radius: re-resolving {} dependent files",
+                all_affected.len()
+            );
+            stats.files_reresolved = all_affected.len() as u32;
+
+            // Parse affected files — source hasn't changed, but we need
+            // their refs for the resolver.
+            let affected_walked: Vec<WalkedFile> = all_affected
+                .iter()
+                .filter_map(|rel_path| {
+                    let abs_path = project_root.join(rel_path);
+                    if !abs_path.exists() {
+                        return None;
+                    }
+                    let language = walker::detect_language(&abs_path)?;
+                    Some(WalkedFile {
+                        relative_path: rel_path.clone(),
+                        absolute_path: abs_path,
+                        language,
+                    })
+                })
+                .collect();
+
+            let affected_results: Vec<Result<ParsedFile>> =
+                affected_walked.par_iter().map(full::parse_file).collect();
+            let mut affected_parsed: Vec<ParsedFile> = Vec::new();
+            for (walked, result) in affected_walked.iter().zip(affected_results) {
+                match result {
+                    Ok(pf) => affected_parsed.push(pf),
+                    Err(e) => {
+                        warn!("Failed to parse dependent {}: {e}", walked.relative_path)
+                    }
+                }
+            }
+
+            // Clean up stale unresolved_refs for affected files —
+            // re-resolution will recreate any that are still unresolvable.
+            for pf in &affected_parsed {
+                if let Ok(file_id) = db.conn.query_row(
+                    "SELECT id FROM files WHERE path = ?1",
+                    [&pf.path],
+                    |r| r.get::<_, i64>(0),
+                ) {
+                    let _ = db.conn.execute(
+                        "DELETE FROM unresolved_refs WHERE source_id IN \
+                         (SELECT id FROM symbols WHERE file_id = ?1)",
+                        [file_id],
+                    );
+                }
+            }
+
+            // Extend parsed with affected files for combined resolution.
+            parsed.extend(affected_parsed);
         }
 
         let (edge_count, _unresolved) =
@@ -616,12 +785,14 @@ pub fn reindex_files(
 
     stats.duration_ms = start.elapsed().as_millis() as u64;
     info!(
-        "Targeted reindex complete in {:.2}s: {} added, {} modified, {} deleted, {} symbols",
+        "Targeted reindex complete in {:.2}s: +{} ~{} -{} re-resolved:{} symbols:{} edges:{}",
         stats.duration_ms as f64 / 1000.0,
         stats.files_added,
         stats.files_modified,
         stats.files_deleted,
+        stats.files_reresolved,
         stats.symbols_written,
+        stats.edges_written,
     );
 
     Ok(stats)
@@ -841,5 +1012,197 @@ mod tests {
         let stats = reindex_files(&mut db, dir.path(), &[]).unwrap();
         assert_eq!(stats.files_added, 0);
         assert_eq!(stats.duration_ms, 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Blast-radius tests
+    // ------------------------------------------------------------------
+
+    /// When file A defines `Foo` and file B calls `Foo`, modifying A should
+    /// trigger re-resolution of B (blast radius).
+    #[test]
+    fn blast_radius_reresolved_on_modify() {
+        let dir = TempDir::new().unwrap();
+
+        // File A defines a class with a method.
+        fs::write(
+            dir.path().join("a.cs"),
+            "namespace App { class Svc { public void DoWork() {} } }",
+        )
+        .unwrap();
+
+        // File B references the method from A.
+        fs::write(
+            dir.path().join("b.cs"),
+            "namespace App { class Consumer { void Run() { DoWork(); } } }",
+        )
+        .unwrap();
+
+        let mut db = Database::open_in_memory().unwrap();
+        crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+
+        // Verify there's at least one edge from B → A.
+        let edge_count_before: u32 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+            .unwrap();
+
+        // Modify A: rename the method.
+        fs::write(
+            dir.path().join("a.cs"),
+            "namespace App { class Svc { public void DoWorkRenamed() {} } }",
+        )
+        .unwrap();
+
+        let changes = vec![FileChangeEvent {
+            relative_path: "a.cs".to_string(),
+            change_kind: ChangeKind::Modified,
+        }];
+
+        let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+        assert_eq!(stats.files_modified, 1);
+        // B should be re-resolved via blast radius.
+        assert!(
+            stats.files_reresolved >= 1,
+            "Expected B to be re-resolved, got {}",
+            stats.files_reresolved
+        );
+
+        // The old edge (B → DoWork) should be gone since DoWork no longer exists.
+        // B's reference to DoWork is now unresolvable.
+        let unresolved: u32 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
+            .unwrap();
+        // B's call to DoWork() should now be in unresolved_refs.
+        assert!(
+            unresolved >= 1,
+            "Expected unresolved ref for renamed symbol, got {unresolved} (edges before: {edge_count_before})"
+        );
+    }
+
+    /// When a deleted file's symbols are referenced by other files, those
+    /// dependents should be re-resolved.
+    #[test]
+    fn blast_radius_reresolved_on_delete() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("a.cs"),
+            "namespace App { class Helper { public static void Aid() {} } }",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("b.cs"),
+            "namespace App { class Main { void Go() { Aid(); } } }",
+        )
+        .unwrap();
+
+        let mut db = Database::open_in_memory().unwrap();
+        crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+
+        // Delete A.
+        fs::remove_file(dir.path().join("a.cs")).unwrap();
+
+        let changes = vec![FileChangeEvent {
+            relative_path: "a.cs".to_string(),
+            change_kind: ChangeKind::Deleted,
+        }];
+
+        let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+        assert_eq!(stats.files_deleted, 1);
+        assert!(
+            stats.files_reresolved >= 1,
+            "Expected B to be re-resolved after A was deleted, got {}",
+            stats.files_reresolved
+        );
+    }
+
+    /// When a new file adds symbols that match previously unresolved refs
+    /// in other files, those files should be re-resolved.
+    #[test]
+    fn blast_radius_resolves_previously_unresolved() {
+        let dir = TempDir::new().unwrap();
+
+        // File B references a symbol that doesn't exist yet.
+        fs::write(
+            dir.path().join("b.cs"),
+            "namespace App { class User { void Go() { MissingMethod(); } } }",
+        )
+        .unwrap();
+
+        let mut db = Database::open_in_memory().unwrap();
+        crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+
+        // Verify that MissingMethod is in unresolved_refs.
+        let unresolved_before: u32 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM unresolved_refs WHERE target_name = 'MissingMethod'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(
+            unresolved_before >= 1,
+            "Expected MissingMethod in unresolved_refs"
+        );
+
+        // Now create a file that defines MissingMethod.
+        fs::write(
+            dir.path().join("a.cs"),
+            "namespace App { class Lib { public void MissingMethod() {} } }",
+        )
+        .unwrap();
+
+        let changes = vec![FileChangeEvent {
+            relative_path: "a.cs".to_string(),
+            change_kind: ChangeKind::Created,
+        }];
+
+        let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+        assert_eq!(stats.files_added, 1);
+        assert!(
+            stats.files_reresolved >= 1,
+            "Expected B to be re-resolved when MissingMethod was added, got {}",
+            stats.files_reresolved
+        );
+    }
+
+    /// No blast radius when the change doesn't affect any dependents.
+    #[test]
+    fn blast_radius_zero_when_no_dependents() {
+        let dir = TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("a.cs"),
+            "namespace App { class Isolated {} }",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("b.cs"),
+            "namespace Other { class Unrelated {} }",
+        )
+        .unwrap();
+
+        let mut db = Database::open_in_memory().unwrap();
+        crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+
+        // Modify A — B has no references to A.
+        fs::write(
+            dir.path().join("a.cs"),
+            "namespace App { class Isolated { void New() {} } }",
+        )
+        .unwrap();
+
+        let changes = vec![FileChangeEvent {
+            relative_path: "a.cs".to_string(),
+            change_kind: ChangeKind::Modified,
+        }];
+
+        let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+        assert_eq!(stats.files_modified, 1);
+        assert_eq!(
+            stats.files_reresolved, 0,
+            "No files should be re-resolved when there are no dependents"
+        );
     }
 }

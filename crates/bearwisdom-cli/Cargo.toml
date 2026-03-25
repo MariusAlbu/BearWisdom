@@ -1,9 +1,14 @@
 [package]
-name    = "bearwisdom-cli"
-version = "0.1.0"
-edition = "2021"
+name         = "bearwisdom-cli"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+repository.workspace   = true
+homepage.workspace     = true
+keywords.workspace     = true
+categories.workspace   = true
 description = "BearWisdom CLI — structural code intelligence for agents and IDEs"
-license = "MIT OR Apache-2.0"
 
 [[bin]]
 name = "bw"
@@ -11,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 bearwisdom         = { path = "../bearwisdom" }
+sqlite-vec         = { workspace = true }
 anyhow             = { workspace = true }
 clap               = { workspace = true }
 serde              = { workspace = true }

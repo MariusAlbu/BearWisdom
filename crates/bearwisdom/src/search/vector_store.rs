@@ -34,8 +34,7 @@ pub fn init_vec_table(conn: &Connection) -> Result<bool> {
     conn.execute_batch(
         "CREATE VIRTUAL TABLE IF NOT EXISTS vec_chunks USING vec0(
             chunk_id INTEGER PRIMARY KEY,
-            embedding float[768],
-            distance_metric = cosine
+            embedding float[768]
         )",
     )
     .context("Failed to create vec_chunks table (is sqlite-vec loaded?)")?;

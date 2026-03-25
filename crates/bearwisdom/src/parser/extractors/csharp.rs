@@ -1390,14 +1390,6 @@ fn find_child_kind<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {
     children.into_iter().find(|c| c.kind() == kind)
 }
 
-/// Split "System.Linq" → (Some("System"), "Linq").
-fn split_qualified(full: &str) -> (Option<String>, String) {
-    match full.rfind('.') {
-        Some(pos) => (Some(full[..pos].to_string()), full[pos + 1..].to_string()),
-        None => (None, full.to_string()),
-    }
-}
-
 /// Returns true for C# primitive / standard-library type names that are not
 /// useful to track as cross-file references.
 fn is_builtin_type(name: &str) -> bool {

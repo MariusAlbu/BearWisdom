@@ -1,0 +1,87 @@
+// Force-link sqlite-vec native library into this binary.
+extern crate sqlite_vec;
+
+mod api;
+mod db;
+
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+use axum::Router;
+use clap::Parser;
+use tower_http::cors::CorsLayer;
+use tower_http::services::ServeDir;
+
+/// Shared embedding status visible to all request handlers.
+#[derive(Clone, Debug, serde::Serialize)]
+pub struct EmbedStatus {
+    pub state: &'static str, // "idle" | "running" | "done" | "error"
+    pub embedded: u32,
+    pub error: Option<String>,
+}
+
+pub type SharedEmbedStatus = Arc<Mutex<EmbedStatus>>;
+
+#[derive(Parser)]
+#[command(name = "bw-web", about = "BearWisdom web UI server")]
+struct Args {
+    #[arg(long, default_value = "3030")]
+    port: u16,
+    #[arg(long)]
+    static_dir: Option<PathBuf>,
+}
+
+#[tokio::main]
+async fn main() {
+    tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .init();
+
+    let args = Args::parse();
+
+    let embed_status: SharedEmbedStatus = Arc::new(Mutex::new(EmbedStatus {
+        state: "idle",
+        embedded: 0,
+        error: None,
+    }));
+
+    let api_router = Router::new()
+        .route("/index",          axum::routing::post(api::post_index))
+        .route("/status",         axum::routing::get(api::get_status))
+        .route("/architecture",   axum::routing::get(api::get_architecture))
+        .route("/search-symbols", axum::routing::get(api::get_search_symbols))
+        .route("/fuzzy-files",    axum::routing::get(api::get_fuzzy_files))
+        .route("/fuzzy-symbols",  axum::routing::get(api::get_fuzzy_symbols))
+        .route("/grep",           axum::routing::get(api::get_grep))
+        .route("/search-content", axum::routing::get(api::get_search_content))
+        .route("/hybrid",         axum::routing::get(api::get_hybrid))
+        .route("/graph",          axum::routing::get(api::get_graph))
+        .route("/concepts",       axum::routing::get(api::get_concepts))
+        .route("/concept-members",axum::routing::get(api::get_concept_members))
+        .route("/symbol-info",    axum::routing::get(api::get_symbol_info))
+        .route("/definition",     axum::routing::get(api::get_definition))
+        .route("/references",     axum::routing::get(api::get_references))
+        .route("/calls-in",       axum::routing::get(api::get_calls_in))
+        .route("/calls-out",      axum::routing::get(api::get_calls_out))
+        .route("/blast-radius",   axum::routing::get(api::get_blast_radius))
+        .route("/file-symbols",   axum::routing::get(api::get_file_symbols))
+        .route("/file-content",   axum::routing::get(api::get_file_content))
+        .route("/browse",         axum::routing::get(api::get_browse))
+        .route("/embed",          axum::routing::post(api::post_embed))
+        .route("/embed-status",   axum::routing::get(api::get_embed_status))
+        .with_state(embed_status);
+
+    let mut app = Router::new()
+        .nest("/api", api_router)
+        .layer(CorsLayer::permissive());
+
+    if let Some(dir) = args.static_dir {
+        app = app.fallback_service(ServeDir::new(dir));
+    }
+
+    let addr = std::net::SocketAddr::from(([0, 0, 0, 0], args.port));
+    tracing::info!("Listening on http://{addr}");
+
+    let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
+    axum::serve(listener, app).await.unwrap();
+}

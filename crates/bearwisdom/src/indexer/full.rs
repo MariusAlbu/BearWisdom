@@ -93,6 +93,10 @@ pub fn full_index(
             // Drop dependent tables first, then recreate via the schema init.
             // The schema init in Database::open already ensures tables exist,
             // so we just need to clear data. Use a transaction for atomicity.
+            // Clear vec_chunks first (virtual table — not covered by CASCADE).
+            if crate::search::vector_store::vec_table_exists(&db.conn) {
+                let _ = db.conn.execute_batch("DELETE FROM vec_chunks");
+            }
             let _ = db.conn.execute_batch(
                 "PRAGMA foreign_keys = OFF;
                  DELETE FROM edges;

@@ -1,0 +1,109 @@
+//! Integration tests for incremental indexing.
+//!
+//! Exercises: full_index → mutate files → incremental_index → verify updates.
+
+use std::fs;
+
+use bearwisdom::query::architecture::get_overview;
+use bearwisdom::{full_index, incremental_index};
+use bearwisdom_tests::TestProject;
+
+#[test]
+fn incremental_detects_new_file() {
+    let project = TestProject::csharp_service();
+    let mut db = TestProject::in_memory_db();
+
+    let stats1 = full_index(&mut db, project.path(), None, None).unwrap();
+    let count_before = stats1.symbol_count;
+
+    // Add a new file after the initial index.
+    project.add_file("Services/OrderService.cs", r#"
+namespace MyApp.Services
+{
+    public class OrderService
+    {
+        public void PlaceOrder(int productId) { }
+    }
+}
+"#);
+
+    let stats2 = incremental_index(&mut db, project.path()).unwrap();
+
+    // The new file should contribute at least one new symbol.
+    let overview = get_overview(&db).unwrap();
+    assert!(
+        overview.total_symbols > count_before,
+        "expected more symbols after adding OrderService.cs: before={count_before}, after={}",
+        overview.total_symbols,
+    );
+    let _ = stats2;
+}
+
+#[test]
+fn incremental_detects_modified_file() {
+    let project = TestProject::python_app();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None).unwrap();
+
+    // Modify an existing file — add a new class.
+    let path = project.path().join("models.py");
+    let mut content = fs::read_to_string(&path).unwrap();
+    content.push_str(r#"
+
+class Bird(Animal):
+    def speak(self) -> str:
+        return f"{self.name} says Tweet!"
+"#);
+    fs::write(&path, content).unwrap();
+
+    let stats = incremental_index(&mut db, project.path()).unwrap();
+    let _ = stats;
+
+    // "Bird" should now be findable.
+    let results = bearwisdom::query::search::search_symbols(&db, "Bird", 10).unwrap();
+    assert!(!results.is_empty(), "Bird class should be indexed after incremental update");
+}
+
+#[test]
+fn incremental_detects_deleted_file() {
+    let project = TestProject::typescript_app();
+    let mut db = TestProject::in_memory_db();
+
+    let stats1 = full_index(&mut db, project.path(), None, None).unwrap();
+    let files_before = stats1.file_count;
+
+    // Delete one of the two files.
+    let target = project.path().join("types.ts");
+    fs::remove_file(&target).unwrap();
+
+    let stats2 = incremental_index(&mut db, project.path()).unwrap();
+    let _ = stats2;
+
+    let overview = get_overview(&db).unwrap();
+    assert!(
+        overview.total_files < files_before,
+        "file count should decrease after deletion: before={files_before}, after={}",
+        overview.total_files,
+    );
+}
+
+#[test]
+fn incremental_on_unchanged_project_is_noop() {
+    let project = TestProject::csharp_service();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None).unwrap();
+
+    let overview_before = get_overview(&db).unwrap();
+    let syms_before = overview_before.total_symbols;
+
+    // Run incremental with no changes.
+    incremental_index(&mut db, project.path()).unwrap();
+
+    let overview_after = get_overview(&db).unwrap();
+    assert_eq!(
+        syms_before, overview_after.total_symbols,
+        "symbol count should not change when nothing was modified"
+    );
+}

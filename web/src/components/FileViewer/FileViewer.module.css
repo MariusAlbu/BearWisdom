@@ -1,0 +1,102 @@
+.fileViewer {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg-base);
+}
+
+.fileViewerHeader {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.fileViewerPath {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  color: var(--teal);
+  flex: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.fileViewerLine {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 11px;
+  color: var(--copper);
+  flex-shrink: 0;
+}
+
+.fileViewerClose {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 18px;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.fileViewerClose:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+.fileViewerContent {
+  flex: 1;
+  overflow: auto;
+}
+
+.fileViewerLoading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  font-style: italic;
+}
+
+.fileViewerCode {
+  margin: 0;
+  padding: 0;
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-secondary);
+  white-space: pre;
+  min-width: fit-content;
+}
+
+.codeLine {
+  display: flex;
+  padding: 0 16px 0 0;
+  border-left: 3px solid transparent;
+}
+
+.codeLineHighlight {
+  background: rgba(200, 145, 92, 0.12);
+  border-left-color: var(--copper);
+}
+
+.lineNumber {
+  display: inline-block;
+  width: 50px;
+  padding: 0 12px 0 12px;
+  text-align: right;
+  color: var(--text-faint);
+  user-select: none;
+  flex-shrink: 0;
+}
+
+.lineContent {
+  flex: 1;
+}

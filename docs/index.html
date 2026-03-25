@@ -1,0 +1,1839 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BearWisdom — Structural Code Intelligence</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600&family=Source+Code+Pro:wght@400&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deepest:    #100D09;
+      --bg-base:       #1A1410;
+      --bg-surface:    #242019;
+      --bg-elevated:   #2E2820;
+      --bg-hover:      #38302A;
+      --bg-active:     #443A30;
+
+      --copper-dim:    #8B6B3E;
+      --copper:        #C8915C;
+      --copper-bright: #E4AD74;
+      --copper-glow:   #C8915C33;
+
+      --teal-dim:      #1E6B6B;
+      --teal:          #2D8F8F;
+      --teal-bright:   #3CB8B8;
+      --teal-glow:     #2D8F8F33;
+
+      --sage:          #4A7C59;
+      --sage-bright:   #62A578;
+
+      --text-primary:  #F0E6D6;
+      --text-secondary:#B8A892;
+      --text-muted:    #8B7D6B;
+      --text-faint:    #5C5044;
+
+      --border:        #3D3226;
+      --border-subtle: #2E2820;
+
+      --kind-class:     #58a6ff;
+      --kind-interface: #bc8cff;
+      --kind-method:    #3fb950;
+      --kind-function:  #3fb950;
+      --kind-enum:      #d29922;
+      --kind-struct:    #58a6ff;
+      --kind-module:    #39c5cf;
+      --kind-field:     #8b949e;
+
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+      --shadow-glow-copper: 0 0 20px var(--copper-glow);
+      --shadow-glow-teal: 0 0 20px var(--teal-glow);
+
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+      --radius-xl: 16px;
+
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      font-family: 'DM Sans', system-ui, sans-serif;
+      background: var(--bg-deepest);
+      color: var(--text-primary);
+      line-height: 1.6;
+      overflow-x: hidden;
+    }
+
+    ::-webkit-scrollbar { width: 5px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+    /* ── Layout helpers ─────────────────────────────────────────────── */
+    .container {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 0 24px;
+    }
+
+    /* ── Scroll animation ───────────────────────────────────────────── */
+    .reveal {
+      opacity: 0;
+      transform: translateY(24px);
+      transition: opacity 0.6s var(--ease-out), transform 0.6s var(--ease-out);
+    }
+    .reveal.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    /* ── Navigation ─────────────────────────────────────────────────── */
+    nav {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 100;
+      background: var(--bg-surface);
+      border-bottom: 1px solid var(--border);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .nav-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 60px;
+    }
+
+    .nav-logo {
+      font-family: 'Playfair Display', serif;
+      font-weight: 700;
+      font-size: 1.35rem;
+      color: var(--copper);
+      text-decoration: none;
+      letter-spacing: 0.01em;
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 32px;
+      list-style: none;
+    }
+
+    .nav-links a {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      transition: color 0.2s;
+    }
+
+    .nav-links a:hover { color: var(--copper); }
+
+    .nav-github {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--teal);
+      color: var(--bg-deepest);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.875rem;
+      padding: 8px 18px;
+      border-radius: 20px;
+      text-decoration: none;
+      transition: background 0.2s, transform 0.15s;
+    }
+
+    .nav-github:hover {
+      background: var(--teal-bright);
+      transform: translateY(-1px);
+    }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+    }
+
+    /* ── Hero ───────────────────────────────────────────────────────── */
+    .hero {
+      padding: 140px 0 100px;
+      background: var(--bg-deepest);
+      position: relative;
+      overflow: hidden;
+      text-align: center;
+    }
+
+    .hero::before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -60%);
+      width: 700px;
+      height: 700px;
+      background: radial-gradient(ellipse at center, var(--copper-glow) 0%, transparent 65%);
+      pointer-events: none;
+    }
+
+    .hero-logo {
+      width: 160px;
+      height: auto;
+      border-radius: 16px;
+      object-fit: contain;
+      margin: 0 auto 32px;
+      display: block;
+      box-shadow: 0 0 0 3px var(--copper-dim), var(--shadow-glow-copper), var(--shadow-lg);
+      position: relative;
+      z-index: 1;
+    }
+
+    /* Fallback when logo.png doesn't exist */
+    .hero-logo-fallback {
+      width: 96px;
+      height: 96px;
+      border-radius: 50%;
+      margin: 0 auto 32px;
+      background: var(--bg-elevated);
+      border: 3px solid var(--copper-dim);
+      box-shadow: var(--shadow-glow-copper), var(--shadow-lg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Playfair Display', serif;
+      font-size: 2rem;
+      color: var(--copper);
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-eyebrow {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.8rem;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--copper-dim);
+      margin-bottom: 16px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-tagline {
+      font-family: 'Playfair Display', serif;
+      font-weight: 700;
+      font-size: clamp(2.5rem, 5vw, 4rem);
+      color: var(--text-primary);
+      line-height: 1.15;
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-tagline span { color: var(--copper); }
+
+    .hero-subtitle {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 400;
+      font-size: 1.2rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      margin: 0 auto 40px;
+      line-height: 1.7;
+      position: relative;
+      z-index: 1;
+    }
+
+    .hero-buttons {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      margin-bottom: 32px;
+      position: relative;
+      z-index: 1;
+    }
+
+    .btn-primary {
+      background: var(--copper);
+      color: var(--bg-base);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 12px 28px;
+      border-radius: var(--radius-md);
+      text-decoration: none;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+      box-shadow: var(--shadow-md);
+    }
+
+    .btn-primary:hover {
+      background: var(--copper-bright);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-glow-copper), var(--shadow-md);
+    }
+
+    .btn-outline-teal {
+      background: transparent;
+      color: var(--teal-bright);
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 1rem;
+      padding: 12px 28px;
+      border-radius: var(--radius-md);
+      border: 1.5px solid var(--teal);
+      text-decoration: none;
+      transition: background 0.2s, transform 0.15s, box-shadow 0.2s;
+    }
+
+    .btn-outline-teal:hover {
+      background: var(--teal-glow);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-glow-teal);
+    }
+
+    .install-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 24px;
+      padding: 9px 20px;
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      position: relative;
+      z-index: 1;
+    }
+
+    .install-badge .prompt { color: var(--copper); }
+    .install-badge .cmd { color: var(--teal-bright); }
+
+    /* ── Section commons ─────────────────────────────────────────────── */
+    section { padding: 96px 0; }
+
+    .section-label {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.75rem;
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--copper-dim);
+      margin-bottom: 12px;
+    }
+
+    .section-title {
+      font-family: 'Playfair Display', serif;
+      font-weight: 700;
+      font-size: clamp(1.8rem, 3vw, 2.5rem);
+      color: var(--copper-bright);
+      margin-bottom: 16px;
+    }
+
+    .section-subtitle {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 400;
+      font-size: 1.1rem;
+      color: var(--text-secondary);
+      max-width: 640px;
+      line-height: 1.7;
+    }
+
+    .section-header { margin-bottom: 56px; }
+    .section-header.centered { text-align: center; }
+    .section-header.centered .section-subtitle { margin: 0 auto; }
+
+    /* ── Capabilities Grid ───────────────────────────────────────────── */
+    .capabilities { background: var(--bg-base); }
+
+    .caps-grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .caps-grid { grid-template-columns: 1fr; }
+    }
+
+    .cap-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 32px;
+      box-shadow: var(--shadow-md);
+      transition: border-color 0.25s, box-shadow 0.25s, transform 0.2s;
+    }
+
+    .cap-card:hover {
+      border-color: var(--copper-dim);
+      box-shadow: var(--shadow-glow-copper), var(--shadow-md);
+      transform: translateY(-3px);
+    }
+
+    .cap-icon {
+      width: 44px;
+      height: 44px;
+      margin-bottom: 20px;
+      color: var(--copper);
+    }
+
+    .cap-title {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 1.1rem;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+    }
+
+    .cap-desc {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 400;
+      font-size: 0.95rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    /* ── IDE Section ─────────────────────────────────────────────────── */
+    .ide-section {
+      background: var(--bg-base);
+      position: relative;
+    }
+
+    .ide-section::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent,
+        transparent 59px,
+        rgba(61, 50, 38, 0.3) 59px,
+        rgba(61, 50, 38, 0.3) 60px
+      );
+      pointer-events: none;
+    }
+
+    .ide-panels {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      position: relative;
+    }
+
+    @media (max-width: 768px) {
+      .ide-panels { grid-template-columns: 1fr; }
+    }
+
+    .ide-panel {
+      background: var(--bg-elevated);
+      border-radius: var(--radius-md);
+      padding: 28px;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .ide-panel:hover {
+      transform: translateY(-3px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .ide-panel--editor { border-left: 3px solid var(--copper); }
+    .ide-panel--ai     { border-left: 3px solid var(--teal); }
+    .ide-panel--dev    { border-left: 3px solid var(--sage-bright); }
+
+    .ide-panel-icon {
+      width: 40px;
+      height: 40px;
+      margin-bottom: 16px;
+    }
+
+    .ide-panel-title {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: var(--text-primary);
+      margin-bottom: 10px;
+    }
+
+    .ide-panel-desc {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.65;
+    }
+
+    /* ── Graph Section ───────────────────────────────────────────────── */
+    .graph-section { background: var(--bg-deepest); }
+
+    .graph-mock {
+      width: 100%;
+      max-width: 960px;
+      margin: 0 auto;
+      aspect-ratio: 16/9;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow-lg);
+      overflow: hidden;
+      display: flex;
+      position: relative;
+    }
+
+    .graph-sidebar {
+      width: 190px;
+      flex-shrink: 0;
+      background: var(--bg-base);
+      border-right: 1px solid var(--border);
+      padding: 16px 14px;
+    }
+
+    .graph-sidebar-title {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    .concept-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      border-radius: var(--radius-sm);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.78rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .concept-item:hover { background: var(--bg-hover); }
+    .concept-item.active {
+      background: var(--bg-active);
+      color: var(--copper);
+    }
+
+    .concept-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .graph-canvas {
+      flex: 1;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .graph-canvas svg {
+      width: 100%;
+      height: 100%;
+    }
+
+    .graph-detail {
+      width: 200px;
+      flex-shrink: 0;
+      background: var(--bg-base);
+      border-left: 1px solid var(--border);
+      padding: 16px 14px;
+    }
+
+    .detail-kind-badge {
+      display: inline-block;
+      padding: 2px 10px;
+      border-radius: 12px;
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.7rem;
+      margin-bottom: 10px;
+    }
+
+    .detail-name {
+      font-family: 'Source Code Pro', monospace;
+      font-weight: 400;
+      font-size: 0.85rem;
+      color: var(--text-primary);
+      margin-bottom: 6px;
+      word-break: break-all;
+    }
+
+    .detail-file {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    .detail-section-label {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.68rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 8px;
+    }
+
+    .detail-code {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px;
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.72rem;
+      color: var(--text-secondary);
+      line-height: 1.5;
+      overflow: hidden;
+    }
+
+    .detail-refs {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .ref-item {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.72rem;
+      color: var(--teal-bright);
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      cursor: pointer;
+    }
+
+    .screenshot-showcase {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+    }
+    .screenshot-main {
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-lg), 0 0 40px rgba(200, 145, 92, 0.08);
+    }
+    .screenshot-main img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .screenshot-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 768px) {
+      .screenshot-grid { grid-template-columns: 1fr; }
+    }
+    .screenshot-card {
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      border: 1px solid var(--border);
+      box-shadow: var(--shadow-md);
+      position: relative;
+    }
+    .screenshot-card img {
+      width: 100%;
+      height: auto;
+      display: block;
+    }
+    .screenshot-label {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      padding: 8px 14px;
+      background: linear-gradient(transparent, rgba(16, 13, 9, 0.9));
+      font-family: 'DM Sans', sans-serif;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--copper-bright);
+    }
+
+    .graph-caption {
+      text-align: center;
+      margin-top: 20px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      color: var(--text-muted);
+      font-style: italic;
+    }
+
+    /* ── CLI Section ─────────────────────────────────────────────────── */
+    .cli-section { background: var(--bg-deepest); }
+
+    .cli-terminals {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 24px;
+    }
+
+    @media (max-width: 768px) {
+      .cli-terminals { grid-template-columns: 1fr; }
+    }
+
+    .terminal-block {
+      background: var(--bg-base);
+      border-left: 3px solid var(--copper);
+      border-radius: var(--radius-md);
+      padding: 24px;
+      overflow-x: auto;
+    }
+
+    .terminal-title {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 20px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .terminal-line {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.875rem;
+      line-height: 1.8;
+      white-space: pre;
+    }
+
+    .t-prompt { color: var(--copper); }
+    .t-cmd    { color: var(--text-primary); }
+    .t-out    { color: var(--text-secondary); }
+    .t-teal   { color: var(--teal-bright); }
+    .t-muted  { color: var(--text-muted); }
+    .t-blank  { display: block; height: 0.4em; }
+
+    /* ── Benchmarks ──────────────────────────────────────────────────── */
+    .benchmarks-section { background: var(--bg-base); }
+
+    .bench-tables {
+      display: flex;
+      flex-direction: column;
+      gap: 40px;
+    }
+
+    .bench-table-wrap {
+      overflow-x: auto;
+    }
+
+    .bench-table {
+      width: 100%;
+      border-collapse: collapse;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      overflow: hidden;
+      font-size: 0.9rem;
+    }
+
+    .bench-table thead tr {
+      background: var(--bg-elevated);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .bench-table th {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.78rem;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--text-muted);
+      padding: 14px 20px;
+      text-align: left;
+      white-space: nowrap;
+    }
+
+    .bench-table td {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.875rem;
+      color: var(--text-secondary);
+      padding: 13px 20px;
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .bench-table td:first-child {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 500;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+    }
+
+    .bench-table tbody tr:last-child td { border-bottom: none; }
+
+    .bench-table tbody tr:hover { background: var(--bg-elevated); }
+
+    .bench-val--bw   { color: var(--copper-bright); }
+    .bench-val--win  { color: var(--teal-bright); }
+    .bench-val--note { color: var(--text-muted); font-size: 0.8rem; }
+
+    .bench-insight {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-left: 3px solid var(--copper);
+      border-radius: var(--radius-md);
+      padding: 20px 24px;
+    }
+
+    .bench-insight-title {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.78rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--copper-dim);
+      margin-bottom: 10px;
+    }
+
+    .bench-insight p {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.925rem;
+      color: var(--text-secondary);
+      line-height: 1.7;
+    }
+
+    .bench-run-note {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-top: 16px;
+    }
+
+    .bench-run-note span {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .code-pill {
+      display: inline-block;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.825rem;
+      color: var(--teal-bright);
+      white-space: nowrap;
+    }
+
+    /* ── Roadmap ─────────────────────────────────────────────────────── */
+    .roadmap-section { background: var(--bg-deepest); }
+
+    .roadmap-status {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 16px 24px;
+      margin-bottom: 48px;
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .roadmap-status strong {
+      color: var(--copper-bright);
+      font-weight: 600;
+    }
+
+    .roadmap-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    @media (max-width: 900px) {
+      .roadmap-grid { grid-template-columns: 1fr; }
+    }
+
+    .roadmap-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 28px;
+      box-shadow: var(--shadow-md);
+      transition: border-color 0.25s, box-shadow 0.25s, transform 0.2s;
+    }
+
+    .roadmap-card:hover {
+      border-color: var(--copper-dim);
+      box-shadow: var(--shadow-glow-copper), var(--shadow-md);
+      transform: translateY(-3px);
+    }
+
+    .roadmap-version-badge {
+      display: inline-block;
+      background: var(--copper-dim);
+      color: var(--bg-deepest);
+      font-family: 'Source Code Pro', monospace;
+      font-weight: 400;
+      font-size: 0.8rem;
+      padding: 3px 12px;
+      border-radius: 12px;
+      margin-bottom: 10px;
+      letter-spacing: 0.04em;
+    }
+
+    .roadmap-card-title {
+      font-family: 'Playfair Display', serif;
+      font-weight: 700;
+      font-size: 1.15rem;
+      color: var(--text-primary);
+      margin-bottom: 20px;
+    }
+
+    .roadmap-feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+
+    .roadmap-feature {
+      border-bottom: 1px solid var(--border-subtle);
+      padding-bottom: 14px;
+    }
+
+    .roadmap-feature:last-child {
+      border-bottom: none;
+      padding-bottom: 0;
+    }
+
+    .roadmap-feature-name {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--copper-bright);
+      margin-bottom: 4px;
+    }
+
+    .roadmap-feature-desc {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.55;
+    }
+
+    /* ── Quick Start ─────────────────────────────────────────────────── */
+    .quickstart-section { background: var(--bg-surface); }
+
+    .steps-row {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 32px;
+    }
+
+    @media (max-width: 768px) {
+      .steps-row { grid-template-columns: 1fr; }
+    }
+
+    .step {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 14px;
+    }
+
+    .step-number {
+      width: 48px;
+      height: 48px;
+      border-radius: 50%;
+      background: var(--copper-dim);
+      border: 2px solid var(--copper);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-family: 'Playfair Display', serif;
+      font-weight: 700;
+      font-size: 1.3rem;
+      color: var(--bg-deepest);
+      flex-shrink: 0;
+      box-shadow: var(--shadow-glow-copper);
+    }
+
+    .step-title {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 1.05rem;
+      color: var(--text-primary);
+    }
+
+    .step-desc {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+    }
+
+    .step-code {
+      background: var(--bg-base);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 8px 14px;
+      font-family: 'Source Code Pro', monospace;
+      font-size: 0.8rem;
+      color: var(--teal-bright);
+      white-space: nowrap;
+      overflow-x: auto;
+      max-width: 100%;
+    }
+
+    /* ── Architecture Diagram ────────────────────────────────────────── */
+    .arch-section { background: var(--bg-base); }
+
+    .arch-diagram {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    .arch-row {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+    }
+
+    .arch-row + .arch-row {
+      margin-top: 0;
+    }
+
+    .arch-connectors {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 0;
+      height: 40px;
+      position: relative;
+      width: 100%;
+      max-width: 800px;
+    }
+
+    .arch-box {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 20px;
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 600;
+      font-size: 0.9rem;
+      color: var(--text-primary);
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .arch-box--core {
+      background: var(--bg-surface);
+      border: 2px solid var(--copper);
+      padding: 16px 32px;
+      font-size: 1.05rem;
+      color: var(--copper-bright);
+      box-shadow: var(--shadow-glow-copper), var(--shadow-md);
+    }
+
+    .arch-box--internal {
+      border-color: var(--teal-dim);
+      color: var(--teal-bright);
+      font-size: 0.85rem;
+    }
+
+    .arch-box--consumer {
+      border-color: var(--border);
+      color: var(--text-secondary);
+      font-size: 0.85rem;
+    }
+
+    .arch-sub {
+      font-family: 'DM Sans', sans-serif;
+      font-weight: 400;
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-top: 3px;
+    }
+
+    .arch-arrow-group {
+      display: flex;
+      justify-content: center;
+      gap: 64px;
+      padding: 8px 0;
+    }
+
+    .arch-arrow {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0;
+    }
+
+    .arch-arrow-line {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+    }
+
+    .arch-arrow-head {
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 7px solid var(--border);
+    }
+
+    .arch-arrow-head-up {
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-bottom: 7px solid var(--border);
+    }
+
+    /* ── Footer ──────────────────────────────────────────────────────── */
+    footer {
+      background: var(--bg-deepest);
+      border-top: 1px solid var(--border);
+      padding: 40px 0;
+    }
+
+    .footer-inner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      flex-wrap: wrap;
+      gap: 16px;
+    }
+
+    .footer-left {}
+
+    .footer-logo {
+      font-family: 'Playfair Display', serif;
+      font-weight: 700;
+      font-size: 1.1rem;
+      color: var(--copper);
+      display: block;
+      margin-bottom: 4px;
+    }
+
+    .footer-license {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .footer-center {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      color: var(--text-muted);
+    }
+
+    .footer-right a {
+      color: var(--teal-bright);
+      transition: color 0.2s;
+    }
+
+    .footer-right a:hover { color: var(--teal); }
+
+    /* ── Divider ─────────────────────────────────────────────────────── */
+    .section-divider {
+      height: 1px;
+      background: linear-gradient(to right, transparent, var(--border), transparent);
+      margin: 0 auto;
+      max-width: 600px;
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Navigation
+════════════════════════════════════════════════════════════════ -->
+<nav>
+  <div class="container">
+    <div class="nav-inner">
+      <a href="#" class="nav-logo">BearWisdom</a>
+      <ul class="nav-links">
+        <li><a href="#capabilities">Features</a></li>
+        <li><a href="#ide">For IDEs</a></li>
+        <li><a href="#cli">CLI</a></li>
+        <li><a href="#benchmarks">Benchmarks</a></li>
+        <li><a href="#roadmap">Roadmap</a></li>
+        <li><a href="architecture.html">Architecture</a></li>
+        <li><a href="#quickstart">Get Started</a></li>
+      </ul>
+      <a href="https://github.com/mariusalbu/bearwisdom" class="nav-github" target="_blank" rel="noopener">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
+          <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+        </svg>
+        GitHub
+      </a>
+    </div>
+  </div>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Hero
+════════════════════════════════════════════════════════════════ -->
+<section class="hero" id="hero">
+  <div class="container">
+    <div class="reveal">
+      <img
+        src="assets/logo.png"
+        width="160"
+        alt="BearWisdom"
+        class="hero-logo"
+        onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+      >
+      <div class="hero-logo-fallback" style="display:none;">B</div>
+
+      <p class="hero-eyebrow">Code Intelligence Engine</p>
+      <h1 class="hero-tagline">
+        Your codebase,<br><span>understood.</span>
+      </h1>
+      <p class="hero-subtitle">
+        31-language structural intelligence for AI-native IDEs. Tree-sitter parsing, knowledge graph, hybrid search.
+      </p>
+      <div class="hero-buttons">
+        <a href="#quickstart" class="btn-primary">Get Started</a>
+        <a href="https://github.com/mariusalbu/bearwisdom" class="btn-outline-teal" target="_blank" rel="noopener">View on GitHub</a>
+      </div>
+      <div>
+        <span class="install-badge">
+          <span class="prompt">$</span>
+          <span class="cmd">cargo build --release</span>
+        </span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Capabilities Grid
+════════════════════════════════════════════════════════════════ -->
+<section class="capabilities" id="capabilities">
+  <div class="container">
+    <div class="section-header centered reveal">
+      <p class="section-label">Core Engine</p>
+      <h2 class="section-title">What BearWisdom Does</h2>
+      <p class="section-subtitle">A structural search engine — not an LLM wrapper. Fast, deterministic, queryable.</p>
+    </div>
+
+    <div class="caps-grid">
+      <!-- Parse -->
+      <div class="cap-card reveal">
+        <svg class="cap-icon" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="22" cy="8" r="3.5"/>
+          <circle cx="8"  cy="36" r="3.5"/>
+          <circle cx="22" cy="36" r="3.5"/>
+          <circle cx="36" cy="36" r="3.5"/>
+          <line x1="22" y1="11.5" x2="22" y2="28"/>
+          <line x1="22" y1="28"   x2="8"  y2="32.5"/>
+          <line x1="22" y1="28"   x2="22" y2="32.5"/>
+          <line x1="22" y1="28"   x2="36" y2="32.5"/>
+        </svg>
+        <div class="cap-title">Parse 31 Languages</div>
+        <p class="cap-desc">Tree-sitter extracts every symbol, reference, and signature. Classes, functions, interfaces, enums — with full qualified names and scope paths.</p>
+      </div>
+
+      <!-- Graph -->
+      <div class="cap-card reveal">
+        <svg class="cap-icon" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="22" cy="12" r="4"/>
+          <circle cx="8"  cy="34" r="4"/>
+          <circle cx="36" cy="34" r="4"/>
+          <line x1="22" y1="16" x2="10" y2="30.5"/>
+          <line x1="22" y1="16" x2="34" y2="30.5"/>
+          <line x1="12" y1="34" x2="32" y2="34"/>
+          <circle cx="22" cy="24" r="2.5" fill="currentColor" stroke="none"/>
+        </svg>
+        <div class="cap-title">Knowledge Graph</div>
+        <p class="cap-desc">SQLite database with symbols, edges, and concepts. Call hierarchy, blast radius, cross-file references — all pre-computed and queryable.</p>
+      </div>
+
+      <!-- Search -->
+      <div class="cap-card reveal">
+        <svg class="cap-icon" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <circle cx="18" cy="19" r="10"/>
+          <line x1="25.5" y1="26.5" x2="38" y2="38"/>
+          <line x1="24" y1="10"  x2="27" y2="7"/>
+          <line x1="27" y1="7"   x2="30" y2="10"/>
+          <line x1="30" y1="7"   x2="33" y2="10"/>
+          <line x1="33" y1="10" x2="30" y2="13"/>
+        </svg>
+        <div class="cap-title">6 Search Modes</div>
+        <p class="cap-desc">FTS5 symbols, fuzzy matching, content trigram, regex grep, hybrid vector + text, and CodeRankEmbed semantic search.</p>
+      </div>
+
+      <!-- Serve -->
+      <div class="cap-card reveal">
+        <svg class="cap-icon" viewBox="0 0 44 44" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round">
+          <rect x="6" y="10" width="32" height="22" rx="3"/>
+          <line x1="13" y1="17" x2="9" y2="21"/>
+          <line x1="9"  y1="21" x2="13" y2="25"/>
+          <line x1="16" y1="25" x2="26" y2="25"/>
+          <path d="M32 36 Q36 32 38 26" stroke-dasharray="3 2"/>
+          <path d="M28 38 Q34 34 36 24" stroke-dasharray="3 2"/>
+        </svg>
+        <div class="cap-title">4 Interfaces</div>
+        <p class="cap-desc">CLI with 25 JSON commands. MCP server for LLM agents. Web explorer with D3 force graph. Claude Code agent for conversational analysis.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     For IDE Builders
+════════════════════════════════════════════════════════════════ -->
+<section class="ide-section" id="ide">
+  <div class="container">
+    <div class="section-header reveal">
+      <p class="section-label">Integrations</p>
+      <h2 class="section-title">Built for AI-Native IDEs</h2>
+      <p class="section-subtitle">BearWisdom isn't an LLM optimization layer. It's a structural search engine that serves both the editor and the AI.</p>
+    </div>
+
+    <div class="ide-panels">
+      <!-- The Editor -->
+      <div class="ide-panel ide-panel--editor reveal">
+        <svg class="ide-panel-icon" viewBox="0 0 40 40" fill="none" stroke="var(--copper)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 32 L18 8 L22 20 L28 14 L34 32"/>
+          <line x1="6" y1="36" x2="34" y2="36"/>
+          <circle cx="22" cy="20" r="2" fill="var(--copper)" stroke="none"/>
+        </svg>
+        <div class="ide-panel-title">The Editor</div>
+        <p class="ide-panel-desc">Go-to-definition, find-references, symbol search, file explorer. The same APIs power IDE features and agent queries.</p>
+      </div>
+
+      <!-- The AI -->
+      <div class="ide-panel ide-panel--ai reveal">
+        <svg class="ide-panel-icon" viewBox="0 0 40 40" fill="none" stroke="var(--teal-bright)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="8" y="12" width="24" height="18" rx="4"/>
+          <circle cx="14" cy="21" r="2"/>
+          <circle cx="20" cy="21" r="2"/>
+          <circle cx="26" cy="21" r="2"/>
+          <path d="M14 12 L14 8 M20 12 L20 6 M26 12 L26 8"/>
+          <line x1="11" y1="6" x2="17" y2="6"/>
+          <line x1="17" y1="6" x2="23" y2="6"/>
+          <line x1="23" y1="6" x2="29" y2="6"/>
+        </svg>
+        <div class="ide-panel-title">The AI</div>
+        <p class="ide-panel-desc">MCP server feeds structural context to any LLM. Blast radius before refactoring. Call chains before debugging. Concepts for onboarding.</p>
+      </div>
+
+      <!-- The Developer -->
+      <div class="ide-panel ide-panel--dev reveal">
+        <svg class="ide-panel-icon" viewBox="0 0 40 40" fill="none" stroke="var(--sage-bright)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <ellipse cx="20" cy="20" rx="14" ry="9"/>
+          <circle cx="20" cy="20" r="4"/>
+          <line x1="6" y1="20" x2="10" y2="20" stroke-width="2.5"/>
+          <line x1="30" y1="20" x2="34" y2="20" stroke-width="2.5"/>
+          <path d="M10 14 Q14 8 20 8 Q26 8 30 14" stroke-dasharray="3 2"/>
+        </svg>
+        <div class="ide-panel-title">The Developer</div>
+        <p class="ide-panel-desc">Web explorer for visual architecture review. Force-directed knowledge graph. Concept sidebar. Symbol detail with code preview.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     The Graph — Visual Showcase
+════════════════════════════════════════════════════════════════ -->
+<section class="graph-section" id="graph">
+  <div class="container">
+    <div class="section-header centered reveal">
+      <p class="section-label">Knowledge Graph</p>
+      <h2 class="section-title">Explore Your Architecture</h2>
+    </div>
+
+    <div class="reveal">
+      <div class="screenshot-showcase">
+        <div class="screenshot-main">
+          <img src="screenshots/explorer-full.png" alt="BearWisdom Explorer — force-directed knowledge graph with concept sidebar" loading="lazy">
+        </div>
+        <div class="screenshot-grid">
+          <div class="screenshot-card">
+            <img src="screenshots/search-symbols.png" alt="Symbol search results" loading="lazy">
+            <span class="screenshot-label">Symbol Search</span>
+          </div>
+          <div class="screenshot-card">
+            <img src="screenshots/concept-filtered.png" alt="Concept-filtered graph view" loading="lazy">
+            <span class="screenshot-label">Concept Filtering</span>
+          </div>
+        </div>
+      </div>
+      <!-- end of screenshot showcase -->
+
+      <p class="graph-caption">Real screenshots from the BearWisdom web explorer running on Microsoft's eShop reference architecture.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     CLI Reference
+════════════════════════════════════════════════════════════════ -->
+<section class="cli-section" id="cli">
+  <div class="container">
+    <div class="section-header centered reveal">
+      <p class="section-label">Command Line</p>
+      <h2 class="section-title">25 Commands, One Tool</h2>
+      <p class="section-subtitle" style="margin: 0 auto;">Every query returns structured JSON. Pipe into jq, scripts, or your editor.</p>
+    </div>
+
+    <div class="cli-terminals">
+      <div class="terminal-block reveal">
+        <div class="terminal-title">Index &amp; Query</div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw open ./eShop</span></div>
+        <div class="terminal-line"><span class="t-out">  675 files, 3451 symbols, 2909 edges</span> <span class="t-muted">(2.8s)</span></div>
+        <div class="t-blank"></div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw blast-radius Entity --depth 3</span></div>
+        <div class="terminal-line"><span class="t-teal">  62 symbols affected</span> <span class="t-out">across 24 files</span></div>
+        <div class="t-blank"></div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw calls-in PlaceOrder</span></div>
+        <div class="terminal-line"><span class="t-out">  8 callers:</span> <span class="t-teal">OrderController</span><span class="t-out">, OrderService, ...</span></div>
+        <div class="t-blank"></div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw architecture</span></div>
+        <div class="terminal-line"><span class="t-out">  9 languages, </span><span class="t-teal">12 hotspots</span><span class="t-out">, 4 entry points</span></div>
+      </div>
+
+      <div class="terminal-block reveal">
+        <div class="terminal-title">Search &amp; Navigate</div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw hybrid "payment retry logic"</span></div>
+        <div class="terminal-line"><span class="t-out">  3 results</span> <span class="t-muted">(FTS5 + vector RRF)</span></div>
+        <div class="t-blank"></div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw fuzzy-symbols "CatServ"</span></div>
+        <div class="terminal-line"><span class="t-teal">  CatalogService</span> <span class="t-muted">(0.92)</span><span class="t-out">, CatalogServiceTest </span><span class="t-muted">(0.87)</span></div>
+        <div class="t-blank"></div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw grep "throw.*Exception" --lang rust</span></div>
+        <div class="terminal-line"><span class="t-out">  14 matches across 7 files</span></div>
+        <div class="t-blank"></div>
+        <div class="terminal-line"><span class="t-prompt">$</span> <span class="t-cmd">bw symbol OrderService --refs</span></div>
+        <div class="terminal-line"><span class="t-out">  Kind: class · </span><span class="t-teal">18 refs</span><span class="t-out"> · 4 methods</span></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Benchmarks
+════════════════════════════════════════════════════════════════ -->
+<section class="benchmarks-section" id="benchmarks">
+  <div class="container">
+    <div class="section-header reveal">
+      <p class="section-label">Performance</p>
+      <h2 class="section-title">Benchmarks</h2>
+      <p class="section-subtitle">BearWisdom is optimized for structural intelligence, not token minimization. This benchmark measures how well an LLM answers code analysis questions with and without BearWisdom's pre-indexed tools, run against Microsoft's eShop reference architecture (675 files, 3,451 symbols).</p>
+    </div>
+
+    <div class="bench-tables">
+
+      <!-- Summary table -->
+      <div class="bench-table-wrap reveal">
+        <table class="bench-table">
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>With BearWisdom</th>
+              <th>Native Only</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Avg Recall</td>
+              <td class="bench-val--bw">71.8%</td>
+              <td>79.1%</td>
+            </tr>
+            <tr>
+              <td>Avg Tool Calls</td>
+              <td class="bench-val--bw">7.1</td>
+              <td>7.3</td>
+            </tr>
+            <tr>
+              <td>Total Tokens</td>
+              <td class="bench-val--bw">51,495</td>
+              <td>61,250</td>
+            </tr>
+            <tr>
+              <td>Token Savings</td>
+              <td class="bench-val--win">16% lower</td>
+              <td class="bench-val--note">baseline</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Per-category breakdown -->
+      <div class="bench-table-wrap reveal">
+        <table class="bench-table">
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th>BW Recall</th>
+              <th>Native Recall</th>
+              <th>BW Calls</th>
+              <th>Native Calls</th>
+              <th>Insight</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Impact Analysis</td>
+              <td class="bench-val--bw">56.7%</td>
+              <td>56.4%</td>
+              <td class="bench-val--win">10.3</td>
+              <td>17.3</td>
+              <td class="bench-val--note">BW uses 40% fewer tool calls for same recall</td>
+            </tr>
+            <tr>
+              <td>Call Hierarchy</td>
+              <td>66.7%</td>
+              <td class="bench-val--win">100%</td>
+              <td>1.7</td>
+              <td>2.0</td>
+              <td class="bench-val--note">Native grep matches more names without semantic context</td>
+            </tr>
+            <tr>
+              <td>Cross-File Refs</td>
+              <td class="bench-val--bw">82.0%</td>
+              <td>82.0%</td>
+              <td>15.7</td>
+              <td class="bench-val--win">9.7</td>
+              <td class="bench-val--note">Parity on recall</td>
+            </tr>
+            <tr>
+              <td>Concept Discovery</td>
+              <td class="bench-val--win">57.1%</td>
+              <td>50.0%</td>
+              <td class="bench-val--win">5.0</td>
+              <td>7.0</td>
+              <td class="bench-val--note">BW finds more concepts with fewer calls</td>
+            </tr>
+            <tr>
+              <td>Symbol Search</td>
+              <td class="bench-val--bw">100%</td>
+              <td>100%</td>
+              <td>3.3</td>
+              <td class="bench-val--win">2.0</td>
+              <td class="bench-val--note">Both perfect</td>
+            </tr>
+            <tr>
+              <td>Architecture</td>
+              <td>32.7%</td>
+              <td class="bench-val--win">42.9%</td>
+              <td>2.0</td>
+              <td>2.0</td>
+              <td class="bench-val--note">Overview queries favor broad grep</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Insight callout -->
+      <div class="bench-insight reveal">
+        <div class="bench-insight-title">Key Insight</div>
+        <p>Where BearWisdom shines: Impact Analysis uses 40% fewer tool calls for equal recall. Concept Discovery finds more with fewer calls. Total token cost is 16% lower. Where native tools win: broad text search across many files (Architecture, Call Hierarchy).</p>
+        <div class="bench-run-note">
+          <span>Run your own:</span>
+          <span class="code-pill">bw-bench full --project /path/to/project --output results/</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Roadmap
+════════════════════════════════════════════════════════════════ -->
+<section class="roadmap-section" id="roadmap">
+  <div class="container">
+    <div class="section-header reveal">
+      <p class="section-label">What's Next</p>
+      <h2 class="section-title">Roadmap</h2>
+    </div>
+
+    <div class="roadmap-status reveal">
+      <strong>v0.1</strong> — the current release — ships with 31-language parsing, knowledge graph, 6 search modes, CLI, MCP, web explorer, and benchmark suite.
+    </div>
+
+    <div class="roadmap-grid">
+
+      <!-- v0.2 -->
+      <div class="roadmap-card reveal">
+        <div class="roadmap-version-badge">v0.2</div>
+        <div class="roadmap-card-title">Live Intelligence</div>
+        <div class="roadmap-feature-list">
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Watch mode</div>
+            <div class="roadmap-feature-desc">OS file watcher feeding the existing incremental indexer — auto-reindex on save.</div>
+          </div>
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Incremental embedding</div>
+            <div class="roadmap-feature-desc">Only embed changed chunks instead of full re-embed.</div>
+          </div>
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Smart context selection</div>
+            <div class="roadmap-feature-desc">Given a task description, return the most relevant graph subset for LLM context.</div>
+          </div>
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">SCIP import</div>
+            <div class="roadmap-feature-desc">Compiler-accurate index from rust-analyzer, tsserver — fills type inference gaps.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.3 -->
+      <div class="roadmap-card reveal">
+        <div class="roadmap-version-badge">v0.3</div>
+        <div class="roadmap-card-title">Depth</div>
+        <div class="roadmap-feature-list">
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">RAG layer</div>
+            <div class="roadmap-feature-desc">Retrieve chunks, synthesize natural language answers via LLM.</div>
+          </div>
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Workspace / monorepo</div>
+            <div class="roadmap-feature-desc">Index multiple roots with cross-project references.</div>
+          </div>
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Git-aware indexing</div>
+            <div class="roadmap-feature-desc">Use git diff to scope re-indexing — faster than a full walk.</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- v0.4 -->
+      <div class="roadmap-card reveal">
+        <div class="roadmap-version-badge">v0.4</div>
+        <div class="roadmap-card-title">Production</div>
+        <div class="roadmap-feature-list">
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Plugin system</div>
+            <div class="roadmap-feature-desc">Custom connectors without forking.</div>
+          </div>
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Publish to crates.io</div>
+            <div class="roadmap-feature-desc"><span class="code-pill">cargo install bearwisdom-cli</span></div>
+          </div>
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Streaming results</div>
+            <div class="roadmap-feature-desc">Stream search results as found for large codebases.</div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<div class="section-divider"></div>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Quick Start
+════════════════════════════════════════════════════════════════ -->
+<section class="quickstart-section" id="quickstart">
+  <div class="container">
+    <div class="section-header centered reveal">
+      <p class="section-label">Setup</p>
+      <h2 class="section-title">Get Started in 60 Seconds</h2>
+      <p class="section-subtitle" style="margin: 0 auto;">Rust is the only prerequisite. No runtime, no daemon, no config file.</p>
+    </div>
+
+    <div class="steps-row">
+      <div class="step reveal">
+        <div class="step-number">1</div>
+        <div>
+          <div class="step-title">Build</div>
+          <p class="step-desc" style="margin-bottom: 12px;">Compile the CLI from source with a single cargo command.</p>
+          <div class="step-code">cargo build --release -p bearwisdom-cli</div>
+        </div>
+      </div>
+
+      <div class="step reveal">
+        <div class="step-number">2</div>
+        <div>
+          <div class="step-title">Index</div>
+          <p class="step-desc" style="margin-bottom: 12px;">Point BearWisdom at any directory. Index builds in seconds.</p>
+          <div class="step-code">bw open /path/to/your/project</div>
+        </div>
+      </div>
+
+      <div class="step reveal">
+        <div class="step-number">3</div>
+        <div>
+          <div class="step-title">Explore</div>
+          <p class="step-desc" style="margin-bottom: 12px;">Use the CLI, launch the web explorer, or register the MCP server with your IDE.</p>
+          <div class="step-code">bw web  # or  bw mcp-serve</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Architecture Diagram
+════════════════════════════════════════════════════════════════ -->
+<section class="arch-section" id="architecture">
+  <div class="container">
+    <div class="section-header centered reveal">
+      <p class="section-label">Internals</p>
+      <h2 class="section-title">Inside BearWisdom</h2>
+      <p class="section-subtitle" style="margin: 0 auto;">A thin set of consumer crates over a single intelligence library.</p>
+    </div>
+
+    <div class="arch-diagram reveal">
+      <!-- Top row: internals -->
+      <div class="arch-row" style="gap: 16px;">
+        <div class="arch-box arch-box--internal">
+          <div>Parser</div>
+          <div class="arch-sub">31 languages · Tree-sitter</div>
+        </div>
+        <div class="arch-box arch-box--internal">
+          <div>Graph DB</div>
+          <div class="arch-sub">SQLite · rusqlite</div>
+        </div>
+        <div class="arch-box arch-box--internal">
+          <div>Search Engine</div>
+          <div class="arch-sub">FTS5 · vector · hybrid</div>
+        </div>
+      </div>
+
+      <!-- Arrow group down -->
+      <div class="arch-arrow-group" style="gap: 80px;">
+        <div class="arch-arrow">
+          <div class="arch-arrow-line"></div>
+          <div class="arch-arrow-head"></div>
+        </div>
+        <div class="arch-arrow">
+          <div class="arch-arrow-line"></div>
+          <div class="arch-arrow-head"></div>
+        </div>
+        <div class="arch-arrow">
+          <div class="arch-arrow-line"></div>
+          <div class="arch-arrow-head"></div>
+        </div>
+      </div>
+
+      <!-- Core crate -->
+      <div class="arch-box arch-box--core" style="min-width: 280px; margin: 0 auto;">
+        <div>bearwisdom</div>
+        <div class="arch-sub" style="color: var(--text-muted);">core library · Rust</div>
+      </div>
+
+      <!-- Arrow group down -->
+      <div class="arch-arrow-group" style="gap: 40px;">
+        <div class="arch-arrow">
+          <div class="arch-arrow-line"></div>
+          <div class="arch-arrow-head"></div>
+        </div>
+        <div class="arch-arrow">
+          <div class="arch-arrow-line"></div>
+          <div class="arch-arrow-head"></div>
+        </div>
+        <div class="arch-arrow">
+          <div class="arch-arrow-line"></div>
+          <div class="arch-arrow-head"></div>
+        </div>
+        <div class="arch-arrow">
+          <div class="arch-arrow-line"></div>
+          <div class="arch-arrow-head"></div>
+        </div>
+      </div>
+
+      <!-- Consumer row -->
+      <div class="arch-row" style="gap: 12px; flex-wrap: wrap; justify-content: center;">
+        <div class="arch-box arch-box--consumer">
+          <div>bw</div>
+          <div class="arch-sub">CLI · 25 cmds</div>
+        </div>
+        <div class="arch-box arch-box--consumer">
+          <div>bw-mcp</div>
+          <div class="arch-sub">MCP Server</div>
+        </div>
+        <div class="arch-box arch-box--consumer">
+          <div>bw-web</div>
+          <div class="arch-sub">Web Explorer</div>
+        </div>
+        <div class="arch-box arch-box--consumer">
+          <div>bw-bench</div>
+          <div class="arch-sub">Benchmarks</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Footer
+════════════════════════════════════════════════════════════════ -->
+<footer>
+  <div class="container">
+    <div class="footer-inner">
+      <div class="footer-left">
+        <span class="footer-logo">BearWisdom</span>
+        <span class="footer-license">MIT License</span>
+      </div>
+      <div class="footer-center">Built by Marius Albu</div>
+      <div class="footer-right">
+        <a href="https://github.com/mariusalbu/bearwisdom" target="_blank" rel="noopener" aria-label="GitHub">
+          <svg width="22" height="22" viewBox="0 0 16 16" fill="currentColor">
+            <path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     Scroll Animations
+════════════════════════════════════════════════════════════════ -->
+<script>
+  (function () {
+    var observer = new IntersectionObserver(function (entries) {
+      entries.forEach(function (entry) {
+        if (entry.isIntersecting) {
+          entry.target.classList.add('visible');
+          observer.unobserve(entry.target);
+        }
+      });
+    }, { threshold: 0.1, rootMargin: '0px 0px -40px 0px' });
+
+    document.querySelectorAll('.reveal').forEach(function (el) {
+      observer.observe(el);
+    });
+
+    // Stagger siblings in grids
+    document.querySelectorAll('.caps-grid, .ide-panels, .cli-terminals, .steps-row, .roadmap-grid').forEach(function (grid) {
+      var children = grid.querySelectorAll('.reveal');
+      children.forEach(function (child, i) {
+        child.style.transitionDelay = (i * 80) + 'ms';
+      });
+    });
+  })();
+</script>
+
+</body>
+</html>

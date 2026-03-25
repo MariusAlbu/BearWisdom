@@ -134,6 +134,25 @@ impl Embedder {
             .ok_or_else(|| anyhow::anyhow!("embed_query returned no vectors"))
     }
 
+    /// Resolve the CodeRankEmbed model directory.
+    ///
+    /// Tries `<project_root>/models/CodeRankEmbed` first, then
+    /// `~/.bearwisdom/models/CodeRankEmbed`.  Returns `None` if neither
+    /// contains a `tokenizer.json`.
+    pub fn resolve_model_dir(project_root: &std::path::Path) -> Option<PathBuf> {
+        let workspace_model = project_root.join("models").join("CodeRankEmbed");
+        if workspace_model.join("tokenizer.json").exists() {
+            return Some(workspace_model);
+        }
+        if let Some(home) = dirs::home_dir() {
+            let home_model = home.join(".bearwisdom").join("models").join("CodeRankEmbed");
+            if home_model.join("tokenizer.json").exists() {
+                return Some(home_model);
+            }
+        }
+        None
+    }
+
     /// Unload the model if it has been idle for longer than `timeout`.
     pub fn maybe_unload(&mut self, timeout: Duration) {
         if self.is_loaded() && self.last_used.elapsed() > timeout {

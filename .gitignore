@@ -1,3 +1,20 @@
+# Build
 /target
+web/dist/
+
+# Data
 /models
 *.db
+.bearwisdom/
+
+# Dependencies
+node_modules/
+
+# Benchmark output
+bench-results/
+
+# Local / session
+.claude/
+screens/
+*.ndjson
+.env

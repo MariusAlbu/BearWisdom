@@ -4,13 +4,55 @@
 // The `Database` struct owns a rusqlite Connection and exposes the setup
 // helpers.  All actual SQL lives in schema.rs (CREATE TABLE) and the
 // various query/indexer modules (INSERT / SELECT).
+//
+// sqlite-vec is statically linked and initialised on every connection via
+// a direct call to sqlite3_vec_init.
 // =============================================================================
 
 pub mod schema;
 
 use anyhow::{Context, Result};
 use rusqlite::Connection;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Initialise sqlite-vec on a raw connection handle.
+///
+/// Calls the statically-linked `sqlite3_vec_init` entry point directly,
+/// passing the connection handle.  With `SQLITE_CORE` compiled in, the
+/// function registers its virtual table modules against the connection.
+fn init_vec_on_connection(conn: &Connection) {
+    unsafe {
+        let init_fn: unsafe extern "C" fn(
+            *mut rusqlite::ffi::sqlite3,
+            *mut *mut std::ffi::c_char,
+            *const rusqlite::ffi::sqlite3_api_routines,
+        ) -> std::ffi::c_int = std::mem::transmute(sqlite_vec::sqlite3_vec_init as *const ());
+
+        let rc = init_fn(conn.handle(), std::ptr::null_mut(), std::ptr::null());
+        tracing::info!("sqlite3_vec_init returned rc={rc}");
+    }
+
+    // Verify the module is actually registered.
+    match conn.query_row("SELECT vec_version()", [], |r| r.get::<_, String>(0)) {
+        Ok(v) => tracing::info!("sqlite-vec {v} loaded successfully"),
+        Err(e) => tracing::warn!("sqlite-vec init failed: {e}"),
+    }
+}
+
+/// Resolve the database path for a project: `<project_root>/.bearwisdom/index.db`.
+///
+/// Creates the `.bearwisdom` directory if it doesn't exist.
+pub fn resolve_db_path(project_root: &Path) -> Result<PathBuf> {
+    let dir = project_root.join(".bearwisdom");
+    std::fs::create_dir_all(&dir)
+        .with_context(|| format!("Cannot create .bearwisdom dir in {}", project_root.display()))?;
+    Ok(dir.join("index.db"))
+}
+
+/// Check whether an index database exists for the given project.
+pub fn db_exists(project_root: &Path) -> bool {
+    project_root.join(".bearwisdom").join("index.db").exists()
+}
 
 /// Wraps a SQLite connection with the v2 schema applied.
 pub struct Database {
@@ -20,15 +62,20 @@ pub struct Database {
 impl Database {
     /// Open (or create) a database file at `path`.
     ///
+    /// sqlite-vec is automatically available on the connection.
+    ///
     /// # What happens on first open
     /// 1. Open the file (SQLite creates it if absent).
-    /// 2. Apply WAL mode + performance PRAGMAs.
-    /// 3. Create all tables and indexes (idempotent — IF NOT EXISTS).
+    /// 2. Initialise sqlite-vec on the connection.
+    /// 3. Apply WAL mode + performance PRAGMAs.
+    /// 4. Create all tables and indexes (idempotent — IF NOT EXISTS).
     pub fn open(path: &Path) -> Result<Self> {
         let is_new = !path.exists();
 
         let conn = Connection::open(path)
             .with_context(|| format!("Failed to open database at {}", path.display()))?;
+
+        init_vec_on_connection(&conn);
 
         schema::apply_pragmas(&conn, is_new)
             .context("Failed to apply SQLite PRAGMAs")?;
@@ -39,20 +86,12 @@ impl Database {
         Ok(Self { conn })
     }
 
-    /// Open a database and attempt to load the sqlite-vec extension.
+    /// Open a database with vector search support.
     ///
-    /// Tries `SQLITE_VEC_PATH` env var for the extension library path.
-    /// If the extension is unavailable, the database opens normally
-    /// without vector search support (check with `has_vec_extension()`).
+    /// This is now identical to `open()` since sqlite-vec is statically
+    /// linked.  Kept for API compatibility — callers don't need to change.
     pub fn open_with_vec(path: &Path) -> Result<Self> {
-        let db = Self::open(path)?;
-        if let Ok(vec_path) = std::env::var("SQLITE_VEC_PATH") {
-            match db.try_load_vec_extension(&vec_path) {
-                Ok(()) => tracing::info!("sqlite-vec loaded from {vec_path}"),
-                Err(e) => tracing::warn!("sqlite-vec unavailable ({e}), vector search disabled"),
-            }
-        }
-        Ok(db)
+        Self::open(path)
     }
 
     /// Returns true if the sqlite-vec extension is loaded and operational.
@@ -65,29 +104,12 @@ impl Database {
             .is_ok()
     }
 
-    fn try_load_vec_extension(&self, path: &str) -> Result<()> {
-        // Safety: load_extension_enable/disable and load_extension are unsafe
-        // because they can execute arbitrary native code. We control the path
-        // via SQLITE_VEC_PATH env var and disable loading immediately after.
-        unsafe {
-            self.conn
-                .load_extension_enable()
-                .context("Failed to enable extension loading")?;
-        }
-
-        let result = unsafe { self.conn.load_extension(path, None) };
-
-        // Always re-disable extension loading for security.
-        let _ = self.conn.load_extension_disable();
-
-        result.context("Failed to load vec0 extension")?;
-        Ok(())
-    }
-
     /// Open an in-memory database — used in unit tests.
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()
             .context("Failed to open in-memory database")?;
+
+        init_vec_on_connection(&conn);
 
         schema::apply_pragmas(&conn, true)?;
         schema::create_schema(&conn)?;
