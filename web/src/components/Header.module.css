@@ -1,0 +1,213 @@
+.header {
+  height: 52px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  padding: 0 16px;
+  gap: 16px;
+  flex-shrink: 0;
+  z-index: 50;
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.logo img {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+
+.logoText {
+  font-family: 'Playfair Display', serif;
+  font-weight: 700;
+  font-size: 16px;
+  color: var(--copper);
+}
+
+.divider {
+  width: 1px;
+  height: 24px;
+  background: var(--border);
+  flex-shrink: 0;
+}
+
+.path {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 12px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 200px;
+}
+
+.searchArea {
+  flex: 1;
+  max-width: 560px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  position: relative;
+}
+
+.modeTabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 2px;
+}
+
+.modeTab {
+  padding: 2px 8px;
+  font-size: 10px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.modeTab:hover { color: var(--text-secondary); }
+
+.modeTabActive {
+  color: var(--copper);
+  border-bottom-color: var(--copper);
+}
+
+.searchWrapper {
+  position: relative;
+}
+
+.searchInput {
+  width: 100%;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  padding: 6px 12px 6px 32px;
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.searchInput::placeholder { color: var(--text-faint); }
+
+.searchInput:focus {
+  border-color: var(--teal);
+  box-shadow: 0 0 0 3px var(--teal-glow);
+}
+
+.searchIcon {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--text-faint);
+  pointer-events: none;
+  display: flex;
+}
+
+.searchSpinner {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--copper);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+
+@keyframes spin { to { transform: translateY(-50%) rotate(360deg); } }
+
+.embedArea {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.embedBtn {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  color: var(--bg-base);
+  background: var(--copper);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: opacity 0.15s;
+  white-space: nowrap;
+}
+
+.embedBtn:hover { opacity: 0.85; }
+
+.embedRunning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  color: var(--copper);
+  white-space: nowrap;
+}
+
+.embedDone {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  color: var(--teal);
+  background: color-mix(in srgb, var(--teal) 12%, transparent);
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+}
+
+.embedError {
+  padding: 4px 12px;
+  font-size: 11px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 600;
+  color: #e55;
+  background: color-mix(in srgb, #e55 12%, transparent);
+  border: none;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.embedError:hover { opacity: 0.85; }
+
+.stats {
+  display: flex;
+  gap: 16px;
+  flex-shrink: 0;
+}
+
+.stat {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.stat strong {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-family: 'Source Code Pro', monospace;
+}

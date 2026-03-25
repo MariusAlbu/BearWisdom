@@ -1,9 +1,13 @@
 [package]
-name    = "bearwisdom-bench"
-version = "0.1.0"
-edition = "2021"
+name         = "bearwisdom-bench"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+repository.workspace   = true
+homepage.workspace     = true
 description = "BearWisdom benchmark harness"
-license = "MIT OR Apache-2.0"
+publish = false
 
 [[bin]]
 name = "bearwisdom-bench"
@@ -11,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 bearwisdom        = { path = "../bearwisdom" }
+sqlite-vec        = { workspace = true }
 anyhow            = { workspace = true }
 clap              = { workspace = true }
 tracing           = { workspace = true }

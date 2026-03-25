@@ -51,6 +51,8 @@
 // The --db option defaults to a temp file that is deleted after the run.
 // =============================================================================
 
+extern crate sqlite_vec;
+
 use bearwisdom::{
     bridge::{enricher::BackgroundEnricher, graph_bridge::GraphBridge},
     connectors::{ef_core, http_api},
@@ -1158,6 +1160,7 @@ fn cmd_hybrid_search(query: &str, db_path: &Path, model_dir: Option<&Path>, limi
 
     let model_path = model_dir
         .map(|p| p.to_path_buf())
+        .or_else(|| bearwisdom::search::embedder::Embedder::resolve_model_dir(&PathBuf::from(".")))
         .unwrap_or_else(|| PathBuf::from("models/CodeRankEmbed"));
 
     let mut embedder = Embedder::new(model_path);

@@ -1,0 +1,49 @@
+[package]
+name         = "bearwisdom-mcp"
+version.workspace      = true
+edition.workspace      = true
+license.workspace      = true
+rust-version.workspace = true
+repository.workspace   = true
+homepage.workspace     = true
+keywords.workspace     = true
+categories.workspace   = true
+description = "BearWisdom code intelligence MCP server"
+
+[[bin]]
+name = "bw-mcp"
+path = "src/main.rs"
+
+[dependencies]
+bearwisdom = { path = "../bearwisdom" }
+sqlite-vec = { workspace = true }
+
+# MCP server (Rust SDK)
+rmcp = { version = "1", features = ["server", "transport-io"] }
+
+# Storage — needed for Database type
+rusqlite = { version = "0.33", features = ["bundled"] }
+
+# CLI
+clap = { version = "4", features = ["derive"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Async runtime
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "signal", "sync"] }
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Error handling
+anyhow = "1"
+
+# Path utilities
+sha2 = "0.10"
+dirs = "5"
+
+[dev-dependencies]
+tempfile = "3"

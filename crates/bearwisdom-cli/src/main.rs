@@ -1,3 +1,5 @@
+extern crate sqlite_vec;
+
 // =============================================================================
 // BearWisdom CLI
 //
@@ -17,8 +19,6 @@ use std::sync::{
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use sha2::{Digest, Sha256};
-
 use bearwisdom::db::Database;
 
 // ---------------------------------------------------------------------------
@@ -247,6 +247,28 @@ enum Commands {
         max_nodes: usize,
     },
 
+    // ---- Enrichment --------------------------------------------------------
+    /// Compute embeddings for all un-embedded code chunks.
+    Embed {
+        /// Absolute path to the project root.
+        path: String,
+        /// Batch size for ONNX inference (default: 4, higher = more RAM).
+        #[arg(long, default_value = "4")]
+        batch_size: usize,
+    },
+
+    /// Enrich the index via LSP (resolve unresolved refs, upgrade low-confidence edges).
+    Enrich {
+        /// Absolute path to the project root.
+        path: String,
+        /// Maximum number of refs to process per pass.
+        #[arg(long, default_value = "500")]
+        batch_size: usize,
+        /// Confidence threshold below which edges get upgraded via LSP.
+        #[arg(long, default_value = "0.85")]
+        threshold: f64,
+    },
+
     // ---- Flow --------------------------------------------------------------
     /// Trace the cross-language flow graph from a file + line.
     TraceFlow {
@@ -340,6 +362,11 @@ fn run(command: Commands) -> Result<String> {
             cmd_concept_members(&path, &concept, limit)
         }
 
+        Commands::Embed { path, batch_size } => cmd_embed(&path, batch_size),
+        Commands::Enrich { path, batch_size, threshold } => {
+            cmd_enrich(&path, batch_size, threshold)
+        }
+
         Commands::ExportGraph { path, filter, max_nodes } => {
             cmd_export_graph(&path, filter.as_deref(), max_nodes)
         }
@@ -376,13 +403,96 @@ fn cmd_open(project_path: &str) -> Result<String> {
         eprintln!("Warning: auto_assign_concepts failed: {e}");
     }
 
+    // Post-index: compute embeddings for code chunks.
+    let mut chunks_embedded = 0u32;
+    let model_dir = resolve_model_dir(&root);
+    if let Some(ref dir) = model_dir {
+        eprintln!("Computing embeddings ...");
+        let mut embedder = bearwisdom::search::embedder::Embedder::new(dir.clone());
+        match bearwisdom::embed_chunks(&db.conn, &mut embedder, 4) {
+            Ok((n, _)) => {
+                chunks_embedded = n;
+                eprintln!("Embedded {n} chunks");
+            }
+            Err(e) => eprintln!("Warning: embedding failed: {e}"),
+        }
+        embedder.unload();
+    } else {
+        eprintln!("No CodeRankEmbed model found, skipping embeddings");
+    }
+
     ok_json(serde_json::json!({
         "db_path": db_path.display().to_string(),
         "file_count": stats.file_count,
         "symbol_count": stats.symbol_count,
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
+        "chunks_embedded": chunks_embedded,
         "duration_ms": stats.duration_ms,
+    }))
+}
+
+/// Compute embeddings for all un-embedded code chunks.
+fn cmd_embed(project_path: &str, batch_size: usize) -> Result<String> {
+    let root = PathBuf::from(project_path);
+    let db_path = resolve_db_path(&root)?;
+    let db = Database::open_with_vec(&db_path)
+        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
+
+    let model_dir = resolve_model_dir(&root)
+        .ok_or_else(|| anyhow::anyhow!("No CodeRankEmbed model found. Run scripts/download-model.py first."))?;
+
+    eprintln!("Loading model from {} ...", model_dir.display());
+    let mut embedder = bearwisdom::search::embedder::Embedder::new(model_dir);
+
+    match bearwisdom::embed_chunks(&db.conn, &mut embedder, batch_size) {
+        Ok((n, _)) => {
+            embedder.unload();
+            eprintln!("Embedded {n} chunks");
+            ok_json(serde_json::json!({ "chunks_embedded": n }))
+        }
+        Err(e) => {
+            embedder.unload();
+            Err(e).context("Embedding failed")
+        }
+    }
+}
+
+/// Enrich the index by resolving unresolved refs and upgrading low-confidence edges via LSP.
+fn cmd_enrich(project_path: &str, batch_size: usize, threshold: f64) -> Result<String> {
+    let root = PathBuf::from(project_path);
+    let db_path = resolve_db_path(&root)?;
+    let db = Database::open_with_vec(&db_path)
+        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
+
+    let db_arc = Arc::new(std::sync::Mutex::new(db));
+    let lsp = Arc::new(bearwisdom::LspManager::new(&root));
+    let bridge = Arc::new(bearwisdom::GraphBridge::new(db_arc.clone(), lsp.clone(), &root));
+    let enricher = bearwisdom::BackgroundEnricher::new(bridge);
+
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .context("Failed to create Tokio runtime")?;
+
+    eprintln!("Resolving unresolved refs via LSP ...");
+    let progress = rt.block_on(enricher.enrich_unresolved(batch_size))?;
+    eprintln!(
+        "Resolved {} / {} refs ({} still unresolved)",
+        progress.resolved_this_pass, progress.total_unresolved, progress.still_unresolved
+    );
+
+    eprintln!("Upgrading low-confidence edges (threshold={threshold}) ...");
+    let upgrade = rt.block_on(enricher.enrich_low_confidence(threshold, batch_size))?;
+    eprintln!("Upgraded {} edges", upgrade.upgraded_this_pass);
+
+    let _ = rt.block_on(lsp.shutdown_all());
+
+    ok_json(serde_json::json!({
+        "resolved": progress.resolved_this_pass,
+        "still_unresolved": progress.still_unresolved,
+        "upgraded": upgrade.upgraded_this_pass,
+        "elapsed_ms": progress.elapsed_ms + upgrade.elapsed_ms,
     }))
 }
 
@@ -489,7 +599,6 @@ fn cmd_hybrid(project_path: &str, query: &str, limit: usize) -> Result<String> {
     let db = Database::open_with_vec(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
-    // Resolve model directory: <project>/models/CodeRankEmbed or ~/.bearwisdom/models/CodeRankEmbed
     let root = PathBuf::from(project_path);
     let model_dir = resolve_model_dir(&root);
 
@@ -653,26 +762,9 @@ fn cmd_trace_flow(project_path: &str, file: &str, line: u32, depth: u32) -> Resu
 // Helpers
 // ---------------------------------------------------------------------------
 
-/// Resolve the database path for a project root.
-///
-/// Mirrors the logic in `IndexManager::resolve_db_path` in the Tauri layer:
-///   ~/.bearwisdom/indexes/<first-16-hex-chars-of-sha256(canonical-path)>/index.db
+/// Resolve the database path for a project root: `<project>/.bearwisdom/index.db`.
 fn resolve_db_path(project_root: &Path) -> Result<PathBuf> {
-    let canonical =
-        std::fs::canonicalize(project_root).unwrap_or_else(|_| project_root.to_path_buf());
-
-    let mut hasher = Sha256::new();
-    hasher.update(canonical.to_string_lossy().as_bytes());
-    let hash = format!("{:x}", hasher.finalize());
-    let short_hash = &hash[..16];
-
-    let home = dirs::home_dir().context("Cannot resolve home directory")?;
-    let dir = home.join(".bearwisdom").join("indexes").join(short_hash);
-
-    std::fs::create_dir_all(&dir)
-        .with_context(|| format!("Cannot create index dir {}", dir.display()))?;
-
-    Ok(dir.join("index.db"))
+    bearwisdom::resolve_db_path(project_root)
 }
 
 /// Open an existing database.  Does NOT re-index.

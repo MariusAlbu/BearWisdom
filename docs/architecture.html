@@ -1,0 +1,1374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>BearWisdom — Architecture</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=DM+Sans:wght@400;500;600&family=Source+Code+Pro:wght@400&display=swap" rel="stylesheet">
+  <style>
+    /* ── Reset & Variables ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg-deepest:    #100D09;
+      --bg-base:       #1A1410;
+      --bg-surface:    #242019;
+      --bg-elevated:   #2E2820;
+      --bg-hover:      #38302A;
+      --bg-active:     #443A30;
+
+      --copper-dim:    #8B6B3E;
+      --copper:        #C8915C;
+      --copper-bright: #E4AD74;
+      --copper-glow:   #C8915C33;
+
+      --teal-dim:      #1E6B6B;
+      --teal:          #2D8F8F;
+      --teal-bright:   #3CB8B8;
+      --teal-glow:     #2D8F8F33;
+
+      --sage:          #4A7C59;
+      --sage-bright:   #62A578;
+
+      --text-primary:  #F0E6D6;
+      --text-secondary:#B8A892;
+      --text-muted:    #8B7D6B;
+      --text-faint:    #5C5044;
+
+      --border:        #3D3226;
+      --border-subtle: #2E2820;
+
+      --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
+      --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
+      --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
+
+      --radius-sm: 4px;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+
+      --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      background: var(--bg-deepest);
+      color: var(--text-primary);
+      font-family: 'DM Sans', system-ui, sans-serif;
+      font-size: 14px;
+      line-height: 1.5;
+      min-width: 1024px;
+      overflow-x: auto;
+    }
+
+    /* ── Nav ───────────────────────────────────────────────────────── */
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      background: var(--bg-base);
+      border-bottom: 1px solid var(--border);
+      padding: 0 32px;
+      height: 52px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    .nav-back {
+      color: var(--teal);
+      text-decoration: none;
+      font-size: 13px;
+      font-weight: 500;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.18s var(--ease-out);
+    }
+    .nav-back:hover { color: var(--teal-bright); }
+    .nav-back svg { flex-shrink: 0; }
+
+    .nav-sep {
+      color: var(--text-faint);
+      font-size: 13px;
+    }
+
+    .nav-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 16px;
+      color: var(--copper);
+      letter-spacing: 0.01em;
+    }
+
+    /* ── Page wrapper ───────────────────────────────────────────────── */
+    .page {
+      max-width: 1280px;
+      margin: 0 auto;
+      padding: 48px 32px 80px;
+    }
+
+    .page-header {
+      margin-bottom: 48px;
+      text-align: center;
+    }
+
+    .page-header h1 {
+      font-family: 'Playfair Display', serif;
+      font-size: 32px;
+      color: var(--copper-bright);
+      margin-bottom: 8px;
+    }
+
+    .page-header p {
+      color: var(--text-secondary);
+      font-size: 15px;
+      max-width: 520px;
+      margin: 0 auto;
+    }
+
+    /* ── Legend ─────────────────────────────────────────────────────── */
+    .legend {
+      display: flex;
+      justify-content: center;
+      gap: 24px;
+      margin-bottom: 40px;
+      flex-wrap: wrap;
+    }
+
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+
+    .legend-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    .legend-line {
+      width: 24px;
+      height: 2px;
+      flex-shrink: 0;
+    }
+
+    /* ── Diagram container ──────────────────────────────────────────── */
+    .diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 0;
+      position: relative;
+    }
+
+    /* ── Connector arrows (SVG overlay) ────────────────────────────── */
+    .connectors-svg {
+      position: absolute;
+      top: 0; left: 0;
+      width: 100%; height: 100%;
+      pointer-events: none;
+      z-index: 1;
+      overflow: visible;
+    }
+
+    /* ── Layer shared styles ────────────────────────────────────────── */
+    .layer {
+      position: relative;
+      z-index: 2;
+    }
+
+    .layer-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--text-faint);
+      margin-bottom: 10px;
+      padding-left: 2px;
+    }
+
+    /* ── Flow connector between layers ─────────────────────────────── */
+    .flow-connector {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      height: 48px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .flow-connector-inner {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+    }
+
+    .flow-connector-line {
+      width: 2px;
+      flex: 1;
+      background: linear-gradient(to bottom, var(--teal-dim), var(--teal));
+      min-height: 16px;
+    }
+
+    .flow-connector-label {
+      font-size: 10px;
+      color: var(--teal);
+      letter-spacing: 0.06em;
+      font-family: 'Source Code Pro', monospace;
+      background: var(--bg-deepest);
+      padding: 2px 8px;
+      border: 1px solid var(--teal-dim);
+      border-radius: var(--radius-sm);
+      white-space: nowrap;
+    }
+
+    .flow-arrow {
+      width: 0;
+      height: 0;
+      border-left: 5px solid transparent;
+      border-right: 5px solid transparent;
+      border-top: 7px solid var(--teal);
+    }
+
+    /* ── Parser layer ───────────────────────────────────────────────── */
+    .parser-bar {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-top: 2px solid var(--copper);
+      border-radius: var(--radius-lg);
+      padding: 20px 24px;
+      transition: box-shadow 0.25s var(--ease-out), border-color 0.25s var(--ease-out);
+    }
+
+    .parser-bar:hover {
+      box-shadow: 0 0 0 1px var(--copper-dim), var(--shadow-md);
+    }
+
+    .parser-bar.highlighted {
+      box-shadow: 0 0 0 2px var(--copper), var(--shadow-lg);
+      border-color: var(--copper);
+    }
+
+    .parser-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+
+    .parser-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 18px;
+      color: var(--copper);
+    }
+
+    .parser-badge {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      background: var(--copper-glow);
+      color: var(--copper-bright);
+      border: 1px solid var(--copper-dim);
+      border-radius: 20px;
+      padding: 3px 12px;
+    }
+
+    .parser-sublayers {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+
+    .parser-group {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+      cursor: default;
+      transition: background 0.18s, border-color 0.18s;
+    }
+
+    .parser-group:hover {
+      background: var(--bg-hover);
+      border-color: var(--border);
+    }
+
+    .parser-group-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--copper-bright);
+      margin-bottom: 8px;
+    }
+
+    .lang-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .lang-chip {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 11px;
+      color: var(--text-secondary);
+      background: var(--bg-active);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 2px 7px;
+      transition: color 0.15s, border-color 0.15s, background 0.15s;
+    }
+
+    .lang-chip.dedicated {
+      color: var(--copper-bright);
+      border-color: var(--copper-dim);
+      background: rgba(200, 145, 92, 0.08);
+    }
+
+    /* ── Core engine ────────────────────────────────────────────────── */
+    .core-box {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-top: 2px solid var(--teal);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      transition: box-shadow 0.25s var(--ease-out);
+    }
+
+    .core-box:hover {
+      box-shadow: 0 0 0 1px var(--teal-dim), var(--shadow-md);
+    }
+
+    .core-box.highlighted {
+      box-shadow: 0 0 0 2px var(--teal), var(--shadow-lg);
+    }
+
+    .core-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+
+    .core-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 18px;
+      color: var(--teal-bright);
+    }
+
+    .core-subtitle {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    .core-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 10px;
+    }
+
+    .core-grid-bottom {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 10px;
+    }
+
+    .module-card {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 14px 12px;
+      cursor: pointer;
+      transition: background 0.18s var(--ease-out),
+                  border-color 0.18s var(--ease-out),
+                  box-shadow 0.18s var(--ease-out),
+                  transform 0.18s var(--ease-out);
+      position: relative;
+    }
+
+    .module-card:hover {
+      background: var(--bg-hover);
+      border-color: var(--teal-dim);
+      box-shadow: var(--shadow-sm);
+      transform: translateY(-1px);
+    }
+
+    .module-card.active {
+      background: var(--bg-active);
+      border-color: var(--teal);
+      box-shadow: 0 0 0 1px var(--teal-dim), var(--shadow-md);
+    }
+
+    .module-card.dimmed {
+      opacity: 0.35;
+    }
+
+    .module-icon {
+      font-size: 18px;
+      margin-bottom: 8px;
+      line-height: 1;
+    }
+
+    .module-name {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-primary);
+      margin-bottom: 4px;
+    }
+
+    .module-desc {
+      font-size: 11px;
+      color: var(--text-muted);
+      line-height: 1.4;
+    }
+
+    .module-tag-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 3px;
+      margin-top: 8px;
+    }
+
+    .module-tag {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 10px;
+      color: var(--teal);
+      background: var(--teal-glow);
+      border: 1px solid var(--teal-dim);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+
+    .module-tag.copper {
+      color: var(--copper);
+      background: var(--copper-glow);
+      border-color: var(--copper-dim);
+    }
+
+    .module-tag.sage {
+      color: var(--sage-bright);
+      background: rgba(74, 124, 89, 0.15);
+      border-color: var(--sage);
+    }
+
+    /* ── Cross-cutting bar ──────────────────────────────────────────── */
+    .crosscut-bar {
+      background: rgba(74, 124, 89, 0.06);
+      border: 1px dashed var(--sage);
+      border-radius: var(--radius-md);
+      padding: 12px 20px;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin: 0 0 0 0;
+      cursor: default;
+      transition: background 0.18s, border-color 0.18s;
+    }
+
+    .crosscut-bar:hover {
+      background: rgba(74, 124, 89, 0.1);
+      border-color: var(--sage-bright);
+    }
+
+    .crosscut-label {
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--sage);
+      white-space: nowrap;
+    }
+
+    .crosscut-items {
+      display: flex;
+      gap: 20px;
+      flex-wrap: wrap;
+    }
+
+    .crosscut-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .crosscut-item-name {
+      font-weight: 600;
+      font-size: 13px;
+      color: var(--sage-bright);
+    }
+
+    .crosscut-item-desc {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+
+    /* ── Consumers ──────────────────────────────────────────────────── */
+    .consumers-row {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 12px;
+    }
+
+    .consumer-card {
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      cursor: pointer;
+      transition: background 0.2s var(--ease-out),
+                  border-color 0.2s var(--ease-out),
+                  box-shadow 0.2s var(--ease-out),
+                  transform 0.2s var(--ease-out);
+      position: relative;
+    }
+
+    .consumer-card:hover {
+      background: var(--bg-elevated);
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-md);
+    }
+
+    .consumer-card.active {
+      border-color: var(--copper);
+      box-shadow: 0 0 0 1px var(--copper-dim), var(--shadow-lg);
+      background: var(--bg-elevated);
+    }
+
+    .consumer-card.dimmed {
+      opacity: 0.35;
+    }
+
+    .consumer-icon {
+      font-size: 24px;
+      margin-bottom: 10px;
+    }
+
+    .consumer-name {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 14px;
+      font-weight: 600;
+      color: var(--copper-bright);
+      margin-bottom: 4px;
+    }
+
+    .consumer-full-name {
+      font-size: 11px;
+      color: var(--text-muted);
+      margin-bottom: 10px;
+    }
+
+    .consumer-stat {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 12px;
+      color: var(--text-secondary);
+      margin-bottom: 4px;
+    }
+
+    .consumer-stat-val {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 11px;
+      color: var(--copper);
+      background: var(--copper-glow);
+      border: 1px solid var(--copper-dim);
+      border-radius: 3px;
+      padding: 0 5px;
+    }
+
+    /* ── Frontend detail section ────────────────────────────────────── */
+    .frontend-section {
+      margin-top: 12px;
+    }
+
+    .frontend-toggle {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 20px;
+      cursor: pointer;
+      width: 100%;
+      text-align: left;
+      color: var(--text-primary);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 14px;
+      font-weight: 500;
+      transition: background 0.18s, border-color 0.18s;
+    }
+
+    .frontend-toggle:hover {
+      background: var(--bg-elevated);
+      border-color: var(--copper-dim);
+    }
+
+    .toggle-icon {
+      color: var(--copper);
+      font-size: 16px;
+      transition: transform 0.25s var(--ease-out);
+      flex-shrink: 0;
+    }
+
+    .toggle-icon.open { transform: rotate(90deg); }
+
+    .toggle-label {
+      flex: 1;
+    }
+
+    .toggle-badge {
+      font-size: 11px;
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+
+    .frontend-detail {
+      display: none;
+      background: var(--bg-surface);
+      border: 1px solid var(--border);
+      border-top: none;
+      border-radius: 0 0 var(--radius-md) var(--radius-md);
+      padding: 20px 24px 24px;
+    }
+
+    .frontend-detail.open {
+      display: block;
+    }
+
+    .frontend-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 12px;
+    }
+
+    .fe-group {
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 16px;
+    }
+
+    .fe-group-title {
+      font-size: 12px;
+      font-weight: 600;
+      color: var(--copper-bright);
+      margin-bottom: 10px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .fe-items {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+
+    .fe-item {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 11px;
+      color: var(--text-secondary);
+      padding: 3px 0;
+      border-bottom: 1px solid var(--border-subtle);
+      transition: color 0.15s;
+    }
+
+    .fe-item:last-child { border-bottom: none; }
+    .fe-item:hover { color: var(--teal-bright); }
+
+    .fe-stat-row {
+      display: flex;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    .fe-stat {
+      text-align: center;
+      flex: 1;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 12px;
+    }
+
+    .fe-stat-num {
+      font-family: 'Playfair Display', serif;
+      font-size: 22px;
+      color: var(--copper-bright);
+      display: block;
+    }
+
+    .fe-stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      display: block;
+      margin-top: 2px;
+    }
+
+    /* ── Tooltip ────────────────────────────────────────────────────── */
+    .tooltip {
+      position: fixed;
+      z-index: 1000;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-md);
+      padding: 12px 16px;
+      max-width: 280px;
+      pointer-events: none;
+      box-shadow: var(--shadow-lg);
+      opacity: 0;
+      transform: translateY(4px);
+      transition: opacity 0.15s, transform 0.15s;
+    }
+
+    .tooltip.visible {
+      opacity: 1;
+      transform: translateY(0);
+    }
+
+    .tooltip-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--copper-bright);
+      margin-bottom: 6px;
+    }
+
+    .tooltip-body {
+      font-size: 12px;
+      color: var(--text-secondary);
+      line-height: 1.5;
+    }
+
+    .tooltip-tags {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-top: 8px;
+    }
+
+    .tooltip-tag {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 10px;
+      color: var(--teal);
+      background: var(--teal-glow);
+      border: 1px solid var(--teal-dim);
+      border-radius: 3px;
+      padding: 1px 5px;
+    }
+
+    /* ── Hint text ──────────────────────────────────────────────────── */
+    .hint-text {
+      text-align: center;
+      font-size: 12px;
+      color: var(--text-faint);
+      margin-top: 32px;
+    }
+
+    .hint-text kbd {
+      font-family: 'Source Code Pro', monospace;
+      font-size: 10px;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border);
+      border-radius: 3px;
+      padding: 1px 5px;
+      color: var(--text-muted);
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Nav -->
+  <nav class="nav">
+    <a href="index.html" class="nav-back">
+      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true">
+        <path d="M9 2L4 7L9 12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Back to BearWisdom
+    </a>
+    <span class="nav-sep">/</span>
+    <span class="nav-title">Architecture</span>
+  </nav>
+
+  <!-- Tooltip (shared) -->
+  <div class="tooltip" id="tooltip" role="tooltip" aria-live="polite">
+    <div class="tooltip-title" id="tooltip-title"></div>
+    <div class="tooltip-body" id="tooltip-body"></div>
+    <div class="tooltip-tags" id="tooltip-tags"></div>
+  </div>
+
+  <div class="page">
+    <div class="page-header">
+      <h1>System Architecture</h1>
+      <p>Four-layer pipeline from source code to structured knowledge — parsing, indexing, querying, consuming.</p>
+    </div>
+
+    <!-- Legend -->
+    <div class="legend" aria-label="Legend">
+      <div class="legend-item">
+        <div class="legend-dot" style="background: var(--copper)"></div>
+        Parser / Input
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: var(--teal)"></div>
+        Core Engine
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: var(--copper-bright)"></div>
+        Consumers
+      </div>
+      <div class="legend-item">
+        <div class="legend-dot" style="background: var(--sage-bright)"></div>
+        Cross-cutting
+      </div>
+      <div class="legend-item">
+        <div class="legend-line" style="background: linear-gradient(90deg, var(--teal-dim), var(--teal))"></div>
+        Data flow
+      </div>
+    </div>
+
+    <div class="diagram">
+
+      <!-- ── LAYER 1: PARSER ─────────────────────────────────────── -->
+      <div class="layer" id="layer-parser">
+        <div class="layer-label">Layer 1 — Parser</div>
+        <div class="parser-bar" id="parser-bar"
+             data-tip-title="Parser Layer — 31 Languages"
+             data-tip-body="Tree-sitter grammars parse source files into structured ASTs. Dedicated extractors handle the 7 most-used languages with deep semantic awareness; generic grammar extraction covers 24 additional languages automatically."
+             data-tip-tags="tree-sitter,AST,multi-language">
+          <div class="parser-header">
+            <div class="parser-title">31 Language Parsers</div>
+            <div class="parser-badge">tree-sitter</div>
+          </div>
+          <div class="parser-sublayers">
+            <div class="parser-group"
+                 data-tip-title="Dedicated Extractors (7)"
+                 data-tip-body="Hand-tuned extractors with deep semantic understanding: full symbol resolution, type inference, decorator/attribute handling, and framework-aware analysis."
+                 data-tip-tags="C#,TypeScript,Rust,Python,Go,Java,JavaScript">
+              <div class="parser-group-title">Dedicated Extractors — 7 languages</div>
+              <div class="lang-chips">
+                <span class="lang-chip dedicated">C#</span>
+                <span class="lang-chip dedicated">TypeScript</span>
+                <span class="lang-chip dedicated">TSX</span>
+                <span class="lang-chip dedicated">Rust</span>
+                <span class="lang-chip dedicated">Python</span>
+                <span class="lang-chip dedicated">Go</span>
+                <span class="lang-chip dedicated">Java</span>
+                <span class="lang-chip dedicated">JavaScript</span>
+              </div>
+            </div>
+            <div class="parser-group"
+                 data-tip-title="Generic Grammar Extraction (24)"
+                 data-tip-body="Automatic extraction via tree-sitter grammar introspection. Identifies functions, classes, and definitions without language-specific knowledge. Coverage is broader but shallower than dedicated extractors."
+                 data-tip-tags="tree-sitter,generic,grammar">
+              <div class="parser-group-title">Generic Grammar Extraction — 24 languages</div>
+              <div class="lang-chips">
+                <span class="lang-chip">Ruby</span>
+                <span class="lang-chip">PHP</span>
+                <span class="lang-chip">C++</span>
+                <span class="lang-chip">C</span>
+                <span class="lang-chip">Kotlin</span>
+                <span class="lang-chip">Swift</span>
+                <span class="lang-chip">HTML</span>
+                <span class="lang-chip">CSS</span>
+                <span class="lang-chip">JSON</span>
+                <span class="lang-chip">Bash</span>
+                <span class="lang-chip">YAML</span>
+                <span class="lang-chip">Lua</span>
+                <span class="lang-chip">R</span>
+                <span class="lang-chip">Dart</span>
+                <span class="lang-chip">Scala</span>
+                <span class="lang-chip">Haskell</span>
+                <span class="lang-chip">Elixir</span>
+                <span class="lang-chip">Markdown</span>
+                <span class="lang-chip">XML</span>
+                <span class="lang-chip">Dockerfile</span>
+                <span class="lang-chip">SQL</span>
+                <span class="lang-chip">+ more</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow connector 1→2 -->
+      <div class="flow-connector" aria-hidden="true">
+        <div class="flow-connector-inner">
+          <div class="flow-connector-line"></div>
+          <div class="flow-connector-label">symbols · edges · chunks</div>
+          <div class="flow-connector-line"></div>
+          <div class="flow-arrow"></div>
+        </div>
+      </div>
+
+      <!-- ── LAYER 2: CORE ENGINE ───────────────────────────────── -->
+      <div class="layer" id="layer-core">
+        <div class="layer-label">Layer 2 — Core Engine (bearwisdom lib)</div>
+        <div class="core-box" id="core-box">
+          <div class="core-header">
+            <div class="core-title">bearwisdom</div>
+            <div class="core-subtitle">Rust library crate — statically linked into all consumers</div>
+          </div>
+
+          <!-- Top row: 4 modules -->
+          <div class="core-grid" id="core-modules">
+
+            <div class="module-card" id="mod-indexer" tabindex="0"
+                 data-tip-title="Indexer"
+                 data-tip-body="Orchestrates full and incremental indexing. Runs the parser over source files, writes to Graph DB, then triggers post-index embedding generation via CodeRankEmbed."
+                 data-tip-tags="full_index,incremental_index,post_index,chunker">
+              <div class="module-icon">🗂</div>
+              <div class="module-name">Indexer</div>
+              <div class="module-desc">Full, incremental, and post-index embedding pipelines</div>
+              <div class="module-tag-row">
+                <span class="module-tag">full_index</span>
+                <span class="module-tag">incremental</span>
+                <span class="module-tag">chunker</span>
+              </div>
+            </div>
+
+            <div class="module-card" id="mod-graphdb" tabindex="0"
+                 data-tip-title="Graph DB"
+                 data-tip-body="SQLite database with 16 tables storing the complete code knowledge graph: files, symbols, typed edges, import maps, unresolved references, route tables, concept clusters, code chunks, and flow edges."
+                 data-tip-tags="SQLite,16 tables,FTS5,sqlite-vec">
+              <div class="module-icon">🗃</div>
+              <div class="module-name">Graph DB</div>
+              <div class="module-desc">SQLite · 16 tables · FTS5 · sqlite-vec vector extension</div>
+              <div class="module-tag-row">
+                <span class="module-tag copper">files</span>
+                <span class="module-tag copper">symbols</span>
+                <span class="module-tag copper">edges</span>
+                <span class="module-tag copper">chunks</span>
+                <span class="module-tag copper">concepts</span>
+              </div>
+            </div>
+
+            <div class="module-card" id="mod-search" tabindex="0"
+                 data-tip-title="Search Engine"
+                 data-tip-body="Six complementary search modes unified under a single API. Hybrid mode uses Reciprocal Rank Fusion to merge results from FTS5, fuzzy, and vector search. Vector mode runs CodeRankEmbed inference via ONNX Runtime."
+                 data-tip-tags="FTS5,fuzzy,grep,trigram,hybrid RRF,vector">
+              <div class="module-icon">🔍</div>
+              <div class="module-name">Search Engine</div>
+              <div class="module-desc">6 modes: FTS5 · fuzzy (nucleo) · grep · trigram · hybrid RRF · vector</div>
+              <div class="module-tag-row">
+                <span class="module-tag">hybrid RRF</span>
+                <span class="module-tag">CodeRankEmbed</span>
+                <span class="module-tag">ONNX</span>
+              </div>
+            </div>
+
+            <div class="module-card" id="mod-query" tabindex="0"
+                 data-tip-title="Query Layer"
+                 data-tip-body="High-level read APIs that compose graph traversals and search queries into answers: architecture overviews, blast radius analysis, call hierarchies, cross-references, concept maps, and subgraph exports."
+                 data-tip-tags="blast_radius,call_hierarchy,definitions,concepts,flow_trace">
+              <div class="module-icon">🔭</div>
+              <div class="module-name">Query Layer</div>
+              <div class="module-desc">Architecture · blast radius · call hierarchy · references · concepts</div>
+              <div class="module-tag-row">
+                <span class="module-tag">blast_radius</span>
+                <span class="module-tag">call_hierarchy</span>
+                <span class="module-tag">subgraph</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Bottom row: 3 modules -->
+          <div class="core-grid-bottom">
+
+            <div class="module-card" id="mod-connectors" tabindex="0"
+                 data-tip-title="Connectors"
+                 data-tip-body="13 framework-aware connectors that detect and map cross-boundary relationships invisible to static analysis: HTTP routes, EF Core entities, gRPC services, DI graphs, React component trees, Tauri/Electron IPC bridges, GraphQL schemas, and message queues."
+                 data-tip-tags="HTTP API,EF Core,gRPC,.NET DI,React,Tauri,GraphQL,MQ">
+              <div class="module-icon">🔌</div>
+              <div class="module-name">Connectors</div>
+              <div class="module-desc">13 framework connectors — HTTP, EF Core, gRPC, DI, React, Tauri, GraphQL, MQ</div>
+              <div class="module-tag-row">
+                <span class="module-tag sage">13 frameworks</span>
+                <span class="module-tag sage">cross-boundary</span>
+              </div>
+            </div>
+
+            <div class="module-card" id="mod-bridge" tabindex="0"
+                 data-tip-title="Bridge"
+                 data-tip-body="GraphBridge resolves edges that static analysis cannot: dynamic dispatch, dependency-injected types, and indirect calls. BackgroundEnricher runs asynchronously against live LSP servers to fill in types and resolve unresolved_refs."
+                 data-tip-tags="GraphBridge,BackgroundEnricher,LSP,unresolved_refs">
+              <div class="module-icon">🌉</div>
+              <div class="module-name">Bridge</div>
+              <div class="module-desc">GraphBridge + BackgroundEnricher — resolves edges via live LSP data</div>
+              <div class="module-tag-row">
+                <span class="module-tag">GraphBridge</span>
+                <span class="module-tag">BackgroundEnricher</span>
+              </div>
+            </div>
+
+            <div class="module-card" id="mod-lsp" tabindex="0"
+                 data-tip-title="LSP Manager"
+                 data-tip-body="Manages lifecycles for 8 language server processes. Provides a registry-driven approach so new language servers can be added without code changes. Used by Bridge to resolve goto-definition and find-references at the symbol level."
+                 data-tip-tags="TypeScript,C#,Rust,Python,Go,Java,C++">
+              <div class="module-icon">🔗</div>
+              <div class="module-name">LSP Manager</div>
+              <div class="module-desc">8 language servers · registry-driven · TypeScript · C# · Rust · Python · Go</div>
+              <div class="module-tag-row">
+                <span class="module-tag">8 servers</span>
+                <span class="module-tag">registry</span>
+              </div>
+            </div>
+
+          </div>
+
+          <!-- Walker inline note -->
+          <div style="margin-top: 10px; padding: 8px 14px; background: var(--bg-surface); border: 1px solid var(--border-subtle); border-radius: var(--radius-sm); display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 14px;">🚶</span>
+            <span style="font-size: 12px; color: var(--text-muted);">
+              <strong style="color: var(--text-secondary);">Walker</strong> —
+              .gitignore-aware file tree traversal feeds all source paths into the Indexer
+            </span>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Cross-cutting -->
+      <div style="margin: 12px 0;">
+        <div class="crosscut-bar"
+             data-tip-title="Cross-cutting: sqlite-vec + ONNX Runtime"
+             data-tip-body="sqlite-vec is statically compiled into every binary — no external dependency at runtime. ONNX Runtime is loaded dynamically on first use; if absent, vector search degrades gracefully to hybrid RRF without it."
+             data-tip-tags="sqlite-vec,ONNX,static link,dynamic load">
+          <div class="crosscut-label">Cross-cutting</div>
+          <div class="crosscut-items">
+            <div class="crosscut-item">
+              <span style="font-size: 14px;">🧊</span>
+              <div>
+                <div class="crosscut-item-name">sqlite-vec</div>
+                <div class="crosscut-item-desc">Statically linked into all binaries — vector storage &amp; ANN search</div>
+              </div>
+            </div>
+            <div style="width: 1px; background: var(--border); align-self: stretch;"></div>
+            <div class="crosscut-item">
+              <span style="font-size: 14px;">⚡</span>
+              <div>
+                <div class="crosscut-item-name">ONNX Runtime</div>
+                <div class="crosscut-item-desc">Dynamically loaded for CodeRankEmbed inference — graceful degradation if absent</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Flow connector 2→3 -->
+      <div class="flow-connector" aria-hidden="true">
+        <div class="flow-connector-inner">
+          <div class="flow-connector-line"></div>
+          <div class="flow-connector-label">JSON · stdio · HTTP · library call</div>
+          <div class="flow-connector-line"></div>
+          <div class="flow-arrow"></div>
+        </div>
+      </div>
+
+      <!-- ── LAYER 3: CONSUMERS ────────────────────────────────── -->
+      <div class="layer" id="layer-consumers">
+        <div class="layer-label">Layer 3 — Consumers (binary crates)</div>
+        <div class="consumers-row" id="consumers-row">
+
+          <div class="consumer-card" id="consumer-cli" tabindex="0"
+               data-tip-title="bw — CLI"
+               data-tip-body="Primary command-line interface. 25 JSON-output commands covering search, query, graph inspection, and project management. Reads from the project's .bw/ database. Designed for scripting and editor integration."
+               data-tip-tags="bw,CLI,JSON,25 commands"
+               data-uses="mod-indexer mod-graphdb mod-search mod-query mod-connectors">
+            <div class="consumer-icon">⬡</div>
+            <div class="consumer-name">bw</div>
+            <div class="consumer-full-name">Command-line interface</div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">25</span> JSON commands
+            </div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">.bw/</span> project DB
+            </div>
+          </div>
+
+          <div class="consumer-card" id="consumer-mcp" tabindex="0"
+               data-tip-title="bw-mcp — MCP Server"
+               data-tip-body="Model Context Protocol server. Exposes 8 tools via stdio JSON-RPC so AI assistants (Claude, Cursor, Copilot) can query the code graph directly. Auto-indexes the project on startup if the index is stale."
+               data-tip-tags="MCP,JSON-RPC,stdio,8 tools,auto-index"
+               data-uses="mod-indexer mod-graphdb mod-search mod-query">
+            <div class="consumer-icon">🤖</div>
+            <div class="consumer-name">bw-mcp</div>
+            <div class="consumer-full-name">MCP Server</div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">8</span> MCP tools
+            </div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">stdio</span> JSON-RPC
+            </div>
+          </div>
+
+          <div class="consumer-card" id="consumer-web" tabindex="0"
+               data-tip-title="bw-web — Web Server"
+               data-tip-body="HTTP server exposing 23 REST endpoints plus a bundled React + D3 frontend. The frontend renders a force-directed knowledge graph for interactive codebase exploration. Shares the same library crate as the CLI."
+               data-tip-tags="bw-web,REST,23 endpoints,React,D3"
+               data-uses="mod-indexer mod-graphdb mod-search mod-query mod-connectors mod-bridge">
+            <div class="consumer-icon">🌐</div>
+            <div class="consumer-name">bw-web</div>
+            <div class="consumer-full-name">Web Server + React UI</div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">23</span> API endpoints
+            </div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">D3</span> force graph
+            </div>
+          </div>
+
+          <div class="consumer-card" id="consumer-bench" tabindex="0"
+               data-tip-title="bw-bench — Benchmark"
+               data-tip-body="Utility crate for comparing BearWisdom tool performance against native Claude Code tools. Measures latency, token usage, and answer quality to validate indexing improvements and search relevance."
+               data-tip-tags="bw-bench,benchmark,comparison,metrics"
+               data-uses="mod-search mod-query">
+            <div class="consumer-icon">📊</div>
+            <div class="consumer-name">bw-bench</div>
+            <div class="consumer-full-name">Benchmark utility</div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">BW</span> vs native tools
+            </div>
+            <div class="consumer-stat">
+              <span class="consumer-stat-val">latency</span> · quality
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ── LAYER 4: FRONTEND (expandable) ───────────────────── -->
+      <div class="layer frontend-section" id="layer-frontend">
+        <div class="layer-label" style="margin-top: 20px;">Layer 4 — Frontend (web/)</div>
+        <button class="frontend-toggle" id="frontend-toggle" aria-expanded="false" aria-controls="frontend-detail">
+          <span class="toggle-icon" id="toggle-icon">▶</span>
+          <span class="toggle-label">React + D3 Frontend Architecture</span>
+          <span class="toggle-badge">3 stores · 6 hooks · 13 component groups · 54 tests</span>
+        </button>
+        <div class="frontend-detail" id="frontend-detail" aria-hidden="true">
+
+          <div class="fe-stat-row">
+            <div class="fe-stat">
+              <span class="fe-stat-num">3</span>
+              <span class="fe-stat-label">Zustand stores</span>
+            </div>
+            <div class="fe-stat">
+              <span class="fe-stat-num">6</span>
+              <span class="fe-stat-label">Custom hooks</span>
+            </div>
+            <div class="fe-stat">
+              <span class="fe-stat-num">13</span>
+              <span class="fe-stat-label">Component groups</span>
+            </div>
+            <div class="fe-stat">
+              <span class="fe-stat-num">54</span>
+              <span class="fe-stat-label">Tests (Vitest)</span>
+            </div>
+          </div>
+
+          <div class="frontend-grid">
+
+            <div class="fe-group">
+              <div class="fe-group-title">
+                <span>🗄</span> Zustand Stores
+              </div>
+              <div class="fe-items">
+                <div class="fe-item">useGraphStore — nodes, edges, layout</div>
+                <div class="fe-item">useSelectionStore — active node/edge</div>
+                <div class="fe-item">useEmbedStore — vector search state</div>
+              </div>
+            </div>
+
+            <div class="fe-group">
+              <div class="fe-group-title">
+                <span>🪝</span> Custom Hooks
+              </div>
+              <div class="fe-items">
+                <div class="fe-item">useGraphData — fetch + normalize</div>
+                <div class="fe-item">useSymbolDetail — symbol panel</div>
+                <div class="fe-item">useD3Simulation — force layout</div>
+                <div class="fe-item">useZoomControls — pan/zoom</div>
+                <div class="fe-item">useResizePanel — split pane</div>
+                <div class="fe-item">useEmbedding — semantic search</div>
+              </div>
+            </div>
+
+            <div class="fe-group">
+              <div class="fe-group-title">
+                <span>📦</span> D3 Force Graph
+              </div>
+              <div class="fe-items">
+                <div class="fe-item">forceLink · forceManyBody</div>
+                <div class="fe-item">forceCenter · forceCollide</div>
+                <div class="fe-item">Drag · zoom · pan</div>
+                <div class="fe-item">Node kind color mapping</div>
+                <div class="fe-item">SVG canvas + labels</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /.diagram -->
+
+    <div class="hint-text">
+      Click any <kbd>consumer</kbd> to highlight which core modules it uses &nbsp;·&nbsp;
+      Hover any module for details &nbsp;·&nbsp;
+      Click again to deselect
+    </div>
+
+  </div><!-- /.page -->
+
+  <script>
+    /* ─── Tooltip ─────────────────────────────────────────────────── */
+    const tooltip   = document.getElementById('tooltip');
+    const tipTitle  = document.getElementById('tooltip-title');
+    const tipBody   = document.getElementById('tooltip-body');
+    const tipTags   = document.getElementById('tooltip-tags');
+
+    let mouseX = 0, mouseY = 0;
+
+    document.addEventListener('mousemove', (e) => {
+      mouseX = e.clientX;
+      mouseY = e.clientY;
+      if (tooltip.classList.contains('visible')) {
+        positionTooltip();
+      }
+    });
+
+    function positionTooltip() {
+      const pad = 14;
+      const tw = tooltip.offsetWidth;
+      const th = tooltip.offsetHeight;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
+      let x = mouseX + pad;
+      let y = mouseY + pad;
+      if (x + tw > vw - 8) x = mouseX - tw - pad;
+      if (y + th > vh - 8) y = mouseY - th - pad;
+      tooltip.style.left = x + 'px';
+      tooltip.style.top  = y + 'px';
+    }
+
+    function showTooltip(el) {
+      const title = el.dataset.tipTitle;
+      const body  = el.dataset.tipBody;
+      const tags  = (el.dataset.tipTags || '').split(',').map(t => t.trim()).filter(Boolean);
+      if (!title && !body) return;
+      tipTitle.textContent = title || '';
+      tipBody.textContent  = body  || '';
+      tipTags.innerHTML = tags.map(t => `<span class="tooltip-tag">${t}</span>`).join('');
+      tooltip.classList.add('visible');
+      positionTooltip();
+    }
+
+    function hideTooltip() {
+      tooltip.classList.remove('visible');
+    }
+
+    /* Attach to all data-tip elements */
+    document.querySelectorAll('[data-tip-title], [data-tip-body]').forEach(el => {
+      el.addEventListener('mouseenter', () => showTooltip(el));
+      el.addEventListener('mouseleave', hideTooltip);
+    });
+
+    /* ─── Consumer → module highlight ────────────────────────────── */
+    const allModuleCards = document.querySelectorAll('.module-card');
+    const allConsumerCards = document.querySelectorAll('.consumer-card');
+    const coreBox    = document.getElementById('core-box');
+    const parserBar  = document.getElementById('parser-bar');
+
+    let activeConsumer = null;
+
+    function clearHighlight() {
+      allModuleCards.forEach(m => {
+        m.classList.remove('active', 'dimmed');
+      });
+      allConsumerCards.forEach(c => {
+        c.classList.remove('active', 'dimmed');
+      });
+      coreBox.classList.remove('highlighted');
+      parserBar.classList.remove('highlighted');
+      activeConsumer = null;
+    }
+
+    function highlightConsumer(card) {
+      const uses = (card.dataset.uses || '').split(' ').filter(Boolean);
+
+      // Mark consumer active, dim others
+      allConsumerCards.forEach(c => {
+        if (c === card) {
+          c.classList.add('active');
+          c.classList.remove('dimmed');
+        } else {
+          c.classList.add('dimmed');
+          c.classList.remove('active');
+        }
+      });
+
+      if (uses.length) {
+        coreBox.classList.add('highlighted');
+        // Active the used modules, dim the rest
+        allModuleCards.forEach(m => {
+          if (uses.includes(m.id)) {
+            m.classList.add('active');
+            m.classList.remove('dimmed');
+          } else {
+            m.classList.add('dimmed');
+            m.classList.remove('active');
+          }
+        });
+      }
+    }
+
+    allConsumerCards.forEach(card => {
+      card.addEventListener('click', () => {
+        if (activeConsumer === card) {
+          clearHighlight();
+        } else {
+          activeConsumer = card;
+          highlightConsumer(card);
+        }
+      });
+
+      /* Keyboard support */
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          card.click();
+        }
+      });
+    });
+
+    /* Clicking the core box or parser clears selection */
+    coreBox.addEventListener('click', (e) => {
+      if (!e.target.closest('.consumer-card')) clearHighlight();
+    });
+
+    /* ─── Frontend expand/collapse ────────────────────────────────── */
+    const toggleBtn    = document.getElementById('frontend-toggle');
+    const toggleIcon   = document.getElementById('toggle-icon');
+    const feDetail     = document.getElementById('frontend-detail');
+
+    toggleBtn.addEventListener('click', () => {
+      const isOpen = feDetail.classList.toggle('open');
+      toggleBtn.setAttribute('aria-expanded', isOpen);
+      feDetail.setAttribute('aria-hidden', !isOpen);
+      toggleIcon.classList.toggle('open', isOpen);
+    });
+
+    /* ─── Module card keyboard focus tooltip ─────────────────────── */
+    allModuleCards.forEach(card => {
+      card.addEventListener('focus', () => showTooltip(card));
+      card.addEventListener('blur',  hideTooltip);
+    });
+  </script>
+
+</body>
+</html>

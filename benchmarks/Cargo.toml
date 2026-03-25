@@ -1,0 +1,27 @@
+[package]
+name        = "bw-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+publish = false
+description = "BearWisdom utility benchmark — BW tools vs native tooling"
+
+[[bin]]
+name = "bw-bench"
+path = "src/main.rs"
+
+[dependencies]
+bearwisdom         = { path = "../crates/bearwisdom" }
+sqlite-vec         = { workspace = true }
+anyhow             = { workspace = true }
+clap               = { workspace = true }
+serde              = { workspace = true }
+serde_json         = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+tokio              = { workspace = true }
+reqwest            = { version = "0.12", features = ["json"] }
+chrono             = { version = "0.4", features = ["serde"] }
+uuid               = { version = "1", features = ["v4"] }
+walkdir            = "2"
+regex              = { workspace = true }

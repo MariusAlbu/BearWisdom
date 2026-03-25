@@ -24,10 +24,11 @@ pub mod walker;
 
 // Re-export the most commonly used entry points at the crate root so callers
 // don't need to dig through module paths.
-pub use db::Database;
+pub use db::{resolve_db_path, db_exists, Database};
 pub use indexer::full::{full_index, ProgressFn};
 pub use indexer::incremental::{incremental_index, reindex_files, ChangeKind, FileChangeEvent};
 pub use types::{EdgeKind, EdgeSource, Symbol, SymbolKind};
+pub use indexer::post_index::embed_chunks;
 pub use walker::WalkedFile;
 
 // Re-export query result types for consumers that only depend on this crate.
