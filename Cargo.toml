@@ -84,7 +84,7 @@ nucleo                = "0.5"
 ort                   = { version = "=2.0.0-rc.12", features = ["load-dynamic"] }
 tokenizers            = "0.21"
 # --- SCIP import (Phase 7) ---
-prost                 = "0.13"
+prost                 = "0.14"
 # --- Web server (bearwisdom-web) ---
 axum                  = "0.8"
 tower-http            = { version = "0.6", features = ["cors", "fs"] }
