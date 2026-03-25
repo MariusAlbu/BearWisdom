@@ -66,7 +66,7 @@ nucleo                 = { workspace = true }
 ort                    = { workspace = true }
 tokenizers             = { workspace = true }
 # Model directory resolution
-dirs                   = "5"
+dirs                   = "6"
 # SCIP import
 prost                  = { workspace = true }
 
