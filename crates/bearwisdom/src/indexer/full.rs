@@ -359,6 +359,48 @@ pub fn full_index(
         Err(e) => warn!("Electron IPC connector failed: {e}"),
     }
 
+    // --- Step 7m: Go routes connector ---
+    match crate::connectors::go_routes::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!("Go routes connector: {n} routes") },
+        Err(e) => warn!("Go routes connector failed: {e}"),
+    }
+
+    // --- Step 7n: Rails routes connector ---
+    match crate::connectors::rails_routes::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!("Rails routes connector: {n} routes") },
+        Err(e) => warn!("Rails routes connector failed: {e}"),
+    }
+
+    // --- Step 7o: Laravel routes connector ---
+    match crate::connectors::laravel_routes::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!("Laravel routes connector: {n} routes") },
+        Err(e) => warn!("Laravel routes connector failed: {e}"),
+    }
+
+    // --- Step 7p: NestJS routes connector ---
+    match crate::connectors::nestjs_routes::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!("NestJS routes connector: {n} routes") },
+        Err(e) => warn!("NestJS routes connector failed: {e}"),
+    }
+
+    // --- Step 7q: FastAPI routes connector ---
+    match crate::connectors::fastapi_routes::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!("FastAPI routes connector: {n} routes") },
+        Err(e) => warn!("FastAPI routes connector failed: {e}"),
+    }
+
+    // --- Step 7r: Spring DI connector ---
+    match crate::connectors::spring_di::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!("Spring DI connector: {n} flow edges") },
+        Err(e) => warn!("Spring DI connector failed: {e}"),
+    }
+
+    // --- Step 7s: Angular DI connector ---
+    match crate::connectors::angular_di::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!("Angular DI connector: {n} flow edges") },
+        Err(e) => warn!("Angular DI connector failed: {e}"),
+    }
+
     emit("connectors", 1.0, None);
 
     let duration = start.elapsed();
@@ -603,58 +645,5 @@ pub(crate) fn read_stats(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::db::Database;
-    use std::fs;
-    use tempfile::TempDir;
-
-    #[test]
-    fn index_simple_csharp_project() {
-        let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join("Foo.cs"),
-            r#"
-namespace App {
-    public class FooService {
-        public void DoSomething() {}
-    }
-}
-"#,
-        ).unwrap();
-
-        let mut db = Database::open_in_memory().unwrap();
-        let stats = full_index(&mut db, dir.path(), None, None).unwrap();
-
-        assert!(stats.file_count >= 1, "No files indexed");
-        assert!(stats.symbol_count >= 2, "Expected at least FooService + DoSomething");
-    }
-
-    #[test]
-    fn index_produces_qualified_names() {
-        let dir = TempDir::new().unwrap();
-        fs::write(
-            dir.path().join("Api.cs"),
-            "namespace Catalog { class CatalogApi { void List() {} } }",
-        ).unwrap();
-
-        let mut db = Database::open_in_memory().unwrap();
-        full_index(&mut db, dir.path(), None, None).unwrap();
-
-        let qname: String = db.conn.query_row(
-            "SELECT qualified_name FROM symbols WHERE name = 'List'",
-            [],
-            |r| r.get(0),
-        ).unwrap();
-        assert_eq!(qname, "Catalog.CatalogApi.List");
-    }
-
-    #[test]
-    fn index_empty_directory_produces_zero_stats() {
-        let dir = TempDir::new().unwrap();
-        let mut db = Database::open_in_memory().unwrap();
-        let stats = full_index(&mut db, dir.path(), None, None).unwrap();
-        assert_eq!(stats.file_count, 0);
-        assert_eq!(stats.symbol_count, 0);
-    }
-}
+#[path = "full_tests.rs"]
+mod tests;
