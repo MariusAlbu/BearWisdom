@@ -6,12 +6,12 @@
       "project": "SimplCommerce",
       "path": "F:/Work/Projects/TestProjects/SimplCommerce",
       "files": 1477,
-      "symbols": 10838,
-      "edges": 26296,
+      "symbols": 16773,
+      "edges": 11828,
       "routes": 344,
-      "flow_edges": 220,
-      "unresolved_refs": 46094,
-      "code_chunks": 84743,
+      "flow_edges": 330,
+      "unresolved_refs": 35254,
+      "code_chunks": 127566,
       "languages": {
         "csharp": 811,
         "javascript": 381,
@@ -27,24 +27,24 @@
         "yaml": 1
       },
       "flow_edge_types": {
-        "di_binding": 220
+        "di_binding": 330
       },
       "assertions": {
         "min_routes": 344,
-        "min_flow_edges": 220,
-        "min_di_binding_edges": 220
+        "min_flow_edges": 330,
+        "min_di_binding_edges": 330
       }
     },
     {
       "project": "Smartstore",
       "path": "F:/Work/Projects/TestProjects/Smartstore",
       "files": 3958,
-      "symbols": 45670,
-      "edges": 108856,
+      "symbols": 54597,
+      "edges": 92247,
       "routes": 1138,
-      "flow_edges": 100,
-      "unresolved_refs": 58867,
-      "code_chunks": 281929,
+      "flow_edges": 150,
+      "unresolved_refs": 45630,
+      "code_chunks": 464258,
       "languages": {
         "csharp": 3137,
         "javascript": 297,
@@ -59,12 +59,12 @@
         "dockerfile": 1
       },
       "flow_edge_types": {
-        "di_binding": 100
+        "di_binding": 150
       },
       "assertions": {
         "min_routes": 1138,
-        "min_flow_edges": 100,
-        "min_di_binding_edges": 100
+        "min_flow_edges": 150,
+        "min_di_binding_edges": 150
       }
     },
     {
@@ -74,7 +74,7 @@
       "symbols": 143,
       "edges": 60,
       "routes": 9,
-      "flow_edges": 20,
+      "flow_edges": 30,
       "unresolved_refs": 171,
       "code_chunks": 353,
       "languages": {
@@ -87,14 +87,14 @@
         "html": 1
       },
       "flow_edge_types": {
-        "di_binding": 8,
-        "http_call": 12
+        "di_binding": 12,
+        "http_call": 18
       },
       "assertions": {
         "min_routes": 9,
-        "min_flow_edges": 20,
-        "min_di_binding_edges": 8,
-        "min_http_call_edges": 12
+        "min_flow_edges": 30,
+        "min_di_binding_edges": 12,
+        "min_http_call_edges": 18
       }
     },
     {
@@ -122,12 +122,12 @@
       "project": "angular-ngx-admin",
       "path": "F:/Work/Projects/TestProjects/angular-ngx-admin",
       "files": 445,
-      "symbols": 1232,
+      "symbols": 1233,
       "edges": 372,
       "routes": 0,
       "flow_edges": 24,
-      "unresolved_refs": 2087,
-      "code_chunks": 4128,
+      "unresolved_refs": 2086,
+      "code_chunks": 4130,
       "languages": {
         "typescript": 242,
         "scss": 95,
@@ -150,12 +150,12 @@
       "project": "dotnet-CleanArchitecture",
       "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
       "files": 196,
-      "symbols": 740,
-      "edges": 602,
+      "symbols": 763,
+      "edges": 615,
       "routes": 6,
-      "flow_edges": 13,
-      "unresolved_refs": 1445,
-      "code_chunks": 1762,
+      "flow_edges": 17,
+      "unresolved_refs": 1464,
+      "code_chunks": 1789,
       "languages": {
         "csharp": 110,
         "typescript": 25,
@@ -166,24 +166,24 @@
         "scss": 4
       },
       "flow_edge_types": {
-        "di_binding": 13
+        "di_binding": 17
       },
       "assertions": {
         "min_routes": 6,
-        "min_flow_edges": 13,
-        "min_di_binding_edges": 13
+        "min_flow_edges": 17,
+        "min_di_binding_edges": 17
       }
     },
     {
       "project": "dotnet-EquinoxProject",
       "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
       "files": 123,
-      "symbols": 526,
-      "edges": 421,
+      "symbols": 680,
+      "edges": 391,
       "routes": 20,
-      "flow_edges": 20,
-      "unresolved_refs": 2301,
-      "code_chunks": 2228,
+      "flow_edges": 30,
+      "unresolved_refs": 1964,
+      "code_chunks": 2421,
       "languages": {
         "csharp": 90,
         "json": 14,
@@ -195,24 +195,24 @@
         "yaml": 1
       },
       "flow_edge_types": {
-        "di_binding": 20
+        "di_binding": 30
       },
       "assertions": {
         "min_routes": 20,
-        "min_flow_edges": 20,
-        "min_di_binding_edges": 20
+        "min_flow_edges": 30,
+        "min_di_binding_edges": 30
       }
     },
     {
       "project": "dotnet-practical-aspnetcore",
       "path": "F:/Work/Projects/TestProjects/dotnet-practical-aspnetcore",
       "files": 1551,
-      "symbols": 5388,
-      "edges": 8431,
+      "symbols": 2805,
+      "edges": 1181,
       "routes": 125,
-      "flow_edges": 16,
-      "unresolved_refs": 17849,
-      "code_chunks": 22946,
+      "flow_edges": 24,
+      "unresolved_refs": 4275,
+      "code_chunks": 25602,
       "languages": {
         "csharp": 794,
         "markdown": 501,
@@ -226,24 +226,24 @@
         "yaml": 1
       },
       "flow_edge_types": {
-        "di_binding": 16
+        "di_binding": 24
       },
       "assertions": {
         "min_routes": 125,
-        "min_flow_edges": 16,
-        "min_di_binding_edges": 16
+        "min_flow_edges": 24,
+        "min_di_binding_edges": 24
       }
     },
     {
       "project": "eShop",
       "path": "F:/Work/Projects/TestProjects/eShop",
       "files": 675,
-      "symbols": 3550,
+      "symbols": 3551,
       "edges": 2903,
       "routes": 44,
-      "flow_edges": 276,
+      "flow_edges": 360,
       "unresolved_refs": 6177,
-      "code_chunks": 11039,
+      "code_chunks": 11041,
       "languages": {
         "csharp": 527,
         "xml": 60,
@@ -256,15 +256,15 @@
         "html": 1
       },
       "flow_edge_types": {
-        "di_binding": 96,
-        "event_handler": 72,
+        "di_binding": 144,
+        "event_handler": 108,
         "http_call": 108
       },
       "assertions": {
         "min_routes": 44,
-        "min_flow_edges": 276,
-        "min_di_binding_edges": 96,
-        "min_event_handler_edges": 72,
+        "min_flow_edges": 360,
+        "min_di_binding_edges": 144,
+        "min_event_handler_edges": 108,
         "min_http_call_edges": 108
       }
     },
@@ -274,7 +274,7 @@
       "files": 180,
       "symbols": 827,
       "edges": 677,
-      "routes": 54,
+      "routes": 90,
       "flow_edges": 0,
       "unresolved_refs": 1227,
       "code_chunks": 2089,
@@ -293,19 +293,19 @@
       },
       "flow_edge_types": {},
       "assertions": {
-        "min_routes": 54
+        "min_routes": 90
       }
     },
     {
       "project": "go-gitea",
       "path": "F:/Work/Projects/TestProjects/go-gitea",
       "files": 3311,
-      "symbols": 26657,
-      "edges": 98847,
-      "routes": 2103,
+      "symbols": 26722,
+      "edges": 99059,
+      "routes": 3505,
       "flow_edges": 0,
-      "unresolved_refs": 59287,
-      "code_chunks": 62115,
+      "unresolved_refs": 59078,
+      "code_chunks": 62138,
       "languages": {
         "go": 2707,
         "typescript": 203,
@@ -322,19 +322,19 @@
       },
       "flow_edge_types": {},
       "assertions": {
-        "min_routes": 2103
+        "min_routes": 3505
       }
     },
     {
       "project": "go-mattermost",
       "path": "F:/Work/Projects/TestProjects/go-mattermost",
       "files": 7830,
-      "symbols": 71289,
-      "edges": 246566,
-      "routes": 34,
-      "flow_edges": 1,
-      "unresolved_refs": 128090,
-      "code_chunks": 208474,
+      "symbols": 75054,
+      "edges": 238430,
+      "routes": 68,
+      "flow_edges": 6,
+      "unresolved_refs": 122579,
+      "code_chunks": 206436,
       "languages": {
         "typescript": 3937,
         "go": 1984,
@@ -351,24 +351,24 @@
         "css": 6
       },
       "flow_edge_types": {
-        "http_call": 1
+        "http_call": 6
       },
       "assertions": {
-        "min_routes": 34,
-        "min_flow_edges": 1,
-        "min_http_call_edges": 1
+        "min_routes": 68,
+        "min_flow_edges": 6,
+        "min_http_call_edges": 6
       }
     },
     {
       "project": "go-photoprism",
       "path": "F:/Work/Projects/TestProjects/go-photoprism",
       "files": 3468,
-      "symbols": 16191,
-      "edges": 99373,
-      "routes": 495,
+      "symbols": 18996,
+      "edges": 99133,
+      "routes": 825,
       "flow_edges": 0,
-      "unresolved_refs": 28676,
-      "code_chunks": 60514,
+      "unresolved_refs": 27818,
+      "code_chunks": 61436,
       "languages": {
         "go": 2271,
         "xml": 565,
@@ -386,19 +386,19 @@
       },
       "flow_edge_types": {},
       "assertions": {
-        "min_routes": 495
+        "min_routes": 825
       }
     },
     {
       "project": "go-pocketbase",
       "path": "F:/Work/Projects/TestProjects/go-pocketbase",
       "files": 577,
-      "symbols": 8263,
-      "edges": 19284,
-      "routes": 388,
+      "symbols": 14179,
+      "edges": 17891,
+      "routes": 582,
       "flow_edges": 0,
-      "unresolved_refs": 40871,
-      "code_chunks": 67974,
+      "unresolved_refs": 17134,
+      "code_chunks": 904454,
       "languages": {
         "go": 442,
         "javascript": 47,
@@ -414,19 +414,19 @@
       },
       "flow_edge_types": {},
       "assertions": {
-        "min_routes": 388
+        "min_routes": 582
       }
     },
     {
       "project": "grandnode",
       "path": "F:/Work/Projects/TestProjects/grandnode",
       "files": 3336,
-      "symbols": 35406,
-      "edges": 87187,
+      "symbols": 61929,
+      "edges": 68658,
       "routes": 986,
-      "flow_edges": 920,
-      "unresolved_refs": 119192,
-      "code_chunks": 215455,
+      "flow_edges": 1338,
+      "unresolved_refs": 49019,
+      "code_chunks": 1583683,
       "languages": {
         "csharp": 2776,
         "javascript": 364,
@@ -439,13 +439,13 @@
         "yaml": 2
       },
       "flow_edge_types": {
-        "di_binding": 836,
+        "di_binding": 1254,
         "http_call": 84
       },
       "assertions": {
         "min_routes": 986,
-        "min_flow_edges": 920,
-        "min_di_binding_edges": 836,
+        "min_flow_edges": 1338,
+        "min_di_binding_edges": 1254,
         "min_http_call_edges": 84
       }
     },
@@ -453,12 +453,12 @@
       "project": "java-petclinic-reactjs",
       "path": "F:/Work/Projects/TestProjects/java-petclinic-reactjs",
       "files": 162,
-      "symbols": 962,
-      "edges": 1288,
-      "routes": 3,
+      "symbols": 983,
+      "edges": 1304,
+      "routes": 5,
       "flow_edges": 2,
-      "unresolved_refs": 2882,
-      "code_chunks": 2539,
+      "unresolved_refs": 2851,
+      "code_chunks": 2562,
       "languages": {
         "java": 102,
         "typescript": 36,
@@ -475,7 +475,7 @@
         "di_binding": 2
       },
       "assertions": {
-        "min_routes": 3,
+        "min_routes": 5,
         "min_flow_edges": 2,
         "min_di_binding_edges": 2
       }
@@ -484,12 +484,12 @@
       "project": "java-petclinic-rest",
       "path": "F:/Work/Projects/TestProjects/java-petclinic-rest",
       "files": 124,
-      "symbols": 837,
+      "symbols": 848,
       "edges": 1155,
-      "routes": 3,
+      "routes": 5,
       "flow_edges": 2,
       "unresolved_refs": 2808,
-      "code_chunks": 1933,
+      "code_chunks": 1934,
       "languages": {
         "java": 106,
         "sql": 8,
@@ -503,7 +503,7 @@
         "di_binding": 2
       },
       "assertions": {
-        "min_routes": 3,
+        "min_routes": 5,
         "min_flow_edges": 2,
         "min_di_binding_edges": 2
       }
@@ -514,7 +514,7 @@
       "files": 81,
       "symbols": 337,
       "edges": 407,
-      "routes": 48,
+      "routes": 80,
       "flow_edges": 0,
       "unresolved_refs": 1268,
       "code_chunks": 2226,
@@ -530,19 +530,19 @@
       },
       "flow_edge_types": {},
       "assertions": {
-        "min_routes": 48
+        "min_routes": 80
       }
     },
     {
       "project": "php-monica",
       "path": "F:/Work/Projects/TestProjects/php-monica",
       "files": 1749,
-      "symbols": 6493,
-      "edges": 2,
-      "routes": 918,
+      "symbols": 8356,
+      "edges": 20894,
+      "routes": 1530,
       "flow_edges": 0,
-      "unresolved_refs": 48,
-      "code_chunks": 24879,
+      "unresolved_refs": 13173,
+      "code_chunks": 28538,
       "languages": {
         "php": 1649,
         "xml": 38,
@@ -556,19 +556,19 @@
       },
       "flow_edge_types": {},
       "assertions": {
-        "min_routes": 918
+        "min_routes": 1530
       }
     },
     {
       "project": "python-cookiecutter-django",
       "path": "F:/Work/Projects/TestProjects/python-cookiecutter-django",
       "files": 138,
-      "symbols": 444,
-      "edges": 209,
-      "routes": 52,
-      "flow_edges": 56,
-      "unresolved_refs": 894,
-      "code_chunks": 4628,
+      "symbols": 486,
+      "edges": 218,
+      "routes": 92,
+      "flow_edges": 84,
+      "unresolved_refs": 883,
+      "code_chunks": 4666,
       "languages": {
         "python": 72,
         "html": 19,
@@ -583,24 +583,24 @@
         "toml": 2
       },
       "flow_edge_types": {
-        "django_view": 56
+        "django_view": 84
       },
       "assertions": {
-        "min_routes": 52,
-        "min_flow_edges": 56,
-        "min_django_view_edges": 56
+        "min_routes": 92,
+        "min_flow_edges": 84,
+        "min_django_view_edges": 84
       }
     },
     {
       "project": "python-paperless-ngx",
       "path": "F:/Work/Projects/TestProjects/python-paperless-ngx",
       "files": 961,
-      "symbols": 11738,
+      "symbols": 11773,
       "edges": 14728,
-      "routes": 467,
-      "flow_edges": 240,
+      "routes": 929,
+      "flow_edges": 360,
       "unresolved_refs": 23047,
-      "code_chunks": 34865,
+      "code_chunks": 34854,
       "languages": {
         "typescript": 412,
         "python": 261,
@@ -617,26 +617,26 @@
         "dockerfile": 1
       },
       "flow_edge_types": {
-        "django_model": 44,
-        "django_view": 196
+        "django_model": 66,
+        "django_view": 294
       },
       "assertions": {
-        "min_routes": 467,
-        "min_flow_edges": 240,
-        "min_django_model_edges": 44,
-        "min_django_view_edges": 196
+        "min_routes": 929,
+        "min_flow_edges": 360,
+        "min_django_model_edges": 66,
+        "min_django_view_edges": 294
       }
     },
     {
       "project": "python-posthog",
       "path": "F:/Work/Projects/TestProjects/python-posthog",
       "files": 15797,
-      "symbols": 205135,
-      "edges": 506059,
-      "routes": 712,
-      "flow_edges": 2987,
-      "unresolved_refs": 176945,
-      "code_chunks": 1468330,
+      "symbols": 192564,
+      "edges": 442409,
+      "routes": 1025,
+      "flow_edges": 3963,
+      "unresolved_refs": 168221,
+      "code_chunks": 902467,
       "languages": {
         "python": 6732,
         "typescript": 6596,
@@ -659,28 +659,28 @@
         "ruby": 1
       },
       "flow_edge_types": {
-        "django_model": 332,
-        "django_view": 2140,
-        "http_call": 515
+        "django_model": 415,
+        "django_view": 2675,
+        "http_call": 873
       },
       "assertions": {
-        "min_routes": 712,
-        "min_flow_edges": 2987,
-        "min_django_model_edges": 332,
-        "min_django_view_edges": 2140,
-        "min_http_call_edges": 515
+        "min_routes": 1025,
+        "min_flow_edges": 3963,
+        "min_django_model_edges": 415,
+        "min_django_view_edges": 2675,
+        "min_http_call_edges": 873
       }
     },
     {
       "project": "react-calcom",
       "path": "F:/Work/Projects/TestProjects/react-calcom",
       "files": 3540,
-      "symbols": 23522,
-      "edges": 12523,
-      "routes": 252,
-      "flow_edges": 662,
-      "unresolved_refs": 29891,
-      "code_chunks": 56095,
+      "symbols": 23597,
+      "edges": 12496,
+      "routes": 756,
+      "flow_edges": 878,
+      "unresolved_refs": 29909,
+      "code_chunks": 56141,
       "languages": {
         "typescript": 2874,
         "xml": 353,
@@ -696,24 +696,26 @@
         "toml": 1
       },
       "flow_edge_types": {
-        "di_binding": 662
+        "di_binding": 662,
+        "http_call": 216
       },
       "assertions": {
-        "min_routes": 252,
-        "min_flow_edges": 662,
-        "min_di_binding_edges": 662
+        "min_routes": 756,
+        "min_flow_edges": 878,
+        "min_di_binding_edges": 662,
+        "min_http_call_edges": 216
       }
     },
     {
       "project": "react-refine",
       "path": "F:/Work/Projects/TestProjects/react-refine",
       "files": 7979,
-      "symbols": 8459,
-      "edges": 7879,
+      "symbols": 8635,
+      "edges": 7900,
       "routes": 0,
       "flow_edges": 0,
-      "unresolved_refs": 13054,
-      "code_chunks": 143559,
+      "unresolved_refs": 12980,
+      "code_chunks": 143551,
       "languages": {
         "typescript": 4528,
         "markdown": 1980,
@@ -733,12 +735,12 @@
       "project": "react-tanstack-query",
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "files": 1137,
-      "symbols": 639,
-      "edges": 277,
+      "symbols": 736,
+      "edges": 270,
       "routes": 0,
       "flow_edges": 0,
-      "unresolved_refs": 1329,
-      "code_chunks": 13358,
+      "unresolved_refs": 1301,
+      "code_chunks": 13453,
       "languages": {
         "markdown": 497,
         "typescript": 308,
@@ -756,12 +758,12 @@
       "project": "ruby-discourse",
       "path": "F:/Work/Projects/TestProjects/ruby-discourse",
       "files": 13374,
-      "symbols": 55503,
-      "edges": 321269,
-      "routes": 1524,
+      "symbols": 59925,
+      "edges": 73712,
+      "routes": 6096,
       "flow_edges": 0,
-      "unresolved_refs": 138295,
-      "code_chunks": 3457978,
+      "unresolved_refs": 127841,
+      "code_chunks": 597303,
       "languages": {
         "ruby": 9055,
         "javascript": 2772,
@@ -777,7 +779,7 @@
       },
       "flow_edge_types": {},
       "assertions": {
-        "min_routes": 1524
+        "min_routes": 6096
       }
     },
     {
@@ -811,8 +813,8 @@
       "files": 1467,
       "symbols": 15296,
       "edges": 9777,
-      "routes": 0,
-      "flow_edges": 4,
+      "routes": 36,
+      "flow_edges": 198,
       "unresolved_refs": 19304,
       "code_chunks": 44600,
       "languages": {
@@ -837,10 +839,13 @@
         "java": 1
       },
       "flow_edge_types": {
+        "di_binding": 194,
         "django_view": 4
       },
       "assertions": {
-        "min_flow_edges": 4,
+        "min_routes": 36,
+        "min_flow_edges": 198,
+        "min_di_binding_edges": 194,
         "min_django_view_edges": 4
       }
     },
@@ -850,7 +855,7 @@
       "files": 43,
       "symbols": 157,
       "edges": 76,
-      "routes": 21,
+      "routes": 84,
       "flow_edges": 5,
       "unresolved_refs": 297,
       "code_chunks": 608,
@@ -864,7 +869,7 @@
         "di_binding": 5
       },
       "assertions": {
-        "min_routes": 21,
+        "min_routes": 84,
         "min_flow_edges": 5,
         "min_di_binding_edges": 5
       }
