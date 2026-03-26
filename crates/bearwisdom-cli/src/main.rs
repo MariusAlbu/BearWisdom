@@ -44,6 +44,9 @@ enum Commands {
     Open {
         /// Absolute path to the project root.
         path: String,
+        /// Skip embedding computation (faster indexing for quality checks).
+        #[arg(long)]
+        no_embed: bool,
     },
 
     /// Show index status for a project (state, file count, symbol count, edge count).
@@ -282,6 +285,18 @@ enum Commands {
         #[arg(long, default_value = "5")]
         depth: u32,
     },
+
+    // ---- Quality ---------------------------------------------------------------
+    /// Run quality checks against baseline. Indexes each project, compares
+    /// against quality-baseline.json, and reports regressions/improvements.
+    QualityCheck {
+        /// Path to the quality-baseline.json file.
+        #[arg(long, default_value = "quality-baseline.json")]
+        baseline: String,
+        /// Re-index projects (don't use cached). Slower but catches indexing regressions.
+        #[arg(long)]
+        reindex: bool,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -319,7 +334,7 @@ fn main() {
 
 fn run(command: Commands) -> Result<String> {
     match command {
-        Commands::Open { path } => cmd_open(&path),
+        Commands::Open { path, no_embed } => cmd_open(&path, no_embed),
         Commands::Status { path } => cmd_status(&path),
 
         Commands::SearchSymbols { path, query, limit } => {
@@ -373,6 +388,9 @@ fn run(command: Commands) -> Result<String> {
         Commands::TraceFlow { path, file, line, depth } => {
             cmd_trace_flow(&path, &file, line, depth)
         }
+        Commands::QualityCheck { baseline, reindex } => {
+            cmd_quality_check(&baseline, reindex)
+        }
     }
 }
 
@@ -381,7 +399,7 @@ fn run(command: Commands) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 /// Open and fully index the project, then print stats.
-fn cmd_open(project_path: &str) -> Result<String> {
+fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
 
@@ -405,20 +423,24 @@ fn cmd_open(project_path: &str) -> Result<String> {
 
     // Post-index: compute embeddings for code chunks.
     let mut chunks_embedded = 0u32;
-    let model_dir = resolve_model_dir(&root);
-    if let Some(ref dir) = model_dir {
-        eprintln!("Computing embeddings ...");
-        let mut embedder = bearwisdom::search::embedder::Embedder::new(dir.clone());
-        match bearwisdom::embed_chunks(&db.conn, &mut embedder, 4) {
-            Ok((n, _)) => {
-                chunks_embedded = n;
-                eprintln!("Embedded {n} chunks");
-            }
-            Err(e) => eprintln!("Warning: embedding failed: {e}"),
-        }
-        embedder.unload();
+    if no_embed {
+        eprintln!("Skipping embeddings (--no-embed)");
     } else {
-        eprintln!("No CodeRankEmbed model found, skipping embeddings");
+        let model_dir = resolve_model_dir(&root);
+        if let Some(ref dir) = model_dir {
+            eprintln!("Computing embeddings ...");
+            let mut embedder = bearwisdom::search::embedder::Embedder::new(dir.clone());
+            match bearwisdom::embed_chunks(&db.conn, &mut embedder, 4) {
+                Ok((n, _)) => {
+                    chunks_embedded = n;
+                    eprintln!("Embedded {n} chunks");
+                }
+                Err(e) => eprintln!("Warning: embedding failed: {e}"),
+            }
+            embedder.unload();
+        } else {
+            eprintln!("No CodeRankEmbed model found, skipping embeddings");
+        }
     }
 
     ok_json(serde_json::json!({
@@ -798,6 +820,176 @@ fn resolve_model_dir(project_root: &Path) -> Option<PathBuf> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Quality check
+// ---------------------------------------------------------------------------
+
+fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
+    let baseline_file = PathBuf::from(baseline_path);
+    let content = std::fs::read_to_string(&baseline_file)
+        .with_context(|| format!("Failed to read baseline: {}", baseline_file.display()))?;
+    let baseline: serde_json::Value =
+        serde_json::from_str(&content).context("Failed to parse baseline JSON")?;
+
+    let projects = baseline["projects"]
+        .as_array()
+        .context("baseline.projects is not an array")?;
+
+    let mut regressions = 0u32;
+    let mut improvements = 0u32;
+    let mut project_results: Vec<serde_json::Value> = Vec::new();
+
+    for proj in projects {
+        let name = proj["project"].as_str().unwrap_or("?");
+        let proj_path = proj["path"].as_str().unwrap_or("");
+        let root = PathBuf::from(proj_path);
+
+        eprint!("--- {name} ---\n  ");
+        if !root.exists() {
+            eprintln!("SKIP (path not found: {proj_path})");
+            continue;
+        }
+
+        let db_path = resolve_db_path(&root)?;
+
+        // Optionally re-index.
+        if reindex || !db_path.exists() {
+            eprintln!("Indexing...");
+            let mut db = Database::open_with_vec(&db_path)
+                .with_context(|| format!("Failed to open DB for {name}"))?;
+            bearwisdom::full_index(&mut db, &root, None, None)
+                .with_context(|| format!("Index failed for {name}"))?;
+        }
+
+        let db = Database::open_with_vec(&db_path)
+            .with_context(|| format!("Failed to open DB for {name}"))?;
+        let conn = &db.conn;
+
+        // Read current counts.
+        let files: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
+        let symbols: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
+        let edges: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
+        let routes: i64 = conn.query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))?;
+        let flow_edges: i64 = conn.query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))?;
+        let unresolved: i64 =
+            conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
+
+        // Compare against assertions.
+        let assertions = &proj["assertions"];
+        let mut proj_regressions: Vec<String> = Vec::new();
+        let mut proj_improvements: Vec<String> = Vec::new();
+
+        let check = |field: &str, current: i64, baseline_val: i64| -> (bool, bool) {
+            // regression if current < baseline, improvement if current > baseline
+            (current < baseline_val, current > baseline_val)
+        };
+
+        // Check key metrics against baseline values.
+        let baseline_flow = proj["flow_edges"].as_i64().unwrap_or(0);
+        let baseline_routes = proj["routes"].as_i64().unwrap_or(0);
+        let baseline_symbols = proj["symbols"].as_i64().unwrap_or(0);
+        let baseline_edges = proj["edges"].as_i64().unwrap_or(0);
+
+        for (label, current, baseline_val) in [
+            ("symbols", symbols, baseline_symbols),
+            ("edges", edges, baseline_edges),
+            ("routes", routes, baseline_routes),
+            ("flow_edges", flow_edges, baseline_flow),
+        ] {
+            let (reg, imp) = check(label, current, baseline_val);
+            if reg {
+                let msg = format!(
+                    "{label}: {baseline_val} \u{2192} {current} ({diff})",
+                    diff = current - baseline_val
+                );
+                proj_regressions.push(msg);
+            } else if imp {
+                let msg = format!(
+                    "{label}: {baseline_val} \u{2192} {current} (+{diff})",
+                    diff = current - baseline_val
+                );
+                proj_improvements.push(msg);
+            }
+        }
+
+        // Check min_* assertions.
+        if let Some(obj) = assertions.as_object() {
+            for (key, val) in obj {
+                if let Some(min_val) = val.as_i64() {
+                    let current_val = match key.as_str() {
+                        "min_routes" => routes,
+                        "min_flow_edges" => flow_edges,
+                        k if k.starts_with("min_") && k.ends_with("_edges") => {
+                            let edge_type = &k[4..k.len() - 6]; // strip min_ and _edges
+                            conn.query_row(
+                                "SELECT COUNT(*) FROM flow_edges WHERE edge_type = ?1",
+                                [edge_type],
+                                |r| r.get(0),
+                            )
+                            .unwrap_or(0)
+                        }
+                        _ => continue,
+                    };
+                    if current_val < min_val {
+                        proj_regressions.push(format!(
+                            "{key}: expected >={min_val}, got {current_val}"
+                        ));
+                    }
+                }
+            }
+        }
+
+        let status = if proj_regressions.is_empty() {
+            "pass"
+        } else {
+            "fail"
+        };
+
+        if !proj_regressions.is_empty() {
+            regressions += 1;
+            for r in &proj_regressions {
+                eprintln!("  REGRESSION: {r}");
+            }
+        } else if !proj_improvements.is_empty() {
+            improvements += 1;
+            for i in &proj_improvements {
+                eprintln!("  improvement: {i}");
+            }
+        } else {
+            eprintln!("  OK (no changes)");
+        }
+
+        project_results.push(serde_json::json!({
+            "project": name,
+            "status": status,
+            "current": {
+                "files": files,
+                "symbols": symbols,
+                "edges": edges,
+                "routes": routes,
+                "flow_edges": flow_edges,
+                "unresolved_refs": unresolved,
+            },
+            "regressions": proj_regressions,
+            "improvements": proj_improvements,
+        }));
+    }
+
+    let passed = regressions == 0;
+    eprintln!(
+        "\n=== SUMMARY: {regressions} regressions, {improvements} improvements ===\n\
+         QUALITY CHECK {}",
+        if passed { "PASSED" } else { "FAILED" }
+    );
+
+    ok_json(serde_json::json!({
+        "passed": passed,
+        "regressions": regressions,
+        "improvements": improvements,
+        "projects": project_results,
+    }))
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.
