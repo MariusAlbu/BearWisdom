@@ -468,10 +468,49 @@ pub(crate) fn parse_file(walked: &WalkedFile) -> Result<ParsedFile> {
             let r = java::extract(&content);
             (r.symbols, r.refs, vec![], vec![], r.has_errors)
         }
+        "javascript" | "jsx" => {
+            let r = crate::parser::extractors::javascript::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "php" => {
+            let r = crate::parser::extractors::php::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "ruby" => {
+            let r = crate::parser::extractors::ruby::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "kotlin" => {
+            let r = crate::parser::extractors::kotlin::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "swift" => {
+            let r = crate::parser::extractors::swift::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "scala" => {
+            let r = crate::parser::extractors::scala::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "dart" => {
+            let r = crate::parser::extractors::dart::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "elixir" => {
+            let r = crate::parser::extractors::elixir::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "c" | "cpp" => {
+            let r = crate::parser::extractors::c_lang::extract(&content, walked.language);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
+        "shell" => {
+            let r = crate::parser::extractors::bash::extract(&content);
+            (r.symbols, r.refs, vec![], vec![], r.has_errors)
+        }
         // ---- Generic grammar-based extraction (all other supported languages)
         // Languages where a grammar exists but no dedicated extractor has been
-        // written yet fall through to the generic DFS walker.  When a dedicated
-        // extractor is added, add a match arm above this block.
+        // written yet fall through to the generic DFS walker.
         _ => match generic::extract(&content, walked.language) {
             Some(r) => (r.symbols, r.refs, vec![], vec![], r.has_errors),
             // No grammar available for this language — index file with zero symbols.

@@ -35,6 +35,43 @@ function greet(name) {
     }
 
     #[test]
+    fn extracts_const_variable() {
+        let src = r#"
+const getters = {
+    sidebar: state => state.app.sidebar,
+    size: state => state.app.size,
+}
+export default getters
+"#;
+        let r = extract(src);
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        eprintln!("Symbols: {names:?}");
+        let kinds: Vec<_> = r.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
+        eprintln!("Kinds: {kinds:?}");
+        assert!(
+            r.symbols.iter().any(|s| s.name == "getters"),
+            "Expected 'getters' variable, got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn extracts_module_exports_function() {
+        let src = r#"
+const install = function(Vue) {
+    Vue.directive('Clipboard', Clipboard)
+}
+module.exports = install
+"#;
+        let r = extract(src);
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        eprintln!("Symbols: {names:?}");
+        assert!(
+            r.symbols.iter().any(|s| s.name == "install"),
+            "Expected 'install' variable, got: {names:?}"
+        );
+    }
+
+    #[test]
     fn import_statement_produces_type_ref() {
         let src = "import { useState, useEffect } from 'react';\n";
         let r = extract(src);
