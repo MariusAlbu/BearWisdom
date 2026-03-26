@@ -39,6 +39,7 @@ use crate::types::{
     DbMappingSource, EdgeKind, ExtractedDbSet, ExtractedRef, ExtractedRoute, ExtractedSymbol,
     SymbolKind, Visibility,
 };
+use std::collections::HashMap;
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -1106,13 +1107,157 @@ fn attr_route_template(attr_node: &Node, src: &[u8]) -> Option<String> {
     None
 }
 
+/// Combine a route prefix with a route template.
+///
+/// Examples:
+///   ("api/auth", "login")       → "api/auth/login"
+///   ("api/auth", "/")           → "api/auth"
+///   ("", "login")               → "login"
+///   ("api/catalog", "{id:int}") → "api/catalog/{id:int}"
+fn combine_route_prefix(prefix: &str, action: &str) -> String {
+    let prefix = prefix.trim_matches('/');
+    let action = action.trim_matches('/');
+
+    if prefix.is_empty() {
+        return if action.is_empty() { "/".to_string() } else { action.to_string() };
+    }
+    if action.is_empty() {
+        return prefix.to_string();
+    }
+    format!("{prefix}/{action}")
+}
+
 /// Minimal-API route registration inside method bodies:
 ///   `app.MapGet("/api/items", ...)` etc.
+///
+/// Also resolves `MapGroup` prefixes:
+///   `var api = app.MapGroup("api/orders"); api.MapGet("/", handler);`
+///   → route template becomes `"api/orders"` instead of `"/"`.
 fn extract_minimal_api_routes(
     body: &Node,
     src: &[u8],
     handler_symbol_index: usize,
     routes: &mut Vec<ExtractedRoute>,
+) {
+    let group_prefixes = build_mapgroup_prefixes(body, src);
+    extract_minimal_api_routes_inner(body, src, handler_symbol_index, routes, &group_prefixes);
+}
+
+/// Build a map of variable names to their accumulated MapGroup prefix.
+fn build_mapgroup_prefixes<'a>(body: &Node<'a>, src: &[u8]) -> HashMap<String, String> {
+    let mut prefixes: HashMap<String, String> = HashMap::new();
+    collect_mapgroup_assignments(body, src, &mut prefixes);
+    prefixes
+}
+
+/// Recursively walk a block collecting `var X = expr.MapGroup("prefix")` assignments.
+fn collect_mapgroup_assignments(node: &Node, src: &[u8], prefixes: &mut HashMap<String, String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "local_declaration_statement"
+            || child.kind() == "variable_declaration"
+        {
+            collect_mapgroup_assignments(&child, src, prefixes);
+            continue;
+        }
+
+        if child.kind() == "variable_declarator" {
+            let var_name = child
+                .child_by_field_name("name")
+                .map(|n| node_text(n, src));
+
+            // The initializer is a direct child of variable_declarator after `=`.
+            let mut found_eq = false;
+            let mut init_expr: Option<Node> = None;
+            let mut vc = child.walk();
+            for vchild in child.children(&mut vc) {
+                if vchild.kind() == "=" {
+                    found_eq = true;
+                } else if found_eq && vchild.kind() == "invocation_expression" {
+                    init_expr = Some(vchild);
+                    break;
+                }
+            }
+
+            if let (Some(var_name), Some(init)) = (var_name, init_expr) {
+                if let Some(prefix) = resolve_mapgroup_chain(&init, src, prefixes) {
+                    prefixes.insert(var_name, prefix);
+                }
+            }
+            continue;
+        }
+
+        collect_mapgroup_assignments(&child, src, prefixes);
+    }
+}
+
+/// Resolve the group prefix from a (possibly chained) expression.
+fn resolve_mapgroup_chain(
+    node: &Node,
+    src: &[u8],
+    prefixes: &HashMap<String, String>,
+) -> Option<String> {
+    if node.kind() != "invocation_expression" {
+        return None;
+    }
+
+    let func_node = node.child_by_field_name("function")?;
+
+    if func_node.kind() == "member_access_expression" {
+        let method_name = node_text(func_node.child_by_field_name("name")?, src);
+        let object = func_node.child_by_field_name("expression")?;
+
+        if method_name == "MapGroup" {
+            let arg_list = node.child_by_field_name("arguments")?;
+            let group_path = first_string_arg(&arg_list, src)?;
+            let receiver_prefix = resolve_receiver_prefix(&object, src, prefixes);
+
+            return Some(combine_route_prefix(
+                &receiver_prefix.unwrap_or_default(),
+                &group_path,
+            ));
+        }
+
+        // Fluent chain: `.HasApiVersion(...)`, etc. — recurse into the object.
+        return resolve_mapgroup_chain(&object, src, prefixes);
+    }
+
+    None
+}
+
+/// Get the accumulated prefix for a receiver expression.
+fn resolve_receiver_prefix(
+    object: &Node,
+    src: &[u8],
+    prefixes: &HashMap<String, String>,
+) -> Option<String> {
+    match object.kind() {
+        "identifier" => {
+            let name = node_text(*object, src);
+            prefixes.get(&name).cloned()
+        }
+        "invocation_expression" => resolve_mapgroup_chain(object, src, prefixes),
+        _ => None,
+    }
+}
+
+/// Get the variable name from the receiver of a member_access_expression.
+fn get_receiver_name(func_node: &Node, src: &[u8]) -> Option<String> {
+    let object = func_node.child_by_field_name("expression")?;
+    if object.kind() == "identifier" {
+        Some(node_text(object, src))
+    } else {
+        None
+    }
+}
+
+/// Inner recursive route extractor with group prefix support.
+fn extract_minimal_api_routes_inner(
+    body: &Node,
+    src: &[u8],
+    handler_symbol_index: usize,
+    routes: &mut Vec<ExtractedRoute>,
+    group_prefixes: &HashMap<String, String>,
 ) {
     let mut cursor = body.walk();
     for child in body.children(&mut cursor) {
@@ -1122,15 +1267,22 @@ fn extract_minimal_api_routes(
                     if let Some(method_name_node) = func_node.child_by_field_name("name") {
                         let method_name = node_text(method_name_node, src);
                         if let Some(http_method) = http_method_from_attribute(&method_name) {
-                            // Extract the first string argument as the route.
-                            // In tree-sitter-c-sharp, the argument list field on
-                            // invocation_expression is "arguments" (not "argument_list").
                             if let Some(arg_list) = child.child_by_field_name("arguments") {
                                 if let Some(template) = first_string_arg(&arg_list, src) {
+                                    let prefix = get_receiver_name(&func_node, src)
+                                        .and_then(|name| group_prefixes.get(&name).cloned())
+                                        .unwrap_or_default();
+
+                                    let full_template = if prefix.is_empty() {
+                                        template
+                                    } else {
+                                        combine_route_prefix(&prefix, &template)
+                                    };
+
                                     routes.push(ExtractedRoute {
                                         handler_symbol_index,
                                         http_method: http_method.to_string(),
-                                        template,
+                                        template: full_template,
                                     });
                                 }
                             }
@@ -1139,8 +1291,7 @@ fn extract_minimal_api_routes(
                 }
             }
         }
-        // Recurse into block bodies.
-        extract_minimal_api_routes(&child, src, handler_symbol_index, routes);
+        extract_minimal_api_routes_inner(&child, src, handler_symbol_index, routes, group_prefixes);
     }
 }
 
@@ -1551,269 +1702,5 @@ fn extract_type_refs_from_params(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::types::{EdgeKind, SymbolKind, Visibility};
-
-    fn sym(source: &str) -> Vec<ExtractedSymbol> { extract(source).symbols }
-    fn refs(source: &str) -> Vec<ExtractedRef>    { extract(source).refs }
-
-    #[test]
-    fn extracts_class_with_namespace() {
-        let src = "namespace App { public class UserService {} }";
-        let symbols = sym(src);
-        let svc = symbols.iter().find(|s| s.name == "UserService").unwrap();
-        assert_eq!(svc.kind, SymbolKind::Class);
-        assert_eq!(svc.visibility, Some(Visibility::Public));
-        assert_eq!(svc.qualified_name, "App.UserService");
-    }
-
-    #[test]
-    fn extracts_interface() {
-        let src = "public interface IRepo { void Save(); }";
-        let symbols = sym(src);
-        let iface = symbols.iter().find(|s| s.name == "IRepo").unwrap();
-        assert_eq!(iface.kind, SymbolKind::Interface);
-    }
-
-    #[test]
-    fn extracts_enum_and_members() {
-        let src = "public enum Color { Red, Green, Blue }";
-        let symbols = sym(src);
-        assert!(symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum));
-        assert!(symbols.iter().any(|s| s.name == "Red" && s.kind == SymbolKind::EnumMember));
-        assert!(symbols.iter().any(|s| s.name == "Blue" && s.kind == SymbolKind::EnumMember));
-    }
-
-    #[test]
-    fn extracts_method_signature() {
-        let src = r#"
-namespace Catalog {
-    class CatalogService {
-        public async Task<Item> GetItem(int id) { return null; }
-    }
-}"#;
-        let symbols = sym(src);
-        let m = symbols.iter().find(|s| s.name == "GetItem").unwrap();
-        assert_eq!(m.kind, SymbolKind::Method);
-        assert!(m.signature.as_ref().unwrap().contains("GetItem"));
-        assert_eq!(m.qualified_name, "Catalog.CatalogService.GetItem");
-    }
-
-    #[test]
-    fn extracts_constructor() {
-        let src = "class Svc { public Svc(string name) {} }";
-        let symbols = sym(src);
-        let c = symbols.iter().find(|s| s.kind == SymbolKind::Constructor).unwrap();
-        assert_eq!(c.name, "Svc");
-    }
-
-    #[test]
-    fn extracts_property() {
-        let src = "class Foo { public string Name { get; set; } }";
-        let symbols = sym(src);
-        let p = symbols.iter().find(|s| s.name == "Name").unwrap();
-        assert_eq!(p.kind, SymbolKind::Property);
-    }
-
-    #[test]
-    fn extracts_inheritance_edges() {
-        let src = "class Foo : Bar, IBaz {}";
-        let r = refs(src);
-        assert!(r.iter().any(|r| r.target_name == "Bar" && r.kind == EdgeKind::Inherits));
-        assert!(r.iter().any(|r| r.target_name == "IBaz" && r.kind == EdgeKind::Implements));
-    }
-
-    #[test]
-    fn extracts_call_edges() {
-        let src = r#"class S { void Run() { Foo(); bar.Baz(); } }"#;
-        let r = refs(src);
-        let calls: Vec<_> = r.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
-        let names: Vec<&str> = calls.iter().map(|r| r.target_name.as_str()).collect();
-        assert!(names.contains(&"Foo"), "Missing Foo: {names:?}");
-        assert!(names.contains(&"Baz"), "Missing Baz: {names:?}");
-    }
-
-    #[test]
-    fn extracts_instantiation_edges() {
-        let src = "class S { void Run() { var x = new Foo(); } }";
-        let r = refs(src);
-        assert!(r.iter().any(|r| r.target_name == "Foo" && r.kind == EdgeKind::Instantiates));
-    }
-
-    #[test]
-    fn extracts_http_get_attribute() {
-        let src = r#"
-class CatalogController {
-    [HttpGet("/api/catalog/{id}")]
-    public IResult GetById(int id) { return Results.Ok(); }
-}"#;
-        let result = extract(src);
-        assert!(!result.routes.is_empty(), "No routes extracted");
-        let route = &result.routes[0];
-        assert_eq!(route.http_method, "GET");
-        assert!(route.template.contains("catalog"), "Template: {}", route.template);
-    }
-
-    #[test]
-    fn extracts_test_method_kind() {
-        let src = r#"
-class Tests {
-    [Fact]
-    public void ShouldWork() {}
-}"#;
-        let symbols = sym(src);
-        let t = symbols.iter().find(|s| s.name == "ShouldWork").unwrap();
-        assert_eq!(t.kind, SymbolKind::Test);
-    }
-
-    #[test]
-    fn extracts_dbset_properties() {
-        let src = r#"
-class CatalogDbContext : DbContext {
-    public DbSet<CatalogItem> CatalogItems { get; set; }
-    public DbSet<CatalogBrand> CatalogBrands { get; set; }
-}"#;
-        let result = extract(src);
-        assert!(!result.db_sets.is_empty(), "No DbSets extracted");
-        assert!(result.db_sets.iter().any(|d| d.entity_type == "CatalogItem"));
-        assert!(result.db_sets.iter().any(|d| d.entity_type == "CatalogBrand"));
-    }
-
-    #[test]
-    fn does_not_panic_on_malformed_source() {
-        let src = "public class { broken !!! @@@ ###";
-        let _ = extract(src); // must not panic
-    }
-
-    #[test]
-    fn extracts_type_refs_from_method_signature() {
-        let src = r#"
-using FamilyBudget.Api.Entities;
-
-namespace FamilyBudget.Api.Controllers;
-
-class CategoriesController {
-    public async Task<ActionResult<Category>> GetCategories() { return null; }
-    public async Task<ActionResult<Category>> CreateCategory(Category category) { return null; }
-}
-"#;
-        let result = extract(src);
-        let type_refs: Vec<_> = result
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Category")
-            .collect();
-        assert!(
-            type_refs.len() >= 2,
-            "Expected at least 2 Category type refs (return type + parameter), got {}. All refs: {:?}",
-            type_refs.len(),
-            result.refs.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn extracts_using_as_namespace_import() {
-        let src = "using FamilyBudget.Api.Entities;";
-        let result = extract(src);
-        let imports: Vec<_> = result
-            .refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::Imports)
-            .collect();
-        assert!(
-            !imports.is_empty(),
-            "Expected using directive to produce an Imports ref. Got: {:?}",
-            result.refs.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
-        );
-        assert_eq!(
-            imports[0].module.as_deref(),
-            Some("FamilyBudget.Api.Entities")
-        );
-    }
-
-    #[test]
-    fn extracts_property_type_ref() {
-        let src = r#"
-class Transaction {
-    public Category? Category { get; set; }
-    public int CategoryId { get; set; }
-}
-"#;
-        let result = extract(src);
-        let cat_refs: Vec<_> = result
-            .refs
-            .iter()
-            .filter(|r| r.target_name == "Category" && r.kind == EdgeKind::TypeRef)
-            .collect();
-        assert!(
-            !cat_refs.is_empty(),
-            "Expected Category type ref from property type. Got refs: {:?}",
-            result.refs.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
-        );
-    }
-
-    #[test]
-    fn file_scoped_namespace_is_handled() {
-        let src = "namespace App.Catalog;\npublic class CatalogApi {}";
-        let symbols = sym(src);
-        let cls = symbols.iter().find(|s| s.name == "CatalogApi").unwrap();
-        assert!(
-            cls.qualified_name.contains("CatalogApi"),
-            "qualified_name: {}",
-            cls.qualified_name
-        );
-    }
-
-    // WP-6: Record primary constructor parameters extracted as properties.
-    #[test]
-    fn record_primary_constructor_params_extracted_as_properties() {
-        let src = r#"
-namespace Geometry {
-    public record Point(int X, int Y);
-}
-"#;
-        let symbols = sym(src);
-        // The record itself should be extracted as a Class.
-        let rec = symbols.iter().find(|s| s.name == "Point").unwrap();
-        assert_eq!(rec.kind, SymbolKind::Class, "record should be Class kind");
-
-        // X and Y should be extracted as Property symbols with the record as parent.
-        let x = symbols
-            .iter()
-            .find(|s| s.name == "X" && s.kind == SymbolKind::Property);
-        assert!(x.is_some(), "Expected property X from record primary ctor");
-        let x = x.unwrap();
-        assert!(
-            x.qualified_name.contains("Point.X"),
-            "X.qualified_name should contain 'Point.X', got: {}",
-            x.qualified_name
-        );
-        assert_eq!(
-            x.scope_path.as_deref(),
-            Some("Geometry.Point"),
-            "X.scope_path should be 'Geometry.Point', got: {:?}",
-            x.scope_path
-        );
-        assert_eq!(x.visibility, Some(Visibility::Public));
-
-        let y = symbols.iter().find(|s| s.name == "Y" && s.kind == SymbolKind::Property);
-        assert!(y.is_some(), "Expected property Y from record primary ctor");
-    }
-
-    // WP-6: Record with body — existing body members not duplicated.
-    #[test]
-    fn record_with_body_extracts_both_params_and_body_members() {
-        let src = r#"
-record Person(string Name) {
-    public int Age { get; init; }
-}
-"#;
-        let symbols = sym(src);
-        let props: Vec<_> = symbols.iter().filter(|s| s.kind == SymbolKind::Property).collect();
-        // Should have Name (from primary ctor) and Age (from body).
-        let names: Vec<&str> = props.iter().map(|s| s.name.as_str()).collect();
-        assert!(names.contains(&"Name"), "Expected Name property: {names:?}");
-        assert!(names.contains(&"Age"), "Expected Age property: {names:?}");
-    }
-}
+#[path = "csharp_tests.rs"]
+mod tests;
