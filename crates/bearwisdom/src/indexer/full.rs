@@ -220,6 +220,12 @@ pub fn full_index(
         Err(e) => warn!("Frontend HTTP detection failed: {e}"),
     }
 
+    // --- Step 7b2: .NET HTTP client connector ---
+    match crate::connectors::dotnet_http_client::connect(&db.conn, project_root) {
+        Ok(n) => if n > 0 { info!(".NET HTTP client connector: {n} routes matched") },
+        Err(e) => warn!(".NET HTTP client connector failed: {e}"),
+    }
+
     // --- Step 7c: gRPC connector ---
     crate::connectors::grpc::connect(db)
         .context("gRPC connector failed")?;
