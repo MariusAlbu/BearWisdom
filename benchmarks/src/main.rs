@@ -367,7 +367,92 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
         println!("    {qname} ({kind}, {vis}): {refs} refs");
     }
 
-    // 8. Verdict
+    // 8. Unresolved refs breakdown
+    println!("\n  Unresolved refs by kind:");
+    {
+        let mut stmt = db.conn.prepare(
+            "SELECT kind, COUNT(*) FROM unresolved_refs GROUP BY kind ORDER BY COUNT(*) DESC"
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let kind: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            println!("    {kind}: {count}");
+        }
+    }
+
+    // Split: inferred external vs truly unknown
+    let external_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM unresolved_refs WHERE module IS NOT NULL AND module != ''",
+        [],
+        |row| row.get(0),
+    )?;
+    let unknown_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM unresolved_refs WHERE module IS NULL OR module = ''",
+        [],
+        |row| row.get(0),
+    )?;
+    println!("    → external (inferred namespace): {external_count}");
+    println!("    → truly unknown: {unknown_count}");
+
+    println!("\n  Top 10 inferred external namespaces:");
+    {
+        let mut stmt = db.conn.prepare(
+            "SELECT module, COUNT(*) as cnt FROM unresolved_refs
+             WHERE module IS NOT NULL AND module != ''
+             GROUP BY module ORDER BY cnt DESC LIMIT 10"
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let module: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            println!("    {module}: {count}");
+        }
+    }
+
+    println!("\n  Top 20 unresolved target names:");
+    {
+        let mut stmt = db.conn.prepare(
+            "SELECT target_name, kind, COUNT(*) as cnt
+             FROM unresolved_refs
+             GROUP BY target_name, kind
+             ORDER BY cnt DESC
+             LIMIT 20"
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let name: String = row.get(0)?;
+            let kind: String = row.get(1)?;
+            let count: i64 = row.get(2)?;
+            println!("    {name} ({kind}): {count}");
+        }
+    }
+
+    println!("\n  Edge confidence distribution:");
+    {
+        let mut stmt = db.conn.prepare(
+            "SELECT
+                CASE
+                    WHEN confidence = 1.0 THEN '1.00 (engine)'
+                    WHEN confidence >= 0.90 THEN '0.90-0.99 (heuristic high)'
+                    WHEN confidence >= 0.80 THEN '0.80-0.89 (heuristic mid)'
+                    WHEN confidence >= 0.50 THEN '0.50-0.79 (heuristic low)'
+                    ELSE '<0.50'
+                END AS bucket,
+                COUNT(*)
+             FROM edges
+             GROUP BY bucket
+             ORDER BY bucket DESC"
+        )?;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let bucket: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            println!("    {bucket}: {count}");
+        }
+    }
+
+    // 9. Verdict
     let mut issues: Vec<String> = Vec::new();
     if current_sampler_count == 0 {
         issues.push(format!(

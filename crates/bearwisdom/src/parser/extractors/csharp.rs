@@ -113,6 +113,7 @@ pub fn extract(source: &str) -> CSharpExtraction {
     let mut routes: Vec<ExtractedRoute> = Vec::new();
     let mut db_sets: Vec<ExtractedDbSet> = Vec::new();
 
+    // First pass: extract all symbols and refs (with unqualified call targets).
     extract_node(
         root,
         src_bytes,
@@ -123,6 +124,73 @@ pub fn extract(source: &str) -> CSharpExtraction {
         &mut db_sets,
         None, // no parent symbol yet
     );
+
+    // Collect using directives for qualification context.
+    let usings: Vec<String> = refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .map(|r| r.module.clone().unwrap_or_else(|| r.target_name.clone()))
+        .filter(|m| m.contains('.'))
+        .collect();
+
+    // Second pass: qualify unresolved call/instantiates/type_ref targets using scope + usings.
+    for r in &mut refs {
+        if r.target_name.contains('.') {
+            continue; // Already qualified
+        }
+        if r.kind != EdgeKind::Calls && r.kind != EdgeKind::Instantiates && r.kind != EdgeKind::TypeRef {
+            continue;
+        }
+        if is_csharp_keyword(&r.target_name) {
+            continue;
+        }
+
+        let ref_kind = r.kind;
+
+        // Try scope chain qualification
+        let byte_offset = {
+            let target_line = r.line as usize;
+            src_bytes.iter().enumerate()
+                .filter(|(_, &b)| b == b'\n')
+                .nth(target_line.saturating_sub(1))
+                .map(|(i, _)| i)
+                .unwrap_or(0)
+        };
+
+        if let Some(scope) = scope_tree::find_scope_at(&scope_tree, byte_offset) {
+            let mut chain = scope.qualified_name.as_str();
+            let mut found = false;
+            loop {
+                let candidate = format!("{chain}.{}", r.target_name);
+                if symbols.iter().any(|s| s.qualified_name == candidate && ref_kind_matches_symbol(ref_kind, s.kind)) {
+                    r.target_name = candidate;
+                    found = true;
+                    break;
+                }
+                match chain.rfind('.') {
+                    Some(pos) => chain = &chain[..pos],
+                    None => {
+                        let candidate = format!("{chain}.{}", r.target_name);
+                        if symbols.iter().any(|s| s.qualified_name == candidate && ref_kind_matches_symbol(ref_kind, s.kind)) {
+                            r.target_name = candidate;
+                            found = true;
+                        }
+                        break;
+                    }
+                }
+            }
+            if found { continue; }
+        }
+
+        // Try using directives
+        for ns in &usings {
+            let candidate = format!("{ns}.{}", r.target_name);
+            if symbols.iter().any(|s| s.qualified_name == candidate && ref_kind_matches_symbol(ref_kind, s.kind)) {
+                r.target_name = candidate;
+                break;
+            }
+        }
+    }
 
     CSharpExtraction { symbols, refs, routes, db_sets, has_errors }
 }
@@ -960,7 +1028,7 @@ fn extract_calls_from_body(
             "invocation_expression" => {
                 if let Some(callee) = child.child_by_field_name("function") {
                     let name = callee_name(callee, src);
-                    if !name.is_empty() {
+                    if !name.is_empty() && !is_csharp_keyword(&name) {
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name: name,
@@ -970,7 +1038,6 @@ fn extract_calls_from_body(
                         });
                     }
                 }
-                // Recurse into arguments (there may be nested calls).
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             "object_creation_expression" => {
@@ -993,6 +1060,29 @@ fn extract_calls_from_body(
             }
         }
     }
+}
+
+/// Check if a ref kind is compatible with a symbol kind for qualification.
+/// TypeRef should match classes/interfaces/enums, Calls should match methods, etc.
+fn ref_kind_matches_symbol(ref_kind: EdgeKind, sym_kind: SymbolKind) -> bool {
+    match ref_kind {
+        EdgeKind::Calls => matches!(sym_kind, SymbolKind::Method | SymbolKind::Function | SymbolKind::Constructor),
+        EdgeKind::TypeRef => matches!(sym_kind, SymbolKind::Class | SymbolKind::Struct | SymbolKind::Interface | SymbolKind::Enum | SymbolKind::Namespace),
+        EdgeKind::Instantiates => matches!(sym_kind, SymbolKind::Class | SymbolKind::Struct),
+        EdgeKind::Inherits => matches!(sym_kind, SymbolKind::Class | SymbolKind::Struct),
+        EdgeKind::Implements => matches!(sym_kind, SymbolKind::Interface),
+        _ => true,
+    }
+}
+
+/// C# keywords/operators that look like method calls but aren't.
+fn is_csharp_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "nameof" | "typeof" | "sizeof" | "default" | "checked" | "unchecked"
+        | "stackalloc" | "await" | "throw" | "yield" | "var" | "is" | "as"
+        | "new" | "this" | "base" | "null" | "true" | "false" | "value"
+    )
 }
 
 fn callee_name(node: Node, src: &[u8]) -> String {

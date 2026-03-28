@@ -165,7 +165,7 @@ pub fn resolve_and_write(
 /// Attempt to resolve a reference using the 4-priority strategy.
 ///
 /// Returns `Some((target_id, confidence))` on success, `None` if unresolvable.
-fn resolve_ref(
+pub(super) fn resolve_ref(
     target_name: &str,
     kind: EdgeKind,
     source_file: &str,
@@ -429,7 +429,7 @@ fn kind_matches_symbol_kind(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 ///
 /// The `kind` string comes from the parsed symbol data so that P4 can
 /// prefer kind-compatible candidates over incidental name collisions.
-fn build_name_index(
+pub(super) fn build_name_index(
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
 ) -> HashMap<String, Vec<(String, String, String, i64)>> {
@@ -458,7 +458,7 @@ fn build_name_index(
 }
 
 /// Build a map from qualified_name → symbol_id for exact dotted-path matches.
-fn build_qname_index(
+pub(super) fn build_qname_index(
     symbol_id_map: &HashMap<(String, String), i64>,
 ) -> HashMap<String, i64> {
     symbol_id_map
@@ -471,7 +471,7 @@ fn build_qname_index(
 ///
 /// For each file, finds the first `Namespace` symbol and records its
 /// qualified name as the file's namespace.
-fn build_file_namespace_map(parsed: &[ParsedFile]) -> HashMap<String, String> {
+pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> HashMap<String, String> {
     let mut map = HashMap::new();
     for pf in parsed {
         if let Some(ns_sym) = pf.symbols.iter().find(|s| s.kind == SymbolKind::Namespace) {
@@ -489,7 +489,7 @@ fn build_file_namespace_map(parsed: &[ParsedFile]) -> HashMap<String, String> {
 ///         → ("FamilyBudget.Api.Entities", Some("FamilyBudget.Api.Entities"))  (EdgeKind::Imports)
 /// For TS: `import { Foo } from "./foo"`
 ///         → ("Foo", Some("./foo"))  (EdgeKind::TypeRef with module)
-fn build_import_map(
+pub(super) fn build_import_map(
     parsed: &[ParsedFile],
 ) -> HashMap<String, Vec<(String, Option<String>)>> {
     let mut map: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
@@ -521,5 +521,5 @@ fn build_import_map(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "resolve_tests.rs"]
+#[path = "heuristic_tests.rs"]
 mod tests;
