@@ -32,7 +32,7 @@ fn search_finds_symbol_by_name() {
     let db = Database::open_in_memory().unwrap();
     insert_symbol(&db, "a.cs", "CatalogService", "App.CatalogService", "class", None, None);
 
-    let results = search_symbols(&db, "CatalogService", 10).unwrap();
+    let results = search_symbols(&db, "CatalogService", 10, &crate::query::QueryOptions::full()).unwrap();
     assert!(!results.is_empty(), "Should find CatalogService");
     assert_eq!(results[0].name, "CatalogService");
 }
@@ -45,7 +45,7 @@ fn search_prefix_match() {
     insert_symbol(&db, "c.cs", "OrderService",   "App.OrderService",   "class", None, None);
 
     // Prefix query: "Catalog*" should match CatalogService and CatalogItem.
-    let results = search_symbols(&db, "Catalog*", 10).unwrap();
+    let results = search_symbols(&db, "Catalog*", 10, &crate::query::QueryOptions::full()).unwrap();
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
     assert!(names.contains(&"CatalogService"), "Should match CatalogService");
     assert!(names.contains(&"CatalogItem"),    "Should match CatalogItem");
@@ -60,7 +60,7 @@ fn search_matches_in_doc_comment() {
         None, Some("Returns all items from the authentication store"),
     );
 
-    let results = search_symbols(&db, "authentication", 10).unwrap();
+    let results = search_symbols(&db, "authentication", 10, &crate::query::QueryOptions::full()).unwrap();
     assert!(!results.is_empty(), "Should find symbol via doc comment");
     assert_eq!(results[0].name, "GetItems");
 }
@@ -70,7 +70,7 @@ fn search_returns_empty_for_nonexistent_term() {
     let db = Database::open_in_memory().unwrap();
     insert_symbol(&db, "a.cs", "FooService", "App.FooService", "class", None, None);
 
-    let results = search_symbols(&db, "ZzzNotFoundXxx", 10).unwrap();
+    let results = search_symbols(&db, "ZzzNotFoundXxx", 10, &crate::query::QueryOptions::full()).unwrap();
     assert!(results.is_empty());
 }
 
@@ -85,14 +85,14 @@ fn search_respects_limit() {
         );
     }
 
-    let results = search_symbols(&db, "Widget*", 3).unwrap();
+    let results = search_symbols(&db, "Widget*", 3, &crate::query::QueryOptions::full()).unwrap();
     assert!(results.len() <= 3, "Should respect limit of 3");
 }
 
 #[test]
 fn search_empty_query_returns_empty() {
     let db = Database::open_in_memory().unwrap();
-    let results = search_symbols(&db, "", 10).unwrap();
+    let results = search_symbols(&db, "", 10, &crate::query::QueryOptions::full()).unwrap();
     assert!(results.is_empty());
 }
 
@@ -104,7 +104,7 @@ fn search_matches_in_signature() {
         Some("Task<CatalogItem> Fetch(int id)"), None,
     );
 
-    let results = search_symbols(&db, "CatalogItem", 10).unwrap();
+    let results = search_symbols(&db, "CatalogItem", 10, &crate::query::QueryOptions::full()).unwrap();
     // The FTS index includes the signature, so "CatalogItem" in the sig should match.
     assert!(!results.is_empty(), "Should match via signature");
 }

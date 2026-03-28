@@ -11,7 +11,8 @@ use anyhow::{Context, Result};
 use rusqlite::{params, Connection};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tracing::trace;
+use std::collections::HashMap;
+use tracing::{debug, trace};
 
 // ---------------------------------------------------------------------------
 // Public types
@@ -116,41 +117,89 @@ pub fn chunk_file(
 
 /// Chunk and persist all chunks for a file into `code_chunks`.
 ///
-/// Deletes existing chunks for the file first, then inserts all new chunks.
-/// Returns the number of chunks inserted.
+/// Uses hash-based dedup: chunks whose `content_hash` matches an existing
+/// chunk are preserved (keeping their vector in `vec_chunks`).  Only chunks
+/// with new content are inserted; only chunks with stale content are deleted.
+/// This avoids re-embedding unchanged code on incremental re-index.
+///
+/// Returns the number of chunks in the final set (preserved + inserted).
 pub fn chunk_and_store(conn: &Connection, file_id: i64, content: &str) -> Result<u32> {
-    let chunks = chunk_file(conn, file_id, content, DEFAULT_MAX_TOKENS)?;
+    let new_chunks = chunk_file(conn, file_id, content, DEFAULT_MAX_TOKENS)?;
 
-    // Delete existing chunks — ON DELETE CASCADE in the schema handles vector
-    // entries if/when we add that constraint; here we delete explicitly first.
-    conn.execute("DELETE FROM code_chunks WHERE file_id = ?1", params![file_id])
-        .with_context(|| format!("Failed to delete existing chunks for file_id={file_id}"))?;
+    // Build a multiset of new content hashes (same hash can appear multiple times).
+    let mut new_hash_budget: HashMap<&str, u32> = HashMap::new();
+    for chunk in &new_chunks {
+        *new_hash_budget.entry(chunk.content_hash.as_str()).or_default() += 1;
+    }
 
-    let count = chunks.len() as u32;
+    // Query existing chunks for this file.
+    let existing: Vec<(i64, String)> = {
+        let mut stmt = conn.prepare(
+            "SELECT id, content_hash FROM code_chunks WHERE file_id = ?1 ORDER BY id",
+        )?;
+        let rows: Vec<(i64, String)> = stmt
+            .query_map([file_id], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .filter_map(|r| r.ok())
+            .collect();
+        rows
+    };
 
-    let mut stmt = conn.prepare_cached(
+    // Decide which existing chunks to keep: consume from the budget.
+    let mut to_delete: Vec<i64> = Vec::new();
+    let mut preserved = 0u32;
+    for (id, hash) in &existing {
+        if let Some(budget) = new_hash_budget.get_mut(hash.as_str()) {
+            if *budget > 0 {
+                *budget -= 1;
+                preserved += 1;
+                continue; // keep this chunk — its vector survives
+            }
+        }
+        to_delete.push(*id);
+    }
+
+    // Delete stale chunks (and their vectors).
+    for id in &to_delete {
+        let _ = conn.execute("DELETE FROM vec_chunks WHERE chunk_id = ?1", [*id]);
+        conn.execute("DELETE FROM code_chunks WHERE id = ?1", [*id])?;
+    }
+
+    // Insert chunks whose hash still has remaining budget (not covered by preserved chunks).
+    let mut ins_stmt = conn.prepare_cached(
         "INSERT INTO code_chunks (file_id, symbol_id, content_hash, content, start_line, end_line)
          VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
     )?;
 
-    for chunk in &chunks {
-        stmt.execute(params![
-            chunk.file_id,
-            chunk.symbol_id,
-            chunk.content_hash,
-            chunk.content,
-            chunk.start_line,
-            chunk.end_line,
-        ])
-        .with_context(|| {
-            format!(
-                "Failed to insert chunk for file_id={file_id} lines={}-{}",
-                chunk.start_line, chunk.end_line
-            )
-        })?;
+    let mut inserted = 0u32;
+    for chunk in &new_chunks {
+        // If budget for this hash is > 0, it means we still need to insert one.
+        if let Some(budget) = new_hash_budget.get_mut(chunk.content_hash.as_str()) {
+            if *budget > 0 {
+                ins_stmt.execute(params![
+                    chunk.file_id,
+                    chunk.symbol_id,
+                    chunk.content_hash,
+                    chunk.content,
+                    chunk.start_line,
+                    chunk.end_line,
+                ])?;
+                *budget -= 1;
+                inserted += 1;
+            }
+        }
     }
 
-    Ok(count)
+    if preserved > 0 {
+        debug!(
+            file_id,
+            preserved,
+            inserted,
+            deleted = to_delete.len(),
+            "chunk_and_store: hash-based dedup preserved {preserved} chunks"
+        );
+    }
+
+    Ok(preserved + inserted)
 }
 
 // ---------------------------------------------------------------------------

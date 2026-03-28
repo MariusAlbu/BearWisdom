@@ -3,7 +3,10 @@ import { api } from '../api'
 import { Header } from './Header'
 import { KnowledgeTree } from './KnowledgeTree'
 import { FileViewer } from './FileViewer'
+import { FlowExplorer } from './FlowExplorer'
 import styles from './Explorer.module.css'
+
+type MainView = 'graph' | 'flow'
 
 interface ExplorerProps {
   workspacePath: string
@@ -18,6 +21,7 @@ interface FileViewState {
 }
 
 export function Explorer({ workspacePath, stats }: ExplorerProps) {
+  const [mainView, setMainView] = useState<MainView>('graph')
   const [pendingSearch, setPendingSearch] = useState<string | null>(null)
   const [fileView, setFileView] = useState<FileViewState | null>(null)
 
@@ -55,6 +59,20 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
         }}
         onFileNavigate={handleFileNavigate}
       />
+      <div className={styles.viewTabs}>
+        <button
+          className={`${styles.viewTab}${mainView === 'graph' ? ' ' + styles.viewTabActive : ''}`}
+          onClick={() => { setMainView('graph'); setFileView(null) }}
+        >
+          Graph
+        </button>
+        <button
+          className={`${styles.viewTab}${mainView === 'flow' ? ' ' + styles.viewTabActive : ''}`}
+          onClick={() => { setMainView('flow'); setFileView(null) }}
+        >
+          Flow
+        </button>
+      </div>
       <div className={styles.main}>
         {fileView ? (
           <FileViewer
@@ -63,6 +81,11 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
             content={fileView.content}
             loading={fileView.loading}
             onClose={() => setFileView(null)}
+          />
+        ) : mainView === 'flow' ? (
+          <FlowExplorer
+            workspacePath={workspacePath}
+            onFileNavigate={handleFileNavigate}
           />
         ) : (
           <KnowledgeTree

@@ -86,7 +86,7 @@ fn find_references_for_interface() {
 #[test]
 fn search_symbols_finds_class() {
     let db = indexed_csharp_db();
-    let results = search_symbols(&db, "Product", 10).unwrap();
+    let results = search_symbols(&db, "Product", 10, &bearwisdom::query::QueryOptions::full()).unwrap();
 
     assert!(!results.is_empty(), "search for 'Product' should return results");
     let names: Vec<&str> = results.iter().map(|r| r.name.as_str()).collect();
@@ -96,7 +96,7 @@ fn search_symbols_finds_class() {
 #[test]
 fn search_symbols_empty_query() {
     let db = indexed_csharp_db();
-    let results = search_symbols(&db, "", 10).unwrap();
+    let results = search_symbols(&db, "", 10, &bearwisdom::query::QueryOptions::full()).unwrap();
     // Empty query behavior is implementation-defined; just ensure no panic.
     let _ = results;
 }
@@ -106,7 +106,7 @@ fn search_symbols_empty_query() {
 #[test]
 fn symbol_info_returns_detail() {
     let db = indexed_csharp_db();
-    let details = symbol_info(&db, "ProductService").unwrap();
+    let details = symbol_info(&db, "ProductService", &bearwisdom::query::QueryOptions::full()).unwrap();
 
     assert!(!details.is_empty(), "should find ProductService");
     let detail = &details[0];

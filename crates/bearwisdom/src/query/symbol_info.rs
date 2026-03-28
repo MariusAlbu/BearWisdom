@@ -56,7 +56,7 @@ pub struct SymbolDetail {
 /// qualified name (returns at most one match).
 ///
 /// Returns an empty vec if nothing is found.
-pub fn symbol_info(db: &Database, query: &str) -> Result<Vec<SymbolDetail>> {
+pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Result<Vec<SymbolDetail>> {
     let conn = &db.conn;
 
     // --- Step 1: Resolve to symbol rows ---
@@ -131,8 +131,8 @@ pub fn symbol_info(db: &Database, query: &str) -> Result<Vec<SymbolDetail>> {
         ).context("Failed to count outgoing edges")?;
 
         // Children: symbols whose scope_path equals our qualified_name.
-        // This covers methods of a class, members of a namespace, etc.
-        let children: Vec<SymbolSummary> = {
+        // Skipped unless opts.include_children is set.
+        let children: Vec<SymbolSummary> = if opts.include_children {
             let mut stmt = conn.prepare(
                 "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
                  FROM symbols s
@@ -153,6 +153,8 @@ pub fn symbol_info(db: &Database, query: &str) -> Result<Vec<SymbolDetail>> {
 
             rows.collect::<rusqlite::Result<Vec<_>>>()
                 .context("Failed to collect children")?
+        } else {
+            vec![]
         };
 
         details.push(SymbolDetail {
@@ -162,8 +164,8 @@ pub fn symbol_info(db: &Database, query: &str) -> Result<Vec<SymbolDetail>> {
             file_path,
             start_line,
             end_line,
-            signature,
-            doc_comment,
+            signature: if opts.include_signature { signature } else { None },
+            doc_comment: if opts.include_doc { doc_comment } else { None },
             visibility,
             incoming_edge_count,
             outgoing_edge_count,
@@ -172,6 +174,101 @@ pub fn symbol_info(db: &Database, query: &str) -> Result<Vec<SymbolDetail>> {
     }
 
     Ok(details)
+}
+
+// ---------------------------------------------------------------------------
+// File symbols — structured outline of a single file
+// ---------------------------------------------------------------------------
+
+/// Controls how much detail `file_symbols` returns.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FileSymbolsMode {
+    /// name, kind, line only.
+    Names,
+    /// name, kind, line, end_line, signature.  Default.
+    Outline,
+    /// All fields including scope_path and visibility.
+    Full,
+}
+
+impl Default for FileSymbolsMode {
+    fn default() -> Self {
+        Self::Outline
+    }
+}
+
+impl FileSymbolsMode {
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "names" => Self::Names,
+            "full" => Self::Full,
+            _ => Self::Outline,
+        }
+    }
+}
+
+/// One symbol in a file outline.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileSymbol {
+    pub name: String,
+    pub kind: String,
+    pub line: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub end_line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub signature: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub qualified_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub visibility: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope_path: Option<String>,
+}
+
+/// Return symbols defined in `file_path`, filtered by `mode`.
+pub fn file_symbols(
+    db: &Database,
+    file_path: &str,
+    mode: FileSymbolsMode,
+) -> Result<Vec<FileSymbol>> {
+    let conn = &db.conn;
+    let mut stmt = conn.prepare(
+        "SELECT s.name, s.kind, s.line, s.end_line,
+                s.signature, s.qualified_name, s.visibility, s.scope_path
+         FROM symbols s JOIN files f ON s.file_id = f.id
+         WHERE f.path = ?1
+         ORDER BY s.line",
+    ).context("file_symbols: prepare")?;
+
+    let rows = stmt.query_map([file_path], |row| {
+        let name: String = row.get(0)?;
+        let kind: String = row.get(1)?;
+        let line: u32 = row.get(2)?;
+        let end_line: Option<u32> = row.get(3)?;
+        let signature: Option<String> = row.get(4)?;
+        let qualified_name: Option<String> = row.get(5)?;
+        let visibility: Option<String> = row.get(6)?;
+        let scope_path: Option<String> = row.get(7)?;
+
+        Ok(match mode {
+            FileSymbolsMode::Names => FileSymbol {
+                name, kind, line,
+                end_line: None, signature: None,
+                qualified_name: None, visibility: None, scope_path: None,
+            },
+            FileSymbolsMode::Outline => FileSymbol {
+                name, kind, line, end_line, signature,
+                qualified_name: None, visibility: None, scope_path: None,
+            },
+            FileSymbolsMode::Full => FileSymbol {
+                name, kind, line, end_line, signature,
+                qualified_name, visibility, scope_path,
+            },
+        })
+    }).context("file_symbols: query")?;
+
+    rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("file_symbols: collect")
 }
 
 // ---------------------------------------------------------------------------

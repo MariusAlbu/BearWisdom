@@ -88,6 +88,29 @@ impl Default for GrepOptions {
     }
 }
 
+/// Truncate `line_content` in each match to at most `max_len` bytes.
+///
+/// When a line is truncated, `…` is appended.  The `match_start` / `match_end`
+/// offsets are left unchanged (they reference the original line).  Pass `0` to
+/// skip truncation entirely.
+pub fn truncate_matches(matches: &mut [GrepMatch], max_len: u32) {
+    if max_len == 0 {
+        return;
+    }
+    let limit = max_len as usize;
+    for m in matches.iter_mut() {
+        if m.line_content.len() > limit {
+            // Truncate at a char boundary to avoid partial UTF-8.
+            let mut end = limit;
+            while end > 0 && !m.line_content.is_char_boundary(end) {
+                end -= 1;
+            }
+            m.line_content.truncate(end);
+            m.line_content.push('…');
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Main entry point
 // ---------------------------------------------------------------------------

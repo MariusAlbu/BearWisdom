@@ -95,7 +95,7 @@ impl BackgroundEnricher {
         }
 
         let (rows, total_unresolved): (Vec<UnresolvedRow>, u32) = {
-            let guard = self.bridge.db().lock().unwrap();
+            let guard = self.bridge.pool().get()?;
 
             let total: u32 = guard
                 .conn
@@ -227,7 +227,7 @@ impl BackgroundEnricher {
                     );
 
                     {
-                        let guard = self.bridge.db().lock().unwrap();
+                        let guard = self.bridge.pool().get()?;
                         let _ = guard
                             .conn
                             .execute("DELETE FROM unresolved_refs WHERE id = ?1", [row.id]);
@@ -251,7 +251,7 @@ impl BackgroundEnricher {
         }
 
         let still_unresolved: u32 = {
-            let guard = self.bridge.db().lock().unwrap();
+            let guard = self.bridge.pool().get()?;
             guard
                 .conn
                 .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r: &rusqlite::Row<'_>| {
@@ -296,7 +296,7 @@ impl BackgroundEnricher {
         }
 
         let rows: Vec<LowConfRow> = {
-            let guard = self.bridge.db().lock().unwrap();
+            let guard = self.bridge.pool().get()?;
             // Join the target symbol to get its name (= what we search for on
             // source_line) and the source file path.
             let mut stmt = guard.conn.prepare(
@@ -403,7 +403,7 @@ impl BackgroundEnricher {
                         )?;
 
                         if did_upgrade {
-                            let guard = self.bridge.db().lock().unwrap();
+                            let guard = self.bridge.pool().get()?;
                             let _ = guard.conn.execute(
                                 "INSERT OR REPLACE INTO lsp_edge_meta
                                  (edge_rowid, source, server, resolved_at)

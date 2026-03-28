@@ -142,6 +142,21 @@ fn extract_node(
     db_sets: &mut Vec<ExtractedDbSet>,
     parent_index: Option<usize>,
 ) {
+    extract_node_inner(node, src, scope_tree, symbols, refs, routes, db_sets, parent_index, None);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn extract_node_inner(
+    node: Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    routes: &mut Vec<ExtractedRoute>,
+    db_sets: &mut Vec<ExtractedDbSet>,
+    parent_index: Option<usize>,
+    class_route_prefix: Option<&str>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -158,18 +173,19 @@ fn extract_node(
             "namespace_declaration" => {
                 let idx = push_namespace(&child, src, scope_tree, symbols, parent_index);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, routes, db_sets, idx);
+                    extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
             }
 
             "class_declaration" => {
                 let idx = push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Class);
                 extract_base_types(&child, src, idx.unwrap_or(0), refs);
+                // Extract class-level [Route("...")] for ASP.NET controllers.
+                let class_route = extract_class_route_prefix(&child, src);
                 // Check if this looks like a DbContext subclass.
-                // We'll flag it and scan properties for DbSet<T> below.
                 let is_db_context = is_dbcontext_subclass(&child, src);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, routes, db_sets, idx);
+                    extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, class_route.as_deref());
                     if is_db_context {
                         extract_db_sets_from_body(&body, src, scope_tree, symbols, db_sets);
                     }
@@ -185,7 +201,7 @@ fn extract_node(
                     extract_record_primary_params(&child, src, scope_tree, symbols, record_idx);
                 }
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, routes, db_sets, idx);
+                    extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
             }
 
@@ -193,7 +209,7 @@ fn extract_node(
                 let idx = push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Struct);
                 extract_base_types(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, routes, db_sets, idx);
+                    extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
             }
 
@@ -201,7 +217,7 @@ fn extract_node(
                 let idx = push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Interface);
                 extract_base_types(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, routes, db_sets, idx);
+                    extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
             }
 
@@ -223,7 +239,8 @@ fn extract_node(
                         extract_minimal_api_routes(&body, src, sym_idx, routes);
                     }
                     // Look for ASP.NET attribute routes on the method declaration.
-                    extract_attribute_routes(&child, src, sym_idx, routes);
+                    // Prepend the class-level [Route("...")] prefix if present.
+                    extract_attribute_routes_with_prefix(&child, src, sym_idx, routes, class_route_prefix);
                 }
             }
 
@@ -1010,6 +1027,80 @@ fn callee_name(node: Node, src: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 // HTTP Route extraction
 // ---------------------------------------------------------------------------
+
+/// Extract the class-level `[Route("...")]` attribute value for ASP.NET controllers.
+///
+/// Example: `[Route("api/categories")]` → `Some("api/categories")`
+fn extract_class_route_prefix(class_node: &Node, src: &[u8]) -> Option<String> {
+    let mut cursor = class_node.walk();
+    for child in class_node.children(&mut cursor) {
+        if child.kind() == "attribute_list" {
+            let mut al_cursor = child.walk();
+            for attr in child.children(&mut al_cursor) {
+                if attr.kind() == "attribute" {
+                    if let Some(name_node) = attr.child_by_field_name("name") {
+                        let name = node_text(name_node, src);
+                        if name == "Route" {
+                            return attr_route_template(&attr, src);
+                        }
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Attribute-based route extraction with optional class-level prefix.
+fn extract_attribute_routes_with_prefix(
+    node: &Node,
+    src: &[u8],
+    handler_symbol_index: usize,
+    routes: &mut Vec<ExtractedRoute>,
+    class_prefix: Option<&str>,
+) {
+    let mut outer = node.walk();
+    for child in node.children(&mut outer) {
+        if child.kind() == "attribute_list" {
+            let mut al_cursor = child.walk();
+            for attr in child.children(&mut al_cursor) {
+                if attr.kind() == "attribute" {
+                    if let Some(name_node) = attr.child_by_field_name("name") {
+                        let attr_name = node_text(name_node, src);
+                        if let Some(method) = http_method_from_attribute(&attr_name) {
+                            let method_template = attr_route_template(&attr, src)
+                                .unwrap_or_else(|| String::from(""));
+                            // Combine class prefix with method template.
+                            let template = match class_prefix {
+                                Some(prefix) if !prefix.is_empty() => {
+                                    let p = prefix.trim_matches('/');
+                                    let m = method_template.trim_matches('/');
+                                    if m.is_empty() {
+                                        format!("/{p}")
+                                    } else {
+                                        format!("/{p}/{m}")
+                                    }
+                                }
+                                _ => {
+                                    if method_template.is_empty() {
+                                        "/".to_string()
+                                    } else {
+                                        method_template
+                                    }
+                                }
+                            };
+                            routes.push(ExtractedRoute {
+                                handler_symbol_index,
+                                http_method: method.to_string(),
+                                template,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /// Attribute-based route extraction — reads `[HttpGet("...")]` etc. on methods.
 fn extract_attribute_routes(

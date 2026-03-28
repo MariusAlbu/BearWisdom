@@ -60,7 +60,12 @@ pub struct SearchResult {
 /// `limit`  — maximum results to return (pass 0 for no limit, capped at 500).
 ///
 /// Results are returned in descending relevance order (highest score first).
-pub fn search_symbols(db: &Database, query: &str, limit: usize) -> Result<Vec<SearchResult>> {
+pub fn search_symbols(
+    db: &Database,
+    query: &str,
+    limit: usize,
+    opts: &super::QueryOptions,
+) -> Result<Vec<SearchResult>> {
     let conn = &db.conn;
 
     // Guard: FTS5 needs at least one term.
@@ -70,6 +75,8 @@ pub fn search_symbols(db: &Database, query: &str, limit: usize) -> Result<Vec<Se
 
     // Cap the limit — an unbounded FTS query on a large index is expensive.
     let effective_limit = if limit == 0 { 500 } else { limit.min(500) };
+
+    let sig_col = if opts.include_signature { "s.signature" } else { "NULL" };
 
     // --- Primary: FTS5 query ---
     // `rank` in FTS5 is a negative BM25 score; ORDER BY rank ascending puts
@@ -81,7 +88,7 @@ pub fn search_symbols(db: &Database, query: &str, limit: usize) -> Result<Vec<Se
                 s.kind,
                 f.path       AS file_path,
                 s.line       AS start_line,
-                s.signature,
+                {sig_col}    AS signature,
                 (-fts.rank)  AS score
          FROM symbols_fts fts
          JOIN symbols s ON s.id = fts.rowid
@@ -130,7 +137,7 @@ pub fn search_symbols(db: &Database, query: &str, limit: usize) -> Result<Vec<Se
                 s.kind,
                 f.path AS file_path,
                 s.line AS start_line,
-                s.signature,
+                {sig_col} AS signature,
                 0.0    AS score
          FROM symbols s
          JOIN files f ON f.id = s.file_id

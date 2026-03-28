@@ -7,12 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-03-28
+
+### Added
+
+- **Full trace engine** (`query/full_trace.rs`) — end-to-end execution flow tracing that walks both the call graph (`edges` table) and cross-framework flows (`flow_edges` table). Traces from specific symbols or auto-detected structural roots
+- **Smart context fix** — `smart_context` now works with natural language queries via multi-strategy seeding (FTS5 raw, per-keyword, LIKE fallback). Previously returned empty results for non-symbol-name queries
+- **Flow visualization** — Sankey diagram in the web explorer showing architecture flows with click-to-pin highlighting, hover exploration, depth control, and symbol-specific tracing
+- **CLI: `bw full-trace`** — trace execution flows from a symbol or all entry points
+- **CLI: `bw diagnose`** (bench) — audit project index quality before running benchmarks
+- **Web API: `/api/full-trace`** — full trace endpoint for the web UI
+- **Web API: `/api/flow-edges`** — flow edge listing with interleaved edge types and summary
+- **Web API: `/api/trace-flow`** — wrapper for existing trace-flow functions
+- **Benchmark: CLI condition** — `UseBearWisdomCli` condition that tests BearWisdom via `bw` CLI commands through Bash, complementing MCP and native-only conditions
+- **Benchmark: `--strict-mcp-config`** — proper isolation between benchmark conditions (prevents project MCP configs from leaking into non-MCP conditions)
+- **Integration tests** — 43 new tests in `tests/tests/commands.rs` covering all query commands against real fixture projects
+- **SCIP import tests** — 5 integration tests for edge creation, confidence upgrade, idempotency
+- **Quality check tests** — 6 integration tests for baseline comparison, regression detection
+- **BearWisdom agent** (`agents/bearwisdom.md`) — Claude Code agent with full CLI command reference for conversational code intelligence
+- **Container descent in full_trace** — classes/structs automatically expand into their methods when tracing, so entry-point classes produce meaningful call chains
+
+### Changed
+
+- **Benchmark sampler** — CrossFileReferences query now includes `struct` and `type_alias` kinds with `NULL` visibility support, fixing empty results for TypeScript and Go projects
+- **Benchmark sampler** — ground truth deduplication across all categories (ImpactAnalysis, CallHierarchy, CrossFileReferences, ArchitectureOverview)
+- **Benchmark report** — uses `Condition::all()` instead of hardcoded pairs, automatically includes any condition with data
+- **Entry point detection** — `trace_from_entry_points` now uses graph topology (outgoing edges, zero incoming calls) instead of architecture overview heuristics
+- **Web Flow tab** — replaced metro map with Sankey diagram. Node colors based on symbol kind (class, method, interface) instead of hardcoded layer names
+
+### Fixed
+
+- **smart_context** — no longer returns empty results for natural language queries like "add a new catalog item with validation"
+- **Benchmark CLI condition** — `--strict-mcp-config` prevents project `.mcp.json` from injecting MCP tools into non-MCP benchmark conditions
+
+### Infrastructure
+
+- Test count: 885 (up from ~830)
+- All benchmark results archived in `bench-archive/` (gitignored)
+- `.gitignore` consolidated: all bench output under single `bench-archive/` entry
+
+## [0.1.1] — 2026-03-26
+
 ### Added
 
 - **sqlite-vec statically linked** — vector search works out of the box; `SQLITE_VEC_PATH` is no longer required or read
 - **Post-index embedding pipeline** — `bw open` automatically computes CodeRankEmbed embeddings after indexing completes (CLI and MCP). The web UI exposes an "Enable AI Search" button that triggers embedding separately
 - **`bw embed <path>`** — new standalone command to compute or refresh CodeRankEmbed embeddings without re-indexing
-- **`bw enrich <path>`** — new standalone command to run LSP background enrichment without re-indexing
 - **`Embedder::resolve_model_dir()`** — centralized model lookup: checks `<project>/models/CodeRankEmbed` first, then `~/.bearwisdom/models/CodeRankEmbed`
 - **ONNX Runtime via `load-dynamic`** — the `onnxruntime` crate is built with `load-dynamic`, so the binary links at runtime. Set `ORT_DYLIB_PATH` to the path of `onnxruntime.dll` / `libonnxruntime.so` / `libonnxruntime.dylib`; inference batch size is 4 to stay within CPU memory budgets
 - **Web UI refactored** — migrated to Zustand state management; `KnowledgeTree` component decomposed from 1,232 LOC to 104 LOC across focused sub-components; 54 Vitest tests added
@@ -24,7 +64,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Symbol detail panel with resizable width
   - File viewer with line highlighting for content/grep results
   - BearWisdom "Scholar's Workshop" theme (copper, teal, sage on dark brown)
-- **Claude Code agent** (`agents/bearwisdom.md`) — conversational agent wrapping all 25 CLI commands
+- **Claude Code agent** (`agents/bearwisdom.md`) — conversational agent wrapping all CLI commands
 - **Benchmark suite** (`bw-bench`) — `generate`, `run`, `report`, and `full` subcommands; CLI backend for Claude Code subscription testing and performance regression tracking
 - **GitHub Pages site** (`docs/index.html`) — project landing page with real application screenshots from the eShop reference architecture
 - **Architecture diagram** (`docs/architecture.html`) — visual overview of the crate dependency graph and data flow
@@ -126,5 +166,7 @@ Initial release. The bear wakes up.
 - **Test framework detection** — xUnit, NUnit, Jest, pytest, cargo test, JUnit, etc.
 - **File walker** — gitignore-aware directory traversal with path normalisation
 
-[Unreleased]: https://github.com/MariusAlbu/BearWisdom/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MariusAlbu/BearWisdom/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/MariusAlbu/BearWisdom/compare/v0.1.1...v0.2.0
+[0.1.1]: https://github.com/MariusAlbu/BearWisdom/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/MariusAlbu/BearWisdom/releases/tag/v0.1.0

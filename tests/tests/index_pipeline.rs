@@ -106,3 +106,34 @@ fn index_with_pre_walked_files() {
     assert!(stats.file_count > 0);
     assert!(stats.symbol_count > 0);
 }
+
+#[test]
+fn index_with_file_backed_db_exercises_parallel_connectors() {
+    let project_dir = tempfile::tempdir().unwrap();
+    let src_dir = project_dir.path().join("src");
+    std::fs::create_dir_all(&src_dir).unwrap();
+
+    std::fs::write(src_dir.join("Service.cs"), r#"
+namespace App {
+    public class CatalogService {
+        public void GetItems() { }
+        public void GetById(int id) { }
+    }
+}
+"#).unwrap();
+
+    let db_dir = project_dir.path().join(".bearwisdom");
+    std::fs::create_dir_all(&db_dir).unwrap();
+    let db_path = db_dir.join("index.db");
+
+    let mut db = bearwisdom::Database::open(&db_path).unwrap();
+
+    // db.path is Some(...) so this exercises the parallel connector path.
+    assert!(db.path.is_some(), "Expected file-backed database");
+
+    let stats = full_index(&mut db, project_dir.path(), None, None).unwrap();
+
+    assert!(stats.file_count >= 1, "Expected at least 1 file, got {}", stats.file_count);
+    assert!(stats.symbol_count >= 2, "Expected at least 2 symbols, got {}", stats.symbol_count);
+    assert!(stats.duration_ms > 0);
+}

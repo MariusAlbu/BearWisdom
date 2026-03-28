@@ -69,6 +69,9 @@ async fn main() {
         .route("/browse",         axum::routing::get(api::get_browse))
         .route("/embed",          axum::routing::post(api::post_embed))
         .route("/embed-status",   axum::routing::get(api::get_embed_status))
+        .route("/flow-edges",     axum::routing::get(api::get_flow_edges))
+        .route("/trace-flow",     axum::routing::get(api::get_trace_flow))
+        .route("/full-trace",     axum::routing::get(api::get_full_trace))
         .with_state(embed_status);
 
     let mut app = Router::new()

@@ -11,3 +11,6 @@ bearwisdom-profile = { path = "../crates/bearwisdom-profile" }
 tempfile           = "3"
 anyhow             = { workspace = true }
 serde_json         = { workspace = true }
+tokio              = { workspace = true }
+prost              = { workspace = true }
+rusqlite           = { workspace = true }

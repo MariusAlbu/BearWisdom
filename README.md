@@ -21,7 +21,8 @@
   <a href="#web-explorer">Web Explorer</a> &middot;
   <a href="#cli-reference">CLI Reference</a> &middot;
   <a href="#architecture">Architecture</a> &middot;
-  <a href="#mcp-server">MCP Server</a>
+  <a href="#mcp-server">MCP Server</a> &middot;
+  <a href="#benchmarks">Benchmarks</a>
 </p>
 
 ---
@@ -42,6 +43,9 @@ It parses your code with [tree-sitter](https://tree-sitter.github.io/tree-sitter
 - **Structural graph** — symbols, edges (calls, inherits, implements, type_ref, instantiates), concepts, and annotations stored in SQLite
 - **5-priority resolver** — namespace imports, scope analysis, qualified name matching, file-path correlation, and kind-based inference
 - **Cross-framework connectors** — Spring Boot, Django, .NET DI, EF Core, gRPC, GraphQL, Electron IPC, Tauri IPC, React/Zustand, and HTTP API routes
+- **Smart context** — describe a task in natural language and get the ranked symbols and files most relevant to it, ready for LLM context windows
+- **Full trace** — end-to-end execution flow tracing that walks both the call graph and cross-framework flow edges (DI, HTTP, events) from any symbol or auto-detected entry points
+- **Flow visualization** — Sankey diagram in the web explorer showing architecture flows with click-to-pin highlighting, depth control, and symbol-specific tracing
 
 ### Search That's Barely Believable
 
@@ -57,6 +61,8 @@ It parses your code with [tree-sitter](https://tree-sitter.github.io/tree-sitter
 - **Architecture overview** — language breakdown, hotspot detection, entry point discovery
 - **Blast radius** — "if I change X, what breaks?" via recursive CTE graph traversal
 - **Call hierarchy** — incoming and outgoing call chains with edge provenance
+- **Full trace** — end-to-end execution tracing from entry points through call chains and cross-framework flow edges (DI, HTTP, events, IPC)
+- **Smart context** — natural language task description to ranked symbols for LLM context windows (multi-strategy seeding: FTS5 raw, per-keyword, LIKE fallback)
 - **Concept discovery** — automatic namespace grouping with member assignment
 - **Subgraph export** — filtered graph export for D3/Cytoscape visualization
 
@@ -64,8 +70,8 @@ It parses your code with [tree-sitter](https://tree-sitter.github.io/tree-sitter
 
 | Interface | Description |
 |-----------|-------------|
-| **`bw` CLI** | 25 JSON-output commands for scripts and agents |
-| **Web Explorer** | React + D3 force-directed knowledge graph with search |
+| **`bw` CLI** | 30+ JSON-output commands for scripts and agents |
+| **Web Explorer** | React + D3 force-directed knowledge graph with Sankey flow diagrams |
 | **MCP Server** | Model Context Protocol server for Claude and other LLMs |
 | **Claude Code Agent** | Conversational subagent that wraps the CLI |
 
@@ -113,9 +119,6 @@ For AI search, `bw open` automatically computes CodeRankEmbed embeddings after i
 
 # Compute embeddings independently
 bw embed /path/to/your/project
-
-# Run LSP enrichment independently
-bw enrich /path/to/your/project
 ```
 
 ### Search
@@ -217,6 +220,7 @@ cargo run -p bearwisdom-web --release -- --static-dir web/dist
 - **Inspect symbols** — click a node to see its signature, documentation, incoming/outgoing calls
 - **View source** — file/content/grep results open a full code viewer with line highlighting
 - **Resize the detail panel** — drag the left edge to make room for code review
+- **Flow tab** — Sankey diagram showing end-to-end execution flows across the codebase. Trace from specific symbols or auto-detected entry points. Click nodes to pin paths, hover to explore connections. Depth slider controls trace depth. Node colors indicate symbol kind (class, method, interface)
 
 ### Development
 
@@ -233,12 +237,13 @@ cd web && npm run dev
 
 All commands output JSON to stdout. Envelope: `{"ok": true, "data": {...}}` or `{"ok": false, "error": "..."}`.
 
+Global flag: `--full` restores verbose output (signatures, doc comments, children).
+
 | Command | Description |
 |---------|-------------|
 | `bw open <path>` | Full index + concept discovery + post-index embedding |
 | `bw status <path>` | Index stats (read-only) |
 | `bw embed <path>` | Compute CodeRankEmbed embeddings standalone |
-| `bw enrich <path>` | Run LSP enrichment standalone |
 | `bw architecture <path>` | Language stats, hotspots, entry points |
 | `bw search-symbols <path> <query>` | FTS5 symbol search |
 | `bw fuzzy-files <path> <pattern>` | Fuzzy file finder |
@@ -254,6 +259,13 @@ All commands output JSON to stdout. Envelope: `{"ok": true, "data": {...}}` or `
 | `bw calls-in <path> <symbol>` | Incoming call hierarchy |
 | `bw calls-out <path> <symbol>` | Outgoing call hierarchy |
 | `bw trace-flow <path> <file> <line>` | Cross-language flow |
+| `bw full-trace <path> [symbol]` | End-to-end execution trace (call graph + flow edges) |
+| `bw smart-context <path> <task>` | Smart context selection for LLM prompts |
+| `bw investigate <path> <symbol>` | Combined deep-dive (symbol info + callers + callees + blast radius) |
+| `bw complete-at <path> <file> <line>` | Scope-aware symbol completion |
+| `bw diagnostics <path> <file>` | File diagnostics (unresolved refs, low confidence edges) |
+| `bw quality-check --baseline <file>` | Regression testing against quality baseline |
+| `bw import-scip <path> --scip <file>` | Import SCIP index for high-confidence edges |
 | `bw concepts <path>` | List concepts |
 | `bw discover-concepts <path>` | Auto-discover concepts |
 | `bw concept-members <path> <concept>` | Concept members |
@@ -268,18 +280,21 @@ bearwisdom/                    Core library — parser, indexer, query, search, 
   src/
     parser/                    Tree-sitter extractors (31 languages)
     indexer/                   Full + incremental indexing
-    query/                     Architecture, blast radius, call hierarchy, concepts, search
+    query/                     Architecture, blast radius, call hierarchy, full trace,
+                               smart context, investigate, diagnostics, completion,
+                               concepts, search, subgraph, definitions
     search/                    Grep, FTS5, fuzzy, hybrid, embeddings, vector store
-    bridge/                    LSP integration, SCIP import, background enrichment
+    bridge/                    SCIP import, background enrichment
     connectors/                Cross-framework edge detection (Spring, Django, EF Core, etc.)
     db/                        SQLite schema, database management
 
-bearwisdom-cli/                CLI binary (bw) — 25 JSON commands
+bearwisdom-cli/                CLI binary (bw) — 30+ JSON commands
 bearwisdom-mcp/                MCP server (bw-mcp) — tool registration
-bearwisdom-web/                Web server (bw-web) — Axum HTTP + static files
+bearwisdom-web/                Web server (bw-web) — Axum HTTP + static files + Sankey flows
 bearwisdom-profile/            Language detection, project scanning
 bearwisdom-bench/              Benchmark harness
 
+benchmarks/                    LLM benchmark runner (bw-bench) — API-based task evaluation
 web/                           React + D3 frontend (Vite + TypeScript)
 tests/                         Integration test suite
 agents/                        Claude Code agent definitions
@@ -367,11 +382,38 @@ Bear: Running bw blast-radius Order --depth 3... [shows impact analysis]
 | Crate | Type | Description |
 |-------|------|-------------|
 | `bearwisdom` | lib | Core engine — 31-language parser, graph DB, hybrid search |
-| `bearwisdom-cli` | bin (`bw`) | CLI with 25 JSON commands |
+| `bearwisdom-cli` | bin (`bw`) | CLI with 30+ JSON commands |
 | `bearwisdom-mcp` | bin (`bw-mcp`) | MCP server for LLM agents |
 | `bearwisdom-web` | bin (`bw-web`) | Axum HTTP server + React UI |
 | `bearwisdom-profile` | lib | Language detection, project scanning |
-| `bearwisdom-bench` | bin | Performance benchmarks |
+| `bearwisdom-bench` | bin | Index benchmarks |
+| `bw-bench` | bin | LLM benchmark runner (in `benchmarks/`) |
+
+## Benchmarks
+
+BearWisdom includes a benchmark harness (`bw-bench`) that compares code intelligence quality across three conditions:
+
+- **MCP**: BearWisdom tools via MCP protocol
+- **CLI**: BearWisdom tools via `bw` CLI commands
+- **Native**: Standard Read/Grep/Glob tools only
+
+Tested across 4 projects (eShop, SimplCommerce, go-gitea, react-calcom) with 10 tasks each covering 6 categories: symbol lookup, cross-file references, call hierarchy, impact analysis, architecture overview, and code navigation.
+
+```bash
+# Generate tasks from a test project
+bw-bench generate --project /path/to/project --output bench-results/tasks.json
+
+# Run benchmarks (all conditions)
+bw-bench run --tasks bench-results/tasks.json --model claude-sonnet-4-6 --output bench-results/
+
+# Generate report
+bw-bench report --results bench-results/
+
+# Full pipeline (generate + run + report)
+bw-bench full --project /path/to/project --model claude-sonnet-4-6 --output bench-results/
+```
+
+Metrics: precision, recall, F1, efficiency (penalizes tool call count), token usage. Requires `ANTHROPIC_API_KEY`.
 
 ## License
 

@@ -32,6 +32,9 @@ use bearwisdom::db::Database;
     about = "BearWisdom code intelligence engine — tree-sitter + SQLite"
 )]
 struct Cli {
+    /// Enable verbose output (signatures, doc comments, children). Default: slim.
+    #[arg(long, global = true)]
+    full: bool,
     #[command(subcommand)]
     command: Commands,
 }
@@ -56,6 +59,16 @@ enum Commands {
         path: String,
     },
 
+    /// Watch project for file changes and re-index incrementally.
+    /// Runs until Ctrl+C. Outputs JSON events to stdout on each re-index.
+    Watch {
+        /// Absolute path to the project root.
+        path: String,
+        /// Debounce delay in milliseconds (default: 100).
+        #[arg(long, default_value = "100")]
+        debounce_ms: u64,
+    },
+
     // ---- Symbol search -----------------------------------------------------
     /// Full-text symbol search (FTS5 BM25).  Supports prefixes with *.
     SearchSymbols {
@@ -63,8 +76,8 @@ enum Commands {
         path: String,
         /// FTS5 query (e.g. "GetById", "Catalog*", "\"get items\"").
         query: String,
-        /// Maximum results (default: 20).
-        #[arg(long, default_value = "20")]
+        /// Maximum results (default: 10).
+        #[arg(long, default_value = "10")]
         limit: usize,
     },
 
@@ -120,8 +133,8 @@ enum Commands {
         /// Restrict to a single language tag (e.g. "typescript", "csharp").
         #[arg(long)]
         lang: Option<String>,
-        /// Maximum results (default: 200).
-        #[arg(long, default_value = "200")]
+        /// Maximum results (default: 20).
+        #[arg(long, default_value = "20")]
         limit: usize,
     },
 
@@ -144,6 +157,9 @@ enum Commands {
         path: String,
         /// Relative file path (forward-slash, relative to project root).
         file: String,
+        /// Output mode: "names", "outline" (default), "full"
+        #[arg(long, default_value = "outline")]
+        mode: String,
     },
 
     /// Go-to-definition by symbol name or qualified name.
@@ -160,9 +176,20 @@ enum Commands {
         path: String,
         /// Symbol name or qualified name.
         symbol: String,
-        /// Maximum results (default: 100).
-        #[arg(long, default_value = "100")]
+        /// Maximum results (default: 20).
+        #[arg(long, default_value = "20")]
         limit: usize,
+    },
+
+    /// Show diagnostics for a file: unresolved symbols and low-confidence edges.
+    Diagnostics {
+        /// Absolute path to the project root.
+        path: String,
+        /// Relative file path to check.
+        file: String,
+        /// Confidence threshold (default: 0.80).
+        #[arg(long, default_value = "0.80")]
+        threshold: f64,
     },
 
     // ---- Architecture ------------------------------------------------------
@@ -172,14 +199,28 @@ enum Commands {
         path: String,
     },
 
+    /// Smart context: select the most relevant symbols for a task (LLM context optimization).
+    SmartContext {
+        /// Absolute path to the project root.
+        path: String,
+        /// Natural-language task description.
+        task: String,
+        /// Token budget (default: 8000).
+        #[arg(long, default_value = "8000")]
+        budget: u32,
+        /// Graph expansion depth (default: 2).
+        #[arg(long, default_value = "2")]
+        depth: u32,
+    },
+
     /// Blast radius analysis: which symbols would be affected by changing this one?
     BlastRadius {
         /// Absolute path to the project root.
         path: String,
         /// Symbol name or qualified name to analyze.
         symbol: String,
-        /// Maximum graph traversal depth (default: 3).
-        #[arg(long, default_value = "3")]
+        /// Maximum graph traversal depth (default: 2).
+        #[arg(long, default_value = "2")]
         depth: u32,
     },
 
@@ -189,8 +230,8 @@ enum Commands {
         path: String,
         /// Symbol name or qualified name.
         symbol: String,
-        /// Maximum results (default: 50, 0 = unlimited).
-        #[arg(long, default_value = "50")]
+        /// Maximum results (default: 20, 0 = unlimited).
+        #[arg(long, default_value = "20")]
         limit: usize,
     },
 
@@ -200,8 +241,8 @@ enum Commands {
         path: String,
         /// Symbol name or qualified name.
         symbol: String,
-        /// Maximum results (default: 50, 0 = unlimited).
-        #[arg(long, default_value = "50")]
+        /// Maximum results (default: 20, 0 = unlimited).
+        #[arg(long, default_value = "20")]
         limit: usize,
     },
 
@@ -211,6 +252,38 @@ enum Commands {
         path: String,
         /// Symbol name or qualified name.
         symbol: String,
+    },
+
+    /// Deep-dive: symbol info + callers + callees + blast radius in one call.
+    Investigate {
+        /// Absolute path to the project root.
+        path: String,
+        /// Symbol name or qualified name.
+        symbol: String,
+        /// Max callers (default: 10).
+        #[arg(long, default_value = "10")]
+        caller_limit: usize,
+        /// Max callees (default: 10).
+        #[arg(long, default_value = "10")]
+        callee_limit: usize,
+        /// Blast radius depth (default: 1).
+        #[arg(long, default_value = "1")]
+        blast_depth: u32,
+    },
+
+    /// Auto-complete symbols at a cursor position (scope-aware).
+    CompleteAt {
+        /// Absolute path to the project root.
+        path: String,
+        /// Relative file path.
+        file: String,
+        /// 1-based line number.
+        line: u32,
+        /// 0-based column number.
+        col: u32,
+        /// Prefix text (partial symbol name).
+        #[arg(default_value = "")]
+        prefix: String,
     },
 
     // ---- Concepts ----------------------------------------------------------
@@ -272,6 +345,15 @@ enum Commands {
         threshold: f64,
     },
 
+    /// Import a SCIP index to upgrade edge confidence (from rust-analyzer, scip-typescript, etc.).
+    ImportScip {
+        /// Absolute path to the project root.
+        path: String,
+        /// Path to the SCIP index file (e.g. index.scip).
+        #[arg(long)]
+        scip: String,
+    },
+
     // ---- Flow --------------------------------------------------------------
     /// Trace the cross-language flow graph from a file + line.
     TraceFlow {
@@ -284,6 +366,23 @@ enum Commands {
         /// Maximum traversal depth (default: 5).
         #[arg(long, default_value = "5")]
         depth: u32,
+        /// Direction: "forward" (default), "backward" / "reverse", or "both".
+        #[arg(long, default_value = "forward")]
+        direction: String,
+    },
+
+    /// Full execution trace: walk call graph + flow edges from a symbol or all entry points.
+    FullTrace {
+        /// Absolute path to the project root.
+        path: String,
+        /// Symbol to trace from (optional — if omitted, traces from entry points).
+        symbol: Option<String>,
+        /// Maximum traversal depth (default: 5).
+        #[arg(long, default_value = "5")]
+        depth: u32,
+        /// Maximum traces from entry points (default: 10).
+        #[arg(long, default_value = "10")]
+        max_traces: usize,
     },
 
     // ---- Quality ---------------------------------------------------------------
@@ -315,7 +414,7 @@ fn main() {
 
     let cli = Cli::parse();
 
-    let result = run(cli.command);
+    let result = run(cli.command, cli.full);
 
     match result {
         Ok(json) => println!("{json}"),
@@ -332,13 +431,14 @@ fn main() {
 // Command dispatch
 // ---------------------------------------------------------------------------
 
-fn run(command: Commands) -> Result<String> {
+fn run(command: Commands, full: bool) -> Result<String> {
     match command {
         Commands::Open { path, no_embed } => cmd_open(&path, no_embed),
         Commands::Status { path } => cmd_status(&path),
+        Commands::Watch { path, debounce_ms } => cmd_watch(&path, debounce_ms),
 
         Commands::SearchSymbols { path, query, limit } => {
-            cmd_search_symbols(&path, &query, limit)
+            cmd_search_symbols(&path, &query, limit, full)
         }
         Commands::FuzzyFiles { path, pattern, limit } => {
             cmd_fuzzy_files(&path, &pattern, limit)
@@ -358,18 +458,32 @@ fn run(command: Commands) -> Result<String> {
             whole_word,
             lang,
             limit,
-        } => cmd_grep(&path, &pattern, regex, !case_insensitive, whole_word, lang.as_deref(), limit),
+        } => cmd_grep(&path, &pattern, regex, !case_insensitive, whole_word, lang.as_deref(), limit, full),
         Commands::Hybrid { path, query, limit } => cmd_hybrid(&path, &query, limit),
 
-        Commands::FileSymbols { path, file } => cmd_file_symbols(&path, &file),
+        Commands::FileSymbols { path, file, mode } => {
+            let effective_mode = if full { "full" } else { &mode };
+            cmd_file_symbols(&path, &file, effective_mode)
+        }
         Commands::Definition { path, symbol } => cmd_definition(&path, &symbol),
         Commands::References { path, symbol, limit } => cmd_references(&path, &symbol, limit),
 
+        Commands::Diagnostics { path, file, threshold } => cmd_diagnostics(&path, &file, threshold),
+        Commands::CompleteAt { path, file, line, col, prefix } => {
+            cmd_complete_at(&path, &file, line, col, &prefix, full)
+        }
+
         Commands::Architecture { path } => cmd_architecture(&path),
+        Commands::SmartContext { path, task, budget, depth } => {
+            cmd_smart_context(&path, &task, budget, depth)
+        }
         Commands::BlastRadius { path, symbol, depth } => cmd_blast_radius(&path, &symbol, depth),
         Commands::CallsIn { path, symbol, limit } => cmd_calls_in(&path, &symbol, limit),
         Commands::CallsOut { path, symbol, limit } => cmd_calls_out(&path, &symbol, limit),
-        Commands::SymbolInfo { path, symbol } => cmd_symbol_info(&path, &symbol),
+        Commands::SymbolInfo { path, symbol } => cmd_symbol_info(&path, &symbol, full),
+        Commands::Investigate { path, symbol, caller_limit, callee_limit, blast_depth } => {
+            cmd_investigate(&path, &symbol, caller_limit, callee_limit, blast_depth)
+        }
 
         Commands::Concepts { path } => cmd_concepts(&path),
         Commands::DiscoverConcepts { path } => cmd_discover_concepts(&path),
@@ -381,12 +495,16 @@ fn run(command: Commands) -> Result<String> {
         Commands::Enrich { path, batch_size, threshold } => {
             cmd_enrich(&path, batch_size, threshold)
         }
+        Commands::ImportScip { path, scip } => cmd_import_scip(&path, &scip),
 
         Commands::ExportGraph { path, filter, max_nodes } => {
             cmd_export_graph(&path, filter.as_deref(), max_nodes)
         }
-        Commands::TraceFlow { path, file, line, depth } => {
-            cmd_trace_flow(&path, &file, line, depth)
+        Commands::TraceFlow { path, file, line, depth, direction } => {
+            cmd_trace_flow(&path, &file, line, depth, &direction)
+        }
+        Commands::FullTrace { path, symbol, depth, max_traces } => {
+            cmd_full_trace(&path, symbol.as_deref(), depth, max_traces)
         }
         Commands::QualityCheck { baseline, reindex } => {
             cmd_quality_check(&baseline, reindex)
@@ -484,12 +602,11 @@ fn cmd_embed(project_path: &str, batch_size: usize) -> Result<String> {
 fn cmd_enrich(project_path: &str, batch_size: usize, threshold: f64) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
-    let db = Database::open_with_vec(&db_path)
-        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
+    let pool = bearwisdom::DbPool::new(&db_path, 4)
+        .with_context(|| format!("Failed to create pool for {}", db_path.display()))?;
 
-    let db_arc = Arc::new(std::sync::Mutex::new(db));
     let lsp = Arc::new(bearwisdom::LspManager::new(&root));
-    let bridge = Arc::new(bearwisdom::GraphBridge::new(db_arc.clone(), lsp.clone(), &root));
+    let bridge = Arc::new(bearwisdom::GraphBridge::new(pool, lsp.clone(), &root));
     let enricher = bearwisdom::BackgroundEnricher::new(bridge);
 
     let rt = tokio::runtime::Builder::new_current_thread()
@@ -516,6 +633,29 @@ fn cmd_enrich(project_path: &str, batch_size: usize, threshold: f64) -> Result<S
         "upgraded": upgrade.upgraded_this_pass,
         "elapsed_ms": progress.elapsed_ms + upgrade.elapsed_ms,
     }))
+}
+
+/// Import a SCIP index to upgrade edge confidence.
+fn cmd_import_scip(project_path: &str, scip_path: &str) -> Result<String> {
+    let root = PathBuf::from(project_path);
+    let db_path = resolve_db_path(&root)?;
+    let db = Database::open_with_vec(&db_path)
+        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
+
+    let scip = PathBuf::from(scip_path);
+    let stats = bearwisdom::import_scip(&db, &scip, &root)
+        .context("SCIP import failed")?;
+
+    eprintln!(
+        "SCIP import: {} docs, {} matched, {} edges created, {} upgraded, {} unmatched",
+        stats.documents_processed,
+        stats.symbols_matched,
+        stats.edges_created,
+        stats.edges_upgraded,
+        stats.symbols_unmatched,
+    );
+
+    ok_json(stats)
 }
 
 /// Report the current index status without re-indexing.
@@ -546,12 +686,133 @@ fn cmd_status(project_path: &str) -> Result<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Watch mode
+// ---------------------------------------------------------------------------
+
+fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
+    use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher, Event, EventKind};
+    use std::sync::mpsc;
+    use std::time::{Duration, Instant};
+
+    let root = PathBuf::from(project_path);
+    let db_path = resolve_db_path(&root)?;
+    let mut db = Database::open_with_vec(&db_path)
+        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
+
+    let debounce = Duration::from_millis(debounce_ms);
+    let (tx, rx) = mpsc::channel::<Event>();
+
+    let mut watcher = RecommendedWatcher::new(
+        move |res: notify::Result<Event>| {
+            if let Ok(event) = res {
+                let _ = tx.send(event);
+            }
+        },
+        Config::default(),
+    ).context("Failed to create file watcher")?;
+
+    watcher
+        .watch(root.as_ref(), RecursiveMode::Recursive)
+        .with_context(|| format!("Failed to watch {}", root.display()))?;
+
+    eprintln!("Watching {} for changes (debounce={}ms, Ctrl+C to stop)", root.display(), debounce_ms);
+
+    // Gitignore-based filtering reuses the walker's language detection.
+    let source_extensions: std::collections::HashSet<&str> = [
+        "cs", "ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "rb", "php",
+        "kt", "swift", "scala", "dart", "ex", "exs", "c", "h", "cpp", "hpp",
+        "sh", "bash", "html", "css", "scss", "json", "yaml", "yml", "xml",
+        "sql", "toml", "md", "lua", "r", "hs", "proto",
+    ].into_iter().collect();
+
+    loop {
+        // Drain events with debounce.
+        let first = match rx.recv() {
+            Ok(e) => e,
+            Err(_) => break, // channel closed
+        };
+
+        let mut events = vec![first];
+        let deadline = Instant::now() + debounce;
+        while Instant::now() < deadline {
+            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+                Ok(e) => events.push(e),
+                Err(mpsc::RecvTimeoutError::Timeout) => break,
+                Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(String::new()),
+            }
+        }
+
+        // Convert notify events to FileChangeEvents, deduplicating by path.
+        let mut seen = std::collections::HashSet::new();
+        let mut changes: Vec<bearwisdom::FileChangeEvent> = Vec::new();
+
+        for event in &events {
+            let change_kind = match event.kind {
+                EventKind::Create(_) => bearwisdom::ChangeKind::Created,
+                EventKind::Modify(_) => bearwisdom::ChangeKind::Modified,
+                EventKind::Remove(_) => bearwisdom::ChangeKind::Deleted,
+                _ => continue,
+            };
+
+            for path in &event.paths {
+                // Filter to source files only.
+                let ext = path.extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("");
+                if !source_extensions.contains(ext) {
+                    continue;
+                }
+
+                // Convert to relative path.
+                let rel = match path.strip_prefix(&root) {
+                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
+                    Err(_) => continue,
+                };
+
+                if seen.insert(rel.clone()) {
+                    changes.push(bearwisdom::FileChangeEvent {
+                        relative_path: rel,
+                        change_kind,
+                    });
+                }
+            }
+        }
+
+        if changes.is_empty() {
+            continue;
+        }
+
+        eprintln!("Detected {} file change(s), re-indexing...", changes.len());
+        match bearwisdom::reindex_files(&mut db, &root, &changes) {
+            Ok(stats) => {
+                let json = serde_json::json!({
+                    "event": "reindex",
+                    "files_added": stats.files_added,
+                    "files_modified": stats.files_modified,
+                    "files_deleted": stats.files_deleted,
+                    "symbols_written": stats.symbols_written,
+                    "edges_written": stats.edges_written,
+                    "duration_ms": stats.duration_ms,
+                });
+                println!("{json}");
+            }
+            Err(e) => {
+                eprintln!("Re-index error: {e:#}");
+            }
+        }
+    }
+
+    Ok(String::new())
+}
+
+// ---------------------------------------------------------------------------
 // Symbol search
 // ---------------------------------------------------------------------------
 
-fn cmd_search_symbols(project_path: &str, query: &str, limit: usize) -> Result<String> {
+fn cmd_search_symbols(project_path: &str, query: &str, limit: usize, full: bool) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let results = bearwisdom::query::search::search_symbols(&db, query, limit)
+    let opts = if full { bearwisdom::query::QueryOptions::full() } else { bearwisdom::query::QueryOptions::default() };
+    let results = bearwisdom::query::search::search_symbols(&db, query, limit, &opts)
         .context("search_symbols failed")?;
     ok_json(results)
 }
@@ -592,6 +853,7 @@ fn cmd_grep(
     whole_word: bool,
     lang: Option<&str>,
     limit: usize,
+    full: bool,
 ) -> Result<String> {
     let root = PathBuf::from(project_path);
     let cancelled = Arc::new(AtomicBool::new(false));
@@ -610,9 +872,12 @@ fn cmd_grep(
         context_lines: 0,
     };
 
-    let results =
+    let mut results =
         bearwisdom::search::grep::grep_search(&root, pattern, &options, &cancelled)
             .context("grep_search failed")?;
+    if !full {
+        bearwisdom::search::grep::truncate_matches(&mut results, 120);
+    }
     ok_json(results)
 }
 
@@ -638,40 +903,10 @@ fn cmd_hybrid(project_path: &str, query: &str, limit: usize) -> Result<String> {
 // Navigation
 // ---------------------------------------------------------------------------
 
-fn cmd_file_symbols(project_path: &str, file_path: &str) -> Result<String> {
+fn cmd_file_symbols(project_path: &str, file_path: &str, mode: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let conn = &db.conn;
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT s.name, s.qualified_name, s.kind, s.line, s.col,
-                    s.end_line, s.scope_path, s.signature, s.visibility
-             FROM symbols s
-             JOIN files f ON f.id = s.file_id
-             WHERE f.path = ?1
-             ORDER BY s.line",
-        )
-        .context("Failed to prepare file_symbols query")?;
-
-    let rows = stmt
-        .query_map([file_path], |row| {
-            Ok(serde_json::json!({
-                "name":          row.get::<_, String>(0)?,
-                "qualified_name": row.get::<_, String>(1)?,
-                "kind":          row.get::<_, String>(2)?,
-                "line":          row.get::<_, u32>(3)?,
-                "col":           row.get::<_, u32>(4)?,
-                "end_line":      row.get::<_, Option<u32>>(5)?,
-                "scope_path":    row.get::<_, Option<String>>(6)?,
-                "signature":     row.get::<_, Option<String>>(7)?,
-                "visibility":    row.get::<_, Option<String>>(8)?,
-            }))
-        })
-        .context("Failed to execute file_symbols query")?;
-
-    let results: Vec<_> = rows
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect file_symbols rows")?;
+    let mode = bearwisdom::query::symbol_info::FileSymbolsMode::from_str(mode);
+    let results = bearwisdom::query::symbol_info::file_symbols(&db, file_path, mode)?;
     ok_json(results)
 }
 
@@ -689,9 +924,30 @@ fn cmd_references(project_path: &str, symbol: &str, limit: usize) -> Result<Stri
     ok_json(results)
 }
 
+fn cmd_diagnostics(project_path: &str, file_path: &str, threshold: f64) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let result = bearwisdom::query::diagnostics::get_diagnostics(&db, file_path, threshold)
+        .context("diagnostics failed")?;
+    ok_json(result)
+}
+
+fn cmd_complete_at(project_path: &str, file_path: &str, line: u32, col: u32, prefix: &str, full: bool) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let results = bearwisdom::query::completion::complete_at(&db, file_path, line, col, prefix, full)
+        .context("completion failed")?;
+    ok_json(results)
+}
+
 // ---------------------------------------------------------------------------
 // Architecture
 // ---------------------------------------------------------------------------
+
+fn cmd_smart_context(project_path: &str, task: &str, budget: u32, depth: u32) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let result = bearwisdom::query::context::smart_context(&db, task, budget, depth)
+        .context("smart context failed")?;
+    ok_json(result)
+}
 
 fn cmd_architecture(project_path: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
@@ -721,13 +977,35 @@ fn cmd_calls_out(project_path: &str, symbol: &str, limit: usize) -> Result<Strin
     ok_json(results)
 }
 
-fn cmd_symbol_info(project_path: &str, symbol: &str) -> Result<String> {
+fn cmd_symbol_info(project_path: &str, symbol: &str, full: bool) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let results = bearwisdom::query::symbol_info::symbol_info(&db, symbol)
+    let opts = if full { bearwisdom::query::QueryOptions::full() } else { bearwisdom::query::QueryOptions::default() };
+    let results = bearwisdom::query::symbol_info::symbol_info(&db, symbol, &opts)
         .context("symbol_info failed")?;
     // Return first match or null.
     let first = results.into_iter().next();
     ok_json(first)
+}
+
+fn cmd_investigate(
+    project_path: &str,
+    symbol: &str,
+    caller_limit: usize,
+    callee_limit: usize,
+    blast_depth: u32,
+) -> Result<String> {
+    let root = PathBuf::from(project_path);
+    let db_path = resolve_db_path(&root)?;
+    let db = Database::open_with_vec(&db_path)
+        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
+
+    let opts = bearwisdom::query::investigate::InvestigateOptions {
+        caller_limit,
+        callee_limit,
+        blast_depth,
+    };
+    let result = bearwisdom::query::investigate::investigate(&db, symbol, &opts)?;
+    ok_json(result)
 }
 
 // ---------------------------------------------------------------------------
@@ -773,11 +1051,36 @@ fn cmd_export_graph(
     ok_json(graph)
 }
 
-fn cmd_trace_flow(project_path: &str, file: &str, line: u32, depth: u32) -> Result<String> {
+fn cmd_trace_flow(project_path: &str, file: &str, line: u32, depth: u32, direction: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let steps = bearwisdom::search::flow::trace_flow(&db, file, line, depth)
-        .context("trace_flow failed")?;
-    ok_json(steps)
+    match direction {
+        "backward" | "reverse" => {
+            let steps = bearwisdom::search::flow::trace_flow_reverse(&db, file, line, depth)
+                .context("trace_flow_reverse failed")?;
+            ok_json(steps)
+        }
+        "both" | "bidirectional" => {
+            let result = bearwisdom::search::flow::trace_flow_bidirectional(&db, file, line, depth)
+                .context("trace_flow_bidirectional failed")?;
+            ok_json(result)
+        }
+        _ => {
+            let steps = bearwisdom::search::flow::trace_flow(&db, file, line, depth)
+                .context("trace_flow failed")?;
+            ok_json(steps)
+        }
+    }
+}
+
+fn cmd_full_trace(project_path: &str, symbol: Option<&str>, depth: u32, max_traces: usize) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let result = match symbol {
+        Some(sym) => bearwisdom::query::full_trace::trace_from_symbol(&db, sym, depth)
+            .context("full_trace from symbol failed")?,
+        None => bearwisdom::query::full_trace::trace_from_entry_points(&db, depth, max_traces)
+            .context("full_trace from entry points failed")?,
+    };
+    ok_json(result)
 }
 
 // ---------------------------------------------------------------------------

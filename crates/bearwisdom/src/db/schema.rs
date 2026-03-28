@@ -145,7 +145,8 @@ CREATE TABLE IF NOT EXISTS unresolved_refs (
     module      TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_unresolved_name ON unresolved_refs(target_name);
+CREATE INDEX IF NOT EXISTS idx_unresolved_name        ON unresolved_refs(target_name);
+CREATE INDEX IF NOT EXISTS idx_unresolved_source_kind ON unresolved_refs(source_id, kind);
 
 -- ============================================================
 -- IMPORTS
@@ -371,8 +372,9 @@ CREATE TABLE IF NOT EXISTS flow_edges (
 
 CREATE INDEX IF NOT EXISTS idx_flow_source ON flow_edges(source_file_id);
 CREATE INDEX IF NOT EXISTS idx_flow_target ON flow_edges(target_file_id);
-CREATE INDEX IF NOT EXISTS idx_flow_type   ON flow_edges(edge_type);
-CREATE INDEX IF NOT EXISTS idx_flow_url    ON flow_edges(url_pattern);
+CREATE INDEX IF NOT EXISTS idx_flow_type      ON flow_edges(edge_type);
+CREATE INDEX IF NOT EXISTS idx_flow_type_lang ON flow_edges(edge_type, source_language);
+CREATE INDEX IF NOT EXISTS idx_flow_url       ON flow_edges(url_pattern);
 
 -- ============================================================
 -- SEARCH HISTORY

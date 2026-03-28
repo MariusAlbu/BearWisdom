@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 bearwisdom        = { path = "../bearwisdom" }
+rusqlite          = { workspace = true }
 sqlite-vec        = { workspace = true }
 anyhow            = { workspace = true }
 clap              = { workspace = true }

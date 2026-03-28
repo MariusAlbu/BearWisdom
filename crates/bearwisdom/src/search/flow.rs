@@ -135,6 +135,127 @@ pub fn trace_flow(
     Ok(steps)
 }
 
+/// Trace the flow graph BACKWARD from a file + line, up to `max_depth` hops.
+///
+/// Where `trace_flow` follows edges forward (source → target), this function
+/// follows them backward (target → source), answering "what flows INTO this
+/// node?"  The depth counter still increments per hop so callers can interpret
+/// it as distance from the start node in the reverse direction.
+pub fn trace_flow_reverse(
+    db: &Database,
+    start_file: &str,
+    start_line: u32,
+    max_depth: u32,
+) -> Result<Vec<FlowStep>> {
+    let conn = &db.conn;
+
+    let sql = "
+        WITH RECURSIVE flow_trace(
+            depth, file_id, line, symbol, language, edge_type, protocol
+        ) AS (
+            -- Base: edges arriving at start_file at start_line.
+            SELECT
+                0,
+                fe.target_file_id,
+                fe.target_line,
+                fe.target_symbol,
+                COALESCE(fe.target_language, tf.language),
+                fe.edge_type,
+                fe.protocol
+            FROM flow_edges fe
+            JOIN files sf ON sf.id = fe.target_file_id
+            LEFT JOIN files tf ON tf.id = fe.target_file_id
+            WHERE sf.path = ?1
+              AND (fe.target_line = ?2 OR fe.target_line IS NULL)
+
+            UNION ALL
+
+            -- Recursive: follow edges arriving at current nodes (backward).
+            SELECT
+                ft.depth + 1,
+                fe.source_file_id,
+                fe.source_line,
+                fe.source_symbol,
+                COALESCE(fe.source_language, sf.language),
+                fe.edge_type,
+                fe.protocol
+            FROM flow_trace ft
+            JOIN flow_edges fe ON fe.target_file_id = ft.file_id
+            LEFT JOIN files sf ON sf.id = fe.source_file_id
+            WHERE ft.depth < ?3
+              AND fe.source_file_id IS NOT NULL
+        )
+        SELECT DISTINCT
+            ft.depth,
+            f.path,
+            ft.line,
+            ft.symbol,
+            ft.language,
+            ft.edge_type,
+            ft.protocol
+        FROM flow_trace ft
+        JOIN files f ON f.id = ft.file_id
+        ORDER BY ft.depth, f.path
+    ";
+
+    let mut stmt = conn
+        .prepare(sql)
+        .context("Failed to prepare trace_flow_reverse CTE")?;
+
+    let steps = stmt
+        .query_map(
+            rusqlite::params![start_file, start_line, max_depth],
+            |row| {
+                Ok(FlowStep {
+                    depth: row.get::<_, u32>(0)?,
+                    file_path: row.get::<_, String>(1)?,
+                    line: row.get::<_, Option<u32>>(2)?,
+                    symbol: row.get::<_, Option<String>>(3)?,
+                    language: row.get::<_, String>(4).unwrap_or_default(),
+                    edge_type: row.get::<_, String>(5)?,
+                    protocol: row.get::<_, Option<String>>(6)?,
+                })
+            },
+        )
+        .context("Failed to execute trace_flow_reverse CTE")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect trace_flow_reverse results")?;
+
+    tracing::debug!(
+        start_file,
+        start_line,
+        max_depth,
+        steps = steps.len(),
+        "trace_flow_reverse complete"
+    );
+
+    Ok(steps)
+}
+
+/// Forward and backward flow results for a single start node.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BidirectionalFlow {
+    /// Nodes reachable by following edges forward (source → target).
+    pub forward: Vec<FlowStep>,
+    /// Nodes reachable by following edges backward (target → source).
+    pub backward: Vec<FlowStep>,
+}
+
+/// Run both `trace_flow` and `trace_flow_reverse` in a single call.
+///
+/// Useful when callers want to render the full context around a node without
+/// making two round-trips to the database.
+pub fn trace_flow_bidirectional(
+    db: &Database,
+    start_file: &str,
+    start_line: u32,
+    max_depth: u32,
+) -> Result<BidirectionalFlow> {
+    let forward = trace_flow(db, start_file, start_line, max_depth)?;
+    let backward = trace_flow_reverse(db, start_file, start_line, max_depth)?;
+    Ok(BidirectionalFlow { forward, backward })
+}
+
 /// Find all cross-language paths between two language boundaries.
 ///
 /// Returns groups of `FlowStep` sequences — each inner `Vec<FlowStep>` is

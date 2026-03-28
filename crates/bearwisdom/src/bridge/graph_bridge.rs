@@ -9,12 +9,12 @@
 // lsp_edge_meta rows so they get re-resolved on the next LSP pass.
 // =============================================================================
 
-use crate::db::Database;
+use crate::db::DbPool;
 use crate::lsp::manager::LspManager;
 use anyhow::{Context, Result};
 use rusqlite::OptionalExtension;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 /// Merges LSP-resolved edges into the index graph.
 ///
@@ -25,7 +25,7 @@ use std::sync::{Arc, Mutex};
 /// When a file changes, the caller must invalidate the corresponding
 /// lsp_edge_meta rows so they get re-resolved on the next LSP pass.
 pub struct GraphBridge {
-    db: Arc<Mutex<Database>>,
+    pool: DbPool,
     lsp: Arc<LspManager>,
     workspace_root: PathBuf,
     /// Don't invoke LSP if tree-sitter confidence is already >= this value.
@@ -34,12 +34,12 @@ pub struct GraphBridge {
 
 impl GraphBridge {
     pub fn new(
-        db: Arc<Mutex<Database>>,
+        pool: DbPool,
         lsp: Arc<LspManager>,
         workspace_root: impl Into<PathBuf>,
     ) -> Self {
         Self {
-            db,
+            pool,
             lsp,
             workspace_root: workspace_root.into(),
             confidence_threshold: 0.95,
@@ -113,8 +113,8 @@ impl GraphBridge {
             None => return Ok(None),
         };
 
-        let guard = self.db.lock().unwrap();
-        let id: Option<i64> = guard
+        let db = self.pool.get()?;
+        let id: Option<i64> = db
             .conn
             .query_row(
                 "SELECT s.id
@@ -150,10 +150,10 @@ impl GraphBridge {
         source_line: Option<u32>,
         server: &str,
     ) -> Result<bool> {
-        let guard = self.db.lock().unwrap();
+        let db = self.pool.get()?;
 
         // Try to upgrade an existing edge that is not yet at 1.0.
-        let updated = guard
+        let updated = db
             .conn
             .execute(
                 "UPDATE edges SET confidence = 1.0
@@ -166,7 +166,7 @@ impl GraphBridge {
 
         if updated == 0 {
             // No existing sub-1.0 edge — try inserting (may be a no-op if already at 1.0).
-            guard
+            db
                 .conn
                 .execute(
                     "INSERT OR IGNORE INTO edges (source_id, target_id, kind, source_line, confidence)
@@ -177,7 +177,7 @@ impl GraphBridge {
         }
 
         // Retrieve the edge's rowid so we can write lsp_edge_meta.
-        let rowid: Option<i64> = guard
+        let rowid: Option<i64> = db
             .conn
             .query_row(
                 "SELECT rowid FROM edges
@@ -194,7 +194,7 @@ impl GraphBridge {
         };
 
         // Check whether lsp_edge_meta already has a fresh entry for this edge.
-        let meta_exists: bool = guard
+        let meta_exists: bool = db
             .conn
             .query_row(
                 "SELECT 1 FROM lsp_edge_meta WHERE edge_rowid = ?1",
@@ -206,7 +206,7 @@ impl GraphBridge {
             .unwrap_or(false);
 
         // Upsert lsp_edge_meta.
-        guard
+        db
             .conn
             .execute(
                 "INSERT OR REPLACE INTO lsp_edge_meta (edge_rowid, source, server, resolved_at)
@@ -228,8 +228,8 @@ impl GraphBridge {
         kind: &str,
         new_confidence: f64,
     ) -> Result<bool> {
-        let guard = self.db.lock().unwrap();
-        let rows = guard
+        let db = self.pool.get()?;
+        let rows = db
             .conn
             .execute(
                 "UPDATE edges
@@ -248,10 +248,10 @@ impl GraphBridge {
     ///
     /// Returns the number of edges invalidated.
     pub fn invalidate_file_edges(&self, file_path: &str) -> Result<u32> {
-        let guard = self.db.lock().unwrap();
+        let db = self.pool.get()?;
 
         // 1. Collect edge rowids that have LSP meta AND belong to the file.
-        let mut stmt = guard.conn.prepare(
+        let mut stmt = db.conn.prepare(
             "SELECT lm.edge_rowid
              FROM lsp_edge_meta lm
              JOIN edges e ON e.rowid = lm.edge_rowid
@@ -278,7 +278,7 @@ impl GraphBridge {
 
         // 2. Delete the meta rows.
         for &rid in &rowids {
-            guard
+            db
                 .conn
                 .execute("DELETE FROM lsp_edge_meta WHERE edge_rowid = ?1", [rid])
                 .context("invalidate_file_edges DELETE meta")?;
@@ -286,7 +286,7 @@ impl GraphBridge {
 
         // 3. Reset confidence to 0.50 for those edges.
         for &rid in &rowids {
-            guard
+            db
                 .conn
                 .execute(
                     "UPDATE edges SET confidence = 0.50 WHERE rowid = ?1",
@@ -385,9 +385,9 @@ impl GraphBridge {
     // Internal accessor (used by BackgroundEnricher in this module)
     // -----------------------------------------------------------------------
 
-    /// Return a reference to the shared database — used by `BackgroundEnricher`.
-    pub(crate) fn db(&self) -> &Arc<Mutex<Database>> {
-        &self.db
+    /// Return a reference to the connection pool — used by `BackgroundEnricher`.
+    pub(crate) fn pool(&self) -> &DbPool {
+        &self.pool
     }
 
     /// Return a reference to the LSP manager — used by `BackgroundEnricher`.
@@ -405,8 +405,8 @@ impl GraphBridge {
     // -----------------------------------------------------------------------
 
     pub fn unresolved_ref_count(&self) -> Result<u32> {
-        let guard = self.db.lock().unwrap();
-        let count: i64 = guard
+        let db = self.pool.get()?;
+        let count: i64 = db
             .conn
             .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |row| row.get(0))
             .context("unresolved_ref_count")?;
@@ -414,8 +414,8 @@ impl GraphBridge {
     }
 
     pub fn lsp_edge_count(&self) -> Result<u32> {
-        let guard = self.db.lock().unwrap();
-        let count: i64 = guard
+        let db = self.pool.get()?;
+        let count: i64 = db
             .conn
             .query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |row| row.get(0))
             .context("lsp_edge_count")?;

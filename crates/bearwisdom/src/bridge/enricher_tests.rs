@@ -1,12 +1,19 @@
 use super::*;
-use crate::db::Database;
+use crate::db::DbPool;
 use crate::lsp::manager::LspManager;
-use std::sync::Mutex;
+
+fn test_db_path() -> std::path::PathBuf {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    std::env::temp_dir().join(format!("bw_enricher_test_{pid}_{id}.db"))
+}
 
 fn make_enricher() -> BackgroundEnricher {
-    let db = Arc::new(Mutex::new(Database::open_in_memory().unwrap()));
+    let path = test_db_path();
+    let pool = DbPool::new(&path, 2).unwrap();
     let lsp = Arc::new(LspManager::new("/tmp/test-workspace"));
-    let bridge = Arc::new(GraphBridge::new(db, lsp, "/tmp/test-workspace"));
+    let bridge = Arc::new(GraphBridge::new(pool, lsp, "/tmp/test-workspace"));
     BackgroundEnricher::new(bridge)
 }
 
@@ -42,28 +49,29 @@ fn test_new_defaults() {
 /// runtime (via `row.get(5)`) if the column index were off.
 #[tokio::test]
 async fn test_enrich_unresolved_reads_target_name() {
-    let db = Arc::new(Mutex::new(Database::open_in_memory().unwrap()));
+    let path = test_db_path();
+    let pool = DbPool::new(&path, 2).unwrap();
     let lsp = Arc::new(LspManager::new("/tmp/test-workspace"));
-    let bridge = Arc::new(GraphBridge::new(db.clone(), lsp, "/tmp/test-workspace"));
+    let bridge = Arc::new(GraphBridge::new(pool.clone(), lsp, "/tmp/test-workspace"));
     let enricher = BackgroundEnricher::new(bridge);
 
     // Seed the minimum schema rows needed.
     {
-        let guard = db.lock().unwrap();
-        guard.conn.execute(
+        let db = pool.get().unwrap();
+        db.conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/a.ts', 'h', 'typescript', 0)",
             [],
         ).unwrap();
-        let file_id = guard.conn.last_insert_rowid();
+        let file_id = db.conn.last_insert_rowid();
 
-        guard.conn.execute(
+        db.conn.execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
              VALUES (?1, 'myFunc', 'mod::myFunc', 'function', 3, 0, 10)",
             [file_id],
         ).unwrap();
-        let sym_id = guard.conn.last_insert_rowid();
+        let sym_id = db.conn.last_insert_rowid();
 
-        guard.conn.execute(
+        db.conn.execute(
             "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line)
              VALUES (?1, 'otherFunc', 'calls', 5)",
             [sym_id],

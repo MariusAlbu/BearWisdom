@@ -79,7 +79,17 @@ pub struct ArchitectureOverview {
 /// Build and return a complete `ArchitectureOverview` for the database.
 ///
 /// All four sub-queries run against the open database; no indexing happens here.
+/// Build overview with default limits (10 hotspots, 20 entry points).
 pub fn get_overview(db: &Database) -> Result<ArchitectureOverview> {
+    get_overview_with_limits(db, 10, 20)
+}
+
+/// Build overview with custom limits.
+pub fn get_overview_with_limits(
+    db: &Database,
+    hotspot_limit: usize,
+    entry_point_limit: usize,
+) -> Result<ArchitectureOverview> {
     let conn = &db.conn;
 
     // --- 1. Totals ---
@@ -133,10 +143,10 @@ pub fn get_overview(db: &Database) -> Result<ArchitectureOverview> {
              JOIN edges e   ON e.target_id = s.id
              GROUP BY s.id
              ORDER BY incoming_refs DESC
-             LIMIT 20",
+             LIMIT ?1",
         ).context("Failed to prepare hotspots query")?;
 
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([hotspot_limit as i64], |row| {
             Ok(HotspotSymbol {
                 name:          row.get(0)?,
                 qualified_name: row.get(1)?,
@@ -161,10 +171,10 @@ pub fn get_overview(db: &Database) -> Result<ArchitectureOverview> {
              WHERE s.visibility = 'public'
                AND s.kind IN ('class', 'interface', 'function', 'struct')
              ORDER BY f.path, s.line
-             LIMIT 50",
+             LIMIT ?1",
         ).context("Failed to prepare entry points query")?;
 
-        let rows = stmt.query_map([], |row| {
+        let rows = stmt.query_map([entry_point_limit as i64], |row| {
             Ok(SymbolSummary {
                 name:          row.get(0)?,
                 qualified_name: row.get(1)?,

@@ -125,6 +125,50 @@ fn fts5_trigger_removes_deleted_symbols() {
 }
 
 #[test]
+fn schema_creates_all_indexes() {
+    let conn = make_db();
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT name FROM sqlite_master \
+             WHERE type='index' AND name LIKE 'idx_%' \
+             ORDER BY name",
+        )
+        .unwrap();
+
+    let indexes: Vec<String> = stmt
+        .query_map([], |row| row.get(0))
+        .unwrap()
+        .filter_map(|r| r.ok())
+        .collect();
+
+    // Verify the two P0 indexes exist.
+    assert!(
+        indexes.contains(&"idx_unresolved_source_kind".to_string()),
+        "Missing idx_unresolved_source_kind. Found: {indexes:?}"
+    );
+    assert!(
+        indexes.contains(&"idx_flow_type_lang".to_string()),
+        "Missing idx_flow_type_lang. Found: {indexes:?}"
+    );
+
+    // Sample of other critical indexes.
+    assert!(indexes.contains(&"idx_symbols_name".to_string()));
+    assert!(indexes.contains(&"idx_symbols_qualified".to_string()));
+    assert!(indexes.contains(&"idx_edges_source".to_string()));
+    assert!(indexes.contains(&"idx_edges_target".to_string()));
+    assert!(indexes.contains(&"idx_flow_source".to_string()));
+    assert!(indexes.contains(&"idx_flow_target".to_string()));
+
+    // Sanity: at least 25 indexes must exist.
+    assert!(
+        indexes.len() >= 25,
+        "Expected >= 25 indexes, found {}",
+        indexes.len()
+    );
+}
+
+#[test]
 fn unique_edge_constraint_prevents_duplicates() {
     let conn = make_db();
     conn.execute(

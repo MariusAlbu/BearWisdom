@@ -11,6 +11,9 @@ import type {
   GrepMatch,
   ContentSearchResult,
   HybridSearchResult,
+  FlowEdgesResult,
+  FlowStep,
+  FullTraceResult,
 } from './types';
 
 const enc = encodeURIComponent;
@@ -116,4 +119,17 @@ export const api = {
 
   embedStatus: () =>
     apiFetch<{ state: string; embedded: number; error: string | null }>('/api/embed-status'),
+
+  flowEdges: (path: string, limit = 500) =>
+    apiFetch<FlowEdgesResult>(`/api/flow-edges?path=${enc(path)}&limit=${limit}`),
+
+  traceFlow: (path: string, file: string, line: number, depth = 3, direction = 'forward') =>
+    apiFetch<FlowStep[]>(
+      `/api/trace-flow?path=${enc(path)}&file=${enc(file)}&line=${line}&depth=${depth}&direction=${enc(direction)}`,
+    ),
+
+  fullTrace: (path: string, symbol?: string, depth = 4, maxTraces = 15) =>
+    apiFetch<FullTraceResult>(
+      `/api/full-trace?path=${enc(path)}${symbol ? `&symbol=${enc(symbol)}` : ''}&depth=${depth}&max_traces=${maxTraces}`,
+    ),
 };

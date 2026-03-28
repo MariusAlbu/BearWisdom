@@ -6,15 +6,19 @@ web/dist/
 /models
 *.db
 .bearwisdom/
+.mcp.json
 
 # Dependencies
 node_modules/
 
 # Benchmark output
-bench-results/
+bench-archive/
 
 # Local / session
 .claude/
-screens/
 *.ndjson
 .env
+research/
+scripts/
+benchmark.md
+CLAUDE.md

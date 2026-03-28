@@ -61,7 +61,7 @@ class Bird(Animal):
     let _ = stats;
 
     // "Bird" should now be findable.
-    let results = bearwisdom::query::search::search_symbols(&db, "Bird", 10).unwrap();
+    let results = bearwisdom::query::search::search_symbols(&db, "Bird", 10, &bearwisdom::query::QueryOptions::full()).unwrap();
     assert!(!results.is_empty(), "Bird class should be indexed after incremental update");
 }
 

@@ -7,7 +7,6 @@ use anyhow::{Context, Result};
 use clap::Parser;
 use rmcp::ServiceExt;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 use tracing::info;
 
 #[derive(Parser, Debug)]
@@ -74,30 +73,28 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     let project = project.canonicalize().unwrap_or(project);
     info!("Starting BearWisdom for project: {}", project.display());
 
-    // Open or create the index database
+    // Open or create the index database via a connection pool (4 connections).
     let db_path = resolve_db_path(&project)?;
-    let db = bearwisdom::Database::open_with_vec(&db_path)
-        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
-    let db = Arc::new(Mutex::new(db));
+    let pool = bearwisdom::DbPool::new(&db_path, 4)
+        .with_context(|| format!("Failed to create pool for {}", db_path.display()))?;
 
     // Start MCP server FIRST so we respond to initialize immediately.
-    // Indexing runs in background — tool calls during indexing will block
-    // on the mutex until the current batch finishes, which is acceptable.
-    let mcp_server = server::BearWisdomServer::new(db.clone(), project.clone());
+    // Indexing runs in background — tool calls use separate pool connections
+    // so they no longer block during indexing.
+    let mcp_server = server::BearWisdomServer::new(pool.clone(), project.clone());
     eprintln!("MCP server ready — listening on stdio");
 
     let transport = rmcp::transport::io::stdio();
     let service = mcp_server.serve(transport).await?;
 
     // Full index in background
-    let bg_db = db.clone();
+    let bg_pool = pool.clone();
     let bg_project = project.clone();
     let _bg_handle = tokio::task::spawn(async move {
-        let idx_db = bg_db;
+        let idx_pool = bg_pool;
         let idx_project = bg_project;
-        // Index first (hold lock briefly), then release lock and embed separately.
         let index_result = tokio::task::spawn_blocking(move || {
-            let mut db = idx_db.lock().expect("index lock");
+            let mut db = idx_pool.get().expect("pool get for indexing");
             bearwisdom::full_index(&mut db, &idx_project, None, None)
         })
         .await;

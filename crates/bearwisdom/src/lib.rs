@@ -24,7 +24,7 @@ pub mod walker;
 
 // Re-export the most commonly used entry points at the crate root so callers
 // don't need to dig through module paths.
-pub use db::{resolve_db_path, db_exists, Database};
+pub use db::{resolve_db_path, db_exists, Database, DbPool, PoolGuard};
 pub use indexer::full::{full_index, ProgressFn};
 pub use indexer::incremental::{incremental_index, reindex_files, ChangeKind, FileChangeEvent};
 pub use types::{EdgeKind, EdgeSource, Symbol, SymbolKind};
@@ -38,10 +38,13 @@ pub use query::call_hierarchy::CallHierarchyItem;
 pub use query::concepts::ConceptSummary;
 pub use query::search::SearchResult;
 pub use query::subgraph::{GraphEdge, GraphNode, SubgraphResult};
-pub use query::symbol_info::SymbolDetail;
+pub use query::symbol_info::{SymbolDetail, FileSymbol, FileSymbolsMode};
+pub use query::investigate::{InvestigateOptions, InvestigateResult, SlimSymbol, BlastRadiusSlim};
+pub use query::QueryOptions;
 
 // Re-export new v3 types.
 pub use bridge::enricher::BackgroundEnricher;
 pub use bridge::graph_bridge::GraphBridge;
+pub use bridge::scip::{import_scip, ScipImportStats};
 pub use lsp::manager::LspManager;
 pub use lsp::types::{Language, ServerState, ServerStatus};

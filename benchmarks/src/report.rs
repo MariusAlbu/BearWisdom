@@ -67,13 +67,13 @@ fn build_markdown(scores: &[TaskScore]) -> String {
     md.push_str("## Summary by Condition\n\n");
     md.push_str(
         "| Condition | Tasks | Avg Precision | Avg Recall | Avg F1 | Avg Efficiency | \
-         Avg Composite | Avg Tool Calls | Avg Input Tokens | Avg Output Tokens |\n",
+         Avg Latency | Avg Composite | Avg Tool Calls | Avg Wall (s) | Avg Output Tokens |\n",
     );
     md.push_str(
-        "|-----------|-------|---------------|------------|--------|----------------|---------------|----------------|------------------|-------------------|\n",
+        "|-----------|-------|---------------|------------|--------|----------------|-------------|---------------|----------------|--------------|-------------------|\n",
     );
 
-    for condition in &[Condition::UseBearWisdom, Condition::NoBearWisdom] {
+    for condition in Condition::all() {
         let cond_str = condition.to_string();
         let subset: Vec<&TaskScore> = scores.iter().filter(|s| s.condition == cond_str).collect();
         if subset.is_empty() {
@@ -83,15 +83,16 @@ fn build_markdown(scores: &[TaskScore]) -> String {
         let avg = |f: fn(&TaskScore) -> f64| subset.iter().map(|s| f(s)).sum::<f64>() / n;
 
         md.push_str(&format!(
-            "| {cond_str} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.1} | {:.0} | {:.0} |\n",
+            "| {cond_str} | {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.1} | {:.1} | {:.0} |\n",
             subset.len(),
             avg(|s| s.precision),
             avg(|s| s.recall),
             avg(|s| s.f1),
             avg(|s| s.efficiency),
+            avg(|s| s.latency_score),
             avg(|s| s.composite),
             avg(|s| s.tool_call_count as f64),
-            avg(|s| s.input_tokens as f64),
+            avg(|s| s.wall_time_ms as f64 / 1000.0),
             avg(|s| s.output_tokens as f64),
         ));
     }
@@ -118,7 +119,7 @@ fn build_markdown(scores: &[TaskScore]) -> String {
             "|-----------|-------|---------------|------------|--------|----------------|---------------|\n",
         );
 
-        for condition in &[Condition::UseBearWisdom, Condition::NoBearWisdom] {
+        for condition in Condition::all() {
             let cond_str = condition.to_string();
             let subset: Vec<&TaskScore> = scores
                 .iter()
@@ -162,25 +163,26 @@ fn build_markdown(scores: &[TaskScore]) -> String {
 
         md.push_str(&format!("### Task `{task_id}` ({category})\n\n"));
         md.push_str(
-            "| Condition | Precision | Recall | F1 | Efficiency | Tool Calls | \
-             Input Tok | Output Tok | Wall ms |\n",
+            "| Condition | Precision | Recall | F1 | Efficiency | Latency | Composite | \
+             Tool Calls | Output Tok | Wall (s) |\n",
         );
         md.push_str(
-            "|-----------|-----------|--------|----|------------|------------|-----------|------------|----------|\n",
+            "|-----------|-----------|--------|----|------------|---------|-----------|------------|------------|----------|\n",
         );
 
         for score in task_scores.iter() {
             md.push_str(&format!(
-                "| {} | {:.3} | {:.3} | {:.3} | {:.3} | {} | {} | {} | {} |\n",
+                "| {} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {:.3} | {} | {} | {:.1} |\n",
                 score.condition,
                 score.precision,
                 score.recall,
                 score.f1,
                 score.efficiency,
+                score.latency_score,
+                score.composite,
                 score.tool_call_count,
-                score.input_tokens,
                 score.output_tokens,
-                score.wall_time_ms,
+                score.wall_time_ms as f64 / 1000.0,
             ));
         }
 
@@ -206,7 +208,7 @@ fn build_markdown(scores: &[TaskScore]) -> String {
     md.push_str("| Condition | Total Input Tokens | Total Output Tokens | Total Tokens |\n");
     md.push_str("|-----------|-------------------|---------------------|---------------|\n");
 
-    for condition in &[Condition::UseBearWisdom, Condition::NoBearWisdom] {
+    for condition in Condition::all() {
         let cond_str = condition.to_string();
         let subset: Vec<&TaskScore> = scores.iter().filter(|s| s.condition == cond_str).collect();
         if subset.is_empty() {

@@ -1,9 +1,13 @@
 // =============================================================================
-// db/mod.rs  —  Database connection wrapper
+// db/mod.rs  —  Database connection wrapper + connection pool
 //
 // The `Database` struct owns a rusqlite Connection and exposes the setup
 // helpers.  All actual SQL lives in schema.rs (CREATE TABLE) and the
 // various query/indexer modules (INSERT / SELECT).
+//
+// `DbPool` manages a set of idle `Database` connections to the same file.
+// Connections are checked out via `pool.get()` and returned on drop.
+// WAL mode + busy_timeout allow concurrent readers and serialised writers.
 //
 // sqlite-vec is statically linked and initialised on every connection via
 // a direct call to sqlite3_vec_init.
@@ -14,6 +18,7 @@ pub mod schema;
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 
 /// Initialise sqlite-vec on a raw connection handle.
 ///
@@ -57,6 +62,8 @@ pub fn db_exists(project_root: &Path) -> bool {
 /// Wraps a SQLite connection with the v2 schema applied.
 pub struct Database {
     pub conn: Connection,
+    /// Path to the database file, or `None` for in-memory databases.
+    pub path: Option<PathBuf>,
 }
 
 impl Database {
@@ -83,7 +90,7 @@ impl Database {
         schema::create_schema(&conn)
             .context("Failed to create schema")?;
 
-        Ok(Self { conn })
+        Ok(Self { conn, path: Some(path.to_path_buf()) })
     }
 
     /// Open a database with vector search support.
@@ -114,6 +121,236 @@ impl Database {
         schema::apply_pragmas(&conn, true)?;
         schema::create_schema(&conn)?;
 
-        Ok(Self { conn })
+        Ok(Self { conn, path: None })
+    }
+}
+
+// =============================================================================
+// Connection pool
+// =============================================================================
+
+struct DbPoolInner {
+    path: PathBuf,
+    idle: Mutex<Vec<Database>>,
+    max_size: usize,
+}
+
+/// A pool of `Database` connections to the same SQLite file.
+///
+/// Connections are checked out via [`get()`](DbPool::get) and automatically
+/// returned when the [`PoolGuard`] drops.  Each connection has sqlite-vec
+/// initialised and PRAGMAs applied.  WAL mode permits concurrent readers;
+/// writers serialise via `busy_timeout`.
+///
+/// `DbPool` is `Clone + Send + Sync` — share freely across threads and tasks.
+#[derive(Clone)]
+pub struct DbPool(Arc<DbPoolInner>);
+
+impl DbPool {
+    /// Create a pool backed by the database file at `path`.
+    ///
+    /// The schema is created (idempotently) on the first connection.
+    /// `max_size` controls how many idle connections are kept; connections
+    /// beyond this limit are closed when returned.
+    pub fn new(path: &Path, max_size: usize) -> Result<Self> {
+        // Open one connection to ensure the schema exists.
+        let seed = Database::open(path)?;
+        let mut idle = Vec::with_capacity(max_size);
+        idle.push(seed);
+        Ok(Self(Arc::new(DbPoolInner {
+            path: path.to_path_buf(),
+            idle: Mutex::new(idle),
+            max_size,
+        })))
+    }
+
+    /// Check out a connection.  Reuses an idle connection when available,
+    /// otherwise opens a fresh one.
+    pub fn get(&self) -> Result<PoolGuard> {
+        let db = {
+            let mut idle = self.0.idle.lock().unwrap();
+            idle.pop()
+        };
+        let db = match db {
+            Some(db) => db,
+            None => Database::open(&self.0.path)?,
+        };
+        Ok(PoolGuard {
+            db: Some(db),
+            pool: self.0.clone(),
+        })
+    }
+}
+
+/// RAII guard that dereferences to `Database` and returns the connection
+/// to the pool on drop.
+pub struct PoolGuard {
+    db: Option<Database>,
+    pool: Arc<DbPoolInner>,
+}
+
+impl std::ops::Deref for PoolGuard {
+    type Target = Database;
+    fn deref(&self) -> &Database {
+        self.db.as_ref().expect("PoolGuard used after drop")
+    }
+}
+
+impl std::ops::DerefMut for PoolGuard {
+    fn deref_mut(&mut self) -> &mut Database {
+        self.db.as_mut().expect("PoolGuard used after drop")
+    }
+}
+
+impl Drop for PoolGuard {
+    fn drop(&mut self) {
+        if let Some(db) = self.db.take() {
+            let mut idle = self.pool.idle.lock().unwrap();
+            if idle.len() < self.pool.max_size {
+                idle.push(db);
+            }
+            // else: connection is dropped (closed)
+        }
+    }
+}
+
+// =============================================================================
+// Tests
+// =============================================================================
+
+#[cfg(test)]
+mod pool_tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    fn test_db_path() -> PathBuf {
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        let pid = std::process::id();
+        std::env::temp_dir().join(format!("bw_pool_test_{pid}_{id}.db"))
+    }
+
+    #[test]
+    fn test_pool_basic_get_and_return() {
+        let path = test_db_path();
+        let pool = DbPool::new(&path, 2).unwrap();
+
+        // Check out a connection.
+        let db = pool.get().unwrap();
+        // Verify it works.
+        let count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 0);
+        // Drop returns it to the pool.
+        drop(db);
+
+        // Check out again — should reuse.
+        let db2 = pool.get().unwrap();
+        let count2: i64 = db2
+            .conn
+            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count2, 0);
+    }
+
+    #[test]
+    fn test_pool_concurrent_access() {
+        let path = test_db_path();
+        let pool = DbPool::new(&path, 4).unwrap();
+
+        // Seed data.
+        {
+            let db = pool.get().unwrap();
+            db.conn
+                .execute(
+                    "INSERT INTO files (path, hash, language, last_indexed) \
+                     VALUES ('a.rs', 'h', 'rust', 0)",
+                    [],
+                )
+                .unwrap();
+        }
+
+        // Spawn multiple threads that all read concurrently.
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let pool = pool.clone();
+                std::thread::spawn(move || {
+                    for _ in 0..5 {
+                        let db = pool.get().unwrap();
+                        let count: i64 = db
+                            .conn
+                            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+                            .unwrap();
+                        assert_eq!(count, 1);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread panicked");
+        }
+    }
+
+    #[test]
+    fn test_pool_max_size_limits_idle() {
+        let path = test_db_path();
+        let pool = DbPool::new(&path, 2).unwrap();
+
+        // Check out 4 connections (exceeds max_size of 2).
+        let db1 = pool.get().unwrap();
+        let db2 = pool.get().unwrap();
+        let db3 = pool.get().unwrap();
+        let db4 = pool.get().unwrap();
+
+        // All four should work.
+        for db in [&db1, &db2, &db3, &db4] {
+            let _: i64 = db
+                .conn
+                .query_row("SELECT 1", [], |r| r.get(0))
+                .unwrap();
+        }
+
+        // Return all four — only 2 should be kept (max_size).
+        drop(db1);
+        drop(db2);
+        drop(db3);
+        drop(db4);
+
+        // Verify pool still works after returns.
+        let db = pool.get().unwrap();
+        let _: i64 = db
+            .conn
+            .query_row("SELECT 1", [], |r| r.get(0))
+            .unwrap();
+    }
+
+    #[test]
+    fn test_pool_clone_shares_state() {
+        let path = test_db_path();
+        let pool1 = DbPool::new(&path, 2).unwrap();
+        let pool2 = pool1.clone();
+
+        // Write via pool1.
+        {
+            let db = pool1.get().unwrap();
+            db.conn
+                .execute(
+                    "INSERT INTO files (path, hash, language, last_indexed) \
+                     VALUES ('x.rs', 'h', 'rust', 0)",
+                    [],
+                )
+                .unwrap();
+        }
+
+        // Read via pool2 — should see the write (same database file).
+        let db = pool2.get().unwrap();
+        let count: i64 = db
+            .conn
+            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count, 1);
     }
 }

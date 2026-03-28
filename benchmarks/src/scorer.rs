@@ -21,7 +21,9 @@ pub struct TaskScore {
     pub f1: f64,
     /// Efficiency penalises excessive tool calls: 1 / (1 + log2(tool_calls))
     pub efficiency: f64,
-    /// Composite = 0.3*precision + 0.3*recall + 0.2*f1 + 0.2*efficiency
+    /// Latency score: 30 / (30 + wall_seconds).  Faster = higher.
+    pub latency_score: f64,
+    /// Composite = 0.25*precision + 0.25*recall + 0.15*f1 + 0.20*efficiency + 0.15*latency
     pub composite: f64,
     pub tool_call_count: usize,
     pub input_tokens: u64,
@@ -92,7 +94,10 @@ pub fn score_run(task: &BenchmarkTask, result: &RunResult) -> TaskScore {
         1.0 / (1.0 + (tool_calls as f64).max(1.0).log2())
     };
 
-    let composite = 0.3 * precision + 0.3 * recall + 0.2 * f1 + 0.2 * efficiency;
+    let wall_seconds = result.wall_time_ms as f64 / 1000.0;
+    let latency_score = 30.0 / (30.0 + wall_seconds);
+
+    let composite = 0.25 * precision + 0.25 * recall + 0.15 * f1 + 0.20 * efficiency + 0.15 * latency_score;
 
     TaskScore {
         task_id: task.id.clone(),
@@ -102,6 +107,7 @@ pub fn score_run(task: &BenchmarkTask, result: &RunResult) -> TaskScore {
         recall,
         f1,
         efficiency,
+        latency_score,
         composite,
         tool_call_count: tool_calls,
         input_tokens: result.input_tokens,

@@ -86,6 +86,8 @@ fn generate_impact_analysis(
                     .affected
                     .iter()
                     .map(|a| a.qualified_name.clone())
+                    .collect::<std::collections::HashSet<_>>()
+                    .into_iter()
                     .collect();
                 let files: Vec<String> = result
                     .affected
@@ -159,6 +161,8 @@ fn generate_call_hierarchy(
         let caller_names: Vec<String> = callers
             .iter()
             .map(|c| c.qualified_name.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
             .collect();
         let caller_files: Vec<String> = callers
             .iter()
@@ -226,6 +230,8 @@ fn generate_architecture_overview(
     expected_items.extend(hotspot_names.clone());
     // Entry points can be numerous; cap at 20 for scoring purposes.
     expected_items.extend(entry_names.iter().take(20).cloned());
+    expected_items.sort();
+    expected_items.dedup();
 
     let expected_files: Vec<String> = overview
         .entry_points
@@ -271,14 +277,15 @@ fn generate_cross_file_references(
     project_path: &str,
     count: usize,
 ) -> Result<Vec<BenchmarkTask>> {
-    // Find interfaces and traits — good targets for cross-file reference queries.
+    // Find type-like symbols that are referenced across files.
+    // Includes struct/type_alias for Go/TS, and accepts NULL visibility for TS/JS.
     let candidates: Vec<(String, String, String)> = {
         let mut stmt = db.conn.prepare(
             "SELECT s.name, s.qualified_name, f.path
              FROM symbols s
              JOIN files f ON f.id = s.file_id
-             WHERE s.kind IN ('interface', 'trait', 'class')
-               AND s.visibility = 'public'
+             WHERE s.kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
+               AND (s.visibility = 'public' OR s.visibility IS NULL)
              ORDER BY (
                  SELECT COUNT(*) FROM edges e WHERE e.target_id = s.id
              ) DESC
@@ -307,6 +314,8 @@ fn generate_cross_file_references(
         let ref_symbols: Vec<String> = refs
             .iter()
             .map(|r| r.referencing_symbol.clone())
+            .collect::<std::collections::HashSet<_>>()
+            .into_iter()
             .collect();
         let ref_files: Vec<String> = refs
             .iter()
@@ -445,7 +454,7 @@ fn generate_symbol_search(
     let mut tasks = Vec::new();
 
     for target in &targets {
-        let details = symbol_info::symbol_info(db, &target.qualified_name)
+        let details = symbol_info::symbol_info(db, &target.qualified_name, &bearwisdom::query::QueryOptions::full())
             .with_context(|| format!("symbol_info failed for {}", target.qualified_name))?;
 
         if details.is_empty() {

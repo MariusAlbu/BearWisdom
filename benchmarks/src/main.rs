@@ -30,6 +30,7 @@ mod scorer;
 mod task;
 
 use anyhow::{bail, Context, Result};
+use bearwisdom::db::Database;
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::info;
@@ -83,8 +84,8 @@ enum Commands {
         #[arg(long)]
         output: PathBuf,
 
-        /// Which conditions to run: both | bw | native (default: both).
-        #[arg(long, default_value = "both")]
+        /// Which conditions to run: all | both | bw | bw-cli | native (default: all).
+        #[arg(long, default_value = "all")]
         conditions: String,
 
         /// Backend to use: "api" (requires ANTHROPIC_API_KEY) or "cli" (uses `claude` CLI from subscription).
@@ -101,6 +102,14 @@ enum Commands {
         /// Output path for the Markdown report (default: report.md in results dir).
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+
+    /// Diagnose a project's index to check benchmark readiness.
+    /// Reports visibility/kind distributions, sampler-relevant counts, and red flags.
+    Diagnose {
+        /// Path to the project root (must already be indexed).
+        #[arg(long)]
+        project: PathBuf,
     },
 
     /// Run generate → run (both conditions) → report in one shot.
@@ -168,6 +177,9 @@ async fn main() -> Result<()> {
             let output_path = output.unwrap_or_else(|| results.join("report.md"));
             cmd_report(&results, &output_path)?;
         }
+        Commands::Diagnose { project } => {
+            cmd_diagnose(&project)?;
+        }
         Commands::Full { project, model, output, count, backend } => {
             std::fs::create_dir_all(&output)
                 .with_context(|| format!("Failed to create output dir {}", output.display()))?;
@@ -177,7 +189,7 @@ async fn main() -> Result<()> {
 
             let task_set = TaskSet::load(&tasks_path)?;
             let project_root = PathBuf::from(&task_set.project_path);
-            let conditions = [Condition::UseBearWisdom, Condition::NoBearWisdom];
+            let conditions = Condition::all().to_vec();
 
             match backend.as_str() {
                 "cli" => {
@@ -213,6 +225,172 @@ fn cmd_generate(project: &std::path::Path, output: &std::path::Path, count: usiz
     info!("Generated {} tasks total", task_set.tasks.len());
     task_set.save(output)?;
     info!("Task set written to {}", output.display());
+    Ok(())
+}
+
+fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
+    let db_path = bearwisdom::resolve_db_path(project)?;
+    if !db_path.exists() {
+        bail!("No index found at {}. Run `bw open` first.", db_path.display());
+    }
+    let db = Database::open(&db_path)?;
+
+    // 1. Basic stats
+    let (total_files, total_symbols, total_edges): (i64, i64, i64) = db.conn.query_row(
+        "SELECT
+            (SELECT COUNT(*) FROM files),
+            (SELECT COUNT(*) FROM symbols),
+            (SELECT COUNT(*) FROM edges)",
+        [],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    )?;
+    println!("=== {} ===", project.display());
+    println!("  Files: {total_files}  Symbols: {total_symbols}  Edges: {total_edges}");
+
+    // 2. Visibility distribution
+    println!("\n  Visibility distribution:");
+    let mut stmt = db.conn.prepare(
+        "SELECT COALESCE(visibility, 'NULL'), COUNT(*) FROM symbols GROUP BY visibility ORDER BY COUNT(*) DESC"
+    )?;
+    let mut rows = Vec::new();
+    let mut query_rows = stmt.query([])?;
+    while let Some(row) = query_rows.next()? {
+        let vis: String = row.get(0)?;
+        let count: i64 = row.get(1)?;
+        rows.push((vis, count));
+    }
+    for (vis, count) in &rows {
+        println!("    {vis}: {count}");
+    }
+
+    // 3. Kind distribution
+    println!("\n  Kind distribution (top 15):");
+    let mut stmt = db.conn.prepare(
+        "SELECT kind, COUNT(*) FROM symbols GROUP BY kind ORDER BY COUNT(*) DESC LIMIT 15"
+    )?;
+    let mut rows = Vec::new();
+    let mut query_rows = stmt.query([])?;
+    while let Some(row) = query_rows.next()? {
+        let kind: String = row.get(0)?;
+        let count: i64 = row.get(1)?;
+        rows.push((kind, count));
+    }
+    for (kind, count) in &rows {
+        println!("    {kind}: {count}");
+    }
+
+    // 4. Sampler-critical: type-like symbols by kind and visibility
+    println!("\n  Type-like symbols (interface/trait/class/struct/type_alias):");
+    let mut stmt = db.conn.prepare(
+        "SELECT kind, COALESCE(visibility, 'NULL'), COUNT(*)
+         FROM symbols
+         WHERE kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
+         GROUP BY kind, visibility
+         ORDER BY kind, COUNT(*) DESC"
+    )?;
+    let mut rows = Vec::new();
+    let mut query_rows = stmt.query([])?;
+    while let Some(row) = query_rows.next()? {
+        let kind: String = row.get(0)?;
+        let vis: String = row.get(1)?;
+        let count: i64 = row.get(2)?;
+        rows.push((kind, vis, count));
+    }
+    for (kind, vis, count) in &rows {
+        println!("    {kind} [{vis}]: {count}");
+    }
+
+    // 5. Sampler query simulation: what the current sampler would find
+    let current_sampler_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM symbols
+         WHERE kind IN ('interface', 'trait', 'class')
+           AND visibility = 'public'",
+        [],
+        |row| row.get(0),
+    )?;
+    println!("\n  Current sampler CrossFileRef candidates (interface/trait/class + public): {current_sampler_count}");
+
+    // What the fixed sampler would find
+    let fixed_sampler_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM symbols
+         WHERE kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
+           AND (visibility = 'public' OR visibility IS NULL)",
+        [],
+        |row| row.get(0),
+    )?;
+    println!("  Fixed sampler CrossFileRef candidates (+ struct/type_alias, + NULL vis): {fixed_sampler_count}");
+
+    // Of those, how many have incoming edges (actually referenced)?
+    let referenced_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM symbols s
+         WHERE s.kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
+           AND (s.visibility = 'public' OR s.visibility IS NULL)
+           AND EXISTS (SELECT 1 FROM edges e WHERE e.target_id = s.id)",
+        [],
+        |row| row.get(0),
+    )?;
+    println!("  Of those, referenced (has incoming edges): {referenced_count}");
+
+    // 6. Architecture overview viability
+    let hotspot_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM (
+            SELECT s.id FROM symbols s
+            JOIN edges e ON e.target_id = s.id
+            GROUP BY s.id
+            HAVING COUNT(*) >= 3
+         )",
+        [],
+        |row| row.get(0),
+    )?;
+    println!("\n  Symbols with >=3 incoming edges (hotspot candidates): {hotspot_count}");
+
+    // 7. find_references viability: pick top 3 referenced symbols and test
+    println!("\n  Top 5 most-referenced symbols:");
+    let mut stmt = db.conn.prepare(
+        "SELECT s.qualified_name, s.kind, COALESCE(s.visibility, 'NULL'), COUNT(*) as ref_count
+         FROM symbols s
+         JOIN edges e ON e.target_id = s.id
+         GROUP BY s.id
+         ORDER BY ref_count DESC
+         LIMIT 5"
+    )?;
+    let mut rows = Vec::new();
+    let mut query_rows = stmt.query([])?;
+    while let Some(row) = query_rows.next()? {
+        let qname: String = row.get(0)?;
+        let kind: String = row.get(1)?;
+        let vis: String = row.get(2)?;
+        let refs: i64 = row.get(3)?;
+        rows.push((qname, kind, vis, refs));
+    }
+    for (qname, kind, vis, refs) in &rows {
+        println!("    {qname} ({kind}, {vis}): {refs} refs");
+    }
+
+    // 8. Verdict
+    let mut issues: Vec<String> = Vec::new();
+    if current_sampler_count == 0 {
+        issues.push(format!(
+            "CrossFileReferences: current sampler finds 0 candidates (fixed sampler would find {fixed_sampler_count})"
+        ));
+    }
+    if hotspot_count < 3 {
+        issues.push(format!("Only {hotspot_count} hotspot candidates — ImpactAnalysis/CallHierarchy tasks may be weak"));
+    }
+    if total_edges == 0 {
+        issues.push("No edges at all — index is empty or broken".to_owned());
+    }
+
+    if issues.is_empty() {
+        println!("\n  VERDICT: READY for benchmarking");
+    } else {
+        println!("\n  VERDICT: ISSUES FOUND");
+        for issue in &issues {
+            println!("    - {issue}");
+        }
+    }
+
+    println!();
     Ok(())
 }
 
@@ -259,9 +437,11 @@ fn api_key() -> Result<String> {
 
 fn parse_conditions(s: &str) -> Result<Vec<Condition>> {
     match s {
+        "all" => Ok(Condition::all().to_vec()),
         "both" => Ok(vec![Condition::UseBearWisdom, Condition::NoBearWisdom]),
         "bw" => Ok(vec![Condition::UseBearWisdom]),
+        "bw-cli" => Ok(vec![Condition::UseBearWisdomCli]),
         "native" => Ok(vec![Condition::NoBearWisdom]),
-        other => bail!("Unknown condition '{other}': expected both | bw | native"),
+        other => bail!("Unknown condition '{other}': expected all | both | bw | bw-cli | native"),
     }
 }

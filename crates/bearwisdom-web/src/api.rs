@@ -174,9 +174,11 @@ pub struct BrowseQuery {
 fn default_limit_20() -> usize { 20 }
 fn default_limit_100() -> usize { 100 }
 fn default_limit_200() -> usize { 200 }
+fn default_limit_500() -> usize { 500 }
 fn default_depth_3() -> u32 { 3 }
 fn default_max_nodes() -> usize { 500 }
 fn default_true() -> bool { true }
+fn default_forward() -> String { "forward".to_string() }
 
 // ---------------------------------------------------------------------------
 // POST /api/index
@@ -294,7 +296,7 @@ pub async fn get_search_symbols(Query(params): Query<SearchQuery>) -> impl IntoR
     let query = params.q.unwrap_or_default();
     match open_existing_db(&root) {
         Ok(db) => {
-            match bearwisdom::query::search::search_symbols(&db, &query, params.limit) {
+            match bearwisdom::query::search::search_symbols(&db, &query, params.limit, &bearwisdom::query::QueryOptions::full()) {
                 Ok(results) => ok_json(results).into_response(),
                 Err(e) => err_json(e).into_response(),
             }
@@ -462,7 +464,7 @@ pub async fn get_concept_members(
 pub async fn get_symbol_info(Query(params): Query<SymbolQuery>) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
     match open_existing_db(&root) {
-        Ok(db) => match bearwisdom::query::symbol_info::symbol_info(&db, &params.symbol) {
+        Ok(db) => match bearwisdom::query::symbol_info::symbol_info(&db, &params.symbol, &bearwisdom::query::QueryOptions::full()) {
             Ok(info) => ok_json(info).into_response(),
             Err(e) => err_json(e).into_response(),
         },
@@ -761,6 +763,209 @@ pub async fn get_embed_status(State(status): State<SharedEmbedStatus>) -> impl I
         "error": s.error,
     }))
     .into_response()
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/flow-edges
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct FlowEdgesQuery {
+    path: String,
+    #[serde(default = "default_limit_500")]
+    limit: usize,
+}
+
+#[derive(serde::Serialize)]
+struct FlowEdgeRow {
+    source_file: String,
+    source_line: Option<i64>,
+    source_symbol: Option<String>,
+    source_language: String,
+    target_file: Option<String>,
+    target_line: Option<i64>,
+    target_symbol: Option<String>,
+    target_language: String,
+    edge_type: String,
+    protocol: Option<String>,
+    url_pattern: Option<String>,
+}
+
+pub async fn get_flow_edges(Query(params): Query<FlowEdgesQuery>) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match open_existing_db(&root) {
+        Ok(db) => match query_flow_edges(&db, params.limit) {
+            Ok(v) => ok_json(v).into_response(),
+            Err(e) => err_json(e).into_response(),
+        },
+        Err(e) => err_json(e).into_response(),
+    }
+}
+
+fn query_flow_edges(db: &bearwisdom::Database, limit: usize) -> anyhow::Result<serde_json::Value> {
+    use std::collections::HashMap;
+
+    let conn = &db.conn;
+
+    // Summary counts from the full dataset (before limit).
+    let mut by_edge_type: HashMap<String, u32> = HashMap::new();
+    let mut by_language_pair: HashMap<String, u32> = HashMap::new();
+    let total: u32 = {
+        let mut stmt = conn.prepare(
+            "SELECT fe.edge_type,
+                    COALESCE(fe.source_language, sf.language, '') AS src_lang,
+                    COALESCE(fe.target_language, tf.language, '') AS tgt_lang,
+                    COUNT(*) AS cnt
+             FROM flow_edges fe
+             JOIN files sf ON sf.id = fe.source_file_id
+             LEFT JOIN files tf ON tf.id = fe.target_file_id
+             GROUP BY fe.edge_type, src_lang, tgt_lang"
+        )?;
+        let mut total = 0u32;
+        let mut rows = stmt.query([])?;
+        while let Some(row) = rows.next()? {
+            let et: String = row.get(0)?;
+            let src: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
+            let tgt: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
+            let cnt: u32 = row.get(3)?;
+            *by_edge_type.entry(et).or_default() += cnt;
+            let pair = format!("{src} → {tgt}");
+            *by_language_pair.entry(pair).or_default() += cnt;
+            total += cnt;
+        }
+        total
+    };
+
+    // Interleave edge types so the limit gets a fair mix.
+    let mut stmt = conn.prepare(
+        "SELECT source_file, source_line, source_symbol, source_language,
+                target_file, target_line, target_symbol, target_language,
+                edge_type, protocol, url_pattern
+         FROM (
+             SELECT
+                 sf.path                                       AS source_file,
+                 fe.source_line,
+                 fe.source_symbol,
+                 COALESCE(fe.source_language, sf.language, '') AS source_language,
+                 tf.path                                       AS target_file,
+                 fe.target_line,
+                 fe.target_symbol,
+                 COALESCE(fe.target_language, tf.language, '') AS target_language,
+                 fe.edge_type,
+                 fe.protocol,
+                 fe.url_pattern,
+                 ROW_NUMBER() OVER (PARTITION BY fe.edge_type ORDER BY sf.path, fe.source_line) AS rn
+             FROM flow_edges fe
+             JOIN files sf ON sf.id = fe.source_file_id
+             LEFT JOIN files tf ON tf.id = fe.target_file_id
+         )
+         ORDER BY rn, edge_type
+         LIMIT ?1",
+    )?;
+
+    let rows = stmt.query_map([limit as i64], |row| {
+        Ok(FlowEdgeRow {
+            source_file:     row.get(0)?,
+            source_line:     row.get(1)?,
+            source_symbol:   row.get(2)?,
+            source_language: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
+            target_file:     row.get(4)?,
+            target_line:     row.get(5)?,
+            target_symbol:   row.get(6)?,
+            target_language: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
+            edge_type:       row.get(8)?,
+            protocol:        row.get(9)?,
+            url_pattern:     row.get(10)?,
+        })
+    })?
+    .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(json!({
+        "edges": rows,
+        "summary": {
+            "total": total,
+            "by_edge_type": by_edge_type,
+            "by_language_pair": by_language_pair,
+        }
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/trace-flow
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct TraceFlowQuery {
+    path: String,
+    file: String,
+    #[serde(default)]
+    line: u32,
+    #[serde(default = "default_depth_3")]
+    depth: u32,
+    #[serde(default = "default_forward")]
+    direction: String,
+}
+
+pub async fn get_trace_flow(Query(params): Query<TraceFlowQuery>) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match open_existing_db(&root) {
+        Ok(db) => {
+            let result = match params.direction.as_str() {
+                "backward" => bearwisdom::search::flow::trace_flow_reverse(
+                    &db, &params.file, params.line, params.depth,
+                ),
+                "both" => bearwisdom::search::flow::trace_flow_bidirectional(
+                    &db, &params.file, params.line, params.depth,
+                )
+                .map(|b| {
+                    let mut steps = b.forward;
+                    steps.extend(b.backward);
+                    steps
+                }),
+                _ => bearwisdom::search::flow::trace_flow(
+                    &db, &params.file, params.line, params.depth,
+                ),
+            };
+            match result {
+                Ok(steps) => ok_json(steps).into_response(),
+                Err(e) => err_json(e).into_response(),
+            }
+        }
+        Err(e) => err_json(e).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/full-trace
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct FullTraceQuery {
+    path: String,
+    symbol: Option<String>,
+    #[serde(default = "default_depth_3")]
+    depth: u32,
+    #[serde(default = "default_max_traces")]
+    max_traces: usize,
+}
+
+fn default_max_traces() -> usize { 15 }
+
+pub async fn get_full_trace(Query(params): Query<FullTraceQuery>) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match open_existing_db(&root) {
+        Ok(db) => {
+            let result = match params.symbol.as_deref() {
+                Some(sym) => bearwisdom::query::full_trace::trace_from_symbol(&db, sym, params.depth),
+                None => bearwisdom::query::full_trace::trace_from_entry_points(&db, params.depth, params.max_traces),
+            };
+            match result {
+                Ok(r) => ok_json(r).into_response(),
+                Err(e) => err_json(e).into_response(),
+            }
+        }
+        Err(e) => err_json(e).into_response(),
+    }
 }
 
 #[cfg(windows)]

@@ -1295,7 +1295,7 @@
           <path d="M28 38 Q34 34 36 24" stroke-dasharray="3 2"/>
         </svg>
         <div class="cap-title">4 Interfaces</div>
-        <p class="cap-desc">CLI with 25 JSON commands. MCP server for LLM agents. Web explorer with D3 force graph. Claude Code agent for conversational analysis.</p>
+        <p class="cap-desc">CLI with 30+ JSON commands. MCP server for LLM agents. Web explorer with D3 force graph. Claude Code agent for conversational analysis.</p>
       </div>
     </div>
   </div>
@@ -1385,6 +1385,10 @@
       <!-- end of screenshot showcase -->
 
       <p class="graph-caption">Real screenshots from the BearWisdom web explorer running on Microsoft's eShop reference architecture.</p>
+
+      <p style="margin-top: 24px; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; color: var(--text-secondary); line-height: 1.7; max-width: 720px; margin-left: auto; margin-right: auto; text-align: center;">
+        Switch to the <strong style="color: var(--copper-bright);">Flow</strong> tab to see a Sankey diagram of execution flows — from entry points through services to data stores. Click paths to pin them, hover to explore, and trace from specific symbols.
+      </p>
     </div>
   </div>
 </section>
@@ -1396,7 +1400,7 @@
   <div class="container">
     <div class="section-header centered reveal">
       <p class="section-label">Command Line</p>
-      <h2 class="section-title">25 Commands, One Tool</h2>
+      <h2 class="section-title">30+ Commands, One Tool</h2>
       <p class="section-subtitle" style="margin: 0 auto;">Every query returns structured JSON. Pipe into jq, scripts, or your editor.</p>
     </div>
 
@@ -1431,6 +1435,17 @@
         <div class="terminal-line"><span class="t-out">  Kind: class · </span><span class="t-teal">18 refs</span><span class="t-out"> · 4 methods</span></div>
       </div>
     </div>
+
+    <div class="terminal-block reveal" style="margin-top: 24px;">
+      <div class="terminal-title">v0.2 Commands</div>
+      <div class="terminal-line"><span class="t-teal">full-trace</span> <span class="t-out">&lt;path&gt; [symbol]</span>          <span class="t-muted">— End-to-end execution trace across call graph and flow edges</span></div>
+      <div class="terminal-line"><span class="t-teal">smart-context</span> <span class="t-out">&lt;path&gt; &lt;task&gt;</span>          <span class="t-muted">— Smart context selection for LLM prompts</span></div>
+      <div class="terminal-line"><span class="t-teal">investigate</span> <span class="t-out">&lt;path&gt; &lt;symbol&gt;</span>          <span class="t-muted">— Combined deep-dive: info, callers, callees, blast radius</span></div>
+      <div class="terminal-line"><span class="t-teal">complete-at</span> <span class="t-out">&lt;path&gt; &lt;file&gt; &lt;line&gt;</span>       <span class="t-muted">— Scope-aware symbol completion</span></div>
+      <div class="terminal-line"><span class="t-teal">diagnostics</span> <span class="t-out">&lt;path&gt; &lt;file&gt;</span>             <span class="t-muted">— Unresolved refs and low-confidence edges for a file</span></div>
+      <div class="terminal-line"><span class="t-teal">quality-check</span> <span class="t-out">--baseline &lt;file&gt;</span>       <span class="t-muted">— Regression testing against a quality baseline</span></div>
+      <div class="terminal-line"><span class="t-teal">import-scip</span> <span class="t-out">&lt;path&gt; &lt;scip-file&gt;</span>        <span class="t-muted">— Import SCIP index for high-confidence edges</span></div>
+    </div>
   </div>
 </section>
 
@@ -1442,107 +1457,86 @@
     <div class="section-header reveal">
       <p class="section-label">Performance</p>
       <h2 class="section-title">Benchmarks</h2>
-      <p class="section-subtitle">BearWisdom is optimized for structural intelligence, not token minimization. This benchmark measures how well an LLM answers code analysis questions with and without BearWisdom's pre-indexed tools, run against Microsoft's eShop reference architecture (675 files, 3,451 symbols).</p>
+      <p class="section-subtitle">v0.2 benchmarks test three conditions — MCP tools, CLI tools, and native Read/Grep/Glob — across 4 real-world projects spanning .NET, Go, and TypeScript. Composite score combines precision, recall, and efficiency (penalizing tool call count).</p>
     </div>
 
     <div class="bench-tables">
 
-      <!-- Summary table -->
+      <!-- Composite scores table -->
       <div class="bench-table-wrap reveal">
         <table class="bench-table">
           <thead>
             <tr>
-              <th>Metric</th>
-              <th>With BearWisdom</th>
-              <th>Native Only</th>
+              <th>Project</th>
+              <th>MCP</th>
+              <th>CLI</th>
+              <th>Native</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>Avg Recall</td>
-              <td class="bench-val--bw">71.8%</td>
-              <td>79.1%</td>
+              <td>eShop (.NET)</td>
+              <td class="bench-val--bw">0.456</td>
+              <td class="bench-val--win">0.626</td>
+              <td>0.404</td>
             </tr>
             <tr>
-              <td>Avg Tool Calls</td>
-              <td class="bench-val--bw">7.1</td>
-              <td>7.3</td>
+              <td>SimplCommerce (.NET)</td>
+              <td class="bench-val--win">0.627</td>
+              <td class="bench-val--bw">0.574</td>
+              <td>0.433</td>
             </tr>
             <tr>
-              <td>Total Tokens</td>
-              <td class="bench-val--bw">51,495</td>
-              <td>61,250</td>
+              <td>go-gitea (Go)</td>
+              <td class="bench-val--bw">0.294</td>
+              <td class="bench-val--win">0.414</td>
+              <td>0.302</td>
             </tr>
             <tr>
-              <td>Token Savings</td>
-              <td class="bench-val--win">16% lower</td>
-              <td class="bench-val--note">baseline</td>
+              <td>react-calcom (TS)</td>
+              <td class="bench-val--bw">0.534</td>
+              <td class="bench-val--win">0.549</td>
+              <td>0.380</td>
             </tr>
           </tbody>
         </table>
       </div>
 
-      <!-- Per-category breakdown -->
+      <!-- Token efficiency table -->
       <div class="bench-table-wrap reveal">
         <table class="bench-table">
           <thead>
             <tr>
-              <th>Category</th>
-              <th>BW Recall</th>
-              <th>Native Recall</th>
-              <th>BW Calls</th>
-              <th>Native Calls</th>
-              <th>Insight</th>
+              <th>Project</th>
+              <th>MCP Tokens</th>
+              <th>CLI Tokens</th>
+              <th>Native Tokens</th>
             </tr>
           </thead>
           <tbody>
             <tr>
-              <td>Impact Analysis</td>
-              <td class="bench-val--bw">56.7%</td>
-              <td>56.4%</td>
-              <td class="bench-val--win">10.3</td>
-              <td>17.3</td>
-              <td class="bench-val--note">BW uses 40% fewer tool calls for same recall</td>
+              <td>eShop (.NET)</td>
+              <td>29,812</td>
+              <td class="bench-val--win">21,843</td>
+              <td>37,538</td>
             </tr>
             <tr>
-              <td>Call Hierarchy</td>
-              <td>66.7%</td>
-              <td class="bench-val--win">100%</td>
-              <td>1.7</td>
-              <td>2.0</td>
-              <td class="bench-val--note">Native grep matches more names without semantic context</td>
+              <td>SimplCommerce (.NET)</td>
+              <td>61,306</td>
+              <td class="bench-val--win">50,084</td>
+              <td>45,895</td>
             </tr>
             <tr>
-              <td>Cross-File Refs</td>
-              <td class="bench-val--bw">82.0%</td>
-              <td>82.0%</td>
-              <td>15.7</td>
-              <td class="bench-val--win">9.7</td>
-              <td class="bench-val--note">Parity on recall</td>
+              <td>go-gitea (Go)</td>
+              <td>52,267</td>
+              <td class="bench-val--win">35,128</td>
+              <td>36,572</td>
             </tr>
             <tr>
-              <td>Concept Discovery</td>
-              <td class="bench-val--win">57.1%</td>
-              <td>50.0%</td>
-              <td class="bench-val--win">5.0</td>
-              <td>7.0</td>
-              <td class="bench-val--note">BW finds more concepts with fewer calls</td>
-            </tr>
-            <tr>
-              <td>Symbol Search</td>
-              <td class="bench-val--bw">100%</td>
-              <td>100%</td>
-              <td>3.3</td>
-              <td class="bench-val--win">2.0</td>
-              <td class="bench-val--note">Both perfect</td>
-            </tr>
-            <tr>
-              <td>Architecture</td>
-              <td>32.7%</td>
-              <td class="bench-val--win">42.9%</td>
-              <td>2.0</td>
-              <td>2.0</td>
-              <td class="bench-val--note">Overview queries favor broad grep</td>
+              <td>react-calcom (TS)</td>
+              <td>49,567</td>
+              <td class="bench-val--win">38,410</td>
+              <td>40,244</td>
             </tr>
           </tbody>
         </table>
@@ -1550,8 +1544,8 @@
 
       <!-- Insight callout -->
       <div class="bench-insight reveal">
-        <div class="bench-insight-title">Key Insight</div>
-        <p>Where BearWisdom shines: Impact Analysis uses 40% fewer tool calls for equal recall. Concept Discovery finds more with fewer calls. Total token cost is 16% lower. Where native tools win: broad text search across many files (Architecture, Call Hierarchy).</p>
+        <div class="bench-insight-title">Key Findings</div>
+        <p>CLI wins 3 of 4 projects on composite score. Both BearWisdom conditions (MCP and CLI) consistently outperform native tools on graph-heavy tasks — blast radius, call hierarchy, cross-file references. Native tools use 2–4× more tool calls to reach the same answers. CLI's slim JSON output keeps token cost lower than MCP in most cases.</p>
         <div class="bench-run-note">
           <span>Run your own:</span>
           <span class="code-pill">bw-bench full --project /path/to/project --output results/</span>
@@ -1575,40 +1569,56 @@
     </div>
 
     <div class="roadmap-status reveal">
-      <strong>v0.1</strong> — the current release — ships with 31-language parsing, knowledge graph, 6 search modes, CLI, MCP, web explorer, and benchmark suite.
+      <strong>v0.2 — Current Release</strong>
+    </div>
+
+    <!-- v0.2 Changelog -->
+    <div class="roadmap-card reveal" style="margin-bottom: 40px; border: 1px solid var(--copper-dim); background: linear-gradient(135deg, var(--bg-elevated) 0%, var(--bg-surface) 100%);">
+      <div class="roadmap-version-badge" style="background: var(--copper); color: var(--bg-deepest);">v0.2</div>
+      <div class="roadmap-card-title" style="font-size: 20px; margin-bottom: 16px;">Flow Intelligence</div>
+      <div class="roadmap-feature-list">
+        <div class="roadmap-feature">
+          <div class="roadmap-feature-name">Full Trace Engine</div>
+          <div class="roadmap-feature-desc">End-to-end execution flow tracing that walks the call graph AND cross-framework flow edges (DI, HTTP, events). Traces from specific symbols or auto-detected structural roots.</div>
+        </div>
+        <div class="roadmap-feature">
+          <div class="roadmap-feature-name">Smart Context (fixed)</div>
+          <div class="roadmap-feature-desc">Natural language task descriptions now return relevant symbols. Multi-strategy seeding: FTS5 raw, per-keyword, and LIKE fallback. Previously returned empty for anything that wasn't an exact symbol name.</div>
+        </div>
+        <div class="roadmap-feature">
+          <div class="roadmap-feature-name">Sankey Flow Visualization</div>
+          <div class="roadmap-feature-desc">New Flow tab in the web explorer. D3-Sankey diagram shows architecture flows from entry points through services to data stores. Click to pin paths, hover to explore, depth slider, symbol-specific tracing.</div>
+        </div>
+        <div class="roadmap-feature">
+          <div class="roadmap-feature-name">7 New CLI Commands</div>
+          <div class="roadmap-feature-desc"><span class="code-pill">full-trace</span> <span class="code-pill">smart-context</span> <span class="code-pill">investigate</span> <span class="code-pill">complete-at</span> <span class="code-pill">diagnostics</span> <span class="code-pill">quality-check</span> <span class="code-pill">import-scip</span> — bringing the total to 30+.</div>
+        </div>
+        <div class="roadmap-feature">
+          <div class="roadmap-feature-name">3-Condition Benchmarks</div>
+          <div class="roadmap-feature-desc">MCP, CLI, and Native conditions tested across 4 projects (eShop, SimplCommerce, go-gitea, react-calcom). CLI wins 3/4 on composite score. BearWisdom uses 2-4x fewer tool calls than native.</div>
+        </div>
+        <div class="roadmap-feature">
+          <div class="roadmap-feature-name">Integration Test Suite</div>
+          <div class="roadmap-feature-desc">43 new integration tests covering all query commands. 5 SCIP import tests. 6 quality-check tests. Total: 885 tests, 0 failures.</div>
+        </div>
+        <div class="roadmap-feature">
+          <div class="roadmap-feature-name">Cross-Language Sampler Fix</div>
+          <div class="roadmap-feature-desc">Benchmark sampler now supports TypeScript (NULL visibility) and Go (struct/type_alias kinds). Ground truth deduplication across all categories.</div>
+        </div>
+      </div>
     </div>
 
     <div class="roadmap-grid">
-
-      <!-- v0.2 -->
-      <div class="roadmap-card reveal">
-        <div class="roadmap-version-badge">v0.2</div>
-        <div class="roadmap-card-title">Live Intelligence</div>
-        <div class="roadmap-feature-list">
-          <div class="roadmap-feature">
-            <div class="roadmap-feature-name">Watch mode</div>
-            <div class="roadmap-feature-desc">OS file watcher feeding the existing incremental indexer — auto-reindex on save.</div>
-          </div>
-          <div class="roadmap-feature">
-            <div class="roadmap-feature-name">Incremental embedding</div>
-            <div class="roadmap-feature-desc">Only embed changed chunks instead of full re-embed.</div>
-          </div>
-          <div class="roadmap-feature">
-            <div class="roadmap-feature-name">Smart context selection</div>
-            <div class="roadmap-feature-desc">Given a task description, return the most relevant graph subset for LLM context.</div>
-          </div>
-          <div class="roadmap-feature">
-            <div class="roadmap-feature-name">SCIP import</div>
-            <div class="roadmap-feature-desc">Compiler-accurate index from rust-analyzer, tsserver — fills type inference gaps.</div>
-          </div>
-        </div>
-      </div>
 
       <!-- v0.3 -->
       <div class="roadmap-card reveal">
         <div class="roadmap-version-badge">v0.3</div>
         <div class="roadmap-card-title">Depth</div>
         <div class="roadmap-feature-list">
+          <div class="roadmap-feature">
+            <div class="roadmap-feature-name">Resolution engine</div>
+            <div class="roadmap-feature-desc">Per-language scope rules for 100% edge confidence — no more low-confidence cross-file edges.</div>
+          </div>
           <div class="roadmap-feature">
             <div class="roadmap-feature-name">RAG layer</div>
             <div class="roadmap-feature-desc">Retrieve chunks, synthesize natural language answers via LLM.</div>
@@ -1766,7 +1776,7 @@
       <div class="arch-row" style="gap: 12px; flex-wrap: wrap; justify-content: center;">
         <div class="arch-box arch-box--consumer">
           <div>bw</div>
-          <div class="arch-sub">CLI · 25 cmds</div>
+          <div class="arch-sub">CLI · 30+ cmds</div>
         </div>
         <div class="arch-box arch-box--consumer">
           <div>bw-mcp</div>

@@ -1,11 +1,11 @@
-use bearwisdom::db::Database;
+use bearwisdom::db::DbPool;
+use bearwisdom::query::QueryOptions;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{schemars, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::Deserialize;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
 
 /// Format a structured JSON error response for MCP tool calls.
 fn error_response(code: &str, message: &str) -> String {
@@ -26,8 +26,10 @@ fn error_response(code: &str, message: &str) -> String {
 pub struct SearchParams {
     /// Search keywords (symbol names, words from signatures or doc comments)
     pub query: String,
-    /// Maximum results to return (default: 15)
+    /// Maximum results (default: 10)
     pub limit: Option<usize>,
+    /// Include function/method signatures in results (default: false)
+    pub include_signature: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
@@ -42,21 +44,29 @@ pub struct GrepParams {
     pub whole_word: Option<bool>,
     /// Filter by language tag (e.g. "rust", "typescript")
     pub language: Option<String>,
-    /// Maximum results to return (default: 30)
+    /// Maximum results (default: 20)
     pub limit: Option<usize>,
+    /// Truncate lines longer than this (default: 120, 0 = unlimited)
+    pub max_line_length: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SymbolInfoParams {
     /// Symbol name or qualified name (e.g. 'DoWork', 'App.Svc.DoWork')
     pub name: String,
+    /// Include function/method signatures (default: false)
+    pub include_signature: Option<bool>,
+    /// Include doc comments (default: false)
+    pub include_doc: Option<bool>,
+    /// Include child symbols — methods of a class, etc. (default: false)
+    pub include_children: Option<bool>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct FindReferencesParams {
     /// Symbol name to find references for
     pub name: String,
-    /// Maximum results to return (default: 100)
+    /// Maximum results (default: 20)
     pub limit: Option<usize>,
 }
 
@@ -66,7 +76,7 @@ pub struct CallHierarchyParams {
     pub name: String,
     /// Direction: "in" for callers, "out" for callees (default: "in")
     pub direction: Option<String>,
-    /// Maximum results to return (default: 50)
+    /// Maximum results (default: 20)
     pub limit: Option<usize>,
 }
 
@@ -74,18 +84,64 @@ pub struct CallHierarchyParams {
 pub struct FileSymbolsParams {
     /// Relative file path within the project
     pub file_path: String,
+    /// Output mode: "names" (minimal), "outline" (default), "full" (all fields)
+    pub mode: Option<String>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct BlastRadiusParams {
     /// Symbol name or qualified name to analyze impact for
     pub symbol: String,
-    /// Max traversal depth (default: 3)
+    /// Max traversal depth (default: 2, max: 10)
+    pub depth: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct SmartContextParams {
+    /// Natural-language task description (e.g. "add pagination to the catalog API")
+    pub task: String,
+    /// Token budget for the context (default: 8000)
+    pub budget: Option<u32>,
+    /// Graph expansion depth (default: 2)
     pub depth: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct ArchitectureParams {}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct InvestigateParams {
+    /// Symbol name or qualified name to investigate
+    pub symbol: String,
+    /// Max callers to return (default: 10)
+    pub caller_limit: Option<usize>,
+    /// Max callees to return (default: 10)
+    pub callee_limit: Option<usize>,
+    /// Blast radius depth (default: 1)
+    pub blast_depth: Option<u32>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct DiagnosticsParams {
+    /// Relative file path to check for issues
+    pub file_path: String,
+    /// Confidence threshold for flagging edges (default: 0.80, lower = more strict)
+    pub confidence_threshold: Option<f64>,
+}
+
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CompleteAtParams {
+    /// Relative file path
+    pub file_path: String,
+    /// 1-based line number of cursor position
+    pub line: u32,
+    /// 0-based column of cursor position
+    pub col: u32,
+    /// Prefix text typed so far (can be empty)
+    pub prefix: String,
+    /// Include signatures in results (default: false)
+    pub include_signature: Option<bool>,
+}
 
 // =============================================================================
 // MCP Server handler
@@ -93,25 +149,25 @@ pub struct ArchitectureParams {}
 
 #[derive(Clone)]
 pub struct BearWisdomServer {
-    db: Arc<Mutex<Database>>,
+    pool: DbPool,
     project_root: PathBuf,
     tool_router: ToolRouter<Self>,
 }
 
 impl BearWisdomServer {
-    pub fn new(db: Arc<Mutex<Database>>, project_root: PathBuf) -> Self {
+    pub fn new(pool: DbPool, project_root: PathBuf) -> Self {
         Self {
-            db,
+            pool,
             project_root,
             tool_router: Self::tool_router(),
         }
     }
 
-    /// Acquire the database, returning a structured error if the mutex is poisoned.
-    fn lock_db(&self) -> Result<std::sync::MutexGuard<'_, Database>, String> {
-        self.db
-            .lock()
-            .map_err(|e| error_response("INTERNAL_ERROR", &format!("Database lock poisoned: {e}")))
+    /// Acquire a database connection from the pool, returning a structured error on failure.
+    fn get_db(&self) -> Result<bearwisdom::PoolGuard, String> {
+        self.pool
+            .get()
+            .map_err(|e| error_response("INTERNAL_ERROR", &format!("Pool error: {e}")))
     }
 }
 
@@ -120,38 +176,40 @@ impl ServerHandler for BearWisdomServer {
     fn get_info(&self) -> ServerInfo {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "BearWisdom code intelligence: search symbols, grep source, inspect call hierarchies, \
-             find references, analyze blast radius, and get architecture overviews for the indexed project.",
+             find references, analyze blast radius, and get architecture overviews for the indexed project. \
+             Use bw_investigate for a combined deep-dive into any symbol.",
         )
     }
 }
 
 #[tool_router]
 impl BearWisdomServer {
-    /// Search code symbols (functions, classes, methods, types) by keyword.
-    /// Returns ranked results with file location, kind, and signature.
-    /// Use for finding symbols by name or partial name.
-    /// Do NOT use for substring search in raw source — use bw_grep instead.
+    /// Search code symbols by keyword. Returns ~10 results with name, kind, file, line.
+    /// Pass include_signature: true for full signatures. Use bw_grep for raw text search.
     #[tool(name = "bw_search")]
     fn search(&self, Parameters(params): Parameters<SearchParams>) -> String {
         if params.query.trim().is_empty() {
             return error_response("INVALID_INPUT", "Query cannot be empty");
         }
-        let db = match self.lock_db() {
+        let db = match self.get_db() {
             Ok(d) => d,
             Err(e) => return e,
         };
-        let limit = params.limit.unwrap_or(15);
-        match bearwisdom::query::search::search_symbols(&db, &params.query, limit) {
+        let limit = params.limit.unwrap_or(10);
+        let opts = QueryOptions {
+            include_signature: params.include_signature.unwrap_or(false),
+            ..QueryOptions::default()
+        };
+        match bearwisdom::query::search::search_symbols(&db, &params.query, limit, &opts) {
             Ok(results) => serde_json::to_string(&results)
                 .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
             Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
         }
     }
 
-    /// Fast substring or regex search across all source files.
-    /// Returns matching lines with file path and line number.
-    /// Respects .gitignore. Use for finding exact text patterns or code snippets.
-    /// Do NOT use for semantic queries — use bw_search instead.
+    /// Fast substring or regex search across source files. Returns ~20 matching lines.
+    /// Lines truncated to 120 chars by default (pass max_line_length: 0 for full lines).
+    /// Use bw_search for semantic symbol lookup.
     #[tool(name = "bw_grep")]
     fn grep(&self, Parameters(params): Parameters<GrepParams>) -> String {
         if params.pattern.is_empty() {
@@ -166,7 +224,7 @@ impl BearWisdomServer {
             regex: params.regex.unwrap_or(false),
             case_sensitive: !params.case_insensitive.unwrap_or(false),
             whole_word: params.whole_word.unwrap_or(false),
-            max_results: params.limit.unwrap_or(30),
+            max_results: params.limit.unwrap_or(20),
             scope,
             context_lines: 0,
         };
@@ -176,43 +234,51 @@ impl BearWisdomServer {
             &options,
             &cancelled,
         ) {
-            Ok(results) => serde_json::to_string(&results)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
+            Ok(mut results) => {
+                let max_len = params.max_line_length.unwrap_or(120);
+                bearwisdom::search::grep::truncate_matches(&mut results, max_len);
+                serde_json::to_string(&results)
+                    .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}")))
+            }
             Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
         }
     }
 
-    /// Get detailed information about a specific code symbol: signature, doc comment,
-    /// location, visibility, and edge counts. Use after bw_search to drill into a result.
+    /// Get symbol details: location, edge counts, visibility. Returns slim output by default.
+    /// Pass include_signature/include_doc/include_children: true for richer data.
     #[tool(name = "bw_symbol_info")]
     fn symbol_info(&self, Parameters(params): Parameters<SymbolInfoParams>) -> String {
         if params.name.is_empty() {
             return error_response("INVALID_INPUT", "Symbol name cannot be empty");
         }
-        let db = match self.lock_db() {
+        let db = match self.get_db() {
             Ok(d) => d,
             Err(e) => return e,
         };
-        match bearwisdom::query::symbol_info::symbol_info(&db, &params.name) {
+        let opts = QueryOptions {
+            include_signature: params.include_signature.unwrap_or(false),
+            include_doc: params.include_doc.unwrap_or(false),
+            include_children: params.include_children.unwrap_or(false),
+            ..QueryOptions::default()
+        };
+        match bearwisdom::query::symbol_info::symbol_info(&db, &params.name, &opts) {
             Ok(results) => serde_json::to_string(&results)
                 .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
             Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
         }
     }
 
-    /// Find all locations where a symbol is referenced across the codebase.
-    /// Returns each reference with file path, line number, referencing symbol, and edge kind.
-    /// Use to understand impact before changing a symbol.
+    /// Find all references to a symbol. Returns ~20 results with file, line, edge kind.
     #[tool(name = "bw_find_references")]
     fn find_references(&self, Parameters(params): Parameters<FindReferencesParams>) -> String {
         if params.name.is_empty() {
             return error_response("INVALID_INPUT", "Symbol name cannot be empty");
         }
-        let db = match self.lock_db() {
+        let db = match self.get_db() {
             Ok(d) => d,
             Err(e) => return e,
         };
-        let limit = params.limit.unwrap_or(100);
+        let limit = params.limit.unwrap_or(20);
         match bearwisdom::query::references::find_references(&db, &params.name, limit) {
             Ok(results) => serde_json::to_string(&results)
                 .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
@@ -220,19 +286,17 @@ impl BearWisdomServer {
         }
     }
 
-    /// Show the call hierarchy for a function or method.
-    /// Direction "in" shows callers (who calls this?), "out" shows callees (what does this call?).
-    /// Use to trace execution flow or understand coupling.
+    /// Show call hierarchy: "in" = who calls this, "out" = what does this call. ~20 results.
     #[tool(name = "bw_call_hierarchy")]
     fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> String {
         if params.name.is_empty() {
             return error_response("INVALID_INPUT", "Symbol name cannot be empty");
         }
-        let db = match self.lock_db() {
+        let db = match self.get_db() {
             Ok(d) => d,
             Err(e) => return e,
         };
-        let limit = params.limit.unwrap_or(50);
+        let limit = params.limit.unwrap_or(20);
         let result = match params.direction.as_deref() {
             Some("out") => {
                 bearwisdom::query::call_hierarchy::outgoing_calls(&db, &params.name, limit)
@@ -246,60 +310,37 @@ impl BearWisdomServer {
         }
     }
 
-    /// List all symbols defined in a file as a flat list with kind, line range, and signature.
-    /// Use to understand a file's structure before reading it.
-    /// Equivalent to a document outline / table of contents.
+    /// List symbols in a file. Modes: "names" (minimal), "outline" (default), "full".
     #[tool(name = "bw_file_symbols")]
     fn file_symbols(&self, Parameters(params): Parameters<FileSymbolsParams>) -> String {
         if params.file_path.is_empty() {
             return error_response("INVALID_INPUT", "file_path is required");
         }
-        let db = match self.lock_db() {
+        let db = match self.get_db() {
             Ok(d) => d,
             Err(e) => return e,
         };
-        // Query symbols for this file from the DB directly.
-        let sql = "SELECT s.name, s.qualified_name, s.kind, s.line, s.end_line, \
-                          s.signature, s.visibility, s.scope_path \
-                   FROM symbols s JOIN files f ON s.file_id = f.id \
-                   WHERE f.path = ?1 \
-                   ORDER BY s.line";
-        let result: Result<Vec<serde_json::Value>, _> = (|| {
-            let mut stmt = db.conn.prepare(sql)?;
-            let rows = stmt.query_map([&params.file_path], |row| {
-                Ok(serde_json::json!({
-                    "name": row.get::<_, String>(0)?,
-                    "qualified_name": row.get::<_, String>(1)?,
-                    "kind": row.get::<_, String>(2)?,
-                    "line": row.get::<_, u32>(3)?,
-                    "end_line": row.get::<_, Option<u32>>(4)?,
-                    "signature": row.get::<_, Option<String>>(5)?,
-                    "visibility": row.get::<_, Option<String>>(6)?,
-                    "scope_path": row.get::<_, Option<String>>(7)?,
-                }))
-            })?;
-            rows.collect::<Result<Vec<_>, _>>().map_err(anyhow::Error::from)
-        })();
-        match result {
+        let mode = bearwisdom::query::symbol_info::FileSymbolsMode::from_str(
+            params.mode.as_deref().unwrap_or("outline"),
+        );
+        match bearwisdom::query::symbol_info::file_symbols(&db, &params.file_path, mode) {
             Ok(symbols) => serde_json::to_string(&symbols)
                 .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
             Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
         }
     }
 
-    /// Analyze the blast radius of changing a specific symbol.
-    /// Shows which symbols are transitively affected (callers, implementors, type users).
-    /// Use before modifying a symbol to understand what might break.
+    /// Blast radius: what breaks if this symbol changes? Default depth 2.
     #[tool(name = "bw_blast_radius")]
     fn blast_radius(&self, Parameters(params): Parameters<BlastRadiusParams>) -> String {
         if params.symbol.is_empty() {
             return error_response("INVALID_INPUT", "Symbol name cannot be empty");
         }
-        let db = match self.lock_db() {
+        let db = match self.get_db() {
             Ok(d) => d,
             Err(e) => return e,
         };
-        let depth = params.depth.unwrap_or(3).min(10).max(1);
+        let depth = params.depth.unwrap_or(2).min(10).max(1);
         match bearwisdom::query::blast_radius::blast_radius(&db, &params.symbol, depth) {
             Ok(result) => serde_json::to_string(&result)
                 .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
@@ -307,21 +348,102 @@ impl BearWisdomServer {
         }
     }
 
-    /// Get a high-level summary of the indexed project: languages, file/symbol counts,
-    /// hotspots (most-referenced symbols), and entry points.
-    /// Use at the start of a session to understand the codebase.
-    /// No parameters needed.
+    /// High-level project summary: languages, file/symbol counts, top hotspots, entry points.
     #[tool(name = "bw_architecture_overview")]
     fn architecture_overview(
         &self,
         Parameters(_params): Parameters<ArchitectureParams>,
     ) -> String {
-        let db = match self.lock_db() {
+        let db = match self.get_db() {
             Ok(d) => d,
             Err(e) => return e,
         };
         match bearwisdom::query::architecture::get_overview(&db) {
             Ok(report) => serde_json::to_string(&report)
+                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
+            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
+        }
+    }
+
+    /// Get diagnostics for a file: unresolved symbols + low-confidence edges.
+    #[tool(name = "bw_diagnostics")]
+    fn diagnostics(&self, Parameters(params): Parameters<DiagnosticsParams>) -> String {
+        if params.file_path.is_empty() {
+            return error_response("INVALID_INPUT", "file_path is required");
+        }
+        let db = match self.get_db() {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        let threshold = params.confidence_threshold.unwrap_or(
+            bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
+        );
+        match bearwisdom::query::diagnostics::get_diagnostics(&db, &params.file_path, threshold) {
+            Ok(result) => serde_json::to_string(&result)
+                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
+            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
+        }
+    }
+
+    /// Auto-complete symbols at a cursor position. Returns scope-aware candidates ranked by distance and relevance.
+    #[tool(name = "bw_complete")]
+    fn complete_at(&self, Parameters(params): Parameters<CompleteAtParams>) -> String {
+        let db = match self.get_db() {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        match bearwisdom::query::completion::complete_at(
+            &db,
+            &params.file_path,
+            params.line,
+            params.col,
+            &params.prefix,
+            params.include_signature.unwrap_or(false),
+        ) {
+            Ok(results) => serde_json::to_string(&results)
+                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
+            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
+        }
+    }
+
+    /// Build smart context for a task: returns the most relevant symbols, files, and concepts
+    /// to include in the LLM context window. Uses semantic search + graph expansion + scoring.
+    #[tool(name = "bw_context")]
+    fn smart_context(&self, Parameters(params): Parameters<SmartContextParams>) -> String {
+        if params.task.trim().is_empty() {
+            return error_response("INVALID_INPUT", "Task description cannot be empty");
+        }
+        let db = match self.get_db() {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        let budget = params.budget.unwrap_or(8000);
+        let depth = params.depth.unwrap_or(2);
+        match bearwisdom::query::context::smart_context(&db, &params.task, budget, depth) {
+            Ok(result) => serde_json::to_string(&result)
+                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
+            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
+        }
+    }
+
+    /// Deep-dive a symbol in one call: info + callers + callees + blast radius.
+    /// Use this instead of calling bw_symbol_info + bw_call_hierarchy + bw_blast_radius separately.
+    #[tool(name = "bw_investigate")]
+    fn investigate(&self, Parameters(params): Parameters<InvestigateParams>) -> String {
+        if params.symbol.is_empty() {
+            return error_response("INVALID_INPUT", "Symbol name cannot be empty");
+        }
+        let db = match self.get_db() {
+            Ok(d) => d,
+            Err(e) => return e,
+        };
+        let opts = bearwisdom::query::investigate::InvestigateOptions {
+            caller_limit: params.caller_limit.unwrap_or(10),
+            callee_limit: params.callee_limit.unwrap_or(10),
+            blast_depth: params.blast_depth.unwrap_or(1),
+        };
+        match bearwisdom::query::investigate::investigate(&db, &params.symbol, &opts) {
+            Ok(result) => serde_json::to_string(&result)
                 .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
             Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
         }

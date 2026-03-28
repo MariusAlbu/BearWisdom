@@ -138,3 +138,58 @@ export interface HybridSearchResult {
 }
 
 export type SearchMode = 'symbols' | 'fuzzy-symbols' | 'fuzzy-files' | 'content' | 'grep' | 'hybrid'
+
+export interface FlowEdge {
+  source_file: string
+  source_line: number | null
+  source_symbol: string | null
+  source_language: string
+  target_file: string | null
+  target_line: number | null
+  target_symbol: string | null
+  target_language: string
+  edge_type: string
+  protocol: string | null
+  url_pattern: string | null
+}
+
+export interface FlowEdgesResult {
+  edges: FlowEdge[]
+  summary: {
+    total: number
+    by_edge_type: Record<string, number>
+    by_language_pair: Record<string, number>
+  }
+}
+
+export interface FlowStep {
+  depth: number
+  file_path: string
+  line: number | null
+  symbol: string | null
+  language: string
+  edge_type: string
+  protocol: string | null
+}
+
+export interface TraceNode {
+  name: string
+  qualified_name: string
+  kind: string
+  file_path: string
+  line: number
+  edge_kind: string
+  depth: number
+  children: TraceNode[]
+}
+
+export interface TraceRoot {
+  entry: TraceNode
+  node_count: number
+}
+
+export interface FullTraceResult {
+  traces: TraceRoot[]
+  total_symbols: number
+  flow_jumps: number
+}

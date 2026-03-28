@@ -745,7 +745,7 @@ fn cmd_symbol_info(symbol: &str, db_path: &Path) -> Result<()> {
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
-    let details = symbol_info::symbol_info(&db, symbol)?;
+    let details = symbol_info::symbol_info(&db, symbol, &bearwisdom::query::QueryOptions::full())?;
     let elapsed = start.elapsed();
 
     println!("=== Symbol Info for '{}' ({} matches in {:.1}ms) ===",
@@ -786,7 +786,7 @@ fn cmd_search(query: &str, db_path: &Path, limit: usize) -> Result<()> {
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
-    let results = search_mod::search_symbols(&db, query, limit)?;
+    let results = search_mod::search_symbols(&db, query, limit, &bearwisdom::query::QueryOptions::full())?;
     let elapsed = start.elapsed();
 
     println!("=== Search '{}' ({} results in {:.1}ms) ===",
@@ -945,10 +945,13 @@ fn cmd_enrich(project_root: &Path, db_path: &Path, batch_size: usize, threshold:
     println!();
 
     // Create LSP manager + bridge + enricher
-    let db_arc = std::sync::Arc::new(std::sync::Mutex::new(db));
+    let pool = bearwisdom::DbPool::new(
+        db.path.as_deref().expect("file-backed database required"),
+        4,
+    )?;
     let lsp = std::sync::Arc::new(LspManager::new(project_root));
     let bridge = std::sync::Arc::new(GraphBridge::new(
-        db_arc.clone(),
+        pool.clone(),
         lsp.clone(),
         project_root,
     ));
@@ -978,10 +981,10 @@ fn cmd_enrich(project_root: &Path, db_path: &Path, batch_size: usize, threshold:
     rt.block_on(lsp.shutdown_all())?;
 
     // Post-enrichment stats
-    let db_guard = db_arc.lock().unwrap();
-    let post_edges: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-    let post_unresolved: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
-    let post_lsp: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r| r.get(0))?;
+    let db_guard = pool.get()?;
+    let post_edges: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM edges", [], |r: &rusqlite::Row<'_>| r.get(0))?;
+    let post_unresolved: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r: &rusqlite::Row<'_>| r.get(0))?;
+    let post_lsp: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r: &rusqlite::Row<'_>| r.get(0))?;
 
     println!("=== Post-Enrichment ===");
     println!("  Edges:       {post_edges}  (was {pre_edges}, +{})", post_edges.saturating_sub(pre_edges));

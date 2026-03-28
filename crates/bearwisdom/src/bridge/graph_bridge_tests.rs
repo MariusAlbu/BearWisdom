@@ -1,17 +1,25 @@
 use super::*;
-use crate::db::Database;
+use crate::db::{Database, DbPool};
+
+fn test_db_path() -> std::path::PathBuf {
+    static COUNTER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let id = COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let pid = std::process::id();
+    std::env::temp_dir().join(format!("bw_bridge_test_{pid}_{id}.db"))
+}
 
 fn make_bridge() -> GraphBridge {
-    let db = Arc::new(Mutex::new(Database::open_in_memory().unwrap()));
+    let path = test_db_path();
+    let pool = DbPool::new(&path, 2).unwrap();
     let lsp = Arc::new(LspManager::new("/tmp/test-workspace"));
-    GraphBridge::new(db, lsp, "/tmp/test-workspace")
+    GraphBridge::new(pool, lsp, "/tmp/test-workspace")
 }
 
 /// Insert a file + two symbols into the DB; return (file_id, src_id, tgt_id).
 fn seed_symbols(bridge: &GraphBridge) -> (i64, i64, i64) {
-    let guard = bridge.db.lock().unwrap();
+    let db = bridge.pool().get().unwrap();
 
-    guard
+    db
         .conn
         .execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -19,9 +27,9 @@ fn seed_symbols(bridge: &GraphBridge) -> (i64, i64, i64) {
             [],
         )
         .unwrap();
-    let file_id = guard.conn.last_insert_rowid();
+    let file_id = db.conn.last_insert_rowid();
 
-    guard
+    db
         .conn
         .execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
@@ -29,9 +37,9 @@ fn seed_symbols(bridge: &GraphBridge) -> (i64, i64, i64) {
             [file_id],
         )
         .unwrap();
-    let src_id = guard.conn.last_insert_rowid();
+    let src_id = db.conn.last_insert_rowid();
 
-    guard
+    db
         .conn
         .execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
@@ -39,7 +47,7 @@ fn seed_symbols(bridge: &GraphBridge) -> (i64, i64, i64) {
             [file_id],
         )
         .unwrap();
-    let tgt_id = guard.conn.last_insert_rowid();
+    let tgt_id = db.conn.last_insert_rowid();
 
     (file_id, src_id, tgt_id)
 }
@@ -56,8 +64,8 @@ fn test_persist_lsp_edge_inserts() {
     assert!(written, "first write should return true");
 
     // Verify the edge exists with confidence 1.0.
-    let guard = bridge.db.lock().unwrap();
-    let conf: f64 = guard
+    let db = bridge.pool().get().unwrap();
+    let conf: f64 = db
         .conn
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
@@ -68,7 +76,7 @@ fn test_persist_lsp_edge_inserts() {
     assert!((conf - 1.0).abs() < f64::EPSILON);
 
     // Verify lsp_edge_meta was written.
-    let meta_count: i64 = guard
+    let meta_count: i64 = db
         .conn
         .query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r| r.get(0))
         .unwrap();
@@ -82,8 +90,8 @@ fn test_persist_lsp_edge_upgrades() {
 
     // Insert an edge at 0.5 confidence first.
     {
-        let guard = bridge.db.lock().unwrap();
-        guard
+        let db = bridge.pool().get().unwrap();
+        db
             .conn
             .execute(
                 "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
@@ -97,8 +105,8 @@ fn test_persist_lsp_edge_upgrades() {
         .persist_lsp_edge(src_id, tgt_id, "calls", Some(5), "test-server")
         .unwrap();
 
-    let guard = bridge.db.lock().unwrap();
-    let conf: f64 = guard
+    let db = bridge.pool().get().unwrap();
+    let conf: f64 = db
         .conn
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
@@ -116,8 +124,8 @@ fn test_upgrade_confidence() {
 
     // Insert at 0.5.
     {
-        let guard = bridge.db.lock().unwrap();
-        guard
+        let db = bridge.pool().get().unwrap();
+        db
             .conn
             .execute(
                 "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
@@ -132,8 +140,8 @@ fn test_upgrade_confidence() {
         .unwrap();
     assert!(upgraded);
 
-    let guard = bridge.db.lock().unwrap();
-    let conf: f64 = guard
+    let db = bridge.pool().get().unwrap();
+    let conf: f64 = db
         .conn
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
@@ -144,7 +152,7 @@ fn test_upgrade_confidence() {
     assert!((conf - 0.9).abs() < f64::EPSILON);
 
     // Upgrading to a lower value should be a no-op.
-    drop(guard);
+    drop(db);
     let downgrade = bridge.upgrade_confidence(src_id, tgt_id, "calls", 0.3).unwrap();
     assert!(!downgrade);
 }
@@ -169,8 +177,8 @@ fn test_invalidate_file_edges() {
     assert_eq!(bridge.lsp_edge_count().unwrap(), 0);
 
     // Confidence should be reset to 0.50.
-    let guard = bridge.db.lock().unwrap();
-    let conf: f64 = guard
+    let db = bridge.pool().get().unwrap();
+    let conf: f64 = db
         .conn
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
@@ -240,9 +248,10 @@ fn test_find_target_column_line_out_of_range_returns_zero() {
 #[test]
 fn test_uri_to_relative_path() {
     // Workspace root: /tmp/test-workspace
-    let db = Arc::new(Mutex::new(Database::open_in_memory().unwrap()));
+    let path = test_db_path();
+    let pool = DbPool::new(&path, 2).unwrap();
     let lsp = Arc::new(LspManager::new("/tmp/test-workspace"));
-    let bridge = GraphBridge::new(db, lsp, "/tmp/test-workspace");
+    let bridge = GraphBridge::new(pool, lsp, "/tmp/test-workspace");
 
     #[cfg(not(target_os = "windows"))]
     {

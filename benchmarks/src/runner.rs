@@ -13,12 +13,10 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
 use bearwisdom::{
-    db::Database,
     query::{
         architecture, blast_radius as blast_radius_mod, call_hierarchy,
         references, search as search_mod, symbol_info,
@@ -36,13 +34,22 @@ use crate::task::{BenchmarkTask, TaskSet};
 #[serde(rename_all = "snake_case")]
 pub enum Condition {
     UseBearWisdom,
+    UseBearWisdomCli,
     NoBearWisdom,
+}
+
+impl Condition {
+    /// All known conditions in display order.
+    pub fn all() -> &'static [Condition] {
+        &[Condition::UseBearWisdom, Condition::UseBearWisdomCli, Condition::NoBearWisdom]
+    }
 }
 
 impl std::fmt::Display for Condition {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::UseBearWisdom => write!(f, "use_bearwisdom"),
+            Self::UseBearWisdomCli => write!(f, "use_bearwisdom_cli"),
             Self::NoBearWisdom => write!(f, "no_bearwisdom"),
         }
     }
@@ -77,20 +84,20 @@ pub struct Runner {
     model: String,
     client: reqwest::Client,
     project_root: PathBuf,
-    db: Arc<Mutex<Database>>,
+    pool: bearwisdom::DbPool,
 }
 
 impl Runner {
     pub fn new(api_key: String, model: String, project_root: PathBuf) -> Result<Self> {
         let db_path = resolve_db_path(&project_root)?;
-        let db = Database::open(&db_path)?;
+        let pool = bearwisdom::DbPool::new(&db_path, 4)?;
 
         Ok(Self {
             api_key,
             model,
             client: reqwest::Client::new(),
             project_root,
-            db: Arc::new(Mutex::new(db)),
+            pool,
         })
     }
 
@@ -522,11 +529,11 @@ impl Runner {
         };
         let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(15) as usize;
 
-        let db = match self.db.lock() {
+        let db = match self.pool.get() {
             Ok(d) => d,
-            Err(_) => return r#"{"error": "database lock poisoned"}"#.to_owned(),
+            Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
-        match search_mod::search_symbols(&db, &query, limit) {
+        match search_mod::search_symbols(&db, &query, limit, &bearwisdom::query::QueryOptions::full()) {
             Ok(results) => serde_json::to_string(&results)
                 .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
@@ -539,11 +546,11 @@ impl Runner {
             Some(n) => n.to_owned(),
             None => return r#"{"error": "name parameter required"}"#.to_owned(),
         };
-        let db = match self.db.lock() {
+        let db = match self.pool.get() {
             Ok(d) => d,
-            Err(_) => return r#"{"error": "database lock poisoned"}"#.to_owned(),
+            Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
-        match symbol_info::symbol_info(&db, &name) {
+        match symbol_info::symbol_info(&db, &name, &bearwisdom::query::QueryOptions::full()) {
             Ok(results) => serde_json::to_string(&results)
                 .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),
@@ -557,9 +564,9 @@ impl Runner {
             None => return r#"{"error": "name parameter required"}"#.to_owned(),
         };
         let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(100) as usize;
-        let db = match self.db.lock() {
+        let db = match self.pool.get() {
             Ok(d) => d,
-            Err(_) => return r#"{"error": "database lock poisoned"}"#.to_owned(),
+            Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
         match references::find_references(&db, &name, limit) {
             Ok(results) => serde_json::to_string(&results)
@@ -580,9 +587,9 @@ impl Runner {
             .unwrap_or(3)
             .min(10)
             .max(1) as u32;
-        let db = match self.db.lock() {
+        let db = match self.pool.get() {
             Ok(d) => d,
-            Err(_) => return r#"{"error": "database lock poisoned"}"#.to_owned(),
+            Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
         match blast_radius_mod::blast_radius(&db, &symbol, depth) {
             Ok(result) => serde_json::to_string(&result)
@@ -593,9 +600,9 @@ impl Runner {
 
     // --- BW: bw_architecture_overview ---
     fn tool_bw_architecture(&self, _input: &Value) -> String {
-        let db = match self.db.lock() {
+        let db = match self.pool.get() {
             Ok(d) => d,
-            Err(_) => return r#"{"error": "database lock poisoned"}"#.to_owned(),
+            Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
         match architecture::get_overview(&db) {
             Ok(result) => serde_json::to_string(&result)
@@ -611,9 +618,9 @@ impl Runner {
             None => return r#"{"error": "name parameter required"}"#.to_owned(),
         };
         let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
-        let db = match self.db.lock() {
+        let db = match self.pool.get() {
             Ok(d) => d,
-            Err(_) => return r#"{"error": "database lock poisoned"}"#.to_owned(),
+            Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
         match call_hierarchy::incoming_calls(&db, &name, limit) {
             Ok(results) => serde_json::to_string(&results)
@@ -629,9 +636,9 @@ impl Runner {
             None => return r#"{"error": "name parameter required"}"#.to_owned(),
         };
         let limit = input.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize;
-        let db = match self.db.lock() {
+        let db = match self.pool.get() {
             Ok(d) => d,
-            Err(_) => return r#"{"error": "database lock poisoned"}"#.to_owned(),
+            Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
         match call_hierarchy::outgoing_calls(&db, &name, limit) {
             Ok(results) => serde_json::to_string(&results)
@@ -864,6 +871,9 @@ impl Runner {
                 "You have access to file navigation tools (Read, Grep, Glob, ListDir). \
                  Use these to answer the question by exploring the codebase directly."
             }
+            Condition::UseBearWisdomCli => {
+                panic!("UseBearWisdomCli is not supported by the API runner — use the CLI backend instead")
+            }
         };
 
         format!(
@@ -887,6 +897,8 @@ pub struct CliRunner {
     model: String,
     project_root: PathBuf,
     mcp_config_path: PathBuf,
+    bw_cli_binary: String,
+    bw_agent_prompt: String,
 }
 
 impl CliRunner {
@@ -910,10 +922,18 @@ impl CliRunner {
         }
         std::fs::write(&mcp_config_path, serde_json::to_string_pretty(&mcp_config)?)?;
 
+        let bw_cli_binary = find_bw_cli_binary()?;
+
+        // Load the BearWisdom agent prompt for the CLI condition.
+        // Look relative to the bw-bench binary, then common locations.
+        let bw_agent_prompt = load_bw_agent_prompt()?;
+
         Ok(Self {
             model,
             project_root,
             mcp_config_path,
+            bw_cli_binary,
+            bw_agent_prompt,
         })
     }
 
@@ -951,7 +971,7 @@ impl CliRunner {
     async fn run_task(&self, task: &BenchmarkTask, condition: &Condition) -> Result<RunResult> {
         let start = Instant::now();
 
-        let system_prompt = format!(
+        let base_rules = format!(
             "You are a code analysis assistant analyzing a codebase at `{}`.\n\n\
              CRITICAL RULES:\n\
              1. You MUST use the provided tools to answer. Do NOT answer from memory or prior knowledge.\n\
@@ -961,6 +981,18 @@ impl CliRunner {
              5. Be exhaustive — find ALL relevant symbols, not just the first few.",
             task.project_path
         );
+
+        let system_prompt = match condition {
+            Condition::UseBearWisdomCli => format!(
+                "{base_rules}\n\n\
+                 The project is already indexed. Use the BearWisdom CLI (`{bw}`) via Bash \
+                 to answer — it returns structured, pre-indexed answers faster than grepping \
+                 files manually.\n\n{agent_prompt}",
+                bw = self.bw_cli_binary,
+                agent_prompt = self.bw_agent_prompt,
+            ),
+            _ => base_rules,
+        };
 
         let mut cmd = std::process::Command::new("claude");
         cmd.arg("-p")
@@ -975,13 +1007,22 @@ impl CliRunner {
 
         match condition {
             Condition::NoBearWisdom => {
-                cmd.arg("--allowedTools")
+                // --strict-mcp-config with no --mcp-config disables all project MCP servers.
+                cmd.arg("--strict-mcp-config")
+                    .arg("--allowedTools")
                     .arg("Read,Grep,Glob,Bash(find:*),Bash(ls:*)");
             }
             Condition::UseBearWisdom => {
-                cmd.arg("--mcp-config").arg(&self.mcp_config_path)
+                cmd.arg("--strict-mcp-config")
+                    .arg("--mcp-config").arg(&self.mcp_config_path)
                     .arg("--allowedTools")
                     .arg("Read,Grep,Glob,Bash(find:*),Bash(ls:*),mcp__bearwisdom__*");
+            }
+            Condition::UseBearWisdomCli => {
+                // No MCP — model uses bw CLI via Bash.
+                cmd.arg("--strict-mcp-config")
+                    .arg("--allowedTools")
+                    .arg(format!("Read,Grep,Glob,Bash(find:*),Bash(ls:*),Bash({}:*)", self.bw_cli_binary));
             }
         }
 
@@ -1100,10 +1141,52 @@ impl CliRunner {
 
 /// Find the bw-mcp binary — check target/release, target/debug, then PATH.
 fn find_bw_mcp_binary() -> Result<String> {
+    find_binary("bw-mcp")
+}
+
+/// Find the bw CLI binary — check target/release, target/debug, then PATH.
+fn find_bw_cli_binary() -> Result<String> {
+    find_binary("bw")
+}
+
+/// Load the BearWisdom agent markdown (stripping frontmatter) for use as a system prompt.
+fn load_bw_agent_prompt() -> Result<String> {
+    // Check relative to the current exe first (same repo checkout).
+    let candidates = [
+        // Relative to exe: target/release/../../agents/bearwisdom.md
+        std::env::current_exe()
+            .ok()
+            .and_then(|e| e.parent()?.parent()?.parent().map(|p| p.join("agents/bearwisdom.md"))),
+        // Current working directory
+        Some(PathBuf::from("agents/bearwisdom.md")),
+    ];
+
+    for candidate in candidates.iter().flatten() {
+        if candidate.exists() {
+            let content = std::fs::read_to_string(candidate)
+                .with_context(|| format!("Failed to read {}", candidate.display()))?;
+            // Strip YAML frontmatter (--- ... ---).
+            let body = if content.starts_with("---") {
+                if let Some(end) = content[3..].find("---") {
+                    content[3 + end + 3..].trim_start().to_owned()
+                } else {
+                    content
+                }
+            } else {
+                content
+            };
+            return Ok(body);
+        }
+    }
+
+    bail!("Could not find agents/bearwisdom.md — run from the BearWisdom repo root or build directory")
+}
+
+fn find_binary(name: &str) -> Result<String> {
     // Check relative to the current exe (benchmarks binary lives in same target dir).
     if let Ok(exe) = std::env::current_exe() {
         if let Some(dir) = exe.parent() {
-            let candidate = dir.join("bw-mcp").with_extension(std::env::consts::EXE_EXTENSION);
+            let candidate = dir.join(name).with_extension(std::env::consts::EXE_EXTENSION);
             if candidate.exists() {
                 return Ok(candidate.to_string_lossy().into_owned());
             }
@@ -1112,14 +1195,14 @@ fn find_bw_mcp_binary() -> Result<String> {
 
     // Check common build locations.
     for subdir in ["target/release", "target/debug"] {
-        let candidate = PathBuf::from(subdir).join("bw-mcp").with_extension(std::env::consts::EXE_EXTENSION);
+        let candidate = PathBuf::from(subdir).join(name).with_extension(std::env::consts::EXE_EXTENSION);
         if candidate.exists() {
             return Ok(std::fs::canonicalize(candidate)?.to_string_lossy().into_owned());
         }
     }
 
     // Fall back to PATH.
-    Ok("bw-mcp".to_owned())
+    Ok(name.to_owned())
 }
 
 // ---------------------------------------------------------------------------

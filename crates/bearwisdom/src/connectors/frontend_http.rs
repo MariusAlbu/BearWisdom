@@ -62,10 +62,10 @@ pub struct DetectedHttpCall {
 /// Returns detected HTTP calls with extracted URL patterns.
 pub fn detect_http_calls(conn: &Connection, project_root: &Path) -> Result<Vec<DetectedHttpCall>> {
     // Compile patterns once.
-    // fetch("url") or fetch('url') or fetch(`url`) — with optional method in options
     let re_fetch = build_fetch_regex();
-    // axios.get("url"), axios.post("url"), etc.
     let re_axios = build_axios_regex();
+    let re_angular_http = build_angular_http_regex();
+    let re_jquery = build_jquery_regex();
 
     // Query all TS/JS files.
     let mut stmt = conn
@@ -94,6 +94,8 @@ pub fn detect_http_calls(conn: &Connection, project_root: &Path) -> Result<Vec<D
         };
 
         detect_in_source(&source, file_id, &re_fetch, &re_axios, &mut calls);
+        detect_angular_http(&source, file_id, &re_angular_http, &mut calls);
+        detect_jquery_calls(&source, file_id, &re_jquery, &mut calls);
     }
 
     Ok(calls)
@@ -154,8 +156,8 @@ pub fn match_http_calls_to_routes(
                     target_file_id, target_line, target_symbol, target_language,
                     edge_type, protocol, http_method, url_pattern, confidence
                  ) VALUES (
-                    ?1, ?2, NULL, 'typescript',
-                    ?3, ?4, ?5,   'csharp',
+                    ?1, ?2, NULL, (SELECT language FROM files WHERE id = ?1),
+                    ?3, ?4, ?5,   (SELECT language FROM files WHERE id = ?3),
                     'http_call', 'http', ?6, ?7, ?8
                  )",
                 rusqlite::params![
@@ -247,6 +249,81 @@ fn build_axios_regex() -> Regex {
     .expect("axios regex is valid")
 }
 
+fn build_angular_http_regex() -> Regex {
+    // Matches: $http.get('url'), $http.post("url"), this.http.get('url'),
+    // this._http.delete("url"), httpClient.get<T>('url'), etc.
+    Regex::new(
+        r#"(?:\$http|(?:this\.)?_?(?:http|httpClient))\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*(?:<[^>]*>)?\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    )
+    .expect("angular http regex is valid")
+}
+
+fn build_jquery_regex() -> Regex {
+    // Matches: $.ajax({url: 'x'}), $.get('url'), $.post("url"),
+    // jQuery.get("url"), jQuery.ajax({url: "x"})
+    Regex::new(
+        r#"(?:\$|jQuery)\s*\.\s*(?P<method>get|post|put|delete|ajax|getJSON)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    )
+    .expect("jquery regex is valid")
+}
+
+fn detect_angular_http(
+    source: &str,
+    file_id: i64,
+    re: &Regex,
+    out: &mut Vec<DetectedHttpCall>,
+) {
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for cap in re.captures_iter(line_text) {
+            let Some(raw_url) = extract_url_from_captures(&cap) else { continue };
+            let method = cap.name("method")
+                .map(|m| m.as_str().to_uppercase())
+                .unwrap_or_else(|| "GET".to_string());
+            let url_pattern = normalise_url_pattern(&raw_url);
+
+            out.push(DetectedHttpCall {
+                file_id,
+                symbol_id: None,
+                line: line_no,
+                http_method: method,
+                url_pattern,
+                raw_url,
+            });
+        }
+    }
+}
+
+fn detect_jquery_calls(
+    source: &str,
+    file_id: i64,
+    re: &Regex,
+    out: &mut Vec<DetectedHttpCall>,
+) {
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for cap in re.captures_iter(line_text) {
+            let Some(raw_url) = extract_url_from_captures(&cap) else { continue };
+            let method = match cap.name("method").map(|m| m.as_str()) {
+                Some("ajax") => "GET".to_string(), // $.ajax — method is in options, default GET
+                Some("getJSON") => "GET".to_string(),
+                Some(m) => m.to_uppercase(),
+                None => "GET".to_string(),
+            };
+            let url_pattern = normalise_url_pattern(&raw_url);
+
+            out.push(DetectedHttpCall {
+                file_id,
+                symbol_id: None,
+                line: line_no,
+                http_method: method,
+                url_pattern,
+                raw_url,
+            });
+        }
+    }
+}
+
 /// Extract the URL from whichever quote-type capture group matched.
 fn extract_url_from_captures(caps: &regex::Captures<'_>) -> Option<String> {
     caps.name("url1")
@@ -311,7 +388,7 @@ fn detect_in_source(
 /// Looks for `method: "POST"` or `method: 'DELETE'` in the same line.
 /// Falls back to GET if no method option is found.
 fn extract_fetch_method(line: &str) -> String {
-    let re = Regex::new(r#"method\s*:\s*['"](?P<m>[A-Z]+)['"]"#).unwrap();
+    let re = Regex::new(r#"method\s*:\s*['"](?P<m>[A-Z]+)['"]"#).expect("fetch method regex is valid");
     if let Some(cap) = re.captures(line) {
         return cap["m"].to_string();
     }
@@ -327,7 +404,7 @@ fn normalise_url_pattern(raw: &str) -> String {
     let without_query = raw.split('?').next().unwrap_or(raw);
 
     // Replace template literal interpolations.
-    let re_tmpl = Regex::new(r#"\$\{[^}]+\}"#).unwrap();
+    let re_tmpl = Regex::new(r#"\$\{[^}]+\}"#).expect("template literal regex is valid");
     re_tmpl.replace_all(without_query, "{param}").into_owned()
 }
 
