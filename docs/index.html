@@ -1389,6 +1389,17 @@
       <p style="margin-top: 24px; font-family: 'DM Sans', sans-serif; font-size: 0.95rem; color: var(--text-secondary); line-height: 1.7; max-width: 720px; margin-left: auto; margin-right: auto; text-align: center;">
         Switch to the <strong style="color: var(--copper-bright);">Flow</strong> tab to see a Sankey diagram of execution flows — from entry points through services to data stores. Click paths to pin them, hover to explore, and trace from specific symbols.
       </p>
+
+      <div style="margin-top: 40px; display: flex; flex-direction: column; gap: 24px;">
+        <div class="reveal" style="border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 8px 40px rgba(0,0,0,0.4);">
+          <img src="screenshots/flow-sankey-overview.png" alt="BearWisdom Flow — Sankey overview" style="width: 100%; display: block;" loading="lazy" />
+        </div>
+        <p class="graph-caption">Flow tab — Sankey diagram showing execution flows across an entire project. Nodes are colored by symbol kind (class, method, interface, constructor).</p>
+        <div class="reveal" style="border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 8px 40px rgba(0,0,0,0.4);">
+          <img src="screenshots/flow-sankey-trace.png" alt="BearWisdom Flow — Controller trace" style="width: 100%; display: block;" loading="lazy" />
+        </div>
+        <p class="graph-caption">Tracing from CategoryApiController — shows the full call chain from controller methods through DI-injected services to repository operations.</p>
+      </div>
     </div>
   </div>
 </section>
