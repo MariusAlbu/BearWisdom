@@ -121,8 +121,9 @@ fn extract_node(
 
             "function_declaration" => {
                 let idx = push_function(&child, src, scope_tree, symbols, parent_index);
-                if let Some(body) = child.child_by_field_name("body") {
-                    if let Some(sym_idx) = idx {
+                if let Some(sym_idx) = idx {
+                    extract_param_and_return_types(&child, src, sym_idx, refs);
+                    if let Some(body) = child.child_by_field_name("body") {
                         extract_calls(&body, src, sym_idx, refs);
                     }
                 }
@@ -136,19 +137,33 @@ fn extract_node(
 
             "method_definition" => {
                 let idx = push_method(&child, src, scope_tree, symbols, parent_index);
-                if let Some(body) = child.child_by_field_name("body") {
-                    if let Some(sym_idx) = idx {
+                if let Some(sym_idx) = idx {
+                    // Constructor parameter properties:
+                    // `constructor(private db: DatabaseRepository)` creates a class property.
+                    if symbols[sym_idx].kind == SymbolKind::Constructor {
+                        extract_constructor_params(
+                            &child, src, scope_tree, symbols, refs, parent_index,
+                        );
+                    }
+                    // Parameter types and return type for all methods.
+                    extract_param_and_return_types(&child, src, sym_idx, refs);
+                    if let Some(body) = child.child_by_field_name("body") {
                         extract_calls(&body, src, sym_idx, refs);
                     }
                 }
             }
 
             "public_field_definition" | "field_definition" => {
-                push_ts_field(&child, src, scope_tree, symbols, parent_index);
+                push_ts_field(&child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // Interface property signatures: `db: Database;`
+            "property_signature" => {
+                push_ts_field(&child, src, scope_tree, symbols, refs, parent_index);
             }
 
             "type_alias_declaration" => {
-                push_type_alias(&child, src, scope_tree, symbols, parent_index);
+                push_type_alias(&child, src, scope_tree, symbols, refs, parent_index);
             }
 
             "enum_declaration" => {
@@ -157,7 +172,7 @@ fn extract_node(
 
             "lexical_declaration" | "variable_declaration" => {
                 // `const Foo = ...` / `let bar = ...`
-                push_variable_decl(&child, src, scope_tree, symbols, parent_index);
+                push_variable_decl(&child, src, scope_tree, symbols, refs, parent_index);
             }
 
             "import_statement" => {
@@ -339,6 +354,7 @@ fn push_ts_field(
     src: &[u8],
     scope_tree: &ScopeTree,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
     let name_node = match node.child_by_field_name("name") {
@@ -355,6 +371,7 @@ fn push_ts_field(
     let qualified_name = scope_tree::qualify(&name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
+    let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name,
         qualified_name,
@@ -369,6 +386,196 @@ fn push_ts_field(
         scope_path,
         parent_index,
     });
+
+    // Extract TypeRef from field type annotation: `db: DatabaseRepository`
+    if let Some(type_ann) = node.child_by_field_name("type") {
+        extract_type_ref_from_annotation(&type_ann, src, idx, refs);
+    }
+}
+
+/// Extract constructor parameter properties.
+///
+/// In TypeScript, `constructor(private db: DatabaseRepository)` is shorthand
+/// for declaring a class property `db` of type `DatabaseRepository`.
+/// Tree-sitter represents this as:
+///
+/// ```text
+/// method_definition [constructor]
+///   formal_parameters
+///     required_parameter
+///       accessibility_modifier  ← "private"/"public"/"protected"/"readonly"
+///       identifier "db"
+///       type_annotation
+///         type_identifier "DatabaseRepository"
+/// ```
+///
+/// For each such parameter, we emit:
+/// 1. A property symbol (`AlbumService.db`)
+/// 2. A TypeRef ref from the property to the type name
+fn extract_constructor_params(
+    method_node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let params = match method_node.child_by_field_name("parameters") {
+        Some(p) => p,
+        None => return,
+    };
+
+    let mut cursor = params.walk();
+    for param in params.children(&mut cursor) {
+        if param.kind() != "required_parameter" {
+            continue;
+        }
+
+        // Check for accessibility modifier (private/public/protected/readonly).
+        let has_modifier = param
+            .children(&mut param.walk())
+            .any(|c| c.kind() == "accessibility_modifier" || c.kind() == "readonly");
+        if !has_modifier {
+            continue;
+        }
+
+        // Get the parameter name.
+        let name_node = match param.child_by_field_name("pattern") {
+            Some(n) => n,
+            None => continue,
+        };
+        let name = node_text(name_node, src);
+
+        // Build qualified name relative to the class scope.
+        let parent_scope = if method_node.start_byte() > 0 {
+            scope_tree::find_scope_at(scope_tree, method_node.start_byte() - 1)
+        } else {
+            None
+        };
+        let qualified_name = scope_tree::qualify(&name, parent_scope);
+        let scope_path = scope_tree::scope_path(parent_scope);
+
+        let prop_idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::Property,
+            visibility: detect_visibility(&param, src),
+            start_line: param.start_position().row as u32,
+            end_line: param.end_position().row as u32,
+            start_col: param.start_position().column as u32,
+            end_col: param.end_position().column as u32,
+            signature: None,
+            doc_comment: None,
+            scope_path,
+            parent_index,
+        });
+
+        // Extract TypeRef from the type annotation.
+        if let Some(type_ann) = param.child_by_field_name("type") {
+            extract_type_ref_from_annotation(&type_ann, src, prop_idx, refs);
+        }
+    }
+}
+
+/// Extract TypeRef edges for function/method parameter types and return type.
+///
+/// For `findAll(id: string, filter: FilterDto): Promise<Album[]>`, emits:
+/// - TypeRef from findAll → FilterDto (parameter type)
+/// - TypeRef from findAll → Promise (return type)
+///
+/// Skips primitive types (string, number, boolean, void, any, etc.) since they
+/// don't reference user-defined symbols.
+fn extract_param_and_return_types(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Parameter types.
+    if let Some(params) = node.child_by_field_name("parameters") {
+        for i in 0..params.child_count() {
+            if let Some(param) = params.child(i) {
+                if param.kind() == "required_parameter" || param.kind() == "optional_parameter" {
+                    if let Some(type_ann) = param.child_by_field_name("type") {
+                        extract_type_ref_from_annotation(&type_ann, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+    }
+
+    // Return type.
+    if let Some(ret_type) = node.child_by_field_name("return_type") {
+        extract_type_ref_from_annotation(&ret_type, src, source_symbol_index, refs);
+    }
+}
+
+/// Extract a TypeRef from a type annotation node.
+/// Handles simple types (`DatabaseRepository`), generic types (`Repository<User>`),
+/// and qualified types (`db.Kysely`).
+fn extract_type_ref_from_annotation(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Walk into type_annotation → the actual type node.
+    // type_annotation children: ":" + the type itself
+    let type_node = if node.kind() == "type_annotation" {
+        let count = node.child_count();
+        let mut found = None;
+        for i in 0..count {
+            if let Some(child) = node.child(i) {
+                if child.kind() != ":" {
+                    found = Some(child);
+                    break;
+                }
+            }
+        }
+        found
+    } else {
+        Some(*node)
+    };
+    let Some(type_node) = type_node else { return };
+
+    match type_node.kind() {
+        "type_identifier" | "identifier" => {
+            let type_name = node_text(type_node, src);
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: type_name,
+                kind: EdgeKind::TypeRef,
+                line: type_node.start_position().row as u32,
+                module: None,
+            });
+        }
+        "generic_type" => {
+            // Repository<User> → extract "Repository"
+            if let Some(name) = type_node.child_by_field_name("name") {
+                let type_name = node_text(name, src);
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: type_name,
+                    kind: EdgeKind::TypeRef,
+                    line: type_node.start_position().row as u32,
+                    module: None,
+                });
+            }
+        }
+        "nested_type_identifier" | "member_expression" => {
+            // db.Kysely → extract the full dotted name
+            let type_name = node_text(type_node, src);
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: type_name,
+                kind: EdgeKind::TypeRef,
+                line: type_node.start_position().row as u32,
+                module: None,
+            });
+        }
+        _ => {}
+    }
 }
 
 fn push_type_alias(
@@ -376,6 +583,7 @@ fn push_type_alias(
     src: &[u8],
     scope_tree: &ScopeTree,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
     let name_node = match node.child_by_field_name("name") {
@@ -392,6 +600,7 @@ fn push_type_alias(
     let qualified_name = scope_tree::qualify(&name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
+    let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
         qualified_name,
@@ -406,6 +615,11 @@ fn push_type_alias(
         scope_path,
         parent_index,
     });
+
+    // Extract TypeRef from type alias value: `type UserId = string`
+    if let Some(value) = node.child_by_field_name("value") {
+        extract_type_ref_from_annotation(&value, src, idx, refs);
+    }
 }
 
 fn push_enum(
@@ -482,6 +696,7 @@ fn push_variable_decl(
     src: &[u8],
     scope_tree: &ScopeTree,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
     let parent_scope = if node.start_byte() > 0 {
@@ -500,6 +715,7 @@ fn push_variable_decl(
                 if name_node.kind() == "identifier" {
                     let name = node_text(name_node, src);
                     let qualified_name = scope_tree::qualify(&name, parent_scope);
+                    let idx = symbols.len();
                     symbols.push(ExtractedSymbol {
                         name: name.clone(),
                         qualified_name,
@@ -514,6 +730,11 @@ fn push_variable_decl(
                         scope_path: scope_path.clone(),
                         parent_index,
                     });
+
+                    // Extract TypeRef from variable type annotation: `const repo: Repository`
+                    if let Some(type_ann) = child.child_by_field_name("type") {
+                        extract_type_ref_from_annotation(&type_ann, src, idx, refs);
+                    }
                 }
             }
         }

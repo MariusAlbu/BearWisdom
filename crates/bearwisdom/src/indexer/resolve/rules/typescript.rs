@@ -147,11 +147,16 @@ impl LanguageResolver for TypeScriptResolver {
 
         // No module on the ref — this is a non-import reference.
 
+        // Normalize: strip `this.` prefix for member access on the current class.
+        // `this.buildUserRO` → `buildUserRO`, then scope chain resolves it.
+        // `this.db.selectFrom` → `db.selectFrom` (still a chain, handled later).
+        let effective_target = target.strip_prefix("this.").unwrap_or(target);
+
         // Step 1: Scope chain walk (innermost → outermost).
         // e.g., scope_chain = ["MyClass.method", "MyClass"]
         // Try "MyClass.method.target", "MyClass.target"
         for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
+            let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if kind_compatible(edge_kind, &sym.kind) {
                     debug!(
@@ -171,7 +176,7 @@ impl LanguageResolver for TypeScriptResolver {
         // Step 2: Same-file resolution.
         // In TS/JS, symbols in the same file are visible at module scope.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target && kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == effective_target && kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "ts_same_file",
                     qualified_name = %sym.qualified_name,
@@ -186,8 +191,8 @@ impl LanguageResolver for TypeScriptResolver {
         }
 
         // Step 3: Fully qualified name (target contains dots).
-        if target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(target) {
+        if effective_target.contains('.') {
+            if let Some(sym) = lookup.by_qualified_name(effective_target) {
                 if kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_qualified_name",

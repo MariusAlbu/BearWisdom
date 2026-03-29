@@ -96,11 +96,14 @@ impl LanguageResolver for CSharpResolver {
             return None;
         }
 
+        // Normalize: strip `this.` prefix for member access on the current class.
+        let effective_target = target.strip_prefix("this.").unwrap_or(target);
+
         // Step 1: Scope chain walk (innermost → outermost).
         // e.g., scope_chain = ["NS.Cls.Method", "NS.Cls", "NS"]
         // Try "NS.Cls.Method.Target", "NS.Cls.Target", "NS.Target"
         for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
+            let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
                     && kind_compatible(edge_kind, &sym.kind)
@@ -117,7 +120,7 @@ impl LanguageResolver for CSharpResolver {
         // Step 2: Same-namespace resolution.
         // In C#, types in the same namespace are visible without a `using` directive.
         if let Some(ns) = &file_ctx.file_namespace {
-            let candidate = format!("{ns}.{target}");
+            let candidate = format!("{ns}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
                     && kind_compatible(edge_kind, &sym.kind)
@@ -136,7 +139,7 @@ impl LanguageResolver for CSharpResolver {
         for import in &file_ctx.imports {
             if import.is_wildcard {
                 if let Some(module) = &import.module_path {
-                    let candidate = format!("{module}.{target}");
+                    let candidate = format!("{module}.{effective_target}");
                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
                         if self.is_visible(file_ctx, ref_ctx, sym)
                             && kind_compatible(edge_kind, &sym.kind)
@@ -153,8 +156,8 @@ impl LanguageResolver for CSharpResolver {
         }
 
         // Step 4: Fully qualified name (target contains dots).
-        if target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(target) {
+        if effective_target.contains('.') {
+            if let Some(sym) = lookup.by_qualified_name(effective_target) {
                 if kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
