@@ -308,6 +308,7 @@ fn extract_class(
                             kind: EdgeKind::Inherits,
                             line: base_child.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }
@@ -332,6 +333,7 @@ fn extract_class(
                         kind: EdgeKind::Inherits,
                         line: bc.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }
@@ -366,6 +368,7 @@ fn extract_interface_list(
                 kind: edge_kind,
                 line: child.start_position().row as u32,
                 module: None,
+                chain: None,
             });
         } else {
             // Recurse in case it's wrapped (e.g. `name_list`)
@@ -746,6 +749,7 @@ fn push_fq_import(
         kind: EdgeKind::Imports,
         line,
         module,
+        chain: None,
     });
 }
 
@@ -787,6 +791,7 @@ fn extract_calls_from_body(
                         kind: EdgeKind::Calls,
                         line: name_node.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }
@@ -823,6 +828,7 @@ fn extract_calls_from_body(
                         kind: EdgeKind::Instantiates,
                         line: cls_node.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }
@@ -838,6 +844,7 @@ fn extract_calls_from_body(
                         kind: EdgeKind::Calls,
                         line: fn_node.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }

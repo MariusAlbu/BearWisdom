@@ -38,6 +38,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         kind,
         line,
         module: None,
+        chain: None,
     }
 }
 
@@ -49,6 +50,7 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         kind: EdgeKind::TypeRef,
         line,
         module: Some(module.to_string()),
+        chain: None,
     }
 }
 

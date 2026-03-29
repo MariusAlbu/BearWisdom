@@ -468,6 +468,7 @@ fn emit_import(
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
                         module: Some(full),
+                        chain: None,
                     });
                 } else {
                     let target = parts.last().cloned().unwrap_or_default();
@@ -478,6 +479,7 @@ fn emit_import(
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
                         module: Some(full),
+                        chain: None,
                     });
                 }
                 return;
@@ -491,6 +493,7 @@ fn emit_import(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module: Some(full),
+                    chain: None,
                 });
                 return;
             }
@@ -531,6 +534,7 @@ fn extract_delegation_specifiers(
                                 kind,
                                 line: spec.start_position().row as u32,
                                 module: None,
+                                chain: None,
                             });
                         }
                     }
@@ -627,6 +631,7 @@ fn extract_calls_from_body(
                             kind: EdgeKind::Calls,
                             line: callee.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }

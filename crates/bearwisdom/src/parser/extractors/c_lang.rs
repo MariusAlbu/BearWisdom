@@ -514,6 +514,7 @@ fn push_include(
                     kind: EdgeKind::Imports,
                     line: node.start_position().row as u32,
                     module: Some(path.to_string()),
+                    chain: None,
                 });
                 return;
             }
@@ -551,6 +552,7 @@ fn extract_bases(
                             kind: EdgeKind::Inherits,
                             line: base.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                     "base_class_specifier" => {
@@ -565,6 +567,7 @@ fn extract_bases(
                                     kind: EdgeKind::Inherits,
                                     line: inner.start_position().row as u32,
                                     module: None,
+                                    chain: None,
                                 });
                             }
                         }
@@ -600,6 +603,7 @@ fn extract_calls_from_body(
                             kind: EdgeKind::Calls,
                             line: fn_node.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }

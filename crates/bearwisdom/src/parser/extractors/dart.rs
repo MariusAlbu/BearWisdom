@@ -585,6 +585,7 @@ fn extract_import_spec_recursive(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module: Some(module),
+                    chain: None,
                 });
             } else if ck == "import_specification" || ck == "library_import" {
                 // Recurse into nested wrappers
@@ -627,6 +628,7 @@ fn extract_import_spec(
                 kind: EdgeKind::Imports,
                 line: child.start_position().row as u32,
                 module: Some(module),
+                chain: None,
             });
         }
     }
@@ -655,6 +657,7 @@ fn extract_part_directive(
                 kind: EdgeKind::Imports,
                 line: child.start_position().row as u32,
                 module: Some(module),
+                chain: None,
             });
         }
     }
@@ -683,6 +686,7 @@ fn extract_dart_heritage(
                             kind: EdgeKind::Inherits,
                             line: n.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }
@@ -697,6 +701,7 @@ fn extract_dart_heritage(
                             kind: EdgeKind::Implements,
                             line: n.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }
@@ -711,6 +716,7 @@ fn extract_dart_heritage(
                             kind: EdgeKind::TypeRef,
                             line: n.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }
@@ -745,6 +751,7 @@ fn extract_dart_calls(
                     kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
         }

@@ -245,6 +245,7 @@ fn extract_class(
             kind: EdgeKind::Inherits,
             line: superclass_node.start_position().row as u32,
             module: None,
+            chain: None,
         });
     }
 
@@ -441,6 +442,7 @@ fn extract_call_statement(
                             kind: EdgeKind::TypeRef,
                             line: arg.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                         break; // only first arg is the model name
                     }
@@ -463,6 +465,7 @@ fn extract_call_statement(
                                 kind: EdgeKind::Instantiates,
                                 line: node.start_position().row as u32,
                                 module: None,
+                                chain: None,
                             });
                         } else {
                             refs.push(ExtractedRef {
@@ -471,6 +474,7 @@ fn extract_call_statement(
                                 kind: EdgeKind::Calls,
                                 line: node.start_position().row as u32,
                                 module: None,
+                                chain: None,
                             });
                         }
                     }
@@ -481,6 +485,7 @@ fn extract_call_statement(
                         kind: EdgeKind::Calls,
                         line: node.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }
@@ -529,6 +534,7 @@ fn extract_require(
                     kind: EdgeKind::Imports,
                     line: arg.start_position().row as u32,
                     module,
+                    chain: None,
                 });
                 break;
             }
@@ -593,6 +599,7 @@ fn extract_calls_from_body(
                             kind: EdgeKind::Instantiates,
                             line: child.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                         // Don't also emit a Calls edge for `.new`.
                         extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -608,6 +615,7 @@ fn extract_calls_from_body(
                     kind,
                     line: child.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
         }

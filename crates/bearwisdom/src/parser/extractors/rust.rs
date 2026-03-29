@@ -646,6 +646,7 @@ fn walk_use_tree(
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
                 module: if module.is_empty() { None } else { Some(module) },
+                chain: None,
             });
         }
 
@@ -699,6 +700,7 @@ fn walk_use_tree(
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
                 module,
+                chain: None,
             });
         }
 
@@ -715,6 +717,7 @@ fn walk_use_tree(
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
                 module,
+                chain: None,
             });
         }
 
@@ -735,6 +738,7 @@ fn walk_use_tree(
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
                 module,
+                chain: None,
             });
         }
 
@@ -796,6 +800,7 @@ fn extract_calls_from_body(
                         kind: EdgeKind::Calls,
                         line: func.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }

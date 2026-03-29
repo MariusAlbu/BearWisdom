@@ -318,6 +318,7 @@ fn extract_superclass_refs(
                     kind: EdgeKind::TypeRef,
                     line: child.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
             "attribute" => {
@@ -333,6 +334,7 @@ fn extract_superclass_refs(
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
                         module: obj,
+                        chain: None,
                     });
                 }
             }
@@ -447,6 +449,7 @@ fn extract_import_statement(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module,
+                    chain: None,
                 });
             }
             "aliased_import" => {
@@ -466,6 +469,7 @@ fn extract_import_statement(
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
                         module,
+                        chain: None,
                     });
                 }
             }
@@ -510,6 +514,7 @@ fn extract_import_from_statement(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module: module.clone(),
+                    chain: None,
                 });
             }
             "aliased_import" => {
@@ -522,6 +527,7 @@ fn extract_import_from_statement(
                         kind: EdgeKind::Imports,
                         line: child.start_position().row as u32,
                         module: module.clone(),
+                        chain: None,
                     });
                 }
             }
@@ -532,6 +538,7 @@ fn extract_import_from_statement(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module: module.clone(),
+                    chain: None,
                 });
             }
             _ => {}
@@ -691,6 +698,7 @@ fn extract_calls_from_body(
                     kind: EdgeKind::Calls,
                     line: func_node.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
         }

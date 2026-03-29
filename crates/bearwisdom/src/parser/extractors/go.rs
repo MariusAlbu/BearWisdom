@@ -283,6 +283,7 @@ fn emit_import_ref(
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
         module,
+        chain: None,
     });
 }
 
@@ -767,6 +768,7 @@ fn extract_field_declaration(
                 kind: EdgeKind::Inherits,
                 line: node.start_position().row as u32,
                 module: None,
+                chain: None,
             });
             // Also emit a Field symbol (the embedded type acts as an accessible field).
             symbols.push(ExtractedSymbol {
@@ -1052,6 +1054,7 @@ fn extract_call_ref(
         kind: EdgeKind::Calls,
         line: func_node.start_position().row as u32,
         module: None,
+        chain: None,
     });
 }
 
@@ -1102,6 +1105,7 @@ fn extract_composite_literal_ref(
         kind: EdgeKind::Instantiates,
         line: type_node.start_position().row as u32,
         module: None,
+        chain: None,
     });
 }
 

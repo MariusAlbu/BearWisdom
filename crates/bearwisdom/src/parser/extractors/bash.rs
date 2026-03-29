@@ -270,6 +270,7 @@ fn extract_source_import(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module: Some(raw),
+                    chain: None,
                 });
             }
         }
@@ -303,6 +304,7 @@ fn extract_command_call(
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
         module: None,
+        chain: None,
     });
 }
 

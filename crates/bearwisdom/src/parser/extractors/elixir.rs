@@ -115,6 +115,7 @@ fn dispatch_call(
                     kind: EdgeKind::Calls,
                     line: node.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
             // Still recurse for nested defs / aliases inside do-block
@@ -300,6 +301,7 @@ fn extract_directive(
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
         module,
+        chain: None,
     });
 }
 
@@ -370,6 +372,7 @@ fn extract_calls_recursive(
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }

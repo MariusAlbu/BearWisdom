@@ -364,6 +364,7 @@ fn push_import(
                             kind: EdgeKind::TypeRef,
                             line: item.start_position().row as u32,
                             module: module_path.clone(),
+                            chain: None,
                         });
                     }
                     "named_imports" => {
@@ -380,6 +381,7 @@ fn push_import(
                                     kind: EdgeKind::TypeRef,
                                     line: spec.start_position().row as u32,
                                     module: module_path.clone(),
+                                    chain: None,
                                 });
                             }
                         }
@@ -412,6 +414,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                             kind: EdgeKind::Inherits,
                             line: n.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                     // TS-style extends_clause — handled if present
@@ -425,6 +428,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                                     kind: EdgeKind::Inherits,
                                     line: type_node.start_position().row as u32,
                                     module: None,
+                                    chain: None,
                                 });
                             }
                         }
@@ -453,6 +457,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                         kind: EdgeKind::Calls,
                         line: func_node.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }

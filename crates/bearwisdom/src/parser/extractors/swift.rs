@@ -591,6 +591,7 @@ fn push_import(
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
         module: Some(full),
+        chain: None,
     });
 }
 
@@ -637,6 +638,7 @@ fn extract_type_inheritance(
                                     kind,
                                     line: inherited.start_position().row as u32,
                                     module: None,
+                                    chain: None,
                                 });
                             }
                         }
@@ -659,6 +661,7 @@ fn extract_type_inheritance(
                         kind,
                         line: child.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }
@@ -723,6 +726,7 @@ fn extract_calls_from_body(
                             kind: EdgeKind::Calls,
                             line: callee.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }

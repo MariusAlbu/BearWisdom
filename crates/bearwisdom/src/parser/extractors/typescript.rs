@@ -548,6 +548,7 @@ fn extract_type_ref_from_annotation(
                 kind: EdgeKind::TypeRef,
                 line: type_node.start_position().row as u32,
                 module: None,
+                chain: None,
             });
         }
         "generic_type" => {
@@ -560,6 +561,7 @@ fn extract_type_ref_from_annotation(
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
         }
@@ -572,6 +574,7 @@ fn extract_type_ref_from_annotation(
                 kind: EdgeKind::TypeRef,
                 line: type_node.start_position().row as u32,
                 module: None,
+                chain: None,
             });
         }
         _ => {}
@@ -773,6 +776,7 @@ fn push_import(
                                 kind: EdgeKind::TypeRef,
                                 line: item.start_position().row as u32,
                                 module: module_path.clone(),
+                                chain: None,
                             });
                         }
                         "named_imports" => {
@@ -791,6 +795,7 @@ fn push_import(
                                         kind: EdgeKind::TypeRef,
                                         line: spec.start_position().row as u32,
                                         module: module_path.clone(),
+                                        chain: None,
                                     });
                                 }
                             }
@@ -831,6 +836,7 @@ fn extract_heritage(
                                         kind: EdgeKind::Inherits,
                                         line: type_node.start_position().row as u32,
                                         module: None,
+                                        chain: None,
                                     });
                                 }
                             }
@@ -845,6 +851,7 @@ fn extract_heritage(
                                         kind: EdgeKind::Implements,
                                         line: type_node.start_position().row as u32,
                                         module: None,
+                                        chain: None,
                                     });
                                 }
                             }
@@ -864,6 +871,7 @@ fn extract_heritage(
                             kind: EdgeKind::Inherits,
                             line: type_node.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }
@@ -895,6 +903,7 @@ fn extract_calls(
                         kind: EdgeKind::Calls,
                         line: func_node.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }

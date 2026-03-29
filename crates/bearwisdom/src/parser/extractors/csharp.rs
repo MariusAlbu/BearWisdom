@@ -926,6 +926,7 @@ fn push_using_directive(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module: Some(name),
+                    chain: None,
                 });
                 return;
             }
@@ -937,6 +938,7 @@ fn push_using_directive(
                     kind: EdgeKind::Imports,
                     line: child.start_position().row as u32,
                     module: Some(full),
+                    chain: None,
                 });
                 return;
             }
@@ -981,6 +983,7 @@ fn extract_base_types(
                             kind,
                             line: base.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                     _ => {}
@@ -1035,6 +1038,7 @@ fn extract_calls_from_body(
                             kind: EdgeKind::Calls,
                             line: callee.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }
@@ -1050,6 +1054,7 @@ fn extract_calls_from_body(
                             kind: EdgeKind::Instantiates,
                             line: type_node.start_position().row as u32,
                             module: None,
+                            chain: None,
                         });
                     }
                 }
@@ -1789,6 +1794,7 @@ fn extract_type_refs_from_type_node(
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
         }
@@ -1802,6 +1808,7 @@ fn extract_type_refs_from_type_node(
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
                     module: None,
+                    chain: None,
                 });
             }
         }
@@ -1820,6 +1827,7 @@ fn extract_type_refs_from_type_node(
                                 kind: EdgeKind::TypeRef,
                                 line: child.start_position().row as u32,
                                 module: None,
+                                chain: None,
                             });
                         }
                     }

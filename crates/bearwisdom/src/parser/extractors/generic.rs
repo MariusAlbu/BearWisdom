@@ -726,6 +726,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 kind: EdgeKind::Imports,
                 line: node.start_position().row as u32,
                 module,
+                chain: None,
             });
         }
         // Don't recurse into imports — there's nothing useful inside.
@@ -819,6 +820,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
                 module: None,
+                chain: None,
             });
         }
         recurse_children(node, ctx, language);
@@ -837,6 +839,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                         kind: EdgeKind::TypeRef,
                         line: node.start_position().row as u32,
                         module: None,
+                        chain: None,
                     });
                 }
             }
@@ -1107,6 +1110,7 @@ fn for_each_type_child<'src>(
                     kind: edge_kind,
                     line,
                     module: None,
+                    chain: None,
                 });
             }
         }

@@ -33,6 +33,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         kind,
         line,
         module: None,
+        chain: None,
     }
 }
 
@@ -222,6 +223,7 @@ fn test_using_directive_resolution() {
         kind: EdgeKind::Imports,
         line: 1,
         module: Some("App.Models".to_string()),
+        chain: None,
     });
 
     let (index, id_map) = build_test_env(&[&file1, &file2]);
@@ -325,6 +327,7 @@ fn test_private_visibility_cross_file() {
         kind: EdgeKind::Imports,
         line: 1,
         module: Some("App.Internal".to_string()),
+        chain: None,
     });
 
     let (index, _) = build_test_env(&[&file1, &file2]);
@@ -577,6 +580,7 @@ fn test_infer_no_false_positive_on_project_ref() {
         kind: EdgeKind::Imports,
         line: 1,
         module: Some("App.Models".to_string()),
+        chain: None,
     });
 
     let resolver = CSharpResolver;
@@ -621,6 +625,7 @@ fn test_infer_without_project_context_fallback() {
         kind: EdgeKind::Imports,
         line: 1,
         module: Some("App.Models".to_string()),
+        chain: None,
     });
 
     let resolver = CSharpResolver;

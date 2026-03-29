@@ -38,6 +38,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         kind,
         line,
         module: None,
+        chain: None,
     }
 }
 
@@ -53,6 +54,7 @@ fn make_import_ref(
         kind: EdgeKind::Imports,
         line,
         module: Some(full_path.to_string()),
+        chain: None,
     }
 }
 
@@ -316,6 +318,7 @@ fn test_build_file_context_alias_import() {
         kind: EdgeKind::Imports,
         line: 3,
         module: Some("github.com/gin-gonic/gin".to_string()),
+        chain: None,
     });
 
     let resolver = GoResolver;
@@ -349,6 +352,7 @@ fn test_build_file_context_blank_import_skipped() {
         kind: EdgeKind::Imports,
         line: 3,
         module: Some("database/sql/driver".to_string()),
+        chain: None,
     });
 
     let resolver = GoResolver;
@@ -569,6 +573,7 @@ fn test_import_alias_resolution() {
         kind: EdgeKind::Imports,
         line: 3,
         module: Some("github.com/gin-gonic/gin".to_string()),
+        chain: None,
     });
 
     let (index, id_map) = build_test_env(&[&gin_file, &main_file]);
@@ -944,6 +949,7 @@ fn test_is_visible_public_always() {
         kind: EdgeKind::Calls,
         line: 1,
         module: None,
+        chain: None,
     };
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
@@ -981,6 +987,7 @@ fn test_is_visible_private_same_dir() {
         kind: EdgeKind::Calls,
         line: 1,
         module: None,
+        chain: None,
     };
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
@@ -1018,6 +1025,7 @@ fn test_is_visible_private_different_dir() {
         kind: EdgeKind::Calls,
         line: 1,
         module: None,
+        chain: None,
     };
     let source_sym = make_symbol("main", "main.main", SymbolKind::Function, Visibility::Private, Some("main"));
     let ref_ctx = RefContext {
@@ -1065,6 +1073,7 @@ fn test_instantiates_ref_resolution() {
                 kind: EdgeKind::Instantiates,
                 line: 10,
                 module: None,
+                chain: None,
             },
         ],
     );

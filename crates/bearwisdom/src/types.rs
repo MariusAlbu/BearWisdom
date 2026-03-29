@@ -266,21 +266,74 @@ pub struct ExtractedSymbol {
     pub parent_index: Option<usize>,
 }
 
+// ---------------------------------------------------------------------------
+// Member access chain (structured representation of tree-sitter AST)
+// ---------------------------------------------------------------------------
+
+/// The semantic role of a segment in a member access chain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SegmentKind {
+    /// `this` / `self` / `base` — receiver referencing the enclosing type.
+    SelfRef,
+    /// A plain identifier: variable, parameter, function name, package name.
+    Identifier,
+    /// A property/field access: `obj.prop`.
+    Property,
+    /// A static/type-level access: `ClassName.staticMethod()`.
+    TypeAccess,
+    /// A `new` / object creation: `new Foo()`.
+    Construction,
+    /// A computed property access: `obj['key']` or `obj[expr]`.
+    ComputedAccess,
+    /// A namespace/package qualifier: `pkg.Symbol` in Go, `Namespace.Type` in C#.
+    NamespaceAccess,
+}
+
+/// A single segment in a member access chain.
+#[derive(Debug, Clone)]
+pub struct ChainSegment {
+    /// The identifier text of this segment.
+    pub name: String,
+    /// The tree-sitter node kind that produced this segment.
+    pub node_kind: String,
+    /// The semantic role of this segment in the chain.
+    pub kind: SegmentKind,
+    /// The declared type from a type annotation visible in the AST.
+    pub declared_type: Option<String>,
+    /// Whether this segment uses optional chaining (`?.`).
+    pub optional_chaining: bool,
+}
+
+/// A structured member access chain built from tree-sitter AST nodes.
+#[derive(Debug, Clone)]
+pub struct MemberChain {
+    pub segments: Vec<ChainSegment>,
+}
+
+// ---------------------------------------------------------------------------
+// Extracted types (parser output, pre-resolution)
+// ---------------------------------------------------------------------------
+
 /// An unresolved reference from one symbol to a named target.
 ///
 /// After all files are parsed, the resolver walks these and attempts to match
-/// each `target_name` to a known symbol using the 4-priority lookup.
+/// each `target_name` to a known symbol using the multi-tier lookup.
 #[derive(Debug, Clone)]
 pub struct ExtractedRef {
     /// Index into the Vec<ExtractedSymbol> that CONTAINS this reference.
     pub source_symbol_index: usize,
     /// The name being referenced.
+    /// For chain-bearing refs, this is the LAST segment name (the method/property).
+    /// For simple refs, this is the full target name.
     pub target_name: String,
     pub kind: EdgeKind,
     /// 0-based source line of the reference site.
     pub line: u32,
     /// For imports: the module path (e.g. "System.Linq", "./catalog-api").
     pub module: Option<String>,
+    /// Structured member access chain from tree-sitter AST.
+    /// `None` for simple identifier refs (e.g., `foo()`, import bindings, type refs).
+    pub chain: Option<MemberChain>,
 }
 
 /// An HTTP route attribute extracted from C#.
