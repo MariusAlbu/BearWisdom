@@ -208,6 +208,50 @@ impl LanguageResolver for TypeScriptResolver {
             }
         }
 
+        // Step 4: Field type chain resolution.
+        // For `db.selectFrom` (after stripping `this.`), split into field + rest,
+        // find the field's type annotation, then look up the method on that type.
+        if let Some(dot) = effective_target.find('.') {
+            let field_name = &effective_target[..dot];
+            let rest = &effective_target[dot + 1..];
+
+            // Try to find the field as a property on enclosing scopes.
+            for scope in &ref_ctx.scope_chain {
+                let field_qname = format!("{scope}.{field_name}");
+                if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                    // Found field type. Try {TypeName}.{rest} in the index.
+                    let candidate = format!("{type_name}.{rest}");
+                    if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                        if kind_compatible(edge_kind, &sym.kind) {
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 0.95,
+                                strategy: "ts_field_type_chain",
+                            });
+                        }
+                    }
+
+                    // Also try: the type might be in a namespace, search by name.
+                    let method_name = rest.split('.').next().unwrap_or(rest);
+                    for sym in lookup.by_name(method_name) {
+                        if sym.qualified_name.starts_with(type_name)
+                            && kind_compatible(edge_kind, &sym.kind)
+                        {
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 0.90,
+                                strategy: "ts_field_type_chain",
+                            });
+                        }
+                    }
+
+                    // Type is known but method isn't in our index — it's on the type.
+                    // Don't fall through; let infer_external_namespace handle it.
+                    break;
+                }
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }

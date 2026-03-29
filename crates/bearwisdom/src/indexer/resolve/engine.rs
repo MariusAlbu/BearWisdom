@@ -92,6 +92,10 @@ pub trait SymbolLookup {
 
     /// Find all symbols defined in a specific file.
     fn in_file(&self, file_path: &str) -> &[SymbolInfo];
+
+    /// Get the annotated type name for a property/field symbol.
+    /// e.g., "AlbumService.db" → Some("DatabaseRepository")
+    fn field_type_name(&self, property_qname: &str) -> Option<&str>;
 }
 
 // ---------------------------------------------------------------------------
@@ -103,6 +107,9 @@ pub struct SymbolIndex {
     by_name: HashMap<String, Vec<SymbolInfo>>,
     by_qname: HashMap<String, SymbolInfo>,
     by_file: HashMap<String, Vec<SymbolInfo>>,
+    /// Maps property qualified_name → type name from TypeRef annotations.
+    /// e.g., "AlbumService.db" → "DatabaseRepository"
+    field_type: HashMap<String, String>,
     empty: Vec<SymbolInfo>,
 }
 
@@ -150,10 +157,29 @@ impl SymbolIndex {
             }
         }
 
+        // Build field_type map: for each property symbol, find its first
+        // TypeRef ref to determine the field's annotated type.
+        let mut field_type: HashMap<String, String> = HashMap::new();
+        for pf in parsed {
+            for (sym_idx, sym) in pf.symbols.iter().enumerate() {
+                if sym.kind != SymbolKind::Property {
+                    continue;
+                }
+                // Find the first TypeRef from this symbol.
+                for r in &pf.refs {
+                    if r.source_symbol_index == sym_idx && r.kind == EdgeKind::TypeRef && r.module.is_none() {
+                        field_type.insert(sym.qualified_name.clone(), r.target_name.clone());
+                        break;
+                    }
+                }
+            }
+        }
+
         Self {
             by_name,
             by_qname,
             by_file,
+            field_type,
             empty: Vec::new(),
         }
     }
@@ -181,6 +207,10 @@ impl SymbolLookup for SymbolIndex {
             .get(file_path)
             .map(|v| v.as_slice())
             .unwrap_or(&self.empty)
+    }
+
+    fn field_type_name(&self, property_qname: &str) -> Option<&str> {
+        self.field_type.get(property_qname).map(|s| s.as_str())
     }
 }
 

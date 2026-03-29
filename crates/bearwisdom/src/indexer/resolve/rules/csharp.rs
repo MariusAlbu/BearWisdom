@@ -168,10 +168,48 @@ impl LanguageResolver for CSharpResolver {
             }
         }
 
-        // Step 5: Base type member resolution.
-        // If the source symbol has a scope_path pointing to a class, and that class
-        // inherits from a base, try resolving in the base class scope.
-        // (Handled implicitly by scope_chain if extractor builds qualified names correctly.)
+        // Step 5: Field type chain resolution.
+        // For `db.SelectFrom` (after stripping `this.`), follow the field's type annotation.
+        if effective_target.contains('.') {
+            if let Some(dot) = effective_target.find('.') {
+                let field_name = &effective_target[..dot];
+                let rest = &effective_target[dot + 1..];
+
+                for scope in &ref_ctx.scope_chain {
+                    let field_qname = format!("{scope}.{field_name}");
+                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                        let candidate = format!("{type_name}.{rest}");
+                        if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                            if kind_compatible(edge_kind, &sym.kind) {
+                                return Some(Resolution {
+                                    target_symbol_id: sym.id,
+                                    confidence: 0.95,
+                                    strategy: "csharp_field_type_chain",
+                                });
+                            }
+                        }
+                        // Try using directives: {namespace}.{TypeName}.{rest}
+                        for import in &file_ctx.imports {
+                            if import.is_wildcard {
+                                if let Some(module) = &import.module_path {
+                                    let candidate = format!("{module}.{type_name}.{rest}");
+                                    if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                                        if kind_compatible(edge_kind, &sym.kind) {
+                                            return Some(Resolution {
+                                                target_symbol_id: sym.id,
+                                                confidence: 0.90,
+                                                strategy: "csharp_field_type_chain",
+                                            });
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
 
         // Could not resolve deterministically — fall back to heuristic.
         None
