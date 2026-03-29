@@ -452,6 +452,7 @@ fn cmd_index(path: &Path, db_path: Option<&Path>) -> Result<()> {
     println!("  Symbols:      {}", stats.symbol_count);
     println!("  Edges:        {}", stats.edge_count);
     println!("  Unresolved:   {}", stats.unresolved_ref_count);
+    println!("  External:     {}", stats.external_ref_count);
     println!("  Routes:       {}", stats.route_count);
     println!("  DB mappings:  {}", stats.db_mapping_count);
     println!("  Parse errors: {}", stats.files_with_errors);
@@ -579,6 +580,7 @@ fn cmd_report(path: &Path, db_path: Option<&Path>) -> Result<()> {
     println!("  Symbols:      {}", stats.symbol_count);
     println!("  Edges:        {}", stats.edge_count);
     println!("  Unresolved:   {}", stats.unresolved_ref_count);
+    println!("  External:     {}", stats.external_ref_count);
     println!("  Routes:       {}", stats.route_count);
     println!("  DB mappings:  {}", stats.db_mapping_count);
     println!("  Parse errors: {}", stats.files_with_errors);

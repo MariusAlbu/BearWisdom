@@ -413,6 +413,19 @@ impl GraphBridge {
         Ok(count as u32)
     }
 
+    pub fn external_ref_count(&self) -> Result<u32> {
+        let db = self.pool.get()?;
+        let count: i64 = db
+            .conn
+            .query_row(
+                "SELECT COUNT(*) FROM external_refs",
+                [],
+                |row| row.get(0),
+            )
+            .context("external_ref_count")?;
+        Ok(count as u32)
+    }
+
     pub fn lsp_edge_count(&self) -> Result<u32> {
         let db = self.pool.get()?;
         let count: i64 = db

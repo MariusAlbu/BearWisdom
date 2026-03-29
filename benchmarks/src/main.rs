@@ -381,36 +381,35 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
         }
     }
 
-    // Split: inferred external vs truly unknown
+    // External refs (separate table)
     let external_count: i64 = db.conn.query_row(
-        "SELECT COUNT(*) FROM unresolved_refs WHERE module IS NOT NULL AND module != ''",
+        "SELECT COUNT(*) FROM external_refs",
         [],
         |row| row.get(0),
     )?;
-    let unknown_count: i64 = db.conn.query_row(
-        "SELECT COUNT(*) FROM unresolved_refs WHERE module IS NULL OR module = ''",
+    let unresolved_count: i64 = db.conn.query_row(
+        "SELECT COUNT(*) FROM unresolved_refs",
         [],
         |row| row.get(0),
     )?;
-    println!("    → external (inferred namespace): {external_count}");
-    println!("    → truly unknown: {unknown_count}");
+    println!("    → external (framework refs): {external_count}");
+    println!("    → truly unresolved: {unresolved_count}");
 
-    println!("\n  Top 10 inferred external namespaces:");
+    println!("\n  Top 10 external namespaces:");
     {
         let mut stmt = db.conn.prepare(
-            "SELECT module, COUNT(*) as cnt FROM unresolved_refs
-             WHERE module IS NOT NULL AND module != ''
-             GROUP BY module ORDER BY cnt DESC LIMIT 10"
+            "SELECT namespace, COUNT(*) as cnt FROM external_refs
+             GROUP BY namespace ORDER BY cnt DESC LIMIT 10"
         )?;
         let mut rows = stmt.query([])?;
         while let Some(row) = rows.next()? {
-            let module: String = row.get(0)?;
+            let ns: String = row.get(0)?;
             let count: i64 = row.get(1)?;
-            println!("    {module}: {count}");
+            println!("    {ns}: {count}");
         }
     }
 
-    println!("\n  Top 20 unresolved target names:");
+    println!("\n  Top 20 truly unresolved target names:");
     {
         let mut stmt = db.conn.prepare(
             "SELECT target_name, kind, COUNT(*) as cnt

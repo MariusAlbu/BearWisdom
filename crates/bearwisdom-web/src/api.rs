@@ -210,12 +210,14 @@ fn index_project(root: &Path) -> anyhow::Result<serde_json::Value> {
         let symbol_count: u32 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
         let edge_count: u32 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
         let unresolved: u32 = conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0)).unwrap_or(0);
+        let external: u32 = conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0)).unwrap_or(0);
 
         return Ok(json!({
             "file_count": file_count,
             "symbol_count": symbol_count,
             "edge_count": edge_count,
             "unresolved_ref_count": unresolved,
+            "external_ref_count": external,
             "duration_ms": 0,
             "cached": true,
         }));
@@ -241,6 +243,7 @@ fn index_project(root: &Path) -> anyhow::Result<serde_json::Value> {
         "symbol_count": stats.symbol_count,
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
+        "external_ref_count": stats.external_ref_count,
         "duration_ms": stats.duration_ms,
         "cached": false,
     }))

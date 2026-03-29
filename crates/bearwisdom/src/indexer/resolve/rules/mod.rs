@@ -15,8 +15,8 @@ use std::sync::Arc;
 
 // Language rule modules (add new languages here)
 mod csharp;
-// mod typescript;
-// mod go;
+mod go;
+mod typescript;
 // mod python;
 // mod java;
 // mod rust_lang;
@@ -28,8 +28,8 @@ mod csharp;
 pub fn default_resolvers() -> Vec<Arc<dyn LanguageResolver>> {
     vec![
         Arc::new(csharp::CSharpResolver),
-        // Arc::new(typescript::TypeScriptResolver),
-        // Arc::new(go::GoResolver),
+        Arc::new(go::GoResolver),
+        Arc::new(typescript::TypeScriptResolver),
         // Arc::new(python::PythonResolver),
         // Arc::new(java::JavaResolver),
         // Arc::new(rust_lang::RustResolver),

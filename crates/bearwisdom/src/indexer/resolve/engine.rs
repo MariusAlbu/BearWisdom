@@ -6,6 +6,7 @@
 // resolver can resolve a reference, it falls back to the heuristic resolver.
 // =============================================================================
 
+use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -195,7 +196,12 @@ pub trait LanguageResolver: Send + Sync {
     fn language_ids(&self) -> &[&str];
 
     /// Build the file context for a parsed file.
-    fn build_file_context(&self, file: &ParsedFile) -> FileContext;
+    /// `project_ctx` provides global usings and external prefix data.
+    fn build_file_context(
+        &self,
+        file: &ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> FileContext;
 
     /// Attempt to resolve a reference using language-specific scope rules.
     ///
@@ -231,6 +237,7 @@ pub trait LanguageResolver: Send + Sync {
         &self,
         _file_ctx: &FileContext,
         _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         None
     }

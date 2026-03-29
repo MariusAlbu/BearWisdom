@@ -149,6 +149,26 @@ CREATE INDEX IF NOT EXISTS idx_unresolved_name        ON unresolved_refs(target_
 CREATE INDEX IF NOT EXISTS idx_unresolved_source_kind ON unresolved_refs(source_id, kind);
 
 -- ============================================================
+-- EXTERNAL REFERENCES
+-- ============================================================
+
+-- References identified as belonging to external frameworks/libraries
+-- (e.g., System.*, Microsoft.*, Newtonsoft.*). Separated from
+-- unresolved_refs so diagnostics and enrichment can focus on
+-- genuinely unknown project references.
+CREATE TABLE IF NOT EXISTS external_refs (
+    id          INTEGER PRIMARY KEY,
+    source_id   INTEGER NOT NULL REFERENCES symbols(id) ON DELETE CASCADE,
+    target_name TEXT    NOT NULL,
+    kind        TEXT    NOT NULL,
+    source_line INTEGER,
+    namespace   TEXT    NOT NULL   -- inferred external namespace
+);
+
+CREATE INDEX IF NOT EXISTS idx_external_source ON external_refs(source_id);
+CREATE INDEX IF NOT EXISTS idx_external_ns     ON external_refs(namespace);
+
+-- ============================================================
 -- IMPORTS
 -- ============================================================
 

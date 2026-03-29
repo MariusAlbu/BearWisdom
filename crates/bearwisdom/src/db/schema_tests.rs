@@ -20,7 +20,7 @@ fn schema_creates_all_tables() {
         .collect();
 
     for expected in &[
-        "files", "symbols", "edges", "unresolved_refs", "imports",
+        "files", "symbols", "edges", "unresolved_refs", "external_refs", "imports",
         "routes", "db_mappings", "annotations", "concepts", "concept_members",
         "lsp_edge_meta", "code_chunks", "flow_edges", "search_history",
     ] {

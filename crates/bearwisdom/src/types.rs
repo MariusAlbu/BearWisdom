@@ -438,6 +438,7 @@ pub struct IndexStats {
     pub symbol_count: u32,
     pub edge_count: u32,
     pub unresolved_ref_count: u32,
+    pub external_ref_count: u32,
     pub route_count: u32,
     pub db_mapping_count: u32,
     pub files_with_errors: u32,

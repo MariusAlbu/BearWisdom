@@ -102,6 +102,7 @@ pub fn full_index(
                  DELETE FROM edges;
                  DELETE FROM imports;
                  DELETE FROM unresolved_refs;
+                 DELETE FROM external_refs;
                  DELETE FROM symbols;
                  DELETE FROM files;
                  PRAGMA foreign_keys = ON;"
@@ -147,14 +148,14 @@ pub fn full_index(
 
     // --- Step 5-6: Cross-file resolution + edge writing ---
     emit("resolving", 0.0, None);
-    let (edge_count, unresolved_count) =
-        resolve::resolve_and_write(db, &parsed, &symbol_id_map)
-            .context("Failed to resolve references")?;
+    let project_ctx = super::project_context::build_project_context(project_root);
+    let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
+        .context("Failed to resolve references")?;
     info!(
-        "Wrote {} edges, {} unresolved references",
-        edge_count, unresolved_count
+        "Wrote {} edges, {} external, {} unresolved references",
+        rstats.resolved, rstats.external, rstats.unresolved
     );
-    emit("resolving", 1.0, Some(&format!("{} edges resolved", edge_count)));
+    emit("resolving", 1.0, Some(&format!("{} edges resolved", rstats.resolved)));
 
     // --- Step 4b: Index file content for FTS5 trigram search ---
     emit("indexing_content", 0.0, Some("Building search index"));
@@ -742,6 +743,8 @@ pub(crate) fn read_stats(
         conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
     let unresolved_ref_count: u32 =
         conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
+    let external_ref_count: u32 =
+        conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0))?;
     let route_count: u32 =
         conn.query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))?;
     let db_mapping_count: u32 =
@@ -752,6 +755,7 @@ pub(crate) fn read_stats(
         symbol_count,
         edge_count,
         unresolved_ref_count,
+        external_ref_count,
         route_count,
         db_mapping_count,
         files_with_errors,

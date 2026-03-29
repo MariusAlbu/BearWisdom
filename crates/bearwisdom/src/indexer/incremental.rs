@@ -343,11 +343,11 @@ pub fn incremental_index(
             }
         }
 
-        let (edge_count, _unresolved) =
-            resolve::resolve_and_write(db, &parsed, &symbol_id_map)
-                .context("Failed to resolve references")?;
-        stats.edges_written = edge_count as u32;
-        info!("Resolved {} edges for changed files", edge_count);
+        let project_ctx = super::project_context::build_project_context(project_root);
+        let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
+            .context("Failed to resolve references")?;
+        stats.edges_written = rstats.resolved as u32;
+        info!("Resolved {} edges for changed files", rstats.resolved);
     }
 
     stats.duration_ms = start.elapsed().as_millis() as u64;
@@ -757,7 +757,7 @@ pub fn reindex_files(
                 }
             }
 
-            // Clean up stale unresolved_refs for affected files —
+            // Clean up stale unresolved_refs and external_refs for affected files —
             // re-resolution will recreate any that are still unresolvable.
             for pf in &affected_parsed {
                 if let Ok(file_id) = db.conn.query_row(
@@ -770,6 +770,11 @@ pub fn reindex_files(
                          (SELECT id FROM symbols WHERE file_id = ?1)",
                         [file_id],
                     );
+                    let _ = db.conn.execute(
+                        "DELETE FROM external_refs WHERE source_id IN \
+                         (SELECT id FROM symbols WHERE file_id = ?1)",
+                        [file_id],
+                    );
                 }
             }
 
@@ -777,10 +782,10 @@ pub fn reindex_files(
             parsed.extend(affected_parsed);
         }
 
-        let (edge_count, _unresolved) =
-            resolve::resolve_and_write(db, &parsed, &symbol_id_map)
-                .context("Failed to resolve references")?;
-        stats.edges_written = edge_count as u32;
+        let project_ctx = super::project_context::build_project_context(project_root);
+        let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
+            .context("Failed to resolve references")?;
+        stats.edges_written = rstats.resolved as u32;
     }
 
     stats.duration_ms = start.elapsed().as_millis() as u64;

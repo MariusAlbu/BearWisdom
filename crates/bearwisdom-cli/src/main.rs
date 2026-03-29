@@ -567,6 +567,7 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
         "symbol_count": stats.symbol_count,
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
+        "external_ref_count": stats.external_ref_count,
         "chunks_embedded": chunks_embedded,
         "duration_ms": stats.duration_ms,
     }))
@@ -675,6 +676,9 @@ fn cmd_status(project_path: &str) -> Result<String> {
     let unresolved: u32 =
         conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
             .unwrap_or(0);
+    let external: u32 =
+        conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0))
+            .unwrap_or(0);
 
     ok_json(serde_json::json!({
         "state": "ready",
@@ -682,6 +686,7 @@ fn cmd_status(project_path: &str) -> Result<String> {
         "symbol_count": symbols,
         "edge_count": edges,
         "unresolved_ref_count": unresolved,
+        "external_ref_count": external,
     }))
 }
 

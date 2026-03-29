@@ -73,6 +73,7 @@ export interface IndexStats {
   symbol_count: number
   edge_count: number
   unresolved_ref_count: number
+  external_ref_count: number
   duration_ms: number
 }
 

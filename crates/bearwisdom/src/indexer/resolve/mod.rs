@@ -14,38 +14,44 @@ mod heuristic;
 pub mod rules;
 
 use crate::db::Database;
+use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 use anyhow::{Context, Result};
 use engine::{build_scope_chain, RefContext, ResolutionEngine, SymbolIndex};
 use std::collections::HashMap;
 use tracing::{debug, info};
 
-/// Resolve all references across all parsed files, writing edges and
-/// unresolved refs to the database.
+/// Stats returned by `resolve_and_write`.
+#[derive(Debug, Clone, Default)]
+pub struct ResolutionStats {
+    pub resolved: u64,
+    pub engine_resolved: u64,
+    pub unresolved: u64,
+    pub external: u64,
+}
+
+/// Resolve all references across all parsed files, writing edges,
+/// unresolved refs, and external refs to the database.
 ///
 /// Two-tier: language-specific resolvers first (1.0 confidence),
 /// then heuristic fallback (0.50-0.95 confidence).
-///
-/// Returns (resolved_count, unresolved_count).
+/// Unresolvable refs with a known external namespace go to `external_refs`;
+/// truly unknown refs go to `unresolved_refs`.
 pub fn resolve_and_write(
     db: &mut Database,
     parsed: &[ParsedFile],
     symbol_id_map: &HashMap<(String, String), i64>,
-) -> Result<(u64, u64)> {
+    project_ctx: Option<&ProjectContext>,
+) -> Result<ResolutionStats> {
     let engine = ResolutionEngine::new();
     let index = SymbolIndex::build(parsed, symbol_id_map);
 
-    // Track how many refs the engine resolves vs heuristic.
-    let mut engine_resolved = 0u64;
-
-    // Build per-file symbol ID lookups (same as heuristic does).
     let conn = &db.conn;
     let tx = conn
         .unchecked_transaction()
         .context("Failed to begin resolution transaction")?;
 
-    let mut total_resolved = 0u64;
-    let mut total_unresolved = 0u64;
+    let mut stats = ResolutionStats::default();
 
     // Pre-build heuristic lookup structures (needed for fallback).
     let name_to_ids = heuristic::build_name_index(symbol_id_map, parsed);
@@ -66,7 +72,7 @@ pub fn resolve_and_write(
 
         // Try language-specific resolver for this file.
         let resolver = engine.resolver_for(&pf.language);
-        let file_ctx = resolver.map(|r| r.build_file_context(pf));
+        let file_ctx = resolver.map(|r| r.build_file_context(pf, project_ctx));
 
         let empty_vec = vec![];
         let file_imports = import_map.get(&pf.path).unwrap_or(&empty_vec);
@@ -103,8 +109,8 @@ pub fn resolve_and_write(
                     );
                     match result {
                         Ok(_) => {
-                            total_resolved += 1;
-                            engine_resolved += 1;
+                            stats.resolved += 1;
+                            stats.engine_resolved += 1;
                             resolved_by_engine = true;
                         }
                         Err(e) => debug!("Engine edge insert failed: {e}"),
@@ -138,35 +144,46 @@ pub fn resolve_and_write(
                         rusqlite::params![source_id, target_id, r.kind.as_str(), r.line, confidence],
                     );
                     match result {
-                        Ok(_) => total_resolved += 1,
+                        Ok(_) => stats.resolved += 1,
                         Err(e) => debug!("Heuristic edge insert failed: {e}"),
                     }
                 }
                 None => {
                     // Try to infer which external namespace this ref comes from.
-                    let inferred_module = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
+                    let inferred_ns = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
                         let source_sym = &pf.symbols[r.source_symbol_index];
                         let ref_ctx = RefContext {
                             extracted_ref: r,
                             source_symbol: source_sym,
                             scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
                         };
-                        resolver.infer_external_namespace(file_ctx, &ref_ctx)
+                        resolver.infer_external_namespace(file_ctx, &ref_ctx, project_ctx)
                     } else {
                         None
                     };
 
-                    // Use inferred namespace if available, otherwise fall back to ref's module
-                    let module_value = inferred_module.as_deref().or(r.module.as_deref());
-
-                    tx.execute(
-                        "INSERT INTO unresolved_refs
-                           (source_id, target_name, kind, source_line, module)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
-                        rusqlite::params![source_id, r.target_name, r.kind.as_str(), r.line, module_value],
-                    )
-                    .ok();
-                    total_unresolved += 1;
+                    if let Some(ns) = &inferred_ns {
+                        // Known external framework ref → external_refs table.
+                        tx.execute(
+                            "INSERT INTO external_refs
+                               (source_id, target_name, kind, source_line, namespace)
+                             VALUES (?1, ?2, ?3, ?4, ?5)",
+                            rusqlite::params![source_id, r.target_name, r.kind.as_str(), r.line, ns],
+                        )
+                        .ok();
+                        stats.external += 1;
+                    } else {
+                        // Truly unresolved — no external namespace identified.
+                        let module_value = r.module.as_deref();
+                        tx.execute(
+                            "INSERT INTO unresolved_refs
+                               (source_id, target_name, kind, source_line, module)
+                             VALUES (?1, ?2, ?3, ?4, ?5)",
+                            rusqlite::params![source_id, r.target_name, r.kind.as_str(), r.line, module_value],
+                        )
+                        .ok();
+                        stats.unresolved += 1;
+                    }
                 }
             }
         }
@@ -175,14 +192,15 @@ pub fn resolve_and_write(
     tx.commit()
         .context("Failed to commit resolution transaction")?;
 
-    if engine_resolved > 0 {
+    if stats.engine_resolved > 0 || stats.external > 0 {
         info!(
-            "Resolution: {} by engine, {} by heuristic, {} unresolved",
-            engine_resolved,
-            total_resolved - engine_resolved,
-            total_unresolved
+            "Resolution: {} by engine, {} by heuristic, {} external, {} unresolved",
+            stats.engine_resolved,
+            stats.resolved - stats.engine_resolved,
+            stats.external,
+            stats.unresolved,
         );
     }
 
-    Ok((total_resolved, total_unresolved))
+    Ok(stats)
 }
