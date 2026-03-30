@@ -31,7 +31,7 @@ use super::super::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::{EdgeKind, MemberChain, ParsedFile, SegmentKind};
 use tracing::debug;
 
 /// TypeScript and JavaScript language resolver.
@@ -97,6 +97,14 @@ impl LanguageResolver for TypeScriptResolver {
         // Skip EdgeKind::Imports — TS/JS extractor rarely emits these, but be safe.
         if edge_kind == EdgeKind::Imports {
             return None;
+        }
+
+        // Chain-aware resolution: if we have a structured MemberChain, walk it
+        // step-by-step following field types.
+        if let Some(chain) = &ref_ctx.extracted_ref.chain {
+            if let Some(res) = resolve_via_chain(chain, edge_kind, ref_ctx, lookup) {
+                return Some(res);
+            }
         }
 
         // If the ref itself carries a module path, it came from an import statement.
@@ -333,6 +341,146 @@ pub fn is_bare_specifier(s: &str) -> bool {
         && !s.starts_with('/')
         // Windows absolute paths (e.g. "C:/...")
         && !(s.len() >= 2 && s.as_bytes()[1] == b':')
+}
+
+// ---------------------------------------------------------------------------
+// Chain-aware resolution
+// ---------------------------------------------------------------------------
+
+/// Walk a MemberChain step-by-step, following field types to resolve the final segment.
+///
+/// For `this.repo.findOne()` with chain `[this, repo, findOne]`:
+/// 1. `this` → find enclosing class from scope_chain (e.g., "UserService")
+/// 2. `repo` → look up "UserService.repo" field → declared_type = "UserRepo"
+/// 3. `findOne` → look up "UserRepo.findOne" in the symbol index → resolved!
+fn resolve_via_chain(
+    chain: &MemberChain,
+    edge_kind: EdgeKind,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let segments = &chain.segments;
+    if segments.len() < 2 {
+        // Single-segment chains (e.g., `foo()`) are handled by the regular scope chain.
+        return None;
+    }
+
+    // Phase 1: Determine the root type from the first segment.
+    let root_type = match segments[0].kind {
+        SegmentKind::SelfRef => {
+            // `this` → find the enclosing class from the scope chain.
+            find_enclosing_class(&ref_ctx.scope_chain, lookup)
+        }
+        SegmentKind::Identifier => {
+            let name = &segments[0].name;
+
+            // Is it a known class/type? (static access: `ClassName.method()`)
+            let is_type = lookup.by_name(name).iter().any(|s| {
+                matches!(
+                    s.kind.as_str(),
+                    "class" | "struct" | "interface" | "enum" | "type_alias"
+                )
+            });
+            if is_type {
+                Some(name.clone())
+            } else {
+                // Is it a field on the enclosing class?
+                let mut found = None;
+                for scope in &ref_ctx.scope_chain {
+                    let field_qname = format!("{scope}.{name}");
+                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                        found = Some(type_name.to_string());
+                        break;
+                    }
+                }
+                found.or_else(|| segments[0].declared_type.clone())
+            }
+        }
+        _ => None,
+    };
+
+    let mut current_type = root_type?;
+
+    // Phase 2: Walk intermediate segments, following field types.
+    for seg in &segments[1..segments.len() - 1] {
+        let field_qname = format!("{current_type}.{}", seg.name);
+
+        // Direct field_type_name lookup.
+        if let Some(next_type) = lookup.field_type_name(&field_qname) {
+            current_type = next_type.to_string();
+            continue;
+        }
+
+        // The field might be qualified with a namespace prefix — try by_name fallback.
+        let mut found = false;
+        for sym in lookup.by_name(&seg.name) {
+            if sym.qualified_name.starts_with(&current_type) && sym.kind == "property" {
+                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                    current_type = ft.to_string();
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if found {
+            continue;
+        }
+
+        // Lost the chain — can't determine the next type.
+        return None;
+    }
+
+    // Phase 3: Resolve the final segment on the resolved type.
+    let last = &segments[segments.len() - 1];
+    let candidate = format!("{current_type}.{}", last.name);
+
+    // Direct qualified name match.
+    if let Some(sym) = lookup.by_qualified_name(&candidate) {
+        if kind_compatible(edge_kind, &sym.kind) {
+            debug!(
+                strategy = "ts_chain_resolution",
+                chain_len = segments.len(),
+                resolved_type = %current_type,
+                target = %last.name,
+                "resolved"
+            );
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 1.0,
+                strategy: "ts_chain_resolution",
+            });
+        }
+    }
+
+    // Try by name, scoped to the type.
+    for sym in lookup.by_name(&last.name) {
+        if sym.qualified_name.starts_with(&current_type) && kind_compatible(edge_kind, &sym.kind) {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.95,
+                strategy: "ts_chain_resolution",
+            });
+        }
+    }
+
+    None
+}
+
+/// Find the enclosing class name from the scope chain.
+/// scope_chain is `["UserService.findAll", "UserService"]` — we want "UserService".
+fn find_enclosing_class(scope_chain: &[String], lookup: &dyn SymbolLookup) -> Option<String> {
+    for scope in scope_chain {
+        if let Some(sym) = lookup.by_qualified_name(scope) {
+            if matches!(
+                sym.kind.as_str(),
+                "class" | "struct" | "interface"
+            ) {
+                return Some(scope.clone());
+            }
+        }
+    }
+    // Fallback: the shortest scope entry is often the class.
+    scope_chain.last().cloned()
 }
 
 /// Detect references to browser/JS runtime globals.
