@@ -630,31 +630,44 @@ fn extract_with_item(
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
 ) {
-    let value = node.child_by_field_name("value").or_else(|| node.named_child(0));
+    // In tree-sitter-python 0.25, `with open('f') as f:` is represented as:
+    //
+    //   with_item
+    //     as_pattern            ← the value field IS the as_pattern
+    //       call                ← open('f')
+    //       as
+    //       as_pattern_target   ← "f"  (via alias field)
+    //
+    // Without an alias the value field is simply the expression (call, identifier, etc.).
+    let value_node = node.child_by_field_name("value").or_else(|| node.named_child(0));
 
-    // Locate the alias identifier after `as`.
-    let alias_node = {
-        let mut found: Option<tree_sitter::Node> = None;
-        let mut saw_as = false;
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            if child.kind() == "as" {
-                saw_as = true;
-            } else if saw_as && child.kind() == "identifier" {
-                found = Some(child);
-                break;
-            }
+    let (cm_expr, alias_ident) = match &value_node {
+        Some(v) if v.kind() == "as_pattern" => {
+            // The context manager expression is the first non-punctuation named child.
+            let expr = v.named_child(0);
+            // The alias identifier is inside as_pattern_target, accessed via the alias field.
+            let alias = v.child_by_field_name("alias").and_then(|t| {
+                // as_pattern_target wraps the identifier
+                if t.kind() == "as_pattern_target" {
+                    t.named_child(0)
+                } else if t.kind() == "identifier" {
+                    Some(t)
+                } else {
+                    None
+                }
+            });
+            (expr, alias)
         }
-        found
+        other => (other.as_ref().copied(), None),
     };
 
     // Emit calls from the context manager expression.
-    if let Some(ref val) = value {
-        extract_calls_from_body(val, source, enclosing_symbol_index, refs);
+    if let Some(ref expr) = cm_expr {
+        extract_calls_from_body(expr, source, enclosing_symbol_index, refs);
     }
 
-    // Emit alias Variable and chain TypeRef when value is a call.
-    if let Some(alias) = alias_node {
+    // Emit alias Variable and chain TypeRef when the cm expression is a call.
+    if let Some(alias) = alias_ident {
         let name = node_text(&alias, source);
         let sym_idx = symbols.len();
         symbols.push(ExtractedSymbol {
@@ -672,9 +685,9 @@ fn extract_with_item(
             parent_index,
         });
 
-        if let Some(val) = value {
-            if val.kind() == "call" {
-                if let Some(func) = val.child_by_field_name("function") {
+        if let Some(expr) = cm_expr {
+            if expr.kind() == "call" {
+                if let Some(func) = expr.child_by_field_name("function") {
                     if let Some(chain) = build_chain(&func, source) {
                         let target = chain
                             .segments
@@ -686,7 +699,7 @@ fn extract_with_item(
                                 source_symbol_index: sym_idx,
                                 target_name: target,
                                 kind: EdgeKind::TypeRef,
-                                line: val.start_position().row as u32,
+                                line: expr.start_position().row as u32,
                                 module: None,
                                 chain: Some(chain),
                             });
@@ -863,6 +876,21 @@ pub(super) fn extract_named_expression(
 // =============================================================================
 
 /// Extract type refs and pattern variables from a `match_statement`.
+///
+/// Tree-sitter-python 0.25 shape:
+/// ```text
+/// match_statement
+///   "match"
+///   <subject expression>
+///   ":"
+///   block                 ← case_clauses live inside this block
+///     case_clause
+///       "case"
+///       case_pattern
+///         <actual pattern>
+///       ":"
+///       block             ← case body
+/// ```
 pub(super) fn extract_match_statement(
     node: &Node,
     source: &str,
@@ -874,16 +902,37 @@ pub(super) fn extract_match_statement(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "case_clause" {
-            extract_case_clause(
-                &child,
-                source,
-                symbols,
-                refs,
-                parent_index,
-                qualified_prefix,
-                enclosing_symbol_index,
-            );
+        match child.kind() {
+            "block" => {
+                // The case_clauses are inside this block.
+                let mut bc = child.walk();
+                for clause in child.children(&mut bc) {
+                    if clause.kind() == "case_clause" {
+                        extract_case_clause(
+                            &clause,
+                            source,
+                            symbols,
+                            refs,
+                            parent_index,
+                            qualified_prefix,
+                            enclosing_symbol_index,
+                        );
+                    }
+                }
+            }
+            "case_clause" => {
+                // Fallback for grammar versions where case_clauses are direct children.
+                extract_case_clause(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    enclosing_symbol_index,
+                );
+            }
+            _ => {}
         }
     }
 }
@@ -897,6 +946,14 @@ fn extract_case_clause(
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
 ) {
+    // In tree-sitter-python 0.25, case_clause structure:
+    //
+    //   case_clause
+    //     "case"               ← keyword
+    //     case_pattern         ← pattern wrapper (one or more)
+    //       <actual pattern>   ← as_pattern | class_pattern | dotted_name | ...
+    //     ":"
+    //     block                ← consequence (via body field)
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -911,17 +968,21 @@ fn extract_case_clause(
                     enclosing_symbol_index,
                 );
             }
-            _ => {
-                extract_pattern_refs(
-                    &child,
-                    source,
-                    symbols,
-                    refs,
-                    parent_index,
-                    qualified_prefix,
-                    enclosing_symbol_index,
-                );
+            "case_pattern" => {
+                // Descend one level: actual pattern is the single named child of case_pattern.
+                if let Some(inner) = child.named_child(0) {
+                    extract_pattern_refs(
+                        &inner,
+                        source,
+                        symbols,
+                        refs,
+                        parent_index,
+                        qualified_prefix,
+                        enclosing_symbol_index,
+                    );
+                }
             }
+            _ => {}
         }
     }
 }
@@ -936,65 +997,44 @@ fn extract_pattern_refs(
     enclosing_symbol_index: usize,
 ) {
     match node.kind() {
-        "class_pattern" => {
-            let class_node =
-                match node.child_by_field_name("cls").or_else(|| node.named_child(0)) {
-                    Some(n) => n,
-                    None => return,
-                };
-            let class_name = node_text(&class_node, source);
-            if !class_name.is_empty() {
-                refs.push(ExtractedRef {
-                    source_symbol_index: enclosing_symbol_index,
-                    target_name: class_name,
-                    kind: EdgeKind::TypeRef,
-                    line: class_node.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
-            }
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                if child.kind() == "keyword_pattern" {
-                    if let Some(binding) = child.named_child(1) {
-                        if binding.kind() == "capture_pattern" || binding.kind() == "identifier" {
-                            let name = node_text(&binding, source);
-                            if name != "_" && !name.is_empty() {
-                                push_variable_symbol(
-                                    node,
-                                    &binding,
-                                    &name,
-                                    SymbolKind::Variable,
-                                    symbols,
-                                    parent_index,
-                                    qualified_prefix,
-                                );
-                            }
-                        }
-                    }
-                }
+        // case_pattern is a transparent wrapper — recurse into its child.
+        "case_pattern" => {
+            if let Some(inner) = node.named_child(0) {
+                extract_pattern_refs(
+                    &inner,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    enclosing_symbol_index,
+                );
             }
         }
-        "as_pattern" => {
-            let mut saw_as = false;
+
+        // `User(name=n)` or `Admin()` — emit TypeRef for the class name.
+        // class_pattern children: dotted_name (class), then case_pattern args.
+        // No cls field in the grammar — first named child is the dotted_name.
+        "class_pattern" => {
+            // First named child is the dotted_name (e.g. "User" or "pkg.Admin").
+            if let Some(class_node) = node.named_child(0) {
+                // dotted_name contains identifiers; use the whole text as the type name.
+                let class_name = node_text(&class_node, source);
+                if !class_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: enclosing_symbol_index,
+                        target_name: class_name,
+                        kind: EdgeKind::TypeRef,
+                        line: class_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            // Recurse into argument patterns for nested captures.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if child.kind() == "as" {
-                    saw_as = true;
-                } else if saw_as && child.kind() == "identifier" {
-                    let name = node_text(&child, source);
-                    if !name.is_empty() && name != "_" {
-                        push_variable_symbol(
-                            node,
-                            &child,
-                            &name,
-                            SymbolKind::Variable,
-                            symbols,
-                            parent_index,
-                            qualified_prefix,
-                        );
-                    }
-                } else if !saw_as {
+                if child.kind() == "case_pattern" || child.kind() == "keyword_pattern" {
                     extract_pattern_refs(
                         &child,
                         source,
@@ -1007,6 +1047,91 @@ fn extract_pattern_refs(
                 }
             }
         }
+
+        // keyword_pattern: `name=n` inside class_pattern args.
+        // Emit Variable for the bound identifier (second named child).
+        "keyword_pattern" => {
+            if let Some(binding) = node.named_child(1) {
+                let name = node_text(&binding, source);
+                if name != "_" && !name.is_empty() {
+                    push_variable_symbol(
+                        node,
+                        &binding,
+                        &name,
+                        SymbolKind::Variable,
+                        symbols,
+                        parent_index,
+                        qualified_prefix,
+                    );
+                }
+            }
+        }
+
+        // `Admin() as admin` — recurse into inner pattern, emit Variable for alias.
+        // In match context, as_pattern children: case_pattern + "as" + identifier.
+        // (alias field points to as_pattern_target, but in match grammar it is just identifier)
+        "as_pattern" => {
+            // Recurse into the inner pattern (first named child, likely case_pattern).
+            if let Some(inner) = node.named_child(0) {
+                if inner.kind() != "as_pattern_target" && inner.kind() != "identifier" {
+                    extract_pattern_refs(
+                        &inner,
+                        source,
+                        symbols,
+                        refs,
+                        parent_index,
+                        qualified_prefix,
+                        enclosing_symbol_index,
+                    );
+                }
+            }
+            // The alias: check the alias field first (as_pattern_target), then scan for
+            // a trailing identifier child after the "as" keyword.
+            let alias_name = node
+                .child_by_field_name("alias")
+                .map(|t| {
+                    // as_pattern_target may wrap an identifier
+                    if t.kind() == "as_pattern_target" {
+                        t.named_child(0)
+                            .map(|n| node_text(&n, source))
+                            .unwrap_or_else(|| node_text(&t, source))
+                    } else {
+                        node_text(&t, source)
+                    }
+                })
+                .or_else(|| {
+                    // Fallback: scan for identifier after "as" keyword token.
+                    let mut saw_as = false;
+                    let mut found = None;
+                    let mut cursor = node.walk();
+                    for child in node.children(&mut cursor) {
+                        if child.kind() == "as" {
+                            saw_as = true;
+                        } else if saw_as && child.kind() == "identifier" {
+                            found = Some(node_text(&child, source));
+                            break;
+                        }
+                    }
+                    found
+                });
+
+            if let Some(name) = alias_name {
+                if !name.is_empty() && name != "_" {
+                    // Find the node to use as position anchor.
+                    let pos_node = node.child_by_field_name("alias").unwrap_or(*node);
+                    push_variable_symbol(
+                        node,
+                        &pos_node,
+                        &name,
+                        SymbolKind::Variable,
+                        symbols,
+                        parent_index,
+                        qualified_prefix,
+                    );
+                }
+            }
+        }
+
         "capture_pattern" => {
             let name = node_text(node, source);
             if !name.is_empty() && name != "_" {
@@ -1021,7 +1146,9 @@ fn extract_pattern_refs(
                 );
             }
         }
-        "or_pattern" | "sequence_pattern" | "group_pattern" => {
+
+        "or_pattern" | "union_pattern" | "sequence_pattern" | "tuple_pattern"
+        | "list_pattern" | "group_pattern" => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 extract_pattern_refs(
@@ -1035,6 +1162,7 @@ fn extract_pattern_refs(
                 );
             }
         }
+
         _ => {}
     }
 }
