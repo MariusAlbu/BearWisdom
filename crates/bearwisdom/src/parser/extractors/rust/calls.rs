@@ -4,7 +4,7 @@
 
 use super::helpers::node_text;
 use super::symbols::extract_method_from_fn;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
 use tree_sitter::Node;
 
 // ---------------------------------------------------------------------------
@@ -44,7 +44,7 @@ pub(super) fn extract_impl(
                 let idx = symbols.len();
                 symbols.push(sym);
                 if let Some(fn_body) = child.child_by_field_name("body") {
-                    extract_calls_from_body(&fn_body, source, idx, refs);
+                    extract_calls_from_body_with_symbols(&fn_body, source, idx, refs, Some(symbols));
                 }
             }
         }
@@ -63,42 +63,137 @@ pub(super) fn extract_calls_from_body(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    extract_calls_from_body_with_symbols(node, source, source_symbol_index, refs, None);
+}
+
+/// Variant that also emits Variable symbols for closure parameters.
+pub(super) fn extract_calls_from_body_with_symbols(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    mut symbols: Option<&mut Vec<ExtractedSymbol>>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "call_expression" {
-            if let Some(func) = child.child_by_field_name("function") {
-                let chain = build_chain(func, source);
+        match child.kind() {
+            "call_expression" => {
+                if let Some(func) = child.child_by_field_name("function") {
+                    let chain = build_chain(func, source);
 
-                let target_name = chain
-                    .as_ref()
-                    .and_then(|c| c.segments.last())
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| {
-                        let callee_text = node_text(&func, source);
-                        callee_text
-                            .rsplit("::")
-                            .next()
-                            .unwrap_or(&callee_text)
-                            .rsplit('.')
-                            .next()
-                            .unwrap_or(&callee_text)
-                            .trim()
-                            .to_string()
-                    });
+                    let target_name = chain
+                        .as_ref()
+                        .and_then(|c| c.segments.last())
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| {
+                            let callee_text = node_text(&func, source);
+                            callee_text
+                                .rsplit("::")
+                                .next()
+                                .unwrap_or(&callee_text)
+                                .rsplit('.')
+                                .next()
+                                .unwrap_or(&callee_text)
+                                .trim()
+                                .to_string()
+                        });
 
-                if !target_name.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index,
-                        target_name,
-                        kind: EdgeKind::Calls,
-                        line: func.start_position().row as u32,
-                        module: None,
-                        chain,
-                    });
+                    if !target_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name,
+                            kind: EdgeKind::Calls,
+                            line: func.start_position().row as u32,
+                            module: None,
+                            chain,
+                        });
+                    }
+                }
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
+            "closure_expression" => {
+                // Emit Variable symbols for closure parameters, then recurse into body.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_closure_params(&child, source, source_symbol_index, syms);
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
+            _ => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
             }
         }
-        extract_calls_from_body(&child, source, source_symbol_index, refs);
+    }
+}
+
+/// Emit Variable symbols for each identifier in a `closure_parameters` node.
+///
+/// Handles:
+/// - `|x|`             → identifier
+/// - `|x: Type|`       → identifier with type annotation
+/// - `|mut x|`         → mutable binding
+/// - `|(a, b)|`        → destructured tuple pattern
+fn extract_closure_params(
+    closure_node: &Node,
+    source: &str,
+    parent_index: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let mut cursor = closure_node.walk();
+    for child in closure_node.children(&mut cursor) {
+        if child.kind() == "closure_parameters" {
+            let mut pc = child.walk();
+            for param in child.children(&mut pc) {
+                match param.kind() {
+                    "identifier" => {
+                        let name = node_text(&param, source);
+                        if !name.is_empty() && name != "|" {
+                            symbols.push(make_closure_variable(name, &param, parent_index));
+                        }
+                    }
+                    // `x: Type` — the identifier is a child named `pattern`
+                    "parameter" => {
+                        if let Some(pat) = param.child_by_field_name("pattern") {
+                            let name = node_text(&pat, source);
+                            if !name.is_empty() {
+                                symbols.push(make_closure_variable(name, &pat, parent_index));
+                            }
+                        }
+                    }
+                    // `mut x`
+                    "mut_specifier" | "mutable_specifier" => {}
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+fn make_closure_variable(name: String, node: &Node, parent_index: usize) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name,
+        kind: SymbolKind::Variable,
+        visibility: None,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: Some(parent_index),
     }
 }
 

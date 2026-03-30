@@ -28,6 +28,7 @@ mod calls;
 pub(super) mod decorators;
 mod helpers;
 mod imports;
+mod narrowing;
 mod params;
 mod symbols;
 mod types;
@@ -146,6 +147,7 @@ fn extract_node(
                     );
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
+                        narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
                     }
                 }
             }
@@ -189,6 +191,7 @@ fn extract_node(
                     decorators::extract_decorators(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
+                        narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
                     }
                 }
             }

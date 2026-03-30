@@ -3,6 +3,7 @@
 // =============================================================================
 
 mod calls;
+pub(super) mod decorators;
 mod helpers;
 mod symbols;
 
@@ -87,6 +88,7 @@ pub(super) fn extract_from_node(
             }
 
             "function_definition" => {
+                let fn_idx = symbols.len();
                 symbols::extract_function(
                     &child,
                     src,
@@ -97,9 +99,13 @@ pub(super) fn extract_from_node(
                     namespace_prefix,
                     false,
                 );
+                if symbols.len() > fn_idx {
+                    decorators::extract_decorators(&child, src, fn_idx, refs);
+                }
             }
 
             "class_declaration" => {
+                let class_idx = symbols.len();
                 symbols::extract_class(
                     &child,
                     src,
@@ -110,9 +116,13 @@ pub(super) fn extract_from_node(
                     namespace_prefix,
                     SymbolKind::Class,
                 );
+                if symbols.len() > class_idx {
+                    decorators::extract_decorators(&child, src, class_idx, refs);
+                }
             }
 
             "interface_declaration" => {
+                let class_idx = symbols.len();
                 symbols::extract_class(
                     &child,
                     src,
@@ -123,9 +133,13 @@ pub(super) fn extract_from_node(
                     namespace_prefix,
                     SymbolKind::Interface,
                 );
+                if symbols.len() > class_idx {
+                    decorators::extract_decorators(&child, src, class_idx, refs);
+                }
             }
 
             "trait_declaration" => {
+                let class_idx = symbols.len();
                 symbols::extract_class(
                     &child,
                     src,
@@ -136,9 +150,13 @@ pub(super) fn extract_from_node(
                     namespace_prefix,
                     SymbolKind::Class,
                 );
+                if symbols.len() > class_idx {
+                    decorators::extract_decorators(&child, src, class_idx, refs);
+                }
             }
 
             "enum_declaration" => {
+                let enum_idx = symbols.len();
                 symbols::extract_enum(
                     &child,
                     src,
@@ -148,6 +166,9 @@ pub(super) fn extract_from_node(
                     qualified_prefix,
                     namespace_prefix,
                 );
+                if symbols.len() > enum_idx {
+                    decorators::extract_decorators(&child, src, enum_idx, refs);
+                }
             }
 
             "ERROR" | "MISSING" => {}

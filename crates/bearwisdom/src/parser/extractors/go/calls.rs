@@ -49,6 +49,19 @@ pub(super) fn extract_refs_from_body(
                     }
                 }
             }
+
+            // `x.(*Admin)` — type assertion
+            "type_assertion_expression" => {
+                extract_type_assertion_ref(&child, source, source_symbol_index, refs);
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
+            // `switch v := x.(type) { case *Admin: ... }`
+            "type_switch_statement" => {
+                extract_type_switch_refs(&child, source, source_symbol_index, refs);
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
             _ => {
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
             }
@@ -244,4 +257,114 @@ pub(super) fn extract_composite_literal_ref(
         module: None,
         chain: None,
     });
+}
+
+// ---------------------------------------------------------------------------
+// Type narrowing — type assertions and type switches
+// ---------------------------------------------------------------------------
+
+/// Emit a TypeRef for `x.(*Admin)` — a `type_assertion_expression`.
+///
+/// Tree-sitter-go structure:
+/// ```text
+/// type_assertion_expression
+///   identifier "x"          ← operand
+///   pointer_type / type_identifier / qualified_type   ← asserted type
+/// ```
+/// The asserted type is the last named child.
+pub(super) fn extract_type_assertion_ref(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let named_count = node.named_child_count();
+    if named_count < 2 {
+        return;
+    }
+    let type_node = match node.named_child(named_count - 1) {
+        Some(n) => n,
+        None => return,
+    };
+
+    let type_name = go_type_node_name(&type_node, source);
+    if type_name.is_empty() {
+        return;
+    }
+
+    refs.push(ExtractedRef {
+        source_symbol_index,
+        target_name: type_name,
+        kind: EdgeKind::TypeRef,
+        line: type_node.start_position().row as u32,
+        module: None,
+        chain: None,
+    });
+}
+
+/// Emit TypeRefs for each case type in a `type_switch_statement`.
+///
+/// ```go
+/// switch v := x.(type) {
+///     case *Admin:   ...
+///     case *User:    ...
+/// }
+/// ```
+/// Tree-sitter-go: `type_switch_statement` → `type_case` children,
+/// each with a `type` field (or positional type children).
+pub(super) fn extract_type_switch_refs(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_case" {
+            // Each case clause can list multiple types: `case *Foo, *Bar:`
+            // Walk all children for type nodes.
+            let mut inner = child.walk();
+            for type_child in child.children(&mut inner) {
+                match type_child.kind() {
+                    "type_identifier" | "pointer_type" | "qualified_type" => {
+                        let name = go_type_node_name(&type_child, source);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::TypeRef,
+                                line: type_child.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+}
+
+/// Extract a simple type name from a Go type node, dereferencing pointer types.
+fn go_type_node_name(node: &Node, source: &str) -> String {
+    match node.kind() {
+        "type_identifier" => node_text(node, source),
+        "pointer_type" => {
+            // `*Admin` — the named child is the underlying type.
+            node.named_child(0)
+                .map(|n| go_type_node_name(&n, source))
+                .unwrap_or_default()
+        }
+        "qualified_type" => {
+            // `pkg.Admin` — use the last type_identifier.
+            (0..node.named_child_count())
+                .filter_map(|i| node.named_child(i))
+                .filter(|c| c.kind() == "type_identifier")
+                .last()
+                .map(|n| node_text(&n, source))
+                .unwrap_or_else(|| node_text(node, source))
+        }
+        _ => String::new(),
+    }
 }

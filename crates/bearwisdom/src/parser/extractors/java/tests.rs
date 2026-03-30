@@ -350,3 +350,89 @@ public @interface MyAnnotation {
         assert_eq!(ann.kind, SymbolKind::Interface);
         assert_eq!(ann.qualified_name, "com.example.MyAnnotation");
     }
+
+    // -----------------------------------------------------------------------
+    // instanceof narrowing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn instanceof_emits_type_ref() {
+        let src = r#"
+package com.example;
+public class AuthService {
+    public void check(Object user) {
+        if (user instanceof Admin) {
+            System.out.println("admin");
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "refs: {r:?}"
+        );
+    }
+
+    #[test]
+    fn instanceof_pattern_variable_emits_variable_and_type_ref() {
+        let src = r#"
+package com.example;
+public class AuthService {
+    public void check(Object user) {
+        if (user instanceof Admin admin) {
+            admin.doStuff();
+        }
+    }
+}
+"#;
+        let s = sym(src);
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to Admin, refs: {r:?}"
+        );
+        assert!(
+            s.iter().any(|s| s.name == "admin" && s.kind == SymbolKind::Variable),
+            "expected Variable symbol 'admin', symbols: {s:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Lambda extraction
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn calls_inside_lambda_are_extracted() {
+        let src = r#"
+class Service {
+    void run() {
+        users.stream().map(u -> u.getName()).collect(Collectors.toList());
+    }
+}
+"#;
+        let r = refs(src);
+        let calls: Vec<&str> = r.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"getName"), "Missing 'getName' inside lambda: {calls:?}");
+        assert!(calls.contains(&"map"),     "Missing 'map': {calls:?}");
+    }
+
+    #[test]
+    fn lambda_parameter_emitted_as_variable_symbol() {
+        let src = r#"
+class Service {
+    void run() {
+        users.stream().map(u -> u.getName()).collect(Collectors.toList());
+    }
+}
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.name == "u" && s.kind == SymbolKind::Variable),
+            "expected Variable symbol 'u', symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }

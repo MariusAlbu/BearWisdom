@@ -29,6 +29,7 @@
 mod calls;
 mod helpers;
 mod symbols;
+pub(super) mod tags;
 
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use tree_sitter::{Node, Parser};

@@ -2,7 +2,7 @@
 // ruby/symbols.rs  —  Symbol pushers for Ruby
 // =============================================================================
 
-use super::calls::extract_calls_from_body;
+use super::calls::extract_calls_from_body_with_symbols;
 use super::helpers::{
     build_method_signature, get_call_method_name, node_text, qualify, ruby_visibility,
     scope_from_prefix,
@@ -182,7 +182,7 @@ pub(super) fn extract_method(
     });
 
     if let Some(body) = node.child_by_field_name("body") {
-        extract_calls_from_body(&body, src, idx, refs);
+        extract_calls_from_body_with_symbols(&body, src, idx, refs, Some(symbols));
     }
 }
 
@@ -223,7 +223,7 @@ pub(super) fn extract_singleton_method(
     });
 
     if let Some(body) = node.child_by_field_name("body") {
-        extract_calls_from_body(&body, src, idx, refs);
+        extract_calls_from_body_with_symbols(&body, src, idx, refs, Some(symbols));
     }
 }
 

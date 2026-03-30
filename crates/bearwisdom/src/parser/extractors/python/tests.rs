@@ -135,3 +135,36 @@
         let result = std::panic::catch_unwind(|| extract(source));
         assert!(result.is_ok(), "extractor panicked on malformed input");
     }
+
+    // -----------------------------------------------------------------------
+    // isinstance type narrowing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn isinstance_single_type_emits_type_ref() {
+        let source = r#"
+def check(user):
+    if isinstance(user, Admin):
+        user.admin_method()
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        assert!(
+            type_refs.iter().any(|r| r.target_name == "Admin"),
+            "expected TypeRef to Admin, refs: {type_refs:?}"
+        );
+    }
+
+    #[test]
+    fn isinstance_tuple_of_types_emits_multiple_type_refs() {
+        let source = r#"
+def check(user):
+    if isinstance(user, (Admin, Moderator)):
+        user.privileged_method()
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        let names: Vec<&str> = type_refs.iter().map(|r| r.target_name.as_str()).collect();
+        assert!(names.contains(&"Admin"), "expected TypeRef to Admin, got: {names:?}");
+        assert!(names.contains(&"Moderator"), "expected TypeRef to Moderator, got: {names:?}");
+    }

@@ -18,6 +18,7 @@
 // =============================================================================
 
 mod calls;
+pub(super) mod decorators;
 mod helpers;
 mod symbols;
 
@@ -96,8 +97,9 @@ fn extract_from_node(
                 {
                     let idx = symbols.len();
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
-                        calls::extract_calls_from_body(&body, source, idx, refs);
+                        calls::extract_calls_from_body_with_symbols(&body, source, idx, refs, Some(symbols));
                     }
                 }
             }
@@ -106,7 +108,9 @@ fn extract_from_node(
                 if let Some(sym) =
                     symbols::extract_struct(&child, source, parent_index, qualified_prefix)
                 {
+                    let idx = symbols.len();
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                 }
             }
 
@@ -117,6 +121,7 @@ fn extract_from_node(
                     let idx = symbols.len();
                     let new_prefix = helpers::qualify(&sym.name, qualified_prefix);
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         symbols::extract_enum_variants(&body, source, Some(idx), &new_prefix, symbols);
                     }
@@ -130,6 +135,7 @@ fn extract_from_node(
                     let idx = symbols.len();
                     let new_prefix = helpers::qualify(&sym.name, qualified_prefix);
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_from_node(body, source, symbols, refs, Some(idx), &new_prefix);
                     }
@@ -144,7 +150,9 @@ fn extract_from_node(
                 if let Some(sym) =
                     symbols::extract_type_alias(&child, source, parent_index, qualified_prefix)
                 {
+                    let idx = symbols.len();
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                 }
             }
 
@@ -152,7 +160,9 @@ fn extract_from_node(
                 if let Some(sym) =
                     symbols::extract_const(&child, source, parent_index, qualified_prefix)
                 {
+                    let idx = symbols.len();
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                 }
             }
 
@@ -160,7 +170,9 @@ fn extract_from_node(
                 if let Some(sym) =
                     symbols::extract_static(&child, source, parent_index, qualified_prefix)
                 {
+                    let idx = symbols.len();
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                 }
             }
 
@@ -171,6 +183,7 @@ fn extract_from_node(
                     let idx = symbols.len();
                     let new_prefix = helpers::qualify(&sym.name, qualified_prefix);
                     symbols.push(sym);
+                    decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_from_node(body, source, symbols, refs, Some(idx), &new_prefix);
                     }

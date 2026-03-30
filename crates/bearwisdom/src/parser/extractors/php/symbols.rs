@@ -238,6 +238,8 @@ pub(super) fn extract_method(
         parent_index,
     });
 
+    super::decorators::extract_decorators(node, src, idx, refs);
+
     if let Some(body) = node.child_by_field_name("body") {
         extract_calls_from_body(&body, src, idx, refs);
     }

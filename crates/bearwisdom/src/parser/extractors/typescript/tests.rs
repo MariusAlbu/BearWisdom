@@ -140,6 +140,41 @@ fn catch_clause_typed_emits_variable_and_type_ref() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// instanceof narrowing
+// ---------------------------------------------------------------------------
+
+#[test]
+fn instanceof_in_if_emits_type_ref() {
+    let src = "function check(user: unknown) { if (user instanceof Admin) { user.doStuff(); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
+#[test]
+fn instanceof_in_method_emits_type_ref() {
+    let src = "class Svc { handle(x: unknown) { if (x instanceof Handler) {} } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Handler" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
+#[test]
+fn as_expression_in_call_chain_emits_type_ref() {
+    // `(user as Admin).doAdminStuff()` — as_expression in expression context, not var decl.
+    let src = "function go(user: unknown) { (user as Admin).doAdminStuff(); }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
 #[test]
 fn catch_clause_untyped_emits_variable_only() {
     let src = "try { doWork(); } catch (e) { console.log(e); }";

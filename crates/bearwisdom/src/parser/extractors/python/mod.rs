@@ -3,6 +3,7 @@
 // =============================================================================
 
 mod calls;
+pub(super) mod decorators;
 mod helpers;
 mod symbols;
 

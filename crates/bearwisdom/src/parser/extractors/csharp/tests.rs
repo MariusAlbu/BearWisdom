@@ -338,3 +338,70 @@ class Program {
         assert!(templates.contains(&"/api/items"), "Expected '/api/items' preserved, got: {templates:?}");
         assert_eq!(result.routes.len(), 2, "Expected 2 routes, got: {templates:?}");
     }
+
+    // -----------------------------------------------------------------------
+    // Type narrowing — is expressions and switch expressions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn is_expression_emits_type_ref() {
+        let src = r#"
+namespace App {
+    class AuthService {
+        public void Check(object user) {
+            if (user is Admin) {
+                System.Console.WriteLine("admin");
+            }
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "refs: {r:?}"
+        );
+    }
+
+    #[test]
+    fn is_pattern_expression_emits_type_ref() {
+        let src = r#"
+namespace App {
+    class AuthService {
+        public void Check(object user) {
+            if (user is Admin admin) {
+                admin.DoStuff();
+            }
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "refs: {r:?}"
+        );
+    }
+
+    #[test]
+    fn switch_expression_pattern_emits_type_ref() {
+        let src = r#"
+namespace App {
+    class LevelService {
+        public int GetLevel(object user) {
+            return user switch {
+                Admin a => a.Level,
+                _ => 0,
+            };
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "refs: {r:?}"
+        );
+    }
+
+

@@ -263,6 +263,9 @@ pub(super) fn extract_decorated_definition(
 ) {
     let decorators = extract_decorator_names(node, source);
 
+    // The symbol pushed by the inner call will land at this index.
+    let symbol_index = symbols.len();
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -277,9 +280,11 @@ pub(super) fn extract_decorated_definition(
                     inside_class,
                     &decorators,
                 );
+                super::decorators::extract_decorators(node, source, symbol_index, refs);
             }
             "class_definition" => {
                 extract_class_definition(&child, source, symbols, refs, parent_index, qualified_prefix);
+                super::decorators::extract_decorators(node, source, symbol_index, refs);
             }
             _ => {}
         }

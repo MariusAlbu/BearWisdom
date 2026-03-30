@@ -35,6 +35,7 @@
 // =============================================================================
 
 mod calls;
+pub(super) mod decorators;
 mod helpers;
 mod symbols;
 mod types;
@@ -251,6 +252,7 @@ fn extract_node_inner(
             "class_declaration" => {
                 let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Class);
                 types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 // Extract class-level [Route("...")] for ASP.NET controllers.
                 let class_route = calls::extract_class_route_prefix(&child, src);
                 // Check if this looks like a DbContext subclass.
@@ -266,6 +268,7 @@ fn extract_node_inner(
             "record_declaration" => {
                 let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Class);
                 types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 // Extract primary constructor parameters as Property symbols.
                 // e.g. `record Point(int X, int Y)` → two Property symbols.
                 if let Some(record_idx) = idx {
@@ -279,6 +282,7 @@ fn extract_node_inner(
             "struct_declaration" => {
                 let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Struct);
                 types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
@@ -287,6 +291,7 @@ fn extract_node_inner(
             "interface_declaration" => {
                 let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Interface);
                 types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
@@ -294,6 +299,7 @@ fn extract_node_inner(
 
             "enum_declaration" => {
                 let idx = symbols::push_enum_decl(&child, src, scope_tree, symbols, parent_index);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 // Enum members are extracted inside push_enum_decl.
                 let _ = idx;
             }
@@ -301,6 +307,7 @@ fn extract_node_inner(
             "method_declaration" => {
                 let idx = symbols::push_method_decl(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    decorators::extract_decorators(&child, src, sym_idx, refs);
                     // Extract type refs from return type and parameter types.
                     symbols::push_method_type_refs(&child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this method.
@@ -322,6 +329,7 @@ fn extract_node_inner(
             "constructor_declaration" => {
                 let idx = symbols::push_constructor_decl(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    decorators::extract_decorators(&child, src, sym_idx, refs);
                     // Extract type refs from parameter types.
                     symbols::push_constructor_type_refs(&child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this constructor.

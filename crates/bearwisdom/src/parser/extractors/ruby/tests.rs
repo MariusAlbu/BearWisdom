@@ -103,3 +103,58 @@ end
         let result = std::panic::catch_unwind(|| extract(source));
         assert!(result.is_ok(), "extractor panicked on malformed input");
     }
+
+    #[test]
+    fn calls_inside_brace_block_are_extracted() {
+        let source = r#"
+class Order
+  def process
+    items.each { |item| item.save }
+  end
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r.refs.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"each"),  "Missing 'each': {calls:?}");
+        assert!(calls.contains(&"save"),  "Missing 'save' (inside block): {calls:?}");
+    }
+
+    #[test]
+    fn calls_inside_do_block_are_extracted() {
+        let source = r#"
+class Repo
+  def run
+    items.map do |item|
+      item.process
+    end
+  end
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r.refs.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"map"),     "Missing 'map': {calls:?}");
+        assert!(calls.contains(&"process"), "Missing 'process' (inside do block): {calls:?}");
+    }
+
+    #[test]
+    fn block_parameters_emitted_as_variable_symbols() {
+        let source = r#"
+class Svc
+  def run
+    items.each { |item| item.name }
+  end
+end
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r.symbols.iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"item"), "Missing block param 'item': {vars:?}");
+    }

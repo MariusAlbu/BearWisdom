@@ -24,6 +24,7 @@
 // =============================================================================
 
 mod calls;
+pub(super) mod decorators;
 mod helpers;
 mod symbols;
 
@@ -152,6 +153,7 @@ pub(super) fn extract_node(
             "class_declaration" => {
                 let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Class);
                 symbols::extract_class_inheritance(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, package, symbols, refs, idx);
                 }
@@ -160,6 +162,7 @@ pub(super) fn extract_node(
             "interface_declaration" => {
                 let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Interface);
                 symbols::extract_interface_inheritance(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, package, symbols, refs, idx);
                 }
@@ -168,6 +171,7 @@ pub(super) fn extract_node(
             "enum_declaration" => {
                 let idx = symbols::push_enum_decl(&child, src, scope_tree, package, symbols, parent_index);
                 symbols::extract_enum_implements(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     // Extract enum constants first, then recurse for nested declarations.
                     symbols::extract_enum_body(&body, src, scope_tree, package, symbols, refs, idx);
@@ -177,6 +181,7 @@ pub(super) fn extract_node(
             "annotation_type_declaration" => {
                 // Treat annotation types as interfaces.
                 let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Interface);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, package, symbols, refs, idx);
                 }
@@ -185,12 +190,13 @@ pub(super) fn extract_node(
             "method_declaration" => {
                 let idx = symbols::push_method_decl(&child, src, scope_tree, package, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    decorators::extract_decorators(&child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this method.
                     if let Some(params) = child.child_by_field_name("parameters") {
                         symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                     if let Some(body) = child.child_by_field_name("body") {
-                        calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                        calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
                     }
                 }
             }
@@ -198,12 +204,13 @@ pub(super) fn extract_node(
             "constructor_declaration" => {
                 let idx = symbols::push_constructor_decl(&child, src, scope_tree, package, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    decorators::extract_decorators(&child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this constructor.
                     if let Some(params) = child.child_by_field_name("parameters") {
                         symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                     if let Some(body) = child.child_by_field_name("body") {
-                        calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                        calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
                     }
                 }
             }

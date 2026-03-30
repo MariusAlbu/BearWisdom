@@ -156,3 +156,34 @@ pub fn foo() {}"#;
         // Must not panic; partial results are acceptable.
         let _ = r.symbols;
     }
+
+    #[test]
+    fn calls_inside_closure_are_extracted() {
+        let source = r#"fn run() {
+    items.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
+}"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(call_names.contains(&"map"),   "Missing 'map': {call_names:?}");
+        assert!(call_names.contains(&"clone"), "Missing 'clone' inside closure: {call_names:?}");
+    }
+
+    #[test]
+    fn closure_parameter_emitted_as_variable_symbol() {
+        let source = r#"fn run() {
+    items.iter().map(|x| x.process()).collect::<Vec<_>>();
+}"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"x"), "Missing closure param 'x': {vars:?}");
+    }

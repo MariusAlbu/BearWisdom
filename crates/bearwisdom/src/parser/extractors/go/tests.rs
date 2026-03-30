@@ -404,3 +404,199 @@ const (
         let _ = &r.symbols;
         let _ = r.has_errors;
     }
+
+    // -----------------------------------------------------------------------
+    // Struct tags
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn struct_tags_stored_in_field_doc_comment() {
+        let source = r#"package model
+
+type User struct {
+    Name  string `json:"name" db:"user_name" validate:"required"`
+    Email string `json:"email,omitempty" db:"email"`
+    Age   int    `json:"age" db:"age"`
+}
+"#;
+        let r = extract(source);
+
+        let name_field = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "Name" && s.kind == SymbolKind::Field)
+            .expect("no Name field");
+        let doc = name_field.doc_comment.as_deref().unwrap_or("");
+        assert!(
+            doc.contains("json=\"name\""),
+            "expected json tag, got: {doc:?}"
+        );
+        assert!(
+            doc.contains("db=\"user_name\""),
+            "expected db tag, got: {doc:?}"
+        );
+        assert!(
+            doc.contains("validate=\"required\""),
+            "expected validate tag, got: {doc:?}"
+        );
+    }
+
+    #[test]
+    fn struct_tag_with_omitempty_option() {
+        let source = r#"package model
+
+type Response struct {
+    Message string `json:"message,omitempty"`
+}
+"#;
+        let r = extract(source);
+        let field = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "Message" && s.kind == SymbolKind::Field)
+            .expect("no Message field");
+        let doc = field.doc_comment.as_deref().unwrap_or("");
+        assert!(
+            doc.contains("json=\"message,omitempty\""),
+            "expected omitempty in tag value, got: {doc:?}"
+        );
+    }
+
+    #[test]
+    fn struct_field_without_tags_has_no_doc_comment() {
+        let source = r#"package model
+
+type Point struct {
+    X float64
+    Y float64
+}
+"#;
+        let r = extract(source);
+        for sym in r.symbols.iter().filter(|s| s.kind == SymbolKind::Field) {
+            assert!(
+                sym.doc_comment.is_none(),
+                "field {} should have no doc_comment, got: {:?}",
+                sym.name,
+                sym.doc_comment
+            );
+        }
+    }
+
+    #[test]
+    fn struct_tags_multiple_fields_all_tagged() {
+        let source = r#"package api
+
+type Item struct {
+    ID    int    `json:"id" gorm:"primaryKey"`
+    Title string `json:"title" gorm:"column:title"`
+}
+"#;
+        let r = extract(source);
+
+        let id_field = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "ID" && s.kind == SymbolKind::Field)
+            .expect("no ID field");
+        let id_doc = id_field.doc_comment.as_deref().unwrap_or("");
+        assert!(id_doc.contains("gorm=\"primaryKey\""), "got: {id_doc:?}");
+
+        let title_field = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "Title" && s.kind == SymbolKind::Field)
+            .expect("no Title field");
+        let title_doc = title_field.doc_comment.as_deref().unwrap_or("");
+        assert!(title_doc.contains("gorm=\"column:title\""), "got: {title_doc:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // defer / go statement call extraction
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn defer_statement_call_is_extracted() {
+        let source = r#"package server
+
+func handleConn(conn net.Conn) {
+    defer conn.Close()
+    conn.Read(nil)
+}
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"Close"),
+            "expected Close call from defer, got: {call_names:?}"
+        );
+    }
+
+    #[test]
+    fn go_statement_call_is_extracted() {
+        let source = r#"package worker
+
+func start(h Handler) {
+    go h.Process()
+}
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"Process"),
+            "expected Process call from go statement, got: {call_names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Type narrowing — type assertions and type switches
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn type_assertion_emits_type_ref() {
+        let source = r#"package app
+
+func handle(x interface{}) {
+    if admin, ok := x.(*Admin); ok {
+        _ = admin
+    }
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        assert!(
+            type_refs.iter().any(|r| r.target_name == "Admin"),
+            "expected TypeRef to Admin, got: {type_refs:?}"
+        );
+    }
+
+    #[test]
+    fn type_switch_emits_type_refs() {
+        let source = r#"package app
+
+func process(x interface{}) {
+    switch v := x.(type) {
+    case *Admin:
+        _ = v
+    case *User:
+        _ = v
+    }
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        let names: Vec<&str> = type_refs.iter().map(|r| r.target_name.as_str()).collect();
+        assert!(names.contains(&"Admin"), "expected TypeRef to Admin, got: {names:?}");
+        assert!(names.contains(&"User"), "expected TypeRef to User, got: {names:?}");
+    }
+
+

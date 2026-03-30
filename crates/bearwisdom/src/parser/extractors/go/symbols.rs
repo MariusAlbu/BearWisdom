@@ -8,6 +8,7 @@ use super::helpers::{
     extract_go_type_name, go_visibility, is_go_builtin_type, is_test_function, node_text,
     pointer_type_name, qualify, scope_from_prefix,
 };
+use super::tags;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::Node;
 
@@ -538,6 +539,7 @@ fn extract_field_declaration(
     let mut field_names: Vec<String> = Vec::new();
     let mut type_text: Option<String> = None;
     let mut embedded_type: Option<String> = None;
+    let mut tag_doc: Option<String> = None;
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -555,6 +557,14 @@ fn extract_field_declaration(
             "pointer_type" if field_names.is_empty() && type_text.is_none() => {
                 // `*EmbeddedType`
                 embedded_type = Some(pointer_type_name(&child, source));
+            }
+            "raw_string_literal" => {
+                // Struct tag: `json:"name" db:"col"`
+                let raw = node_text(&child, source);
+                let parsed = tags::parse_struct_tags(&raw);
+                if !parsed.is_empty() {
+                    tag_doc = Some(tags::format_tags(&parsed));
+                }
             }
             _ => {
                 // Any other named child after field_identifier(s) is the type.
@@ -614,7 +624,7 @@ fn extract_field_declaration(
                 start_col: node.start_position().column as u32,
                 end_col: node.end_position().column as u32,
                 signature: Some(sig),
-                doc_comment: None,
+                doc_comment: tag_doc.clone(),
                 scope_path: scope_from_prefix(struct_prefix),
                 parent_index,
             });

@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::helpers::{get_call_method_name, node_text};
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
 use tree_sitter::Node;
 
 pub(super) fn extract_calls_from_body(
@@ -12,40 +12,128 @@ pub(super) fn extract_calls_from_body(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    extract_calls_from_body_with_symbols(node, src, source_symbol_index, refs, None);
+}
+
+/// Recursive call extractor that also emits Variable symbols for block parameters
+/// when a `symbols` vec is provided.
+pub(super) fn extract_calls_from_body_with_symbols(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    mut symbols: Option<&mut Vec<ExtractedSymbol>>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "call" {
-            if let Some(mname) = get_call_method_name(&child, src) {
-                if mname == "new" {
-                    // Emit Instantiates for `ClassName.new`
-                    if let Some(recv) = child.child_by_field_name("receiver") {
-                        let recv_text = node_text(&recv, src);
-                        refs.push(ExtractedRef {
-                            source_symbol_index,
-                            target_name: recv_text,
-                            kind: EdgeKind::Instantiates,
-                            line: child.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
-                        // Don't also emit a Calls edge for `.new`.
-                        extract_calls_from_body(&child, src, source_symbol_index, refs);
-                        continue;
+        match child.kind() {
+            "call" => {
+                if let Some(mname) = get_call_method_name(&child, src) {
+                    if mname == "new" {
+                        // Emit Instantiates for `ClassName.new`
+                        if let Some(recv) = child.child_by_field_name("receiver") {
+                            let recv_text = node_text(&recv, src);
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: recv_text,
+                                kind: EdgeKind::Instantiates,
+                                line: child.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                            // Don't also emit a Calls edge for `.new`.
+                            // Recurse into arguments but not the receiver again.
+                            if let Some(syms) = symbols.as_deref_mut() {
+                                extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                            } else {
+                                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                            }
+                            continue;
+                        }
+                    }
+
+                    let chain = build_chain(&child, src);
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: mname,
+                        kind: EdgeKind::Calls,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain,
+                    });
+                }
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            "block" | "do_block" => {
+                // Extract block parameters as Variable symbols, then recurse into
+                // the block body so calls inside blocks are captured.
+                let params_kind = if child.kind() == "block" {
+                    "block_parameters"
+                } else {
+                    "block_parameters"
+                };
+                // Emit Variable symbols for block parameters.
+                let mut cc = child.walk();
+                for block_child in child.children(&mut cc) {
+                    if block_child.kind() == params_kind {
+                        if let Some(syms) = symbols.as_deref_mut() {
+                            extract_block_params(&block_child, src, source_symbol_index, syms);
+                        }
                     }
                 }
+                // Recurse into block body.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
 
-                let chain = build_chain(&child, src);
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: mname,
-                    kind: EdgeKind::Calls,
-                    line: child.start_position().row as u32,
-                    module: None,
-                    chain,
-                });
+            _ => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
             }
         }
-        extract_calls_from_body(&child, src, source_symbol_index, refs);
+    }
+}
+
+/// Emit a `Variable` symbol for each identifier in a `block_parameters` node.
+fn extract_block_params(
+    params_node: &Node,
+    src: &[u8],
+    parent_index: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let mut cursor = params_node.walk();
+    for child in params_node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            let name = node_text(&child, src);
+            if name.is_empty() {
+                continue;
+            }
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: name,
+                kind: SymbolKind::Variable,
+                visibility: None,
+                start_line: child.start_position().row as u32,
+                end_line: child.end_position().row as u32,
+                start_col: child.start_position().column as u32,
+                end_col: child.end_position().column as u32,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: Some(parent_index),
+            });
+        }
     }
 }
 
