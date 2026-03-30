@@ -45,6 +45,26 @@ pub struct ProjectContext {
     /// Any import path starting with this prefix is internal to the project.
     /// `None` when no go.mod was found.
     pub go_module_path: Option<String>,
+
+    /// Rust crate names from Cargo.toml [dependencies] and [dev-dependencies].
+    /// e.g., {"serde", "tokio", "axum", "sqlx"}
+    /// Used by the Rust resolver to classify `use` paths as external.
+    pub rust_crates: HashSet<String>,
+
+    /// Python package names from pyproject.toml / requirements.txt / Pipfile / setup.py.
+    /// e.g., {"django", "fastapi", "sqlalchemy", "pytest"}
+    /// Used by the Python resolver to classify imports as external.
+    pub python_packages: HashSet<String>,
+
+    /// Ruby gem names from Gemfile (e.g., {"rails", "devise", "sidekiq"}).
+    /// Also includes stdlib gem names. Used by the Ruby resolver to classify
+    /// require paths as external.
+    pub ruby_gems: HashSet<String>,
+
+    /// PHP package names from composer.json require / require-dev
+    /// (e.g., {"laravel/framework", "phpunit/phpunit"}).
+    /// Used by the PHP resolver to classify use-statement namespaces as external.
+    pub php_packages: HashSet<String>,
 }
 
 /// .NET SDK type, determines which implicit usings are injected.
@@ -181,11 +201,30 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         }
     }
 
+    // Scan for Cargo.toml (Rust projects).
+    scan_cargo_toml(project_root, &mut ctx);
+
+    // Scan for Python manifest files.
+    scan_python_manifests(project_root, &mut ctx);
+
+    // Scan for Gemfile (Ruby projects).
+    scan_gemfile(project_root, &mut ctx);
+
+    // Scan for composer.json (PHP projects).
+    scan_composer_json(project_root, &mut ctx);
+
+    // Scan for pom.xml / build.gradle (Java projects).
+    scan_java_manifests(project_root, &mut ctx);
+
     info!(
-        "ProjectContext: {} external prefixes, {} global usings, {} ts_packages",
+        "ProjectContext: {} external prefixes, {} global usings, {} ts_packages, {} rust_crates, {} python_packages, {} ruby_gems, {} php_packages",
         ctx.external_prefixes.len(),
         ctx.global_usings.len(),
         ctx.ts_packages.len(),
+        ctx.rust_crates.len(),
+        ctx.python_packages.len(),
+        ctx.ruby_gems.len(),
+        ctx.php_packages.len(),
     );
     debug!(
         "External prefixes: {:?}",
@@ -687,6 +726,24 @@ impl ProjectContext {
         first_segment.contains('.')
     }
 
+    /// Check whether a Rust crate name is external (from Cargo.toml deps).
+    ///
+    /// Also returns `true` for the standard crate trilogy (std/core/alloc) which
+    /// are never in Cargo.toml but are always external.
+    pub fn is_external_rust_crate(&self, name: &str) -> bool {
+        matches!(name, "std" | "core" | "alloc")
+            || self.rust_crates.contains(name)
+            // Crate names may use hyphens in Cargo.toml but underscores in source.
+            || self.rust_crates.contains(&name.replace('_', "-"))
+    }
+
+    /// Check whether a Python package/module name is external (from manifests).
+    pub fn is_external_python_package(&self, name: &str) -> bool {
+        self.python_packages.contains(name)
+            // pip packages may use hyphens; Python imports use underscores.
+            || self.python_packages.contains(&name.replace('_', "-"))
+    }
+
     /// Check whether a namespace is external based on the project's package references.
     pub fn is_external_namespace(&self, ns: &str) -> bool {
         // Check exact match first.
@@ -703,6 +760,709 @@ impl ProjectContext {
             }
         }
         false
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Cargo.toml scanning (Rust projects)
+// ---------------------------------------------------------------------------
+
+/// Scan the project root for Cargo.toml files and populate `ctx.rust_crates`.
+///
+/// Handles both workspace roots (with `[workspace]`) and individual crate
+/// Cargo.toml files. We parse `[dependencies]` and `[dev-dependencies]` from
+/// every Cargo.toml we find.
+fn scan_cargo_toml(root: &Path, ctx: &mut ProjectContext) {
+    let mut paths = Vec::new();
+    collect_cargo_tomls(root, &mut paths, 0);
+
+    for path in &paths {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        for name in parse_cargo_dependencies(&content) {
+            ctx.rust_crates.insert(name);
+        }
+    }
+}
+
+fn collect_cargo_tomls(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
+    if depth > 8 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if matches!(
+                name.as_ref(),
+                "target" | ".git" | "node_modules" | "bin" | "obj" | ".cargo"
+            ) {
+                continue;
+            }
+            collect_cargo_tomls(&path, out, depth + 1);
+        } else if entry.file_name() == "Cargo.toml" {
+            out.push(path);
+        }
+    }
+}
+
+/// Parse crate names from `[dependencies]` and `[dev-dependencies]` sections.
+///
+/// TOML parsing is done line-by-line to avoid pulling in a full TOML crate.
+/// We only need crate names (keys), not version strings.
+///
+/// Handles:
+///   `serde = "1"`
+///   `tokio = { version = "1", features = ["full"] }`
+///   `my-crate.workspace = true`
+pub fn parse_cargo_dependencies(content: &str) -> Vec<String> {
+    let mut crates = Vec::new();
+    let mut in_dep_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Detect section headers.
+        if trimmed.starts_with('[') {
+            // We care about [dependencies], [dev-dependencies],
+            // [build-dependencies], and their workspace variants.
+            in_dep_section = matches!(
+                trimmed,
+                "[dependencies]"
+                    | "[dev-dependencies]"
+                    | "[build-dependencies]"
+                    | "[workspace.dependencies]"
+            );
+            continue;
+        }
+
+        if !in_dep_section {
+            continue;
+        }
+
+        // Skip blank lines and comments.
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        // Extract the crate name (the key before `=`).
+        // Keys may contain hyphens and underscores but not spaces.
+        if let Some(eq_pos) = trimmed.find('=') {
+            let key = trimmed[..eq_pos]
+                .trim()
+                // Strip dotted suffixes like `tokio.workspace`
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .trim();
+            if !key.is_empty()
+                && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                crates.push(key.to_string());
+            }
+        }
+    }
+
+    crates
+}
+
+// ---------------------------------------------------------------------------
+// Python manifest scanning
+// ---------------------------------------------------------------------------
+
+/// Scan the project root for Python manifest files and populate `ctx.python_packages`.
+fn scan_python_manifests(root: &Path, ctx: &mut ProjectContext) {
+    let mut paths = Vec::new();
+    collect_python_manifests(root, &mut paths, 0);
+
+    for (path, kind) in &paths {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let names = match kind.as_str() {
+            "pyproject" => parse_pyproject_deps(&content),
+            "requirements" => parse_requirements_txt(&content),
+            "pipfile" => parse_pipfile_deps(&content),
+            _ => Vec::new(),
+        };
+        for name in names {
+            ctx.python_packages.insert(name);
+        }
+    }
+}
+
+fn collect_python_manifests(
+    dir: &Path,
+    out: &mut Vec<(std::path::PathBuf, String)>,
+    depth: usize,
+) {
+    if depth > 6 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if matches!(
+                name.as_ref(),
+                ".git"
+                    | "node_modules"
+                    | "target"
+                    | "__pycache__"
+                    | ".venv"
+                    | "venv"
+                    | ".tox"
+                    | "dist"
+                    | "build"
+                    | ".eggs"
+            ) {
+                continue;
+            }
+            collect_python_manifests(&path, out, depth + 1);
+        } else {
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy();
+            let kind = if name == "pyproject.toml" {
+                "pyproject"
+            } else if name == "requirements.txt"
+                || (name.starts_with("requirements") && name.ends_with(".txt"))
+            {
+                "requirements"
+            } else if name == "Pipfile" {
+                "pipfile"
+            } else {
+                continue;
+            };
+            out.push((path, kind.to_string()));
+        }
+    }
+}
+
+/// Parse package names from `pyproject.toml`.
+///
+/// Handles both PEP 621 (`[project] dependencies`) and Poetry
+/// (`[tool.poetry.dependencies]`) formats. Line-based; no full TOML parser.
+pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
+    let mut packages = Vec::new();
+    let mut in_deps = false;
+    let mut in_array = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Section detection.
+        if trimmed.starts_with('[') {
+            in_deps = matches!(
+                trimmed,
+                "[project.dependencies]"
+                    | "[tool.poetry.dependencies]"
+                    | "[tool.poetry.dev-dependencies]"
+                    | "[tool.poetry.group.dev.dependencies]"
+            )
+            // Also detect inline array under [project]: `dependencies = [...]`
+            // — handled below without section flag.
+            || trimmed == "[project]";
+
+            // Reset inline array state on any section boundary.
+            in_array = false;
+            continue;
+        }
+
+        // PEP 621: `dependencies = ["django>=4.0", "pydantic"]` (may span lines)
+        if trimmed.starts_with("dependencies") && trimmed.contains('=') {
+            // Single-line or start of multi-line array.
+            let rest = trimmed.splitn(2, '=').nth(1).unwrap_or("").trim();
+            in_array = rest.starts_with('[') && !rest.contains(']');
+
+            // Extract names from the current line.
+            let data = if rest.starts_with('[') {
+                let inner = rest.trim_start_matches('[');
+                let inner = inner.trim_end_matches(']');
+                inner
+            } else {
+                rest
+            };
+            for name in extract_pep508_names(data) {
+                packages.push(name);
+            }
+            if rest.contains(']') {
+                in_array = false;
+            }
+            continue;
+        }
+
+        if in_array {
+            if trimmed.contains(']') {
+                in_array = false;
+            }
+            for name in extract_pep508_names(trimmed) {
+                packages.push(name);
+            }
+            continue;
+        }
+
+        // Poetry format: `django = "^4.0"` inside a deps section.
+        if in_deps && !trimmed.starts_with('[') && trimmed.contains('=') {
+            let key = trimmed.split('=').next().unwrap_or("").trim();
+            // python is a special Poetry key, not a package.
+            if !key.is_empty()
+                && key != "python"
+                && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+            {
+                packages.push(key.to_string());
+            }
+        }
+    }
+
+    packages
+}
+
+/// Parse a PEP 508 dependency specifier list and extract package names.
+/// `"django>=4.0"`, `"pydantic[email]"`, `'requests ; python_version>="3"'`
+fn extract_pep508_names(s: &str) -> Vec<String> {
+    let mut names = Vec::new();
+    for part in s.split(',') {
+        // Strip quotes, brackets, extras, version specs.
+        let part = part.trim().trim_matches(|c| c == '"' || c == '\'' || c == ']');
+        // Name ends at the first of: `[`, `>`, `<`, `=`, `!`, `;`, `@`, ` `.
+        let end = part
+            .find(|c: char| matches!(c, '[' | '>' | '<' | '=' | '!' | ';' | '@' | ' '))
+            .unwrap_or(part.len());
+        let name = part[..end].trim();
+        if !name.is_empty()
+            && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
+        {
+            names.push(name.to_string());
+        }
+    }
+    names
+}
+
+/// Parse package names from a `requirements.txt` file.
+///
+/// Handles:
+///   - Plain package names: `django`
+///   - Versioned: `django>=4.0,<5.0`
+///   - Extras: `pydantic[email]`
+///   - Comments (`#`) and blank lines
+///   - `-r other.txt` (skipped — we don't recurse)
+///   - VCS/URL installs: `git+https://...` (skipped)
+pub fn parse_requirements_txt(content: &str) -> Vec<String> {
+    let mut packages = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty()
+            || trimmed.starts_with('#')
+            || trimmed.starts_with('-')
+            || trimmed.starts_with("git+")
+            || trimmed.starts_with("http")
+        {
+            continue;
+        }
+        // Strip inline comment.
+        let without_comment = trimmed.split('#').next().unwrap_or(trimmed).trim();
+        // Extract the name portion (up to version/extras/env markers).
+        let end = without_comment
+            .find(|c: char| matches!(c, '[' | '>' | '<' | '=' | '!' | ';' | '@' | ' '))
+            .unwrap_or(without_comment.len());
+        let name = without_comment[..end].trim();
+        if !name.is_empty() {
+            packages.push(name.to_string());
+        }
+    }
+    packages
+}
+
+/// Parse package names from a `Pipfile`.
+///
+/// Format:
+/// ```toml
+/// [packages]
+/// django = "*"
+/// requests = ">=2.28"
+///
+/// [dev-packages]
+/// pytest = "*"
+/// ```
+pub fn parse_pipfile_deps(content: &str) -> Vec<String> {
+    let mut packages = Vec::new();
+    let mut in_section = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.starts_with('[') {
+            in_section = matches!(trimmed, "[packages]" | "[dev-packages]");
+            continue;
+        }
+
+        if !in_section || trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        if let Some(eq_pos) = trimmed.find('=') {
+            let key = trimmed[..eq_pos].trim();
+            if !key.is_empty()
+                && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+            {
+                packages.push(key.to_string());
+            }
+        }
+    }
+
+    packages
+}
+
+// ---------------------------------------------------------------------------
+// Gemfile parsing (Ruby projects)
+// ---------------------------------------------------------------------------
+
+/// Scan the project root for a Gemfile and populate `ctx.ruby_gems`.
+fn scan_gemfile(root: &Path, ctx: &mut ProjectContext) {
+    let gemfile_path = root.join("Gemfile");
+    if !gemfile_path.is_file() {
+        return;
+    }
+    let content = match std::fs::read_to_string(&gemfile_path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Failed to read Gemfile at {}: {e}", gemfile_path.display());
+            return;
+        }
+    };
+    for name in parse_gemfile_gems(&content) {
+        ctx.ruby_gems.insert(name);
+    }
+}
+
+/// Parse gem names from a Gemfile.
+///
+/// Handles:
+///   `gem 'rails', '~> 7.0'`
+///   `gem "devise"`
+///   `gem 'sidekiq', require: false`
+///
+/// Returns the gem name only (first argument, without quotes or version).
+pub fn parse_gemfile_gems(content: &str) -> Vec<String> {
+    let mut gems = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Skip comments and blank lines.
+        if trimmed.is_empty() || trimmed.starts_with('#') {
+            continue;
+        }
+
+        // Match lines starting with `gem ` (possibly indented for group blocks).
+        let rest = if let Some(r) = trimmed.strip_prefix("gem ") {
+            r.trim()
+        } else {
+            continue;
+        };
+
+        // Extract the gem name — the first quoted string argument.
+        // Handles both single and double quotes.
+        let name = if let Some(r) = rest.strip_prefix('\'') {
+            r.split('\'').next().unwrap_or("").trim()
+        } else if let Some(r) = rest.strip_prefix('"') {
+            r.split('"').next().unwrap_or("").trim()
+        } else {
+            // Unquoted gem name (rare but valid in some DSL forms).
+            rest.split(|c: char| c == ',' || c.is_whitespace())
+                .next()
+                .unwrap_or("")
+                .trim()
+        };
+
+        if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_') {
+            gems.push(name.to_string());
+        }
+    }
+    gems
+}
+
+// ---------------------------------------------------------------------------
+// composer.json parsing (PHP projects)
+// ---------------------------------------------------------------------------
+
+/// Scan the project root for a composer.json and populate `ctx.php_packages`.
+fn scan_composer_json(root: &Path, ctx: &mut ProjectContext) {
+    let composer_path = root.join("composer.json");
+    if !composer_path.is_file() {
+        return;
+    }
+    let content = match std::fs::read_to_string(&composer_path) {
+        Ok(c) => c,
+        Err(e) => {
+            warn!("Failed to read composer.json at {}: {e}", composer_path.display());
+            return;
+        }
+    };
+    for name in parse_composer_json_deps(&content) {
+        ctx.php_packages.insert(name);
+    }
+}
+
+/// Extract package names from a composer.json file's `require` and `require-dev` objects.
+///
+/// Uses `serde_json` for parsing since it's already a workspace dependency.
+/// Skips the `php` and `ext-*` entries (platform requirements, not packages).
+pub fn parse_composer_json_deps(content: &str) -> Vec<String> {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
+        return Vec::new();
+    };
+    let Some(obj) = value.as_object() else {
+        return Vec::new();
+    };
+
+    let mut packages = Vec::new();
+    for key in &["require", "require-dev"] {
+        if let Some(serde_json::Value::Object(deps)) = obj.get(*key) {
+            for pkg_name in deps.keys() {
+                // Skip platform requirements.
+                if pkg_name == "php"
+                    || pkg_name.starts_with("ext-")
+                    || pkg_name.starts_with("lib-")
+                {
+                    continue;
+                }
+                if !pkg_name.is_empty() {
+                    packages.push(pkg_name.clone());
+                }
+            }
+        }
+    }
+    packages
+}
+
+// ---------------------------------------------------------------------------
+// pom.xml / build.gradle parsing (Java projects)
+// ---------------------------------------------------------------------------
+
+/// Scan the project root for pom.xml and build.gradle files, populating
+/// `ctx.external_prefixes` with Java dependency groupId prefixes.
+fn scan_java_manifests(root: &Path, ctx: &mut ProjectContext) {
+    // Always-external Java roots — present in every Java project.
+    for prefix in &["java", "javax", "jakarta", "sun", "com.sun", "org.junit"] {
+        ctx.external_prefixes.insert(prefix.to_string());
+    }
+
+    // Scan for pom.xml files.
+    let mut pom_paths = Vec::new();
+    collect_java_manifests(root, &mut pom_paths, 0);
+
+    for (path, kind) in &pom_paths {
+        let content = match std::fs::read_to_string(path) {
+            Ok(c) => c,
+            Err(_) => continue,
+        };
+        let group_ids = match kind.as_str() {
+            "pom" => parse_pom_xml_dependencies(&content),
+            "gradle" => parse_gradle_dependencies(&content),
+            _ => Vec::new(),
+        };
+        for group_id in group_ids {
+            // Store the full groupId and the root prefix.
+            ctx.external_prefixes.insert(group_id.clone());
+            if let Some(root_prefix) = group_id.split('.').next() {
+                ctx.external_prefixes.insert(root_prefix.to_string());
+            }
+        }
+    }
+}
+
+fn collect_java_manifests(
+    dir: &Path,
+    out: &mut Vec<(std::path::PathBuf, String)>,
+    depth: usize,
+) {
+    if depth > 8 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if matches!(
+                name.as_ref(),
+                ".git" | "target" | "build" | "node_modules" | ".gradle" | "bin" | "obj"
+            ) {
+                continue;
+            }
+            collect_java_manifests(&path, out, depth + 1);
+        } else {
+            let file_name = entry.file_name();
+            let name = file_name.to_string_lossy();
+            if name == "pom.xml" {
+                out.push((path, "pom".to_string()));
+            } else if name == "build.gradle" || name == "build.gradle.kts" {
+                out.push((path, "gradle".to_string()));
+            }
+        }
+    }
+}
+
+/// Parse `<dependency><groupId>...</groupId><artifactId>...</artifactId>` from pom.xml.
+///
+/// Returns a list of groupId strings (e.g., "org.springframework", "com.google.guava").
+/// Lightweight line-based parsing — no XML library needed.
+pub fn parse_pom_xml_dependencies(content: &str) -> Vec<String> {
+    let mut group_ids = Vec::new();
+    let mut in_dependency = false;
+    let mut current_group_id: Option<String> = None;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        if trimmed.contains("<dependency>") {
+            in_dependency = true;
+            current_group_id = None;
+            continue;
+        }
+        if trimmed.contains("</dependency>") {
+            if let Some(gid) = current_group_id.take() {
+                group_ids.push(gid);
+            }
+            in_dependency = false;
+            continue;
+        }
+
+        if !in_dependency {
+            continue;
+        }
+
+        // Extract <groupId>...</groupId>
+        if let Some(value) = extract_xml_text(trimmed, "groupId") {
+            current_group_id = Some(value);
+        }
+    }
+
+    group_ids
+}
+
+/// Extract the text content of a simple XML element on a single line.
+/// e.g., `<groupId>org.springframework</groupId>` → `Some("org.springframework")`
+fn extract_xml_text(line: &str, tag: &str) -> Option<String> {
+    let open = format!("<{tag}>");
+    let close = format!("</{tag}>");
+    let start = line.find(&open)?;
+    let after_open = &line[start + open.len()..];
+    let end = after_open.find(&close)?;
+    let value = after_open[..end].trim();
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+/// Parse dependency declarations from build.gradle / build.gradle.kts.
+///
+/// Handles the common forms:
+///   `implementation 'group:artifact:version'`
+///   `implementation("group:artifact:version")`
+///   `testImplementation 'group:artifact:version'`
+///   `api 'group:artifact:version'`
+///
+/// Returns a list of groupId strings extracted from the coordinates.
+pub fn parse_gradle_dependencies(content: &str) -> Vec<String> {
+    let mut group_ids = Vec::new();
+
+    // Keywords that introduce a dependency coordinate string.
+    let dependency_keywords = [
+        "implementation",
+        "testImplementation",
+        "api",
+        "compileOnly",
+        "runtimeOnly",
+        "testCompileOnly",
+        "annotationProcessor",
+        "kapt",
+    ];
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+
+        // Skip blank lines and comments.
+        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with('#') {
+            continue;
+        }
+
+        let mut found_keyword = false;
+        let mut rest = trimmed;
+        for kw in &dependency_keywords {
+            if let Some(r) = trimmed.strip_prefix(kw) {
+                let r = r.trim();
+                // Must be followed by a space, '(', or quote.
+                if r.is_empty() || r.starts_with(' ') || r.starts_with('(') || r.starts_with('"') || r.starts_with('\'') {
+                    rest = r.trim_start_matches(['(', ' ']);
+                    found_keyword = true;
+                    break;
+                }
+            }
+        }
+        if !found_keyword {
+            continue;
+        }
+
+        // Extract the coordinate string from quotes.
+        let coord = if let Some(r) = rest.strip_prefix('\'') {
+            r.split('\'').next().unwrap_or("").trim()
+        } else if let Some(r) = rest.strip_prefix('"') {
+            r.split('"').next().unwrap_or("").trim()
+        } else {
+            continue;
+        };
+
+        // Maven coordinate: "group:artifact:version"
+        // Extract the groupId (first segment before ':').
+        if let Some(group_id) = coord.split(':').next() {
+            let group_id = group_id.trim();
+            if !group_id.is_empty()
+                && group_id.chars().all(|c| c.is_alphanumeric() || c == '.' || c == '-' || c == '_')
+            {
+                group_ids.push(group_id.to_string());
+            }
+        }
+    }
+
+    group_ids
+}
+
+// ---------------------------------------------------------------------------
+// ProjectContext helpers for Java/Ruby/PHP resolvers
+// ---------------------------------------------------------------------------
+
+impl ProjectContext {
+    /// Check whether a Ruby require path refers to an external gem.
+    pub fn is_external_ruby_gem(&self, require_path: &str) -> bool {
+        let gem_root = require_path.split('/').next().unwrap_or(require_path);
+        self.ruby_gems.contains(gem_root) || self.ruby_gems.contains(require_path)
+    }
+
+    /// Check whether a PHP composer package name is external.
+    ///
+    /// Handles both vendor/package form and bare package names.
+    pub fn is_external_php_package(&self, package: &str) -> bool {
+        self.php_packages.contains(package)
     }
 }
 
