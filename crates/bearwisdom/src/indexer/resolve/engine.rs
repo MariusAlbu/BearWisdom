@@ -398,27 +398,45 @@ pub fn infer_external_from_chain(
         _ => None,
     };
 
-    let mut current_type = root_type?;
+    // Phase 2: Walk the chain checking if the current type is external.
+    // If no root type was determined, check if the root identifier itself
+    // is not a known symbol (e.g., `console`, `$`, a variable from an external package).
+    let mut current_type = match root_type {
+        Some(t) => t,
+        None => {
+            // Root identifier not resolvable as a field — check if it's simply
+            // not in the index at all (external variable/global).
+            if segments[0].kind == SegmentKind::Identifier {
+                let name = &segments[0].name;
+                let in_index = lookup
+                    .by_name(name)
+                    .iter()
+                    .any(|s| s.kind != "namespace");
+                if !in_index {
+                    return Some(name.clone());
+                }
+            }
+            return None;
+        }
+    };
 
-    // Phase 2: Walk segments. At each step, check if the type is in the index.
     for seg in &segments[1..] {
-        let member_qname = format!("{current_type}.{}", seg.name);
-
-        // If the current type isn't in the index at all → it's external.
+        // If the current type isn't in the index → it's external.
         let type_in_index = lookup.by_qualified_name(&current_type).is_some()
             || lookup.by_name(&current_type).iter().any(|s| {
                 matches!(
                     s.kind.as_str(),
-                    "class" | "struct" | "interface" | "enum" | "type_alias" | "trait"
+                    "class" | "struct" | "interface" | "enum" | "type_alias"
+                        | "trait" | "module" | "namespace"
                 )
             });
 
         if !type_in_index {
-            // This type is not in our index → external.
             return Some(current_type);
         }
 
-        // Try to follow to next type.
+        // Try to follow to the next type.
+        let member_qname = format!("{current_type}.{}", seg.name);
         if let Some(next) = lookup.field_type_name(&member_qname) {
             current_type = next.to_string();
             continue;
@@ -428,8 +446,8 @@ pub fn infer_external_from_chain(
             continue;
         }
 
-        // Can't follow — check if we reached a dead end on a known type.
-        // The member might exist but we can't determine its return type.
+        // Can't follow further — the member exists on a known type but
+        // we don't know its return type. Not enough info to classify.
         break;
     }
 
