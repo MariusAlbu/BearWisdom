@@ -270,5 +270,5 @@ impl LanguageResolver for PhpResolver {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../php_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

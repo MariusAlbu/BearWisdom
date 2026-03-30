@@ -390,5 +390,5 @@ fn extract_package_name(file: &ParsedFile) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../go_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

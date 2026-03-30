@@ -484,5 +484,5 @@ fn callee_name(node: Node, src: &[u8]) -> String {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../javascript_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

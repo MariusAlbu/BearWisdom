@@ -157,5 +157,5 @@ fn extract_node<'a>(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../c_lang_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

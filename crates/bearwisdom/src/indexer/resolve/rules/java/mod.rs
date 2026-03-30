@@ -302,5 +302,5 @@ impl LanguageResolver for JavaResolver {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../java_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

@@ -378,5 +378,5 @@ fn extract_calls_recursive(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../elixir_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

@@ -310,5 +310,5 @@ impl LanguageResolver for CSharpResolver {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../csharp_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

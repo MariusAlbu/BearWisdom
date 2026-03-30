@@ -204,5 +204,5 @@ fn extract_from_node(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../rust_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

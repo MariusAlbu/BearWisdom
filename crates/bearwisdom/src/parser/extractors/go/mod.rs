@@ -199,5 +199,5 @@ fn extract_from_node(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../go_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

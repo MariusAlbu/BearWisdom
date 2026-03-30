@@ -234,5 +234,5 @@ impl LanguageResolver for RubyResolver {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../ruby_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

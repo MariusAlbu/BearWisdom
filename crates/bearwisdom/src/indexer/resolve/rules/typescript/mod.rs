@@ -339,5 +339,5 @@ impl LanguageResolver for TypeScriptResolver {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../typescript_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

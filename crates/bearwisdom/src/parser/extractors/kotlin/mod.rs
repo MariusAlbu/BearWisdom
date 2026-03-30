@@ -139,5 +139,5 @@ pub(super) fn extract_node<'a>(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../kotlin_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

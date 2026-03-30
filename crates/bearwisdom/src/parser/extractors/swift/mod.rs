@@ -155,5 +155,5 @@ pub(super) fn extract_node<'a>(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../swift_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

@@ -143,5 +143,5 @@ pub(super) fn extract_node<'a>(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../scala_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

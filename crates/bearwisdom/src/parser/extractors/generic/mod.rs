@@ -485,5 +485,5 @@ fn recurse_children<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, languag
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../generic_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

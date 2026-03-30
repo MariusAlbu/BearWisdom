@@ -138,5 +138,5 @@ pub(super) fn extract_from_node(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../ruby_tests.rs"]
+#[path = "tests.rs"]
 mod tests;

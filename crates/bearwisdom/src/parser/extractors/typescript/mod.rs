@@ -250,5 +250,5 @@ fn extract_node(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "../typescript_tests.rs"]
+#[path = "tests.rs"]
 mod tests;
