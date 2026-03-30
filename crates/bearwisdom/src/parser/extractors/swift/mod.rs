@@ -3,10 +3,15 @@
 // =============================================================================
 
 mod calls;
+mod decorators;
 mod helpers;
 mod symbols;
 
 use calls::extract_calls_from_body;
+use decorators::{
+    extract_decorators, extract_extension_conformances, extract_guard_bindings,
+    extract_switch_patterns,
+};
 use helpers::find_child_by_kind;
 use symbols::{
     extract_type_inheritance, handle_class_declaration, push_deinit, push_extension,
@@ -81,12 +86,22 @@ pub(super) fn extract_node<'a>(
             }
 
             "class_declaration" => {
+                // Capture the index before handle_class_declaration pushes anything.
+                // push_type_decl inside it pushes the class as the first symbol, so
+                // pre_len is the correct index for the class regardless of how many
+                // nested symbols get pushed during recursion.
+                let pre_len = symbols.len();
                 handle_class_declaration(&child, src, scope_tree, symbols, refs, parent_index);
+                // If a symbol was pushed it's at pre_len.
+                if symbols.len() > pre_len {
+                    extract_decorators(&child, src, pre_len, refs);
+                }
             }
 
             "struct_declaration" => {
                 let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Struct, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_type_inheritance(&child, src, sym_idx, refs, true);
                 }
                 recurse_into_body(&child, src, scope_tree, symbols, refs, idx);
@@ -95,6 +110,7 @@ pub(super) fn extract_node<'a>(
             "enum_declaration" => {
                 let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Enum, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_type_inheritance(&child, src, sym_idx, refs, true);
                 }
                 symbols::recurse_enum_body(&child, src, scope_tree, symbols, refs, idx);
@@ -103,6 +119,7 @@ pub(super) fn extract_node<'a>(
             "protocol_declaration" => {
                 let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Interface, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_type_inheritance(&child, src, sym_idx, refs, true);
                 }
                 recurse_into_body(&child, src, scope_tree, symbols, refs, idx);
@@ -110,12 +127,17 @@ pub(super) fn extract_node<'a>(
 
             "extension_declaration" => {
                 let idx = push_extension(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
+                    extract_extension_conformances(&child, src, sym_idx, refs);
+                }
                 recurse_into_body(&child, src, scope_tree, symbols, refs, idx);
             }
 
             "function_declaration" => {
                 let idx = push_function_decl(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_calls_from_body(&body, src, sym_idx, refs);
                     } else if let Some(body) = find_child_by_kind(&child, "code_block") {
@@ -127,6 +149,7 @@ pub(super) fn extract_node<'a>(
             "initializer_declaration" => {
                 let idx = push_init(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     if let Some(body) = find_child_by_kind(&child, "code_block") {
                         extract_calls_from_body(&body, src, sym_idx, refs);
                     }
@@ -137,8 +160,26 @@ pub(super) fn extract_node<'a>(
                 push_deinit(&child, src, scope_tree, symbols, parent_index);
             }
 
+            "guard_statement" => {
+                if let Some(sym_idx) = parent_index {
+                    extract_guard_bindings(&child, src, sym_idx, refs);
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            "switch_statement" => {
+                if let Some(sym_idx) = parent_index {
+                    extract_switch_patterns(&child, src, sym_idx, refs);
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
             "property_declaration" | "stored_property" | "variable_declaration" => {
+                let pre_len = symbols.len();
                 push_property(&child, src, scope_tree, symbols, parent_index);
+                if symbols.len() > pre_len {
+                    extract_decorators(&child, src, pre_len, refs);
+                }
             }
 
             "ERROR" | "MISSING" => {}

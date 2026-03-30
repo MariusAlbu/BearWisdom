@@ -2,6 +2,7 @@
 // kotlin/calls.rs  —  Call extraction and member chain builder for Kotlin
 // =============================================================================
 
+use super::decorators::extract_when_patterns;
 use super::helpers::{call_target_name, node_text};
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
@@ -36,12 +37,18 @@ pub(super) fn extract_calls_from_body(
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+            // Extract TypeRef edges from `is` checks inside when expressions.
+            "when_expression" => {
+                extract_when_patterns(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
         }
     }
 }
+
 
 /// Build a structured member access chain from a Kotlin CST node.
 pub(super) fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {

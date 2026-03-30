@@ -187,3 +187,89 @@ pub fn foo() {}"#;
             .collect();
         assert!(vars.contains(&"x"), "Missing closure param 'x': {vars:?}");
     }
+
+    #[test]
+    fn match_enum_variant_emits_typeref() {
+        let source = r#"fn dispatch(msg: Message) {
+    match msg {
+        Message::Quit => quit(),
+        Message::Move { x, y } => move_to(x, y),
+    }
+}"#;
+        let r = extract(source);
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            typerefs.iter().any(|n| n.contains("Message")),
+            "Expected TypeRef for Message variant; got: {typerefs:?}"
+        );
+    }
+
+    #[test]
+    fn match_some_emits_typeref_and_binding_variable() {
+        let source = r#"fn run(opt: Option<i32>) {
+    match opt {
+        Some(x) => println!("{}", x),
+        None => {},
+    }
+}"#;
+        let r = extract(source);
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(typerefs.contains(&"Some"), "Expected TypeRef for Some: {typerefs:?}");
+
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable && s.name == "x")
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(!vars.is_empty(), "Expected Variable binding 'x' from Some(x)");
+    }
+
+    #[test]
+    fn if_let_binding_emitted_as_variable() {
+        let source = r#"fn run(opt: Option<String>) {
+    if let Some(user) = find_user() {
+        user.process();
+    }
+}"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"user"), "Expected 'user' binding from if let: {vars:?}");
+    }
+
+    #[test]
+    fn where_clause_bounds_emit_typerefs() {
+        let source = r#"fn serialize<T>(item: &T) -> String
+where
+    T: Clone + Send + Serialize,
+{
+    String::new()
+}"#;
+        let r = extract(source);
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(typerefs.contains(&"Clone"),     "Missing Clone:     {typerefs:?}");
+        assert!(typerefs.contains(&"Send"),      "Missing Send:      {typerefs:?}");
+        assert!(typerefs.contains(&"Serialize"), "Missing Serialize: {typerefs:?}");
+    }
+
+

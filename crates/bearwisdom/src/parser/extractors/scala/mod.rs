@@ -3,10 +3,12 @@
 // =============================================================================
 
 mod calls;
+mod decorators;
 mod helpers;
 mod symbols;
 
 use calls::extract_calls_from_body;
+use decorators::{extract_case_class_params, extract_decorators, extract_match_patterns};
 use helpers::classify_class;
 use symbols::{
     extract_enum_body, extract_extends_with, push_function_def, push_import, push_type_def,
@@ -83,7 +85,11 @@ pub(super) fn extract_node<'a>(
                 let kind = classify_class(&child, src);
                 let idx = push_type_def(&child, src, scope_tree, kind, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_extends_with(&child, src, sym_idx, refs);
+                    // Extract case class constructor params as Property symbols.
+                    let qname = symbols[sym_idx].qualified_name.clone();
+                    extract_case_class_params(&child, src, sym_idx, &qname, symbols);
                 }
                 recurse_body(&child, src, scope_tree, symbols, refs, idx);
             }
@@ -92,6 +98,7 @@ pub(super) fn extract_node<'a>(
                 let idx =
                     push_type_def(&child, src, scope_tree, SymbolKind::Namespace, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_extends_with(&child, src, sym_idx, refs);
                 }
                 recurse_body(&child, src, scope_tree, symbols, refs, idx);
@@ -101,6 +108,7 @@ pub(super) fn extract_node<'a>(
                 let idx =
                     push_type_def(&child, src, scope_tree, SymbolKind::Interface, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_extends_with(&child, src, sym_idx, refs);
                 }
                 recurse_body(&child, src, scope_tree, symbols, refs, idx);
@@ -111,6 +119,7 @@ pub(super) fn extract_node<'a>(
                 let idx =
                     push_type_def(&child, src, scope_tree, SymbolKind::Enum, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_extends_with(&child, src, sym_idx, refs);
                 }
                 extract_enum_body(&child, src, scope_tree, symbols, refs, idx);
@@ -119,7 +128,13 @@ pub(super) fn extract_node<'a>(
             "function_definition" => {
                 let idx = push_function_def(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
+                        // If the body IS a match_expression (e.g. `def f = x match {...}`),
+                        // extract patterns directly; extract_calls_from_body only sees children.
+                        if body.kind() == "match_expression" {
+                            extract_match_patterns(&body, src, sym_idx, refs);
+                        }
                         extract_calls_from_body(&body, src, sym_idx, refs);
                     }
                 }
@@ -127,6 +142,20 @@ pub(super) fn extract_node<'a>(
 
             "val_definition" | "var_definition" => {
                 push_val_var(&child, src, scope_tree, symbols, parent_index);
+            }
+
+            "match_expression" => {
+                if let Some(sym_idx) = parent_index {
+                    extract_match_patterns(&child, src, sym_idx, refs);
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // for-expression / for-comprehension — extract embedded calls.
+            "for_expression" => {
+                if let Some(sym_idx) = parent_index {
+                    extract_calls_from_body(&child, src, sym_idx, refs);
+                }
             }
 
             "ERROR" | "MISSING" => {}

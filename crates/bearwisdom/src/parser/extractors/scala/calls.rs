@@ -2,6 +2,7 @@
 // scala/calls.rs  —  Call extraction and member chain builder for Scala
 // =============================================================================
 
+use super::decorators::extract_match_patterns;
 use super::helpers::{call_target_name, node_text};
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
@@ -38,6 +39,11 @@ pub(super) fn extract_calls_from_body(
                         });
                     }
                 }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // Extract TypeRef edges from `case` patterns in match expressions.
+            "match_expression" => {
+                extract_match_patterns(&child, src, source_symbol_index, refs);
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             _ => {

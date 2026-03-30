@@ -404,4 +404,192 @@ namespace App {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Lambda expression extraction
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn lambda_single_param_extracted_as_variable() {
+        let src = r#"
+class S {
+    void Run() {
+        var names = users.Select(u => u.Name);
+    }
+}
+"#;
+        let symbols = sym(src);
+        let var_u = symbols.iter().find(|s| s.name == "u" && s.kind == SymbolKind::Variable);
+        assert!(var_u.is_some(), "Expected variable symbol 'u' from lambda param. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn lambda_multi_param_extracted_as_variables() {
+        let src = r#"
+class S {
+    void Run() {
+        var result = pairs.Select((x, y) => Combine(x, y));
+    }
+}
+"#;
+        let symbols = sym(src);
+        let names: Vec<&str> = symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(names.contains(&"x"), "Expected variable 'x': {names:?}");
+        assert!(names.contains(&"y"), "Expected variable 'y': {names:?}");
+    }
+
+    #[test]
+    fn lambda_body_calls_extracted() {
+        // Calls inside a lambda body must still be emitted.
+        let src = r#"
+class S {
+    void Run() {
+        var active = items.Where(x => Validate(x));
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Validate" && r.kind == EdgeKind::Calls),
+            "Expected Validate call from inside lambda body. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // LINQ query expression extraction
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn linq_range_variable_extracted_as_variable() {
+        let src = r#"
+class S {
+    void Run() {
+        var q = from u in users where u.IsActive select u.Name;
+    }
+}
+"#;
+        let symbols = sym(src);
+        let var_u = symbols.iter().find(|s| s.name == "u" && s.kind == SymbolKind::Variable);
+        assert!(var_u.is_some(), "Expected variable symbol 'u' from LINQ from_clause. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    }
+
+    // -----------------------------------------------------------------------
+    // Switch expression pattern binding variables
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn switch_expression_pattern_binding_variable_extracted() {
+        let src = r#"
+namespace App {
+    class LevelService {
+        public int GetLevel(object user) {
+            return user switch {
+                Admin a => a.Level,
+                Student s => s.Grade,
+                _ => 0,
+            };
+        }
+    }
+}
+"#;
+        let symbols = sym(src);
+        let var_names: Vec<&str> = symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(var_names.contains(&"a"), "Expected variable 'a' from switch pattern. Variables: {var_names:?}");
+        assert!(var_names.contains(&"s"), "Expected variable 's' from switch pattern. Variables: {var_names:?}");
+    }
+
+    #[test]
+    fn is_pattern_binding_variable_extracted() {
+        let src = r#"
+namespace App {
+    class AuthService {
+        public void Check(object user) {
+            if (user is Admin admin) {
+                admin.DoStuff();
+            }
+        }
+    }
+}
+"#;
+        let symbols = sym(src);
+        let var_admin = symbols.iter().find(|s| s.name == "admin" && s.kind == SymbolKind::Variable);
+        assert!(var_admin.is_some(), "Expected variable symbol 'admin' from is-pattern binding. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    }
+
+    // -----------------------------------------------------------------------
+    // Nullable type annotation (already handled — regression guard)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn nullable_type_in_property_emits_type_ref() {
+        // `Category?` should produce a TypeRef to `Category` (not `Category?`).
+        let src = r#"
+class Order {
+    public Category? Category { get; set; }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Category" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef to Category from nullable property type. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // using_statement — object_creation inside using block is reachable
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn using_statement_instantiation_extracted() {
+        let src = r#"
+class S {
+    void Run() {
+        using (var conn = new DbConnection()) {
+            conn.Open();
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "DbConnection" && r.kind == EdgeKind::Instantiates),
+            "Expected Instantiates edge for DbConnection. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "Open" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Open. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn using_var_declaration_instantiation_extracted() {
+        // `using var db = new Database();` — no parens, statement-level using.
+        let src = r#"
+class S {
+    void Run() {
+        using var db = new Database();
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Database" && r.kind == EdgeKind::Instantiates),
+            "Expected Instantiates edge for Database. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
 

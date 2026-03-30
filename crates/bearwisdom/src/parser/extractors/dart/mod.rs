@@ -3,9 +3,11 @@
 // =============================================================================
 
 mod calls;
+mod decorators;
 mod helpers;
 mod symbols;
 
+use decorators::{extract_cascade_calls, extract_decorators};
 use symbols::{
     extract_class, extract_enum, extract_extension, extract_import_directive, extract_mixin,
     extract_part_directive, extract_top_level_function, extract_variable,
@@ -55,20 +57,41 @@ fn visit(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "class_declaration" | "class_definition" => {
+                let pre_len = symbols.len();
                 extract_class(&child, src, symbols, refs, parent_index, qualified_prefix);
+                // Annotations appear as children of the class_declaration node.
+                if symbols.len() > pre_len {
+                    extract_decorators(&child, src, pre_len, refs);
+                }
             }
             "mixin_declaration" => {
+                let pre_len = symbols.len();
                 extract_mixin(&child, src, symbols, refs, parent_index, qualified_prefix);
+                if symbols.len() > pre_len {
+                    extract_decorators(&child, src, pre_len, refs);
+                }
             }
             "extension_declaration" => {
+                let pre_len = symbols.len();
                 extract_extension(&child, src, symbols, refs, parent_index, qualified_prefix);
+                if symbols.len() > pre_len {
+                    extract_decorators(&child, src, pre_len, refs);
+                }
             }
             "enum_declaration" => {
+                let pre_len = symbols.len();
                 extract_enum(&child, src, symbols, parent_index, qualified_prefix);
+                if symbols.len() > pre_len {
+                    extract_decorators(&child, src, pre_len, refs);
+                }
             }
             "function_signature" | "function_declaration" => {
                 if parent_index.is_none() {
+                    let pre_len = symbols.len();
                     extract_top_level_function(&child, src, symbols, parent_index, qualified_prefix);
+                    if symbols.len() > pre_len {
+                        extract_decorators(&child, src, pre_len, refs);
+                    }
                 }
             }
             "import_or_export" | "library_import" => {
@@ -81,6 +104,13 @@ fn visit(
                 if parent_index.is_none() {
                     extract_variable(&child, src, symbols, parent_index, qualified_prefix);
                 }
+            }
+            // Cascade expressions at statement level — extract each section's calls.
+            "expression_statement" | "return_statement" => {
+                if let Some(sym_idx) = parent_index {
+                    extract_cascade_calls(&child, src, sym_idx, refs);
+                }
+                visit(child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "ERROR" | "MISSING" => {}
             _ => {

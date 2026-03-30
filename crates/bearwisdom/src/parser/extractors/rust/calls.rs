@@ -3,6 +3,7 @@
 // =============================================================================
 
 use super::helpers::node_text;
+use super::patterns;
 use super::symbols::extract_method_from_fn;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
 use tree_sitter::Node;
@@ -43,6 +44,20 @@ pub(super) fn extract_impl(
             if let Some(sym) = extract_method_from_fn(&child, source, None, &impl_prefix) {
                 let idx = symbols.len();
                 symbols.push(sym);
+                {
+                    let mut wc = child.walk();
+                    for gc in child.children(&mut wc) {
+                        match gc.kind() {
+                            "type_parameters" => {
+                                patterns::extract_type_param_bounds(&gc, source, idx, refs);
+                            }
+                            "where_clause" => {
+                                patterns::extract_where_clause(&gc, source, idx, refs);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
                 if let Some(fn_body) = child.child_by_field_name("body") {
                     extract_calls_from_body_with_symbols(&fn_body, source, idx, refs, Some(symbols));
                 }
@@ -77,6 +92,51 @@ pub(super) fn extract_calls_from_body_with_symbols(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
+            // Match arms: extract patterns (TypeRef for variants, Variable for bindings)
+            "match_expression" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    patterns::extract_match_patterns(&child, source, source_symbol_index, syms, refs);
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
+                    let mut tmp: Vec<ExtractedSymbol> = Vec::new();
+                    patterns::extract_match_patterns(&child, source, source_symbol_index, &mut tmp, refs);
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
+            // tree-sitter-rust represents `if let Pat = val` as `if_expression` containing
+            // a `let_condition` child (NOT as `if_let_expression`).
+            // The `let_condition` holds: `let` keyword, pattern, `=`, value expression.
+            "let_condition" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    patterns::extract_let_condition_pattern(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        syms,
+                        refs,
+                    );
+                    // Recurse into the condition (calls in the RHS value expression)
+                    extract_calls_from_body_with_symbols(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        refs,
+                        Some(syms),
+                    );
+                } else {
+                    let mut tmp: Vec<ExtractedSymbol> = Vec::new();
+                    patterns::extract_let_condition_pattern(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        &mut tmp,
+                        refs,
+                    );
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
             "call_expression" => {
                 if let Some(func) = child.child_by_field_name("function") {
                     let chain = build_chain(func, source);

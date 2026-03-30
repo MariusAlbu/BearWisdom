@@ -158,3 +158,90 @@ end
             .collect();
         assert!(vars.contains(&"item"), "Missing block param 'item': {vars:?}");
     }
+
+    #[test]
+    fn method_keyword_params_emitted_as_variables() {
+        let source = r#"
+class UserService
+  def create(name:, email: nil, &block)
+    User.new
+  end
+end
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"name"),  "Missing keyword param 'name': {vars:?}");
+        assert!(vars.contains(&"email"), "Missing optional param 'email': {vars:?}");
+        assert!(vars.contains(&"block"), "Missing block param 'block': {vars:?}");
+    }
+
+    #[test]
+    fn method_splat_params_emitted_as_variables() {
+        let source = r#"
+def log(*args, **opts)
+end
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"args"), "Missing splat param 'args': {vars:?}");
+        assert!(vars.contains(&"opts"), "Missing hash splat 'opts': {vars:?}");
+    }
+
+    #[test]
+    fn rescue_exception_type_emits_typeref() {
+        let source = r#"
+class Repo
+  def find(id)
+    User.find(id)
+  rescue ActiveRecord::RecordNotFound => e
+    nil
+  rescue StandardError => e
+    raise
+  end
+end
+"#;
+        let r = extract(source);
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            typerefs.iter().any(|n| n.contains("RecordNotFound") || n.contains("ActiveRecord")),
+            "Expected TypeRef for ActiveRecord::RecordNotFound: {typerefs:?}"
+        );
+        assert!(
+            typerefs.contains(&"StandardError"),
+            "Expected TypeRef for StandardError: {typerefs:?}"
+        );
+    }
+
+    #[test]
+    fn rescue_variable_emitted_as_variable_symbol() {
+        let source = r#"
+def run
+  do_work
+rescue => e
+  log(e)
+end
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"e"), "Expected rescue variable 'e': {vars:?}");
+    }

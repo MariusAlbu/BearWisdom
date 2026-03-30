@@ -121,6 +121,34 @@ pub(super) fn extract_from_node(
                 );
             }
 
+            // `with open('f') as fh:` — context manager
+            "with_statement" => {
+                let enclosing = parent_index.unwrap_or(0);
+                symbols::extract_with_statement(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    enclosing,
+                );
+            }
+
+            // `match command: case ...:` — structural pattern matching (3.10+)
+            "match_statement" => {
+                let enclosing = parent_index.unwrap_or(0);
+                symbols::extract_match_statement(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    enclosing,
+                );
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {

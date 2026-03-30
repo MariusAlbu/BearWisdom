@@ -7,6 +7,7 @@ use super::helpers::{
     build_method_signature, get_call_method_name, node_text, qualify, ruby_visibility,
     scope_from_prefix,
 };
+use super::params::{extract_method_params, extract_rescue};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
@@ -181,8 +182,14 @@ pub(super) fn extract_method(
         parent_index,
     });
 
+    // Extract parameter names as Variable symbols scoped to this method.
+    if let Some(params_node) = node.child_by_field_name("parameters") {
+        extract_method_params(&params_node, src, idx, qualified_prefix, symbols);
+    }
+
     if let Some(body) = node.child_by_field_name("body") {
         extract_calls_from_body_with_symbols(&body, src, idx, refs, Some(symbols));
+        extract_rescue_from_body(&body, src, idx, refs, symbols, qualified_prefix);
     }
 }
 
@@ -222,8 +229,14 @@ pub(super) fn extract_singleton_method(
         parent_index,
     });
 
+    // Extract parameter names as Variable symbols.
+    if let Some(params_node) = node.child_by_field_name("parameters") {
+        extract_method_params(&params_node, src, idx, qualified_prefix, symbols);
+    }
+
     if let Some(body) = node.child_by_field_name("body") {
         extract_calls_from_body_with_symbols(&body, src, idx, refs, Some(symbols));
+        extract_rescue_from_body(&body, src, idx, refs, symbols, qualified_prefix);
     }
 }
 
@@ -357,6 +370,26 @@ fn extract_require(
                 });
                 break;
             }
+        }
+    }
+}
+
+/// Scan a subtree for `rescue` nodes and extract TypeRef/Variable from them.
+fn extract_rescue_from_body(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    qualified_prefix: &str,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "rescue" {
+            extract_rescue(&child, src, source_symbol_index, symbols, refs, qualified_prefix);
+            extract_rescue_from_body(&child, src, source_symbol_index, refs, symbols, qualified_prefix);
+        } else {
+            extract_rescue_from_body(&child, src, source_symbol_index, refs, symbols, qualified_prefix);
         }
     }
 }

@@ -20,6 +20,7 @@
 mod calls;
 pub(super) mod decorators;
 mod helpers;
+mod patterns;
 mod symbols;
 
 use crate::types::{ExtractedRef, ExtractedSymbol};
@@ -98,6 +99,23 @@ fn extract_from_node(
                     let idx = symbols.len();
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
+                    // where-clause and type-parameter bounds → TypeRef edges.
+                    // Iterate children by kind rather than field_name to avoid
+                    // grammar-version sensitivity.
+                    {
+                        let mut wc = child.walk();
+                        for gc in child.children(&mut wc) {
+                            match gc.kind() {
+                                "type_parameters" => {
+                                    patterns::extract_type_param_bounds(&gc, source, idx, refs);
+                                }
+                                "where_clause" => {
+                                    patterns::extract_where_clause(&gc, source, idx, refs);
+                                }
+                                _ => {}
+                            }
+                        }
+                    }
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls_from_body_with_symbols(&body, source, idx, refs, Some(symbols));
                     }

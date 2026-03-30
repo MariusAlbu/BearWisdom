@@ -317,6 +317,15 @@ fn extract_node_inner(
                     // Extract calls from the method body.
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                        // Extract lambda params, LINQ range vars, and pattern binding
+                        // variables as Variable symbols scoped to this method.
+                        calls::extract_body_variable_symbols(
+                            &body,
+                            src,
+                            scope_tree,
+                            symbols,
+                            Some(sym_idx),
+                        );
                         // Look for minimal-API route registrations inside the body.
                         calls::extract_minimal_api_routes(&body, src, sym_idx, routes);
                     }
@@ -338,6 +347,15 @@ fn extract_node_inner(
                     }
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                        // Extract lambda params, LINQ range vars, and pattern binding
+                        // variables as Variable symbols scoped to this constructor.
+                        calls::extract_body_variable_symbols(
+                            &body,
+                            src,
+                            scope_tree,
+                            symbols,
+                            Some(sym_idx),
+                        );
                     }
                 }
             }

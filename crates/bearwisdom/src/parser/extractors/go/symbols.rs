@@ -2,7 +2,7 @@
 // go/symbols.rs  —  Symbol extraction for Go declarations
 // =============================================================================
 
-use super::calls::{extract_composite_literal_ref, extract_refs_from_body};
+use super::calls::extract_body_with_symbols;
 use super::helpers::{
     build_fn_signature_from_source, build_method_elem_signature, extract_go_doc_comment,
     extract_go_type_name, go_visibility, is_go_builtin_type, is_test_function, node_text,
@@ -149,7 +149,7 @@ pub(super) fn extract_function_declaration(
     }
 
     if let Some(body) = body_opt {
-        extract_refs_from_body(&body, source, idx, refs);
+        extract_body_with_symbols(&body, source, idx, &qualified_name, symbols, refs);
     }
 }
 
@@ -247,7 +247,7 @@ pub(super) fn extract_method_declaration(
     }
 
     if let Some(body) = body_opt {
-        extract_refs_from_body(&body, source, idx, refs);
+        extract_body_with_symbols(&body, source, idx, &qualified_name, symbols, refs);
     }
 }
 
@@ -683,6 +683,148 @@ fn extract_interface_methods(
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
         });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Short variable declarations (`:=`)
+// ---------------------------------------------------------------------------
+
+/// Extract a `short_var_declaration` node.
+///
+/// `user := repo.FindOne(id)` or `data, err := fetchData()`
+///
+/// Tree-sitter-go shape:
+/// ```text
+/// short_var_declaration
+///   expression_list      ← left  (identifiers)
+///   ":="                 (anon)
+///   expression_list      ← right (values / call expressions)
+/// ```
+///
+/// For each declared name emit a Variable symbol.  When the corresponding
+/// right-hand value is a `call_expression`, emit a chain-bearing TypeRef so the
+/// resolution engine can infer the variable's type from the callee's return type.
+pub(super) fn extract_short_var_decl(
+    node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+    enclosing_symbol_index: usize,
+) {
+    use super::calls::build_chain;
+
+    // Collect named children — first expression_list is LHS, second is RHS.
+    let named: Vec<Node> = {
+        let mut cursor = node.walk();
+        node.children(&mut cursor)
+            .filter(|c| c.is_named())
+            .collect()
+    };
+
+    if named.len() < 2 {
+        return;
+    }
+
+    let lhs = &named[0];
+    let rhs = &named[1];
+
+    // Collect the LHS identifiers.
+    let lhs_names: Vec<(String, u32, u32)> = {
+        let mut cursor = lhs.walk();
+        lhs.children(&mut cursor)
+            .filter(|c| c.is_named() && c.kind() == "identifier")
+            .map(|c| {
+                (
+                    node_text(&c, source),
+                    c.start_position().row as u32,
+                    c.start_position().column as u32,
+                )
+            })
+            .collect()
+    };
+
+    if lhs_names.is_empty() {
+        return;
+    }
+
+    // Collect the RHS values (call expressions or other).
+    let rhs_values: Vec<Node> = {
+        let mut cursor = rhs.walk();
+        rhs.children(&mut cursor).filter(|c| c.is_named()).collect()
+    };
+
+    for (i, (name, start_line, start_col)) in lhs_names.iter().enumerate() {
+        // Skip blank identifiers.
+        if name == "_" {
+            continue;
+        }
+
+        let qualified_name = qualify(name, qualified_prefix);
+        let visibility = go_visibility(name);
+
+        let sym_idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::Variable,
+            visibility,
+            start_line: *start_line,
+            end_line: node.end_position().row as u32,
+            start_col: *start_col,
+            end_col: node.end_position().column as u32,
+            signature: Some(format!("{name} :=")),
+            doc_comment: None,
+            scope_path: scope_from_prefix(qualified_prefix),
+            parent_index,
+        });
+
+        // If the corresponding RHS value is a call_expression, emit a
+        // chain-bearing TypeRef so the resolution engine can follow the chain.
+        if let Some(rhs_node) = rhs_values.get(i) {
+            if rhs_node.kind() == "call_expression" {
+                if let Some(func) = rhs_node.named_child(0) {
+                    if let Some(chain) = build_chain(func, source) {
+                        let target = chain
+                            .segments
+                            .last()
+                            .map(|s| s.name.clone())
+                            .unwrap_or_default();
+                        if !target.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: target,
+                                kind: EdgeKind::TypeRef,
+                                line: rhs_node.start_position().row as u32,
+                                module: None,
+                                chain: Some(chain),
+                            });
+                        }
+                    } else {
+                        // Bare function call (single identifier) — still emit TypeRef.
+                        let target = node_text(&func, source);
+                        if !target.is_empty() && target != "_" {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: target,
+                                kind: EdgeKind::TypeRef,
+                                line: rhs_node.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        // Recurse into the RHS call expressions to extract any nested calls.
+        // We do this via the body extractor on the full RHS node.
+        if let Some(rhs_node) = rhs_values.get(i) {
+            super::calls::extract_refs_from_body(rhs_node, source, enclosing_symbol_index, refs);
+        }
     }
 }
 

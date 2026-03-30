@@ -3,11 +3,13 @@
 // =============================================================================
 
 mod calls;
+mod decorators;
 mod helpers;
 mod symbols;
 
 use calls::extract_calls_from_body;
-use helpers::classify_class;
+use decorators::{extract_decorators, extract_lambda_params, extract_when_patterns};
+use helpers::{classify_class, find_child_by_kind};
 use symbols::{
     emit_import, extract_class_body, extract_delegation_specifiers, extract_imports,
     push_function_decl, push_property_decl, push_secondary_constructor, push_type_decl,
@@ -86,6 +88,7 @@ pub(super) fn extract_node<'a>(
                 let kind = classify_class(&child, src);
                 let idx = push_type_decl(&child, src, scope_tree, kind, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_delegation_specifiers(&child, src, sym_idx, refs);
                     extract_class_body(&child, src, scope_tree, symbols, refs, idx);
                 }
@@ -93,6 +96,9 @@ pub(super) fn extract_node<'a>(
 
             "object_declaration" => {
                 let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Class, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
+                }
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, symbols, refs, idx);
                 }
@@ -101,6 +107,7 @@ pub(super) fn extract_node<'a>(
             "interface_declaration" => {
                 let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Interface, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_delegation_specifiers(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_node(body, src, scope_tree, symbols, refs, idx);
@@ -111,10 +118,22 @@ pub(super) fn extract_node<'a>(
             "function_declaration" => {
                 let idx = push_function_decl(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
-                    if let Some(body) = child.child_by_field_name("body") {
-                        extract_calls_from_body(&body, src, sym_idx, refs);
+                    extract_decorators(&child, src, sym_idx, refs);
+                    // function_body is a child (not a named field) in kotlin-ng 1.1.
+                    let body = child.child_by_field_name("body")
+                        .or_else(|| find_child_by_kind(&child, "function_body"));
+                    if let Some(b) = body {
+                        extract_calls_from_body(&b, src, sym_idx, refs);
+                        extract_lambda_params(&b, src, sym_idx, symbols);
                     }
                 }
+            }
+
+            "when_expression" => {
+                if let Some(sym_idx) = parent_index {
+                    extract_when_patterns(&child, src, sym_idx, refs);
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             "property_declaration" => {

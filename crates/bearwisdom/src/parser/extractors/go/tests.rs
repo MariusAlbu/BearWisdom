@@ -599,4 +599,164 @@ func process(x interface{}) {
         assert!(names.contains(&"User"), "expected TypeRef to User, got: {names:?}");
     }
 
+    // -----------------------------------------------------------------------
+    // Short variable declarations (:=)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn short_var_decl_emits_variable_symbol() {
+        let source = r#"package main
+
+func run(repo UserRepo) {
+    user := repo.FindOne(1)
+    _ = user
+}
+"#;
+        let r = extract(source);
+        let var_sym = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "user" && s.kind == SymbolKind::Variable);
+        assert!(var_sym.is_some(), "expected 'user' Variable symbol, got: {:?}", r.symbols);
+    }
+
+    #[test]
+    fn short_var_decl_chain_type_ref() {
+        let source = r#"package main
+
+func run(repo UserRepo) {
+    user := repo.FindOne(1)
+    _ = user
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        assert!(
+            type_refs.iter().any(|r| r.target_name == "FindOne"),
+            "expected chain TypeRef to FindOne, got: {type_refs:?}"
+        );
+        // The chain TypeRef should carry the chain [repo, FindOne].
+        let chain_ref = type_refs.iter().find(|r| r.target_name == "FindOne").unwrap();
+        assert!(chain_ref.chain.is_some(), "expected chain on TypeRef");
+    }
+
+    #[test]
+    fn short_var_multi_assign_both_symbols() {
+        let source = r#"package main
+
+func run() {
+    data, err := fetchData()
+    _, _ = data, err
+}
+"#;
+        let r = extract(source);
+        let var_names: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(var_names.contains(&"data"), "missing 'data': {var_names:?}");
+        assert!(var_names.contains(&"err"), "missing 'err': {var_names:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Channel operations
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn make_chan_emits_type_ref_for_element_type() {
+        let source = r#"package main
+
+func run() {
+    ch := make(chan User, 10)
+    _ = ch
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        assert!(
+            type_refs.iter().any(|r| r.target_name == "User"),
+            "expected TypeRef to User from make(chan User), got: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Select statement
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn select_case_calls_are_extracted() {
+        let source = r#"package main
+
+func run(ch chan Msg, done chan struct{}) {
+    select {
+    case msg := <-ch:
+        msg.Process()
+    case <-done:
+        return
+    }
+}
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"Process"),
+            "expected Process call from select case, got: {call_names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // For-range loop variables
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn for_range_emits_loop_variable_symbols() {
+        let source = r#"package main
+
+func process(users []User) {
+    for i, user := range users {
+        user.Process()
+        _ = i
+    }
+}
+"#;
+        let r = extract(source);
+        let var_names: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(var_names.contains(&"i"), "expected 'i' Variable: {var_names:?}");
+        assert!(var_names.contains(&"user"), "expected 'user' Variable: {var_names:?}");
+    }
+
+    #[test]
+    fn for_range_body_calls_are_extracted() {
+        let source = r#"package main
+
+func process(users []User) {
+    for _, user := range users {
+        user.Process()
+    }
+}
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"Process"),
+            "expected Process call inside for-range body, got: {call_names:?}"
+        );
+    }
 

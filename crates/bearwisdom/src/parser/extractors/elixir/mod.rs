@@ -78,7 +78,7 @@ fn visit(
             dispatch_call(&child, src, symbols, refs, parent_index, qualified_prefix);
         } else if child.kind() == "unary_operator" {
             // Module attributes: `@moduledoc "..."`, `@doc "..."`, `@spec name(...)`
-            dispatch_attribute(&child, src, symbols, parent_index, qualified_prefix);
+            dispatch_attribute(&child, src, symbols, refs, parent_index, qualified_prefix);
         } else {
             visit(child, src, symbols, refs, parent_index, qualified_prefix);
         }
@@ -311,6 +311,7 @@ fn dispatch_attribute(
     node: &Node,
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
@@ -338,6 +339,24 @@ fn dispatch_attribute(
                 parent_index,
             });
         }
+
+        // `@behaviour GenServer` — emits a TypeRef edge (like implements)
+        "behaviour" | "behavior" => {
+            let target = extract_behaviour_target(node, src);
+            if let Some(target_name) = target {
+                // Use the parent symbol index if available; otherwise use current symbol count.
+                let source_idx = parent_index.unwrap_or(symbols.len());
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+
         _ => {}
     }
 }
@@ -354,23 +373,164 @@ fn extract_calls_recursive(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
+        match child.kind() {
+            "call" => {
+                if let Some(callee) = call_identifier(&child, src) {
+                    if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "alias" | "import" | "use" | "require") {
+                        let simple = callee.rsplit('.').next().unwrap_or(&callee).to_string();
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: simple,
+                            kind: EdgeKind::Calls,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                extract_calls_recursive(&child, src, source_symbol_index, refs);
+            }
+
+            // Pipe operator: `value |> function_name(args)`
+            "binary_operator" => {
+                extract_pipe_calls(&child, src, source_symbol_index, refs);
+                extract_calls_recursive(&child, src, source_symbol_index, refs);
+            }
+
+            _ => {
+                extract_calls_recursive(&child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Emit a Calls edge for the right-hand side of a `|>` pipe expression.
+fn extract_pipe_calls(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Confirm this is a pipe operator by checking for `|>` among children
+    let is_pipe = {
+        let mut cursor = node.walk();
+        let found = node.children(&mut cursor).any(|c| node_text(c, src) == "|>");
+        found
+    };
+    if !is_pipe {
+        return;
+    }
+
+    // The right operand is the function being piped into
+    if let Some(right) = node.child_by_field_name("right") {
+        let name = extract_pipe_callee_name(&right, src);
+        if let Some(n) = name {
+            if !n.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: n,
+                    kind: EdgeKind::Calls,
+                    line: right.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+    }
+}
+
+/// Extract the function name from the right side of a `|>` pipe.
+///
+/// Handles:
+///   `validate(record)`       → "validate"   (identifier call)
+///   `Enum.map(fn ...)`       → "map"         (dot-access call)
+///   `String.length`          → "length"      (dot access, no parens)
+fn extract_pipe_callee_name(node: &Node, src: &str) -> Option<String> {
+    match node.kind() {
+        "call" => {
+            // Check if this is a dot-access call: `Enum.map(...)`
+            // The call's first child is a `dot` node for qualified calls.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "dot" => {
+                        // `dot` → alias/identifier . identifier
+                        // The last identifier is the function name.
+                        let mut dc = child.walk();
+                        let mut last_ident: Option<String> = None;
+                        for dc_child in child.children(&mut dc) {
+                            if dc_child.kind() == "identifier" {
+                                last_ident = Some(node_text(dc_child, src));
+                            }
+                        }
+                        return last_ident;
+                    }
+                    "identifier" => {
+                        // Bare call: `validate(...)`
+                        return Some(node_text(child, src));
+                    }
+                    "alias" => {
+                        // Module reference — use it as-is (shouldn't be a bare pipe target)
+                        return Some(node_text(child, src));
+                    }
+                    _ => {}
+                }
+            }
+            // Fallback to call_identifier
+            call_identifier(node, src)
+        }
+        "identifier" => Some(node_text(*node, src)),
+        "alias" => Some(node_text(*node, src)),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Behaviour target extraction
+// ---------------------------------------------------------------------------
+
+/// Extract the module name from a `@behaviour GenServer` unary_operator node.
+///
+/// Actual tree-sitter structure (tree-sitter-elixir):
+///   unary_operator
+///     "@"            ← anonymous token
+///     call
+///       identifier   "behaviour"
+///       arguments
+///         alias      "GenServer"
+///
+/// The `@` operator's operand is a `call` node with callee "behaviour" and the
+/// target module as its sole argument.
+fn extract_behaviour_target(node: &Node, src: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
         if child.kind() == "call" {
-            if let Some(callee) = call_identifier(&child, src) {
-                if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "alias" | "import" | "use" | "require") {
-                    let simple = callee.rsplit('.').next().unwrap_or(&callee).to_string();
-                    refs.push(ExtractedRef {
-                        source_symbol_index,
-                        target_name: simple,
-                        kind: EdgeKind::Calls,
-                        line: child.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                    });
+            // Verify this is @behaviour (not some other @attribute call)
+            let callee = call_identifier(&child, src)?;
+            if callee != "behaviour" && callee != "behavior" {
+                return None;
+            }
+            // Extract the argument — the module being implemented.
+            // Look for arguments field first, then walk children for arguments node.
+            let args_node = if let Some(a) = child.child_by_field_name("arguments") {
+                Some(a)
+            } else {
+                let mut cc = child.walk();
+                let found = child.children(&mut cc).find(|c| c.kind() == "arguments");
+                found
+            };
+            if let Some(args) = args_node {
+                let mut ac = args.walk();
+                for arg in args.children(&mut ac) {
+                    match arg.kind() {
+                        "alias" | "identifier" => return Some(node_text(arg, src)),
+                        _ => {}
+                    }
                 }
             }
         }
-        extract_calls_recursive(&child, src, source_symbol_index, refs);
     }
+    None
 }
 
 // ---------------------------------------------------------------------------

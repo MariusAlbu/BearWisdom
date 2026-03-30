@@ -4,6 +4,7 @@
 
 mod calls;
 mod helpers;
+mod params;
 mod symbols;
 
 use symbols::{

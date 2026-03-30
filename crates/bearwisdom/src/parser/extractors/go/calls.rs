@@ -3,8 +3,185 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+// ---------------------------------------------------------------------------
+// Body traversal — refs + local variable symbols
+// ---------------------------------------------------------------------------
+
+/// Walk a function/method body, extracting both:
+///   1. All call/composite-literal/type-assertion refs (via `extract_refs_from_body`)
+///   2. Local variable symbols from `:=` declarations and `for range` clauses
+///
+/// `enclosing_idx` is the index of the enclosing function/method symbol.
+/// `qualified_prefix` is the qualified name of the enclosing function (used as
+/// the scope_path for the emitted Variable symbols).
+pub(super) fn extract_body_with_symbols(
+    body: &Node,
+    source: &str,
+    enclosing_idx: usize,
+    qualified_prefix: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    extract_body_with_symbols_inner(body, source, enclosing_idx, qualified_prefix, symbols, refs);
+}
+
+fn extract_body_with_symbols_inner(
+    node: &Node,
+    source: &str,
+    enclosing_idx: usize,
+    qualified_prefix: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            // `:=` short variable declaration
+            "short_var_declaration" => {
+                super::symbols::extract_short_var_decl(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    Some(enclosing_idx),
+                    qualified_prefix,
+                    enclosing_idx,
+                );
+                // Don't recurse further — extract_short_var_decl handles its RHS.
+            }
+
+            // `for i, v := range slice { ... }`
+            "for_statement" => {
+                extract_for_range_vars(&child, source, enclosing_idx, qualified_prefix, symbols, refs);
+                // Recurse into the body block.
+                let mut fc = child.walk();
+                for fc_child in child.children(&mut fc) {
+                    if fc_child.kind() == "block" {
+                        extract_body_with_symbols_inner(
+                            &fc_child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                        );
+                    }
+                }
+                // Also extract plain refs from the whole for_statement.
+                extract_refs_from_body(&child, source, enclosing_idx, refs);
+            }
+
+            // `select { case msg := <-ch: ... }` — variables in communication_case
+            "select_statement" => {
+                let mut sc = child.walk();
+                for case_child in child.children(&mut sc) {
+                    if case_child.kind() == "communication_case" {
+                        // Look for a short_var_declaration inside the case header.
+                        let mut cc = case_child.walk();
+                        for cc_child in case_child.children(&mut cc) {
+                            if cc_child.kind() == "short_var_declaration" {
+                                super::symbols::extract_short_var_decl(
+                                    &cc_child,
+                                    source,
+                                    symbols,
+                                    refs,
+                                    Some(enclosing_idx),
+                                    qualified_prefix,
+                                    enclosing_idx,
+                                );
+                            }
+                        }
+                        // Recurse into case body.
+                        extract_body_with_symbols_inner(
+                            &case_child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                        );
+                    } else if case_child.kind() == "default_case" {
+                        extract_body_with_symbols_inner(
+                            &case_child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                        );
+                    }
+                }
+                // Also extract plain refs.
+                extract_refs_from_body(&child, source, enclosing_idx, refs);
+            }
+
+            // All other nodes: extract refs and recurse for nested symbols.
+            _ => {
+                extract_refs_from_body(&child, source, enclosing_idx, refs);
+                extract_body_with_symbols_inner(
+                    &child, source, enclosing_idx, qualified_prefix, symbols, refs,
+                );
+            }
+        }
+    }
+}
+
+/// Extract loop variables from `for i, v := range slice { ... }`.
+///
+/// Tree-sitter-go shape:
+/// ```text
+/// for_statement
+///   for_clause / for_range_clause
+///     left:  expression_list   → identifiers
+///     right: expression        → the slice/map/channel
+///   block
+/// ```
+///
+/// `for_range_clause` has `left` and `right` field names in the grammar.
+fn extract_for_range_vars(
+    for_node: &Node,
+    source: &str,
+    enclosing_idx: usize,
+    qualified_prefix: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::helpers::{go_visibility, qualify, scope_from_prefix};
+
+    let mut cursor = for_node.walk();
+    for child in for_node.children(&mut cursor) {
+        if child.kind() != "range_clause" {
+            continue;
+        }
+
+        let left = match child.child_by_field_name("left") {
+            Some(n) => n,
+            None => continue,
+        };
+
+        // Collect identifiers from the left side.
+        let mut lc = left.walk();
+        for ident in left.children(&mut lc) {
+            if ident.kind() != "identifier" {
+                continue;
+            }
+            let name = node_text(&ident, source);
+            if name == "_" {
+                continue;
+            }
+            let qualified_name = qualify(&name, qualified_prefix);
+            let visibility = go_visibility(&name);
+
+            symbols.push(ExtractedSymbol {
+                name,
+                qualified_name,
+                kind: crate::types::SymbolKind::Variable,
+                visibility,
+                start_line: ident.start_position().row as u32,
+                end_line: ident.end_position().row as u32,
+                start_col: ident.start_position().column as u32,
+                end_col: ident.end_position().column as u32,
+                signature: None,
+                doc_comment: None,
+                scope_path: scope_from_prefix(qualified_prefix),
+                parent_index: Some(enclosing_idx),
+            });
+        }
+
+        // Extract refs from the right-hand side (the range expression).
+        if let Some(right) = child.child_by_field_name("right") {
+            extract_refs_from_body(&right, source, enclosing_idx, refs);
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Body reference extraction (calls, instantiations)
@@ -62,9 +239,47 @@ pub(super) fn extract_refs_from_body(
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
             }
 
+            // `ch <- value` — send statement: recurse into value
+            "send_statement" => {
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
+            // `select { case msg := <-ch: ... }` — recurse into all case bodies
+            "select_statement" => {
+                extract_select_refs(&child, source, source_symbol_index, refs);
+            }
+
             _ => {
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
             }
+        }
+    }
+}
+
+/// Recurse into each `communication_case` body inside a `select_statement`.
+///
+/// Tree-sitter-go shape:
+/// ```text
+/// select_statement
+///   communication_case
+///     send_statement / receive_statement / ...
+///     (body statements)
+///   default_case
+///     (body statements)
+/// ```
+fn extract_select_refs(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "communication_case" | "default_case" => {
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+            _ => {}
         }
     }
 }
@@ -76,6 +291,9 @@ pub(super) fn extract_refs_from_body(
 ///
 /// For `bar.Baz()` the function part is a `selector_expression` with children:
 ///   operand, `.`, `field_identifier`
+///
+/// Special case: `make(chan User, 10)` — emit a TypeRef for the channel element
+/// type in addition to the normal Calls edge.
 fn extract_call_ref(
     node: &Node,
     source: &str,
@@ -87,6 +305,13 @@ fn extract_call_ref(
         Some(n) => n,
         None => return,
     };
+
+    let func_name = node_text(&func_node, source);
+
+    // `make(chan T, ...)` — extract the channel element type as a TypeRef.
+    if func_name == "make" {
+        extract_make_chan_type_ref(node, source, source_symbol_index, refs);
+    }
 
     // Build a structured chain for selector expressions; fall back to the
     // existing single-name extraction for bare identifiers.
@@ -102,7 +327,7 @@ fn extract_call_ref(
                 .find(|c| c.kind() == "field_identifier")
                 .map(|n| node_text(&n, source))
                 .unwrap_or_else(|| node_text(&func_node, source)),
-            _ => node_text(&func_node, source),
+            _ => func_name.clone(),
         });
 
     if target_name.is_empty() {
@@ -117,6 +342,59 @@ fn extract_call_ref(
         module: None,
         chain,
     });
+}
+
+/// For `make(chan User, 10)` emit a TypeRef to `User` (the channel element type).
+///
+/// Tree-sitter-go shape:
+/// ```text
+/// call_expression
+///   identifier "make"
+///   argument_list
+///     channel_type
+///       type_identifier "User"
+///     int_literal "10"
+/// ```
+fn extract_make_chan_type_ref(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let args = match (0..node.named_child_count())
+        .filter_map(|i| node.named_child(i))
+        .find(|c| c.kind() == "argument_list")
+    {
+        Some(a) => a,
+        None => return,
+    };
+
+    // First argument to make() — look for a channel_type node.
+    let mut cursor = args.walk();
+    for child in args.children(&mut cursor) {
+        if child.kind() == "channel_type" {
+            // channel_type children: `chan` (anon), element_type
+            let mut inner = child.walk();
+            for elem in child.children(&mut inner) {
+                if !elem.is_named() {
+                    continue; // skip `chan` keyword
+                }
+                let elem_name = go_type_node_name(&elem, source);
+                if !elem_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: elem_name,
+                        kind: EdgeKind::TypeRef,
+                        line: elem.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                break;
+            }
+            break;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
