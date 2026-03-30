@@ -1,5 +1,5 @@
 // =============================================================================
-// indexer/resolve/rules/go.rs — Go resolution rules
+// indexer/resolve/rules/go/mod.rs — Go resolution rules
 //
 // Scope rules for Go:
 //
@@ -33,11 +33,14 @@
 // target_name = "Default" with no module. Disambiguation happens via imports.
 // =============================================================================
 
+mod builtins;
+mod chain;
+
 use super::super::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{EdgeKind, MemberChain, ParsedFile, SegmentKind};
+use crate::types::{EdgeKind, ParsedFile};
 
 /// Go language resolver.
 pub struct GoResolver;
@@ -125,8 +128,8 @@ impl LanguageResolver for GoResolver {
 
         // Chain-aware resolution: if we have a structured MemberChain, walk it
         // step-by-step following field types.
-        if let Some(chain) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = resolve_via_chain(chain, edge_kind, ref_ctx, lookup) {
+        if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
+            if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, ref_ctx, lookup) {
                 return Some(res);
             }
         }
@@ -139,7 +142,7 @@ impl LanguageResolver for GoResolver {
             let candidate = format!("{scope}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && kind_compatible(edge_kind, &sym.kind)
+                    && builtins::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -157,7 +160,7 @@ impl LanguageResolver for GoResolver {
             let candidate = format!("{pkg}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && kind_compatible(edge_kind, &sym.kind)
+                    && builtins::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -171,9 +174,9 @@ impl LanguageResolver for GoResolver {
             // by simple name and prefer ones in the same package.
             let candidates = lookup.by_name(target);
             for sym in candidates {
-                if sym_package(sym) == pkg.as_str()
+                if builtins::sym_package(sym) == pkg.as_str()
                     && self.is_visible(file_ctx, ref_ctx, sym)
-                    && kind_compatible(edge_kind, &sym.kind)
+                    && builtins::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -199,7 +202,7 @@ impl LanguageResolver for GoResolver {
                 let candidate = format!("{last_seg}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
                     if self.is_visible(file_ctx, ref_ctx, sym)
-                        && kind_compatible(edge_kind, &sym.kind)
+                        && builtins::kind_compatible(edge_kind, &sym.kind)
                     {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
@@ -224,7 +227,7 @@ impl LanguageResolver for GoResolver {
             let candidate = format!("{last_seg}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && kind_compatible(edge_kind, &sym.kind)
+                    && builtins::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -239,7 +242,7 @@ impl LanguageResolver for GoResolver {
                 let candidate = format!("{pkg_alias}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
                     if self.is_visible(file_ctx, ref_ctx, sym)
-                        && kind_compatible(edge_kind, &sym.kind)
+                        && builtins::kind_compatible(edge_kind, &sym.kind)
                     {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
@@ -254,7 +257,7 @@ impl LanguageResolver for GoResolver {
         // Step 4: Fully qualified name (target contains dots, e.g., "pkg.Func").
         if target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(target) {
-                if kind_compatible(edge_kind, &sym.kind) {
+                if builtins::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -286,12 +289,12 @@ impl LanguageResolver for GoResolver {
         }
 
         // Go built-in functions and types — always external (runtime/stdlib).
-        if is_go_builtin(target) {
+        if builtins::is_go_builtin(target) {
             return Some("builtin".to_string());
         }
 
         // Go composite literal types: []string, map[string]int, []*Foo, etc.
-        if is_go_composite_type(target) {
+        if builtins::is_go_composite_type(target) {
             return Some("builtin".to_string());
         }
 
@@ -312,7 +315,7 @@ impl LanguageResolver for GoResolver {
 
             let external = match project_ctx {
                 Some(ctx) => ctx.is_external_go_import(full_path),
-                None => is_external_go_import_fallback(full_path),
+                None => builtins::is_external_go_import_fallback(full_path),
             };
 
             if external {
@@ -343,8 +346,8 @@ impl LanguageResolver for GoResolver {
                 return true;
             }
             // Same package: compare directories.
-            let target_dir = parent_dir(&target.file_path);
-            let source_dir = parent_dir(&file_ctx.file_path);
+            let target_dir = builtins::parent_dir(&target.file_path);
+            let source_dir = builtins::parent_dir(&file_ctx.file_path);
             return target_dir == source_dir;
         }
 
@@ -354,7 +357,7 @@ impl LanguageResolver for GoResolver {
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Private helpers (file-local)
 // ---------------------------------------------------------------------------
 
 /// Extract the Go package name from a parsed file.
@@ -382,230 +385,10 @@ fn extract_package_name(file: &ParsedFile) -> Option<String> {
     None
 }
 
-/// Extract the Go package name from a symbol's qualified_name.
-/// "main.Server" → "main", "handlers.Handler" → "handlers".
-fn sym_package(sym: &SymbolInfo) -> &str {
-    sym.qualified_name
-        .split('.')
-        .next()
-        .unwrap_or(sym.qualified_name.as_str())
-}
-
-/// Return the directory portion of a file path (everything up to the last '/').
-fn parent_dir(path: &str) -> &str {
-    match path.rfind('/') {
-        Some(pos) => &path[..pos],
-        None => "",
-    }
-}
-
-/// Check whether a Go import path is external (heuristic: host with a dot).
-/// Used when no ProjectContext is available.
-fn is_external_go_import_fallback(import_path: &str) -> bool {
-    let first_segment = import_path.split('/').next().unwrap_or(import_path);
-    first_segment.contains('.')
-}
-
-/// Go built-in functions and types that are always in scope without import.
-/// These come from the `builtin` pseudo-package.
-fn is_go_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "len" | "cap" | "make" | "new" | "append" | "copy" | "delete"
-            | "close" | "panic" | "recover" | "print" | "println"
-            | "complex" | "real" | "imag" | "clear" | "min" | "max"
-            // Built-in type conversions used as calls
-            | "string" | "int" | "int8" | "int16" | "int32" | "int64"
-            | "uint" | "uint8" | "uint16" | "uint32" | "uint64"
-            | "float32" | "float64" | "byte" | "rune" | "bool"
-            | "error" | "any" | "comparable"
-    )
-}
-
-/// Detect Go composite literal types that the extractor captures as target_name.
-/// Examples: `[]string`, `map[string]int`, `[]*Foo`, `[]tests.ApiScenario`.
-fn is_go_composite_type(name: &str) -> bool {
-    name.starts_with("[]")
-        || name.starts_with("[]*")
-        || name.starts_with("map[")
-        || name.starts_with("chan ")
-        || name.starts_with("*[")
-}
-
-// ---------------------------------------------------------------------------
-// Chain-aware resolution
-// ---------------------------------------------------------------------------
-
-/// Walk a MemberChain step-by-step, following field types to resolve the final segment.
-///
-/// For `s.repo.FindOne()` with chain `[s, repo, FindOne]`:
-/// 1. `s` (Identifier) → look up as a field on the enclosing receiver type
-///    (e.g., scope_chain contains "main.Server" → look for "main.Server.s")
-/// 2. `repo` → look up "ResolvedType.repo" field → field_type_name = "UserRepo"
-/// 3. `FindOne` → look up "UserRepo.FindOne" in the symbol index → resolved!
-///
-/// Go has no `this`/`self` keyword — the first segment is always an identifier.
-fn resolve_via_chain(
-    chain: &MemberChain,
-    edge_kind: EdgeKind,
-    ref_ctx: &RefContext,
-    lookup: &dyn SymbolLookup,
-) -> Option<Resolution> {
-    let segments = &chain.segments;
-    if segments.len() < 2 {
-        // Single-segment chains are handled by the regular scope-chain strategies.
-        return None;
-    }
-
-    // Phase 1: Determine the root type from the first segment.
-    // In Go, the first segment is always an Identifier (receiver var, package name, or
-    // local variable). No SelfRef — Go has no `this`.
-    let root_type = match segments[0].kind {
-        SegmentKind::Identifier => {
-            let name = &segments[0].name;
-
-            // Is it a known type? (static/package-level access: `pkg.Func()`)
-            let is_type = lookup.by_name(name).iter().any(|s| {
-                matches!(
-                    s.kind.as_str(),
-                    "struct" | "interface" | "enum" | "type_alias"
-                )
-            });
-            if is_type {
-                Some(name.clone())
-            } else {
-                // Is it a field/variable on the enclosing receiver type?
-                let mut found = None;
-                for scope in &ref_ctx.scope_chain {
-                    let field_qname = format!("{scope}.{name}");
-                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
-                        found = Some(type_name.to_string());
-                        break;
-                    }
-                }
-                found.or_else(|| segments[0].declared_type.clone())
-            }
-        }
-        _ => None,
-    };
-
-    let mut current_type = root_type?;
-
-    // Phase 2: Walk intermediate segments, following field types or return types.
-    for seg in &segments[1..segments.len() - 1] {
-        let member_qname = format!("{current_type}.{}", seg.name);
-
-        if let Some(next_type) = lookup.field_type_name(&member_qname) {
-            current_type = next_type.to_string();
-            continue;
-        }
-        if let Some(next_type) = lookup.return_type_name(&member_qname) {
-            current_type = next_type.to_string();
-            continue;
-        }
-
-        // Try by_name fallback with namespace prefix.
-        let mut found = false;
-        for sym in lookup.by_name(&seg.name) {
-            if sym.qualified_name.starts_with(&current_type) {
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    current_type = ft.to_string();
-                    found = true;
-                    break;
-                }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    current_type = rt.to_string();
-                    found = true;
-                    break;
-                }
-            }
-        }
-        if found {
-            continue;
-        }
-
-        // Lost the chain — can't determine the next type.
-        return None;
-    }
-
-    // Phase 3: Resolve the final segment on the resolved type.
-    let last = &segments[segments.len() - 1];
-    let candidate = format!("{current_type}.{}", last.name);
-
-    // Direct qualified name match.
-    if let Some(sym) = lookup.by_qualified_name(&candidate) {
-        if kind_compatible(edge_kind, &sym.kind) {
-            tracing::debug!(
-                strategy = "go_chain_resolution",
-                chain_len = segments.len(),
-                resolved_type = %current_type,
-                target = %last.name,
-                "resolved"
-            );
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: "go_chain_resolution",
-            });
-        }
-    }
-
-    // Try by name, scoped to the resolved type.
-    for sym in lookup.by_name(&last.name) {
-        if sym.qualified_name.starts_with(&current_type) && kind_compatible(edge_kind, &sym.kind) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.95,
-                strategy: "go_chain_resolution",
-            });
-        }
-    }
-
-    None
-}
-
-/// Find the enclosing struct/interface name from the scope chain.
-///
-/// scope_chain for a method `(s *Server) Handle()` is
-/// `["main.Server.Handle", "main.Server", "main"]` — we want `"main.Server"`.
-#[allow(dead_code)]
-fn find_enclosing_class(scope_chain: &[String], lookup: &dyn SymbolLookup) -> Option<String> {
-    for scope in scope_chain {
-        if let Some(sym) = lookup.by_qualified_name(scope) {
-            if matches!(sym.kind.as_str(), "struct" | "interface") {
-                return Some(scope.clone());
-            }
-        }
-    }
-    // Fallback: the penultimate scope entry is often the receiver type.
-    if scope_chain.len() >= 2 {
-        return Some(scope_chain[scope_chain.len() - 2].clone());
-    }
-    scope_chain.last().cloned()
-}
-
-/// Check that the edge kind is compatible with the symbol kind.
-fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
-    match edge_kind {
-        EdgeKind::Calls => matches!(
-            sym_kind,
-            "method" | "function" | "constructor" | "test"
-        ),
-        EdgeKind::Inherits => matches!(sym_kind, "struct" | "interface"),
-        EdgeKind::Implements => matches!(sym_kind, "interface"),
-        EdgeKind::TypeRef => matches!(
-            sym_kind,
-            "class" | "struct" | "interface" | "enum" | "type_alias"
-        ),
-        EdgeKind::Instantiates => matches!(sym_kind, "struct" | "class"),
-        _ => true,
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "go_tests.rs"]
+#[path = "../go_tests.rs"]
 mod tests;
