@@ -90,6 +90,105 @@ pub(super) fn extract_constructor_params(
     }
 }
 
+/// Extract the catch variable from a `catch_clause` as a Variable symbol.
+///
+/// Handles `catch (e: Error)` and `catch (e)`:
+/// ```text
+/// catch_clause
+///   "catch"
+///   catch_parameter   (or just identifier in some grammars)
+///     identifier "e"
+///     type_annotation
+///       ":"
+///       type_identifier "Error"
+///   statement_block
+/// ```
+///
+/// Emits a Variable symbol for `e` and, if typed, a TypeRef to the catch type.
+pub(super) fn extract_catch_variable(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // Find the catch parameter node. Tree-sitter may represent it as a
+    // `catch_parameter` child, or as a bare `identifier` after `catch`.
+    let mut param_node: Option<Node> = None;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "catch_parameter" | "identifier" => {
+                param_node = Some(child);
+                break;
+            }
+            _ => {}
+        }
+    }
+    let Some(param) = param_node else { return };
+
+    // Extract the identifier name — either the param itself (if `identifier`)
+    // or its first `identifier` child (if `catch_parameter`).
+    let name_node = if param.kind() == "identifier" {
+        param
+    } else {
+        // Inside catch_parameter, find the identifier child.
+        let mut found: Option<Node> = None;
+        let mut pcursor = param.walk();
+        for child in param.children(&mut pcursor) {
+            if child.kind() == "identifier" {
+                found = Some(child);
+                break;
+            }
+        }
+        match found {
+            Some(n) => n,
+            None => return,
+        }
+    };
+
+    let name = node_text(name_node, src);
+    if name.is_empty() {
+        return;
+    }
+
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let scope_path = scope_tree::scope_path(parent_scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Variable,
+        visibility: None,
+        start_line: name_node.start_position().row as u32,
+        end_line: name_node.end_position().row as u32,
+        start_col: name_node.start_position().column as u32,
+        end_col: name_node.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path,
+        parent_index,
+    });
+
+    // Emit TypeRef if the catch variable has a type annotation.
+    // Annotation may live on the `catch_parameter` node or directly on `param`.
+    let annotation_parent = if param.kind() == "identifier" { node } else { &param };
+    let mut acursor = annotation_parent.walk();
+    for child in annotation_parent.children(&mut acursor) {
+        if child.kind() == "type_annotation" {
+            extract_type_ref_from_annotation(&child, src, idx, refs);
+            break;
+        }
+    }
+}
+
 /// Extract the loop variable from a `for_in_statement` as a Variable symbol.
 ///
 /// Handles `for (const item of items)` and `for (const key in obj)`:

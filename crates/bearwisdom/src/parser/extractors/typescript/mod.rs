@@ -25,6 +25,7 @@
 // =============================================================================
 
 mod calls;
+pub(super) mod decorators;
 mod helpers;
 mod imports;
 mod params;
@@ -112,8 +113,11 @@ fn extract_node(
         match child.kind() {
             "class_declaration" => {
                 let idx = symbols::push_class(&child, src, scope_tree, symbols, parent_index);
+                let sym_idx = idx.unwrap_or(0);
                 // Heritage clause (extends / implements).
-                imports::extract_heritage(&child, src, idx.unwrap_or(0), refs);
+                imports::extract_heritage(&child, src, sym_idx, refs);
+                // Decorators (@Injectable, @Controller, etc.).
+                decorators::extract_decorators(&child, src, sym_idx, refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, symbols, refs, idx);
                 }
@@ -181,6 +185,8 @@ fn extract_node(
                             Some(sym_idx),
                         );
                     }
+                    // Decorators (@Get, @Post, @UseGuards, etc.).
+                    decorators::extract_decorators(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
                     }
@@ -233,6 +239,23 @@ fn extract_node(
                     refs,
                     parent_index,
                 );
+                if let Some(body) = child.child_by_field_name("body") {
+                    extract_node(body, src, scope_tree, symbols, refs, parent_index);
+                }
+            }
+
+            "catch_clause" => {
+                // catch (e: Error) { ... }
+                // Extract the catch variable as a scoped symbol with an optional TypeRef.
+                params::extract_catch_variable(
+                    &child,
+                    src,
+                    scope_tree,
+                    symbols,
+                    refs,
+                    parent_index,
+                );
+                // Recurse into the body for nested calls and symbols.
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, symbols, refs, parent_index);
                 }

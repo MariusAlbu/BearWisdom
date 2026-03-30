@@ -326,6 +326,149 @@ pub(super) fn push_type_alias(
     }
 }
 
+/// Extract a TypeRef from `user as Admin` — the `as_expression` node.
+///
+/// Tree-sitter structure:
+/// ```text
+/// as_expression
+///   identifier "user"      ← expression
+///   "as"
+///   type_identifier "Admin" ← asserted type
+/// ```
+/// We look for a `type_identifier`, `generic_type`, or `identifier` child that
+/// appears after the `as` keyword.
+pub(super) fn extract_type_ref_from_as_expression(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut after_as = false;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "as" {
+            after_as = true;
+            continue;
+        }
+        if !after_as {
+            continue;
+        }
+        // First node after `as` is the asserted type.
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let type_name = node_text(child, src);
+                if !type_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                return;
+            }
+            "generic_type" => {
+                // `user as Repository<User>` → emit TypeRef to "Repository"
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let type_name = node_text(name_node, src);
+                    if !type_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                return;
+            }
+            "type_annotation" => {
+                // Delegate to the shared helper which already handles all type forms.
+                extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                return;
+            }
+            _ => {
+                return;
+            }
+        }
+    }
+}
+
+/// Extract a TypeRef from `<Admin>user` — the `type_assertion` node.
+///
+/// Tree-sitter structure:
+/// ```text
+/// type_assertion
+///   type_arguments
+///     type_identifier "Admin"
+///   identifier "user"
+/// ```
+pub(super) fn extract_type_ref_from_type_assertion(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let type_args = if let Some(n) = node.child_by_field_name("type_arguments") {
+        n
+    } else {
+        // Fallback: find the first child of kind "type_arguments".
+        let mut found: Option<Node> = None;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "type_arguments" {
+                found = Some(child);
+                break;
+            }
+        }
+        match found {
+            Some(n) => n,
+            None => return,
+        }
+    };
+
+    let mut cursor = type_args.walk();
+    for child in type_args.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let type_name = node_text(child, src);
+                if !type_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                return;
+            }
+            "generic_type" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let type_name = node_text(name_node, src);
+                    if !type_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                return;
+            }
+            _ => {}
+        }
+    }
+}
+
 pub(super) fn push_variable_decl(
     node: &Node,
     src: &[u8],
@@ -442,6 +585,14 @@ pub(super) fn push_variable_decl(
                                     });
                                 }
                             }
+                        } else if init_node.kind() == "as_expression" {
+                            // `const admin = user as Admin` → type is Admin
+                            // The type node is the last named child after the `as` keyword.
+                            extract_type_ref_from_as_expression(&init_node, src, idx, refs);
+                        } else if init_node.kind() == "type_assertion" {
+                            // `const admin = <Admin>user` → type is Admin
+                            // type_assertion has type_arguments as first child.
+                            extract_type_ref_from_type_assertion(&init_node, src, idx, refs);
                         }
                     }
                 } else if name_node.kind() == "object_pattern" {

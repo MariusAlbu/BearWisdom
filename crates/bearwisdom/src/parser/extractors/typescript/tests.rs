@@ -82,3 +82,75 @@ fn does_not_panic_on_malformed_source() {
     let src = "class { !!! broken @@@ }";
     let _ = extract(src, false);
 }
+
+// ---------------------------------------------------------------------------
+// Type assertions
+// ---------------------------------------------------------------------------
+
+#[test]
+fn as_expression_emits_type_ref() {
+    // `const admin = user as Admin` — asserted type should be a TypeRef.
+    let src = "const admin = user as Admin;";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
+#[test]
+fn as_expression_generic_emits_base_type_ref() {
+    // `const repo = raw as Repository<User>` — base type should be emitted.
+    let src = "const repo = raw as Repository<User>;";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Repository" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
+#[test]
+fn type_assertion_emits_type_ref() {
+    // TSX angle-bracket form is not valid in .tsx files but is valid in .ts.
+    // `const admin = <Admin>user` — asserted type should be a TypeRef.
+    let src = "const admin = <Admin>user;";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Catch clause variables
+// ---------------------------------------------------------------------------
+
+#[test]
+fn catch_clause_typed_emits_variable_and_type_ref() {
+    let src = "try { doWork(); } catch (e: Error) { console.log(e); }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "e" && s.kind == SymbolKind::Variable),
+        "symbols: {s:?}"
+    );
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Error" && r.kind == EdgeKind::TypeRef),
+        "refs: {r:?}"
+    );
+}
+
+#[test]
+fn catch_clause_untyped_emits_variable_only() {
+    let src = "try { doWork(); } catch (e) { console.log(e); }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "e" && s.kind == SymbolKind::Variable),
+        "symbols: {s:?}"
+    );
+    // No TypeRef expected — untyped catch variable.
+    let r = refs(src);
+    let type_refs_to_e: Vec<_> =
+        r.iter().filter(|r| r.kind == EdgeKind::TypeRef && r.target_name == "e").collect();
+    assert!(type_refs_to_e.is_empty(), "unexpected TypeRef for untyped catch: {type_refs_to_e:?}");
+}

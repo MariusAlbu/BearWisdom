@@ -112,6 +112,85 @@ pub(super) fn extract_type_ref_from_annotation(
                 chain: None,
             });
         }
+        "function_type" => {
+            // (req: Request, res: Response) => void
+            // Extract parameter types.
+            if let Some(params) = type_node.child_by_field_name("parameters") {
+                for i in 0..params.child_count() {
+                    if let Some(param) = params.child(i) {
+                        if param.kind() == "required_parameter"
+                            || param.kind() == "optional_parameter"
+                        {
+                            if let Some(type_ann) = param.child_by_field_name("type") {
+                                extract_type_ref_from_annotation(
+                                    &type_ann,
+                                    src,
+                                    source_symbol_index,
+                                    refs,
+                                );
+                            }
+                        }
+                    }
+                }
+            }
+            // Return type: the child after "=>".
+            let child_count = type_node.child_count();
+            for i in 0..child_count {
+                if let Some(child) = type_node.child(i) {
+                    if child.kind() == "=>" {
+                        if let Some(ret) = type_node.child(i + 1) {
+                            extract_type_ref_from_annotation(
+                                &ret,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        "union_type" => {
+            // User | null  /  string | number
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if child.kind() != "|" {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+        "intersection_type" => {
+            // Foo & Bar
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if child.kind() != "&" {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+        "array_type" => {
+            // User[]  — element type is the child before "["
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if child.kind() != "[" && child.kind() != "]" {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+        "parenthesized_type" => {
+            // (User | null)
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if child.kind() != "(" && child.kind() != ")" {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
         _ => {}
     }
 }
