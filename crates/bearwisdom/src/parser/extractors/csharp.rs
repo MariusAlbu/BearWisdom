@@ -36,8 +36,8 @@
 
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::{
-    DbMappingSource, EdgeKind, ExtractedDbSet, ExtractedRef, ExtractedRoute, ExtractedSymbol,
-    SymbolKind, Visibility,
+    ChainSegment, DbMappingSource, EdgeKind, ExtractedDbSet, ExtractedRef, ExtractedRoute,
+    ExtractedSymbol, MemberChain, SegmentKind, SymbolKind, Visibility,
 };
 use std::collections::HashMap;
 use tree_sitter::{Node, Parser};
@@ -1030,7 +1030,12 @@ fn extract_calls_from_body(
         match child.kind() {
             "invocation_expression" => {
                 if let Some(callee) = child.child_by_field_name("function") {
-                    let name = callee_name(callee, src);
+                    let chain = build_chain(callee, src);
+                    let name = chain
+                        .as_ref()
+                        .and_then(|c| c.segments.last())
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| callee_name(callee, src));
                     if !name.is_empty() && !is_csharp_keyword(&name) {
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -1038,7 +1043,7 @@ fn extract_calls_from_body(
                             kind: EdgeKind::Calls,
                             line: callee.start_position().row as u32,
                             module: None,
-                            chain: None,
+                            chain,
                         });
                     }
                 }
@@ -1116,6 +1121,153 @@ fn callee_name(node: Node, src: &[u8]) -> String {
             let t = node_text(node, src);
             t.rsplit('.').next().unwrap_or(&t).to_string()
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// MemberChain building
+// ---------------------------------------------------------------------------
+
+/// Build a structured member access chain from tree-sitter AST nodes.
+///
+/// Recursively walks nested `member_access_expression` nodes to produce
+/// a `Vec<ChainSegment>` from root to leaf.
+///
+/// `this.repo.FindOne()` tree structure:
+/// ```text
+/// invocation_expression
+///   function: member_access_expression
+///     expression: member_access_expression
+///       expression: this_expression "this"
+///       name: identifier "repo"
+///     name: identifier "FindOne"
+/// ```
+/// produces: `[this, repo, FindOne]`
+fn build_chain(node: Node, src: &[u8]) -> Option<MemberChain> {
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.is_empty() {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "this_expression" => {
+            segments.push(ChainSegment {
+                name: "this".to_string(),
+                node_kind: "this_expression".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "base_expression" => {
+            segments.push(ChainSegment {
+                name: "base".to_string(),
+                node_kind: "base_expression".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "identifier" => {
+            segments.push(ChainSegment {
+                name: node_text(node, src),
+                node_kind: "identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "generic_name" => {
+            // `GetService<T>` — strip the generic args, keep just the identifier.
+            let name = {
+                let mut cursor = node.walk();
+                let children: Vec<Node> = node.children(&mut cursor).collect();
+                drop(cursor);
+                children
+                    .iter()
+                    .find(|c| c.kind() == "identifier")
+                    .map(|c| node_text(*c, src))
+                    .unwrap_or_else(|| node_text(node, src))
+            };
+            segments.push(ChainSegment {
+                name,
+                node_kind: "generic_name".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "member_access_expression" => {
+            let expr = node.child_by_field_name("expression")?;
+            let name_node = node.child_by_field_name("name")?;
+
+            // Recurse into the expression (receiver) to build the prefix chain.
+            build_chain_inner(expr, src, segments)?;
+
+            // The name may be a generic_name (e.g., `Foo<T>`) — extract identifier.
+            let name = if name_node.kind() == "generic_name" {
+                let mut cursor = name_node.walk();
+                let children: Vec<Node> = name_node.children(&mut cursor).collect();
+                drop(cursor);
+                children
+                    .iter()
+                    .find(|c| c.kind() == "identifier")
+                    .map(|c| node_text(*c, src))
+                    .unwrap_or_else(|| node_text(name_node, src))
+            } else {
+                node_text(name_node, src)
+            };
+
+            segments.push(ChainSegment {
+                name,
+                node_kind: name_node.kind().to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "conditional_access_expression" => {
+            // C# `?.` operator: `foo?.Bar()`
+            let expr = node.child_by_field_name("expression")?;
+            let binding = node.child_by_field_name("binding")?;
+
+            build_chain_inner(expr, src, segments)?;
+
+            // The binding is a `member_binding_expression` with a `name` field.
+            let name_node = binding.child_by_field_name("name").unwrap_or(binding);
+            segments.push(ChainSegment {
+                name: node_text(name_node, src),
+                node_kind: binding.kind().to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: true,
+            });
+            Some(())
+        }
+
+        "invocation_expression" => {
+            // Nested call in a chain: `a.B().C()` — the expression is an invocation.
+            // Walk into the function child to continue the chain.
+            let func = node.child_by_field_name("function")?;
+            build_chain_inner(func, src, segments)
+        }
+
+        // Unknown node — can't build a chain.
+        _ => None,
     }
 }
 

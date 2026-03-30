@@ -46,7 +46,10 @@
 //     const_spec / var_spec → children: identifier* (names), [type], [= values]
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -1031,18 +1034,22 @@ fn extract_call_ref(
         None => return,
     };
 
-    let target_name = match func_node.kind() {
-        "selector_expression" => {
-            // Find the `field_identifier` child by index.
-            (0..func_node.named_child_count())
+    // Build a structured chain for selector expressions; fall back to the
+    // existing single-name extraction for bare identifiers.
+    let chain = build_chain(func_node, source);
+
+    let target_name = chain
+        .as_ref()
+        .and_then(|c| c.segments.last())
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| match func_node.kind() {
+            "selector_expression" => (0..func_node.named_child_count())
                 .filter_map(|i| func_node.named_child(i))
                 .find(|c| c.kind() == "field_identifier")
                 .map(|n| node_text(&n, source))
-                .unwrap_or_else(|| node_text(&func_node, source))
-        }
-        "identifier" => node_text(&func_node, source),
-        _ => node_text(&func_node, source),
-    };
+                .unwrap_or_else(|| node_text(&func_node, source)),
+            _ => node_text(&func_node, source),
+        });
 
     if target_name.is_empty() {
         return;
@@ -1054,8 +1061,95 @@ fn extract_call_ref(
         kind: EdgeKind::Calls,
         line: func_node.start_position().row as u32,
         module: None,
-        chain: None,
+        chain,
     });
+}
+
+// ---------------------------------------------------------------------------
+// Member chain builder
+// ---------------------------------------------------------------------------
+
+/// Build a structured `MemberChain` from a Go function/selector node.
+///
+/// Go uses `selector_expression` for member access (not `member_expression`):
+///
+/// `repo.FindOne()`:
+/// ```text
+/// selector_expression
+///   identifier "repo"
+///   field_identifier "FindOne"
+/// ```
+///
+/// `s.repo.FindOne()`:
+/// ```text
+/// selector_expression
+///   selector_expression
+///     identifier "s"
+///     field_identifier "repo"
+///   field_identifier "FindOne"
+/// ```
+///
+/// Returns `None` for bare `identifier` nodes (single-segment — handled by
+/// the existing scope-chain strategies) and for any node we can't walk.
+fn build_chain(node: Node, source: &str) -> Option<MemberChain> {
+    // Only build a chain for multi-segment expressions.
+    if node.kind() == "identifier" {
+        return None;
+    }
+    let mut segments = Vec::new();
+    build_chain_inner(node, source, &mut segments)?;
+    if segments.len() < 2 {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "identifier" => {
+            segments.push(ChainSegment {
+                name: node_text(&node, source),
+                node_kind: "identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "selector_expression" => {
+            // Children (by index): operand, `.` (anon), field_identifier
+            // We need the first named child (operand) and the last named child
+            // (field_identifier).  Use indexed access to avoid cursor re-borrow.
+            let named_count = node.named_child_count();
+            if named_count < 2 {
+                return None;
+            }
+            let operand = node.named_child(0)?;
+            let field = node.named_child(named_count - 1)?;
+
+            // Recurse into the operand to build the prefix chain.
+            build_chain_inner(operand, source, segments)?;
+
+            segments.push(ChainSegment {
+                name: node_text(&field, source),
+                node_kind: field.kind().to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "call_expression" => {
+            // Nested call in a chain: `a.B().C()` — walk into its function child.
+            let func = node.named_child(0)?;
+            build_chain_inner(func, source, segments)
+        }
+
+        // Unknown node — can't build a chain from this.
+        _ => None,
+    }
 }
 
 /// Emit an `Instantiates` ref for a `composite_literal`.
