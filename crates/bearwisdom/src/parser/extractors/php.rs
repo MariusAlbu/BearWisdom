@@ -43,7 +43,10 @@
 // =============================================================================
 
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -781,17 +784,34 @@ fn extract_calls_from_body(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            // `$obj->method(...)` or `ClassName::staticMethod(...)`
-            "member_call_expression" | "static_call_expression" => {
+            // instance member call
+            "member_call_expression" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let callee = node_text(&name_node, src);
+                    let chain = build_chain(&child, src);
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: callee,
                         kind: EdgeKind::Calls,
                         line: name_node.start_position().row as u32,
                         module: None,
-                        chain: None,
+                        chain,
+                    });
+                }
+            }
+
+            // static call
+            "static_call_expression" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let callee = node_text(&name_node, src);
+                    let chain = build_chain(&child, src);
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: callee,
+                        kind: EdgeKind::Calls,
+                        line: name_node.start_position().row as u32,
+                        module: None,
+                        chain,
                     });
                 }
             }
@@ -852,6 +872,102 @@ fn extract_calls_from_body(
             _ => {}
         }
         extract_calls_from_body(&child, src, source_symbol_index, refs);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Member chain builder
+// ---------------------------------------------------------------------------
+
+fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.is_empty() {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "variable_name" => {
+            let raw = node_text(node, src);
+            let name = raw.trim_start_matches('$').to_string();
+            let kind = if name == "this" {
+                SegmentKind::SelfRef
+            } else {
+                SegmentKind::Identifier
+            };
+            segments.push(ChainSegment {
+                name,
+                node_kind: "variable_name".to_string(),
+                kind,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "name" | "identifier" => {
+            segments.push(ChainSegment {
+                name: node_text(node, src),
+                node_kind: node.kind().to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "member_access_expression" => {
+            let object = node.child_by_field_name("object")?;
+            let name_node = node.child_by_field_name("name")?;
+            build_chain_inner(&object, src, segments)?;
+            segments.push(ChainSegment {
+                name: node_text(&name_node, src),
+                node_kind: "member_access_expression".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "member_call_expression" => {
+            let object = node.child_by_field_name("object")?;
+            let name_node = node.child_by_field_name("name")?;
+            build_chain_inner(&object, src, segments)?;
+            segments.push(ChainSegment {
+                name: node_text(&name_node, src),
+                node_kind: "member_call_expression".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "static_call_expression" | "scoped_call_expression" => {
+            let class_node = node.child_by_field_name("class")?;
+            let name_node = node.child_by_field_name("name")?;
+            segments.push(ChainSegment {
+                name: node_text(&class_node, src),
+                node_kind: "class".to_string(),
+                kind: SegmentKind::TypeAccess,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            segments.push(ChainSegment {
+                name: node_text(&name_node, src),
+                node_kind: "static_call_expression".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        _ => None,
     }
 }
 

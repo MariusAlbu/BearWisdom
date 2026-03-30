@@ -52,7 +52,10 @@
 // =============================================================================
 
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -595,15 +598,22 @@ fn extract_calls_from_body(
             "call_expression" => {
                 // `function` field is the callee node.
                 if let Some(fn_node) = child.child_by_field_name("function") {
-                    let name = call_target_name(&fn_node, src);
-                    if !name.is_empty() {
+                    let chain = build_chain(fn_node, src);
+
+                    let target_name = chain
+                        .as_ref()
+                        .and_then(|c| c.segments.last())
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| call_target_name(&fn_node, src));
+
+                    if !target_name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index,
-                            target_name: name,
+                            target_name,
                             kind: EdgeKind::Calls,
                             line: fn_node.start_position().row as u32,
                             module: None,
-                            chain: None,
+                            chain,
                         });
                     }
                 }
@@ -613,6 +623,98 @@ fn extract_calls_from_body(
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
         }
+    }
+}
+
+/// Build a structured member-access chain from a C/C++ call expression's function node.
+///
+/// Returns `None` for bare single-segment identifiers.
+///
+/// C/C++ tree-sitter node shapes:
+///   `identifier`          — leaf name
+///   `field_identifier`    — member name leaf
+///   `this`                — C++ `this` keyword (node kind is "this")
+///   `field_expression`    — `obj.field` or `obj->field`
+///                           fields: `argument` (receiver), `field` (member name)
+///   `qualified_identifier`— `Foo::bar` — fields: `scope`, `name`
+///   `call_expression`     — nested call `a.b().c()` — walk into `function` child
+fn build_chain(node: Node, src: &[u8]) -> Option<MemberChain> {
+    match node.kind() {
+        "identifier" | "field_identifier" => return None,
+        _ => {}
+    }
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.len() < 2 {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "identifier" | "field_identifier" | "type_identifier" => {
+            segments.push(ChainSegment {
+                name: node_text(node, src),
+                node_kind: node.kind().to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "this" => {
+            segments.push(ChainSegment {
+                name: "this".to_string(),
+                node_kind: "this".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "field_expression" => {
+            // `argument` field = receiver, `field` field = member name.
+            let argument = node.child_by_field_name("argument")?;
+            let field = node.child_by_field_name("field")?;
+            build_chain_inner(argument, src, segments)?;
+            segments.push(ChainSegment {
+                name: node_text(field, src),
+                node_kind: field.kind().to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "qualified_identifier" => {
+            // `Foo::bar` — emit scope as Identifier, name as Property.
+            let scope = node.child_by_field_name("scope");
+            let name_node = node.child_by_field_name("name")?;
+            if let Some(scope_node) = scope {
+                build_chain_inner(scope_node, src, segments)?;
+            }
+            segments.push(ChainSegment {
+                name: node_text(name_node, src),
+                node_kind: name_node.kind().to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "call_expression" => {
+            // Nested call in a chain: `a.b().c()` — walk into `function` child.
+            let func = node.child_by_field_name("function")?;
+            build_chain_inner(func, src, segments)
+        }
+
+        // Unknown — can't build a chain.
+        _ => None,
     }
 }
 

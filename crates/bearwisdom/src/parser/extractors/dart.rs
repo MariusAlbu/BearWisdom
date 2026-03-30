@@ -24,7 +24,10 @@
 //   initialized_variable_definition, field_declaration
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -739,20 +742,29 @@ fn extract_dart_calls(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "invocation_expression" || child.kind() == "function_invocation" {
-            let callee_text = child
+            let callee_node_opt = child
                 .child_by_field_name("function")
-                .or_else(|| child.child_by_field_name("name"))
-                .map(|n| dart_callee_name(n, src))
-                .unwrap_or_default();
-            if !callee_text.is_empty() {
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: callee_text,
-                    kind: EdgeKind::Calls,
-                    line: child.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
+                .or_else(|| child.child_by_field_name("name"));
+
+            if let Some(callee_node) = callee_node_opt {
+                let chain = build_chain(callee_node, src);
+
+                let target_name = chain
+                    .as_ref()
+                    .and_then(|c| c.segments.last())
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| dart_callee_name(callee_node, src));
+
+                if !target_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name,
+                        kind: EdgeKind::Calls,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain,
+                    });
+                }
             }
         }
         extract_dart_calls(&child, src, source_symbol_index, refs);
@@ -763,23 +775,162 @@ fn dart_callee_name(node: Node, src: &str) -> String {
     match node.kind() {
         "identifier" => node_text(node, src),
         "selector_expression" | "navigation_expression" => {
-            node.child_by_field_name("selector")
-                .or_else(|| {
-                    // last child is the method name
-                    let mut c = node.walk();
-                    let mut last = None;
-                    for n in node.children(&mut c) {
-                        last = Some(node_text(n, src));
-                    }
-                    last.map(|_| node) // hack: just use node_text below
-                })
-                .map(|n| node_text(n, src))
-                .unwrap_or_default()
+            // Try `selector` field; fall back to the last identifier-like child.
+            if let Some(sel) = node.child_by_field_name("selector") {
+                return node_text(sel, src);
+            }
+            let mut last = String::new();
+            let mut c = node.walk();
+            for n in node.children(&mut c) {
+                if n.kind() == "identifier" || n.kind() == "simple_identifier" {
+                    last = node_text(n, src);
+                }
+            }
+            last
         }
         _ => {
             let t = node_text(node, src);
             t.rsplit('.').next().unwrap_or(&t).to_string()
         }
+    }
+}
+
+/// Build a structured member-access chain from a Dart invocation callee node.
+///
+/// Returns `None` for bare single-segment identifiers.
+///
+/// Dart tree-sitter node shapes:
+///   `identifier`           — leaf name
+///   `this`                 — receiver keyword
+///   `super`                — super keyword
+///   `selector_expression`  — `target.selector` member access
+///   `navigation_expression`— alternative navigation form (some grammar versions)
+///   `cascade_expression`   — `obj..method()` cascade — treat object as receiver
+///   `invocation_expression`— nested invocation (chained call)
+fn build_chain(node: Node, src: &str) -> Option<MemberChain> {
+    if node.kind() == "identifier" {
+        return None;
+    }
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.len() < 2 {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "identifier" | "simple_identifier" => {
+            segments.push(ChainSegment {
+                name: node_text(node, src),
+                node_kind: node.kind().to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "this" => {
+            segments.push(ChainSegment {
+                name: "this".to_string(),
+                node_kind: "this".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "super" => {
+            segments.push(ChainSegment {
+                name: "super".to_string(),
+                node_kind: "super".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "selector_expression" => {
+            // `object.selector` — named fields vary by grammar version.
+            // Try `object` field for the receiver, `selector` for the member.
+            let receiver = node
+                .child_by_field_name("object")
+                .or_else(|| node.named_child(0))?;
+            build_chain_inner(receiver, src, segments)?;
+
+            // The selector may be under a `selector` field or as a direct identifier child.
+            let member_name = node
+                .child_by_field_name("selector")
+                .map(|n| node_text(n, src))
+                .or_else(|| {
+                    // Scan for the last identifier-like child after the `.`
+                    let mut last: Option<String> = None;
+                    let mut c = node.walk();
+                    for child in node.children(&mut c) {
+                        if child.kind() == "identifier" || child.kind() == "simple_identifier" {
+                            last = Some(node_text(child, src));
+                        }
+                    }
+                    last
+                })?;
+
+            segments.push(ChainSegment {
+                name: member_name,
+                node_kind: "selector_expression".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "navigation_expression" => {
+            // Alternative navigation form — same structure as selector_expression.
+            let receiver = node
+                .child_by_field_name("target")
+                .or_else(|| node.named_child(0))?;
+            build_chain_inner(receiver, src, segments)?;
+
+            let mut last: Option<String> = None;
+            let mut c = node.walk();
+            for child in node.children(&mut c) {
+                if child.kind() == "identifier" || child.kind() == "simple_identifier" {
+                    last = Some(node_text(child, src));
+                }
+            }
+            let member_name = last?;
+            segments.push(ChainSegment {
+                name: member_name,
+                node_kind: "navigation_expression".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "cascade_expression" => {
+            // `obj..method()` — the receiver is the first named child before `..`.
+            // Just recurse into the first named child (the object).
+            let receiver = node.named_child(0)?;
+            build_chain_inner(receiver, src, segments)
+        }
+
+        "invocation_expression" | "function_invocation" => {
+            // Nested invocation in a chain — walk into the function/name child.
+            let callee = node
+                .child_by_field_name("function")
+                .or_else(|| node.child_by_field_name("name"))
+                .or_else(|| node.named_child(0))?;
+            build_chain_inner(callee, src, segments)
+        }
+
+        // Unknown — can't build a chain.
+        _ => None,
     }
 }
 

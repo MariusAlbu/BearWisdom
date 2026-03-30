@@ -24,7 +24,10 @@
 //   everything else                      → Public
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -684,25 +687,103 @@ fn extract_calls_from_body(
     for child in node.children(&mut cursor) {
         if child.kind() == "call" {
             if let Some(func_node) = child.child_by_field_name("function") {
-                let callee_text = node_text(&func_node, source);
-                // Last segment of a.b.c is c
-                let simple_name = callee_text
-                    .rsplit('.')
-                    .next()
-                    .unwrap_or(&callee_text)
-                    .to_string();
+                let chain = build_chain(&func_node, source);
+                let target_name = chain
+                    .as_ref()
+                    .and_then(|c| c.segments.last())
+                    .map(|s| s.name.clone())
+                    .or_else(|| {
+                        // Fallback: last segment of dotted text
+                        let t = node_text(&func_node, source);
+                        Some(t.rsplit('.').next().unwrap_or(&t).to_string())
+                    });
 
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: simple_name,
-                    kind: EdgeKind::Calls,
-                    line: func_node.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
+                if let Some(target_name) = target_name {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name,
+                        kind: EdgeKind::Calls,
+                        line: func_node.start_position().row as u32,
+                        module: None,
+                        chain,
+                    });
+                }
             }
         }
         extract_calls_from_body(&child, source, source_symbol_index, refs);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Member chain builder
+// ---------------------------------------------------------------------------
+
+/// Build a structured member access chain from a Python CST node.
+///
+/// Python uses `attribute` for member access and `call` for invocations:
+///
+/// ```text
+/// call
+///   attribute @function
+///     attribute @object
+///       identifier "self"
+///       identifier "repo"
+///     identifier "findOne"
+///   argument_list
+/// ```
+/// produces: `[self, repo, findOne]`
+fn build_chain(node: &Node, src: &str) -> Option<MemberChain> {
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.is_empty() {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: &Node, src: &str, segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "identifier" => {
+            let name = node_text(node, src);
+            let kind = if name == "self" || name == "cls" {
+                SegmentKind::SelfRef
+            } else {
+                SegmentKind::Identifier
+            };
+            segments.push(ChainSegment {
+                name,
+                node_kind: "identifier".to_string(),
+                kind,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "attribute" => {
+            // attribute { object: <expr>, attribute: identifier }
+            let object = node.child_by_field_name("object")?;
+            let attribute = node.child_by_field_name("attribute")?;
+
+            build_chain_inner(&object, src, segments)?;
+
+            segments.push(ChainSegment {
+                name: node_text(&attribute, src),
+                node_kind: "attribute".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "call" => {
+            // Chained call: `a.b().c()` — the function child carries the chain.
+            let func = node.child_by_field_name("function")?;
+            build_chain_inner(&func, src, segments)
+        }
+
+        _ => None,
     }
 }
 

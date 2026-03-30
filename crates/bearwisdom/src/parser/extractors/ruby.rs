@@ -31,7 +31,10 @@
 // =============================================================================
 
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -589,7 +592,7 @@ fn extract_calls_from_body(
     for child in node.children(&mut cursor) {
         if child.kind() == "call" {
             if let Some(mname) = get_call_method_name(&child, src) {
-                let kind = if mname == "new" {
+                if mname == "new" {
                     // Emit Instantiates for `ClassName.new`
                     if let Some(recv) = child.child_by_field_name("receiver") {
                         let recv_text = node_text(&recv, src);
@@ -605,21 +608,111 @@ fn extract_calls_from_body(
                         extract_calls_from_body(&child, src, source_symbol_index, refs);
                         continue;
                     }
-                    EdgeKind::Calls
-                } else {
-                    EdgeKind::Calls
-                };
+                }
+
+                let chain = build_chain(&child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index,
                     target_name: mname,
-                    kind,
+                    kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
                     module: None,
-                    chain: None,
+                    chain,
                 });
             }
         }
         extract_calls_from_body(&child, src, source_symbol_index, refs);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Member chain builder
+// ---------------------------------------------------------------------------
+
+/// Build a structured member access chain from a Ruby CST `call` node.
+///
+/// Ruby uses `call` with a `receiver` field and `method` field:
+///
+/// ```text
+/// call
+///   identifier / call @receiver
+///   identifier @method "find_one"
+///   argument_list
+/// ```
+/// produces: `[receiver, find_one]`
+///
+/// For `self.method_name`:
+/// ```text
+/// call
+///   self @receiver
+///   identifier @method "method_name"
+/// ```
+/// produces: `[self, method_name]`
+fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.is_empty() {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "self" => {
+            segments.push(ChainSegment {
+                name: "self".to_string(),
+                node_kind: "self".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "identifier" | "constant" => {
+            segments.push(ChainSegment {
+                name: node_text(node, src),
+                node_kind: node.kind().to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "call" => {
+            // `receiver.method(...)` — recurse into receiver, then push method.
+            if let Some(receiver) = node.child_by_field_name("receiver") {
+                build_chain_inner(&receiver, src, segments)?;
+                if let Some(method) = node.child_by_field_name("method") {
+                    segments.push(ChainSegment {
+                        name: node_text(&method, src),
+                        node_kind: "call".to_string(),
+                        kind: SegmentKind::Property,
+                        declared_type: None,
+                        optional_chaining: false,
+                    });
+                }
+                Some(())
+            } else {
+                // Bare call (no receiver) — treat the method name as Identifier.
+                if let Some(method) = node.child_by_field_name("method") {
+                    segments.push(ChainSegment {
+                        name: node_text(&method, src),
+                        node_kind: "call".to_string(),
+                        kind: SegmentKind::Identifier,
+                        declared_type: None,
+                        optional_chaining: false,
+                    });
+                    Some(())
+                } else {
+                    None
+                }
+            }
+        }
+
+        _ => None,
     }
 }
 

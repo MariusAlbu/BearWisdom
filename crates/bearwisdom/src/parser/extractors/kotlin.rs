@@ -44,7 +44,7 @@
 // =============================================================================
 
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -623,15 +623,20 @@ fn extract_calls_from_body(
             "call_expression" => {
                 // The callee is the first child.
                 if let Some(callee) = child.named_child(0) {
-                    let name = call_target_name(&callee, src);
-                    if !name.is_empty() {
+                    let chain = build_chain(&callee, src);
+                    let target_name = chain
+                        .as_ref()
+                        .and_then(|c| c.segments.last())
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| call_target_name(&callee, src));
+                    if !target_name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index,
-                            target_name: name,
+                            target_name,
                             kind: EdgeKind::Calls,
                             line: callee.start_position().row as u32,
                             module: None,
-                            chain: None,
+                            chain,
                         });
                     }
                 }
@@ -741,6 +746,108 @@ fn node_text(node: Node, src: &[u8]) -> String {
     std::str::from_utf8(&src[node.start_byte()..node.end_byte()])
         .unwrap_or("")
         .to_string()
+}
+
+// ---------------------------------------------------------------------------
+// Member chain builder
+// ---------------------------------------------------------------------------
+
+/// Build a structured member access chain from a Kotlin CST node.
+///
+/// Kotlin uses `navigation_expression` for member access:
+///
+/// ```text
+/// call_expression
+///   navigation_expression        ← callee
+///     navigation_expression      ← receiver (chained)
+///       this_expression
+///       navigation_suffix: simple_identifier "repo"
+///     navigation_suffix: simple_identifier "findOne"
+///   value_arguments
+/// ```
+/// produces: `[this, repo, findOne]`
+fn build_chain(node: &Node, src: &[u8]) -> Option<MemberChain> {
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.is_empty() {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "simple_identifier" | "identifier" => {
+            let name = node_text(*node, src);
+            segments.push(ChainSegment {
+                name,
+                node_kind: "simple_identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "this_expression" => {
+            segments.push(ChainSegment {
+                name: "this".to_string(),
+                node_kind: "this_expression".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "super_expression" => {
+            segments.push(ChainSegment {
+                name: "super".to_string(),
+                node_kind: "super_expression".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "navigation_expression" => {
+            // navigation_expression: receiver `.` navigation_suffix
+            // receiver is first named child; navigation_suffix follows.
+            let mut cursor = node.walk();
+            let mut children = node.children(&mut cursor);
+            let receiver = children.find(|c| c.is_named())?;
+            build_chain_inner(&receiver, src, segments)?;
+            // Find the navigation_suffix and extract simple_identifier from it.
+            let mut cursor2 = node.walk();
+            for child in node.children(&mut cursor2) {
+                if child.kind() == "navigation_suffix" {
+                    let mut nc = child.walk();
+                    for inner in child.children(&mut nc) {
+                        if inner.kind() == "simple_identifier" {
+                            segments.push(ChainSegment {
+                                name: node_text(inner, src),
+                                node_kind: "navigation_suffix".to_string(),
+                                kind: SegmentKind::Property,
+                                declared_type: None,
+                                optional_chaining: false,
+                            });
+                            break;
+                        }
+                    }
+                }
+            }
+            Some(())
+        }
+
+        "call_expression" => {
+            // Chained call: callee is first named child.
+            let callee = node.named_child(0)?;
+            build_chain_inner(&callee, src, segments)
+        }
+
+        _ => None,
+    }
 }
 
 // ---------------------------------------------------------------------------

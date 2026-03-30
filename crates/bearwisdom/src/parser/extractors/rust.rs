@@ -17,7 +17,10 @@
 //   blocks are not symbols themselves; they set the prefix for their methods.
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -777,35 +780,143 @@ fn extract_calls_from_body(
     for child in node.children(&mut cursor) {
         if child.kind() == "call_expression" {
             if let Some(func) = child.child_by_field_name("function") {
-                let callee_text = node_text(&func, source);
+                let chain = build_chain(func, source);
 
-                // Extract the simple name:
-                //   `Foo::bar`   → "bar"  (path-style call)
-                //   `obj.method` → "method" (method call via field_expression)
-                //   `foo`        → "foo"
-                let simple_name = callee_text
-                    .rsplit("::")
-                    .next()
-                    .unwrap_or(&callee_text)
-                    .rsplit('.')
-                    .next()
-                    .unwrap_or(&callee_text)
-                    .trim()
-                    .to_string();
+                let target_name = chain
+                    .as_ref()
+                    .and_then(|c| c.segments.last())
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| {
+                        let callee_text = node_text(&func, source);
+                        callee_text
+                            .rsplit("::")
+                            .next()
+                            .unwrap_or(&callee_text)
+                            .rsplit('.')
+                            .next()
+                            .unwrap_or(&callee_text)
+                            .trim()
+                            .to_string()
+                    });
 
-                if !simple_name.is_empty() {
+                if !target_name.is_empty() {
                     refs.push(ExtractedRef {
                         source_symbol_index,
-                        target_name: simple_name,
+                        target_name,
                         kind: EdgeKind::Calls,
                         line: func.start_position().row as u32,
                         module: None,
-                        chain: None,
+                        chain,
                     });
                 }
             }
         }
         extract_calls_from_body(&child, source, source_symbol_index, refs);
+    }
+}
+
+/// Build a structured member-access chain from a Rust call expression's function node.
+///
+/// Returns `None` for bare single-segment identifiers (handled by scope-chain strategies).
+///
+/// Rust tree-sitter node shapes:
+///   `field_expression`  — `obj.field` / `obj.method` (also `self.method`)
+///   `scoped_identifier` — `Foo::bar` / `HashMap::new`
+///   `call_expression`   — nested call `a.b().c()` — walk into `function` child
+///   `identifier`        — leaf name
+///   `self`              — receiver keyword
+fn build_chain(node: Node, source: &str) -> Option<MemberChain> {
+    // Bare identifier → not a chain.
+    if node.kind() == "identifier" || node.kind() == "self" {
+        return None;
+    }
+    let mut segments = Vec::new();
+    build_chain_inner(node, source, &mut segments)?;
+    if segments.len() < 2 {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "identifier" => {
+            segments.push(ChainSegment {
+                name: node_text(&node, source),
+                node_kind: "identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "self" => {
+            segments.push(ChainSegment {
+                name: "self".to_string(),
+                node_kind: "self".to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "field_expression" => {
+            // Children (named): value (the receiver), field_identifier (the member).
+            let value = node.child_by_field_name("value")?;
+            let field = node.child_by_field_name("field")?;
+            build_chain_inner(value, source, segments)?;
+            segments.push(ChainSegment {
+                name: node_text(&field, source),
+                node_kind: field.kind().to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "scoped_identifier" => {
+            // `HashMap::new` — split on `::` and emit each part.
+            // The last segment is the actual call target.
+            let text = node_text(&node, source);
+            let parts: Vec<&str> = text.split("::").collect();
+            if parts.len() < 2 {
+                segments.push(ChainSegment {
+                    name: text,
+                    node_kind: "scoped_identifier".to_string(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    optional_chaining: false,
+                });
+            } else {
+                for (i, part) in parts.iter().enumerate() {
+                    let kind = if i == 0 {
+                        SegmentKind::Identifier
+                    } else {
+                        SegmentKind::Property
+                    };
+                    segments.push(ChainSegment {
+                        name: part.trim().to_string(),
+                        node_kind: "scoped_identifier".to_string(),
+                        kind,
+                        declared_type: None,
+                        optional_chaining: false,
+                    });
+                }
+            }
+            Some(())
+        }
+
+        "call_expression" => {
+            // Nested call in a chain: `a.b().c()` — walk into its function child.
+            let func = node.child_by_field_name("function")?;
+            build_chain_inner(func, source, segments)
+        }
+
+        // Unknown node — can't build a chain.
+        _ => None,
     }
 }
 
