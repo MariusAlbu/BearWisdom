@@ -1,4 +1,5 @@
     use super::*;
+    use crate::types::{EdgeKind, SymbolKind, Visibility};
 
     #[test]
     fn class_and_method_qualified_name() {
