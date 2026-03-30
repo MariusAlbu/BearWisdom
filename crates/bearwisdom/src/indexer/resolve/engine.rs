@@ -96,6 +96,10 @@ pub trait SymbolLookup {
     /// Get the annotated type name for a property/field symbol.
     /// e.g., "AlbumService.db" → Some("DatabaseRepository")
     fn field_type_name(&self, property_qname: &str) -> Option<&str>;
+
+    /// Get the annotated return type for a method/function symbol.
+    /// e.g., "UserRepo.findOne" → Some("User")
+    fn return_type_name(&self, method_qname: &str) -> Option<&str>;
 }
 
 // ---------------------------------------------------------------------------
@@ -110,6 +114,9 @@ pub struct SymbolIndex {
     /// Maps property qualified_name → type name from TypeRef annotations.
     /// e.g., "AlbumService.db" → "DatabaseRepository"
     field_type: HashMap<String, String>,
+    /// Maps method/function qualified_name → return type name from annotations.
+    /// e.g., "UserRepo.findOne" → "User"
+    return_type: HashMap<String, String>,
     empty: Vec<SymbolInfo>,
 }
 
@@ -157,20 +164,45 @@ impl SymbolIndex {
             }
         }
 
-        // Build field_type map: for each property symbol, find its first
-        // TypeRef ref to determine the field's annotated type.
+        // Build field_type and return_type maps from TypeRef annotations.
         let mut field_type: HashMap<String, String> = HashMap::new();
+        let mut return_type: HashMap<String, String> = HashMap::new();
+
         for pf in parsed {
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
-                if sym.kind != SymbolKind::Property {
+                // Collect TypeRef refs from this symbol (no module = not an import).
+                let type_refs: Vec<&str> = pf
+                    .refs
+                    .iter()
+                    .filter(|r| {
+                        r.source_symbol_index == sym_idx
+                            && r.kind == EdgeKind::TypeRef
+                            && r.module.is_none()
+                    })
+                    .map(|r| r.target_name.as_str())
+                    .collect();
+
+                if type_refs.is_empty() {
                     continue;
                 }
-                // Find the first TypeRef from this symbol.
-                for r in &pf.refs {
-                    if r.source_symbol_index == sym_idx && r.kind == EdgeKind::TypeRef && r.module.is_none() {
-                        field_type.insert(sym.qualified_name.clone(), r.target_name.clone());
-                        break;
+
+                match sym.kind {
+                    // Properties/fields: first TypeRef is the field type.
+                    SymbolKind::Property | SymbolKind::Field => {
+                        field_type
+                            .insert(sym.qualified_name.clone(), type_refs[0].to_string());
                     }
+                    // Methods/functions: last TypeRef is likely the return type
+                    // (parameters come first in source order, return type annotation is last).
+                    SymbolKind::Method
+                    | SymbolKind::Function
+                    | SymbolKind::Constructor => {
+                        if let Some(&last) = type_refs.last() {
+                            return_type
+                                .insert(sym.qualified_name.clone(), last.to_string());
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
@@ -180,6 +212,7 @@ impl SymbolIndex {
             by_qname,
             by_file,
             field_type,
+            return_type,
             empty: Vec::new(),
         }
     }
@@ -211,6 +244,10 @@ impl SymbolLookup for SymbolIndex {
 
     fn field_type_name(&self, property_qname: &str) -> Option<&str> {
         self.field_type.get(property_qname).map(|s| s.as_str())
+    }
+
+    fn return_type_name(&self, method_qname: &str) -> Option<&str> {
+        self.return_type.get(method_qname).map(|s| s.as_str())
     }
 }
 

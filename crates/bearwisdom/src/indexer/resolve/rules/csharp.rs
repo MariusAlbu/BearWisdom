@@ -361,12 +361,16 @@ fn resolve_via_chain(
 
     let mut current_type = root_type?;
 
-    // Phase 2: Walk intermediate segments, following field types.
+    // Phase 2: Walk intermediate segments, following field types or return types.
     for seg in &segments[1..segments.len() - 1] {
-        let field_qname = format!("{current_type}.{}", seg.name);
+        let member_qname = format!("{current_type}.{}", seg.name);
 
-        // Direct field_type_name lookup.
-        if let Some(next_type) = lookup.field_type_name(&field_qname) {
+        // Direct field_type_name or return_type_name lookup.
+        if let Some(next_type) = lookup.field_type_name(&member_qname) {
+            current_type = next_type.to_string();
+            continue;
+        }
+        if let Some(next_type) = lookup.return_type_name(&member_qname) {
             current_type = next_type.to_string();
             continue;
         }
@@ -376,8 +380,13 @@ fn resolve_via_chain(
         for import in &file_ctx.imports {
             if import.is_wildcard {
                 if let Some(module) = &import.module_path {
-                    let qualified_field = format!("{module}.{field_qname}");
-                    if let Some(next_type) = lookup.field_type_name(&qualified_field) {
+                    let qualified_member = format!("{module}.{member_qname}");
+                    if let Some(next_type) = lookup.field_type_name(&qualified_member) {
+                        current_type = next_type.to_string();
+                        found = true;
+                        break;
+                    }
+                    if let Some(next_type) = lookup.return_type_name(&qualified_member) {
                         current_type = next_type.to_string();
                         found = true;
                         break;

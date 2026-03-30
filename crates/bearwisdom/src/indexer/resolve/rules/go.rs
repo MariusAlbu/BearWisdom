@@ -491,21 +491,30 @@ fn resolve_via_chain(
 
     let mut current_type = root_type?;
 
-    // Phase 2: Walk intermediate segments, following field types.
+    // Phase 2: Walk intermediate segments, following field types or return types.
     for seg in &segments[1..segments.len() - 1] {
-        let field_qname = format!("{current_type}.{}", seg.name);
+        let member_qname = format!("{current_type}.{}", seg.name);
 
-        if let Some(next_type) = lookup.field_type_name(&field_qname) {
+        if let Some(next_type) = lookup.field_type_name(&member_qname) {
+            current_type = next_type.to_string();
+            continue;
+        }
+        if let Some(next_type) = lookup.return_type_name(&member_qname) {
             current_type = next_type.to_string();
             continue;
         }
 
-        // The field might be in a different namespace prefix — try by_name fallback.
+        // Try by_name fallback with namespace prefix.
         let mut found = false;
         for sym in lookup.by_name(&seg.name) {
-            if sym.qualified_name.starts_with(&current_type) && sym.kind == "field" {
+            if sym.qualified_name.starts_with(&current_type) {
                 if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
                     current_type = ft.to_string();
+                    found = true;
+                    break;
+                }
+                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                    current_type = rt.to_string();
                     found = true;
                     break;
                 }
