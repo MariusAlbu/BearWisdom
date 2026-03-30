@@ -447,24 +447,3 @@ object M {
     }
 }
 
-#[cfg(test)]
-mod probe_tests {
-    #[test]
-    #[ignore]
-    fn probe_scala_match() {
-        let source = "object M {\n  def check(x: Any) = x match {\n    case Admin(level) => level\n    case _ => 0\n  }\n}";
-        let lang: tree_sitter::Language = tree_sitter_scala::LANGUAGE.into();
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&lang).unwrap();
-        let tree = parser.parse(source, None).unwrap();
-        fn print_tree(node: tree_sitter::Node, src: &[u8], depth: usize) {
-            let indent = "  ".repeat(depth);
-            let text = if node.child_count() == 0 { format!(" {:?}", std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?")) } else { String::new() };
-            eprintln!("{}{}{}", indent, node.kind(), text);
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) { print_tree(child, src, depth + 1); }
-        }
-        print_tree(tree.root_node(), source.as_bytes(), 0);
-        panic!("see output");
-    }
-}

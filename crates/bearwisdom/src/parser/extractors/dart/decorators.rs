@@ -356,24 +356,3 @@ mod tests {
     }
 }
 
-#[cfg(test)]
-mod probe_tests {
-    #[test]
-    #[ignore]
-    fn probe_dart_annotation() {
-        let source = "@JsonSerializable()\nclass User {}";
-        let lang: tree_sitter::Language = tree_sitter_dart::LANGUAGE.into();
-        let mut parser = tree_sitter::Parser::new();
-        parser.set_language(&lang).unwrap();
-        let tree = parser.parse(source, None).unwrap();
-        fn print_tree(node: tree_sitter::Node, src: &str, depth: usize) {
-            let indent = "  ".repeat(depth);
-            let text = if node.child_count() == 0 { format!(" {:?}", &src[node.start_byte()..node.end_byte()]) } else { String::new() };
-            eprintln!("{}{}{}", indent, node.kind(), text);
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) { print_tree(child, src, depth + 1); }
-        }
-        print_tree(tree.root_node(), source, 0);
-        panic!("see output");
-    }
-}
