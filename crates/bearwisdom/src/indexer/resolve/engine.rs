@@ -273,6 +273,39 @@ impl SymbolIndex {
             }
         }
 
+        // Variable type inference pass: for Variable symbols without an explicit
+        // type annotation, try to infer the type from chain-bearing TypeRef refs.
+        // These are emitted by the extractor for `const x = this.repo.findOne()`.
+        // We resolve the chain to get the method's return type.
+        for pf in parsed {
+            for (sym_idx, sym) in pf.symbols.iter().enumerate() {
+                if sym.kind != SymbolKind::Variable {
+                    continue;
+                }
+                // Skip if already has an explicit type.
+                if field_type.contains_key(&sym.qualified_name) {
+                    continue;
+                }
+                // Find a chain-bearing TypeRef from this variable.
+                for r in &pf.refs {
+                    if r.source_symbol_index != sym_idx
+                        || r.kind != EdgeKind::TypeRef
+                        || r.chain.is_none()
+                    {
+                        continue;
+                    }
+                    let chain = r.chain.as_ref().unwrap();
+                    // Walk the chain to infer the type.
+                    if let Some(inferred) =
+                        infer_type_from_chain(chain, &sym.scope_path, &field_type, &field_type_args, &return_type, &generic_params, &by_name, &by_qname)
+                    {
+                        field_type.insert(sym.qualified_name.clone(), inferred);
+                        break;
+                    }
+                }
+            }
+        }
+
         Self {
             by_name,
             by_qname,
@@ -284,6 +317,117 @@ impl SymbolIndex {
             empty: Vec::new(),
         }
     }
+}
+
+/// Lightweight chain resolution for variable type inference during index building.
+/// Uses the already-built field_type and return_type maps (not the full SymbolLookup trait).
+fn infer_type_from_chain(
+    chain: &crate::types::MemberChain,
+    scope_path: &Option<String>,
+    field_type: &HashMap<String, String>,
+    field_type_args: &HashMap<String, Vec<String>>,
+    return_type: &HashMap<String, String>,
+    generic_params: &HashMap<String, Vec<String>>,
+    by_name: &HashMap<String, Vec<SymbolInfo>>,
+    by_qname: &HashMap<String, SymbolInfo>,
+) -> Option<String> {
+    use crate::types::SegmentKind;
+
+    let segments = &chain.segments;
+    if segments.is_empty() {
+        return None;
+    }
+
+    // Build a minimal scope chain from scope_path.
+    let scopes: Vec<String> = if let Some(sp) = scope_path {
+        let mut chain = Vec::new();
+        let mut current = sp.clone();
+        chain.push(current.clone());
+        while let Some(dot) = current.rfind('.') {
+            current.truncate(dot);
+            chain.push(current.clone());
+        }
+        chain
+    } else {
+        Vec::new()
+    };
+
+    // Phase 1: Root type.
+    let root_type = match segments[0].kind {
+        SegmentKind::SelfRef => {
+            // Find enclosing class from scope.
+            scopes.iter().find_map(|s| {
+                by_qname.get(s).and_then(|sym| {
+                    if matches!(sym.kind.as_str(), "class" | "struct" | "interface") {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+            }).or_else(|| scopes.last().cloned())
+        }
+        SegmentKind::Identifier => {
+            let name = &segments[0].name;
+            scopes.iter().find_map(|scope| {
+                let qname = format!("{scope}.{name}");
+                field_type.get(&qname).cloned()
+            }).or_else(|| segments[0].declared_type.clone())
+        }
+        _ => None,
+    }?;
+
+    let mut current_type = root_type;
+    let mut generic_args: Vec<String> = Vec::new();
+
+    // Look up initial generic args.
+    for scope in &scopes {
+        let key = format!("{scope}.{}", segments[0].name);
+        if let Some(args) = field_type_args.get(&key) {
+            generic_args = args.clone();
+            break;
+        }
+    }
+
+    // Phase 2: Walk remaining segments.
+    for seg in &segments[1..] {
+        let member_qname = format!("{current_type}.{}", seg.name);
+
+        if let Some(next) = field_type.get(&member_qname) {
+            generic_args = field_type_args.get(&member_qname).cloned().unwrap_or_default();
+            current_type = next.clone();
+            continue;
+        }
+        if let Some(raw_return) = return_type.get(&member_qname) {
+            // Generic substitution.
+            let resolved = if !generic_args.is_empty() {
+                if let Some(params) = generic_params.get(&current_type)
+                    .or_else(|| {
+                        // Try simple name too.
+                        let simple = current_type.rsplit('.').next().unwrap_or(&current_type);
+                        generic_params.get(simple)
+                    })
+                {
+                    params.iter().enumerate()
+                        .find(|(_, p)| p.as_str() == raw_return)
+                        .and_then(|(i, _)| generic_args.get(i).cloned())
+                        .unwrap_or_else(|| raw_return.clone())
+                } else {
+                    raw_return.clone()
+                }
+            } else {
+                raw_return.clone()
+            };
+            generic_args.clear();
+            current_type = resolved;
+            continue;
+        }
+
+        // Can't follow further.
+        return None;
+    }
+
+    // The final current_type is the inferred return type of the chain.
+    Some(current_type)
 }
 
 impl SymbolLookup for SymbolIndex {

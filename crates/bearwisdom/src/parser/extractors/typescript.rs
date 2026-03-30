@@ -789,6 +789,59 @@ fn push_variable_decl(
                     // Extract TypeRef from variable type annotation: `const repo: Repository`
                     if let Some(type_ann) = child.child_by_field_name("type") {
                         extract_type_ref_from_annotation(&type_ann, src, idx, refs);
+                    } else if let Some(init) = child.child_by_field_name("value") {
+                        // No explicit type — try to infer from initializer.
+                        // `const user = this.repo.findOne(1)` → chain [this, repo, findOne]
+                        // Emit a chain-bearing TypeRef so the index builder can
+                        // resolve the chain's return type as the variable's type.
+                        let init_node = if init.kind() == "await_expression" {
+                            // `const user = await this.repo.findOne(1)` → unwrap await
+                            init.child_by_field_name("value")
+                                .or_else(|| init.named_child(0))
+                                .unwrap_or(init)
+                        } else {
+                            init
+                        };
+                        if init_node.kind() == "call_expression" {
+                            if let Some(func) = init_node.child_by_field_name("function") {
+                                if let Some(chain) = build_chain(func, src) {
+                                    // Use the last segment as the target_name.
+                                    let target = chain
+                                        .segments
+                                        .last()
+                                        .map(|s| s.name.clone())
+                                        .unwrap_or_default();
+                                    if !target.is_empty() {
+                                        refs.push(ExtractedRef {
+                                            source_symbol_index: idx,
+                                            target_name: target,
+                                            kind: EdgeKind::TypeRef,
+                                            line: init_node.start_position().row as u32,
+                                            module: None,
+                                            chain: Some(chain),
+                                        });
+                                    }
+                                }
+                            }
+                        } else if init_node.kind() == "new_expression" {
+                            // `const map = new Map()` → type is the constructor name
+                            if let Some(constructor) = init_node.child_by_field_name("constructor") {
+                                let type_name = match constructor.kind() {
+                                    "identifier" | "type_identifier" => node_text(constructor, src),
+                                    _ => String::new(),
+                                };
+                                if !type_name.is_empty() {
+                                    refs.push(ExtractedRef {
+                                        source_symbol_index: idx,
+                                        target_name: type_name,
+                                        kind: EdgeKind::TypeRef,
+                                        line: init_node.start_position().row as u32,
+                                        module: None,
+                                        chain: None,
+                                    });
+                                }
+                            }
+                        }
                     }
                 }
             }
