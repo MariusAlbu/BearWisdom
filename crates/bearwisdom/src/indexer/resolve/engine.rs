@@ -342,6 +342,101 @@ impl ResolutionEngine {
 }
 
 // ---------------------------------------------------------------------------
+// Chain-aware external inference (shared by all resolvers)
+// ---------------------------------------------------------------------------
+
+/// If a ref has a MemberChain, walk it to see if we can determine a type
+/// that isn't in our index — meaning the chain leads to an external type.
+///
+/// For `this.repo.findMany()` where repo has type `PrismaClient`:
+/// 1. `this` → `UserService` (from scope chain)
+/// 2. `repo` → field_type = `PrismaClient`
+/// 3. `PrismaClient` not in index → return Some("PrismaClient")
+///
+/// This classifies the entire chain call as external with the unresolved
+/// type name as the namespace.
+pub fn infer_external_from_chain(
+    chain: &crate::types::MemberChain,
+    scope_chain: &[String],
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    use crate::types::SegmentKind;
+
+    let segments = &chain.segments;
+    if segments.len() < 2 {
+        return None;
+    }
+
+    // Phase 1: Determine root type.
+    let root_type = match segments[0].kind {
+        SegmentKind::SelfRef => {
+            // Find enclosing class.
+            let mut found = None;
+            for scope in scope_chain {
+                if let Some(sym) = lookup.by_qualified_name(scope) {
+                    if matches!(sym.kind.as_str(), "class" | "struct" | "interface") {
+                        found = Some(scope.clone());
+                        break;
+                    }
+                }
+            }
+            found.or_else(|| scope_chain.last().cloned())
+        }
+        SegmentKind::Identifier => {
+            let name = &segments[0].name;
+            // Field on enclosing class?
+            let mut found = None;
+            for scope in scope_chain {
+                let field_qname = format!("{scope}.{name}");
+                if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                    found = Some(type_name.to_string());
+                    break;
+                }
+            }
+            found.or_else(|| segments[0].declared_type.clone())
+        }
+        _ => None,
+    };
+
+    let mut current_type = root_type?;
+
+    // Phase 2: Walk segments. At each step, check if the type is in the index.
+    for seg in &segments[1..] {
+        let member_qname = format!("{current_type}.{}", seg.name);
+
+        // If the current type isn't in the index at all → it's external.
+        let type_in_index = lookup.by_qualified_name(&current_type).is_some()
+            || lookup.by_name(&current_type).iter().any(|s| {
+                matches!(
+                    s.kind.as_str(),
+                    "class" | "struct" | "interface" | "enum" | "type_alias" | "trait"
+                )
+            });
+
+        if !type_in_index {
+            // This type is not in our index → external.
+            return Some(current_type);
+        }
+
+        // Try to follow to next type.
+        if let Some(next) = lookup.field_type_name(&member_qname) {
+            current_type = next.to_string();
+            continue;
+        }
+        if let Some(next) = lookup.return_type_name(&member_qname) {
+            current_type = next.to_string();
+            continue;
+        }
+
+        // Can't follow — check if we reached a dead end on a known type.
+        // The member might exist but we can't determine its return type.
+        break;
+    }
+
+    None
+}
+
+// ---------------------------------------------------------------------------
 // Helpers for building RefContext
 // ---------------------------------------------------------------------------
 

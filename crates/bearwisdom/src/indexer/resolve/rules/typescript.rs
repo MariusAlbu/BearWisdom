@@ -314,6 +314,13 @@ impl LanguageResolver for TypeScriptResolver {
             }
         }
 
+        // Last resort: common built-in method names that appear on Array, String,
+        // Promise, and Object instances. Only classify when we have no other
+        // information — all import-based checks have already failed above.
+        if is_common_builtin_method(target) {
+            return Some("runtime".to_string());
+        }
+
         None
     }
 
@@ -521,6 +528,77 @@ fn is_js_runtime_global(target: &str) -> bool {
             | "encodeURI" | "decodeURI"
             | "parseInt" | "parseFloat" | "isNaN" | "isFinite"
             | "structuredClone" | "queueMicrotask"
+    )
+}
+
+/// Common built-in method names that appear on Array, String, Promise, and
+/// Object instances. Used as a last resort in `infer_external_namespace` when
+/// no import or chain information narrows the origin.
+///
+/// These are only checked after all import-based checks have already failed, so
+/// false positives (e.g., a project method named `map`) are suppressed: if the
+/// name was resolvable via imports it would have returned earlier.
+fn is_common_builtin_method(name: &str) -> bool {
+    // Strip `this.` if somehow present.
+    let name = name.strip_prefix("this.").unwrap_or(name);
+    matches!(
+        name,
+        // Array methods
+        "map"
+            | "filter"
+            | "reduce"
+            | "forEach"
+            | "find"
+            | "findIndex"
+            | "some"
+            | "every"
+            | "includes"
+            | "push"
+            | "pop"
+            | "shift"
+            | "unshift"
+            | "slice"
+            | "splice"
+            | "concat"
+            | "join"
+            | "sort"
+            | "reverse"
+            | "flat"
+            | "flatMap"
+            | "fill"
+            | "indexOf"
+            | "lastIndexOf"
+            | "keys"
+            | "values"
+            | "entries"
+            | "at"
+            // String methods
+            | "split"
+            | "replace"
+            | "replaceAll"
+            | "trim"
+            | "trimStart"
+            | "trimEnd"
+            | "toLowerCase"
+            | "toUpperCase"
+            | "startsWith"
+            | "endsWith"
+            | "match"
+            | "search"
+            | "substring"
+            | "charAt"
+            | "charCodeAt"
+            | "padStart"
+            | "padEnd"
+            | "repeat"
+            // Promise methods
+            | "then"
+            | "catch"
+            | "finally"
+            // Object methods
+            | "toString"
+            | "valueOf"
+            | "hasOwnProperty"
     )
 }
 

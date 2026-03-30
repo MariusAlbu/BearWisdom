@@ -150,17 +150,27 @@ pub fn resolve_and_write(
                 }
                 None => {
                     // Try to infer which external namespace this ref comes from.
+                    let source_sym = &pf.symbols[r.source_symbol_index];
+                    let scope_chain = build_scope_chain(source_sym.scope_path.as_deref());
+
                     let inferred_ns = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
-                        let source_sym = &pf.symbols[r.source_symbol_index];
                         let ref_ctx = RefContext {
                             extracted_ref: r,
                             source_symbol: source_sym,
-                            scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
+                            scope_chain: scope_chain.clone(),
                         };
                         resolver.infer_external_namespace(file_ctx, &ref_ctx, project_ctx)
                     } else {
                         None
                     };
+
+                    // Chain-to-external: if the chain walks to a type not in the index,
+                    // classify as external (handles ORM, test framework, fluent API chains).
+                    let inferred_ns = inferred_ns.or_else(|| {
+                        r.chain.as_ref().and_then(|chain| {
+                            engine::infer_external_from_chain(chain, &scope_chain, &index)
+                        })
+                    });
 
                     if let Some(ns) = &inferred_ns {
                         // Known external framework ref → external_refs table.

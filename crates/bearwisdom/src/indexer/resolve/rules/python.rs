@@ -330,9 +330,9 @@ impl LanguageResolver for PythonResolver {
             return None;
         }
 
-        // Python builtins.
+        // Python builtins (built-in functions, types, and common method names).
         if is_python_builtin(target) {
-            return Some("builtins".to_string());
+            return Some("python_builtins".to_string());
         }
 
         // Walk file imports for a match.
@@ -460,12 +460,18 @@ fn is_python_stdlib(name: &str) -> bool {
     )
 }
 
-/// Python built-in functions and types that are always in scope.
+/// Python built-in functions, types, and common method names.
+///
+/// Covers the built-in namespace (functions/types always in scope), common
+/// str/list/dict instance methods, unittest assert helpers, and a few Django
+/// model convenience methods. Used both in `resolve` (fast exit) and in
+/// `infer_external_namespace` (classify as `python_builtins`).
 fn is_python_builtin(name: &str) -> bool {
     // Strip `self.` prefix if present.
     let name = name.strip_prefix("self.").unwrap_or(name);
     matches!(
         name,
+        // Built-in functions always in scope
         "len"
             | "print"
             | "str"
@@ -555,6 +561,66 @@ fn is_python_builtin(name: &str) -> bool {
             | "ZeroDivisionError"
             | "FileNotFoundError"
             | "PermissionError"
+            // str instance methods
+            | "strip"
+            | "lstrip"
+            | "rstrip"
+            | "split"
+            | "rsplit"
+            | "join"
+            | "replace"
+            | "lower"
+            | "upper"
+            | "title"
+            | "capitalize"
+            | "startswith"
+            | "endswith"
+            | "find"
+            | "rfind"
+            | "index"
+            | "count"
+            | "encode"
+            | "decode"
+            | "isdigit"
+            | "isalpha"
+            | "isnumeric"
+            // list / dict instance methods
+            | "append"
+            | "extend"
+            | "insert"
+            | "remove"
+            | "pop"
+            | "clear"
+            | "sort"
+            | "reverse"
+            | "copy"
+            | "get"
+            | "keys"
+            | "values"
+            | "items"
+            | "update"
+            | "setdefault"
+            // unittest assert helpers
+            | "assertEqual"
+            | "assertIn"
+            | "assertTrue"
+            | "assertFalse"
+            | "assertIsNone"
+            | "assertIsNotNone"
+            | "assertRaises"
+            | "assertAlmostEqual"
+            | "assertGreater"
+            | "assertLess"
+            | "assert_called_once"
+            | "assert_called_with"
+            | "assert_not_called"
+            // Django model convenience methods
+            | "refresh_from_db"
+            | "save"
+            | "delete"
+            | "get_absolute_url"
+            | "full_clean"
+            | "clean"
     )
 }
 
