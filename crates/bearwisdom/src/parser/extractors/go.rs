@@ -307,7 +307,7 @@ fn extract_function_declaration(
     qualified_prefix: &str,
 ) {
     // First named child whose kind is `identifier` is the function name.
-    let (name, body_opt) = parse_function_decl_children(node, source);
+    let (name, params_opt, body_opt) = parse_function_decl_children(node, source);
     let name = match name {
         Some(n) => n,
         None => return,
@@ -327,7 +327,7 @@ fn extract_function_declaration(
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name,
-        qualified_name,
+        qualified_name: qualified_name.clone(),
         kind,
         visibility,
         start_line: node.start_position().row as u32,
@@ -340,17 +340,23 @@ fn extract_function_declaration(
         parent_index,
     });
 
+    // Extract typed parameters as Property symbols scoped to this function.
+    if let Some(params) = params_opt {
+        extract_go_typed_params_as_symbols(&params, source, symbols, refs, Some(idx), &qualified_name);
+    }
+
     if let Some(body) = body_opt {
         extract_refs_from_body(&body, source, idx, refs);
     }
 }
 
-/// Returns (name, body_node) from a `function_declaration`.
+/// Returns (name, params_node, body_node) from a `function_declaration`.
 fn parse_function_decl_children<'a>(
     node: &'a Node<'a>,
     source: &str,
-) -> (Option<String>, Option<Node<'a>>) {
+) -> (Option<String>, Option<Node<'a>>, Option<Node<'a>>) {
     let mut name: Option<String> = None;
+    let mut params: Option<Node<'a>> = None;
     let mut body: Option<Node<'a>> = None;
     let mut cursor = node.walk();
 
@@ -362,6 +368,11 @@ fn parse_function_decl_children<'a>(
             "identifier" if name.is_none() => {
                 name = Some(node_text(&child, source));
             }
+            "parameter_list" if params.is_none() => {
+                // The first (and only) parameter_list in a function_declaration
+                // is the regular parameter list.
+                params = Some(child);
+            }
             "block" => {
                 body = Some(child);
             }
@@ -369,7 +380,7 @@ fn parse_function_decl_children<'a>(
         }
     }
 
-    (name, body)
+    (name, params, body)
 }
 
 // ---------------------------------------------------------------------------
@@ -387,7 +398,7 @@ fn extract_method_declaration(
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
-    let (receiver_type, name, body_opt) = parse_method_decl_children(node, source);
+    let (receiver_type, name, params_opt, body_opt) = parse_method_decl_children(node, source);
 
     let name = match name {
         Some(n) => n,
@@ -414,7 +425,7 @@ fn extract_method_declaration(
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name,
-        qualified_name,
+        qualified_name: qualified_name.clone(),
         kind,
         visibility,
         start_line: node.start_position().row as u32,
@@ -427,22 +438,28 @@ fn extract_method_declaration(
         parent_index,
     });
 
+    // Extract typed parameters as Property symbols scoped to this method.
+    if let Some(params) = params_opt {
+        extract_go_typed_params_as_symbols(&params, source, symbols, refs, Some(idx), &qualified_name);
+    }
+
     if let Some(body) = body_opt {
         extract_refs_from_body(&body, source, idx, refs);
     }
 }
 
 /// Parse the children of a `method_declaration` and return
-/// `(receiver_type, method_name, body)`.
+/// `(receiver_type, method_name, params_node, body)`.
 ///
 /// Child order: `func` (anon), parameter_list (receiver), field_identifier (name),
 /// parameter_list (params), result?, block (body)
 fn parse_method_decl_children<'a>(
     node: &'a Node<'a>,
     source: &str,
-) -> (Option<String>, Option<String>, Option<Node<'a>>) {
+) -> (Option<String>, Option<String>, Option<Node<'a>>, Option<Node<'a>>) {
     let mut receiver_type: Option<String> = None;
     let mut method_name: Option<String> = None;
+    let mut params: Option<Node<'a>> = None;
     let mut body: Option<Node<'a>> = None;
     let mut param_list_count = 0usize;
 
@@ -457,8 +474,10 @@ fn parse_method_decl_children<'a>(
                 if param_list_count == 1 {
                     // First parameter_list is the receiver `(p Point)`.
                     receiver_type = extract_receiver_type_from_param_list(&child, source);
+                } else if param_list_count == 2 {
+                    // Second parameter_list is the regular parameters.
+                    params = Some(child);
                 }
-                // Second parameter_list is the regular parameters — skip.
             }
             "field_identifier" => {
                 // Method name.
@@ -473,7 +492,7 @@ fn parse_method_decl_children<'a>(
         }
     }
 
-    (receiver_type, method_name, body)
+    (receiver_type, method_name, params, body)
 }
 
 /// Extract the plain type name from a receiver `parameter_list`.
@@ -1294,6 +1313,159 @@ fn extract_go_doc_comment(node: &Node, source: &str) -> Option<String> {
 
     lines.reverse();
     Some(lines.join("\n"))
+}
+
+// ---------------------------------------------------------------------------
+// Typed parameter symbol extraction
+// ---------------------------------------------------------------------------
+
+/// Extract typed parameters from a Go `parameter_list` as Property symbols
+/// scoped to the enclosing function or method.
+///
+/// For `func GetUser(repo UserRepository, id int)`, creates:
+///   Symbol: `mypackage.GetUser.repo` (kind=Property)
+///   TypeRef: `mypackage.GetUser.repo → UserRepository`
+///
+/// Skips parameters without names (bare type declarations in interfaces) and
+/// parameters with only builtin types since they don't reference user symbols.
+///
+/// Go `parameter_declaration` structure:
+///   `commaSep(field('name', identifier))`, `field('type', _type)`
+fn extract_go_typed_params_as_symbols(
+    params_node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    func_qualified_name: &str,
+) {
+    let mut cursor = params_node.walk();
+    for child in params_node.children(&mut cursor) {
+        if child.kind() != "parameter_declaration" {
+            continue;
+        }
+
+        // Collect all `name` field nodes (Go allows `a, b int`).
+        let names: Vec<String> = (0..child.child_count())
+            .filter_map(|i| child.child(i))
+            .filter(|c| c.is_named() && c.kind() == "identifier")
+            .map(|c| node_text(&c, source))
+            .collect();
+
+        if names.is_empty() {
+            // No name — bare type in interface method or unnamed param.
+            continue;
+        }
+
+        // The type is the last named child that isn't an identifier.
+        let type_node = (0..child.child_count())
+            .filter_map(|i| child.child(i))
+            .filter(|c| c.is_named() && c.kind() != "identifier")
+            .last();
+
+        let type_name = match type_node {
+            Some(tn) => extract_go_type_name(&tn, source),
+            None => continue,
+        };
+
+        if type_name.is_empty() || is_go_builtin_type(&type_name) {
+            continue;
+        }
+
+        for name in names {
+            let qualified_name = qualify(&name, func_qualified_name);
+            let scope_path = Some(func_qualified_name.to_string());
+
+            let param_idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name,
+                kind: SymbolKind::Property,
+                visibility: None,
+                start_line: child.start_position().row as u32,
+                end_line: child.end_position().row as u32,
+                start_col: child.start_position().column as u32,
+                end_col: child.end_position().column as u32,
+                signature: Some(format!("{name} {type_name}")),
+                doc_comment: None,
+                scope_path,
+                parent_index,
+            });
+
+            refs.push(ExtractedRef {
+                source_symbol_index: param_idx,
+                target_name: type_name.clone(),
+                kind: EdgeKind::TypeRef,
+                line: child.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+}
+
+/// Extract a simple type name from a Go type node for TypeRef emission.
+///
+/// Handles:
+/// - `type_identifier`  → `"Foo"`
+/// - `pointer_type`     → `"Foo"` (strips `*`)
+/// - `qualified_type`   → `"Foo"` (last segment of `pkg.Foo`)
+/// - `slice_type`       → recursively extracts element type
+/// - `map_type`         → recursively extracts value type
+fn extract_go_type_name(node: &Node, source: &str) -> String {
+    match node.kind() {
+        "type_identifier" => node_text(node, source),
+        "pointer_type" => {
+            // Find the inner type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    return extract_go_type_name(&child, source);
+                }
+            }
+            String::new()
+        }
+        "qualified_type" => {
+            // `pkg.Type` — take the last segment.
+            let text = node_text(node, source);
+            text.rsplit('.').next().unwrap_or(&text).to_string()
+        }
+        "slice_type" => {
+            // `[]Foo` — extract element type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    return extract_go_type_name(&child, source);
+                }
+            }
+            String::new()
+        }
+        "map_type" => {
+            // `map[K]V` — extract value type (second named child).
+            let named: Vec<_> = {
+                let mut cursor = node.walk();
+                node.children(&mut cursor).filter(|c| c.is_named()).collect()
+            };
+            if named.len() >= 2 {
+                return extract_go_type_name(&named[1], source);
+            }
+            String::new()
+        }
+        _ => String::new(),
+    }
+}
+
+/// Return true for Go builtin types that don't reference user symbols.
+fn is_go_builtin_type(name: &str) -> bool {
+    matches!(
+        name,
+        "bool" | "byte" | "complex64" | "complex128" | "error"
+            | "float32" | "float64"
+            | "int" | "int8" | "int16" | "int32" | "int64"
+            | "rune" | "string" | "uint" | "uint8" | "uint16"
+            | "uint32" | "uint64" | "uintptr"
+            | "any" | "comparable"
+    )
 }
 
 // ---------------------------------------------------------------------------

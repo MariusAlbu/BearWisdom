@@ -211,6 +211,7 @@ fn extract_function_definition(
     let doc_comment = body.as_ref().and_then(|b| extract_docstring(b, source));
     let signature = extract_function_signature(node, source);
 
+    let qualified_name_str = qualified_name.clone();
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name,
@@ -227,8 +228,158 @@ fn extract_function_definition(
         parent_index,
     });
 
+    // Extract typed parameters as Property symbols scoped to this function.
+    if let Some(params) = node.child_by_field_name("parameters") {
+        extract_python_typed_params_as_symbols(&params, source, symbols, refs, Some(idx), &qualified_name_str);
+    }
+
     if let Some(body_node) = body {
         extract_calls_from_body(&body_node, source, idx, refs);
+    }
+}
+
+/// Extract typed parameters from a Python `parameters` node as Property symbols.
+///
+/// Python type hinted parameters come as:
+///   `typed_parameter`         → `param: Type`       (name is first child, type field)
+///   `typed_default_parameter` → `param: Type = val` (name field, type field)
+///
+/// `self` and `cls` parameters are skipped (they don't carry type info we need
+/// for chain resolution since they refer back to the class itself).
+fn extract_python_typed_params_as_symbols(
+    params_node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    func_qualified_name: &str,
+) {
+    let mut cursor = params_node.walk();
+    for child in params_node.children(&mut cursor) {
+        let (name, type_node) = match child.kind() {
+            "typed_parameter" => {
+                // `param: Type` — name is the first named child (identifier),
+                // type is available via the `type` field.
+                let type_node = match child.child_by_field_name("type") {
+                    Some(t) => t,
+                    None => continue,
+                };
+                // The name is the first identifier child (positional).
+                let name_node = (0..child.child_count())
+                    .filter_map(|i| child.child(i))
+                    .find(|c| c.kind() == "identifier");
+                let name = match name_node {
+                    Some(n) => node_text(&n, source),
+                    None => continue,
+                };
+                (name, type_node)
+            }
+            "typed_default_parameter" => {
+                // `param: Type = default` — name field and type field both present.
+                let name_node = match child.child_by_field_name("name") {
+                    Some(n) => n,
+                    None => continue,
+                };
+                let type_node = match child.child_by_field_name("type") {
+                    Some(t) => t,
+                    None => continue,
+                };
+                (node_text(&name_node, source), type_node)
+            }
+            _ => continue,
+        };
+
+        // Skip self/cls — they don't carry useful type hints for resolution.
+        if name == "self" || name == "cls" {
+            continue;
+        }
+
+        // Extract the type name from the type node.
+        let type_name = extract_python_type_name(&type_node, source);
+        if type_name.is_empty() {
+            continue;
+        }
+
+        let qualified_name = qualify(&name, func_qualified_name);
+        let scope_path = Some(func_qualified_name.to_string());
+
+        let param_idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::Property,
+            visibility: None,
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: child.end_position().column as u32,
+            signature: Some(format!("{name}: {type_name}")),
+            doc_comment: None,
+            scope_path,
+            parent_index,
+        });
+
+        refs.push(ExtractedRef {
+            source_symbol_index: param_idx,
+            target_name: type_name,
+            kind: EdgeKind::TypeRef,
+            line: type_node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+/// Extract a simple type name from a Python type node.
+///
+/// Handles:
+/// - `identifier`      → `"Foo"`
+/// - `attribute`       → `"Foo"` (last segment of `module.Foo`)
+/// - `generic_type`    → `"Foo"` (outer type of `Foo[Bar]`)
+/// - `subscript`       → `"Foo"` (outer type of `Optional[Foo]`)
+/// - `union_type`      → first non-None identifier
+fn extract_python_type_name(node: &Node, source: &str) -> String {
+    match node.kind() {
+        "identifier" => node_text(node, source),
+        "attribute" => {
+            // `module.Type` — take the attribute (last segment).
+            node.child_by_field_name("attribute")
+                .map(|a| node_text(&a, source))
+                .unwrap_or_default()
+        }
+        "generic_type" => {
+            // `List[int]` or `Optional[Foo]` — take the outer name.
+            if let Some(name_node) = node.child_by_field_name("name") {
+                return node_text(&name_node, source);
+            }
+            // Fall back to first identifier or attribute child.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" || child.kind() == "attribute" {
+                    return node_text(&child, source);
+                }
+            }
+            String::new()
+        }
+        "subscript" => {
+            // `Optional[Foo]` via subscript node — value is the outer type.
+            node.child_by_field_name("value")
+                .map(|v| extract_python_type_name(&v, source))
+                .unwrap_or_default()
+        }
+        _ => {
+            // For other complex types (union, etc.) take the first identifier child.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" {
+                    let name = node_text(&child, source);
+                    if !name.is_empty() && name != "None" {
+                        return name;
+                    }
+                }
+            }
+            String::new()
+        }
     }
 }
 

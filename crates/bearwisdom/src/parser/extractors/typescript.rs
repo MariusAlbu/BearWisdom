@@ -197,6 +197,16 @@ fn extract_node(
                 push_import(&child, src, symbols.len(), refs);
             }
 
+            "for_in_statement" => {
+                // for (const item of items) / for (const key in obj)
+                // Extract loop variable with chain to iterable for type inference.
+                // Then recurse into the body for call extraction.
+                extract_for_loop_var(&child, src, scope_tree, symbols, refs, parent_index);
+                if let Some(body) = child.child_by_field_name("body") {
+                    extract_node(body, src, scope_tree, symbols, refs, parent_index);
+                }
+            }
+
             _ => {
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
@@ -857,7 +867,7 @@ fn push_variable_decl(
     for child in node.children(&mut cursor) {
         if child.kind() == "variable_declarator" {
             if let Some(name_node) = child.child_by_field_name("name") {
-                // Only capture simple identifiers (not destructuring).
+                // Capture simple identifiers and object destructuring patterns.
                 if name_node.kind() == "identifier" {
                     let name = node_text(name_node, src);
                     let qualified_name = scope_tree::qualify(&name, parent_scope);
@@ -953,8 +963,193 @@ fn push_variable_decl(
                             }
                         }
                     }
+                } else if name_node.kind() == "object_pattern" {
+                    // const { name, email } = user
+                    // Extract each destructured property as a Variable symbol
+                    // with a TypeRef chain to the source expression.
+                    let source_chain = child.child_by_field_name("value")
+                        .and_then(|init| build_chain(init, src));
+
+                    let mut ppcursor = name_node.walk();
+                    for prop in name_node.children(&mut ppcursor) {
+                        let prop_name = if prop.kind() == "shorthand_property_identifier_pattern"
+                            || prop.kind() == "shorthand_property_identifier"
+                        {
+                            node_text(prop, src)
+                        } else if prop.kind() == "pair_pattern" {
+                            prop.child_by_field_name("key")
+                                .map(|k| node_text(k, src))
+                                .unwrap_or_default()
+                        } else {
+                            continue;
+                        };
+                        if prop_name.is_empty() {
+                            continue;
+                        }
+
+                        let qualified_name = scope_tree::qualify(&prop_name, parent_scope);
+                        let prop_idx = symbols.len();
+                        symbols.push(ExtractedSymbol {
+                            name: prop_name.clone(),
+                            qualified_name,
+                            kind: SymbolKind::Variable,
+                            visibility: detect_visibility(node, src),
+                            start_line: prop.start_position().row as u32,
+                            end_line: prop.end_position().row as u32,
+                            start_col: prop.start_position().column as u32,
+                            end_col: prop.end_position().column as u32,
+                            signature: None,
+                            doc_comment: None,
+                            scope_path: scope_path.clone(),
+                            parent_index,
+                        });
+
+                        // Emit chain to source with property name appended so the
+                        // index builder can resolve the type of this property.
+                        if let Some(ref base_chain) = source_chain {
+                            let mut prop_chain = base_chain.clone();
+                            prop_chain.segments.push(ChainSegment {
+                                name: prop_name.clone(),
+                                node_kind: "property".to_string(),
+                                kind: SegmentKind::Property,
+                                declared_type: None,
+                                type_args: vec![],
+                                optional_chaining: false,
+                            });
+                            refs.push(ExtractedRef {
+                                source_symbol_index: prop_idx,
+                                target_name: prop_name,
+                                kind: EdgeKind::TypeRef,
+                                line: prop.start_position().row as u32,
+                                module: None,
+                                chain: Some(prop_chain),
+                            });
+                        }
+                    }
                 }
             }
+        }
+    }
+}
+
+/// Extract the loop variable from a `for_in_statement` as a Variable symbol.
+///
+/// Handles `for (const item of items)` and `for (const key in obj)`:
+/// - tree-sitter represents these as `for_in_statement` with `left` (the variable
+///   declaration) and `right` (the iterable expression).
+/// - We extract the variable name from `left` and build a chain from `right`
+///   so the index builder can infer the element type from the iterable.
+fn extract_for_loop_var(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let left = match node.child_by_field_name("left") {
+        Some(n) => n,
+        None => return,
+    };
+    let right = match node.child_by_field_name("right") {
+        Some(n) => n,
+        None => return,
+    };
+
+    // `left` is typically a `lexical_declaration` (`const item`) or an `identifier`.
+    // Dig down to find the identifier.
+    let name = if left.kind() == "identifier" {
+        node_text(left, src)
+    } else {
+        // Look for a variable_declarator → identifier inside a lexical_declaration.
+        let mut found = String::new();
+        let mut cur = left.walk();
+        'outer: for child in left.children(&mut cur) {
+            if child.kind() == "variable_declarator" {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    if name_node.kind() == "identifier" {
+                        found = node_text(name_node, src);
+                        break 'outer;
+                    }
+                }
+            } else if child.kind() == "identifier" {
+                found = node_text(child, src);
+                break 'outer;
+            }
+        }
+        found
+    };
+
+    if name.is_empty() {
+        return;
+    }
+
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let scope_path = scope_tree::scope_path(parent_scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Variable,
+        visibility: None,
+        start_line: left.start_position().row as u32,
+        end_line: left.end_position().row as u32,
+        start_col: left.start_position().column as u32,
+        end_col: left.end_position().column as u32,
+        signature: Some(format!("const {name}")),
+        doc_comment: None,
+        scope_path,
+        parent_index,
+    });
+
+    // Build a chain from the iterable (right side) so the index builder can
+    // infer the element type.  For `for (const item of this.repo.findAll())`,
+    // the chain is [this, repo, findAll] and the type engine unwraps the array.
+    let iterable_node = if right.kind() == "await_expression" {
+        right.child_by_field_name("value")
+            .or_else(|| right.named_child(0))
+            .unwrap_or(right)
+    } else {
+        right
+    };
+
+    let chain_source = if iterable_node.kind() == "call_expression" {
+        iterable_node.child_by_field_name("function").unwrap_or(iterable_node)
+    } else {
+        iterable_node
+    };
+
+    if let Some(chain) = build_chain(chain_source, src) {
+        let target = chain.segments.last().map(|s| s.name.clone()).unwrap_or_default();
+        if !target.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: idx,
+                target_name: target,
+                kind: EdgeKind::TypeRef,
+                line: right.start_position().row as u32,
+                module: None,
+                chain: Some(chain),
+            });
+        }
+    } else if iterable_node.kind() == "identifier" {
+        // Simple identifier iterable: `for (const item of items)` — emit a
+        // plain TypeRef so the index builder can look up `items` type.
+        let target = node_text(iterable_node, src);
+        if !target.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: idx,
+                target_name: target,
+                kind: EdgeKind::TypeRef,
+                line: right.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
         }
     }
 }

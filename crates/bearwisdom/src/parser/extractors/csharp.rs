@@ -300,6 +300,10 @@ fn extract_node_inner(
                 if let Some(sym_idx) = idx {
                     // Extract type refs from return type and parameter types.
                     push_method_type_refs(&child, src, sym_idx, refs);
+                    // Extract typed parameters as Property symbols scoped to this method.
+                    if let Some(params) = child.child_by_field_name("parameters") {
+                        extract_csharp_typed_params_as_symbols(params, src, scope_tree, symbols, refs, Some(sym_idx));
+                    }
                     // Extract calls from the method body.
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_calls_from_body(&body, src, sym_idx, refs);
@@ -317,6 +321,10 @@ fn extract_node_inner(
                 if let Some(sym_idx) = idx {
                     // Extract type refs from parameter types.
                     push_constructor_type_refs(&child, src, sym_idx, refs);
+                    // Extract typed parameters as Property symbols scoped to this constructor.
+                    if let Some(params) = child.child_by_field_name("parameters") {
+                        extract_csharp_typed_params_as_symbols(params, src, scope_tree, symbols, refs, Some(sym_idx));
+                    }
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_calls_from_body(&body, src, sym_idx, refs);
                     }
@@ -2041,6 +2049,125 @@ fn extract_type_refs_from_params(
                 extract_type_refs_from_type_node(type_node, src, source_symbol_index, refs);
             }
         }
+    }
+}
+
+/// Extract typed parameters from a C# `parameter_list` node as Property symbols
+/// scoped to the enclosing method or constructor.
+///
+/// For `void Process(UserRepository repo, int id)`, creates:
+///   Symbol: `Namespace.Class.Process.repo` (kind=Property)
+///   TypeRef: `Namespace.Class.Process.repo → UserRepository`
+///
+/// Skips parameters with predefined/builtin types and parameters without names.
+///
+/// C# `parameter` structure:
+///   `attribute_list*`, optional `_parameter_type_with_modifiers` (has `type` field),
+///   `name` field (identifier), optional default value
+fn extract_csharp_typed_params_as_symbols(
+    params_node: Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // Find the method/constructor scope — params are qualified under it.
+    let method_scope = if params_node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, params_node.start_byte())
+    } else {
+        None
+    };
+
+    let mut cursor = params_node.walk();
+    for child in params_node.children(&mut cursor) {
+        if child.kind() != "parameter" {
+            continue;
+        }
+
+        let name_node = match child.child_by_field_name("name") {
+            Some(n) => n,
+            None => continue,
+        };
+        let name = node_text(name_node, src);
+        if name.is_empty() {
+            continue;
+        }
+
+        let type_node = match child.child_by_field_name("type") {
+            Some(t) => t,
+            None => continue,
+        };
+
+        // Skip predefined (builtin) types — they don't reference user symbols.
+        if type_node.kind() == "predefined_type" {
+            continue;
+        }
+
+        // Extract a simple type name for the TypeRef target.
+        let type_name = csharp_param_type_name(type_node, src);
+        if type_name.is_empty() || is_builtin_type(&type_name) {
+            continue;
+        }
+
+        let qualified_name = scope_tree::qualify(&name, method_scope);
+        let scope_path = scope_tree::scope_path(method_scope);
+
+        let param_idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::Property,
+            visibility: None,
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: child.end_position().column as u32,
+            signature: Some(format!("{type_name} {name}")),
+            doc_comment: None,
+            scope_path,
+            parent_index,
+        });
+
+        // Emit a TypeRef from the param symbol to its type.
+        extract_type_refs_from_type_node(type_node, src, param_idx, refs);
+    }
+}
+
+/// Extract a simple display name from a C# type node for use in signatures.
+fn csharp_param_type_name(node: Node, src: &[u8]) -> String {
+    match node.kind() {
+        "identifier" => node_text(node, src),
+        "qualified_name" => {
+            let full = node_text(node, src);
+            full.rsplit('.').next().unwrap_or(&full).to_string()
+        }
+        "generic_name" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" {
+                    return node_text(child, src);
+                }
+            }
+            String::new()
+        }
+        "nullable_type" => {
+            // `Foo?` — extract inner type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let name = csharp_param_type_name(child, src);
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+            String::new()
+        }
+        "array_type" => {
+            node.child_by_field_name("type")
+                .map(|t| csharp_param_type_name(t, src))
+                .unwrap_or_default()
+        }
+        _ => String::new(),
     }
 }
 

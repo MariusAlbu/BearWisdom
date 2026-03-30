@@ -197,6 +197,10 @@ fn extract_node(
             "method_declaration" => {
                 let idx = push_method_decl(&child, src, scope_tree, package, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    // Extract typed parameters as Property symbols scoped to this method.
+                    if let Some(params) = child.child_by_field_name("parameters") {
+                        extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
+                    }
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_calls_from_body(&body, src, sym_idx, refs);
                     }
@@ -206,6 +210,10 @@ fn extract_node(
             "constructor_declaration" => {
                 let idx = push_constructor_decl(&child, src, scope_tree, package, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    // Extract typed parameters as Property symbols scoped to this constructor.
+                    if let Some(params) = child.child_by_field_name("parameters") {
+                        extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
+                    }
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_calls_from_body(&body, src, sym_idx, refs);
                     }
@@ -1098,6 +1106,157 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
 
         _ => None,
     }
+}
+
+// ---------------------------------------------------------------------------
+// Typed parameter symbol extraction
+// ---------------------------------------------------------------------------
+
+/// Extract typed parameters from a Java `formal_parameters` node as Property
+/// symbols scoped to the enclosing method or constructor.
+///
+/// For `void process(UserRepository repo, Long id)`, creates:
+///   Symbol: `com.example.Service.process.repo` (kind=Property)
+///   TypeRef: `com.example.Service.process.repo → UserRepository`
+///
+/// Skips parameters with primitive types (int, long, etc.) since they don't
+/// reference user-defined symbols.
+///
+/// Java `formal_parameter` structure:
+///   optional `modifiers`, `type` field, `_variable_declarator_id` (has `name` field)
+fn extract_java_typed_params_as_symbols(
+    params_node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // The method scope — params should be qualified under the method.
+    let method_scope = if params_node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, params_node.start_byte())
+    } else {
+        None
+    };
+
+    let mut cursor = params_node.walk();
+    for child in params_node.children(&mut cursor) {
+        if child.kind() != "formal_parameter" && child.kind() != "spread_parameter" {
+            continue;
+        }
+
+        let type_node = match child.child_by_field_name("type") {
+            Some(t) => t,
+            None => continue,
+        };
+
+        // Dig into variable_declarator_id for the name.
+        // formal_parameter → ... type, _variable_declarator_id → name field
+        let name = find_formal_param_name(&child, src);
+        if name.is_empty() {
+            continue;
+        }
+
+        let type_name = java_type_node_simple_name(type_node, src);
+        if type_name.is_empty() || is_java_primitive(&type_name) {
+            continue;
+        }
+
+        let qualified_name = scope_tree::qualify(&name, method_scope);
+        let scope_path = scope_tree::scope_path(method_scope);
+
+        let param_idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::Property,
+            visibility: None,
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: child.end_position().column as u32,
+            signature: Some(format!("{type_name} {name}")),
+            doc_comment: None,
+            scope_path,
+            parent_index,
+        });
+
+        refs.push(ExtractedRef {
+            source_symbol_index: param_idx,
+            target_name: type_name,
+            kind: EdgeKind::TypeRef,
+            line: type_node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+/// Find the parameter name inside a `formal_parameter` node.
+///
+/// Java grammar: `formal_parameter → modifiers? type _variable_declarator_id`
+/// where `_variable_declarator_id → field('name', identifier) dimensions?`
+fn find_formal_param_name(param_node: &Node, src: &[u8]) -> String {
+    // Walk through children looking for _variable_declarator_id or an
+    // identifier that follows the type.
+    let mut cursor = param_node.walk();
+    for child in param_node.children(&mut cursor) {
+        match child.kind() {
+            "identifier" => {
+                // Direct identifier child — this is the name.
+                return node_text(child, src);
+            }
+            _ if child.is_named() => {
+                // Try the `name` field on this child (handles _variable_declarator_id).
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    return node_text(name_node, src);
+                }
+            }
+            _ => {}
+        }
+    }
+    String::new()
+}
+
+/// Extract a simple type name from a Java type node.
+fn java_type_node_simple_name(node: Node, src: &[u8]) -> String {
+    match node.kind() {
+        "type_identifier" => node_text(node, src),
+        "generic_type" => {
+            // `Repository<User>` — take the outer type name.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "type_identifier" {
+                    return node_text(child, src);
+                }
+            }
+            String::new()
+        }
+        "array_type" => {
+            // `User[]` — extract element type.
+            node.child_by_field_name("element")
+                .map(|e| java_type_node_simple_name(e, src))
+                .unwrap_or_default()
+        }
+        "scoped_type_identifier" => {
+            // `java.util.List` — last segment.
+            let text = node_text(node, src);
+            text.rsplit('.').next().unwrap_or(&text).to_string()
+        }
+        _ => String::new(),
+    }
+}
+
+/// Return true for Java primitive types that don't reference user symbols.
+fn is_java_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "boolean" | "byte" | "char" | "double" | "float"
+            | "int" | "long" | "short" | "void"
+            | "String" | "Integer" | "Long" | "Double" | "Float"
+            | "Boolean" | "Byte" | "Character" | "Short"
+            | "Object" | "Number"
+    )
 }
 
 // ---------------------------------------------------------------------------
