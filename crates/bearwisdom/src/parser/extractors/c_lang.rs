@@ -659,6 +659,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: node.kind().to_string(),
                 kind: SegmentKind::Identifier,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -670,6 +671,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: "this".to_string(),
                 kind: SegmentKind::SelfRef,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -685,6 +687,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: field.kind().to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -702,6 +705,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: name_node.kind().to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())

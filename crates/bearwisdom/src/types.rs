@@ -300,6 +300,10 @@ pub struct ChainSegment {
     pub kind: SegmentKind,
     /// The declared type from a type annotation visible in the AST.
     pub declared_type: Option<String>,
+    /// Generic type arguments, if the declared type is generic.
+    /// e.g., for `repo: Repository<User>`, type_args = ["User"].
+    /// For `map: Map<string, Handler>`, type_args = ["string", "Handler"].
+    pub type_args: Vec<String>,
     /// Whether this segment uses optional chaining (`?.`).
     pub optional_chaining: bool,
 }

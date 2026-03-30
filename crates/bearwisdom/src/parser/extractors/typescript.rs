@@ -165,6 +165,14 @@ fn extract_node(
                 push_ts_field(&child, src, scope_tree, symbols, refs, parent_index);
             }
 
+            // Interface method signatures: `findOne(id: number): T;`
+            "method_signature" => {
+                let idx = push_method(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    extract_param_and_return_types(&child, src, sym_idx, refs);
+                }
+            }
+
             "type_alias_declaration" => {
                 push_type_alias(&child, src, scope_tree, symbols, refs, parent_index);
             }
@@ -555,17 +563,58 @@ fn extract_type_ref_from_annotation(
             });
         }
         "generic_type" => {
-            // Repository<User> → extract "Repository"
+            // Repository<User> → extract "Repository" as the ref target,
+            // but also emit a second ref with the full generic text for
+            // the field_type map to capture type arguments.
             if let Some(name) = type_node.child_by_field_name("name") {
-                let type_name = node_text(name, src);
+                let base_name = node_text(name, src);
+                // Emit base type ref (for edge resolution to the type itself).
                 refs.push(ExtractedRef {
                     source_symbol_index,
-                    target_name: type_name,
+                    target_name: base_name.clone(),
                     kind: EdgeKind::TypeRef,
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
                 });
+                // Also extract type arguments for generic parameter resolution.
+                if let Some(type_args_node) = type_node.child_by_field_name("type_arguments") {
+                    for i in 0..type_args_node.child_count() {
+                        if let Some(arg) = type_args_node.child(i) {
+                            if matches!(arg.kind(), "type_identifier" | "identifier" | "generic_type" | "array_type") {
+                                let arg_name = match arg.kind() {
+                                    "generic_type" => arg.child_by_field_name("name")
+                                        .map(|n| node_text(n, src))
+                                        .unwrap_or_default(),
+                                    "array_type" => {
+                                        // User[] → extract "User"
+                                        let mut found_name = String::new();
+                                        for j in 0..arg.child_count() {
+                                            if let Some(child) = arg.child(j) {
+                                                if child.kind() == "type_identifier" || child.kind() == "identifier" {
+                                                    found_name = node_text(child, src);
+                                                    break;
+                                                }
+                                            }
+                                        }
+                                        found_name
+                                    }
+                                    _ => node_text(arg, src),
+                                };
+                                if !arg_name.is_empty() {
+                                    refs.push(ExtractedRef {
+                                        source_symbol_index,
+                                        target_name: arg_name,
+                                        kind: EdgeKind::TypeRef,
+                                        line: arg.start_position().row as u32,
+                                        module: None,
+                                        chain: None,
+                                    });
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
         "nested_type_identifier" | "member_expression" => {
@@ -952,6 +1001,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: node.kind().to_string(),
                 kind: SegmentKind::SelfRef,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -963,6 +1013,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: "identifier".to_string(),
                 kind: SegmentKind::Identifier,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -987,6 +1038,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: property.kind().to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: is_optional,
             });
             Some(())
@@ -1004,6 +1056,7 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
                 node_kind: "subscript_expression".to_string(),
                 kind: SegmentKind::ComputedAccess,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())

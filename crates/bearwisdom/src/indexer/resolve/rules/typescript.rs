@@ -373,6 +373,7 @@ fn resolve_via_chain(
     }
 
     // Phase 1: Determine the root type from the first segment.
+    let mut initial_generic_args: Vec<String> = Vec::new();
     let root_type = match segments[0].kind {
         SegmentKind::SelfRef => {
             // `this` → find the enclosing class from the scope chain.
@@ -396,6 +397,11 @@ fn resolve_via_chain(
                 for scope in &ref_ctx.scope_chain {
                     let field_qname = format!("{scope}.{name}");
                     if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                        // Capture generic args from the field declaration.
+                        initial_generic_args = lookup
+                            .field_type_args(&field_qname)
+                            .unwrap_or(&[])
+                            .to_vec();
                         found = Some(type_name.to_string());
                         break;
                     }
@@ -407,6 +413,9 @@ fn resolve_via_chain(
     };
 
     let mut current_type = root_type?;
+    // Track generic type arguments from the field that produced current_type.
+    // e.g., for `repo: Repository<User>`, generic_args = ["User"].
+    let mut generic_args = initial_generic_args;
 
     // Phase 2: Walk intermediate segments, following field types or return types.
     for seg in &segments[1..segments.len() - 1] {
@@ -414,13 +423,22 @@ fn resolve_via_chain(
 
         // Try field type (property access).
         if let Some(next_type) = lookup.field_type_name(&member_qname) {
+            // Capture type args from this field for generic substitution.
+            generic_args = lookup
+                .field_type_args(&member_qname)
+                .unwrap_or(&[])
+                .to_vec();
             current_type = next_type.to_string();
             continue;
         }
 
         // Try return type (method call result in a fluent chain).
-        if let Some(next_type) = lookup.return_type_name(&member_qname) {
-            current_type = next_type.to_string();
+        if let Some(raw_return) = lookup.return_type_name(&member_qname) {
+            // Generic substitution: if return type is a type parameter (e.g., "T"),
+            // and we have concrete generic args, substitute.
+            let resolved = resolve_generic_type(raw_return, &current_type, &generic_args, lookup);
+            generic_args.clear(); // consumed
+            current_type = resolved;
             continue;
         }
 
@@ -499,6 +517,37 @@ fn find_enclosing_class(scope_chain: &[String], lookup: &dyn SymbolLookup) -> Op
     }
     // Fallback: the shortest scope entry is often the class.
     scope_chain.last().cloned()
+}
+
+/// Resolve a generic type parameter to its concrete type.
+///
+/// If `return_type` is "T" and the enclosing type `Repository` has generic params ["T"]
+/// and the field was declared as `Repository<User>` (generic_args = ["User"]),
+/// then "T" maps to "User".
+///
+/// Returns the resolved type name, or the original if no substitution applies.
+fn resolve_generic_type(
+    return_type: &str,
+    enclosing_type: &str,
+    generic_args: &[String],
+    lookup: &dyn SymbolLookup,
+) -> String {
+    if generic_args.is_empty() {
+        return return_type.to_string();
+    }
+    // Get the generic parameter names for the enclosing type.
+    let params = lookup.generic_params(enclosing_type);
+    if let Some(params) = params {
+        // Find which parameter position matches the return type.
+        for (i, param) in params.iter().enumerate() {
+            if param == return_type {
+                if let Some(concrete) = generic_args.get(i) {
+                    return concrete.clone();
+                }
+            }
+        }
+    }
+    return_type.to_string()
 }
 
 /// Detect references to browser/JS runtime globals.

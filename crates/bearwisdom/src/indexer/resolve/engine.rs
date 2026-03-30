@@ -100,6 +100,14 @@ pub trait SymbolLookup {
     /// Get the annotated return type for a method/function symbol.
     /// e.g., "UserRepo.findOne" → Some("User")
     fn return_type_name(&self, method_qname: &str) -> Option<&str>;
+
+    /// Get the generic type arguments for a field's type annotation.
+    /// e.g., "UserService.repo" → Some(["User"]) for `repo: Repository<User>`
+    fn field_type_args(&self, property_qname: &str) -> Option<&[String]>;
+
+    /// Get the generic type parameter names for a type declaration.
+    /// e.g., "Repository" → Some(["T"]) for `interface Repository<T>`
+    fn generic_params(&self, type_name: &str) -> Option<&[String]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -114,9 +122,15 @@ pub struct SymbolIndex {
     /// Maps property qualified_name → type name from TypeRef annotations.
     /// e.g., "AlbumService.db" → "DatabaseRepository"
     field_type: HashMap<String, String>,
+    /// Maps property qualified_name → generic type arguments.
+    /// e.g., "AlbumService.repo" → ["User"] (from `repo: Repository<User>`)
+    field_type_args: HashMap<String, Vec<String>>,
     /// Maps method/function qualified_name → return type name from annotations.
     /// e.g., "UserRepo.findOne" → "User"
     return_type: HashMap<String, String>,
+    /// Maps generic type declaration qualified_name → type parameter names.
+    /// e.g., "Repository" → ["T"] (from `interface Repository<T>`)
+    generic_params: HashMap<String, Vec<String>>,
     empty: Vec<SymbolInfo>,
 }
 
@@ -164,9 +178,11 @@ impl SymbolIndex {
             }
         }
 
-        // Build field_type and return_type maps from TypeRef annotations.
+        // Build field_type, field_type_args, return_type, and generic_params maps.
         let mut field_type: HashMap<String, String> = HashMap::new();
+        let mut field_type_args: HashMap<String, Vec<String>> = HashMap::new();
         let mut return_type: HashMap<String, String> = HashMap::new();
+        let mut generic_params: HashMap<String, Vec<String>> = HashMap::new();
 
         for pf in parsed {
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
@@ -188,12 +204,20 @@ impl SymbolIndex {
 
                 match sym.kind {
                     // Properties/fields: first TypeRef is the field type.
+                    // Subsequent TypeRefs from the same symbol may be generic type args.
                     SymbolKind::Property | SymbolKind::Field => {
                         field_type
                             .insert(sym.qualified_name.clone(), type_refs[0].to_string());
+                        // If there are additional TypeRefs, they're generic type arguments.
+                        // e.g., `repo: Repository<User>` emits ["Repository", "User"]
+                        if type_refs.len() > 1 {
+                            field_type_args.insert(
+                                sym.qualified_name.clone(),
+                                type_refs[1..].iter().map(|s| s.to_string()).collect(),
+                            );
+                        }
                     }
-                    // Methods/functions: last TypeRef is likely the return type
-                    // (parameters come first in source order, return type annotation is last).
+                    // Methods/functions: last TypeRef is likely the return type.
                     SymbolKind::Method
                     | SymbolKind::Function
                     | SymbolKind::Constructor => {
@@ -202,7 +226,49 @@ impl SymbolIndex {
                                 .insert(sym.qualified_name.clone(), last.to_string());
                         }
                     }
+                    // Classes/interfaces/structs with TypeRef to themselves may have
+                    // generic type parameters in the signature.
                     _ => {}
+                }
+            }
+
+            // Build generic_params: for class/interface/struct symbols that have
+            // type_parameters in their signature (e.g., `interface Repository<T>`).
+            // We detect this by looking at the symbol's signature text.
+            for sym in &pf.symbols {
+                if !matches!(
+                    sym.kind,
+                    SymbolKind::Class
+                        | SymbolKind::Interface
+                        | SymbolKind::Struct
+                        | SymbolKind::TypeAlias
+                ) {
+                    continue;
+                }
+                if let Some(sig) = &sym.signature {
+                    // Parse generic params from signature: "interface Repository<T>" → ["T"]
+                    // "class Map<K, V>" → ["K", "V"]
+                    if let Some(start) = sig.find('<') {
+                        if let Some(end) = sig.find('>') {
+                            let params_str = &sig[start + 1..end];
+                            let params: Vec<String> = params_str
+                                .split(',')
+                                .map(|s| {
+                                    s.trim()
+                                        .split_whitespace()
+                                        .next()
+                                        .unwrap_or("")
+                                        .to_string()
+                                })
+                                .filter(|s| !s.is_empty())
+                                .collect();
+                            if !params.is_empty() {
+                                generic_params.insert(sym.name.clone(), params.clone());
+                                generic_params
+                                    .insert(sym.qualified_name.clone(), params);
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -212,7 +278,9 @@ impl SymbolIndex {
             by_qname,
             by_file,
             field_type,
+            field_type_args,
             return_type,
+            generic_params,
             empty: Vec::new(),
         }
     }
@@ -248,6 +316,16 @@ impl SymbolLookup for SymbolIndex {
 
     fn return_type_name(&self, method_qname: &str) -> Option<&str> {
         self.return_type.get(method_qname).map(|s| s.as_str())
+    }
+
+    fn field_type_args(&self, property_qname: &str) -> Option<&[String]> {
+        self.field_type_args
+            .get(property_qname)
+            .map(|v| v.as_slice())
+    }
+
+    fn generic_params(&self, type_name: &str) -> Option<&[String]> {
+        self.generic_params.get(type_name).map(|v| v.as_slice())
     }
 }
 

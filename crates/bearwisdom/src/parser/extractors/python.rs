@@ -755,6 +755,7 @@ fn build_chain_inner(node: &Node, src: &str, segments: &mut Vec<ChainSegment>) -
                 node_kind: "identifier".to_string(),
                 kind,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -772,6 +773,7 @@ fn build_chain_inner(node: &Node, src: &str, segments: &mut Vec<ChainSegment>) -
                 node_kind: "attribute".to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())

@@ -903,6 +903,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 node_kind: "variable_name".to_string(),
                 kind,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -914,6 +915,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 node_kind: node.kind().to_string(),
                 kind: SegmentKind::Identifier,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -928,6 +930,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 node_kind: "member_access_expression".to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -942,6 +945,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 node_kind: "member_call_expression".to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
@@ -955,6 +959,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 node_kind: "class".to_string(),
                 kind: SegmentKind::TypeAccess,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             segments.push(ChainSegment {
@@ -962,6 +967,7 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
                 node_kind: "static_call_expression".to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
+                type_args: vec![],
                 optional_chaining: false,
             });
             Some(())
