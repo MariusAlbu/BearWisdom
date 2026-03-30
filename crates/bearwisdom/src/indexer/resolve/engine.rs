@@ -622,21 +622,27 @@ pub fn infer_external_from_chain(
 
     // Phase 2: Walk the chain checking if the current type is external.
     // If no root type was determined, check if the root identifier itself
-    // is not a known symbol (e.g., `console`, `$`, a variable from an external package).
+    // is external (not in the index, or a variable with no resolvable type).
     let mut current_type = match root_type {
         Some(t) => t,
         None => {
-            // Root identifier not resolvable as a field — check if it's simply
-            // not in the index at all (external variable/global).
             if segments[0].kind == SegmentKind::Identifier {
                 let name = &segments[0].name;
-                let in_index = lookup
-                    .by_name(name)
-                    .iter()
-                    .any(|s| s.kind != "namespace");
-                if !in_index {
-                    return Some(name.clone());
+                let symbols = lookup.by_name(name);
+                let has_type_or_class = symbols.iter().any(|s| {
+                    matches!(
+                        s.kind.as_str(),
+                        "class" | "struct" | "interface" | "enum"
+                            | "type_alias" | "function" | "method"
+                    )
+                });
+                if has_type_or_class {
+                    // It's a known type/function — can't determine as external.
+                    return None;
                 }
+                // Either not in index at all, or only a variable/namespace
+                // with no resolvable type → treat as external.
+                return Some(name.clone());
             }
             return None;
         }
