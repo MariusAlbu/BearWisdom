@@ -142,21 +142,21 @@ fn schema_creates_all_indexes() {
         .filter_map(|r| r.ok())
         .collect();
 
-    // Verify the two P0 indexes exist.
+    // Verify covering indexes exist (these replaced the old single-column variants).
     assert!(
-        indexes.contains(&"idx_unresolved_source_kind".to_string()),
-        "Missing idx_unresolved_source_kind. Found: {indexes:?}"
+        indexes.contains(&"idx_unresolved_source_cov".to_string()),
+        "Missing idx_unresolved_source_cov. Found: {indexes:?}"
     );
     assert!(
-        indexes.contains(&"idx_flow_type_lang".to_string()),
-        "Missing idx_flow_type_lang. Found: {indexes:?}"
+        indexes.contains(&"idx_flow_edges_type".to_string()),
+        "Missing idx_flow_edges_type. Found: {indexes:?}"
     );
 
     // Sample of other critical indexes.
     assert!(indexes.contains(&"idx_symbols_name".to_string()));
     assert!(indexes.contains(&"idx_symbols_qualified".to_string()));
-    assert!(indexes.contains(&"idx_edges_source".to_string()));
-    assert!(indexes.contains(&"idx_edges_target".to_string()));
+    assert!(indexes.contains(&"idx_edges_source_cov".to_string()));
+    assert!(indexes.contains(&"idx_edges_target_cov".to_string()));
     assert!(indexes.contains(&"idx_flow_source".to_string()));
     assert!(indexes.contains(&"idx_flow_target".to_string()));
 

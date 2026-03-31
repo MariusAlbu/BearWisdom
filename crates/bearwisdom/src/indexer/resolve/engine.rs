@@ -8,6 +8,7 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -111,26 +112,36 @@ pub trait SymbolLookup {
 }
 
 // ---------------------------------------------------------------------------
+// TypeInfo — unified per-symbol type metadata
+// ---------------------------------------------------------------------------
+
+/// All type metadata for a single symbol, stored in a single map keyed by
+/// the symbol's qualified name (or simple name for generic_params).
+#[derive(Debug, Default, Clone)]
+pub struct TypeInfo {
+    /// Field/property type (e.g., "UserRepository").
+    pub field_type: Option<String>,
+    /// Generic type arguments (e.g., ["User"] for `Repository<User>`).
+    pub type_args: Vec<String>,
+    /// Method return type (e.g., "User").
+    pub return_type: Option<String>,
+    /// Generic parameter names for type declarations (e.g., ["T"] for `interface Repository<T>`).
+    pub generic_params: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
 // SymbolIndex — concrete implementation of SymbolLookup
 // ---------------------------------------------------------------------------
 
 /// In-memory index of all symbols, built once from parsed data.
 pub struct SymbolIndex {
-    by_name: HashMap<String, Vec<SymbolInfo>>,
-    by_qname: HashMap<String, SymbolInfo>,
-    by_file: HashMap<String, Vec<SymbolInfo>>,
-    /// Maps property qualified_name → type name from TypeRef annotations.
-    /// e.g., "AlbumService.db" → "DatabaseRepository"
-    field_type: HashMap<String, String>,
-    /// Maps property qualified_name → generic type arguments.
-    /// e.g., "AlbumService.repo" → ["User"] (from `repo: Repository<User>`)
-    field_type_args: HashMap<String, Vec<String>>,
-    /// Maps method/function qualified_name → return type name from annotations.
-    /// e.g., "UserRepo.findOne" → "User"
-    return_type: HashMap<String, String>,
-    /// Maps generic type declaration qualified_name → type parameter names.
-    /// e.g., "Repository" → ["T"] (from `interface Repository<T>`)
-    generic_params: HashMap<String, Vec<String>>,
+    by_name: FxHashMap<String, Vec<SymbolInfo>>,
+    by_qname: FxHashMap<String, SymbolInfo>,
+    by_file: FxHashMap<String, Vec<SymbolInfo>>,
+    /// Sorted by qualified_name for O(log N) prefix (in_namespace) queries.
+    sorted_qnames: Vec<(String, SymbolInfo)>,
+    /// Unified per-symbol type metadata (replaces 4 separate maps).
+    type_info: FxHashMap<String, TypeInfo>,
     empty: Vec<SymbolInfo>,
 }
 
@@ -140,9 +151,9 @@ impl SymbolIndex {
         parsed: &[ParsedFile],
         symbol_id_map: &HashMap<(String, String), i64>,
     ) -> Self {
-        let mut by_name: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
-        let mut by_qname: HashMap<String, SymbolInfo> = HashMap::new();
-        let mut by_file: HashMap<String, Vec<SymbolInfo>> = HashMap::new();
+        let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut by_qname: FxHashMap<String, SymbolInfo> = FxHashMap::default();
+        let mut by_file: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
 
         for pf in parsed {
             for sym in &pf.symbols {
@@ -179,10 +190,10 @@ impl SymbolIndex {
         }
 
         // Build field_type, field_type_args, return_type, and generic_params maps.
-        let mut field_type: HashMap<String, String> = HashMap::new();
-        let mut field_type_args: HashMap<String, Vec<String>> = HashMap::new();
-        let mut return_type: HashMap<String, String> = HashMap::new();
-        let mut generic_params: HashMap<String, Vec<String>> = HashMap::new();
+        let mut field_type: FxHashMap<String, String> = FxHashMap::default();
+        let mut field_type_args: FxHashMap<String, Vec<String>> = FxHashMap::default();
+        let mut return_type: FxHashMap<String, String> = FxHashMap::default();
+        let mut generic_params: FxHashMap<String, Vec<String>> = FxHashMap::default();
 
         for pf in parsed {
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
@@ -273,6 +284,21 @@ impl SymbolIndex {
             }
         }
 
+        // Merge the four local maps into the unified type_info map.
+        let mut type_info: FxHashMap<String, TypeInfo> = FxHashMap::default();
+        for (qname, ft) in field_type {
+            type_info.entry(qname).or_default().field_type = Some(ft);
+        }
+        for (qname, args) in field_type_args {
+            type_info.entry(qname).or_default().type_args = args;
+        }
+        for (qname, rt) in return_type {
+            type_info.entry(qname).or_default().return_type = Some(rt);
+        }
+        for (name_or_qname, params) in generic_params {
+            type_info.entry(name_or_qname).or_default().generic_params = params;
+        }
+
         // Variable type inference pass: for Variable symbols without an explicit
         // type annotation, try to infer the type from chain-bearing TypeRef refs.
         // These are emitted by the extractor for `const x = this.repo.findOne()`.
@@ -283,7 +309,11 @@ impl SymbolIndex {
                     continue;
                 }
                 // Skip if already has an explicit type.
-                if field_type.contains_key(&sym.qualified_name) {
+                if type_info
+                    .get(&sym.qualified_name)
+                    .and_then(|ti| ti.field_type.as_ref())
+                    .is_some()
+                {
                     continue;
                 }
                 // Find a chain-bearing TypeRef from this variable.
@@ -297,39 +327,44 @@ impl SymbolIndex {
                     let chain = r.chain.as_ref().unwrap();
                     // Walk the chain to infer the type.
                     if let Some(inferred) =
-                        infer_type_from_chain(chain, &sym.scope_path, &field_type, &field_type_args, &return_type, &generic_params, &by_name, &by_qname)
+                        infer_type_from_chain(chain, &sym.scope_path, &type_info, &by_name, &by_qname)
                     {
-                        field_type.insert(sym.qualified_name.clone(), inferred);
+                        type_info
+                            .entry(sym.qualified_name.clone())
+                            .or_default()
+                            .field_type = Some(inferred);
                         break;
                     }
                 }
             }
         }
 
+        // Build sorted_qnames for O(log N) prefix (in_namespace) queries.
+        let mut sorted_qnames: Vec<(String, SymbolInfo)> = by_qname
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        sorted_qnames.sort_by(|a, b| a.0.cmp(&b.0));
+
         Self {
             by_name,
             by_qname,
             by_file,
-            field_type,
-            field_type_args,
-            return_type,
-            generic_params,
+            sorted_qnames,
+            type_info,
             empty: Vec::new(),
         }
     }
 }
 
 /// Lightweight chain resolution for variable type inference during index building.
-/// Uses the already-built field_type and return_type maps (not the full SymbolLookup trait).
+/// Uses the already-built type_info map (not the full SymbolLookup trait).
 fn infer_type_from_chain(
     chain: &crate::types::MemberChain,
     scope_path: &Option<String>,
-    field_type: &HashMap<String, String>,
-    field_type_args: &HashMap<String, Vec<String>>,
-    return_type: &HashMap<String, String>,
-    generic_params: &HashMap<String, Vec<String>>,
-    by_name: &HashMap<String, Vec<SymbolInfo>>,
-    by_qname: &HashMap<String, SymbolInfo>,
+    type_info: &FxHashMap<String, TypeInfo>,
+    by_name: &FxHashMap<String, Vec<SymbolInfo>>,
+    by_qname: &FxHashMap<String, SymbolInfo>,
 ) -> Option<String> {
     use crate::types::SegmentKind;
 
@@ -340,14 +375,14 @@ fn infer_type_from_chain(
 
     // Build a minimal scope chain from scope_path.
     let scopes: Vec<String> = if let Some(sp) = scope_path {
-        let mut chain = Vec::new();
+        let mut scope_chain = Vec::new();
         let mut current = sp.clone();
-        chain.push(current.clone());
+        scope_chain.push(current.clone());
         while let Some(dot) = current.rfind('.') {
             current.truncate(dot);
-            chain.push(current.clone());
+            scope_chain.push(current.clone());
         }
-        chain
+        scope_chain
     } else {
         Vec::new()
     };
@@ -356,22 +391,28 @@ fn infer_type_from_chain(
     let root_type = match segments[0].kind {
         SegmentKind::SelfRef => {
             // Find enclosing class from scope.
-            scopes.iter().find_map(|s| {
-                by_qname.get(s).and_then(|sym| {
-                    if matches!(sym.kind.as_str(), "class" | "struct" | "interface") {
-                        Some(s.clone())
-                    } else {
-                        None
-                    }
+            scopes
+                .iter()
+                .find_map(|s| {
+                    by_qname.get(s).and_then(|sym| {
+                        if matches!(sym.kind.as_str(), "class" | "struct" | "interface") {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
+                    })
                 })
-            }).or_else(|| scopes.last().cloned())
+                .or_else(|| scopes.last().cloned())
         }
         SegmentKind::Identifier => {
             let name = &segments[0].name;
-            scopes.iter().find_map(|scope| {
-                let qname = format!("{scope}.{name}");
-                field_type.get(&qname).cloned()
-            }).or_else(|| segments[0].declared_type.clone())
+            scopes
+                .iter()
+                .find_map(|scope| {
+                    let qname = format!("{scope}.{name}");
+                    type_info.get(&qname).and_then(|ti| ti.field_type.clone())
+                })
+                .or_else(|| segments[0].declared_type.clone())
         }
         _ => None,
     }?;
@@ -382,9 +423,11 @@ fn infer_type_from_chain(
     // Look up initial generic args.
     for scope in &scopes {
         let key = format!("{scope}.{}", segments[0].name);
-        if let Some(args) = field_type_args.get(&key) {
-            generic_args = args.clone();
-            break;
+        if let Some(ti) = type_info.get(&key) {
+            if !ti.type_args.is_empty() {
+                generic_args = ti.type_args.clone();
+                break;
+            }
         }
     }
 
@@ -392,41 +435,53 @@ fn infer_type_from_chain(
     for seg in &segments[1..] {
         let member_qname = format!("{current_type}.{}", seg.name);
 
-        if let Some(next) = field_type.get(&member_qname) {
-            generic_args = field_type_args.get(&member_qname).cloned().unwrap_or_default();
-            current_type = next.clone();
-            continue;
-        }
-        if let Some(raw_return) = return_type.get(&member_qname) {
-            // Generic substitution.
-            let resolved = if !generic_args.is_empty() {
-                if let Some(params) = generic_params.get(&current_type)
-                    .or_else(|| {
-                        // Try simple name too.
-                        let simple = current_type.rsplit('.').next().unwrap_or(&current_type);
-                        generic_params.get(simple)
-                    })
-                {
-                    params.iter().enumerate()
-                        .find(|(_, p)| p.as_str() == raw_return)
-                        .and_then(|(i, _)| generic_args.get(i).cloned())
-                        .unwrap_or_else(|| raw_return.clone())
+        if let Some(ti) = type_info.get(&member_qname) {
+            if let Some(ft) = &ti.field_type {
+                generic_args = ti.type_args.clone();
+                current_type = ft.clone();
+                continue;
+            }
+            if let Some(raw_return) = &ti.return_type {
+                // Generic substitution.
+                let resolved = if !generic_args.is_empty() {
+                    let params_opt = type_info
+                        .get(&current_type)
+                        .map(|ti| &ti.generic_params)
+                        .filter(|p| !p.is_empty())
+                        .or_else(|| {
+                            // Try simple name too.
+                            let simple =
+                                current_type.rsplit('.').next().unwrap_or(&current_type);
+                            type_info
+                                .get(simple)
+                                .map(|ti| &ti.generic_params)
+                                .filter(|p| !p.is_empty())
+                        });
+                    if let Some(params) = params_opt {
+                        params
+                            .iter()
+                            .enumerate()
+                            .find(|(_, p)| p.as_str() == raw_return)
+                            .and_then(|(i, _)| generic_args.get(i).cloned())
+                            .unwrap_or_else(|| raw_return.clone())
+                    } else {
+                        raw_return.clone()
+                    }
                 } else {
                     raw_return.clone()
-                }
-            } else {
-                raw_return.clone()
-            };
-            generic_args.clear();
-            current_type = resolved;
-            continue;
+                };
+                generic_args.clear();
+                current_type = resolved;
+                continue;
+            }
         }
 
         // Can't follow further.
+        let _ = by_name; // retained for future use
         return None;
     }
 
-    // The final current_type is the inferred return type of the chain.
+    // The final current_type is the inferred type of the chain.
     Some(current_type)
 }
 
@@ -439,11 +494,17 @@ impl SymbolLookup for SymbolIndex {
         self.by_qname.get(qname)
     }
 
+    /// O(log N) prefix search using the sorted Vec.
     fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo> {
         let prefix = format!("{namespace}.");
-        self.by_qname
-            .values()
-            .filter(|s| s.qualified_name.starts_with(&prefix))
+        let start = self
+            .sorted_qnames
+            .partition_point(|(k, _)| k.as_str() < prefix.as_str());
+        let end = self.sorted_qnames[start..]
+            .partition_point(|(k, _)| k.starts_with(&prefix));
+        self.sorted_qnames[start..start + end]
+            .iter()
+            .map(|(_, info)| info)
             .collect()
     }
 
@@ -455,21 +516,35 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn field_type_name(&self, property_qname: &str) -> Option<&str> {
-        self.field_type.get(property_qname).map(|s| s.as_str())
+        self.type_info
+            .get(property_qname)
+            .and_then(|ti| ti.field_type.as_deref())
     }
 
     fn return_type_name(&self, method_qname: &str) -> Option<&str> {
-        self.return_type.get(method_qname).map(|s| s.as_str())
+        self.type_info
+            .get(method_qname)
+            .and_then(|ti| ti.return_type.as_deref())
     }
 
     fn field_type_args(&self, property_qname: &str) -> Option<&[String]> {
-        self.field_type_args
-            .get(property_qname)
-            .map(|v| v.as_slice())
+        self.type_info.get(property_qname).and_then(|ti| {
+            if ti.type_args.is_empty() {
+                None
+            } else {
+                Some(ti.type_args.as_slice())
+            }
+        })
     }
 
     fn generic_params(&self, type_name: &str) -> Option<&[String]> {
-        self.generic_params.get(type_name).map(|v| v.as_slice())
+        self.type_info.get(type_name).and_then(|ti| {
+            if ti.generic_params.is_empty() {
+                None
+            } else {
+                Some(ti.generic_params.as_slice())
+            }
+        })
     }
 }
 
@@ -538,14 +613,14 @@ pub trait LanguageResolver: Send + Sync {
 
 /// The engine that dispatches resolution to language-specific resolvers.
 pub struct ResolutionEngine {
-    resolvers: HashMap<String, Arc<dyn LanguageResolver>>,
+    resolvers: FxHashMap<String, Arc<dyn LanguageResolver>>,
 }
 
 impl ResolutionEngine {
     /// Create a new engine with the default set of language resolvers.
     pub fn new() -> Self {
         let mut engine = Self {
-            resolvers: HashMap::new(),
+            resolvers: FxHashMap::default(),
         };
         for resolver in super::rules::default_resolvers() {
             for &lang_id in resolver.language_ids() {
@@ -794,5 +869,100 @@ mod tests {
         // missing
         assert!(index.by_name("Bar").is_empty());
         assert!(index.by_qualified_name("NS.Bar").is_none());
+    }
+
+    fn make_class_sym(name: &str, qname: &str) -> ExtractedSymbol {
+        ExtractedSymbol {
+            name: name.to_string(),
+            qualified_name: qname.to_string(),
+            kind: SymbolKind::Class,
+            visibility: None,
+            start_line: 1,
+            end_line: 2,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        }
+    }
+
+    fn make_pf(path: &str, syms: Vec<ExtractedSymbol>) -> ParsedFile {
+        ParsedFile {
+            path: path.to_string(),
+            language: "csharp".to_string(),
+            content_hash: String::new(),
+            size: 0,
+            line_count: 0,
+            content: None,
+            has_errors: false,
+            symbols: syms,
+            refs: vec![],
+            routes: vec![],
+            db_sets: vec![],
+        }
+    }
+
+    #[test]
+    fn test_in_namespace_sorted_multiple() {
+        let pf = make_pf(
+            "src/a.cs",
+            vec![
+                make_class_sym("Foo", "NS.Foo"),
+                make_class_sym("Bar", "NS.Bar"),
+                make_class_sym("Baz", "Other.Baz"),
+            ],
+        );
+
+        let mut id_map = HashMap::new();
+        id_map.insert(("src/a.cs".to_string(), "NS.Foo".to_string()), 1);
+        id_map.insert(("src/a.cs".to_string(), "NS.Bar".to_string()), 2);
+        id_map.insert(("src/a.cs".to_string(), "Other.Baz".to_string()), 3);
+
+        let index = SymbolIndex::build(&[pf], &id_map);
+
+        let ns_results = index.in_namespace("NS");
+        assert_eq!(ns_results.len(), 2);
+        let mut ids: Vec<i64> = ns_results.iter().map(|s| s.id).collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec![1, 2]);
+
+        let other_results = index.in_namespace("Other");
+        assert_eq!(other_results.len(), 1);
+        assert_eq!(other_results[0].id, 3);
+    }
+
+    #[test]
+    fn test_in_namespace_no_prefix_bleed() {
+        // "NS" must not match "NSX.Thing"
+        let pf = make_pf(
+            "src/a.cs",
+            vec![
+                make_class_sym("Foo", "NS.Foo"),
+                make_class_sym("Thing", "NSX.Thing"),
+            ],
+        );
+
+        let mut id_map = HashMap::new();
+        id_map.insert(("src/a.cs".to_string(), "NS.Foo".to_string()), 1);
+        id_map.insert(("src/a.cs".to_string(), "NSX.Thing".to_string()), 2);
+
+        let index = SymbolIndex::build(&[pf], &id_map);
+
+        let ns_results = index.in_namespace("NS");
+        assert_eq!(ns_results.len(), 1);
+        assert_eq!(ns_results[0].qualified_name, "NS.Foo");
+    }
+
+    #[test]
+    fn test_in_namespace_empty() {
+        let pf = make_pf("src/a.cs", vec![make_class_sym("Foo", "NS.Foo")]);
+        let mut id_map = HashMap::new();
+        id_map.insert(("src/a.cs".to_string(), "NS.Foo".to_string()), 1);
+        let index = SymbolIndex::build(&[pf], &id_map);
+
+        assert!(index.in_namespace("Missing").is_empty());
+        assert!(index.in_namespace("N").is_empty()); // "N" is a prefix of "NS" but not "NS."
     }
 }

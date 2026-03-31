@@ -84,30 +84,50 @@ pub fn full_index(
     emit("scanning", 1.0, Some(&format!("{} files found", files.len())));
 
     // --- Step 1b: Clear existing data ---
-    // full_index is a complete rebuild. Drop and recreate core tables
-    // rather than DELETE (which is slow on large tables due to index updates).
+    // For full reindex: DROP + CREATE core tables instead of DELETE.
+    // DELETE on a large indexed table is O(n log n) due to index maintenance;
+    // DROP + CREATE is O(1) and lets SQLite reclaim pages immediately.
+    // Virtual tables (symbols_fts, fts_content, vec_chunks) are handled
+    // separately to avoid leaving their internal state pointing at stale rowids.
     {
         let count: i64 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap_or(0);
         if count > 0 {
-            info!("Clearing {} existing files from index for full rebuild", count);
-            // Drop dependent tables first, then recreate via the schema init.
-            // The schema init in Database::open already ensures tables exist,
-            // so we just need to clear data. Use a transaction for atomicity.
-            // Clear vec_chunks first (virtual table — not covered by CASCADE).
+            info!("Dropping and recreating index tables for full rebuild ({} existing files)", count);
+
+            // Drop vec_chunks first (virtual table — not CASCADE-covered).
             if crate::search::vector_store::vec_table_exists(&db.conn) {
                 let _ = db.conn.execute_batch("DELETE FROM vec_chunks");
             }
+
+            // Drop the FTS trigger + virtual table so their internal rowid state
+            // doesn't point at stale symbols after we drop and recreate symbols.
+            // The triggers and table will be recreated by create_schema below.
+            let _ = db.conn.execute_batch(
+                "DROP TRIGGER IF EXISTS symbols_ai;
+                 DROP TRIGGER IF EXISTS symbols_ad;
+                 DROP TRIGGER IF EXISTS symbols_au;
+                 DROP TABLE IF EXISTS symbols_fts;",
+            );
+
+            // Drop core tables (FK-ordered: dependents first).
+            // Disable FK enforcement so we can drop in any order.
             let _ = db.conn.execute_batch(
                 "PRAGMA foreign_keys = OFF;
-                 DELETE FROM edges;
-                 DELETE FROM imports;
-                 DELETE FROM unresolved_refs;
-                 DELETE FROM external_refs;
-                 DELETE FROM symbols;
-                 DELETE FROM files;
-                 PRAGMA foreign_keys = ON;"
+                 DROP TABLE IF EXISTS edges;
+                 DROP TABLE IF EXISTS imports;
+                 DROP TABLE IF EXISTS unresolved_refs;
+                 DROP TABLE IF EXISTS external_refs;
+                 DROP TABLE IF EXISTS symbols;
+                 DROP TABLE IF EXISTS files;
+                 PRAGMA foreign_keys = ON;",
             );
-            info!("Index tables cleared");
+
+            // Recreate all tables, indexes, triggers, and virtual tables
+            // using the canonical schema.
+            crate::db::schema::create_schema(&db.conn)
+                .context("Failed to recreate schema after drop")?;
+
+            info!("Index tables recreated");
         }
     }
 
@@ -377,6 +397,13 @@ pub fn full_index(
     info!("Connectors completed in {:.2}s", connector_start.elapsed().as_secs_f64());
     emit("connectors", 1.0, None);
 
+    // Update SQLite's statistics so the query planner has accurate selectivity
+    // data for all of the new covering indexes.  ANALYZE is fast on a freshly
+    // written database (sequential scan, no I/O amplification).
+    if let Err(e) = db.conn.execute("ANALYZE", []) {
+        warn!("ANALYZE failed (non-fatal): {e}");
+    }
+
     let duration = start.elapsed();
 
     // Read back counts for the stats report.
@@ -535,57 +562,67 @@ fn write_to_db(
     let mut file_id_map: HashMap<String, i64> = HashMap::new();
     let mut symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
 
+    // Prepare statements once — avoids SQL re-parsing on every row.
+    // CachedStatement borrows `tx`, so we reborrow as needed inside the loop.
     for pf in parsed {
         // Upsert the file row (delete existing symbols via CASCADE, then re-insert).
-        tx.execute(
+        tx.prepare_cached(
             "INSERT INTO files (path, hash, language, last_indexed)
              VALUES (?1, ?2, ?3, ?4)
              ON CONFLICT(path) DO UPDATE SET
                hash = excluded.hash,
                language = excluded.language,
                last_indexed = excluded.last_indexed",
-            rusqlite::params![pf.path, pf.content_hash, pf.language, now],
-        ).with_context(|| format!("Failed to upsert file {}", pf.path))?;
+        )
+        .context("Failed to prepare file upsert")?
+        .execute(rusqlite::params![pf.path, pf.content_hash, pf.language, now])
+        .with_context(|| format!("Failed to upsert file {}", pf.path))?;
 
         // If it was an UPDATE the last_insert_rowid() returns 0 on some platforms.
         // Re-fetch by path to be safe.
-        let file_id: i64 = tx.query_row(
-            "SELECT id FROM files WHERE path = ?1",
-            [&pf.path],
-            |r| r.get(0),
-        ).with_context(|| format!("Failed to get file_id for {}", pf.path))?;
+        let file_id: i64 = tx
+            .prepare_cached("SELECT id FROM files WHERE path = ?1")
+            .context("Failed to prepare file id select")?
+            .query_row([&pf.path], |r| r.get(0))
+            .with_context(|| format!("Failed to get file_id for {}", pf.path))?;
 
         file_id_map.insert(pf.path.clone(), file_id);
 
         // Delete existing symbols for this file so we can re-insert cleanly.
         // (The ON CONFLICT above updates the file row but doesn't cascade-delete symbols.)
-        tx.execute("DELETE FROM symbols WHERE file_id = ?1", [file_id])?;
+        tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
+            .context("Failed to prepare symbol delete")?
+            .execute([file_id])?;
 
         // Delete existing imports for this file (not cascaded by symbols delete).
-        tx.execute("DELETE FROM imports WHERE file_id = ?1", [file_id])?;
+        tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
+            .context("Failed to prepare import delete")?
+            .execute([file_id])?;
 
         // Insert all symbols for this file.
         for sym in &pf.symbols {
-            tx.execute(
+            tx.prepare_cached(
                 "INSERT INTO symbols
                    (file_id, name, qualified_name, kind, line, col,
                     end_line, end_col, scope_path, signature, doc_comment, visibility)
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-                rusqlite::params![
-                    file_id,
-                    sym.name,
-                    sym.qualified_name,
-                    sym.kind.as_str(),
-                    sym.start_line,
-                    sym.start_col,
-                    sym.end_line,
-                    sym.end_col,
-                    sym.scope_path,
-                    sym.signature,
-                    sym.doc_comment,
-                    sym.visibility.map(|v| v.as_str()),
-                ],
-            ).with_context(|| format!("Failed to insert symbol {} in {}", sym.qualified_name, pf.path))?;
+            )
+            .context("Failed to prepare symbol insert")?
+            .execute(rusqlite::params![
+                file_id,
+                sym.name,
+                sym.qualified_name,
+                sym.kind.as_str(),
+                sym.start_line,
+                sym.start_col,
+                sym.end_line,
+                sym.end_col,
+                sym.scope_path,
+                sym.signature,
+                sym.doc_comment,
+                sym.visibility.map(|v| v.as_str()),
+            ])
+            .with_context(|| format!("Failed to insert symbol {} in {}", sym.qualified_name, pf.path))?;
 
             let sym_id = tx.last_insert_rowid();
             symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), sym_id);
@@ -594,23 +631,29 @@ fn write_to_db(
         // Insert route records for this file (ASP.NET [HttpGet], [Route], etc.).
         for route in &pf.routes {
             let sym_id = symbol_id_map
-                .get(&(pf.path.clone(), pf.symbols.get(route.handler_symbol_index)
-                    .map(|s| s.qualified_name.clone())
-                    .unwrap_or_default()))
+                .get(&(
+                    pf.path.clone(),
+                    pf.symbols
+                        .get(route.handler_symbol_index)
+                        .map(|s| s.qualified_name.clone())
+                        .unwrap_or_default(),
+                ))
                 .copied();
 
-            tx.execute(
+            tx.prepare_cached(
                 "INSERT OR IGNORE INTO routes
                    (file_id, symbol_id, http_method, route_template, line)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![
-                    file_id,
-                    sym_id,
-                    route.http_method,
-                    route.template,
-                    pf.symbols.get(route.handler_symbol_index).map(|s| s.start_line),
-                ],
-            ).with_context(|| format!("Failed to insert route for {}", pf.path))?;
+            )
+            .context("Failed to prepare route insert")?
+            .execute(rusqlite::params![
+                file_id,
+                sym_id,
+                route.http_method,
+                route.template,
+                pf.symbols.get(route.handler_symbol_index).map(|s| s.start_line),
+            ])
+            .with_context(|| format!("Failed to insert route for {}", pf.path))?;
         }
 
         // Insert import records for this file.
@@ -624,17 +667,19 @@ fn write_to_db(
             let imported_name = &r.target_name;
             let module_path = r.module.as_deref();
             // Use module as module_path; for C# both target_name and module hold the namespace.
-            tx.execute(
+            tx.prepare_cached(
                 "INSERT INTO imports (file_id, imported_name, module_path, alias, line)
                  VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![
-                    file_id,
-                    imported_name,
-                    module_path,
-                    Option::<&str>::None, // alias extraction not yet implemented
-                    r.line,
-                ],
-            ).with_context(|| format!("Failed to insert import '{}' in {}", imported_name, pf.path))?;
+            )
+            .context("Failed to prepare import insert")?
+            .execute(rusqlite::params![
+                file_id,
+                imported_name,
+                module_path,
+                Option::<&str>::None, // alias extraction not yet implemented
+                r.line,
+            ])
+            .with_context(|| format!("Failed to insert import '{}' in {}", imported_name, pf.path))?;
         }
     }
 

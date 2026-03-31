@@ -117,7 +117,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
     ];
 
     // Register NS.Models.Foo in qname_to_id.
-    let mut qname_to_id2: HashMap<String, i64> = HashMap::new();
+    let mut qname_to_id2: FxHashMap<String, i64> = FxHashMap::default();
     qname_to_id2.insert("NS.Models.Foo".to_string(), 42);
 
     let result = resolve_via_namespace_import("Foo", &dotted_imports, &qname_to_id2);

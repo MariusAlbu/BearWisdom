@@ -71,6 +71,7 @@ serde_json            = "1"
 tracing               = "0.1"
 tracing-subscriber    = { version = "0.3", features = ["env-filter"] }
 rayon                 = "1.10"
+rustc-hash            = "2"
 tokio                 = { version = "1", features = ["full"] }
 # --- Search engine (Phase 1: grep) ---
 grep-matcher          = "0.1"

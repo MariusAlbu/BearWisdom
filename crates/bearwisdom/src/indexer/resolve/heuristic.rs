@@ -41,6 +41,7 @@
 use crate::db::Database;
 use crate::types::{EdgeKind, ParsedFile, SymbolKind};
 use anyhow::{Context, Result};
+use rustc_hash::FxHashMap;
 use std::collections::HashMap;
 use tracing::debug;
 
@@ -171,8 +172,8 @@ pub(super) fn resolve_ref(
     source_file: &str,
     file_imports: &[(String, Option<String>)],
     source_namespace: Option<&str>,
-    name_to_ids: &HashMap<String, Vec<(String, String, String, i64)>>, // name → [(file, qname, kind, id)]
-    qname_to_id: &HashMap<String, i64>,
+    name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>, // name → [(file, qname, kind, id)]
+    qname_to_id: &FxHashMap<String, i64>,
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
 ) -> Option<(i64, f64)> {
@@ -211,17 +212,34 @@ pub(super) fn resolve_ref(
         return Some((id, 0.80));
     }
 
-    // --- Priority 4: Name + kind (0.50) ---
+    // --- Priority 4: Name + kind (0.50 base, with ambiguity decay) ---
+    // Names like `get`, `create`, `update` appear in hundreds of symbols.
+    // Resolving them produces false edges that poison graph quality.
+    // Hard cap: skip resolution entirely when > 10 kind-compatible candidates.
+    // Soft decay: confidence scales as 0.50 / sqrt(candidate_count) so that
+    // edge weights reflect how ambiguous the resolution is.
     if let Some(candidates) = name_to_ids.get(target_name) {
-        // Prefer a candidate whose symbol kind matches the edge kind.
-        // Fall back to the first candidate if no kind-match found.
-        let chosen = candidates
+        // Filter to kind-compatible candidates first; fall back to all if none match.
+        let kind_matched: Vec<_> = candidates
             .iter()
-            .find(|(_, _, sym_kind, _)| kind_matches_symbol_kind(kind, sym_kind))
-            .or_else(|| candidates.first());
+            .filter(|(_, _, sym_kind, _)| kind_matches_symbol_kind(kind, sym_kind))
+            .collect();
+        let pool: Vec<_> = if kind_matched.is_empty() {
+            candidates.iter().collect()
+        } else {
+            kind_matched
+        };
 
-        if let Some((_, _, _, id)) = chosen {
-            return Some((*id, 0.50));
+        // Ambiguity threshold: > 10 matching candidates -> too noisy, skip.
+        const AMBIGUITY_LIMIT: usize = 10;
+        if pool.len() > AMBIGUITY_LIMIT {
+            return None;
+        }
+
+        if let Some((_, _, _, id)) = pool.first() {
+            // Confidence decays with candidate count: 0.50 / sqrt(n).
+            let confidence = 0.50 / (pool.len() as f64).sqrt();
+            return Some((*id, confidence));
         }
     }
 
@@ -234,7 +252,7 @@ fn resolve_via_import(
     target_name: &str,
     _source_file: &str,
     file_imports: &[(String, Option<String>)],
-    name_to_ids: &HashMap<String, Vec<(String, String, String, i64)>>,
+    name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>,
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
 ) -> Option<i64> {
@@ -282,7 +300,7 @@ fn resolve_via_import(
 fn resolve_via_namespace_import(
     target_name: &str,
     file_imports: &[(String, Option<String>)],
-    qname_to_id: &HashMap<String, i64>,
+    qname_to_id: &FxHashMap<String, i64>,
 ) -> Option<i64> {
     for (imported_name, module_opt) in file_imports {
         // Collect candidate namespace prefixes to try: prefer module_opt if
@@ -320,7 +338,7 @@ fn resolve_via_namespace(
     target_name: &str,
     _source_file: &str,
     file_imports: &[(String, Option<String>)],
-    name_to_ids: &HashMap<String, Vec<(String, String, String, i64)>>,
+    name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>,
     _parsed: &[ParsedFile],
 ) -> Option<i64> {
     let candidates = name_to_ids.get(target_name)?;
@@ -355,7 +373,7 @@ fn resolve_via_namespace(
 fn resolve_via_same_namespace(
     target_name: &str,
     source_namespace: &str,
-    name_to_ids: &HashMap<String, Vec<(String, String, String, i64)>>,
+    name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>,
 ) -> Option<i64> {
     let candidates = name_to_ids.get(target_name)?;
     let expected_qname = format!("{source_namespace}.{target_name}");
@@ -432,16 +450,16 @@ fn kind_matches_symbol_kind(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 pub(super) fn build_name_index(
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
-) -> HashMap<String, Vec<(String, String, String, i64)>> {
+) -> FxHashMap<String, Vec<(String, String, String, i64)>> {
     // Build a secondary map from (file, qname) → kind string using parsed data.
-    let mut kind_map: HashMap<(&str, &str), &str> = HashMap::new();
+    let mut kind_map: FxHashMap<(&str, &str), &str> = FxHashMap::default();
     for pf in parsed {
         for sym in &pf.symbols {
             kind_map.insert((pf.path.as_str(), sym.qualified_name.as_str()), sym.kind.as_str());
         }
     }
 
-    let mut map: HashMap<String, Vec<(String, String, String, i64)>> = HashMap::new();
+    let mut map: FxHashMap<String, Vec<(String, String, String, i64)>> = FxHashMap::default();
     for ((file, qname), &id) in symbol_id_map {
         // Extract the simple name (last segment of the qualified name).
         let simple = qname.rsplit('.').next().unwrap_or(qname.as_str()).to_string();
@@ -460,7 +478,7 @@ pub(super) fn build_name_index(
 /// Build a map from qualified_name → symbol_id for exact dotted-path matches.
 pub(super) fn build_qname_index(
     symbol_id_map: &HashMap<(String, String), i64>,
-) -> HashMap<String, i64> {
+) -> FxHashMap<String, i64> {
     symbol_id_map
         .iter()
         .map(|((_, qname), &id)| (qname.clone(), id))
@@ -471,8 +489,8 @@ pub(super) fn build_qname_index(
 ///
 /// For each file, finds the first `Namespace` symbol and records its
 /// qualified name as the file's namespace.
-pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> FxHashMap<String, String> {
+    let mut map = FxHashMap::default();
     for pf in parsed {
         if let Some(ns_sym) = pf.symbols.iter().find(|s| s.kind == SymbolKind::Namespace) {
             map.insert(pf.path.clone(), ns_sym.qualified_name.clone());
@@ -491,8 +509,8 @@ pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> HashMap<String,
 ///         → ("Foo", Some("./foo"))  (EdgeKind::TypeRef with module)
 pub(super) fn build_import_map(
     parsed: &[ParsedFile],
-) -> HashMap<String, Vec<(String, Option<String>)>> {
-    let mut map: HashMap<String, Vec<(String, Option<String>)>> = HashMap::new();
+) -> FxHashMap<String, Vec<(String, Option<String>)>> {
+    let mut map: FxHashMap<String, Vec<(String, Option<String>)>> = FxHashMap::default();
     for pf in parsed {
         for r in &pf.refs {
             match r.kind {

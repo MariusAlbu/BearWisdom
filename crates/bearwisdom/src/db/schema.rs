@@ -46,6 +46,13 @@ pub fn apply_pragmas(conn: &Connection, is_new: bool) -> rusqlite::Result<()> {
     // 16 MB cache (negative value = kibibytes).
     pragma(conn, "PRAGMA cache_size = -16000")?;
 
+    // 256 MB mmap window — OS maps the file into virtual address space so
+    // reads bypass the syscall boundary on large databases.
+    pragma(conn, "PRAGMA mmap_size = 268435456")?;
+
+    // Keep all temp tables and indexes in memory rather than on disk.
+    pragma(conn, "PRAGMA temp_store = MEMORY")?;
+
     // Enforce FK constraints — catches bugs where we insert an edge whose
     // source_id or target_id does not exist in symbols.
     pragma(conn, "PRAGMA foreign_keys = ON")?;
@@ -74,8 +81,10 @@ CREATE TABLE IF NOT EXISTS files (
     last_indexed INTEGER NOT NULL   -- Unix timestamp (seconds since epoch)
 );
 
-CREATE INDEX IF NOT EXISTS idx_files_language ON files(language);
-CREATE INDEX IF NOT EXISTS idx_files_hash     ON files(hash);
+CREATE INDEX IF NOT EXISTS idx_files_language  ON files(language);
+-- Covers both hash-only lookups (incremental change detection) and
+-- path+hash scans — replaces the old idx_files_hash single-column index.
+CREATE INDEX IF NOT EXISTS idx_files_path_hash ON files(path, hash);
 
 -- ============================================================
 -- CODE GRAPH: SYMBOLS
@@ -104,11 +113,15 @@ CREATE TABLE IF NOT EXISTS symbols (
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_qualified ON symbols(qualified_name);
-CREATE INDEX IF NOT EXISTS idx_symbols_file      ON symbols(file_id);
--- Covering index for the most common query pattern: 'find me a symbol by name
--- and tell me where it lives' — avoids a table lookup.
+-- Covering index for name-based lookups: returns file, kind, and position
+-- without a table lookup.
 CREATE INDEX IF NOT EXISTS idx_symbols_name_cov
     ON symbols(name, file_id, kind, line, col);
+-- Covering index for file-based lookups (most common in incremental indexing):
+-- returns all display columns without touching the symbols heap.
+-- Replaces the old idx_symbols_file single-column index.
+CREATE INDEX IF NOT EXISTS idx_symbols_file_cov
+    ON symbols(file_id, name, qualified_name, kind, line, col);
 
 -- ============================================================
 -- CODE GRAPH: EDGES
@@ -127,8 +140,13 @@ CREATE TABLE IF NOT EXISTS edges (
     UNIQUE(source_id, target_id, kind, source_line)
 );
 
-CREATE INDEX IF NOT EXISTS idx_edges_source ON edges(source_id, kind);
-CREATE INDEX IF NOT EXISTS idx_edges_target ON edges(target_id, kind);
+-- Covering indexes for call hierarchy queries: include all columns needed
+-- to resolve callers/callees without touching the edges heap.
+-- These supersede the old idx_edges_source and idx_edges_target indexes.
+CREATE INDEX IF NOT EXISTS idx_edges_source_cov
+    ON edges(source_id, kind, target_id, confidence, source_line);
+CREATE INDEX IF NOT EXISTS idx_edges_target_cov
+    ON edges(target_id, kind, source_id, confidence);
 
 -- ============================================================
 -- UNRESOLVED REFERENCES
@@ -145,8 +163,12 @@ CREATE TABLE IF NOT EXISTS unresolved_refs (
     module      TEXT
 );
 
-CREATE INDEX IF NOT EXISTS idx_unresolved_name        ON unresolved_refs(target_name);
-CREATE INDEX IF NOT EXISTS idx_unresolved_source_kind ON unresolved_refs(source_id, kind);
+CREATE INDEX IF NOT EXISTS idx_unresolved_name       ON unresolved_refs(target_name);
+-- Covering index for diagnostics queries: returns all display columns for a
+-- given source symbol without a table lookup.
+-- Supersedes the old idx_unresolved_source_kind index.
+CREATE INDEX IF NOT EXISTS idx_unresolved_source_cov
+    ON unresolved_refs(source_id, target_name, kind, source_line);
 
 -- ============================================================
 -- EXTERNAL REFERENCES
@@ -165,8 +187,12 @@ CREATE TABLE IF NOT EXISTS external_refs (
     namespace   TEXT    NOT NULL   -- inferred external namespace
 );
 
-CREATE INDEX IF NOT EXISTS idx_external_source ON external_refs(source_id);
-CREATE INDEX IF NOT EXISTS idx_external_ns     ON external_refs(namespace);
+-- Covering index for namespace analysis queries: returns target, kind, and
+-- namespace without a table lookup.
+-- Supersedes the old idx_external_source single-column index.
+CREATE INDEX IF NOT EXISTS idx_external_source_cov
+    ON external_refs(source_id, target_name, kind, namespace);
+CREATE INDEX IF NOT EXISTS idx_external_ns ON external_refs(namespace);
 
 -- ============================================================
 -- IMPORTS
@@ -392,9 +418,12 @@ CREATE TABLE IF NOT EXISTS flow_edges (
 
 CREATE INDEX IF NOT EXISTS idx_flow_source ON flow_edges(source_file_id);
 CREATE INDEX IF NOT EXISTS idx_flow_target ON flow_edges(target_file_id);
-CREATE INDEX IF NOT EXISTS idx_flow_type      ON flow_edges(edge_type);
-CREATE INDEX IF NOT EXISTS idx_flow_type_lang ON flow_edges(edge_type, source_language);
-CREATE INDEX IF NOT EXISTS idx_flow_url       ON flow_edges(url_pattern);
+-- Covers edge_type-only filters, (edge_type, source_language) filters, and
+-- cross-language pair queries — supersedes both idx_flow_type and
+-- idx_flow_type_lang.
+CREATE INDEX IF NOT EXISTS idx_flow_edges_type
+    ON flow_edges(edge_type, source_language, target_language);
+CREATE INDEX IF NOT EXISTS idx_flow_url ON flow_edges(url_pattern);
 
 -- ============================================================
 -- SEARCH HISTORY

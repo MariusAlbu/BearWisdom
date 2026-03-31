@@ -95,18 +95,21 @@ pub fn resolve_and_write(
                 };
 
                 if let Some(resolution) = resolver.resolve(file_ctx, &ref_ctx, &index) {
-                    let result = tx.execute(
-                        "INSERT OR IGNORE INTO edges
-                           (source_id, target_id, kind, source_line, confidence)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
-                        rusqlite::params![
-                            source_id,
-                            resolution.target_symbol_id,
-                            r.kind.as_str(),
-                            r.line,
-                            resolution.confidence,
-                        ],
-                    );
+                    let result = tx
+                        .prepare_cached(
+                            "INSERT OR IGNORE INTO edges
+                               (source_id, target_id, kind, source_line, confidence)
+                             VALUES (?1, ?2, ?3, ?4, ?5)",
+                        )
+                        .and_then(|mut stmt| {
+                            stmt.execute(rusqlite::params![
+                                source_id,
+                                resolution.target_symbol_id,
+                                r.kind.as_str(),
+                                r.line,
+                                resolution.confidence,
+                            ])
+                        });
                     match result {
                         Ok(_) => {
                             stats.resolved += 1;
@@ -137,12 +140,21 @@ pub fn resolve_and_write(
 
             match resolution {
                 Some((target_id, confidence)) => {
-                    let result = tx.execute(
-                        "INSERT OR IGNORE INTO edges
-                           (source_id, target_id, kind, source_line, confidence)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
-                        rusqlite::params![source_id, target_id, r.kind.as_str(), r.line, confidence],
-                    );
+                    let result = tx
+                        .prepare_cached(
+                            "INSERT OR IGNORE INTO edges
+                               (source_id, target_id, kind, source_line, confidence)
+                             VALUES (?1, ?2, ?3, ?4, ?5)",
+                        )
+                        .and_then(|mut stmt| {
+                            stmt.execute(rusqlite::params![
+                                source_id,
+                                target_id,
+                                r.kind.as_str(),
+                                r.line,
+                                confidence,
+                            ])
+                        });
                     match result {
                         Ok(_) => stats.resolved += 1,
                         Err(e) => debug!("Heuristic edge insert failed: {e}"),
@@ -174,23 +186,39 @@ pub fn resolve_and_write(
 
                     if let Some(ns) = &inferred_ns {
                         // Known external framework ref → external_refs table.
-                        tx.execute(
+                        tx.prepare_cached(
                             "INSERT INTO external_refs
                                (source_id, target_name, kind, source_line, namespace)
                              VALUES (?1, ?2, ?3, ?4, ?5)",
-                            rusqlite::params![source_id, r.target_name, r.kind.as_str(), r.line, ns],
                         )
+                        .and_then(|mut stmt| {
+                            stmt.execute(rusqlite::params![
+                                source_id,
+                                r.target_name,
+                                r.kind.as_str(),
+                                r.line,
+                                ns,
+                            ])
+                        })
                         .ok();
                         stats.external += 1;
                     } else {
                         // Truly unresolved — no external namespace identified.
                         let module_value = r.module.as_deref();
-                        tx.execute(
+                        tx.prepare_cached(
                             "INSERT INTO unresolved_refs
                                (source_id, target_name, kind, source_line, module)
                              VALUES (?1, ?2, ?3, ?4, ?5)",
-                            rusqlite::params![source_id, r.target_name, r.kind.as_str(), r.line, module_value],
                         )
+                        .and_then(|mut stmt| {
+                            stmt.execute(rusqlite::params![
+                                source_id,
+                                r.target_name,
+                                r.kind.as_str(),
+                                r.line,
+                                module_value,
+                            ])
+                        })
                         .ok();
                         stats.unresolved += 1;
                     }
