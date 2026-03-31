@@ -122,7 +122,9 @@ fn extract_from_node(
                 }
             }
 
-            "struct_item" => {
+            "struct_item" | "union_item" => {
+                // `union_item` has the same field layout as `struct_item` in
+                // tree-sitter-rust; reuse the struct extractor and emit Struct kind.
                 if let Some(sym) =
                     symbols::extract_struct(&child, source, parent_index, qualified_prefix)
                 {
@@ -212,7 +214,41 @@ fn extract_from_node(
                 calls::extract_use_names(&child, source, refs, symbols.len());
             }
 
-            "macro_definition" => {}
+            // `extern "C" { fn malloc(size: usize) -> *mut u8; }`
+            // Walk the declaration_list body and emit Function symbols for each
+            // `foreign_item` function declaration.
+            "foreign_mod_item" => {
+                if let Some(body) = child.child_by_field_name("body") {
+                    let mut bc = body.walk();
+                    for decl in body.children(&mut bc) {
+                        if decl.kind() == "function_item" || decl.kind() == "function_signature_item" {
+                            if let Some(sym) =
+                                symbols::extract_function(&decl, source, parent_index, qualified_prefix)
+                            {
+                                let idx = symbols.len();
+                                symbols.push(sym);
+                                decorators::extract_decorators(&decl, source, idx, refs);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // `extern crate foo;` — emit an Imports edge for the crate name.
+            "extern_crate_declaration" => {
+                calls::extract_extern_crate(&child, source, refs, symbols.len());
+            }
+
+            // `macro_rules! foo { ... }` — tree-sitter-rust 0.24 emits `macro_definition`.
+            // Emit a Function symbol for the macro name.
+            "macro_definition" => {
+                if let Some(sym) =
+                    symbols::extract_macro_rules(&child, source, parent_index, qualified_prefix)
+                {
+                    let idx = symbols.len();
+                    symbols.push(sym);
+                }
+            }
 
             "ERROR" | "MISSING" => {}
 

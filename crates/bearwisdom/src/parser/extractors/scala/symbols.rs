@@ -258,6 +258,179 @@ pub(super) fn push_val_var(
     });
 }
 
+/// Emit a TypeAlias symbol for a Scala `type` definition.
+/// `type_definition` has `name` and optionally `type` fields.
+pub(super) fn push_type_definition(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let name_node = node.child_by_field_name("name")?;
+    let name = node_text(name_node, src);
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let type_params = node
+        .child_by_field_name("type_parameters")
+        .map(|tp| node_text(tp, src))
+        .unwrap_or_default();
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("type {name}{type_params}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+
+    // Emit TypeRef for the aliased type (field `type`).
+    if let Some(type_node) = node.child_by_field_name("type") {
+        let alias_name = type_name_from_node(&type_node, src);
+        if !alias_name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: idx,
+                target_name: alias_name,
+                kind: EdgeKind::TypeRef,
+                line: type_node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+
+    Some(idx)
+}
+
+/// Emit a Class symbol for a `given_definition` (Scala 3 implicit instance).
+/// `given_definition` has an optional `name` field and a `return_type` field.
+pub(super) fn push_given_definition(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // Name is optional — use return_type name as fallback.
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .or_else(|| {
+            node.child_by_field_name("return_type")
+                .map(|t| type_name_from_node(&t, src))
+                .filter(|n| !n.is_empty())
+        })?;
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Class,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("given {name}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+
+    // Emit TypeRef for the given's return_type.
+    if let Some(rt) = node.child_by_field_name("return_type") {
+        let type_name = type_name_from_node(&rt, src);
+        if !type_name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: idx,
+                target_name: type_name,
+                kind: EdgeKind::TypeRef,
+                line: rt.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+
+    Some(idx)
+}
+
+/// Emit a Namespace symbol for `extension (T) { ... }` (Scala 3).
+/// `extension_definition` has `parameters` (the extended type) but no `name`.
+pub(super) fn push_extension_definition(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // The extended type lives inside the `parameters` field.
+    let name = node
+        .child_by_field_name("parameters")
+        .and_then(|p| {
+            let mut cursor = p.walk();
+            for child in p.named_children(&mut cursor) {
+                // parameters → parameters → parameter → type
+                if child.kind() == "parameters" {
+                    let mut ic = child.walk();
+                    for param in child.named_children(&mut ic) {
+                        // Each param may have a `type` child.
+                        if let Some(type_node) = param.child_by_field_name("type") {
+                            let n = type_name_from_node(&type_node, src);
+                            if !n.is_empty() {
+                                return Some(n);
+                            }
+                        }
+                    }
+                }
+                let n = type_name_from_node(&child, src);
+                if !n.is_empty() {
+                    return Some(n);
+                }
+            }
+            None
+        })
+        .unwrap_or_else(|| "extension".to_string());
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Namespace,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("extension {name}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
 // ---------------------------------------------------------------------------
 // Import extraction
 // ---------------------------------------------------------------------------

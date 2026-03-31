@@ -127,4 +127,46 @@ end
         assert!(calls.contains(&"persist"),  "Missing 'persist': {calls:?}");
     }
 
+    #[test]
+    fn defprotocol_extracted_as_interface() {
+        let src = r#"
+defprotocol Stringify do
+  def to_string(value)
+end
+"#;
+        let r = extract(src);
+        let proto = r
+            .symbols
+            .iter()
+            .find(|s| s.name == "Stringify")
+            .expect("Stringify protocol not found");
+        assert_eq!(proto.kind, SymbolKind::Interface, "expected Interface kind for defprotocol");
+        // The protocol's callback should be extracted as a child function.
+        assert!(
+            r.symbols.iter().any(|s| s.name == "to_string"),
+            "expected to_string callback; symbols: {:?}",
+            r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn defimpl_extracted_as_namespace() {
+        let src = r#"
+defimpl Stringify, for: Integer do
+  def to_string(value), do: Integer.to_string(value)
+end
+"#;
+        let r = extract(src);
+        let impl_sym = r
+            .symbols
+            .iter()
+            .find(|s| s.kind == SymbolKind::Namespace)
+            .expect("defimpl should produce a Namespace symbol");
+        assert_eq!(impl_sym.name, "Stringify");
+        // Should also produce the to_string function inside the impl.
+        assert!(
+            r.symbols.iter().any(|s| s.name == "to_string"),
+            "expected to_string method inside impl"
+        );
+    }
 

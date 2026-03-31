@@ -12,7 +12,9 @@ use decorators::{extract_decorators, extract_lambda_params, extract_when_pattern
 use helpers::{classify_class, find_child_by_kind};
 use symbols::{
     emit_import, extract_class_body, extract_delegation_specifiers, extract_imports,
-    push_function_decl, push_property_decl, push_secondary_constructor, push_type_decl,
+    extract_primary_constructor_params, extract_type_parameter_bounds,
+    push_companion_object, push_function_decl, push_property_decl,
+    push_secondary_constructor, push_type_decl,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -90,7 +92,21 @@ pub(super) fn extract_node<'a>(
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_delegation_specifiers(&child, src, sym_idx, refs);
+                    extract_type_parameter_bounds(&child, src, sym_idx, refs);
+                    // Extract primary constructor params (promoted properties + TypeRefs).
+                    extract_primary_constructor_params(&child, src, scope_tree, symbols, refs, idx);
                     extract_class_body(&child, src, scope_tree, symbols, refs, idx);
+                }
+            }
+
+            "companion_object" => {
+                let idx = push_companion_object(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    extract_delegation_specifiers(&child, src, sym_idx, refs);
+                    // `class_body` is a non-field child of companion_object.
+                    if let Some(body) = find_child_by_kind(&child, "class_body") {
+                        extract_node(body, src, scope_tree, symbols, refs, idx);
+                    }
                 }
             }
 
@@ -109,6 +125,7 @@ pub(super) fn extract_node<'a>(
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
                     extract_delegation_specifiers(&child, src, sym_idx, refs);
+                    extract_type_parameter_bounds(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         extract_node(body, src, scope_tree, symbols, refs, idx);
                     }
@@ -119,6 +136,7 @@ pub(super) fn extract_node<'a>(
                 let idx = push_function_decl(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
+                    extract_type_parameter_bounds(&child, src, sym_idx, refs);
                     // function_body is a child (not a named field) in kotlin-ng 1.1.
                     let body = child.child_by_field_name("body")
                         .or_else(|| find_child_by_kind(&child, "function_body"));

@@ -46,6 +46,31 @@ pub(super) fn extract_calls_from_body(
                 extract_match_patterns(&child, src, source_symbol_index, refs);
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+
+            // Infix method calls: `a.map(f)` or `list sorted ordering`.
+            // The operator field is the method name — emit a Calls edge.
+            "infix_expression" => {
+                if let Some(op) = child.child_by_field_name("operator") {
+                    let target_name = node_text(op, src);
+                    if !target_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name,
+                            kind: EdgeKind::Calls,
+                            line: op.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
+            // Lambda expressions: `x => expr`, `(x, y) => expr` — recurse into body.
+            "lambda_expression" => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }

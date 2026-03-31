@@ -109,7 +109,18 @@ pub fn extract(source: &str) -> CSharpExtraction {
     // --- Build the scope tree (first pass) ---
     // This gives us a flat list of all scope entries with their byte ranges
     // and qualified names.  We'll use it to look up the scope of any node.
-    let scope_tree = scope_tree::build(root, src_bytes, CSHARP_SCOPE_KINDS);
+    let mut scope_tree = scope_tree::build(root, src_bytes, CSHARP_SCOPE_KINDS);
+
+    // File-scoped namespaces (`namespace Foo.Bar;`) logically encompass the
+    // entire compilation unit, but their tree-sitter node ends at the semicolon.
+    // Extend any such entry to cover the full source so that `find_scope_at`
+    // returns the namespace scope for type declarations that follow it.
+    let src_len = src_bytes.len();
+    for entry in &mut scope_tree {
+        if entry.node_kind == "file_scoped_namespace_declaration" {
+            entry.end_byte = src_len;
+        }
+    }
 
     // --- Extract symbols and references (second pass) ---
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
@@ -229,8 +240,20 @@ fn extract_node_inner(
     parent_index: Option<usize>,
     class_route_prefix: Option<&str>,
 ) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
+    // File-scoped namespaces (`namespace Foo.Bar;`) have no body block — all
+    // subsequent top-level declarations in the file are implicitly inside them.
+    // We collect children into a Vec so we can scan ahead for the namespace
+    // declaration, then process all siblings after it under its index.
+    let children: Vec<Node> = {
+        let mut cursor = node.walk();
+        node.children(&mut cursor).collect()
+    };
+
+    // Track whether a file-scoped namespace has been encountered and its index.
+    // All siblings after the declaration use this as their effective parent.
+    let mut effective_parent_index = parent_index;
+
+    for child in &children {
         match child.kind() {
             // ----------------------------------------------------------------
             // Skip — already handled by scope tree, or irrelevant syntax
@@ -238,25 +261,30 @@ fn extract_node_inner(
             "file_scoped_namespace_declaration" => {
                 // Emit a Namespace symbol so same-namespace resolution works
                 // for file-scoped declarations like `namespace X.Y.Z;`
-                let idx = symbols::push_namespace(&child, src, scope_tree, symbols, parent_index);
-                extract_node(child, src, scope_tree, symbols, refs, routes, db_sets, idx);
+                let idx = symbols::push_namespace(child, src, scope_tree, symbols, parent_index);
+                // Update the effective parent so that all subsequent siblings
+                // in the compilation unit are nested under this namespace.
+                effective_parent_index = idx;
+                // Do NOT recurse into the node itself — its only children are
+                // the `namespace` keyword, the name, and `;`.  The actual type
+                // declarations come as siblings in the compilation_unit.
             }
 
             "namespace_declaration" => {
-                let idx = symbols::push_namespace(&child, src, scope_tree, symbols, parent_index);
+                let idx = symbols::push_namespace(child, src, scope_tree, symbols, effective_parent_index);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
             }
 
             "class_declaration" => {
-                let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Class);
-                types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
-                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
+                let idx = symbols::push_type_decl(child, src, scope_tree, symbols, effective_parent_index, SymbolKind::Class);
+                types::extract_base_types(child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(child, src, idx.unwrap_or(0), refs);
                 // Extract class-level [Route("...")] for ASP.NET controllers.
-                let class_route = calls::extract_class_route_prefix(&child, src);
+                let class_route = calls::extract_class_route_prefix(child, src);
                 // Check if this looks like a DbContext subclass.
-                let is_db_context = helpers::is_dbcontext_subclass(&child, src);
+                let is_db_context = helpers::is_dbcontext_subclass(child, src);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, class_route.as_deref());
                     if is_db_context {
@@ -266,13 +294,13 @@ fn extract_node_inner(
             }
 
             "record_declaration" => {
-                let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Class);
-                types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
-                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
+                let idx = symbols::push_type_decl(child, src, scope_tree, symbols, effective_parent_index, SymbolKind::Class);
+                types::extract_base_types(child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(child, src, idx.unwrap_or(0), refs);
                 // Extract primary constructor parameters as Property symbols.
                 // e.g. `record Point(int X, int Y)` → two Property symbols.
                 if let Some(record_idx) = idx {
-                    symbols::extract_record_primary_params(&child, src, scope_tree, symbols, record_idx);
+                    symbols::extract_record_primary_params(child, src, scope_tree, symbols, record_idx);
                 }
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
@@ -280,36 +308,36 @@ fn extract_node_inner(
             }
 
             "struct_declaration" => {
-                let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Struct);
-                types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
-                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
+                let idx = symbols::push_type_decl(child, src, scope_tree, symbols, effective_parent_index, SymbolKind::Struct);
+                types::extract_base_types(child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
             }
 
             "interface_declaration" => {
-                let idx = symbols::push_type_decl(&child, src, scope_tree, symbols, parent_index, SymbolKind::Interface);
-                types::extract_base_types(&child, src, idx.unwrap_or(0), refs);
-                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
+                let idx = symbols::push_type_decl(child, src, scope_tree, symbols, effective_parent_index, SymbolKind::Interface);
+                types::extract_base_types(child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node_inner(body, src, scope_tree, symbols, refs, routes, db_sets, idx, None);
                 }
             }
 
             "enum_declaration" => {
-                let idx = symbols::push_enum_decl(&child, src, scope_tree, symbols, parent_index);
-                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
+                let idx = symbols::push_enum_decl(child, src, scope_tree, symbols, effective_parent_index);
+                decorators::extract_decorators(child, src, idx.unwrap_or(0), refs);
                 // Enum members are extracted inside push_enum_decl.
                 let _ = idx;
             }
 
             "method_declaration" => {
-                let idx = symbols::push_method_decl(&child, src, scope_tree, symbols, parent_index);
+                let idx = symbols::push_method_decl(child, src, scope_tree, symbols, effective_parent_index);
                 if let Some(sym_idx) = idx {
-                    decorators::extract_decorators(&child, src, sym_idx, refs);
+                    decorators::extract_decorators(child, src, sym_idx, refs);
                     // Extract type refs from return type and parameter types.
-                    symbols::push_method_type_refs(&child, src, sym_idx, refs);
+                    symbols::push_method_type_refs(child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this method.
                     if let Some(params) = child.child_by_field_name("parameters") {
                         types::extract_csharp_typed_params_as_symbols(params, src, scope_tree, symbols, refs, Some(sym_idx));
@@ -331,16 +359,16 @@ fn extract_node_inner(
                     }
                     // Look for ASP.NET attribute routes on the method declaration.
                     // Prepend the class-level [Route("...")] prefix if present.
-                    calls::extract_attribute_routes_with_prefix(&child, src, sym_idx, routes, class_route_prefix);
+                    calls::extract_attribute_routes_with_prefix(child, src, sym_idx, routes, class_route_prefix);
                 }
             }
 
             "constructor_declaration" => {
-                let idx = symbols::push_constructor_decl(&child, src, scope_tree, symbols, parent_index);
+                let idx = symbols::push_constructor_decl(child, src, scope_tree, symbols, effective_parent_index);
                 if let Some(sym_idx) = idx {
-                    decorators::extract_decorators(&child, src, sym_idx, refs);
+                    decorators::extract_decorators(child, src, sym_idx, refs);
                     // Extract type refs from parameter types.
-                    symbols::push_constructor_type_refs(&child, src, sym_idx, refs);
+                    symbols::push_constructor_type_refs(child, src, sym_idx, refs);
                     // Extract typed parameters as Property symbols scoped to this constructor.
                     if let Some(params) = child.child_by_field_name("parameters") {
                         types::extract_csharp_typed_params_as_symbols(params, src, scope_tree, symbols, refs, Some(sym_idx));
@@ -361,23 +389,81 @@ fn extract_node_inner(
             }
 
             "property_declaration" => {
-                symbols::push_property_decl(&child, src, scope_tree, symbols, refs, parent_index);
+                symbols::push_property_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
             }
 
             "field_declaration" => {
-                symbols::push_field_decl(&child, src, scope_tree, symbols, refs, parent_index);
+                symbols::push_field_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
             }
 
             "event_field_declaration" => {
-                symbols::push_event_field_decl(&child, src, scope_tree, symbols, parent_index);
+                symbols::push_event_field_decl(child, src, scope_tree, symbols, effective_parent_index);
+            }
+
+            // `event EventHandler Clicked { add { ... } remove { ... } }` — event with accessors.
+            "event_declaration" => {
+                symbols::push_event_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
             }
 
             "delegate_declaration" => {
-                symbols::push_delegate_decl(&child, src, scope_tree, symbols, parent_index);
+                symbols::push_delegate_decl(child, src, scope_tree, symbols, effective_parent_index);
+            }
+
+            // `this[int index]` — indexer declaration.
+            "indexer_declaration" => {
+                let idx = symbols::push_indexer_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
+                if let Some(sym_idx) = idx {
+                    if let Some(body) = child.child_by_field_name("body") {
+                        calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                    }
+                }
+            }
+
+            // `public static Foo operator +(Foo a, Foo b)` — operator overload.
+            "operator_declaration" => {
+                let idx = symbols::push_operator_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
+                if let Some(sym_idx) = idx {
+                    if let Some(body) = child.child_by_field_name("body") {
+                        calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                    }
+                }
+            }
+
+            // `implicit operator int(Foo f)` — conversion operator.
+            "conversion_operator_declaration" => {
+                let idx = symbols::push_conversion_operator_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
+                if let Some(sym_idx) = idx {
+                    if let Some(body) = child.child_by_field_name("body") {
+                        calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                    }
+                }
+            }
+
+            // `~ClassName()` — destructor.
+            "destructor_declaration" => {
+                let idx = symbols::push_destructor_decl(child, src, scope_tree, symbols, effective_parent_index);
+                if let Some(sym_idx) = idx {
+                    if let Some(body) = child.child_by_field_name("body") {
+                        calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                    }
+                }
+            }
+
+            // Local functions inside method bodies — handled inside body walkers.
+            // At the top level of a type body this can appear as a stray child; recurse.
+            "local_function_statement" => {
+                let idx = symbols::push_local_function_decl(child, src, scope_tree, symbols, effective_parent_index);
+                if let Some(sym_idx) = idx {
+                    symbols::push_method_type_refs(child, src, sym_idx, refs);
+                    if let Some(body) = child.child_by_field_name("body") {
+                        calls::extract_calls_from_body(&body, src, sym_idx, refs);
+                        calls::extract_body_variable_symbols(&body, src, scope_tree, symbols, Some(sym_idx));
+                    }
+                }
             }
 
             "using_directive" => {
-                symbols::push_using_directive(&child, src, symbols.len(), refs);
+                symbols::push_using_directive(child, src, symbols.len(), refs);
             }
 
             "ERROR" | "MISSING" => {
@@ -386,7 +472,7 @@ fn extract_node_inner(
 
             _ => {
                 // Recurse into any container we don't explicitly handle.
-                extract_node(child, src, scope_tree, symbols, refs, routes, db_sets, parent_index);
+                extract_node(*child, src, scope_tree, symbols, refs, routes, db_sets, effective_parent_index);
             }
         }
     }

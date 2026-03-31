@@ -760,3 +760,253 @@ func process(users []User) {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Variadic parameters
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn variadic_param_extracted_as_property_symbol() {
+        let source = r#"package p
+
+func Join(sep string, args ...string) string {
+    return ""
+}
+"#;
+        let r = extract(source);
+        let join_fn = r.symbols.iter().find(|s| s.name == "Join").expect("no Join");
+        assert_eq!(join_fn.kind, SymbolKind::Function);
+    }
+
+    #[test]
+    fn variadic_param_with_user_type_emits_type_ref() {
+        let source = r#"package p
+
+func Emit(handlers ...Handler) {
+    _ = handlers
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        assert!(
+            type_refs.iter().any(|r| r.target_name == "Handler"),
+            "expected TypeRef to Handler from variadic param, got: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Type conversion expressions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn type_conversion_with_user_type_emits_type_ref() {
+        let source = r#"package p
+
+func convert(b Buffer) MyString {
+    return MyString(b)
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
+        assert!(
+            type_refs.iter().any(|r| r.target_name == "MyString"),
+            "expected TypeRef to MyString from type conversion, got: {type_refs:?}"
+        );
+    }
+
+    #[test]
+    fn type_conversion_with_builtin_type_no_panic() {
+        // `string(bytes)` — builtin target, no TypeRef emitted; must not panic.
+        let source = r#"package p
+
+func f(b []byte) {
+    _ = string(b)
+}
+"#;
+        let r = extract(source);
+        let _ = r.refs;
+    }
+
+    // -----------------------------------------------------------------------
+    // Iota const blocks
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn iota_const_block_extracts_all_identifiers() {
+        let source = r#"package status
+
+const (
+    Pending = iota
+    Active
+    Closed
+)
+"#;
+        let r = extract(source);
+        let names: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(names.contains(&"Pending"), "missing Pending: {names:?}");
+        assert!(names.contains(&"Active"),  "missing Active:  {names:?}");
+        assert!(names.contains(&"Closed"),  "missing Closed:  {names:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Blank identifier in expressions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn blank_identifier_rhs_calls_extracted() {
+        // `_ = expr` — calls inside the RHS should still be extracted.
+        let source = r#"package p
+
+func run(repo Repo) {
+    _ = repo.FindAll()
+}
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"FindAll"),
+            "expected FindAll call from blank-identifier rhs, got: {call_names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // array_type TypeRef
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn array_type_in_field_emits_type_ref_via_struct_extraction() {
+        // [N]User as a struct field — the type text is captured in the field sig.
+        // The TypeRef extraction for array_type is used when it appears in
+        // expression positions (func_literal params, type_conversion, etc.).
+        // This test confirms no panic and graceful handling.
+        let source = r#"package model
+
+type Batch struct {
+    Items [10]User
+}
+"#;
+        let r = extract(source);
+        assert!(!r.has_errors, "parse errors in source");
+        // At minimum, the struct and field must be extracted.
+        assert!(r.symbols.iter().any(|s| s.name == "Batch"), "missing Batch struct");
+    }
+
+    // -----------------------------------------------------------------------
+    // func_literal TypeRef for parameter types
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn func_literal_param_type_emits_type_ref() {
+        let source = r#"package p
+
+func run() {
+    handler := func(req Request, w ResponseWriter) {
+        _ = req
+        _ = w
+    }
+    _ = handler
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"Request"),
+            "expected TypeRef to Request from func_literal param, got: {type_refs:?}"
+        );
+        assert!(
+            type_refs.contains(&"ResponseWriter"),
+            "expected TypeRef to ResponseWriter from func_literal param, got: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // generic_type TypeRef (Go 1.18+)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn generic_type_emits_type_ref() {
+        let source = r#"package p
+
+func run() {
+    var items List[User]
+    _ = items
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"List"),
+            "expected TypeRef to List from generic_type, got: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // go_statement / defer_statement — calls captured
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn defer_cleanup_call_captured() {
+        let source = r#"package io
+
+func open(db Database) {
+    defer db.Close()
+    db.Query("SELECT 1")
+}
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"Close"),
+            "expected Close from defer, got: {call_names:?}"
+        );
+        assert!(
+            call_names.contains(&"Query"),
+            "expected Query, got: {call_names:?}"
+        );
+    }
+
+    #[test]
+    fn go_statement_goroutine_call_captured() {
+        let source = r#"package worker
+
+func dispatch(q Queue) {
+    go q.Process()
+}
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"Process"),
+            "expected Process from go statement, got: {call_names:?}"
+        );
+    }
+

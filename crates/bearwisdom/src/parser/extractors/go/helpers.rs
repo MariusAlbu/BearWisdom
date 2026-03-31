@@ -120,11 +120,14 @@ pub(super) fn is_go_builtin_type(name: &str) -> bool {
 /// Extract a simple type name from a Go type node for TypeRef emission.
 ///
 /// Handles:
-/// - `type_identifier`  → `"Foo"`
-/// - `pointer_type`     → `"Foo"` (strips `*`)
-/// - `qualified_type`   → `"Foo"` (last segment of `pkg.Foo`)
-/// - `slice_type`       → recursively extracts element type
-/// - `map_type`         → recursively extracts value type
+/// - `type_identifier`            → `"Foo"`
+/// - `pointer_type`               → `"Foo"` (strips `*`)
+/// - `qualified_type`             → `"Foo"` (last segment of `pkg.Foo`)
+/// - `slice_type`                 → recursively extracts element type
+/// - `map_type`                   → recursively extracts value type
+/// - `array_type`                 → `[N]Foo` → extracts element type
+/// - `channel_type`               → `chan Foo` → extracts element type
+/// - `generic_type`               → `List[T]` → base type name (Go 1.18+)
 pub(super) fn extract_go_type_name(node: &Node, source: &str) -> String {
     match node.kind() {
         "type_identifier" => node_text(node, source),
@@ -164,6 +167,113 @@ pub(super) fn extract_go_type_name(node: &Node, source: &str) -> String {
             }
             String::new()
         }
+        "array_type" => {
+            // `[N]Foo` — extract element type (last named child after the length).
+            // tree-sitter-go: array_type { length: _, element: _type }
+            if let Some(elem) = node.child_by_field_name("element") {
+                return extract_go_type_name(&elem, source);
+            }
+            // Fallback: last named child.
+            let named: Vec<_> = {
+                let mut cursor = node.walk();
+                node.children(&mut cursor).filter(|c| c.is_named()).collect()
+            };
+            if let Some(last) = named.last() {
+                return extract_go_type_name(last, source);
+            }
+            String::new()
+        }
+        "channel_type" => {
+            // `chan Foo` / `<-chan Foo` — extract element type (last named child).
+            let mut cursor = node.walk();
+            let mut last_name = String::new();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    let name = extract_go_type_name(&child, source);
+                    if !name.is_empty() {
+                        last_name = name;
+                    }
+                }
+            }
+            last_name
+        }
+        "generic_type" => {
+            // `List[int]` (Go 1.18+) — extract base type name.
+            // tree-sitter-go generic_type: type_identifier, type_arguments
+            if let Some(base) = node.child_by_field_name("name") {
+                return node_text(&base, source);
+            }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "type_identifier" {
+                    return node_text(&child, source);
+                }
+            }
+            String::new()
+        }
         _ => String::new(),
+    }
+}
+
+/// Emit TypeRef edges for all non-builtin named types referenced inside a
+/// `function_type` node (`func(A, B) C`).
+///
+/// This covers both parameter types and the return type.
+pub(super) fn extract_function_type_refs(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
+    use crate::types::EdgeKind;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "parameter_list" | "result" => {
+                let mut inner = child.walk();
+                for param_child in child.children(&mut inner) {
+                    if !param_child.is_named() {
+                        continue;
+                    }
+                    match param_child.kind() {
+                        "parameter_declaration" | "variadic_parameter_declaration" => {
+                            // The type is the last named child that isn't an identifier.
+                            let type_node = (0..param_child.child_count())
+                                .filter_map(|i| param_child.child(i))
+                                .filter(|c| c.is_named() && c.kind() != "identifier")
+                                .last();
+                            if let Some(tn) = type_node {
+                                let name = extract_go_type_name(&tn, source);
+                                if !name.is_empty() && !is_go_builtin_type(&name) {
+                                    refs.push(crate::types::ExtractedRef {
+                                        source_symbol_index,
+                                        target_name: name,
+                                        kind: EdgeKind::TypeRef,
+                                        line: tn.start_position().row as u32,
+                                        module: None,
+                                        chain: None,
+                                    });
+                                }
+                            }
+                        }
+                        _ => {
+                            // Bare type in result or single-type result.
+                            let name = extract_go_type_name(&param_child, source);
+                            if !name.is_empty() && !is_go_builtin_type(&name) {
+                                refs.push(crate::types::ExtractedRef {
+                                    source_symbol_index,
+                                    target_name: name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: param_child.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 }

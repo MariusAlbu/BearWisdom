@@ -593,3 +593,708 @@ class S {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Pattern matching completeness
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn or_pattern_emits_type_refs_for_both_branches() {
+        // `x is Admin or User` — both Admin and User should produce TypeRefs.
+        let src = r#"
+class S {
+    void F(object x) {
+        bool r = x is Admin or User;
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef to Admin in or_pattern. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef to User in or_pattern. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn negated_pattern_emits_type_ref() {
+        // `x is not Admin` — Admin should produce a TypeRef.
+        let src = r#"
+class S {
+    void F(object x) {
+        if (x is not Admin) {}
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef to Admin in negated_pattern. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn var_pattern_binding_variable_extracted() {
+        // `x is var v` — v should be extracted as a Variable symbol.
+        let src = r#"
+class S {
+    void F(object x) {
+        if (x is var v) {}
+    }
+}
+"#;
+        let symbols = sym(src);
+        let var_v = symbols.iter().find(|s| s.name == "v" && s.kind == SymbolKind::Variable);
+        assert!(
+            var_v.is_some(),
+            "Expected variable symbol 'v' from var pattern. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn switch_expression_or_pattern_arm_emits_type_refs() {
+        // `x switch { Admin or User => ... }` — TypeRefs for Admin and User.
+        let src = r#"
+class S {
+    void F(object x) {
+        var r = x switch {
+            Admin or User => 1,
+            _ => 0,
+        };
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef to Admin in switch or_pattern arm. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef to User in switch or_pattern arm. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn switch_expression_arm_calls_extracted() {
+        // Calls in switch expression arm bodies must be extracted.
+        let src = r#"
+class S {
+    void F(int x) {
+        var r = x switch {
+            > 5 => Compute(),
+            _ => Default(),
+        };
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Compute" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Compute in switch arm. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "Default" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Default in switch arm. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Body constructs that must recurse into calls
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn lock_statement_calls_extracted() {
+        let src = r#"
+class S {
+    void F() {
+        lock (_lock) {
+            DoWork();
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "DoWork" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for DoWork inside lock body. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn checked_statement_calls_extracted() {
+        let src = r#"
+class S {
+    void F() {
+        checked { ProcessChecked(); }
+        unchecked { ProcessUnchecked(); }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "ProcessChecked" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for ProcessChecked inside checked block. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "ProcessUnchecked" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for ProcessUnchecked inside unchecked block. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn unsafe_statement_calls_extracted() {
+        let src = r#"
+class S {
+    unsafe void F() {
+        unsafe {
+            ReadMemory();
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "ReadMemory" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for ReadMemory inside unsafe block. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn fixed_statement_calls_extracted() {
+        let src = r#"
+class S {
+    unsafe void F() {
+        int x = 1;
+        fixed (int* p = &x) {
+            ReadPtr(p);
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "ReadPtr" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for ReadPtr inside fixed block. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn yield_statement_calls_extracted() {
+        let src = r#"
+class S {
+    System.Collections.Generic.IEnumerable<int> F() {
+        yield return Calc();
+        yield break;
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Calc" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Calc inside yield return. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn string_interpolation_calls_extracted() {
+        let src = r#"
+class S {
+    void F() {
+        var s = $"Hello {user.GetName()} ({GetRole()})";
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "GetName" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for GetName inside string interpolation. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "GetRole" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for GetRole inside string interpolation. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn with_expression_calls_extracted() {
+        let src = r#"
+class S {
+    void F() {
+        var b = a with { Name = Compute() };
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Compute" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Compute inside with_expression. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn tuple_deconstruction_calls_extracted() {
+        let src = r#"
+class S {
+    void F() {
+        var (a, b) = GetValues();
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "GetValues" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for GetValues in tuple deconstruction. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn discard_assignment_calls_extracted() {
+        let src = r#"
+class S {
+    void F() {
+        _ = SomeMethod();
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "SomeMethod" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for SomeMethod in discard assignment. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn block_lambda_calls_extracted() {
+        // Block-bodied lambda `() => { Work(); }` — calls inside must be found.
+        let src = r#"
+class S {
+    void F() {
+        var t = Task.Run(() => { Work(); });
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Work" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Work inside block lambda body. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn event_handler_lambda_calls_extracted() {
+        // `button.Click += (s, e) => HandleClick(s);` — HandleClick must be found.
+        let src = r#"
+class S {
+    void F() {
+        button.Click += (s, e) => HandleClick(s);
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "HandleClick" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for HandleClick in event handler lambda. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn event_handler_lambda_params_extracted_as_variables() {
+        // `(s, e) => HandleClick(s)` — s and e should be Variable symbols.
+        let src = r#"
+class S {
+    void F() {
+        button.Click += (s, e) => HandleClick(s);
+    }
+}
+"#;
+        let symbols = sym(src);
+        let var_names: Vec<&str> = symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(var_names.contains(&"s"), "Expected variable 's' from event handler lambda. Variables: {var_names:?}");
+        assert!(var_names.contains(&"e"), "Expected variable 'e' from event handler lambda. Variables: {var_names:?}");
+    }
+
+    #[test]
+    fn linq_where_clause_calls_extracted() {
+        // Calls inside LINQ where/select clauses must be extracted.
+        let src = r#"
+class S {
+    void F() {
+        var q = from u in users where IsActive(u) select Transform(u);
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "IsActive" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for IsActive in LINQ where clause. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "Transform" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Transform in LINQ select clause. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn global_using_directive_emits_import() {
+        // `global using System;` — must produce an Imports ref just like a normal using.
+        let src = r#"global using System.Collections.Generic;"#;
+        let result = extract(src);
+        let imports: Vec<_> = result
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Imports)
+            .collect();
+        assert!(
+            !imports.is_empty(),
+            "Expected global using to produce an Imports ref. refs: {:?}",
+            result.refs.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            imports[0].module.as_deref(),
+            Some("System.Collections.Generic"),
+        );
+    }
+
+    #[test]
+    fn file_scoped_namespace_qualified_name() {
+        // `namespace MyApp;` (file-scoped) — class should be qualified under MyApp.
+        let src = r#"
+namespace MyApp.Services;
+public class OrderService {}
+"#;
+        let symbols = sym(src);
+        let svc = symbols.iter().find(|s| s.name == "OrderService").unwrap();
+        assert!(
+            svc.qualified_name.starts_with("MyApp.Services"),
+            "Expected qualified_name to start with 'MyApp.Services', got: {}",
+            svc.qualified_name
+        );
+    }
+
+    #[test]
+    fn init_accessor_property_extracted() {
+        // `public string Name { get; init; }` — property must be extracted; init does not break it.
+        let src = r#"
+record Person {
+    public string Name { get; init; }
+    public int Age { get; init; }
+}
+"#;
+        let symbols = sym(src);
+        assert!(
+            symbols.iter().any(|s| s.name == "Name" && s.kind == SymbolKind::Property),
+            "Expected Name property extracted. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            symbols.iter().any(|s| s.name == "Age" && s.kind == SymbolKind::Property),
+            "Expected Age property extracted. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn nullable_type_unwrapped_in_type_ref() {
+        // `User?` param should emit TypeRef to `User`, not `User?`.
+        let src = r#"
+class S {
+    public void Process(User? user) {}
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef to User (not User?) from nullable param. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            !r.iter().any(|r| r.target_name == "User?" && r.kind == EdgeKind::TypeRef),
+            "TypeRef target should not include the '?' suffix"
+        );
+    }
+
+    #[test]
+    fn record_positional_params_have_type_refs() {
+        // `record UserDto(string Name, Category Category)` — TypeRef to Category.
+        let src = r#"
+namespace App {
+    public record UserDto(string Name, Category Category);
+}
+"#;
+        let result = extract(src);
+        // The primary ctor params are extracted as Property symbols.
+        let symbols = &result.symbols;
+        assert!(
+            symbols.iter().any(|s| s.name == "Name" && s.kind == SymbolKind::Property),
+            "Expected Name property from record primary ctor. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            symbols.iter().any(|s| s.name == "Category" && s.kind == SymbolKind::Property),
+            "Expected Category property from record primary ctor. Symbols: {:?}",
+            symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // New: cast_expression, typeof, nameof, destructor, operator, indexer,
+    //      event declaration, local function
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cast_expression_emits_type_ref() {
+        let src = r#"
+class S {
+    void F(object x) {
+        var y = (Admin)x;
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef for cast type Admin. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn as_expression_emits_type_ref() {
+        let src = r#"
+class S {
+    void F(object x) {
+        var y = x as Admin;
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef for as-expression type Admin. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn typeof_expression_emits_type_ref() {
+        let src = r#"
+class S {
+    void F() {
+        var t = typeof(Admin);
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef for typeof(Admin). refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn foreach_explicit_type_emits_type_ref() {
+        let src = r#"
+class S {
+    void F(System.Collections.Generic.List<Admin> items) {
+        foreach (Admin item in items) { item.Check(); }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef for foreach type Admin. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "Check" && r.kind == EdgeKind::Calls),
+            "Expected Calls edge for Check inside foreach body. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn catch_clause_emits_type_ref_for_exception() {
+        let src = r#"
+class S {
+    void F() {
+        try { DoWork(); }
+        catch (ArgumentException e) { Handle(e); }
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "ArgumentException" && r.kind == EdgeKind::TypeRef),
+            "Expected TypeRef for catch clause exception type. refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn destructor_emits_method_symbol() {
+        let src = r#"
+class Resource {
+    ~Resource() { }
+}
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.name == "~Resource" && s.kind == SymbolKind::Method),
+            "Expected ~Resource method symbol. Symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn operator_overload_emits_method_symbol() {
+        let src = r#"
+class Money {
+    public static Money operator +(Money a, Money b) => new Money();
+}
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.name.starts_with("operator") && s.kind == SymbolKind::Method),
+            "Expected operator+ method symbol. Symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn conversion_operator_emits_method_symbol() {
+        let src = r#"
+class Celsius {
+    double Value { get; set; }
+    public static implicit operator double(Celsius c) => c.Value;
+}
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.kind == SymbolKind::Method && s.name.contains("operator")),
+            "Expected conversion operator method symbol. Symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn indexer_emits_property_symbol() {
+        let src = r#"
+class Grid {
+    public int this[int x, int y] { get => 0; set {} }
+}
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.name == "this[]" && s.kind == SymbolKind::Property),
+            "Expected this[] property symbol for indexer. Symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn event_declaration_with_accessors_emits_event_symbol() {
+        let src = r#"
+class Button {
+    public event System.EventHandler Click {
+        add { }
+        remove { }
+    }
+}
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.name == "Click" && s.kind == SymbolKind::Event),
+            "Expected Click event symbol. Symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn local_function_emits_function_symbol() {
+        let src = r#"
+class S {
+    void Outer() {
+        int Inner(int x) => x + 1;
+        var r = Inner(5);
+    }
+}
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.name == "Inner" && s.kind == SymbolKind::Function),
+            "Expected Inner local function symbol. Symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Diagnostic dump — not a real test, just prints node tree structure.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dump_csharp_node_kinds() {
+        let snippets = [
+            ("as_expression", "class S { void F(object x) { var y = x as Admin; } }"),
+            ("cast_expression", "class S { void F(object x) { var y = (Admin)x; } }"),
+            ("foreach", "class S { void F() { foreach (Admin item in items) {} } }"),
+            ("catch", "class S { void F() { try { } catch (ArgumentException e) { } } }"),
+            ("local_fn", "class S { void Outer() { int Inner(int x) => x + 1; } }"),
+            ("typeof", "class S { void F() { var t = typeof(Admin); } }"),
+        ];
+        for (label, src) in &snippets {
+            let language: tree_sitter::Language = tree_sitter_c_sharp::LANGUAGE.into();
+            let mut parser = tree_sitter::Parser::new();
+            parser.set_language(&language).unwrap();
+            let tree = parser.parse(src, None).unwrap();
+            let root = tree.root_node();
+            println!("\n--- {label}: {src}");
+            let mut cursor = root.walk();
+            for child in root.children(&mut cursor) {
+                print_csharp_node_tree(child, 0);
+            }
+        }
+    }
+
+    fn print_csharp_node_tree(node: tree_sitter::Node, depth: usize) {
+        let indent = "  ".repeat(depth);
+        println!("{}[{}] ({}:{})", indent, node.kind(), node.start_position().row, node.start_position().column);
+        if depth < 8 {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                print_csharp_node_tree(child, depth + 1);
+            }
+        }
+    }
+

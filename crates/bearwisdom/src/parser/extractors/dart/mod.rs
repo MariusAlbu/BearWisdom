@@ -10,7 +10,7 @@ mod symbols;
 use decorators::{extract_cascade_calls, extract_decorators};
 use symbols::{
     extract_class, extract_enum, extract_extension, extract_import_directive, extract_mixin,
-    extract_part_directive, extract_top_level_function, extract_variable,
+    extract_part_directive, extract_top_level_function, extract_typedef, extract_variable,
 };
 
 use crate::types::{ExtractedRef, ExtractedSymbol};
@@ -99,6 +99,11 @@ fn visit(
             }
             "part_directive" | "part_of_directive" => {
                 extract_part_directive(&child, src, symbols.len(), refs);
+            }
+
+            // Dart `typedef` / `type_alias` declarations.
+            "type_alias" => {
+                extract_typedef(&child, src, symbols, parent_index, qualified_prefix);
             }
             "initialized_variable_definition" | "static_final_declaration" => {
                 if parent_index.is_none() {

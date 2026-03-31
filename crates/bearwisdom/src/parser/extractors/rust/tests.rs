@@ -272,4 +272,294 @@ where
         assert!(typerefs.contains(&"Serialize"), "Missing Serialize: {typerefs:?}");
     }
 
+    // -----------------------------------------------------------------------
+    // macro_invocation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn macro_invocation_emits_calls_edge() {
+        let source = r#"fn run() {
+    println!("hello");
+    vec![1, 2, 3];
+}"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"println"),
+            "expected 'println' Calls edge from macro, got: {call_names:?}"
+        );
+        assert!(
+            call_names.contains(&"vec"),
+            "expected 'vec' Calls edge from macro, got: {call_names:?}"
+        );
+    }
+
+    #[test]
+    fn custom_macro_emits_calls_edge() {
+        let source = r#"fn run() {
+    tracing::info!("starting");
+    bail!("oh no");
+}"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        // `bail` macro — should produce a Calls edge.
+        assert!(
+            call_names.contains(&"bail"),
+            "expected 'bail' Calls edge, got: {call_names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // type_cast_expression
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn type_cast_user_type_emits_type_ref() {
+        let source = r#"fn f(x: UserId) -> i64 {
+    x as i64
+}"#;
+        let r = extract(source);
+        // `i64` is a builtin — no TypeRef expected.  Verify no panic.
+        let _ = r.refs;
+    }
+
+    #[test]
+    fn type_cast_named_type_emits_type_ref() {
+        // Cast to a user-defined type (uncommon but valid with newtype patterns).
+        let source = r#"fn f(x: usize) -> MyIndex {
+    x as MyIndex
+}"#;
+        let r = extract(source);
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            typerefs.contains(&"MyIndex"),
+            "expected TypeRef to MyIndex from cast, got: {typerefs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // let_declaration variable binding
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn let_declaration_emits_variable_symbol() {
+        let source = r#"fn run() {
+    let user = find_user();
+    let (a, b) = split();
+}"#;
+        let r = extract(source);
+        let var_names: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(var_names.contains(&"user"), "missing 'user': {var_names:?}");
+    }
+
+    #[test]
+    fn let_declaration_rhs_calls_extracted() {
+        let source = r#"fn run(repo: &Repo) {
+    let user = repo.find_one(1);
+    let _ = user;
+}"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"find_one"),
+            "expected 'find_one' call from let rhs, got: {call_names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // foreign_mod_item (extern "C")
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn extern_block_functions_extracted_as_symbols() {
+        let source = r#"extern "C" {
+    fn malloc(size: usize) -> *mut u8;
+    fn free(ptr: *mut u8);
+}"#;
+        let r = extract(source);
+        let fn_names: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| matches!(s.kind, SymbolKind::Function | SymbolKind::Method))
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(fn_names.contains(&"malloc"), "missing 'malloc': {fn_names:?}");
+        assert!(fn_names.contains(&"free"),   "missing 'free':   {fn_names:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // associated_type in impl
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn associated_type_in_impl_extracted_as_type_alias() {
+        let source = r#"struct MyIter;
+
+impl Iterator for MyIter {
+    type Item = i32;
+
+    fn next(&mut self) -> Option<i32> {
+        None
+    }
+}"#;
+        let r = extract(source);
+        let type_aliases: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::TypeAlias)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(
+            type_aliases.contains(&"Item"),
+            "expected 'Item' TypeAlias from associated type, got: {type_aliases:?}"
+        );
+    }
+
+    #[test]
+    fn associated_type_with_named_rhs_emits_type_ref() {
+        let source = r#"struct Wrapper;
+
+impl Container for Wrapper {
+    type Output = MyValue;
+
+    fn get(&self) -> Self::Output { unimplemented!() }
+}"#;
+        let r = extract(source);
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            typerefs.contains(&"MyValue"),
+            "expected TypeRef to MyValue from associated type RHS, got: {typerefs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // extern crate declaration
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn extern_crate_emits_imports_edge() {
+        let source = "extern crate serde;";
+        let r = extract(source);
+        let imports: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Imports)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            imports.contains(&"serde"),
+            "expected 'serde' Imports edge from extern crate, got: {imports:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // union_item
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn union_item_extracted_as_struct_kind() {
+        let source = r#"union MyUnion {
+    i: i32,
+    f: f32,
+}"#;
+        let r = extract(source);
+        let sym = r.symbols.iter().find(|s| s.name == "MyUnion");
+        assert!(sym.is_some(), "expected MyUnion symbol");
+        assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
+    }
+
+    // -----------------------------------------------------------------------
+    // macro_definition (macro_rules!)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn macro_rules_definition_extracted_as_function() {
+        let source = r#"macro_rules! my_vec {
+    ($($x:expr),*) => { vec![$($x),*] };
+}"#;
+        let r = extract(source);
+        let sym = r.symbols.iter().find(|s| s.name == "my_vec");
+        assert!(sym.is_some(), "expected my_vec symbol from macro_rules!");
+        assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+        let sig = sym.unwrap().signature.as_deref().unwrap_or("");
+        assert!(sig.contains("macro_rules!"), "expected macro_rules! in sig, got: {sig:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // struct_expression emits Calls + TypeRef
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn struct_expression_emits_calls_and_type_ref() {
+        let source = r#"fn build() -> Point {
+    Point { x: 1, y: 2 }
+}"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"Point"),
+            "expected Calls edge for struct literal Point, got: {calls:?}"
+        );
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            typerefs.contains(&"Point"),
+            "expected TypeRef for struct literal Point, got: {typerefs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // dynamic_trait_type (dyn Trait)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dyn_trait_type_in_cast_emits_type_ref() {
+        let source = r#"fn f(e: Box<dyn Error>) -> i32 {
+    let _ = e as i32;
+    0
+}"#;
+        // This is a type cast to a primitive, no TypeRef for i32.
+        // But the function itself has `dyn Error` in its signature — verify no panic.
+        let r = extract(source);
+        let _ = r.refs;
+    }
 

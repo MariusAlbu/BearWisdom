@@ -10,28 +10,59 @@ pub(super) fn extract_calls(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "call_expression" {
-            if let Some(func_node) = child.child_by_field_name("function") {
-                let chain = build_chain(func_node, src);
-                let target_name = chain
-                    .as_ref()
-                    .and_then(|c| c.segments.last())
-                    .map(|s| s.name.clone())
-                    .unwrap_or_else(|| callee_name_fallback(func_node, src));
+        match child.kind() {
+            "call_expression" => {
+                if let Some(func_node) = child.child_by_field_name("function") {
+                    let chain = build_chain(func_node, src);
+                    let target_name = chain
+                        .as_ref()
+                        .and_then(|c| c.segments.last())
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| callee_name_fallback(func_node, src));
 
-                if !target_name.is_empty() && target_name != "undefined" {
-                    refs.push(ExtractedRef {
-                        source_symbol_index,
-                        target_name,
-                        kind: EdgeKind::Calls,
-                        line: func_node.start_position().row as u32,
-                        module: None,
-                        chain,
-                    });
+                    if !target_name.is_empty() && target_name != "undefined" {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name,
+                            kind: EdgeKind::Calls,
+                            line: func_node.start_position().row as u32,
+                            module: None,
+                            chain,
+                        });
+                    }
                 }
+                extract_calls(&child, src, source_symbol_index, refs);
+            }
+            // `sql\`SELECT ...\`` / `gql\`query { ... }\`` — tagged template expression.
+            // The first child (the tag) is the function being called.
+            "tagged_template_expression" => {
+                // tree-sitter field: "tag" is the function, "template" is the literal.
+                let tag_node = child.child_by_field_name("tag");
+                if let Some(tag) = tag_node {
+                    let chain = build_chain(tag, src);
+                    let target_name = chain
+                        .as_ref()
+                        .and_then(|c| c.segments.last())
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| callee_name_fallback(tag, src));
+                    if !target_name.is_empty() && target_name != "undefined" {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name,
+                            kind: EdgeKind::Calls,
+                            line: tag.start_position().row as u32,
+                            module: None,
+                            chain,
+                        });
+                    }
+                }
+                // Recurse for any nested calls inside the template.
+                extract_calls(&child, src, source_symbol_index, refs);
+            }
+            _ => {
+                extract_calls(&child, src, source_symbol_index, refs);
             }
         }
-        extract_calls(&child, src, source_symbol_index, refs);
     }
 }
 

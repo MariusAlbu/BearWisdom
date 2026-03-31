@@ -9,7 +9,7 @@ mod symbols;
 
 use symbols::{
     extract_call_statement, extract_class, extract_method, extract_module,
-    extract_singleton_method,
+    extract_singleton_class, extract_singleton_method,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -96,6 +96,18 @@ pub(super) fn extract_from_node(
 
             "singleton_method" => {
                 extract_singleton_method(
+                    &child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                );
+            }
+
+            // `class << self ... end` — singleton class / eigenclass.
+            "singleton_class" => {
+                extract_singleton_class(
                     &child,
                     src,
                     symbols,

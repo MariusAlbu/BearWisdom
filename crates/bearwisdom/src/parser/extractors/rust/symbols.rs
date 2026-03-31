@@ -313,6 +313,44 @@ pub(super) fn extract_static(
     })
 }
 
+/// `macro_rules! foo { ... }` — emit a Function symbol for the macro name.
+///
+/// tree-sitter-rust 0.24 shape (`macro_definition` node):
+/// ```text
+/// macro_definition
+///   name: identifier  "foo"
+///   macro_rule+
+/// ```
+pub(super) fn extract_macro_rules(
+    node: &Node,
+    source: &str,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) -> Option<ExtractedSymbol> {
+    let name_node = node.child_by_field_name("name")?;
+    let name = node_text(&name_node, source);
+    if name.is_empty() {
+        return None;
+    }
+    let qualified_name = qualify(&name, qualified_prefix);
+    let doc_comment = extract_doc_comment(node, source);
+
+    Some(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Function,
+        visibility: detect_visibility(node),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("macro_rules! {name}")),
+        doc_comment,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    })
+}
+
 pub(super) fn extract_mod(
     node: &Node,
     source: &str,

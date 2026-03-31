@@ -108,6 +108,9 @@ fn dispatch_call(
         "def" | "defp" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, false),
         "defmacro" | "defmacrop" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, true),
         "defstruct" => extract_struct(node, src, symbols, parent_index, qualified_prefix),
+        "defprotocol" => extract_protocol(node, src, symbols, refs, parent_index, qualified_prefix),
+        "defimpl" => extract_implementation(node, src, symbols, refs, parent_index, qualified_prefix),
+        "defguard" | "defguardp" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, false),
         "alias" => extract_directive(node, src, symbols.len(), refs, "alias"),
         "import" => extract_directive(node, src, symbols.len(), refs, "import"),
         "use" => extract_directive(node, src, symbols.len(), refs, "use"),
@@ -265,6 +268,98 @@ fn extract_struct(
 }
 
 // ---------------------------------------------------------------------------
+// Protocol
+// ---------------------------------------------------------------------------
+
+fn extract_protocol(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    let protocol_name = directive_target(node, src).unwrap_or_else(|| "Protocol".to_string());
+    let qualified_name = qualify(&protocol_name, qualified_prefix);
+    let new_prefix = qualified_name.clone();
+    let idx = symbols.len();
+
+    symbols.push(ExtractedSymbol {
+        name: protocol_name.clone(),
+        qualified_name,
+        kind: SymbolKind::Interface,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("defprotocol {protocol_name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+
+    let do_block_idx = find_do_block_index(node);
+    if let Some(i) = do_block_idx {
+        if let Some(do_block) = node.child(i) {
+            visit(do_block, src, symbols, refs, Some(idx), &new_prefix);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Implementation (defimpl)
+// ---------------------------------------------------------------------------
+
+fn extract_implementation(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    // `defimpl ProtocolName, for: TargetType do ... end`
+    // The first argument is the protocol name; `for:` option is the target type.
+    let impl_name = directive_target(node, src).unwrap_or_else(|| "Impl".to_string());
+    let qualified_name = qualify(&impl_name, qualified_prefix);
+    let new_prefix = qualified_name.clone();
+    let idx = symbols.len();
+
+    symbols.push(ExtractedSymbol {
+        name: impl_name.clone(),
+        qualified_name,
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("defimpl {impl_name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+
+    // Emit TypeRef to the protocol being implemented
+    refs.push(ExtractedRef {
+        source_symbol_index: idx,
+        target_name: impl_name,
+        kind: EdgeKind::TypeRef,
+        line: node.start_position().row as u32,
+        module: None,
+        chain: None,
+    });
+
+    let do_block_idx = find_do_block_index(node);
+    if let Some(i) = do_block_idx {
+        if let Some(do_block) = node.child(i) {
+            visit(do_block, src, symbols, refs, Some(idx), &new_prefix);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Directives: alias / import / use / require
 // ---------------------------------------------------------------------------
 
@@ -323,6 +418,7 @@ fn dispatch_attribute(
 
     match attr_name.as_str() {
         "moduledoc" | "doc" | "spec" | "type" | "callback" => {
+            let sym_idx = symbols.len();
             let qualified_name = qualify(&format!("@{attr_name}"), qualified_prefix);
             symbols.push(ExtractedSymbol {
                 name: format!("@{attr_name}"),
@@ -338,6 +434,11 @@ fn dispatch_attribute(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
             });
+            // For @type and @spec, extract module references (alias nodes) as TypeRef edges.
+            if attr_name == "type" || attr_name == "spec" || attr_name == "callback" {
+                let ref_idx = parent_index.unwrap_or(sym_idx);
+                extract_attribute_type_refs(node, src, ref_idx, refs);
+            }
         }
 
         // `@behaviour GenServer` — emits a TypeRef edge (like implements)
@@ -376,7 +477,7 @@ fn extract_calls_recursive(
         match child.kind() {
             "call" => {
                 if let Some(callee) = call_identifier(&child, src) {
-                    if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "alias" | "import" | "use" | "require") {
+                    if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "defprotocol" | "defimpl" | "defguard" | "defguardp" | "alias" | "import" | "use" | "require") {
                         let simple = callee.rsplit('.').next().unwrap_or(&callee).to_string();
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -395,6 +496,27 @@ fn extract_calls_recursive(
             "binary_operator" => {
                 extract_pipe_calls(&child, src, source_symbol_index, refs);
                 extract_calls_recursive(&child, src, source_symbol_index, refs);
+            }
+
+            // Anonymous functions: `fn arg -> body end` — recurse into stab_clause bodies.
+            "anonymous_function" => {
+                let mut fc = child.walk();
+                for clause in child.children(&mut fc) {
+                    if clause.kind() == "stab_clause" {
+                        if let Some(body) = clause.child_by_field_name("body") {
+                            extract_calls_recursive(&body, src, source_symbol_index, refs);
+                        } else {
+                            // fallback: last named child of stab_clause is the body
+                            let clause_children: Vec<_> = {
+                                let mut cc = clause.walk();
+                                clause.named_children(&mut cc).collect()
+                            };
+                            if let Some(last) = clause_children.last() {
+                                extract_calls_recursive(last, src, source_symbol_index, refs);
+                            }
+                        }
+                    }
+                }
             }
 
             _ => {
@@ -482,6 +604,37 @@ fn extract_pipe_callee_name(node: &Node, src: &str) -> Option<String> {
         "identifier" => Some(node_text(*node, src)),
         "alias" => Some(node_text(*node, src)),
         _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Attribute type reference extraction  (@type / @spec / @callback)
+// ---------------------------------------------------------------------------
+
+/// Walk an attribute node and emit TypeRef edges for every `alias` node found
+/// (module references like `GenServer.on_start`, `MyApp.User`, etc.).
+fn extract_attribute_type_refs(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "alias" {
+            let name = node_text(child, src);
+            if !name.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: child.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        extract_attribute_type_refs(&child, src, source_symbol_index, refs);
     }
 }
 

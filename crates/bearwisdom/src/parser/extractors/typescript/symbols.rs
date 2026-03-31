@@ -124,6 +124,79 @@ pub(super) fn push_function(
     Some(idx)
 }
 
+/// Emit a Constructor symbol for `construct_signature` in an interface.
+///
+/// `interface Factory { new(name: string): Product; }` — no `name` field,
+/// so we synthesise the name `new`.
+pub(super) fn push_construct_signature(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = scope_tree::qualify("new", parent_scope);
+    let scope_path = scope_tree::scope_path(parent_scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: "new".to_string(),
+        qualified_name,
+        kind: SymbolKind::Constructor,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: None,
+        doc_comment: extract_jsdoc(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
+/// Emit a Method symbol for `call_signature` in an interface.
+///
+/// `interface Callable { (x: number): string; }` — no `name` field, synthesise `call`.
+pub(super) fn push_call_signature(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = scope_tree::qualify("call", parent_scope);
+    let scope_path = scope_tree::scope_path(parent_scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: "call".to_string(),
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: None,
+        doc_comment: extract_jsdoc(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
 pub(super) fn push_method(
     node: &Node,
     src: &[u8],
@@ -398,6 +471,70 @@ pub(super) fn extract_type_ref_from_as_expression(
     }
 }
 
+/// Extract a TypeRef from `expr satisfies TypeName` — the `satisfies_expression` node.
+///
+/// Tree-sitter structure:
+/// ```text
+/// satisfies_expression
+///   <expression>           ← the value being checked
+///   "satisfies"
+///   type_identifier "Config"  ← the asserted type
+/// ```
+pub(super) fn extract_type_ref_from_satisfies_expression(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut after_satisfies = false;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "satisfies" {
+            after_satisfies = true;
+            continue;
+        }
+        if !after_satisfies {
+            continue;
+        }
+        // First node after `satisfies` is the asserted type.
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let type_name = node_text(child, src);
+                if !type_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                return;
+            }
+            "generic_type" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let type_name = node_text(name_node, src);
+                    if !type_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                return;
+            }
+            _ => {
+                return;
+            }
+        }
+    }
+}
+
 /// Extract a TypeRef from `<Admin>user` — the `type_assertion` node.
 ///
 /// Tree-sitter structure:
@@ -465,6 +602,122 @@ pub(super) fn extract_type_ref_from_type_assertion(
                 return;
             }
             _ => {}
+        }
+    }
+}
+
+/// Emit a Namespace symbol for `namespace NS { ... }` / `module NS { ... }`.
+///
+/// Tree-sitter represents these as `internal_module` with fields:
+/// - `name`: identifier (the namespace name)
+/// - `body`: statement_block (the contents)
+pub(super) fn push_namespace(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let name_node = node.child_by_field_name("name")?;
+    let name = node_text(name_node, src);
+
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let scope_path = scope_tree::scope_path(parent_scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Namespace,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("namespace {name}")),
+        doc_comment: extract_jsdoc(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
+/// Emit a Property symbol for an index signature: `[key: string]: Value`.
+///
+/// Tree-sitter structure:
+/// ```text
+/// index_signature
+///   "[" "[" identifier ":" type_annotation "]"
+///   ":" type_annotation
+/// ```
+/// We emit a symbol named `[index]` (or keyed by the parameter name) and
+/// extract TypeRef for the value type (child after the closing `]`).
+pub(super) fn push_index_signature(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // Find the key parameter name (first identifier inside the brackets).
+    let key_name = {
+        let mut found = None;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "identifier" {
+                found = Some(node_text(child, src));
+                break;
+            }
+        }
+        found.unwrap_or_else(|| "index".to_string())
+    };
+    let name = format!("[{key_name}]");
+
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = scope_tree::qualify(&name, parent_scope);
+    let scope_path = scope_tree::scope_path(parent_scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::Property,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path,
+        parent_index,
+    });
+
+    // Extract TypeRef from the value type annotation (the type after the closing `]:`).
+    // The index_signature has a `type` field for the value type in tree-sitter.
+    if let Some(type_ann) = node.child_by_field_name("type") {
+        extract_type_ref_from_annotation(&type_ann, src, idx, refs);
+    } else {
+        // Fallback: scan for the last type_annotation child.
+        let mut last_type_ann: Option<Node> = None;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "type_annotation" {
+                last_type_ann = Some(child);
+            }
+        }
+        if let Some(ann) = last_type_ann {
+            extract_type_ref_from_annotation(&ann, src, idx, refs);
         }
     }
 }
@@ -593,6 +846,13 @@ pub(super) fn push_variable_decl(
                             // `const admin = <Admin>user` → type is Admin
                             // type_assertion has type_arguments as first child.
                             extract_type_ref_from_type_assertion(&init_node, src, idx, refs);
+                        } else if init_node.kind() == "satisfies_expression" {
+                            // `const obj = { a: 1 } satisfies Config` → type is Config
+                            // satisfies_expression: <expr> satisfies <type>
+                            // The type is the last named child after the `satisfies` keyword.
+                            extract_type_ref_from_satisfies_expression(
+                                &init_node, src, idx, refs,
+                            );
                         }
                     }
                 } else if name_node.kind() == "object_pattern" {

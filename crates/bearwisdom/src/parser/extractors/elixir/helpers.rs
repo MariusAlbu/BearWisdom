@@ -81,7 +81,7 @@ pub(super) fn function_name_arity(node: &Node, src: &str) -> (String, usize) {
         if !past_def {
             if child.kind() == "identifier" {
                 let t = node_text(child, src);
-                if matches!(t.as_str(), "def" | "defp" | "defmacro" | "defmacrop") {
+                if matches!(t.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defguard" | "defguardp") {
                     past_def = true;
                     continue;
                 }
@@ -137,7 +137,7 @@ pub(super) fn is_private_def(node: &Node, src: &str) -> bool {
     for child in node.children(&mut cursor) {
         if child.kind() == "identifier" {
             let t = node_text(child, src);
-            if t == "defp" || t == "defmacrop" {
+            if t == "defp" || t == "defmacrop" || t == "defguardp" {
                 return true;
             }
             break;

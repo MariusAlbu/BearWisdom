@@ -8,8 +8,9 @@ mod symbols;
 
 use calls::extract_calls_from_body;
 use symbols::{
-    extract_bases, extract_enum_body, push_declaration, push_function_def, push_include,
-    push_namespace, push_specifier, push_typedef,
+    emit_typerefs_for_type_descriptor, extract_bases, extract_enum_body, push_alias_decl,
+    push_declaration, push_function_def, push_include, push_namespace, push_preproc_def,
+    push_preproc_function_def, push_specifier, push_template_decl, push_typedef, push_using_decl,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -90,6 +91,58 @@ fn extract_node<'a>(
                 push_include(&child, src, symbols.len(), refs);
             }
 
+            // C++ `template<typename T> class/struct/fn { ... }`
+            "template_declaration" if language != "c" => {
+                let (idx, inner_node) = push_template_decl(
+                    &child, src, scope_tree, language, symbols, refs, parent_index,
+                );
+                if let Some(inner) = inner_node {
+                    // Inherit/bases for class/struct inner.
+                    if let Some(sym_idx) = idx {
+                        match inner.kind() {
+                            "class_specifier" | "struct_specifier" => {
+                                extract_bases(&inner, src, sym_idx, refs);
+                            }
+                            _ => {}
+                        }
+                    }
+                    // Recurse into body.
+                    let body_opt = inner.child_by_field_name("body");
+                    if let Some(body) = body_opt {
+                        match inner.kind() {
+                            "function_definition" => {
+                                if let Some(sym_idx) = idx {
+                                    extract_calls_from_body(&body, src, sym_idx, refs);
+                                }
+                            }
+                            _ => {
+                                extract_node(body, src, scope_tree, language, symbols, refs, idx);
+                            }
+                        }
+                    }
+                }
+            }
+
+            // C++ `using Alias = Type;`
+            "alias_declaration" if language != "c" => {
+                push_alias_decl(&child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // C++ `using std::vector;`
+            "using_declaration" if language != "c" => {
+                push_using_decl(&child, src, symbols.len(), refs);
+            }
+
+            // `#define FOO value`
+            "preproc_def" => {
+                push_preproc_def(&child, src, scope_tree, symbols, parent_index);
+            }
+
+            // `#define MAX(a, b) expr`
+            "preproc_function_def" => {
+                push_preproc_function_def(&child, src, scope_tree, symbols, parent_index);
+            }
+
             "function_definition" => {
                 let idx = push_function_def(&child, src, scope_tree, language, symbols, parent_index);
                 if let Some(sym_idx) = idx {
@@ -141,6 +194,21 @@ fn extract_node<'a>(
 
             "declaration" | "field_declaration" => {
                 push_declaration(&child, src, scope_tree, symbols, parent_index);
+                // Emit TypeRef for type identifiers in declarations with generic/template types.
+                // e.g. `vector<Foo> items;` or `std::map<K,V> m;` at file or class scope.
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    match type_node.kind() {
+                        // Only process complex types — avoid emitting TypeRef for every
+                        // primitive field type like `int x`.
+                        "template_type" | "qualified_identifier" => {
+                            let source_idx = parent_index.unwrap_or(
+                                symbols.len().saturating_sub(1),
+                            );
+                            emit_typerefs_for_type_descriptor(type_node, src, source_idx, refs);
+                        }
+                        _ => {}
+                    }
+                }
             }
 
             "ERROR" | "MISSING" => {}

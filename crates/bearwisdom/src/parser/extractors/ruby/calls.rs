@@ -69,14 +69,77 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
 
+            // `puts "hello"` / `raise NotImplementedError` — method call without parens.
+            "command_call" => {
+                // receiver (optional) + method identifier.
+                if let Some(method_node) = child.child_by_field_name("method") {
+                    let mname = node_text(&method_node, src);
+                    if !mname.is_empty() {
+                        let chain = build_chain(&child, src);
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: mname,
+                            kind: EdgeKind::Calls,
+                            line: method_node.start_position().row as u32,
+                            module: None,
+                            chain,
+                        });
+                    }
+                } else {
+                    // Bare command: first identifier is the method name.
+                    let mut cc = child.walk();
+                    for gc in child.children(&mut cc) {
+                        if gc.kind() == "identifier" || gc.kind() == "constant" {
+                            let mname = node_text(&gc, src);
+                            if !mname.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index,
+                                    target_name: mname,
+                                    kind: EdgeKind::Calls,
+                                    line: gc.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                            break;
+                        }
+                    }
+                }
+                // Recurse into arguments for nested calls.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `obj.method arg` — method call node (grammar variant of `call`).
+            "method_call" => {
+                if let Some(method_node) = child.child_by_field_name("method") {
+                    let mname = node_text(&method_node, src);
+                    if !mname.is_empty() {
+                        let chain = build_chain(&child, src);
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: mname,
+                            kind: EdgeKind::Calls,
+                            line: method_node.start_position().row as u32,
+                            module: None,
+                            chain,
+                        });
+                    }
+                }
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
             "block" | "do_block" => {
                 // Extract block parameters as Variable symbols, then recurse into
                 // the block body so calls inside blocks are captured.
-                let params_kind = if child.kind() == "block" {
-                    "block_parameters"
-                } else {
-                    "block_parameters"
-                };
+                let params_kind = "block_parameters";
                 // Emit Variable symbols for block parameters.
                 let mut cc = child.walk();
                 for block_child in child.children(&mut cc) {
@@ -87,6 +150,43 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     }
                 }
                 // Recurse into block body.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `"Hello #{user.get_name()}"` — extract calls from string interpolations.
+            "string" | "subshell" => {
+                extract_string_interpolation_calls(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
+            }
+
+            // `case x; when A then ...; when B then ...; end`
+            "case" => {
+                extract_case_calls(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
+            }
+
+            // `begin; ...; end` blocks — recurse into body.
+            "begin_block" | "begin" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `ensure` clause — recurse.
+            "ensure" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `hash` / `array` — recurse for calls in values/elements.
+            "hash" | "array" => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
                 } else {
@@ -133,6 +233,87 @@ fn extract_block_params(
                 scope_path: None,
                 parent_index: Some(parent_index),
             });
+        }
+    }
+}
+
+/// Extract calls from string interpolation expressions: `"Hello #{user.name}"`.
+///
+/// tree-sitter-ruby represents interpolation as:
+/// ```text
+/// string
+///   string_content
+///   interpolation        ← #{...}
+///     <expression>
+///   string_content
+/// ```
+fn extract_string_interpolation_calls(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    mut symbols: Option<&mut Vec<ExtractedSymbol>>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "interpolation" {
+            // Recurse into the interpolation node itself so that call nodes
+            // inside it are discovered by the `"call"` match arm in
+            // `extract_calls_from_body_with_symbols`.  Passing the individual
+            // named children would mean the function sees the *inside* of the
+            // call (identifiers, argument_list) rather than the call itself.
+            if let Some(syms) = symbols.as_deref_mut() {
+                extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+            } else {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Extract calls from all `when` arms and the `else` arm of a `case` statement.
+fn extract_case_calls(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    mut symbols: Option<&mut Vec<ExtractedSymbol>>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            // Recurse into the subject expression.
+            "value" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+            // `when <pattern> then <body>` — recurse into body for calls.
+            "when" => {
+                // The body of a `when` clause is everything after the pattern.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+            // `else` branch.
+            "else" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+            _ => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
         }
     }
 }

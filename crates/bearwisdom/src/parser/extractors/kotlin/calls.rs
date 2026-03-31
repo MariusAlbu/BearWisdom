@@ -42,10 +42,91 @@ pub(super) fn extract_calls_from_body(
                 extract_when_patterns(&child, src, source_symbol_index, refs);
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+            // `x as Type` — emit TypeRef for the cast type (field: right).
+            "as_expression" => {
+                if let Some(type_node) = child.child_by_field_name("right") {
+                    extract_type_ref_from_type_node(&type_node, src, source_symbol_index, refs);
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `x is Type` — emit TypeRef for the checked type (field: right).
+            "is_expression" => {
+                if let Some(type_node) = child.child_by_field_name("right") {
+                    extract_type_ref_from_type_node(&type_node, src, source_symbol_index, refs);
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `"Hello ${expr}"` — recurse into interpolated expressions.
+            "string_literal" => {
+                let mut sc = child.walk();
+                for seg in child.children(&mut sc) {
+                    if seg.kind() == "interpolation" {
+                        extract_calls_from_body(&seg, src, source_symbol_index, refs);
+                    }
+                }
+            }
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
         }
+    }
+}
+
+/// Emit a TypeRef edge for a Kotlin `type` or `user_type` node.
+pub(super) fn extract_type_ref_from_type_node(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let name = kotlin_type_name(node, src);
+    if !name.is_empty() {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: name,
+            kind: EdgeKind::TypeRef,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+/// Extract the simple name from a Kotlin type node.
+pub(super) fn kotlin_type_name(node: &Node, src: &[u8]) -> String {
+    match node.kind() {
+        "user_type" => {
+            // user_type → simple_user_type+ — take the last segment's identifier.
+            let mut last = String::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "simple_user_type" {
+                    let mut ic = child.walk();
+                    for inner in child.children(&mut ic) {
+                        if inner.kind() == "simple_identifier" || inner.kind() == "identifier" {
+                            last = node_text(inner, src);
+                            break;
+                        }
+                    }
+                } else if child.kind() == "simple_identifier" || child.kind() == "identifier" {
+                    last = node_text(child, src);
+                }
+            }
+            last
+        }
+        "type" | "nullable_type" => {
+            // Recurse into the inner type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let name = kotlin_type_name(&child, src);
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+            String::new()
+        }
+        "simple_identifier" | "identifier" | "type_identifier" => node_text(*node, src),
+        _ => String::new(),
     }
 }
 

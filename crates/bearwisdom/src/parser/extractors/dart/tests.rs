@@ -39,6 +39,40 @@ enum Direction {
     }
 
     #[test]
+    fn typedef_extracted_as_type_alias() {
+        let src = r#"
+typedef StringCallback = void Function(String value);
+typedef JsonMap = Map<String, dynamic>;
+"#;
+        let r = extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "StringCallback" && s.kind == SymbolKind::TypeAlias),
+            "StringCallback TypeAlias not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.symbols.iter().any(|s| s.name == "JsonMap" && s.kind == SymbolKind::TypeAlias),
+            "JsonMap TypeAlias not found"
+        );
+    }
+
+    #[test]
+    fn getter_setter_extracted_as_methods() {
+        let src = r#"
+class Config {
+  String get name => _name;
+  set name(String value) { _name = value; }
+}
+"#;
+        let r = extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "name" && s.kind == SymbolKind::Method),
+            "name getter/setter not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn import_directive_produces_import_ref() {
         let src = "import 'dart:core';\nimport 'package:flutter/material.dart';\n";
         let r = extract(src);

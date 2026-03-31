@@ -54,6 +54,56 @@ enum Direction {
     }
 
     #[test]
+    fn typealias_extracted() {
+        let src = r#"
+typealias StringMap = [String: Int]
+typealias Handler = (String) -> Void
+"#;
+        let r = extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "StringMap" && s.kind == SymbolKind::TypeAlias),
+            "StringMap TypeAlias not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.symbols.iter().any(|s| s.name == "Handler" && s.kind == SymbolKind::TypeAlias),
+            "Handler TypeAlias not found"
+        );
+    }
+
+    #[test]
+    fn as_expression_emits_type_ref() {
+        let src = r#"
+func cast(x: Any) -> String {
+    return x as! String
+}
+"#;
+        let r = extract(src);
+        assert!(
+            r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+            "TypeRef for String not found; refs: {:?}",
+            r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn subscript_declaration_extracted() {
+        let src = r#"
+struct Matrix {
+    subscript(row: Int, col: Int) -> Double {
+        return 0.0
+    }
+}
+"#;
+        let r = extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "subscript" && s.kind == SymbolKind::Method),
+            "subscript Method not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn import_produces_import_ref() {
         let src = "import Foundation\nimport UIKit\n";
         let r = extract(src);

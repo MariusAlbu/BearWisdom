@@ -112,7 +112,7 @@ fn extract_node(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "class_declaration" => {
+            "class_declaration" | "abstract_class_declaration" => {
                 let idx = symbols::push_class(&child, src, scope_tree, symbols, parent_index);
                 let sym_idx = idx.unwrap_or(0);
                 // Heritage clause (extends / implements).
@@ -262,6 +262,82 @@ fn extract_node(
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, symbols, refs, parent_index);
                 }
+            }
+
+            // `namespace Foo { ... }` — TypeScript internal module / namespace declaration.
+            "internal_module" => {
+                let idx = symbols::push_namespace(&child, src, scope_tree, symbols, parent_index);
+                if let Some(body) = child.child_by_field_name("body") {
+                    extract_node(body, src, scope_tree, symbols, refs, idx);
+                }
+            }
+
+            // `declare module "foo" { ... }` / `declare function bar(): void`
+            // The meaningful declaration is a child — recurse and let existing arms handle it.
+            "ambient_declaration" => {
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // Generator functions — same extraction as regular function_declaration.
+            "generator_function_declaration" | "generator_function" => {
+                let idx =
+                    symbols::push_function(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                    types::extract_typed_params_as_symbols(
+                        &child,
+                        src,
+                        scope_tree,
+                        symbols,
+                        refs,
+                        Some(sym_idx),
+                    );
+                    if let Some(body) = child.child_by_field_name("body") {
+                        calls::extract_calls(&body, src, sym_idx, refs);
+                        narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
+                    }
+                }
+            }
+
+            // Interface construct signatures: `new(name: string): Product`
+            // No `name` field — push with a synthetic name "new".
+            "construct_signature" => {
+                let idx = symbols::push_construct_signature(
+                    &child, src, scope_tree, symbols, parent_index,
+                );
+                if let Some(sym_idx) = idx {
+                    types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                }
+            }
+
+            // Interface call signatures: `(x: number): string`
+            // No `name` field — push with synthetic name "call".
+            "call_signature" => {
+                let idx = symbols::push_call_signature(
+                    &child, src, scope_tree, symbols, parent_index,
+                );
+                if let Some(sym_idx) = idx {
+                    types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                }
+            }
+
+            // Abstract method signatures — treat as method symbols.
+            "abstract_method_signature" => {
+                let idx = symbols::push_method(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                }
+            }
+
+            // Interface getter/setter signatures — emit as Property.
+            "getter_signature" | "setter_signature" => {
+                symbols::push_ts_field(&child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // Index signature: `[key: string]: unknown` — emit as Property symbol
+            // and extract TypeRef for the value type.
+            "index_signature" => {
+                symbols::push_index_signature(&child, src, scope_tree, symbols, refs, parent_index);
             }
 
             _ => {

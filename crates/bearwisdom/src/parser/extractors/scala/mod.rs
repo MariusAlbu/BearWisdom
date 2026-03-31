@@ -9,10 +9,11 @@ mod symbols;
 
 use calls::extract_calls_from_body;
 use decorators::{extract_case_class_params, extract_decorators, extract_match_patterns};
-use helpers::classify_class;
+use helpers::{call_target_name, classify_class, node_text};
 use symbols::{
-    extract_enum_body, extract_extends_with, push_function_def, push_import, push_type_def,
-    push_val_var, recurse_body,
+    extract_enum_body, extract_extends_with, push_extension_definition, push_function_def,
+    push_given_definition, push_import, push_type_def, push_type_definition, push_val_var,
+    recurse_body,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -135,6 +136,9 @@ pub(super) fn extract_node<'a>(
                         if body.kind() == "match_expression" {
                             extract_match_patterns(&body, src, sym_idx, refs);
                         }
+                        // For expression-body functions (`def f = expr`), the body may be an
+                        // infix_expression or call_expression directly — handle the root too.
+                        dispatch_body_node(body, src, sym_idx, refs);
                         extract_calls_from_body(&body, src, sym_idx, refs);
                     }
                 }
@@ -142,6 +146,32 @@ pub(super) fn extract_node<'a>(
 
             "val_definition" | "var_definition" => {
                 push_val_var(&child, src, scope_tree, symbols, parent_index);
+            }
+
+            // Scala `type` alias / abstract type member.
+            "type_definition" | "type_declaration" => {
+                push_type_definition(&child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // Scala 3 `given` — implicit instance.
+            "given_definition" => {
+                let idx = push_given_definition(&child, src, scope_tree, symbols, refs, parent_index);
+                recurse_body(&child, src, scope_tree, symbols, refs, idx);
+            }
+
+            // Scala 3 `extension` — extension methods block.
+            "extension_definition" => {
+                let idx = push_extension_definition(&child, src, scope_tree, symbols, parent_index);
+                recurse_body(&child, src, scope_tree, symbols, refs, idx);
+            }
+
+            // `package foo.bar { ... }` — recurse into the body.
+            "package_clause" => {
+                if let Some(body) = child.child_by_field_name("body") {
+                    extract_node(body, src, scope_tree, symbols, refs, parent_index);
+                } else {
+                    extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                }
             }
 
             "match_expression" => {
@@ -164,6 +194,63 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Dispatch a single expression node that may be the direct body of a function
+/// (i.e. not a block container). Handles infix_expression and call_expression
+/// that would otherwise be missed because `extract_calls_from_body` only walks
+/// children of the passed node.
+fn dispatch_body_node(
+    node: tree_sitter::Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match node.kind() {
+        "infix_expression" => {
+            if let Some(op) = node.child_by_field_name("operator") {
+                let target_name = node_text(op, src);
+                if !target_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name,
+                        kind: crate::types::EdgeKind::Calls,
+                        line: op.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+        "call_expression" => {
+            if let Some(callee) = node
+                .child_by_field_name("function")
+                .or_else(|| node.named_child(0))
+            {
+                let chain = calls::build_chain(&callee, src);
+                let target_name = chain
+                    .as_ref()
+                    .and_then(|c| c.segments.last())
+                    .map(|s| s.name.clone())
+                    .unwrap_or_else(|| call_target_name(&callee, src));
+                if !target_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name,
+                        kind: crate::types::EdgeKind::Calls,
+                        line: callee.start_position().row as u32,
+                        module: None,
+                        chain,
+                    });
+                }
+            }
+        }
+        _ => {}
     }
 }
 

@@ -378,3 +378,422 @@ def make_sorter():
             "expected get_name call from lambda body, got: {call_names:?}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // F-string interpolation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn fstring_interpolation_calls_extracted() {
+        let source = r#"
+def greet(user):
+    return f"Hello {user.get_name()}"
+"#;
+        let r = extract(source);
+        let call_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            call_names.contains(&"get_name"),
+            "expected get_name call from f-string interpolation, got: {call_names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Type alias statement (Python 3.12+)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn type_alias_statement_emits_type_alias_symbol() {
+        let source = "type Point = tuple[int, int]\n";
+        let r = extract(source);
+        let sym = r.symbols.iter().find(|s| s.name == "Point");
+        assert!(sym.is_some(), "expected TypeAlias symbol 'Point', got: {:?}", r.symbols);
+        assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
+    }
+
+    #[test]
+    fn type_alias_statement_emits_type_refs() {
+        let source = "type UserOrAdmin = User | Admin\n";
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"User") || type_refs.contains(&"Admin"),
+            "expected TypeRef edges from type alias, got: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Raise statement
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn raise_statement_emits_type_ref_for_exception() {
+        let source = r#"
+def validate(value):
+    if value is None:
+        raise ValueError("value must not be None")
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"ValueError"),
+            "expected TypeRef to ValueError, got: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Augmented assignment
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn augmented_assignment_member_access_emits_calls_edge() {
+        let source = r#"
+def increment(self):
+    self.count += 1
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"count"),
+            "expected Calls edge for self.count +=, got: {calls:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // For / async-for statements
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn for_statement_loop_var_emits_variable() {
+        let source = r#"
+def process(items):
+    for item in items:
+        item.save()
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"item"), "expected loop var 'item', got: {vars:?}");
+    }
+
+    #[test]
+    fn for_statement_body_calls_extracted() {
+        let source = r#"
+def process(items):
+    for item in items:
+        item.save()
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"save"), "expected save() call from for body, got: {calls:?}");
+    }
+
+    #[test]
+    fn async_for_statement_loop_var_emits_variable() {
+        let source = r#"
+async def process(stream):
+    async for item in stream:
+        await item.save()
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"item"), "expected async loop var 'item', got: {vars:?}");
+    }
+
+    #[test]
+    fn async_with_statement_alias_emits_variable() {
+        let source = r#"
+async def run(engine):
+    async with engine.connect() as conn:
+        conn.execute()
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"conn"), "expected async with alias 'conn', got: {vars:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Conditional expression
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn conditional_expression_calls_extracted() {
+        let source = r#"
+def pick(flag):
+    return foo() if flag else bar()
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"foo"), "expected foo() in ternary, got: {calls:?}");
+        assert!(calls.contains(&"bar"), "expected bar() in ternary, got: {calls:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Assert statement
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn assert_statement_calls_extracted() {
+        let source = r#"
+def validate(obj):
+    assert obj.is_valid(), "not valid"
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"is_valid"), "expected is_valid() from assert, got: {calls:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Yield expression
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn yield_expression_calls_extracted() {
+        let source = r#"
+def gen():
+    yield compute()
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"compute"), "expected compute() from yield, got: {calls:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Tuple / list / dictionary / binary operator expressions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tuple_expression_calls_extracted() {
+        let source = r#"
+def make_pair():
+    return (foo(), bar())
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"foo"), "expected foo() from tuple, got: {calls:?}");
+        assert!(calls.contains(&"bar"), "expected bar() from tuple, got: {calls:?}");
+    }
+
+    #[test]
+    fn binary_operator_calls_extracted() {
+        let source = r#"
+def combine():
+    return left() + right()
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"left"), "expected left() from binary op, got: {calls:?}");
+        assert!(calls.contains(&"right"), "expected right() from binary op, got: {calls:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Except clause — TypeRef + Variable binding
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn except_clause_emits_type_ref_for_exception() {
+        let source = r#"
+def run():
+    try:
+        do_work()
+    except ValueError as e:
+        handle(e)
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"ValueError"),
+            "expected TypeRef to ValueError, got: {type_refs:?}"
+        );
+    }
+
+    #[test]
+    fn except_clause_emits_variable_for_as_binding() {
+        let source = r#"
+def run():
+    try:
+        do_work()
+    except RuntimeError as err:
+        log(err)
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"err"), "expected Variable 'err' from except as binding, got: {vars:?}");
+    }
+
+    #[test]
+    fn except_clause_multi_exception_emits_all_type_refs() {
+        let source = r#"
+def run():
+    try:
+        do_work()
+    except (TypeError, ValueError) as e:
+        handle(e)
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(type_refs.contains(&"TypeError"), "expected TypeRef to TypeError: {type_refs:?}");
+        assert!(type_refs.contains(&"ValueError"), "expected TypeRef to ValueError: {type_refs:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Untyped default / splat parameters
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn default_parameter_emits_variable_symbol() {
+        let source = r#"
+def foo(x=5, y="hello"):
+    pass
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"x") || vars.contains(&"y"),
+            "expected default param Variable symbols, got: {vars:?}");
+    }
+
+    #[test]
+    fn splat_params_emit_variable_symbols() {
+        let source = r#"
+def log(*args, **kwargs):
+    pass
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(vars.contains(&"args"), "expected *args Variable, got: {vars:?}");
+        assert!(vars.contains(&"kwargs"), "expected **kwargs Variable, got: {vars:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Match pattern extensions
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn match_splat_pattern_emits_variable() {
+        let source = r#"
+def handle(items):
+    match items:
+        case [first, *rest]:
+            process(first, rest)
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(
+            vars.contains(&"rest") || vars.contains(&"first"),
+            "expected splat pattern Variable, got: {vars:?}"
+        );
+    }
+
+    #[test]
+    fn match_dict_pattern_value_binding_emits_variable() {
+        let source = r#"
+def handle(event):
+    match event:
+        case {"type": action, "data": payload}:
+            process(action)
+"#;
+        let r = extract(source);
+        let vars: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Variable)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(
+            vars.contains(&"action") || vars.contains(&"payload"),
+            "expected dict pattern value bindings, got: {vars:?}"
+        );
+    }

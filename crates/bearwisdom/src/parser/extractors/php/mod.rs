@@ -171,6 +171,56 @@ pub(super) fn extract_from_node(
                 }
             }
 
+            // `foreach ($items as $key => $value) { ... }`
+            "foreach_statement" => {
+                let source_idx = parent_index.unwrap_or(0);
+                calls::extract_foreach_vars(
+                    &child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    source_idx,
+                );
+            }
+
+            // `try { ... } catch (Ex $e) { ... } finally { ... }`
+            "try_statement" => {
+                let source_idx = parent_index.unwrap_or(0);
+                calls::extract_try_catch_types(
+                    &child,
+                    src,
+                    refs,
+                    symbols,
+                    parent_index,
+                    qualified_prefix,
+                    source_idx,
+                );
+            }
+
+            // `global $var;` — scope modifier, extract as variable.
+            "global_declaration" => {
+                symbols::extract_global_static_vars(&child, src, symbols, parent_index, qualified_prefix, false);
+            }
+
+            // `static $cache = [];` — static local variable.
+            "static_variable_declaration" => {
+                symbols::extract_global_static_vars(&child, src, symbols, parent_index, qualified_prefix, true);
+            }
+
+            // `[$name] = $user->toArray()` / `list($a, $b) = $tuple`
+            "expression_statement" => {
+                symbols::extract_expression_statement(
+                    &child,
+                    src,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                );
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {

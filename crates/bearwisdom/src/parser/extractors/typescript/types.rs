@@ -191,6 +191,176 @@ pub(super) fn extract_type_ref_from_annotation(
                 }
             }
         }
+        // `T extends U ? A : B` — extract all four type positions.
+        "conditional_type" => {
+            // Fields: left (check type), right (extends type), consequence, alternative.
+            // tree-sitter uses: "left", "right" for extends pair, "consequence", "alternative".
+            for field in &["left", "right", "consequence", "alternative"] {
+                if let Some(child) = type_node.child_by_field_name(field) {
+                    extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                }
+            }
+            // Also walk all children to catch any not covered by named fields.
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if !matches!(
+                        child.kind(),
+                        "extends" | "?" | ":" | "conditional_type"
+                            | "type_identifier" | "identifier"
+                    ) {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+        // `{ [K in keyof T]: T[K] }` — extract constraint and value types.
+        "mapped_type" => {
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    match child.kind() {
+                        "{" | "}" | "[" | "]" | "in" | ":" | "readonly" | "?" | "+" | "-"
+                        | "property_identifier" | "type_identifier" | "identifier" => {}
+                        _ => {
+                            extract_type_ref_from_annotation(
+                                &child,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        // `T[K]` — extract the object type.
+        "indexed_access_type" => {
+            if let Some(obj) = type_node.child_by_field_name("object") {
+                extract_type_ref_from_annotation(&obj, src, source_symbol_index, refs);
+            }
+            if let Some(index) = type_node.child_by_field_name("index") {
+                extract_type_ref_from_annotation(&index, src, source_symbol_index, refs);
+            }
+        }
+        // `` `prefix_${string}` `` — recurse for any type refs inside.
+        "template_literal_type" => {
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if !matches!(child.kind(), "`" | "${" | "}") {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+        // `typeof Foo` — the referenced name is a value-space ref; emit as TypeRef.
+        "type_query" => {
+            // The expression after `typeof` is the referenced name.
+            if let Some(expr) = type_node.child_by_field_name("name") {
+                let name = node_text(expr, src);
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: expr.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            } else {
+                // Fallback: first named non-keyword child.
+                for i in 0..type_node.child_count() {
+                    if let Some(child) = type_node.child(i) {
+                        if child.kind() != "typeof" {
+                            let name = node_text(child, src);
+                            if !name.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index,
+                                    target_name: name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: child.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // `keyof T` — tree-sitter uses `index_type_query` for this node.
+        "keyof_type" | "index_type_query" => {
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if child.kind() != "keyof" {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+        // `readonly T[]` — unwrap and recurse.
+        "readonly_type" => {
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if child.kind() != "readonly" {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
+        // `x is Foo` — tree-sitter uses `type_predicate` (inside `type_predicate_annotation`).
+        // Also handle the outer `type_predicate_annotation` wrapper.
+        "predicate_type" | "type_predicate" | "type_predicate_annotation" => {
+            // Walk children: skip the subject identifier and `is` keyword,
+            // extract the asserted type (type_identifier or generic_type after `is`).
+            let mut after_is = false;
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    match child.kind() {
+                        "is" => {
+                            after_is = true;
+                        }
+                        ":" => {}  // colon in type_predicate_annotation
+                        _ => {
+                            if after_is {
+                                extract_type_ref_from_annotation(
+                                    &child,
+                                    src,
+                                    source_symbol_index,
+                                    refs,
+                                );
+                                break;
+                            } else if child.kind() == "type_predicate" {
+                                // Recurse into the inner type_predicate node.
+                                extract_type_ref_from_annotation(
+                                    &child,
+                                    src,
+                                    source_symbol_index,
+                                    refs,
+                                );
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        // `infer T` — T is a local binding, not a reference to an existing type.
+        "infer_type" => {}
+        // `this` — self-reference, nothing to extract.
+        "this_type" => {}
+        // Literal types (`"foo"`, `42`, `true`) — not type references.
+        "literal_type" | "string" | "number" | "true" | "false" | "null" => {}
+        // Tuple type: `[string, number]` — recurse into element types.
+        "tuple_type" => {
+            for i in 0..type_node.child_count() {
+                if let Some(child) = type_node.child(i) {
+                    if !matches!(child.kind(), "[" | "]" | ",") {
+                        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+        }
         _ => {}
     }
 }

@@ -349,6 +349,116 @@ pub(super) fn push_property(
     });
 }
 
+/// Emit a TypeAlias symbol for `typealias Name = Type`.
+/// Field `name` holds the alias name; field `value` holds the aliased type.
+pub(super) fn push_typealias(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // `name` field holds the alias identifier (first named child with kind simple_identifier
+    // or type_identifier, not the type node).
+    let name = find_alias_name(node, src)?;
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("typealias {name}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+
+    // Emit TypeRef for the aliased type — the type node appears after `=`.
+    // Walk children: after `=` take the first named node that looks like a type.
+    let mut after_eq = false;
+    let mut cursor2 = node.walk();
+    for child in node.children(&mut cursor2) {
+        if child.kind() == "=" {
+            after_eq = true;
+            continue;
+        }
+        if after_eq && child.is_named() {
+            super::calls::extract_type_ref_from_swift_type(&child, src, idx, refs);
+            break;
+        }
+    }
+
+    Some(idx)
+}
+
+/// Find the name identifier in a `typealias_declaration`.
+/// The declared name is the first `type_identifier`, `simple_identifier`, or
+/// `identifier` child that appears before the `=` token.
+fn find_alias_name(node: &Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "simple_identifier" | "identifier" => {
+                return Some(node_text(child, src));
+            }
+            // Stop at `=` token.
+            "=" => break,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Emit a Method symbol for a `subscript_declaration`.
+pub(super) fn push_subscript(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify("subscript", scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let params = find_child_by_kind(node, "parameter_clause")
+        .or_else(|| find_child_by_kind(node, "function_value_parameters"))
+        .map(|p| node_text(p, src))
+        .unwrap_or_default();
+
+    let ret = node
+        .child_by_field_name("return_type")
+        .map(|r| format!(" -> {}", node_text(r, src)))
+        .unwrap_or_default();
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: "subscript".to_string(),
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("subscript{params}{ret}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
 pub(super) fn push_import(
     node: &Node,
     src: &[u8],

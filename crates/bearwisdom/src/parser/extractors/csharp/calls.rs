@@ -75,6 +75,102 @@ pub(super) fn extract_calls_from_body(
                 extract_switch_expression_type_refs(&child, src, source_symbol_index, refs);
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+            // `(Admin)user` — cast expression; emit TypeRef for the cast type.
+            "cast_expression" => {
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    extract_type_ref_from_cast_type(type_node, src, source_symbol_index, refs);
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `value as Admin` — as_expression; emit TypeRef for the target type.
+            // In tree-sitter-c-sharp the type is the `right` field (left=value, right=type).
+            "as_expression" => {
+                if let Some(type_node) = child.child_by_field_name("right") {
+                    extract_type_ref_from_cast_type(type_node, src, source_symbol_index, refs);
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `typeof(Admin)` — emit TypeRef for the argument type.
+            "typeof_expression" => {
+                // tree-sitter-c-sharp: typeof_expression has a single type child
+                // (not a named field in all grammar versions — scan children).
+                let mut cursor2 = child.walk();
+                for c in child.children(&mut cursor2) {
+                    if !matches!(c.kind(), "typeof" | "(" | ")") {
+                        extract_type_ref_from_cast_type(c, src, source_symbol_index, refs);
+                        break;
+                    }
+                }
+            }
+            // `nameof(Symbol)` — emit a Calls-like ref for the named symbol.
+            "nameof_expression" => {
+                let mut cursor2 = child.walk();
+                for c in child.children(&mut cursor2) {
+                    if !matches!(c.kind(), "nameof" | "(" | ")") {
+                        let name = match c.kind() {
+                            "identifier" => node_text(c, src),
+                            "member_access_expression" => c
+                                .child_by_field_name("name")
+                                .map(|n| node_text(n, src))
+                                .unwrap_or_else(|| {
+                                    let t = node_text(c, src);
+                                    t.rsplit('.').next().unwrap_or(&t).to_string()
+                                }),
+                            _ => {
+                                let t = node_text(c, src);
+                                t.rsplit('.').next().unwrap_or(&t).to_string()
+                            }
+                        };
+                        if !name.is_empty() && !is_csharp_keyword(&name) {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::TypeRef,
+                                line: c.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                        break;
+                    }
+                }
+            }
+            // `foreach (TypeName item in collection)` — TypeRef for explicit type,
+            // plus recurse into the body.
+            // Note: tree-sitter-c-sharp uses "foreach_statement" (not "for_each_statement").
+            "foreach_statement" => {
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    extract_type_ref_from_cast_type(type_node, src, source_symbol_index, refs);
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `catch (ExceptionType e)` — TypeRef for the exception type.
+            // tree-sitter-c-sharp: catch_clause has an unnamed catch_declaration child
+            // (it is not a named field).  Scan children for catch_declaration.
+            "catch_clause" => {
+                let mut catch_cursor = child.walk();
+                for catch_child in child.children(&mut catch_cursor) {
+                    if catch_child.kind() == "catch_declaration" {
+                        if let Some(type_node) = catch_child.child_by_field_name("type") {
+                            extract_type_ref_from_cast_type(type_node, src, source_symbol_index, refs);
+                        }
+                        break;
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `using (var x = new Resource())` — recurse; TypeRef extracted from new expr.
+            "using_statement" => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // Local function statement inside a method body — emit Function symbol
+            // and extract calls from its body.
+            "local_function_statement" => {
+                // Calls within the local function are attributed to the enclosing method.
+                if let Some(body) = child.child_by_field_name("body") {
+                    extract_calls_from_body(&body, src, source_symbol_index, refs);
+                }
+            }
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
@@ -128,6 +224,16 @@ pub(super) fn extract_body_variable_symbols(
             }
             "declaration_pattern" => {
                 extract_pattern_binding_variable(&child, src, scope_tree, symbols, parent_index);
+            }
+            // Local function statements inside a method/constructor body — emit
+            // a Function symbol then recurse into the body for nested lambdas/LINQ.
+            "local_function_statement" => {
+                let local_idx = super::symbols::push_local_function_decl(
+                    &child, src, scope_tree, symbols, parent_index,
+                );
+                if let Some(body) = child.child_by_field_name("body") {
+                    extract_body_variable_symbols(&body, src, scope_tree, symbols, local_idx.or(parent_index));
+                }
             }
             _ => {
                 extract_body_variable_symbols(&child, src, scope_tree, symbols, parent_index);
@@ -261,12 +367,24 @@ fn extract_linq_range_variables(
 
 /// Extract the binding variable from a `declaration_pattern`.
 ///
-/// `declaration_pattern` has two identifier children:
-/// - child 0: type name  (e.g. `Admin`)
-/// - child 1: bound name (e.g. `a`)
+/// Handles two forms:
 ///
-/// The TypeRef for the type is handled by `extract_calls_from_body`. Here
-/// we emit only the Variable symbol for the bound name.
+/// `Admin a` — two identifiers: type name + bound variable:
+/// ```text
+/// declaration_pattern
+///   identifier "Admin"   ← type
+///   identifier "a"       ← designator
+/// ```
+///
+/// `var v` — implicit_type (not an identifier) + bound variable identifier:
+/// ```text
+/// declaration_pattern
+///   implicit_type "var"  ← type (NOT an identifier)
+///   identifier "v"       ← designator
+/// ```
+///
+/// The TypeRef for the explicit type is handled by `extract_calls_from_body`.
+/// Here we emit only the Variable symbol for the bound name.
 fn extract_pattern_binding_variable(
     pattern: &Node,
     src: &[u8],
@@ -274,16 +392,30 @@ fn extract_pattern_binding_variable(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    // Collect identifier children — expect exactly two: type then variable name.
+    // Collect identifier children.
     let mut cursor = pattern.walk();
     let idents: Vec<Node> = pattern
         .children(&mut cursor)
         .filter(|c| c.kind() == "identifier")
         .collect();
 
-    // Second identifier is the bound variable.
-    if let Some(name_node) = idents.get(1) {
-        let name = node_text(*name_node, src);
+    // If there are two identifiers (e.g. `Admin a`), the second is the bound variable.
+    // If there is one identifier (e.g. `var v` where the type is implicit_type),
+    // that single identifier IS the bound variable.
+    let name_node = match idents.len() {
+        2 => idents.get(1).copied(),
+        1 => {
+            // Only emit as a variable if the sibling type node is `implicit_type` (var pattern).
+            let has_implicit_type = (0..pattern.child_count())
+                .filter_map(|i| pattern.child(i))
+                .any(|ch| ch.kind() == "implicit_type");
+            if has_implicit_type { idents.first().copied() } else { None }
+        }
+        _ => None,
+    };
+
+    if let Some(name_node) = name_node {
+        let name = node_text(name_node, src);
         if !name.is_empty() && !is_csharp_keyword(&name) {
             let scope = if name_node.start_byte() > 0 {
                 scope_tree::find_scope_at(scope_tree, name_node.start_byte())
@@ -403,9 +535,32 @@ fn extract_is_expression_refs(
                 }
                 return;
             }
-            "var_pattern" | "discard_pattern" | "not_pattern"
-            | "or_pattern" | "and_pattern" | "parenthesized_pattern" => {
-                // No type information to extract from these patterns.
+            "discard_pattern" => {
+                // `_` — no type information.
+                return;
+            }
+            // `x is not Admin` — negated_pattern wraps a sub-pattern
+            // (grammar node is `negated_pattern`, not `not_pattern`).
+            "negated_pattern" | "not_pattern" => {
+                // Recurse into the single sub-pattern.
+                let mut cp = child.walk();
+                for sub in child.children(&mut cp) {
+                    extract_pattern_type_refs_recursive(&sub, src, source_symbol_index, refs);
+                }
+                return;
+            }
+            // `x is Admin or User`, `x is > 0 and < 10` — composite patterns.
+            "or_pattern" | "and_pattern" | "binary_pattern" | "parenthesized_pattern" => {
+                // Recurse into each sub-pattern.
+                let mut cp = child.walk();
+                for sub in child.children(&mut cp) {
+                    extract_pattern_type_refs_recursive(&sub, src, source_symbol_index, refs);
+                }
+                return;
+            }
+            "var_pattern" | "relational_pattern" | "list_pattern"
+            | "slice_pattern" | "recursive_pattern" => {
+                // var/relational/list patterns carry no user type reference.
                 return;
             }
             _ => {}
@@ -450,6 +605,61 @@ fn extract_is_expression_refs(
             });
         }
         break;
+    }
+}
+
+/// Recursively extract TypeRefs from any pattern node.
+///
+/// Handles composite patterns (`or_pattern`, `and_pattern`, `negated_pattern`,
+/// `parenthesized_pattern`) by recursing into children, and terminal patterns
+/// (`declaration_pattern`, `type_pattern`, `constant_pattern` with identifier)
+/// by emitting a TypeRef.
+fn extract_pattern_type_refs_recursive(
+    pattern: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match pattern.kind() {
+        "declaration_pattern" | "type_pattern" => {
+            emit_pattern_type_ref(pattern, src, source_symbol_index, refs);
+        }
+        "constant_pattern" => {
+            if let Some(inner) = pattern.named_child(0) {
+                let type_name = match inner.kind() {
+                    "identifier" => node_text(inner, src),
+                    "generic_name" => inner
+                        .child_by_field_name("name")
+                        .map(|n| node_text(n, src))
+                        .unwrap_or_else(|| node_text(inner, src)),
+                    "qualified_name" => {
+                        let full = node_text(inner, src);
+                        full.rsplit('.').next().unwrap_or(&full).to_string()
+                    }
+                    _ => String::new(),
+                };
+                if !type_name.is_empty() && !is_csharp_keyword(&type_name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: inner.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+        "or_pattern" | "and_pattern" | "binary_pattern"
+        | "negated_pattern" | "not_pattern"
+        | "parenthesized_pattern" => {
+            let mut cp = pattern.walk();
+            for sub in pattern.children(&mut cp) {
+                extract_pattern_type_refs_recursive(&sub, src, source_symbol_index, refs);
+            }
+        }
+        // relational, discard, var, list, slice, recursive — no user type refs
+        _ => {}
     }
 }
 
@@ -526,14 +736,23 @@ fn extract_switch_expression_type_refs(
             .child_by_field_name("pattern")
             .or_else(|| arm.named_child(0));
         if let Some(pattern) = pattern {
-            match pattern.kind() {
-                "declaration_pattern" | "type_pattern" => {
-                    emit_pattern_type_ref(&pattern, src, source_symbol_index, refs);
-                }
-                _ => {}
-            }
+            // Use the recursive helper so composite patterns (or/and/not) are
+            // walked fully, not just top-level declaration/type patterns.
+            extract_pattern_type_refs_recursive(&pattern, src, source_symbol_index, refs);
         }
     }
+}
+
+/// Emit a TypeRef for a cast/typeof/as target type node.
+/// Delegates to the shared type-node walker but skips builtins.
+fn extract_type_ref_from_cast_type(
+    type_node: Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::types::extract_type_refs_from_type_node;
+    extract_type_refs_from_type_node(type_node, src, source_symbol_index, refs);
 }
 
 /// C# keywords/operators that look like method calls but aren't.

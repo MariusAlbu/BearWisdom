@@ -948,7 +948,12 @@ pub(super) fn extract_go_typed_params_as_symbols(
 ) {
     let mut cursor = params_node.walk();
     for child in params_node.children(&mut cursor) {
-        if child.kind() != "parameter_declaration" {
+        // `variadic_parameter_declaration` has the same field layout as
+        // `parameter_declaration` — the type field holds the element type
+        // (without the `...`).  Treat them identically.
+        if child.kind() != "parameter_declaration"
+            && child.kind() != "variadic_parameter_declaration"
+        {
             continue;
         }
 

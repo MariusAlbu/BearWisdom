@@ -36,6 +36,62 @@ enum class Direction {
     }
 
     #[test]
+    fn companion_object_extracted_as_class() {
+        let src = r#"
+class Config {
+    companion object {
+        val DEFAULT_TIMEOUT = 30
+        fun create(): Config = Config()
+    }
+}
+"#;
+        let r = extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "Companion" && s.kind == SymbolKind::Class),
+            "Companion not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        // create() should be extracted as a member inside the companion.
+        assert!(r.symbols.iter().any(|s| s.name == "create"));
+    }
+
+    #[test]
+    fn as_expression_emits_type_ref() {
+        let src = r#"
+fun cast(x: Any): String {
+    return x as String
+}
+"#;
+        let r = extract(src);
+        assert!(
+            r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+            "TypeRef for String not found; refs: {:?}",
+            r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn primary_constructor_promoted_params_extracted() {
+        let src = r#"
+class Point(val x: Double, val y: Double)
+"#;
+        let r = extract(src);
+        // val x and val y become Property symbols.
+        assert!(
+            r.symbols.iter().any(|s| s.name == "x" && s.kind == SymbolKind::Property),
+            "x property not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        assert!(r.symbols.iter().any(|s| s.name == "y" && s.kind == SymbolKind::Property));
+        // TypeRefs for Double emitted.
+        assert!(
+            r.refs.iter().any(|rf| rf.target_name == "Double" && rf.kind == EdgeKind::TypeRef),
+            "TypeRef for Double not found; refs: {:?}",
+            r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn interface_and_class_extracted() {
         let src = r#"
 interface Drawable {

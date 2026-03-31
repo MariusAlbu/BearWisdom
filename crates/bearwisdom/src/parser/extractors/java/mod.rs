@@ -38,6 +38,7 @@ use tree_sitter::{Node, Parser};
 
 static JAVA_SCOPE_KINDS: &[ScopeKind] = &[
     ScopeKind { node_kind: "class_declaration",             name_field: "name" },
+    ScopeKind { node_kind: "record_declaration",            name_field: "name" },
     ScopeKind { node_kind: "interface_declaration",         name_field: "name" },
     ScopeKind { node_kind: "enum_declaration",              name_field: "name" },
     ScopeKind { node_kind: "annotation_type_declaration",   name_field: "name" },
@@ -182,6 +183,21 @@ pub(super) fn extract_node(
                 // Treat annotation types as interfaces.
                 let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Interface);
                 decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
+                if let Some(body) = child.child_by_field_name("body") {
+                    extract_node(body, src, scope_tree, package, symbols, refs, idx);
+                }
+            }
+
+            // Java 16+ `record Foo(String name, int age) implements Bar { ... }`
+            // Treated as Class — emit symbol + record components as Property symbols.
+            "record_declaration" => {
+                let idx = symbols::push_type_decl(&child, src, scope_tree, package, symbols, parent_index, SymbolKind::Class);
+                symbols::extract_class_inheritance(&child, src, idx.unwrap_or(0), refs);
+                decorators::extract_decorators(&child, src, idx.unwrap_or(0), refs);
+                // Record components (the constructor parameters).
+                if let Some(params) = child.child_by_field_name("parameters") {
+                    symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, idx);
+                }
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_node(body, src, scope_tree, package, symbols, refs, idx);
                 }

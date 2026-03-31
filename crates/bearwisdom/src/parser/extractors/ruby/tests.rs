@@ -245,3 +245,250 @@ end
             .collect();
         assert!(vars.contains(&"e"), "Expected rescue variable 'e': {vars:?}");
     }
+
+    // -----------------------------------------------------------------------
+    // String interpolation
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn string_interpolation_calls_extracted() {
+        let source = r#"
+class Greeter
+  def greet(user)
+    "Hello #{user.get_name()}"
+  end
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"get_name"),
+            "expected get_name() from string interpolation, got: {calls:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Case / when
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn case_when_body_calls_extracted() {
+        let source = r#"
+class Handler
+  def handle(command)
+    case command
+    when :create
+      create_record()
+    when :delete
+      delete_record()
+    else
+      log_unknown()
+    end
+  end
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"create_record"), "expected create_record: {calls:?}");
+        assert!(calls.contains(&"delete_record"), "expected delete_record: {calls:?}");
+        assert!(calls.contains(&"log_unknown"), "expected log_unknown: {calls:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Begin / ensure
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn begin_block_calls_extracted() {
+        let source = r#"
+def run
+  begin
+    do_work()
+  rescue => e
+    handle_error(e)
+  ensure
+    cleanup()
+  end
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"do_work"), "expected do_work from begin: {calls:?}");
+        assert!(calls.contains(&"cleanup"), "expected cleanup from ensure: {calls:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Hash / array expressions with calls
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn hash_value_calls_extracted() {
+        let source = r#"
+def build_options
+  { name: compute_name(), count: fetch_count() }
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"compute_name"), "expected compute_name: {calls:?}");
+        assert!(calls.contains(&"fetch_count"), "expected fetch_count: {calls:?}");
+    }
+
+    #[test]
+    fn array_element_calls_extracted() {
+        let source = r#"
+def build_list
+  [fetch_first(), fetch_second()]
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"fetch_first"), "expected fetch_first: {calls:?}");
+        assert!(calls.contains(&"fetch_second"), "expected fetch_second: {calls:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Singleton method (def self.foo)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn singleton_method_emitted_as_method() {
+        let source = r#"
+class Repo
+  def self.find(id)
+    where(id: id).first
+  end
+end
+"#;
+        let r = extract(source);
+        let m = r.symbols.iter().find(|s| s.name == "find").expect("find method");
+        assert_eq!(m.kind, SymbolKind::Method);
+    }
+
+    // -----------------------------------------------------------------------
+    // Multiple exception types in rescue
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rescue_multiple_exceptions_emits_all_typerefs() {
+        let source = r#"
+def run
+  do_work
+rescue ArgumentError, TypeError => e
+  handle(e)
+end
+"#;
+        let r = extract(source);
+        let typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(typerefs.contains(&"ArgumentError"), "expected ArgumentError TypeRef: {typerefs:?}");
+        assert!(typerefs.contains(&"TypeError"), "expected TypeError TypeRef: {typerefs:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Singleton class (class << self)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn singleton_class_methods_are_extracted() {
+        let source = r#"
+class Repo
+  class << self
+    def find(id)
+      where(id: id).first
+    end
+
+    def all
+      order(:name)
+    end
+  end
+end
+"#;
+        let r = extract(source);
+        let method_names: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Method || s.kind == SymbolKind::Function)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(
+            method_names.contains(&"find"),
+            "expected 'find' from singleton class body: {method_names:?}"
+        );
+        assert!(
+            method_names.contains(&"all"),
+            "expected 'all' from singleton class body: {method_names:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Command call (method call without parens)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn command_call_emits_calls_edge() {
+        let source = r#"
+class Greeter
+  def greet(user)
+    puts "Hello #{user.name}"
+  end
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"puts"), "expected 'puts' Calls edge: {calls:?}");
+    }
+
+    #[test]
+    fn command_call_with_receiver_emits_calls_edge() {
+        let source = r#"
+class Logger
+  def log(msg)
+    Rails.logger.info msg
+  end
+end
+"#;
+        let r = extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"info"), "expected 'info' Calls edge: {calls:?}");
+    }
+

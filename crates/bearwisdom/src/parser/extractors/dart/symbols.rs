@@ -206,6 +206,9 @@ pub(super) fn extract_class_body(
             "field_declaration" | "initialized_variable_definition" => {
                 extract_field(&child, src, symbols, parent_index, qualified_prefix);
             }
+            "getter_signature" | "setter_signature" => {
+                extract_getter_setter(&child, src, symbols, refs, parent_index, qualified_prefix);
+            }
             "static_final_declaration_list" | "declaration" => {
                 extract_class_body(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
@@ -224,6 +227,15 @@ fn extract_method(
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
+    // For getter/setter signatures wrapped in method_signature, delegate.
+    let mut cursor_check = node.walk();
+    for child in node.named_children(&mut cursor_check) {
+        if child.kind() == "getter_signature" || child.kind() == "setter_signature" {
+            extract_getter_setter(&child, src, symbols, refs, parent_index, qualified_prefix);
+            return;
+        }
+    }
+
     let name = match get_field_text(node, src, "name")
         .or_else(|| first_child_text_of_kind(node, src, "identifier"))
     {
@@ -489,6 +501,99 @@ pub(super) fn extract_part_directive(
                 module: Some(module),
                 chain: None,
             });
+        }
+    }
+}
+
+/// Emit a TypeAlias symbol for a Dart `typedef` / `type_alias` declaration.
+/// The grammar's `type_alias` has no `name` field — the name is a
+/// `type_identifier` child before `=`.
+pub(super) fn extract_typedef(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    // Walk children: take the first `type_identifier` as the alias name.
+    let name = {
+        let mut found: Option<String> = None;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "type_identifier" || child.kind() == "identifier" {
+                found = Some(node_text(child, src));
+                break;
+            }
+        }
+        match found {
+            Some(n) => n,
+            None => return,
+        }
+    };
+
+    let qualified_name = qualify(&name, qualified_prefix);
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("typedef {name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+}
+
+/// Emit Method symbols for `getter_signature` and `setter_signature` nodes.
+pub(super) fn extract_getter_setter(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    let name = match get_field_text(node, src, "name")
+        .or_else(|| first_child_text_of_kind(node, src, "identifier"))
+    {
+        Some(n) => n,
+        None => return,
+    };
+    let qualified_name = qualify(&name, qualified_prefix);
+    let idx = symbols.len();
+
+    let visibility = if name.starts_with('_') {
+        Some(Visibility::Private)
+    } else {
+        Some(Visibility::Public)
+    };
+
+    let is_getter = node.kind() == "getter_signature";
+    let sig_prefix = if is_getter { "get" } else { "set" };
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("{sig_prefix} {name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+
+    // Extract calls from the body (sibling node).
+    if let Some(body) = node.next_sibling() {
+        if body.kind() == "function_body" || body.kind() == "block" {
+            extract_dart_calls(&body, src, idx, refs);
         }
     }
 }

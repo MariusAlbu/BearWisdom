@@ -15,8 +15,8 @@ use decorators::{
 use helpers::find_child_by_kind;
 use symbols::{
     extract_type_inheritance, handle_class_declaration, push_deinit, push_extension,
-    push_function_decl, push_import, push_init, push_property, push_type_decl,
-    recurse_into_body,
+    push_function_decl, push_import, push_init, push_property, push_subscript,
+    push_type_decl, push_typealias, recurse_into_body,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -179,6 +179,22 @@ pub(super) fn extract_node<'a>(
                 push_property(&child, src, scope_tree, symbols, parent_index);
                 if symbols.len() > pre_len {
                     extract_decorators(&child, src, pre_len, refs);
+                }
+            }
+
+            "typealias_declaration" => {
+                push_typealias(&child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            "subscript_declaration" => {
+                let idx = push_subscript(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    // Recurse into the computed_property body for calls.
+                    let body = find_child_by_kind(&child, "computed_property")
+                        .or_else(|| find_child_by_kind(&child, "code_block"));
+                    if let Some(b) = body {
+                        extract_calls_from_body(&b, src, sym_idx, refs);
+                    }
                 }
             }
 

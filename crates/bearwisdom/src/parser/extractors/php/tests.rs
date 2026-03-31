@@ -130,3 +130,135 @@ function build() {
         let result = std::panic::catch_unwind(|| extract(source));
         assert!(result.is_ok(), "extractor panicked on malformed input");
     }
+
+    // -----------------------------------------------------------------------
+    // Constructor promotion (PHP 8.0)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn constructor_promotion_emits_property_symbols() {
+        let source = r#"<?php
+class User {
+    public function __construct(
+        public readonly string $name,
+        private int $age,
+    ) {}
+}
+"#;
+        let r = extract(source);
+        let props: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Property)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(props.contains(&"name"), "expected 'name' Property from promotion: {props:?}");
+        assert!(props.contains(&"age"), "expected 'age' Property from promotion: {props:?}");
+    }
+
+    #[test]
+    fn constructor_promotion_emits_type_refs() {
+        let source = r#"<?php
+class Repo {
+    public function __construct(
+        public UserRepository $users,
+        public EventDispatcher $events,
+    ) {}
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"UserRepository"),
+            "expected TypeRef to UserRepository: {type_refs:?}"
+        );
+        assert!(
+            type_refs.contains(&"EventDispatcher"),
+            "expected TypeRef to EventDispatcher: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Method parameter type refs
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn method_param_type_ref_emitted() {
+        let source = r#"<?php
+class Handler {
+    public function handle(Request $request, Response $response): void {
+        $request->validate();
+    }
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"Request"),
+            "expected TypeRef to Request: {type_refs:?}"
+        );
+        assert!(
+            type_refs.contains(&"Response"),
+            "expected TypeRef to Response: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // include / require — Imports edge
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn include_produces_imports_edge() {
+        let source = "<?php\ninclude 'helpers/utils.php';\n";
+        let r = extract(source);
+        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports);
+        assert!(imp.is_some(), "expected Imports edge from include, refs: {:?}", r.refs);
+        let imp = imp.unwrap();
+        assert_eq!(imp.target_name, "utils", "expected target 'utils': {}", imp.target_name);
+    }
+
+    #[test]
+    fn require_once_produces_imports_edge() {
+        let source = "<?php\nrequire_once 'config/database.php';\n";
+        let r = extract(source);
+        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports);
+        assert!(
+            imp.is_some(),
+            "expected Imports edge from require_once, refs: {:?}",
+            r.refs
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Disjunctive normal form type (PHP 8.2+)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dnf_type_emits_type_refs() {
+        let source = r#"<?php
+class Processor {
+    public function handle((Stringable&Countable)|Logger $input): void {}
+}
+"#;
+        let r = extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"Stringable") || type_refs.contains(&"Logger"),
+            "expected TypeRef from DNF type: {type_refs:?}"
+        );
+    }

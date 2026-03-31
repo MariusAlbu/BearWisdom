@@ -220,6 +220,195 @@ pub(super) fn push_property_decl(
     });
 }
 
+/// Emit a Class symbol for a `companion object [Name]` declaration.
+/// Returns the symbol index.
+pub(super) fn push_companion_object(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // Name is optional — default to "Companion" per Kotlin spec.
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .unwrap_or_else(|| "Companion".to_string());
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::Class,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some("companion object".to_string()),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
+/// Extract Variable symbols (and TypeRef edges) from a `primary_constructor`'s
+/// `class_parameters`. Parameters with `val`/`var` modifiers also become
+/// Property symbols (Kotlin primary-constructor promotion).
+pub(super) fn extract_primary_constructor_params(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // `primary_constructor` is a non-field child of `class_declaration`.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "primary_constructor" {
+            let mut pc = child.walk();
+            for inner in child.children(&mut pc) {
+                if inner.kind() == "class_parameters" {
+                    let mut cc = inner.walk();
+                    for param in inner.children(&mut cc) {
+                        if param.kind() == "class_parameter" {
+                            extract_class_parameter(
+                                &param, src, scope_tree, symbols, refs, parent_index,
+                            );
+                        }
+                    }
+                }
+            }
+            break;
+        }
+    }
+}
+
+fn extract_class_parameter(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // Walk children to find identifier and type.
+    // NOTE: In tree-sitter-kotlin-ng the `type` rule is transparent — the actual
+    // child node kind is `user_type`, `nullable_type`, `function_type`, etc.
+    let mut name: Option<String> = None;
+    let mut type_node: Option<tree_sitter::Node> = None;
+    let mut is_property = false;
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "identifier" | "simple_identifier" => {
+                if name.is_none() {
+                    name = Some(node_text(child, src));
+                }
+            }
+            // Explicit `type` wrapper (if present in some grammar versions).
+            "type" | "nullable_type" => {
+                type_node = Some(child);
+            }
+            // In kotlin-ng the type rule is transparent — `user_type` appears directly.
+            "user_type" | "function_type" => {
+                type_node = Some(child);
+            }
+            // `val` or `var` keyword makes this a promoted property.
+            "val" | "var" => {
+                is_property = true;
+            }
+            _ => {}
+        }
+    }
+
+    let name = match name {
+        Some(n) => n,
+        None => return,
+    };
+
+    // Emit TypeRef for the parameter type.
+    if let Some(tn) = type_node {
+        // Extract the simple name from the type node and emit a TypeRef directly.
+        let type_name = super::calls::kotlin_type_name(&tn, src);
+        if !type_name.is_empty() {
+            refs.push(crate::types::ExtractedRef {
+                source_symbol_index: parent_index.unwrap_or(0),
+                target_name: type_name,
+                kind: crate::types::EdgeKind::TypeRef,
+                line: tn.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let kind = if is_property {
+        SymbolKind::Property
+    } else {
+        SymbolKind::Variable
+    };
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path,
+        parent_index,
+    });
+}
+
+/// Emit TypeRef edges for upper bounds of `type_parameter` nodes inside a
+/// `type_parameters` list (e.g. `<T : Comparable<T>>`).
+pub(super) fn extract_type_parameter_bounds(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_parameters" {
+            let mut tc = child.walk();
+            for tp in child.children(&mut tc) {
+                if tp.kind() == "type_parameter" {
+                    // type_parameter children: identifier, type_parameter_modifiers?, type?
+                    // The `type` child is the upper bound.
+                    let mut ic = tp.walk();
+                    for inner in tp.children(&mut ic) {
+                        if inner.kind() == "type" {
+                            super::calls::extract_type_ref_from_type_node(
+                                &inner,
+                                src,
+                                source_symbol_index,
+                                refs,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 pub(super) fn push_secondary_constructor(
     node: &Node,
     src: &[u8],

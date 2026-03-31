@@ -89,6 +89,63 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 extract_instanceof_refs(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
                 // Don't recurse further — the instanceof_expression has no nested bodies.
             }
+
+            // `catch (IOException | SQLException e)` — emit TypeRef for the exception type(s)
+            // and a Variable symbol for the catch binding.
+            "catch_clause" => {
+                extract_catch_clause_refs(&child, src, source_symbol_index, refs, symbols.as_deref_mut());
+                // Recurse into the catch body for nested calls.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `try (Resource r = new Resource())` — emit TypeRef and Variable for each resource.
+            "try_with_resources_statement" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_try_with_resources_refs(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_try_with_resources_refs(&child, src, source_symbol_index, refs, None);
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `(Type) value` — emit TypeRef for the cast target.
+            "cast_expression" => {
+                extract_cast_expression_refs(&child, src, source_symbol_index, refs);
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `Class::method` or `obj::method` — emit a Calls edge.
+            "method_reference" => {
+                extract_method_reference_calls(&child, src, source_symbol_index, refs);
+                // No further recursion needed — method_reference has no sub-expressions.
+            }
+
+            // `for (var item : list)` — emit Variable for the loop variable,
+            // TypeRef for an explicit declared type.
+            "enhanced_for_statement" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_enhanced_for_refs(&child, src, source_symbol_index, refs, Some(syms));
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_enhanced_for_refs(&child, src, source_symbol_index, refs, None);
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
+            // `Foo.class` — emit TypeRef for the class name.
+            "class_literal" => {
+                extract_class_literal_ref(&child, src, source_symbol_index, refs);
+            }
+
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
@@ -97,6 +154,301 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// catch_clause helpers
+// ---------------------------------------------------------------------------
+
+/// Emit TypeRef(s) for the exception type(s) in a catch clause, plus a
+/// Variable symbol for the catch parameter binding.
+///
+/// Tree-sitter-java shape:
+/// ```text
+/// catch_clause
+///   catch_formal_parameter
+///     catch_type              ← type_identifier | union_type
+///     identifier              ← the binding variable
+/// ```
+fn extract_catch_clause_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    symbols: Option<&mut Vec<ExtractedSymbol>>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() != "catch_formal_parameter" {
+            continue;
+        }
+
+        let mut binding_name: Option<(String, Node)> = None;
+        let mut cc = child.walk();
+        for param_child in child.children(&mut cc) {
+            match param_child.kind() {
+                "catch_type" => {
+                    // `catch_type` may contain multiple `type_identifier` children
+                    // separated by `|` (multi-catch).
+                    let mut tc = param_child.walk();
+                    for type_node in param_child.children(&mut tc) {
+                        let name = super::helpers::type_node_simple_name(type_node, src);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::TypeRef,
+                                line: type_node.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                }
+                "identifier" => {
+                    let name = node_text(param_child, src);
+                    if !name.is_empty() {
+                        binding_name = Some((name, param_child));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if let (Some((name, binding_node)), Some(syms)) = (binding_name, symbols) {
+            syms.push(make_variable_symbol(name, &binding_node, source_symbol_index));
+            // Only one catch_formal_parameter per catch clause.
+            break;
+        }
+        break;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// try-with-resources helpers
+// ---------------------------------------------------------------------------
+
+fn extract_try_with_resources_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    mut symbols: Option<&mut Vec<ExtractedSymbol>>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "resource_specification" {
+            let mut rc = child.walk();
+            for res in child.children(&mut rc) {
+                if res.kind() != "resource" {
+                    continue;
+                }
+                // resource: type identifier = expression
+                let type_node = res.child_by_field_name("type");
+                let name_node = res.child_by_field_name("name")
+                    .or_else(|| res.child_by_field_name("name"));
+
+                if let Some(tn) = type_node {
+                    let type_name = super::helpers::type_node_simple_name(tn, src);
+                    if !type_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: tn.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+
+                if let (Some(nn), Some(syms)) = (name_node, symbols.as_deref_mut()) {
+                    let name = node_text(nn, src);
+                    if !name.is_empty() {
+                        syms.push(make_variable_symbol(name, &nn, source_symbol_index));
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// cast_expression helper
+// ---------------------------------------------------------------------------
+
+fn extract_cast_expression_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // cast_expression { type: _type, value: expression }
+    if let Some(type_node) = node.child_by_field_name("type") {
+        let name = super::helpers::type_node_simple_name(type_node, src);
+        if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: name,
+                kind: EdgeKind::TypeRef,
+                line: type_node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// method_reference helper
+// ---------------------------------------------------------------------------
+
+/// Emit a Calls edge for `Class::method` or `obj::method`.
+///
+/// Tree-sitter-java shape:
+/// ```text
+/// method_reference
+///   identifier | type_identifier | method_invocation  ← object/type
+///   identifier                                        ← method name
+/// ```
+fn extract_method_reference_calls(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // The method name is the last identifier after `::`.
+    // In tree-sitter-java the `::` is an anonymous token, and the method name
+    // is the last named child or a child named `name`.
+    let method_name = node.child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .or_else(|| {
+            // Fall back: scan all named children and take the last identifier.
+            let mut last: Option<String> = None;
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" {
+                    last = Some(node_text(child, src));
+                }
+            }
+            last
+        });
+
+    if let Some(name) = method_name {
+        if !name.is_empty() && name != "new" {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: name,
+                kind: EdgeKind::Calls,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+
+    // Also emit TypeRef for the receiver type if it's a type reference.
+    // `String::valueOf` — the first child before `::` is `String`.
+    let receiver = node.child_by_field_name("object")
+        .or_else(|| {
+            let children: Vec<_> = {
+                let mut cursor = node.walk();
+                node.children(&mut cursor).collect()
+            };
+            children.into_iter().find(|c| c.kind() == "type_identifier" || c.kind() == "identifier")
+        });
+
+    if let Some(recv) = receiver {
+        if recv.kind() == "type_identifier" {
+            let name = node_text(recv, src);
+            if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: recv.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// enhanced_for_statement helper
+// ---------------------------------------------------------------------------
+
+fn extract_enhanced_for_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    symbols: Option<&mut Vec<ExtractedSymbol>>,
+) {
+    // enhanced_for_statement { type: _type, name: identifier, value: expression, body: statement }
+    let type_node = node.child_by_field_name("type");
+    let name_node = node.child_by_field_name("name");
+
+    if let Some(tn) = type_node {
+        let type_name = super::helpers::type_node_simple_name(tn, src);
+        if !type_name.is_empty() && !super::helpers::is_java_primitive(&type_name) {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: type_name,
+                kind: EdgeKind::TypeRef,
+                line: tn.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+
+    if let (Some(nn), Some(syms)) = (name_node, symbols) {
+        let name = node_text(nn, src);
+        if !name.is_empty() {
+            syms.push(make_variable_symbol(name, &nn, source_symbol_index));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// class_literal helper
+// ---------------------------------------------------------------------------
+
+/// Emit a TypeRef for `Foo.class`.
+///
+/// Tree-sitter-java shape:
+/// ```text
+/// class_literal
+///   type_identifier | generic_type | ...  ← the class type
+///   "." "class"
+/// ```
+fn extract_class_literal_ref(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // The type is the first named child.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if !child.is_named() {
+            continue;
+        }
+        let name = super::helpers::type_node_simple_name(child, src);
+        if !name.is_empty() && !super::helpers::is_java_primitive(&name) {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: name,
+                kind: EdgeKind::TypeRef,
+                line: child.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+        break;
     }
 }
 

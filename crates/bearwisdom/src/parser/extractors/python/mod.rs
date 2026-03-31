@@ -110,6 +110,20 @@ pub(super) fn extract_from_node(
                 calls::extract_import_from_statement(&child, source, refs, symbols.len());
             }
 
+            // `type Point = tuple[int, int]` (Python 3.12+)
+            "type_alias_statement" => {
+                let enclosing = parent_index.unwrap_or(0);
+                symbols::extract_type_alias_top_level(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    enclosing,
+                );
+            }
+
             "expression_statement" => {
                 symbols::extract_assignment_if_any(
                     &child,

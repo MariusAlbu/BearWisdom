@@ -241,6 +241,28 @@ pub(super) fn extract_singleton_method(
 }
 
 // ---------------------------------------------------------------------------
+// Singleton class (class << self)
+// ---------------------------------------------------------------------------
+
+/// Extract `class << self ... end` — the eigenclass / singleton class.
+///
+/// There is no named class symbol to emit (it's anonymous). We recurse into
+/// its body so that methods defined there are extracted as Method symbols
+/// scoped to the enclosing class prefix.
+pub(super) fn extract_singleton_class(
+    node: &Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    if let Some(body) = node.child_by_field_name("body") {
+        super::extract_from_node(body, src, symbols, refs, parent_index, qualified_prefix, true);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Call statements: require, require_relative, attr_*, Rails macros
 // ---------------------------------------------------------------------------
 

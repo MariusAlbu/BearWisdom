@@ -36,6 +36,36 @@ object App {
     }
 
     #[test]
+    fn type_definition_extracted_as_type_alias() {
+        let src = r#"
+object Aliases {
+  type StringMap = Map[String, Int]
+  type Callback = Int => Unit
+}
+"#;
+        let r = extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "StringMap" && s.kind == SymbolKind::TypeAlias),
+            "StringMap TypeAlias not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        assert!(r.symbols.iter().any(|s| s.name == "Callback" && s.kind == SymbolKind::TypeAlias));
+    }
+
+    #[test]
+    fn infix_expression_emits_calls_edge() {
+        let src = r#"
+def process(a: Int, b: Int): Int = a + b
+"#;
+        let r = extract(src);
+        assert!(
+            r.refs.iter().any(|rf| rf.target_name == "+" && rf.kind == EdgeKind::Calls),
+            "Calls edge for '+' not found; refs: {:?}",
+            r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn import_produces_import_ref() {
         let src = "import scala.collection.mutable.ListBuffer\n";
         let r = extract(src);

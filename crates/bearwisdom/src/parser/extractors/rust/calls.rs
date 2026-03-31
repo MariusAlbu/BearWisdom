@@ -40,28 +40,75 @@ pub(super) fn extract_impl(
 
     let mut cursor = body.walk();
     for child in body.children(&mut cursor) {
-        if child.kind() == "function_item" {
-            if let Some(sym) = extract_method_from_fn(&child, source, None, &impl_prefix) {
-                let idx = symbols.len();
-                symbols.push(sym);
-                {
-                    let mut wc = child.walk();
-                    for gc in child.children(&mut wc) {
-                        match gc.kind() {
-                            "type_parameters" => {
-                                patterns::extract_type_param_bounds(&gc, source, idx, refs);
+        match child.kind() {
+            "function_item" => {
+                if let Some(sym) = extract_method_from_fn(&child, source, None, &impl_prefix) {
+                    let idx = symbols.len();
+                    symbols.push(sym);
+                    {
+                        let mut wc = child.walk();
+                        for gc in child.children(&mut wc) {
+                            match gc.kind() {
+                                "type_parameters" => {
+                                    patterns::extract_type_param_bounds(&gc, source, idx, refs);
+                                }
+                                "where_clause" => {
+                                    patterns::extract_where_clause(&gc, source, idx, refs);
+                                }
+                                _ => {}
                             }
-                            "where_clause" => {
-                                patterns::extract_where_clause(&gc, source, idx, refs);
+                        }
+                    }
+                    if let Some(fn_body) = child.child_by_field_name("body") {
+                        extract_calls_from_body_with_symbols(&fn_body, source, idx, refs, Some(symbols));
+                    }
+                }
+            }
+
+            // `type Output = String;` — associated type in an impl or trait body.
+            // Emit a TypeAlias symbol scoped to the impl type and a TypeRef for
+            // the right-hand type (when it's a named type, not a primitive).
+            "associated_type" | "type_item" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let name = node_text(&name_node, source);
+                    if !name.is_empty() {
+                        use super::helpers::{qualify, scope_from_prefix};
+                        use crate::types::SymbolKind;
+                        let qualified_name = qualify(&name, &impl_prefix);
+                        let sym_idx = symbols.len();
+                        symbols.push(crate::types::ExtractedSymbol {
+                            name: name.clone(),
+                            qualified_name,
+                            kind: SymbolKind::TypeAlias,
+                            visibility: None,
+                            start_line: child.start_position().row as u32,
+                            end_line: child.end_position().row as u32,
+                            start_col: child.start_position().column as u32,
+                            end_col: child.end_position().column as u32,
+                            signature: Some(format!("type {name}")),
+                            doc_comment: None,
+                            scope_path: scope_from_prefix(&impl_prefix),
+                            parent_index: None,
+                        });
+                        // Emit TypeRef if the RHS type is a named type.
+                        if let Some(ty_node) = child.child_by_field_name("type") {
+                            let type_name = rust_type_node_name(&ty_node, source);
+                            if !type_name.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: sym_idx,
+                                    target_name: type_name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: ty_node.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
                             }
-                            _ => {}
                         }
                     }
                 }
-                if let Some(fn_body) = child.child_by_field_name("body") {
-                    extract_calls_from_body_with_symbols(&fn_body, source, idx, refs, Some(symbols));
-                }
             }
+
+            _ => {}
         }
     }
 }
@@ -133,6 +180,106 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         &mut tmp,
                         refs,
                     );
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
+            // `println!()`, `vec![]`, `format!()`, custom macros.
+            // Can't expand them, but we emit a Calls edge for the macro name.
+            "macro_invocation" => {
+                if let Some(macro_node) = child.child_by_field_name("macro") {
+                    let name = node_text(&macro_node, source);
+                    // Strip trailing `!` if present (some grammars include it).
+                    let name = name.trim_end_matches('!').to_string();
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::Calls,
+                            line: macro_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                // Recurse into the token-tree arguments for nested calls inside the macro.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
+            // `x as u64` — type cast expression.  Emit TypeRef for the target type.
+            "type_cast_expression" => {
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    let type_name = rust_type_node_name(&type_node, source);
+                    if !type_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: type_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                // Recurse into the value expression for nested calls.
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
+            // `let x: T = expr;` — emit a Variable symbol for the binding pattern
+            // and recurse into the value expression for nested calls.
+            "let_declaration" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    // Reuse the pattern extractor — handles identifiers, tuple patterns, etc.
+                    // `let_declaration` and `let_condition` share the same `pattern` field.
+                    super::patterns::extract_let_condition_pattern(
+                        &child,
+                        source,
+                        source_symbol_index,
+                        syms,
+                        refs,
+                    );
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                }
+            }
+
+            // `Point { x: 1, y: 2 }` — struct literal / constructor call.
+            // Emit a Calls edge for the struct name so it appears in call hierarchy.
+            "struct_expression" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let name = rust_type_node_name(&name_node, source);
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name.clone(),
+                            kind: EdgeKind::Calls,
+                            line: name_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                        // Also emit TypeRef so the type graph is connected.
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: name_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
+                } else {
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
             }
@@ -355,6 +502,43 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
 }
 
 // ---------------------------------------------------------------------------
+// extern crate import
+// ---------------------------------------------------------------------------
+
+/// Emit an `Imports` edge for `extern crate foo;`.
+///
+/// tree-sitter-rust shape:
+/// ```text
+/// extern_crate_declaration
+///   "extern" "crate"
+///   name: identifier  "foo"
+///   ["as" alias: identifier]
+/// ```
+pub(super) fn extract_extern_crate(
+    node: &Node,
+    source: &str,
+    refs: &mut Vec<ExtractedRef>,
+    current_symbol_count: usize,
+) {
+    let name_node = match node.child_by_field_name("name") {
+        Some(n) => n,
+        None => return,
+    };
+    let name = node_text(&name_node, source);
+    if name.is_empty() || name == "self" {
+        return;
+    }
+    refs.push(ExtractedRef {
+        source_symbol_index: current_symbol_count,
+        target_name: name,
+        kind: EdgeKind::Imports,
+        line: name_node.start_position().row as u32,
+        module: None,
+        chain: None,
+    });
+}
+
+// ---------------------------------------------------------------------------
 // Use declaration / import reference extraction
 // ---------------------------------------------------------------------------
 
@@ -517,6 +701,103 @@ fn build_module_path(prefix: &str, path: &str) -> String {
         (true, false) => path.to_string(),
         (false, true) => prefix.to_string(),
         (false, false) => format!("{prefix}::{path}"),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Type name extraction helper (for type_cast_expression targets)
+// ---------------------------------------------------------------------------
+
+/// Extract a simple type name from a Rust type node, unwrapping references and
+/// generic wrappers to their base name.
+///
+/// Handles:
+/// - `type_identifier`          → `"Foo"`
+/// - `scoped_type_identifier`   → last segment of `foo::Bar`
+/// - `generic_type`             → base type name from `Vec<T>`
+/// - `reference_type`           → recurse into inner type (`&T`, `&mut T`)
+/// - `pointer_type` (raw ptr)   → recurse into inner type (`*const T`)
+/// - `abstract_type`            → `impl Trait` → trait name
+/// - `dynamic_trait_type`       → `dyn Error + Send` → first trait name
+/// - `array_type`               → `[T; N]` → element type name
+/// - `tuple_type`               → `(A, B)` → first non-primitive element
+pub(super) fn rust_type_node_name(node: &Node, source: &str) -> String {
+    match node.kind() {
+        "type_identifier" => node_text(node, source),
+        "scoped_type_identifier" => {
+            // Last segment — `foo::Bar` → `"Bar"`.
+            node.child_by_field_name("name")
+                .map(|n| node_text(&n, source))
+                .unwrap_or_else(|| {
+                    let text = node_text(node, source);
+                    text.rsplit("::").next().unwrap_or(&text).to_string()
+                })
+        }
+        "generic_type" => {
+            // `Vec<T>` — take the base type.
+            node.child_by_field_name("type")
+                .map(|n| rust_type_node_name(&n, source))
+                .unwrap_or_default()
+        }
+        "reference_type" | "pointer_type" => {
+            // `&T`, `&mut T`, `*const T` — unwrap to inner type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() && child.kind() != "mutable_specifier" {
+                    let name = rust_type_node_name(&child, source);
+                    if !name.is_empty() {
+                        return name;
+                    }
+                }
+            }
+            String::new()
+        }
+        "abstract_type" => {
+            // `impl Trait` — extract trait name (first named child after `impl` keyword).
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    let name = rust_type_node_name(&child, source);
+                    if !name.is_empty() {
+                        return name;
+                    }
+                }
+            }
+            String::new()
+        }
+        "dynamic_trait_type" => {
+            // `dyn Error + Send` — use the first trait name (skip `dyn` keyword).
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    let name = rust_type_node_name(&child, source);
+                    if !name.is_empty() {
+                        return name;
+                    }
+                }
+            }
+            String::new()
+        }
+        "array_type" => {
+            // `[T; N]` — element type is the `element` field.
+            node.child_by_field_name("element")
+                .map(|n| rust_type_node_name(&n, source))
+                .unwrap_or_default()
+        }
+        "tuple_type" => {
+            // `(A, B, C)` — return the first named element type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    let name = rust_type_node_name(&child, source);
+                    if !name.is_empty() {
+                        return name;
+                    }
+                }
+            }
+            String::new()
+        }
+        _ => String::new(),
     }
 }
 

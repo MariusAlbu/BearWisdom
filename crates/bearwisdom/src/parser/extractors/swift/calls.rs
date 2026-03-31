@@ -36,10 +36,120 @@ pub(super) fn extract_calls_from_body(
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+
+            // `expr as Type` — emit TypeRef for the cast type.
+            // In tree-sitter-swift the type is the last named child (after as_operator).
+            "as_expression" => {
+                // Walk named children: skip the lhs expression and as_operator; the
+                // remaining named child is the type node.
+                let mut nc = child.walk();
+                let named: Vec<_> = child.named_children(&mut nc).collect();
+                if let Some(type_node) = named.last() {
+                    if type_node.kind() != "as_operator" {
+                        extract_type_ref_from_swift_type(type_node, src, source_symbol_index, refs);
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
+            // `{ params in body }` — recurse into lambda/closure body.
+            "lambda_literal" => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
+            // `"\(expr)"` — recurse into interpolated expressions.
+            "line_string_literal" | "multi_line_string_literal" => {
+                let mut sc = child.walk();
+                for seg in child.children(&mut sc) {
+                    if seg.kind() == "interpolated_expression" {
+                        extract_calls_from_body(&seg, src, source_symbol_index, refs);
+                    }
+                }
+            }
+
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
         }
+    }
+}
+
+/// Emit a TypeRef for a Swift type node (user_type, optional_type, array_type, etc.).
+pub(super) fn extract_type_ref_from_swift_type(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let name = swift_type_name(node, src);
+    if !name.is_empty() {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: name,
+            kind: EdgeKind::TypeRef,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+/// Extract the simple name from a Swift type node.
+pub(super) fn swift_type_name(node: &Node, src: &[u8]) -> String {
+    match node.kind() {
+        "user_type" => {
+            // user_type → type_identifier+ (e.g. `Array` or `Swift.Array`).
+            // Take the last type_identifier.
+            let mut last = String::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "type_identifier" | "simple_identifier" | "identifier" => {
+                        last = node_text(child, src);
+                    }
+                    _ => {}
+                }
+            }
+            last
+        }
+        "optional_type" => {
+            // Recurse into the wrapped type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let n = swift_type_name(&child, src);
+                if !n.is_empty() {
+                    return n;
+                }
+            }
+            String::new()
+        }
+        "array_type" => {
+            // `[T]` — the element type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let n = swift_type_name(&child, src);
+                if !n.is_empty() {
+                    return n;
+                }
+            }
+            String::new()
+        }
+        "dictionary_type" => {
+            // `[K: V]` — just emit the key type.
+            if let Some(key) = node.named_child(0) {
+                return swift_type_name(&key, src);
+            }
+            String::new()
+        }
+        "function_type" => {
+            // `(A) -> B` — emit return type.
+            if let Some(ret) = node.child_by_field_name("return_type") {
+                return swift_type_name(&ret, src);
+            }
+            String::new()
+        }
+        "type_identifier" | "simple_identifier" | "identifier" => node_text(*node, src),
+        _ => String::new(),
     }
 }
 

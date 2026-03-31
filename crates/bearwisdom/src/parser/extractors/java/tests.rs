@@ -436,3 +436,161 @@ class Service {
             s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
         );
     }
+
+    // -----------------------------------------------------------------------
+    // record_declaration (Java 16+)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn record_declaration_extracted_as_class() {
+        let src = r#"
+package com.example;
+
+public record Point(int x, int y) {}
+"#;
+        let s = sym(src);
+        let rec = s.iter().find(|s| s.name == "Point");
+        assert!(rec.is_some(), "expected Point record symbol");
+        assert_eq!(rec.unwrap().kind, SymbolKind::Class, "record should map to Class");
+        assert_eq!(rec.unwrap().qualified_name, "com.example.Point");
+    }
+
+    #[test]
+    fn record_with_implements_emits_implements_edge() {
+        let src = r#"
+package com.example;
+
+public record Named(String name) implements Comparable<Named> {}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Comparable" && r.kind == EdgeKind::Implements),
+            "expected Implements edge for Comparable from record, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // catch_clause
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn catch_clause_emits_type_ref_and_variable() {
+        let src = r#"
+class Service {
+    void run() {
+        try {
+            riskyCall();
+        } catch (IOException e) {
+            e.getMessage();
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        let s = sym(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "IOException" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to IOException from catch, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            s.iter().any(|s| s.name == "e" && s.kind == SymbolKind::Variable),
+            "expected Variable 'e' from catch clause"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // cast_expression
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn cast_expression_emits_type_ref() {
+        let src = r#"
+class Service {
+    void run(Object obj) {
+        Admin admin = (Admin) obj;
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to Admin from cast, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // method_reference
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn method_reference_emits_calls_edge() {
+        let src = r#"
+class Service {
+    void run() {
+        users.stream().map(User::getName).collect(Collectors.toList());
+    }
+}
+"#;
+        let r = refs(src);
+        let calls: Vec<&str> = r.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"getName"),
+            "expected Calls edge for getName from method_reference, got: {calls:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // enhanced_for_statement
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn enhanced_for_emits_variable_and_type_ref() {
+        let src = r#"
+class Service {
+    void run(List<User> users) {
+        for (User user : users) {
+            user.activate();
+        }
+    }
+}
+"#;
+        let r = refs(src);
+        let s = sym(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to User from enhanced-for, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            s.iter().any(|s| s.name == "user" && s.kind == SymbolKind::Variable),
+            "expected Variable 'user' from enhanced-for, symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // class_literal
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn class_literal_emits_type_ref() {
+        let src = r#"
+class Service {
+    void run() {
+        Class<?> cls = User.class;
+    }
+}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to User from class literal, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }

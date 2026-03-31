@@ -239,6 +239,28 @@ pub(super) fn extract_refs_from_body(
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
             }
 
+            // `string(bytes)`, `int64(x)` — type conversion expression.
+            // The `type` field is the target type; emit a TypeRef for it.
+            // Also recurse into the operand expression for nested calls.
+            "type_conversion_expression" => {
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    let type_name = super::helpers::extract_go_type_name(&type_node, source);
+                    if !type_name.is_empty()
+                        && !super::helpers::is_go_builtin_type(&type_name)
+                    {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: type_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
             // `ch <- value` — send statement: recurse into value
             "send_statement" => {
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
@@ -249,9 +271,130 @@ pub(super) fn extract_refs_from_body(
                 extract_select_refs(&child, source, source_symbol_index, refs);
             }
 
+            // `go doWork()` / `go func() { ... }()` — extract calls inside the goroutine.
+            // The wildcard would recurse, but we name it explicitly so it's clear
+            // and to ensure the call_expression inside is fully processed.
+            "go_statement" | "defer_statement" => {
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
+            // `func() { ... }` — anonymous function literal.
+            // TypeRefs for parameter types in the func_literal's parameter_list.
+            "func_literal" => {
+                extract_func_literal_type_refs(&child, source, source_symbol_index, refs);
+                // Recurse into the body block for nested calls.
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
+            // `[N]Foo` — array type used as a value expression (e.g. in composite literals).
+            "array_type" => {
+                let type_name = super::helpers::extract_go_type_name(&child, source);
+                if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
+            // `func(A) B` — function type in an expression position.
+            "function_type" => {
+                super::helpers::extract_function_type_refs(
+                    &child, source, source_symbol_index, refs,
+                );
+            }
+
+            // `List[int]` — generic type (Go 1.18+).
+            "generic_type" => {
+                let type_name = super::helpers::extract_go_type_name(&child, source);
+                if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // Also recurse into type arguments for their contained type refs.
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
             _ => {
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
             }
+        }
+    }
+}
+
+/// Extract TypeRef edges for parameter types of a `func_literal` node.
+///
+/// `func_literal` children: `func` (keyword), `parameter_list`, `result?`, `block`
+fn extract_func_literal_type_refs(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "parameter_list" => {
+                // Walk parameter declarations.
+                let mut pc = child.walk();
+                for param in child.children(&mut pc) {
+                    if param.kind() != "parameter_declaration"
+                        && param.kind() != "variadic_parameter_declaration"
+                    {
+                        continue;
+                    }
+                    // The type is the last named child that isn't an identifier.
+                    let type_node = (0..param.child_count())
+                        .filter_map(|i| param.child(i))
+                        .filter(|c| c.is_named() && c.kind() != "identifier")
+                        .last();
+                    if let Some(tn) = type_node {
+                        let name = super::helpers::extract_go_type_name(&tn, source);
+                        if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::TypeRef,
+                                line: tn.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                }
+            }
+            "result" => {
+                // Return type(s).
+                let mut rc = child.walk();
+                for ret_child in child.children(&mut rc) {
+                    if !ret_child.is_named() {
+                        continue;
+                    }
+                    let name = super::helpers::extract_go_type_name(&ret_child, source);
+                    if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: ret_child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -332,6 +475,25 @@ fn extract_call_ref(
 
     if target_name.is_empty() {
         return;
+    }
+
+    // When the callee is a bare identifier that starts with an uppercase letter,
+    // Go convention says it is exported — this may be a user-defined type
+    // conversion (`MyString(b)` is syntactically a call_expression in tree-sitter-go,
+    // not a type_conversion_expression).  Emit a TypeRef so the resolution engine
+    // can treat it as a potential type usage.
+    if func_node.kind() == "identifier"
+        && target_name.chars().next().map_or(false, |c| c.is_uppercase())
+        && !super::helpers::is_go_builtin_type(&target_name)
+    {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target_name.clone(),
+            kind: EdgeKind::TypeRef,
+            line: func_node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
     }
 
     refs.push(ExtractedRef {
