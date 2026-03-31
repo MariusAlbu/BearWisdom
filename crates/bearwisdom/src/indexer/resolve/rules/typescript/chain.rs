@@ -3,6 +3,7 @@
 // =============================================================================
 
 use super::super::super::engine::{RefContext, Resolution, SymbolLookup};
+use super::super::super::type_env::TypeEnvironment;
 use super::builtins::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
@@ -13,6 +14,11 @@ use tracing::debug;
 /// 1. `this` → find enclosing class from scope_chain (e.g., "UserService")
 /// 2. `repo` → look up "UserService.repo" field → declared_type = "UserRepo"
 /// 3. `findOne` → look up "UserRepo.findOne" in the symbol index → resolved!
+///
+/// Generic substitution is handled by a `TypeEnvironment`: when we encounter a field
+/// like `repo: Repository<User>`, we bind the Repository's type params to concrete
+/// args in a new scope. When the resolved return type is a bound param (e.g., "T"),
+/// `env.resolve("T")` returns the concrete type ("User").
 pub(super) fn resolve_via_chain(
     chain: &MemberChain,
     edge_kind: EdgeKind,
@@ -66,9 +72,18 @@ pub(super) fn resolve_via_chain(
     };
 
     let mut current_type = root_type?;
-    // Track generic type arguments from the field that produced current_type.
-    // e.g., for `repo: Repository<User>`, generic_args = ["User"].
-    let mut generic_args = initial_generic_args;
+
+    // Build a TypeEnvironment for this chain walk.
+    // When entering a generic type (e.g., Repository<User>), we push a scope binding
+    // T=User. When a return type is a bound param, env.resolve() substitutes it.
+    let mut env = TypeEnvironment::new();
+
+    // If the root was a generic field, enter its generic context now.
+    if !initial_generic_args.is_empty() {
+        env.enter_generic_context(&current_type, &initial_generic_args, |name| {
+            lookup.generic_params(name).map(|p| p.to_vec())
+        });
+    }
 
     // Phase 2: Walk intermediate segments, following field types or return types.
     for seg in &segments[1..segments.len() - 1] {
@@ -76,21 +91,29 @@ pub(super) fn resolve_via_chain(
 
         // Try field type (property access).
         if let Some(next_type) = lookup.field_type_name(&member_qname) {
-            // Capture type args from this field for generic substitution.
-            generic_args = lookup
+            let new_args = lookup
                 .field_type_args(&member_qname)
                 .unwrap_or(&[])
                 .to_vec();
-            current_type = next_type.to_string();
+            // Resolve the new type through the environment (handles T → User etc).
+            let resolved_type = env.resolve(next_type);
+            // Transition to the new type's generic context.
+            env.push_scope();
+            if !new_args.is_empty() {
+                env.enter_generic_context(&resolved_type, &new_args, |name| {
+                    lookup.generic_params(name).map(|p| p.to_vec())
+                });
+            }
+            current_type = resolved_type;
             continue;
         }
 
         // Try return type (method call result in a fluent chain).
         if let Some(raw_return) = lookup.return_type_name(&member_qname) {
-            // Generic substitution: if return type is a type parameter (e.g., "T"),
-            // and we have concrete generic args, substitute.
-            let resolved = resolve_generic_type(raw_return, &current_type, &generic_args, lookup);
-            generic_args.clear(); // consumed
+            // Use TypeEnvironment to substitute type params (e.g., "T" → "User").
+            let resolved = env.resolve(raw_return);
+            // Clear current generic bindings and enter context for the new type.
+            env.push_scope();
             current_type = resolved;
             continue;
         }
@@ -100,12 +123,16 @@ pub(super) fn resolve_via_chain(
         for sym in lookup.by_name(&seg.name) {
             if sym.qualified_name.starts_with(&current_type) {
                 if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    current_type = ft.to_string();
+                    let resolved_type = env.resolve(ft);
+                    env.push_scope();
+                    current_type = resolved_type;
                     found = true;
                     break;
                 }
                 if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    current_type = rt.to_string();
+                    let resolved = env.resolve(rt);
+                    env.push_scope();
+                    current_type = resolved;
                     found = true;
                     break;
                 }
@@ -170,35 +197,4 @@ pub(super) fn find_enclosing_class(
     }
     // Fallback: the shortest scope entry is often the class.
     scope_chain.last().cloned()
-}
-
-/// Resolve a generic type parameter to its concrete type.
-///
-/// If `return_type` is "T" and the enclosing type `Repository` has generic params ["T"]
-/// and the field was declared as `Repository<User>` (generic_args = ["User"]),
-/// then "T" maps to "User".
-///
-/// Returns the resolved type name, or the original if no substitution applies.
-pub(super) fn resolve_generic_type(
-    return_type: &str,
-    enclosing_type: &str,
-    generic_args: &[String],
-    lookup: &dyn SymbolLookup,
-) -> String {
-    if generic_args.is_empty() {
-        return return_type.to_string();
-    }
-    // Get the generic parameter names for the enclosing type.
-    let params = lookup.generic_params(enclosing_type);
-    if let Some(params) = params {
-        // Find which parameter position matches the return type.
-        for (i, param) in params.iter().enumerate() {
-            if param == return_type {
-                if let Some(concrete) = generic_args.get(i) {
-                    return concrete.clone();
-                }
-            }
-        }
-    }
-    return_type.to_string()
 }

@@ -418,6 +418,13 @@ pub fn full_index(
         stats.db_mapping_count,
     );
 
+    // Populate the ref cache (if the caller opted in) so incremental reindex
+    // can skip re-parsing unchanged dependent files on the next pass.
+    if let Some(ref_cache) = db.ref_cache.as_mut() {
+        ref_cache.store_all(&parsed);
+        tracing::debug!("RefCache populated: {} files", parsed.len());
+    }
+
     Ok(stats)
 }
 

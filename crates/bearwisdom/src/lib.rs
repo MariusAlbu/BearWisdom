@@ -41,6 +41,8 @@ pub use query::subgraph::{GraphEdge, GraphNode, SubgraphResult};
 pub use query::symbol_info::{SymbolDetail, FileSymbol, FileSymbolsMode};
 pub use query::investigate::{InvestigateOptions, InvestigateResult, SlimSymbol, BlastRadiusSlim};
 pub use query::QueryOptions;
+pub use query::cache::QueryCache;
+pub use indexer::ref_cache::RefCache;
 
 // Re-export new v3 types.
 pub use bridge::enricher::BackgroundEnricher;

@@ -12,6 +12,7 @@
 pub mod engine;
 mod heuristic;
 pub mod rules;
+pub mod type_env;
 
 use crate::db::Database;
 use crate::indexer::project_context::ProjectContext;

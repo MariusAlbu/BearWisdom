@@ -70,6 +70,8 @@ tokenizers             = { workspace = true }
 dirs                   = "5"
 # SCIP import
 prost                  = { workspace = true }
+# LRU cache for query results and ref caching
+lru                    = { workspace = true }
 
 [dev-dependencies]
 tempfile               = "3"

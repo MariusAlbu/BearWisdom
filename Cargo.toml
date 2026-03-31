@@ -91,6 +91,7 @@ axum                  = "0.8"
 tower-http            = { version = "0.6", features = ["cors", "fs"] }
 dirs                  = "6"
 notify                = "7"
+lru                   = "0.12"
 
 [profile.release]
 strip   = true

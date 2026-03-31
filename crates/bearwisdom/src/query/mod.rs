@@ -1,4 +1,5 @@
 // Existing modules.
+pub mod cache;
 pub mod definitions;
 pub mod references;
 

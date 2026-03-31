@@ -7,6 +7,7 @@
 // =============================================================================
 
 use crate::indexer::project_context::ProjectContext;
+use crate::indexer::resolve::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use rustc_hash::FxHashMap;
 use std::collections::HashMap;
@@ -418,14 +419,31 @@ fn infer_type_from_chain(
     }?;
 
     let mut current_type = root_type;
-    let mut generic_args: Vec<String> = Vec::new();
 
-    // Look up initial generic args.
+    // Build a TypeEnvironment for generic substitution.
+    let mut env = TypeEnvironment::new();
+
+    // Look up initial generic args for the root field.
     for scope in &scopes {
         let key = format!("{scope}.{}", segments[0].name);
         if let Some(ti) = type_info.get(&key) {
             if !ti.type_args.is_empty() {
-                generic_args = ti.type_args.clone();
+                // Enter the generic context for the root type.
+                let args = ti.type_args.clone();
+                env.enter_generic_context(&current_type, &args, |name| {
+                    // Look up by qualified name first, then by simple name.
+                    type_info
+                        .get(name)
+                        .map(|ti| ti.generic_params.clone())
+                        .filter(|p| !p.is_empty())
+                        .or_else(|| {
+                            let simple = name.rsplit('.').next().unwrap_or(name);
+                            type_info
+                                .get(simple)
+                                .map(|ti| ti.generic_params.clone())
+                                .filter(|p| !p.is_empty())
+                        })
+                });
                 break;
             }
         }
@@ -437,40 +455,31 @@ fn infer_type_from_chain(
 
         if let Some(ti) = type_info.get(&member_qname) {
             if let Some(ft) = &ti.field_type {
-                generic_args = ti.type_args.clone();
-                current_type = ft.clone();
+                let new_args = ti.type_args.clone();
+                let resolved_type = env.resolve(ft);
+                env.push_scope();
+                if !new_args.is_empty() {
+                    env.enter_generic_context(&resolved_type, &new_args, |name| {
+                        type_info
+                            .get(name)
+                            .map(|ti| ti.generic_params.clone())
+                            .filter(|p| !p.is_empty())
+                            .or_else(|| {
+                                let simple = name.rsplit('.').next().unwrap_or(name);
+                                type_info
+                                    .get(simple)
+                                    .map(|ti| ti.generic_params.clone())
+                                    .filter(|p| !p.is_empty())
+                            })
+                    });
+                }
+                current_type = resolved_type;
                 continue;
             }
             if let Some(raw_return) = &ti.return_type {
-                // Generic substitution.
-                let resolved = if !generic_args.is_empty() {
-                    let params_opt = type_info
-                        .get(&current_type)
-                        .map(|ti| &ti.generic_params)
-                        .filter(|p| !p.is_empty())
-                        .or_else(|| {
-                            // Try simple name too.
-                            let simple =
-                                current_type.rsplit('.').next().unwrap_or(&current_type);
-                            type_info
-                                .get(simple)
-                                .map(|ti| &ti.generic_params)
-                                .filter(|p| !p.is_empty())
-                        });
-                    if let Some(params) = params_opt {
-                        params
-                            .iter()
-                            .enumerate()
-                            .find(|(_, p)| p.as_str() == raw_return)
-                            .and_then(|(i, _)| generic_args.get(i).cloned())
-                            .unwrap_or_else(|| raw_return.clone())
-                    } else {
-                        raw_return.clone()
-                    }
-                } else {
-                    raw_return.clone()
-                };
-                generic_args.clear();
+                // Use TypeEnvironment for generic substitution (T → User, E → Error, etc).
+                let resolved = env.resolve(raw_return);
+                env.push_scope();
                 current_type = resolved;
                 continue;
             }

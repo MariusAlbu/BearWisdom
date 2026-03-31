@@ -202,7 +202,17 @@ pub fn incremental_index(
         debug!("Deleted file from index: {path}");
     }
 
-    // Step 3: Parse changed/new files (parallel).
+    // Invalidate ref cache entries for files that changed or were deleted.
+    if let Some(ref_cache) = db.ref_cache.as_mut() {
+        for (_, path) in &files_to_delete {
+            ref_cache.invalidate(path);
+        }
+        for walked in &files_to_parse {
+            ref_cache.invalidate(&walked.relative_path);
+        }
+    }
+
+        // Step 3: Parse changed/new files (parallel).
     let parse_results: Vec<Result<ParsedFile>> =
         files_to_parse.par_iter().map(full::parse_file).collect();
 
@@ -574,7 +584,17 @@ pub fn reindex_files(
         return Ok(stats);
     }
 
-    // Parse changed/new files (parallel via Rayon, mirroring incremental_index).
+    // Invalidate ref cache entries for files about to be replaced or deleted.
+    if let Some(ref_cache) = db.ref_cache.as_mut() {
+        for rel_path in &files_to_delete {
+            ref_cache.invalidate(rel_path);
+        }
+        for walked in &files_to_parse {
+            ref_cache.invalidate(&walked.relative_path);
+        }
+    }
+
+        // Parse changed/new files (parallel via Rayon, mirroring incremental_index).
     let parse_results: Vec<Result<ParsedFile>> =
         files_to_parse.par_iter().map(full::parse_file).collect();
 

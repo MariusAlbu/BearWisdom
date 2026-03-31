@@ -3,6 +3,7 @@
 // =============================================================================
 
 use super::super::super::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use super::super::super::type_env::TypeEnvironment;
 use super::builtins::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
@@ -14,6 +15,7 @@ use crate::types::{EdgeKind, MemberChain, SegmentKind};
 /// 3. `FindOne` → look up "MyNs.CatalogRepo.FindOne" in the symbol index → resolved!
 ///
 /// Also tries `{using_namespace}.{type}.{method}` for types resolved via using directives.
+/// Generic substitution (e.g., `IRepository<User>`) is handled by a `TypeEnvironment`.
 pub(super) fn resolve_via_chain(
     chain: &MemberChain,
     edge_kind: EdgeKind,
@@ -28,6 +30,7 @@ pub(super) fn resolve_via_chain(
     }
 
     // Phase 1: Determine the root type from the first segment.
+    let mut initial_generic_args: Vec<String> = Vec::new();
     let root_type = match segments[0].kind {
         SegmentKind::SelfRef => {
             // `this` / `base` → find the enclosing class from the scope chain.
@@ -51,6 +54,10 @@ pub(super) fn resolve_via_chain(
                 for scope in &ref_ctx.scope_chain {
                     let field_qname = format!("{scope}.{name}");
                     if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                        initial_generic_args = lookup
+                            .field_type_args(&field_qname)
+                            .unwrap_or(&[])
+                            .to_vec();
                         found = Some(type_name.to_string());
                         break;
                     }
@@ -63,17 +70,41 @@ pub(super) fn resolve_via_chain(
 
     let mut current_type = root_type?;
 
+    // Build a TypeEnvironment for this chain walk.
+    let mut env = TypeEnvironment::new();
+
+    if !initial_generic_args.is_empty() {
+        env.enter_generic_context(&current_type, &initial_generic_args, |name| {
+            lookup.generic_params(name).map(|p| p.to_vec())
+        });
+    }
+
     // Phase 2: Walk intermediate segments, following field types or return types.
     for seg in &segments[1..segments.len() - 1] {
         let member_qname = format!("{current_type}.{}", seg.name);
 
-        // Direct field_type_name or return_type_name lookup.
+        // Direct field_type_name lookup.
         if let Some(next_type) = lookup.field_type_name(&member_qname) {
-            current_type = next_type.to_string();
+            let new_args = lookup
+                .field_type_args(&member_qname)
+                .unwrap_or(&[])
+                .to_vec();
+            let resolved_type = env.resolve(next_type);
+            env.push_scope();
+            if !new_args.is_empty() {
+                env.enter_generic_context(&resolved_type, &new_args, |name| {
+                    lookup.generic_params(name).map(|p| p.to_vec())
+                });
+            }
+            current_type = resolved_type;
             continue;
         }
-        if let Some(next_type) = lookup.return_type_name(&member_qname) {
-            current_type = next_type.to_string();
+
+        // Direct return_type_name lookup.
+        if let Some(raw_return) = lookup.return_type_name(&member_qname) {
+            let resolved = env.resolve(raw_return);
+            env.push_scope();
+            current_type = resolved;
             continue;
         }
 
@@ -84,12 +115,16 @@ pub(super) fn resolve_via_chain(
                 if let Some(module) = &import.module_path {
                     let qualified_member = format!("{module}.{member_qname}");
                     if let Some(next_type) = lookup.field_type_name(&qualified_member) {
-                        current_type = next_type.to_string();
+                        let resolved_type = env.resolve(next_type);
+                        env.push_scope();
+                        current_type = resolved_type;
                         found = true;
                         break;
                     }
-                    if let Some(next_type) = lookup.return_type_name(&qualified_member) {
-                        current_type = next_type.to_string();
+                    if let Some(raw_return) = lookup.return_type_name(&qualified_member) {
+                        let resolved = env.resolve(raw_return);
+                        env.push_scope();
+                        current_type = resolved;
                         found = true;
                         break;
                     }

@@ -15,6 +15,8 @@
 
 pub mod schema;
 
+use crate::indexer::ref_cache::RefCache;
+use crate::query::cache::QueryCache;
 use anyhow::{Context, Result};
 use rusqlite::Connection;
 use std::path::{Path, PathBuf};
@@ -64,6 +66,11 @@ pub struct Database {
     pub conn: Connection,
     /// Path to the database file, or `None` for in-memory databases.
     pub path: Option<PathBuf>,
+    /// Optional in-memory cache of parsed symbols + refs for each indexed
+    /// file.  Populated by `full_index` when present; consulted by the
+    /// blast-radius pass in `reindex_files` to avoid re-parsing unchanged
+    /// dependent files.  `None` by default — callers opt in explicitly.
+    pub ref_cache: Option<RefCache>,
 }
 
 impl Database {
@@ -90,7 +97,7 @@ impl Database {
         schema::create_schema(&conn)
             .context("Failed to create schema")?;
 
-        Ok(Self { conn, path: Some(path.to_path_buf()) })
+        Ok(Self { conn, path: Some(path.to_path_buf()), ref_cache: None })
     }
 
     /// Open a database with vector search support.
@@ -121,7 +128,7 @@ impl Database {
         schema::apply_pragmas(&conn, true)?;
         schema::create_schema(&conn)?;
 
-        Ok(Self { conn, path: None })
+        Ok(Self { conn, path: None, ref_cache: None })
     }
 }
 
@@ -133,6 +140,9 @@ struct DbPoolInner {
     path: PathBuf,
     idle: Mutex<Vec<Database>>,
     max_size: usize,
+    /// Shared query-result cache.  `None` when the pool was created without a
+    /// cache (the default).  Use [`DbPool::with_cache`] to opt in.
+    cache: Option<Arc<QueryCache>>,
 }
 
 /// A pool of `Database` connections to the same SQLite file.
@@ -161,7 +171,30 @@ impl DbPool {
             path: path.to_path_buf(),
             idle: Mutex::new(idle),
             max_size,
+            cache: None,
         })))
+    }
+
+    /// Create a pool with an associated [`QueryCache`].
+    ///
+    /// The returned pool shares the cache across all checked-out connections.
+    /// Callers should call [`QueryCache::invalidate_all`] after a full reindex
+    /// and [`QueryCache::invalidate_files`] after an incremental reindex.
+    pub fn with_cache(path: &Path, max_size: usize, cache: Arc<QueryCache>) -> Result<Self> {
+        let seed = Database::open(path)?;
+        let mut idle = Vec::with_capacity(max_size);
+        idle.push(seed);
+        Ok(Self(Arc::new(DbPoolInner {
+            path: path.to_path_buf(),
+            idle: Mutex::new(idle),
+            max_size,
+            cache: Some(cache),
+        })))
+    }
+
+    /// Return the shared [`QueryCache`], if the pool was created with one.
+    pub fn cache(&self) -> Option<&Arc<QueryCache>> {
+        self.0.cache.as_ref()
     }
 
     /// Check out a connection.  Reuses an idle connection when available,
