@@ -59,11 +59,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
 
 use std::sync::Arc;
 
-// Language modules will be added here as they migrate:
-// pub mod typescript;
-// pub mod rust_lang;
-// pub mod csharp;
-// ...
+pub mod typescript;
 
 /// Build the default language registry with all built-in plugins.
 ///
@@ -74,12 +70,9 @@ pub fn default_registry() -> LanguageRegistry {
     // The generic plugin handles any language with a tree-sitter grammar
     // but no dedicated extractor.
     let generic = Arc::new(GenericPlugin);
-    let reg = LanguageRegistry::new(generic);
+    let mut reg = LanguageRegistry::new(generic);
 
-    // Dedicated plugins will be registered here as they migrate:
-    // reg.register(Arc::new(typescript::TypeScriptPlugin));
-    // reg.register(Arc::new(rust_lang::RustPlugin));
-    // ...
+    reg.register(Arc::new(typescript::TypeScriptPlugin));
 
     reg
 }
@@ -90,10 +83,7 @@ pub fn default_registry() -> LanguageRegistry {
 /// Once all resolvers are migrated, this replaces it.
 pub fn default_resolvers() -> Vec<Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
     vec![
-        // Resolvers will be registered here as they migrate:
-        // Arc::new(typescript::TypeScriptResolver),
-        // Arc::new(rust_lang::RustResolver),
-        // ...
+        Arc::new(typescript::TypeScriptResolver),
     ]
 }
 
