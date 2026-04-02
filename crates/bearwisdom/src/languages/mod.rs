@@ -59,6 +59,21 @@ pub trait LanguagePlugin: Send + Sync + 'static {
 
 use std::sync::Arc;
 
+pub mod bash;
+pub mod c_lang;
+pub mod csharp;
+pub mod dart;
+pub mod elixir;
+pub mod go;
+pub mod java;
+pub mod javascript;
+pub mod kotlin;
+pub mod php;
+pub mod python;
+pub mod ruby;
+pub mod rust_lang;
+pub mod scala;
+pub mod swift;
 pub mod typescript;
 
 /// Build the default language registry with all built-in plugins.
@@ -72,6 +87,21 @@ pub fn default_registry() -> LanguageRegistry {
     let generic = Arc::new(GenericPlugin);
     let mut reg = LanguageRegistry::new(generic);
 
+    reg.register(Arc::new(bash::BashPlugin));
+    reg.register(Arc::new(c_lang::CLangPlugin));
+    reg.register(Arc::new(csharp::CSharpPlugin));
+    reg.register(Arc::new(dart::DartPlugin));
+    reg.register(Arc::new(elixir::ElixirPlugin));
+    reg.register(Arc::new(go::GoPlugin));
+    reg.register(Arc::new(java::JavaPlugin));
+    reg.register(Arc::new(javascript::JavascriptPlugin));
+    reg.register(Arc::new(kotlin::KotlinPlugin));
+    reg.register(Arc::new(php::PhpPlugin));
+    reg.register(Arc::new(python::PythonPlugin));
+    reg.register(Arc::new(ruby::RubyPlugin));
+    reg.register(Arc::new(rust_lang::RustLangPlugin));
+    reg.register(Arc::new(scala::ScalaPlugin));
+    reg.register(Arc::new(swift::SwiftPlugin));
     reg.register(Arc::new(typescript::TypeScriptPlugin));
 
     reg
@@ -83,6 +113,19 @@ pub fn default_registry() -> LanguageRegistry {
 /// Once all resolvers are migrated, this replaces it.
 pub fn default_resolvers() -> Vec<Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
     vec![
+        Arc::new(c_lang::CLangResolver),
+        Arc::new(csharp::CSharpResolver),
+        Arc::new(dart::DartResolver),
+        Arc::new(elixir::ElixirResolver),
+        Arc::new(go::GoResolver),
+        Arc::new(java::JavaResolver),
+        Arc::new(kotlin::KotlinResolver),
+        Arc::new(php::PhpResolver),
+        Arc::new(python::PythonResolver),
+        Arc::new(ruby::RubyResolver),
+        Arc::new(rust_lang::RustResolver),
+        Arc::new(scala::ScalaResolver),
+        Arc::new(swift::SwiftResolver),
         Arc::new(typescript::TypeScriptResolver),
     ]
 }
