@@ -17,7 +17,7 @@ pub mod scala;
 pub mod swift;
 pub mod typescript;
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain};
+use crate::types::{EdgeKind, ExtractedDbSet, ExtractedRef, ExtractedRoute, ExtractedSymbol, MemberChain};
 use tree_sitter::Node;
 
 /// When a call has a chain (e.g. `Foo::bar()`, `Foo.bar()`, `ClassName.method()`),
@@ -54,11 +54,16 @@ pub fn emit_chain_type_ref(
     }
 }
 
-/// Shared extraction result for the newer extractors (bash, c_lang, dart, etc.)
-/// that do not define a per-language result type.
+/// Universal extraction result returned by all language plugins.
+///
+/// Older extractors that define their own result structs (e.g., `TypeScriptExtraction`,
+/// `GoExtraction`) will be migrated to return this type directly. During the transition,
+/// the dispatch code in `full.rs` destructures them into this shape.
 pub struct ExtractionResult {
     pub symbols: Vec<ExtractedSymbol>,
     pub refs: Vec<ExtractedRef>,
+    pub routes: Vec<ExtractedRoute>,
+    pub db_sets: Vec<ExtractedDbSet>,
     pub has_errors: bool,
 }
 
@@ -68,6 +73,34 @@ impl ExtractionResult {
         refs: Vec<ExtractedRef>,
         has_errors: bool,
     ) -> Self {
-        Self { symbols, refs, has_errors }
+        Self {
+            symbols,
+            refs,
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors,
+        }
+    }
+
+    /// Create a result with routes and db_sets (used by C# extractor).
+    pub fn with_connectors(
+        symbols: Vec<ExtractedSymbol>,
+        refs: Vec<ExtractedRef>,
+        routes: Vec<ExtractedRoute>,
+        db_sets: Vec<ExtractedDbSet>,
+        has_errors: bool,
+    ) -> Self {
+        Self { symbols, refs, routes, db_sets, has_errors }
+    }
+
+    /// Empty result — no symbols, no refs, no errors.
+    pub fn empty() -> Self {
+        Self {
+            symbols: Vec::new(),
+            refs: Vec::new(),
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors: false,
+        }
     }
 }
