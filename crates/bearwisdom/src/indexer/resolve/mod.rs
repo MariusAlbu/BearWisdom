@@ -126,13 +126,71 @@ pub fn resolve_and_write(
                 continue;
             }
 
+            // Tier 1.5: External classification — BEFORE heuristic.
+            //
+            // Language resolvers and chain inference can identify refs that
+            // belong to external packages (stdlib, third-party crates).
+            // Check this FIRST so the heuristic doesn't create false
+            // low-confidence edges for things like `map`, `iter`, `get`
+            // that match internal method names by coincidence.
+            let source_sym = &pf.symbols[r.source_symbol_index];
+            let scope_chain = build_scope_chain(source_sym.scope_path.as_deref());
+
+            let inferred_ns = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
+                let ref_ctx = RefContext {
+                    extracted_ref: r,
+                    source_symbol: source_sym,
+                    scope_chain: scope_chain.clone(),
+                };
+                resolver.infer_external_namespace(file_ctx, &ref_ctx, project_ctx)
+            } else {
+                None
+            };
+
+            // Chain-to-external: if the chain walks to a type not in the index,
+            // classify as external (handles ORM, test framework, fluent API chains).
+            let inferred_ns = inferred_ns.or_else(|| {
+                r.chain.as_ref().and_then(|chain| {
+                    engine::infer_external_from_chain(chain, &scope_chain, &index)
+                })
+            });
+
+            if let Some(ns) = &inferred_ns {
+                // Known external framework ref → external_refs table.
+                tx.prepare_cached(
+                    "INSERT INTO external_refs
+                       (source_id, target_name, kind, source_line, namespace)
+                     VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .and_then(|mut stmt| {
+                    stmt.execute(rusqlite::params![
+                        source_id,
+                        r.target_name,
+                        r.kind.as_str(),
+                        r.line,
+                        ns,
+                    ])
+                })
+                .ok();
+                stats.external += 1;
+                continue;
+            }
+
             // Tier 2: Heuristic fallback.
+            let chain_prefix = r.chain.as_ref().and_then(|c| {
+                if c.segments.len() >= 2 {
+                    Some(c.segments[c.segments.len() - 2].name.as_str())
+                } else {
+                    None
+                }
+            });
             let resolution = heuristic::resolve_ref(
                 r.target_name.as_str(),
                 r.kind,
                 &pf.path,
                 file_imports,
                 source_namespace,
+                chain_prefix,
                 &name_to_ids,
                 &qname_to_id,
                 symbol_id_map,
@@ -162,67 +220,25 @@ pub fn resolve_and_write(
                     }
                 }
                 None => {
-                    // Try to infer which external namespace this ref comes from.
-                    let source_sym = &pf.symbols[r.source_symbol_index];
-                    let scope_chain = build_scope_chain(source_sym.scope_path.as_deref());
-
-                    let inferred_ns = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
-                        let ref_ctx = RefContext {
-                            extracted_ref: r,
-                            source_symbol: source_sym,
-                            scope_chain: scope_chain.clone(),
-                        };
-                        resolver.infer_external_namespace(file_ctx, &ref_ctx, project_ctx)
-                    } else {
-                        None
-                    };
-
-                    // Chain-to-external: if the chain walks to a type not in the index,
-                    // classify as external (handles ORM, test framework, fluent API chains).
-                    let inferred_ns = inferred_ns.or_else(|| {
-                        r.chain.as_ref().and_then(|chain| {
-                            engine::infer_external_from_chain(chain, &scope_chain, &index)
-                        })
-                    });
-
-                    if let Some(ns) = &inferred_ns {
-                        // Known external framework ref → external_refs table.
-                        tx.prepare_cached(
-                            "INSERT INTO external_refs
-                               (source_id, target_name, kind, source_line, namespace)
-                             VALUES (?1, ?2, ?3, ?4, ?5)",
-                        )
-                        .and_then(|mut stmt| {
-                            stmt.execute(rusqlite::params![
-                                source_id,
-                                r.target_name,
-                                r.kind.as_str(),
-                                r.line,
-                                ns,
-                            ])
-                        })
-                        .ok();
-                        stats.external += 1;
-                    } else {
-                        // Truly unresolved — no external namespace identified.
-                        let module_value = r.module.as_deref();
-                        tx.prepare_cached(
-                            "INSERT INTO unresolved_refs
-                               (source_id, target_name, kind, source_line, module)
-                             VALUES (?1, ?2, ?3, ?4, ?5)",
-                        )
-                        .and_then(|mut stmt| {
-                            stmt.execute(rusqlite::params![
-                                source_id,
-                                r.target_name,
-                                r.kind.as_str(),
-                                r.line,
-                                module_value,
-                            ])
-                        })
-                        .ok();
-                        stats.unresolved += 1;
-                    }
+                    // Truly unresolved — no external namespace identified,
+                    // no heuristic match found.
+                    let module_value = r.module.as_deref();
+                    tx.prepare_cached(
+                        "INSERT INTO unresolved_refs
+                           (source_id, target_name, kind, source_line, module)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.execute(rusqlite::params![
+                            source_id,
+                            r.target_name,
+                            r.kind.as_str(),
+                            r.line,
+                            module_value,
+                        ])
+                    })
+                    .ok();
+                    stats.unresolved += 1;
                 }
             }
         }

@@ -20,6 +20,7 @@ pub(super) fn extract_calls(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| callee_name_fallback(func_node, src));
 
+                    super::super::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -45,6 +46,7 @@ pub(super) fn extract_calls(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| callee_name_fallback(tag, src));
+                    super::super::emit_chain_type_ref(&chain, source_symbol_index, &tag, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -57,6 +59,40 @@ pub(super) fn extract_calls(
                     }
                 }
                 // Recurse for any nested calls inside the template.
+                extract_calls(&child, src, source_symbol_index, refs);
+            }
+            // JSX: `<Component />` or `<Component>...</Component>` is a call
+            // to the component function/class.  Emit a Calls edge for user-
+            // defined components (PascalCase) — lowercase tags are HTML intrinsics.
+            "jsx_self_closing_element" | "jsx_opening_element" => {
+                // The tag name is the first named child (identifier or member_expression).
+                let tag = child
+                    .child_by_field_name("name")
+                    .or_else(|| child.named_child(0));
+                if let Some(tag_node) = tag {
+                    let tag_name = node_text(tag_node, src);
+                    // PascalCase = user component; lowercase = HTML intrinsic.
+                    if !tag_name.is_empty()
+                        && tag_name.chars().next().map_or(false, |c| c.is_uppercase())
+                    {
+                        // Member expression: `<Foo.Bar />` → chain + TypeRef.
+                        let chain = build_chain(tag_node, src);
+                        let target = chain
+                            .as_ref()
+                            .and_then(|c| c.segments.last())
+                            .map(|s| s.name.clone())
+                            .unwrap_or(tag_name);
+                        super::super::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: target,
+                            kind: EdgeKind::Calls,
+                            line: tag_node.start_position().row as u32,
+                            module: None,
+                            chain,
+                        });
+                    }
+                }
                 extract_calls(&child, src, source_symbol_index, refs);
             }
             _ => {

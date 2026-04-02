@@ -74,8 +74,13 @@ fn export_with_concept_filter() {
 #[test]
 fn export_respects_max_nodes_cap() {
     let db = Database::open_in_memory().unwrap();
+    let mut ids = Vec::new();
     for i in 0..20 {
-        insert_symbol(&db, "a.cs", &format!("Sym{i}"), &format!("App.Sym{i}"));
+        ids.push(insert_symbol(&db, "a.cs", &format!("Sym{i}"), &format!("App.Sym{i}")));
+    }
+    // Connect them so they pass the "has edges" filter.
+    for i in 0..19 {
+        insert_edge(&db, ids[i], ids[i + 1]);
     }
 
     let graph = export_graph(&db, None, 5).unwrap();
@@ -102,7 +107,9 @@ fn export_edges_only_between_included_nodes() {
 #[test]
 fn export_graph_json_is_valid_json() {
     let db = Database::open_in_memory().unwrap();
-    insert_symbol(&db, "a.cs", "Foo", "App.Foo");
+    let s1 = insert_symbol(&db, "a.cs", "Foo", "App.Foo");
+    let s2 = insert_symbol(&db, "b.cs", "Bar", "App.Bar");
+    insert_edge(&db, s1, s2);
 
     let json = export_graph_json(&db, None, 100).unwrap();
     // Verify it parses without error and contains the expected keys.

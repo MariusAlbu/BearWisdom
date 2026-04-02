@@ -147,6 +147,25 @@ pub fn export_graph(
             .collect()
     };
 
+    // --- Step 3: Prune nodes that became isolated after edge filtering ---
+    // When no filter is applied, a node may be connected in the full graph but
+    // have all its edges cut because the partner nodes fell outside the cap.
+    // Remove these to keep the visualization clean.
+    // When a filter IS applied, keep all matched nodes — the user explicitly
+    // asked for them even if they have no internal edges.
+    let nodes = if filter.is_none() {
+        let edge_ids: std::collections::HashSet<i64> = edges
+            .iter()
+            .flat_map(|e| [e.source_id, e.target_id])
+            .collect();
+        nodes
+            .into_iter()
+            .filter(|n| edge_ids.contains(&n.id))
+            .collect::<Vec<_>>()
+    } else {
+        nodes
+    };
+
     Ok(SubgraphResult { nodes, edges })
 }
 
@@ -170,17 +189,31 @@ fn build_node_sql(filter: Option<&str>, cap: usize) -> String {
         LEFT JOIN annotations a ON a.symbol_id = s.id
     ";
 
+    // Exclude symbol kinds that are structural/noise in a graph view.
+    // Variables (let bindings, params) and namespaces (mod/package) clutter
+    // the graph without adding meaningful relationship information.
+    let kind_filter =
+        "s.kind NOT IN ('variable', 'namespace')";
+
+    // Only include nodes that participate in at least one edge (as source or
+    // target).  Isolated symbols are noise in the graph visualization.
+    let connected_filter =
+        "(EXISTS (SELECT 1 FROM edges e WHERE e.source_id = s.id)
+       OR EXISTS (SELECT 1 FROM edges e WHERE e.target_id = s.id))";
+
     let group_and_limit = format!("GROUP BY s.id ORDER BY s.qualified_name LIMIT {cap}");
 
     match filter {
-        None => format!("{select} {group_and_limit}"),
+        None => format!(
+            "{select} WHERE {kind_filter} AND {connected_filter} {group_and_limit}"
+        ),
 
         Some(f) if f.starts_with('@') => {
             // Concept filter: symbols that are members of the named concept.
             // The parameter ?1 is the concept name (without the '@').
             format!(
                 "{select}
-                 WHERE c.name = ?1
+                 WHERE c.name = ?1 AND {kind_filter}
                  {group_and_limit}"
             )
         }
@@ -189,7 +222,7 @@ fn build_node_sql(filter: Option<&str>, cap: usize) -> String {
             // Prefix filter: symbols whose qualified_name starts with ?1.
             format!(
                 "{select}
-                 WHERE s.qualified_name LIKE ?1 || '%'
+                 WHERE s.qualified_name LIKE ?1 || '%' AND {kind_filter}
                  {group_and_limit}"
             )
         }

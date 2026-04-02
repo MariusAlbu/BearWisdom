@@ -110,20 +110,20 @@ pub fn blast_radius(
     // REVERSE direction (source → target means "source depends on target",
     // so we follow source_id to find all dependents of the center).
     //
-    // DISTINCT on the symbol id prevents infinite loops in cyclic graphs.
-    // The WHERE depth < max_depth guard is the termination condition.
-    //
-    // We also capture the edge kind at the last hop for display.
+    // UNION deduplicates on the full row (id, depth, edge_kind), which means
+    // the same symbol can appear at multiple depths via different paths,
+    // creating cycles.  We let the CTE run (bounded by max_depth) and then
+    // use ROW_NUMBER() to keep only the first (shallowest) occurrence of
+    // each symbol in the output.
     let sql = "
         WITH RECURSIVE blast(id, depth, edge_kind) AS (
-            -- Seed: the center symbol itself at depth 0 (no edge kind needed).
+            -- Seed: the center symbol itself at depth 0.
             SELECT ?1 AS id, 0 AS depth, '' AS edge_kind
 
             UNION
 
             -- Recursive step: find every symbol that has an edge pointing TO
-            -- a symbol already in our blast set.  That means the source_id
-            -- symbol depends on blast.id, so it's affected.
+            -- a symbol already in our blast set.
             SELECT e.source_id,
                    blast.depth + 1,
                    e.kind
@@ -131,18 +131,18 @@ pub fn blast_radius(
             JOIN blast ON blast.id = e.target_id
             WHERE blast.depth < ?2
         )
-        SELECT DISTINCT
-               s.name,
-               s.qualified_name,
-               s.kind,
-               f.path        AS file_path,
-               b.depth,
-               b.edge_kind
-        FROM blast b
-        JOIN symbols s ON s.id = b.id
+        SELECT s.name, s.qualified_name, s.kind,
+               f.path AS file_path, sub.depth, sub.edge_kind
+        FROM (
+            SELECT id, depth, edge_kind,
+                   ROW_NUMBER() OVER (PARTITION BY id ORDER BY depth) AS rn
+            FROM blast
+            WHERE depth > 0
+        ) sub
+        JOIN symbols s ON s.id = sub.id
         JOIN files   f ON f.id = s.file_id
-        WHERE b.depth > 0          -- exclude the center itself
-        ORDER BY b.depth, f.path
+        WHERE sub.rn = 1
+        ORDER BY sub.depth, f.path
     ";
 
     let mut stmt = conn.prepare(sql).context("Failed to prepare blast radius CTE")?;

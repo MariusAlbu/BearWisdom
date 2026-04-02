@@ -811,6 +811,29 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                 extract_calls(&child, src, source_symbol_index, refs);
             }
 
+            // JSX: `<Component />` or `<Component>...</Component>`
+            "jsx_self_closing_element" | "jsx_opening_element" => {
+                let tag = child
+                    .child_by_field_name("name")
+                    .or_else(|| child.named_child(0));
+                if let Some(tag_node) = tag {
+                    let tag_name = node_text(tag_node, src);
+                    if !tag_name.is_empty()
+                        && tag_name.chars().next().map_or(false, |c| c.is_uppercase())
+                    {
+                        refs.push(Ref {
+                            source_symbol_index,
+                            target_name: tag_name,
+                            kind: EdgeKind::Calls,
+                            line: tag_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                extract_calls(&child, src, source_symbol_index, refs);
+            }
+
             _ => {
                 extract_calls(&child, src, source_symbol_index, refs);
             }

@@ -103,12 +103,20 @@ pub fn resolve_and_write(
 
             // Try each resolution priority.
             let source_namespace = file_namespace_map.get(&pf.path).map(|s| s.as_str());
+            let chain_prefix = r.chain.as_ref().and_then(|c| {
+                if c.segments.len() >= 2 {
+                    Some(c.segments[c.segments.len() - 2].name.as_str())
+                } else {
+                    None
+                }
+            });
             let resolution = resolve_ref(
                 r.target_name.as_str(),
                 r.kind,
                 &pf.path,
                 file_imports,
                 source_namespace,
+                chain_prefix,
                 &name_to_ids,
                 &qname_to_id,
                 symbol_id_map,
@@ -172,11 +180,28 @@ pub(super) fn resolve_ref(
     source_file: &str,
     file_imports: &[(String, Option<String>)],
     source_namespace: Option<&str>,
+    chain_prefix: Option<&str>,
     name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>, // name → [(file, qname, kind, id)]
     qname_to_id: &FxHashMap<String, i64>,
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
 ) -> Option<(i64, f64)> {
+    // --- Priority 0.5: Chain-prefix import match (0.95) ---
+    // When the ref has a chain like `Foo::bar()` or `resolve::resolve_and_write()`,
+    // the chain prefix ("Foo" or "resolve") may match an import.  Use the import's
+    // module path to narrow candidates: only consider symbols in files whose path
+    // matches the imported module.
+    //
+    // This is the analogue of C# `using Namespace; Namespace.Type.Method()` — the
+    // qualified chain tells us which module the target lives in.
+    if let Some(prefix) = chain_prefix {
+        if let Some(id) = resolve_via_chain_prefix(
+            target_name, prefix, file_imports, name_to_ids, parsed,
+        ) {
+            return Some((id, 0.95));
+        }
+    }
+
     // --- Priority 1: Import match (0.95) ---
     if let Some(id) = resolve_via_import(target_name, source_file, file_imports, name_to_ids, symbol_id_map, parsed) {
         return Some((id, 0.95));
@@ -236,10 +261,119 @@ pub(super) fn resolve_ref(
             return None;
         }
 
-        if let Some((_, _, _, id)) = pool.first() {
+        if !pool.is_empty() {
+            // Prefer same-file, then same-directory, then first candidate.
+            let best = pool
+                .iter()
+                .min_by_key(|(file, _, _, _)| {
+                    if *file == source_file { 0 }
+                    else if parent_dir(file) == parent_dir(source_file) { 1 }
+                    else { 2 }
+                })
+                .unwrap();
             // Confidence decays with candidate count: 0.50 / sqrt(n).
             let confidence = 0.50 / (pool.len() as f64).sqrt();
-            return Some((*id, confidence));
+            return Some((best.3, confidence));
+        }
+    }
+
+    None
+}
+
+/// Priority 0.5: chain-prefix import match.
+///
+/// When the call has a chain like `resolve::resolve_and_write()`, the prefix
+/// `resolve` may match an import (`use crate::indexer::resolve`).  The import's
+/// module path tells us which module the target lives in, and we narrow
+/// candidates to files that match that module path.
+///
+/// Works across languages:
+///   - Rust:   `use crate::indexer::resolve;` + `resolve::resolve_and_write()`
+///   - Python: `import models` + `models.User()`
+///   - TS/JS:  `import { api } from './services'` + `api.fetchUser()`
+///   - C#:     `using System.Linq;` + `Enumerable.Range()`
+fn resolve_via_chain_prefix(
+    target_name: &str,
+    prefix: &str,
+    file_imports: &[(String, Option<String>)],
+    name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>,
+    parsed: &[ParsedFile],
+) -> Option<i64> {
+    // Find an import whose name matches the chain prefix.
+    let matching_import = file_imports
+        .iter()
+        .find(|(imported_name, _)| imported_name == prefix)?;
+
+    let module_path = matching_import.1.as_deref().unwrap_or("");
+
+    // Look for target_name among candidates, preferring those in files that
+    // match the imported module path.
+    let candidates = name_to_ids.get(target_name)?;
+
+    // First pass: strict file-path match against the module.
+    for (file_path, _qname, _sym_kind, id) in candidates {
+        if file_path_matches_module(file_path, module_path) {
+            return Some(*id);
+        }
+    }
+
+    // Second pass: the prefix itself may be a directory name (Rust modules map
+    // to directories).  Check if any candidate file is inside a directory whose
+    // name matches the prefix.  e.g., prefix="resolve" matches files in
+    // ".../resolve/mod.rs" or ".../resolve/heuristic.rs".
+    // Prefer module entry points (mod.rs, __init__.py, index.ts).
+    let mut dir_matches: Vec<&(String, String, String, i64)> = candidates
+        .iter()
+        .filter(|(file_path, _, _, _)| {
+            // Check if any path segment matches the prefix.
+            file_path.split('/').any(|seg| seg == prefix)
+        })
+        .collect();
+
+    if !dir_matches.is_empty() {
+        // Prefer module entry points.
+        dir_matches.sort_by_key(|(file_path, _, _, _)| {
+            if is_module_entry_point(file_path) { 0 } else { 1 }
+        });
+        return Some(dir_matches[0].3);
+    }
+
+    // Third pass: the module path itself may contain the prefix as a Rust-style
+    // path.  e.g., module "crate::indexer::resolve" → look for files under
+    // "indexer/resolve/".
+    if !module_path.is_empty() {
+        let module_dir = module_path
+            .replace("::", "/")
+            .replace('.', "/");
+        for (file_path, _qname, _kind, id) in candidates {
+            // Check if the file contains the module directory segments.
+            let normalized = file_path.replace('\\', "/");
+            if normalized.contains(&module_dir) {
+                return Some(*id);
+            }
+        }
+    }
+
+    // For Rust specifically: if the prefix matches a directory name but the
+    // import has no explicit module path (e.g., `use crate::indexer::resolve;`
+    // where the extractor stored "resolve" as the import name with module
+    // "crate::indexer"), try matching via the ParsedFile paths.
+    for pf in parsed {
+        let norm = pf.path.replace('\\', "/");
+        // Check if this file is the module entry for the prefix
+        if norm.ends_with(&format!("{prefix}/mod.rs"))
+            || norm.ends_with(&format!("{prefix}/__init__.py"))
+            || norm.ends_with(&format!("{prefix}/index.ts"))
+            || norm.ends_with(&format!("{prefix}/index.tsx"))
+        {
+            // Found the module file — now look for target in siblings
+            let module_dir = parent_dir(&norm);
+            for (file_path, _qname, _kind, id) in candidates {
+                let cf = file_path.replace('\\', "/");
+                if cf.starts_with(module_dir) {
+                    return Some(*id);
+                }
+            }
         }
     }
 
@@ -392,6 +526,23 @@ fn resolve_via_same_namespace(
 
 /// Check whether a file path "matches" a module reference.
 ///
+/// Return the parent directory portion of a file path (everything up to the last `/`).
+fn parent_dir(path: &str) -> &str {
+    path.rfind('/').map(|i| &path[..i]).unwrap_or("")
+}
+
+/// Check if a file is a module entry point (public re-export surface).
+fn is_module_entry_point(path: &str) -> bool {
+    let basename = path.rsplit('/').next().unwrap_or(path);
+    matches!(
+        basename,
+        "mod.rs" | "lib.rs"
+            | "__init__.py"
+            | "index.ts" | "index.tsx" | "index.js" | "index.jsx"
+            | "index.mts" | "index.mjs"
+    )
+}
+
 /// Handles both:
 ///   - TS relative imports: `./catalog` matches `src/catalog.ts`
 ///   - C# namespace: `System.Linq` matches a file in namespace `System`
@@ -431,7 +582,14 @@ fn kind_matches_symbol_kind(edge_kind: EdgeKind, sym_kind: &str) -> bool {
         EdgeKind::Implements => matches!(sym_kind, "interface"),
         EdgeKind::TypeRef => matches!(
             sym_kind,
-            "class" | "struct" | "interface" | "enum" | "type_alias" | "namespace" | "delegate"
+            "class"
+                | "struct"
+                | "interface"
+                | "enum"
+                | "enum_member"
+                | "type_alias"
+                | "namespace"
+                | "delegate"
         ),
         EdgeKind::Instantiates => matches!(sym_kind, "class" | "struct"),
         // Imports, HttpCall, DbEntity, LspResolved — accept any kind.

@@ -8,7 +8,7 @@
 //   4. Write files + symbols to SQLite in a single transaction.
 //   5. Run cross-file resolution (match unresolved refs to symbol IDs).
 //   6. Write resolved edges; log unresolved refs for diagnostics.
-//   7. Run HTTP and EF Core connectors (post-processing).
+//   7. Run connector registry (extract→match→flow_edges) + non-flow post-steps.
 //
 // Performance notes:
 //   Steps 2-3 are run sequentially for simplicity.  The tree-sitter Parser
@@ -111,8 +111,17 @@ pub fn full_index(
 
             // Drop core tables (FK-ordered: dependents first).
             // Disable FK enforcement so we can drop in any order.
+            // Derived tables (routes, flow_edges, connection_points, db_mappings,
+            // code_chunks, lsp_edge_meta) must also be cleared — they reference
+            // file/symbol IDs that become stale after DROP TABLE files/symbols.
             let _ = db.conn.execute_batch(
                 "PRAGMA foreign_keys = OFF;
+                 DROP TABLE IF EXISTS lsp_edge_meta;
+                 DROP TABLE IF EXISTS flow_edges;
+                 DROP TABLE IF EXISTS connection_points;
+                 DROP TABLE IF EXISTS routes;
+                 DROP TABLE IF EXISTS db_mappings;
+                 DROP TABLE IF EXISTS code_chunks;
                  DROP TABLE IF EXISTS edges;
                  DROP TABLE IF EXISTS imports;
                  DROP TABLE IF EXISTS unresolved_refs;
@@ -214,187 +223,46 @@ pub fn full_index(
 
     emit("indexing_content", 1.0, Some(&format!("{total_chunks} chunks created")));
 
-    // --- Step 7: Connectors (parallel) ---
+    // --- Step 7: Connectors (registry-based) ---
     //
-    // 21 connectors split across 4 rayon threads.  Each thread opens its own
-    // Database connection — WAL mode + busy_timeout serialise writes while
-    // allowing concurrent reads.  Connectors are grouped by ecosystem so
-    // related work stays on the same connection.
+    // All connectors run through the ConnectorRegistry pipeline:
+    //   1. detect  — filter to connectors relevant for this project
+    //   2. extract — collect ConnectionPoints (start=caller, stop=handler)
+    //   3. match   — group by protocol, resolve start↔stop pairs
+    //   4. write   — insert flow_edges + back-fill legacy routes table
+    //
+    // Non-flow connectors (ef_core, react_patterns) run as standalone post-steps.
     emit("connectors", 0.0, Some("Running connectors"));
     let connector_start = Instant::now();
 
-    match db.path.as_deref() {
-        Some(db_path) => {
-            let root = project_root.to_path_buf();
-            let path = db_path.to_path_buf();
+    // Enrich routes written by tree-sitter extractors (set resolved_route where NULL).
+    if let Err(e) = db.conn.execute(
+        "UPDATE routes SET resolved_route = route_template WHERE resolved_route IS NULL",
+        [],
+    ) {
+        warn!("Route enrichment failed: {e}");
+    }
 
-            rayon::scope(|s| {
-                // --- Group 1: .NET stack ---
-                let root1 = root.clone();
-                let path1 = path.clone();
-                s.spawn(move |_| {
-                    let Ok(tdb) = crate::db::Database::open(&path1) else { return };
-                    if let Err(e) = crate::connectors::http_api::connect(&tdb) {
-                        warn!("HTTP API connector failed: {e}");
-                    }
-                    if let Err(e) = crate::connectors::ef_core::connect(&tdb) {
-                        warn!("EF Core connector failed: {e}");
-                    }
-                    match crate::connectors::dotnet_http_client::connect(&tdb.conn, &root1) {
-                        Ok(n) => if n > 0 { info!(".NET HTTP client connector: {n} routes matched") },
-                        Err(e) => warn!(".NET HTTP client connector failed: {e}"),
-                    }
-                    if let Err(e) = crate::connectors::grpc::connect(&tdb) {
-                        warn!("gRPC connector failed: {e}");
-                    }
-                    match crate::connectors::dotnet_di::detect_di_registrations(&tdb.conn, &root1) {
-                        Ok(registrations) => {
-                            if !registrations.is_empty() {
-                                match crate::connectors::dotnet_di::link_di_registrations(&tdb.conn, &registrations) {
-                                    Ok(linked) => info!("DI connector: {} registrations, {} edges", registrations.len(), linked),
-                                    Err(e) => warn!("DI registration linking failed: {e}"),
-                                }
-                            }
-                        }
-                        Err(e) => warn!("DI registration detection failed: {e}"),
-                    }
-                    match crate::connectors::dotnet_events::find_integration_events(&tdb.conn) {
-                        Ok(events) => {
-                            match crate::connectors::dotnet_events::find_event_handlers(&tdb.conn, &root1) {
-                                Ok(handlers) => {
-                                    if !events.is_empty() && !handlers.is_empty() {
-                                        match crate::connectors::dotnet_events::link_events_to_handlers(&tdb.conn, &events, &handlers) {
-                                            Ok(linked) => info!("Events connector: {} events, {} handlers, {} edges", events.len(), handlers.len(), linked),
-                                            Err(e) => warn!("Event linking failed: {e}"),
-                                        }
-                                    }
-                                }
-                                Err(e) => warn!("Event handler detection failed: {e}"),
-                            }
-                        }
-                        Err(e) => warn!("Integration event detection failed: {e}"),
-                    }
-                });
+    let registry = crate::connectors::registry::build_default_registry();
+    match registry.run(&db.conn, project_root, &project_ctx) {
+        Ok(flow_count) => info!(
+            "Connectors: {flow_count} flow edges in {:.2}s",
+            connector_start.elapsed().as_secs_f64()
+        ),
+        Err(e) => warn!("Connector registry failed: {e}"),
+    }
 
-                // --- Group 2: Frontend ---
-                let root2 = root.clone();
-                let path2 = path.clone();
-                s.spawn(move |_| {
-                    let Ok(tdb) = crate::db::Database::open(&path2) else { return };
-                    match crate::connectors::frontend_http::detect_http_calls(&tdb.conn, &root2) {
-                        Ok(http_calls) => {
-                            if !http_calls.is_empty() {
-                                match crate::connectors::frontend_http::match_http_calls_to_routes(&tdb.conn, &http_calls) {
-                                    Ok(matched) => info!("Frontend HTTP: {} calls detected, {} matched", http_calls.len(), matched),
-                                    Err(e) => warn!("Frontend HTTP route matching failed: {e}"),
-                                }
-                            }
-                        }
-                        Err(e) => warn!("Frontend HTTP detection failed: {e}"),
-                    }
-                    match crate::connectors::tauri_ipc::connect(&tdb.conn, &root2) {
-                        Ok(()) => info!("Tauri IPC connector complete"),
-                        Err(e) => warn!("Tauri IPC connector failed: {e}"),
-                    }
-                    match crate::connectors::react_patterns::find_zustand_stores(&tdb.conn, &root2) {
-                        Ok(stores) => {
-                            match crate::connectors::react_patterns::find_story_mappings(&tdb.conn, &root2) {
-                                Ok(stories) => {
-                                    if !stores.is_empty() || !stories.is_empty() {
-                                        match crate::connectors::react_patterns::create_react_concepts(&tdb.conn, &stores, &stories) {
-                                            Ok(()) => info!("React patterns: {} stores, {} stories", stores.len(), stories.len()),
-                                            Err(e) => warn!("React concept creation failed: {e}"),
-                                        }
-                                    }
-                                }
-                                Err(e) => warn!("Story mapping detection failed: {e}"),
-                            }
-                        }
-                        Err(e) => warn!("Zustand store detection failed: {e}"),
-                    }
-                    match crate::connectors::electron_ipc::connect(&tdb, &root2) {
-                        Ok(()) => info!("Electron IPC connector complete"),
-                        Err(e) => warn!("Electron IPC connector failed: {e}"),
-                    }
-                    match crate::connectors::angular_di::connect(&tdb.conn, &root2) {
-                        Ok(n) => if n > 0 { info!("Angular DI connector: {n} flow edges") },
-                        Err(e) => warn!("Angular DI connector failed: {e}"),
-                    }
-                });
-
-                // --- Group 3: JVM + Python ---
-                let root3 = root.clone();
-                let path3 = path.clone();
-                s.spawn(move |_| {
-                    let Ok(tdb) = crate::db::Database::open(&path3) else { return };
-                    match crate::connectors::spring::find_spring_routes(&tdb.conn, &root3) {
-                        Ok(routes) => {
-                            match crate::connectors::spring::find_spring_services(&tdb.conn, &root3) {
-                                Ok(services) => {
-                                    if !routes.is_empty() || !services.is_empty() {
-                                        match crate::connectors::spring::register_spring_patterns(&tdb.conn, &routes, &services) {
-                                            Ok(()) => info!("Spring connector: {} routes, {} services", routes.len(), services.len()),
-                                            Err(e) => warn!("Spring pattern registration failed: {e}"),
-                                        }
-                                    }
-                                }
-                                Err(e) => warn!("Spring service detection failed: {e}"),
-                            }
-                        }
-                        Err(e) => warn!("Spring route detection failed: {e}"),
-                    }
-                    match crate::connectors::spring_di::connect(&tdb.conn, &root3) {
-                        Ok(n) => if n > 0 { info!("Spring DI connector: {n} flow edges") },
-                        Err(e) => warn!("Spring DI connector failed: {e}"),
-                    }
-                    match crate::connectors::django::connect(&tdb, &root3) {
-                        Ok(()) => info!("Django connector complete"),
-                        Err(e) => warn!("Django connector failed: {e}"),
-                    }
-                    match crate::connectors::fastapi_routes::connect(&tdb.conn, &root3) {
-                        Ok(n) => if n > 0 { info!("FastAPI routes connector: {n} routes") },
-                        Err(e) => warn!("FastAPI routes connector failed: {e}"),
-                    }
-                });
-
-                // --- Group 4: Other frameworks ---
-                let root4 = root.clone();
-                let path4 = path.clone();
-                s.spawn(move |_| {
-                    let Ok(tdb) = crate::db::Database::open(&path4) else { return };
-                    match crate::connectors::graphql::connect(&tdb, &root4) {
-                        Ok(()) => info!("GraphQL connector complete"),
-                        Err(e) => warn!("GraphQL connector failed: {e}"),
-                    }
-                    match crate::connectors::message_queue::connect(&tdb, &root4) {
-                        Ok(()) => info!("Message queue connector complete"),
-                        Err(e) => warn!("Message queue connector failed: {e}"),
-                    }
-                    match crate::connectors::go_routes::connect(&tdb.conn, &root4) {
-                        Ok(n) => if n > 0 { info!("Go routes connector: {n} routes") },
-                        Err(e) => warn!("Go routes connector failed: {e}"),
-                    }
-                    match crate::connectors::rails_routes::connect(&tdb.conn, &root4) {
-                        Ok(n) => if n > 0 { info!("Rails routes connector: {n} routes") },
-                        Err(e) => warn!("Rails routes connector failed: {e}"),
-                    }
-                    match crate::connectors::laravel_routes::connect(&tdb.conn, &root4) {
-                        Ok(n) => if n > 0 { info!("Laravel routes connector: {n} routes") },
-                        Err(e) => warn!("Laravel routes connector failed: {e}"),
-                    }
-                    match crate::connectors::nestjs_routes::connect(&tdb.conn, &root4) {
-                        Ok(n) => if n > 0 { info!("NestJS routes connector: {n} routes") },
-                        Err(e) => warn!("NestJS routes connector failed: {e}"),
-                    }
-                });
-            });
-        }
-        None => {
-            // In-memory database (tests) — run sequentially on the existing connection.
-            run_connectors_sequential(db, project_root);
+    // Non-flow post-steps: EF Core (DB mappings), Django (views/models), React patterns.
+    if let Err(e) = crate::connectors::ef_core::connect(db) {
+        warn!("EF Core connector: {e}");
+    }
+    if project_ctx.python_packages.contains("django") {
+        if let Err(e) = crate::connectors::django::connect(db, project_root) {
+            warn!("Django connector: {e}");
         }
     }
-    info!("Connectors completed in {:.2}s", connector_start.elapsed().as_secs_f64());
+    run_react_patterns(&db.conn, project_root);
+
     emit("connectors", 1.0, None);
 
     // Update SQLite's statistics so the query planner has accurate selectivity
@@ -452,12 +320,11 @@ pub(crate) fn parse_file(walked: &WalkedFile) -> Result<ParsedFile> {
             let r = csharp::extract(&content);
             (r.symbols, r.refs, r.routes, r.db_sets, r.has_errors)
         }
-        "typescript" => {
-            let r = typescript::extract(&content, false);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "tsx" => {
-            let r = typescript::extract(&content, true);
+        "typescript" | "tsx" => {
+            // .tsx files are stored as language "typescript" but need the TSX grammar
+            // to parse JSX elements.  Check the file extension.
+            let is_tsx = walked.relative_path.ends_with(".tsx") || walked.language == "tsx";
+            let r = typescript::extract(&content, is_tsx);
             (r.symbols, r.refs, vec![], vec![], r.has_errors)
         }
         "javascript" | "jsx" => {
@@ -695,55 +562,15 @@ fn write_to_db(
 }
 
 // ---------------------------------------------------------------------------
-// Sequential connector fallback (in-memory databases / tests)
+// Non-flow connector helpers
 // ---------------------------------------------------------------------------
 
-fn run_connectors_sequential(db: &mut Database, project_root: &Path) {
-    if let Err(e) = crate::connectors::http_api::connect(db) { warn!("HTTP API connector: {e}"); }
-    if let Err(e) = crate::connectors::ef_core::connect(db) { warn!("EF Core connector: {e}"); }
-    match crate::connectors::frontend_http::detect_http_calls(&db.conn, project_root) {
-        Ok(calls) if !calls.is_empty() => {
-            match crate::connectors::frontend_http::match_http_calls_to_routes(&db.conn, &calls) {
-                Ok(n) => info!("Frontend HTTP: {} calls, {} matched", calls.len(), n),
-                Err(e) => warn!("Frontend HTTP matching: {e}"),
-            }
-        }
-        Err(e) => warn!("Frontend HTTP detection: {e}"),
-        _ => {}
-    }
-    let _ = crate::connectors::dotnet_http_client::connect(&db.conn, project_root).map(|n| if n > 0 { info!(".NET HTTP client: {n} matched") });
-    if let Err(e) = crate::connectors::grpc::connect(db) { warn!("gRPC connector: {e}"); }
-    match crate::connectors::dotnet_di::detect_di_registrations(&db.conn, project_root) {
-        Ok(regs) if !regs.is_empty() => {
-            match crate::connectors::dotnet_di::link_di_registrations(&db.conn, &regs) {
-                Ok(n) => info!("DI connector: {} registrations, {} edges", regs.len(), n),
-                Err(e) => warn!("DI linking: {e}"),
-            }
-        }
-        Err(e) => warn!("DI detection: {e}"),
-        _ => {}
-    }
-    match crate::connectors::dotnet_events::find_integration_events(&db.conn) {
-        Ok(events) => {
-            match crate::connectors::dotnet_events::find_event_handlers(&db.conn, project_root) {
-                Ok(handlers) if !events.is_empty() && !handlers.is_empty() => {
-                    match crate::connectors::dotnet_events::link_events_to_handlers(&db.conn, &events, &handlers) {
-                        Ok(n) => info!("Events: {} events, {} handlers, {} edges", events.len(), handlers.len(), n),
-                        Err(e) => warn!("Event linking: {e}"),
-                    }
-                }
-                Err(e) => warn!("Event handler detection: {e}"),
-                _ => {}
-            }
-        }
-        Err(e) => warn!("Integration event detection: {e}"),
-    }
-    let _ = crate::connectors::tauri_ipc::connect(&db.conn, project_root).map_err(|e| warn!("Tauri IPC: {e}"));
-    match crate::connectors::react_patterns::find_zustand_stores(&db.conn, project_root) {
+fn run_react_patterns(conn: &rusqlite::Connection, project_root: &Path) {
+    match crate::connectors::react_patterns::find_zustand_stores(conn, project_root) {
         Ok(stores) => {
-            match crate::connectors::react_patterns::find_story_mappings(&db.conn, project_root) {
+            match crate::connectors::react_patterns::find_story_mappings(conn, project_root) {
                 Ok(stories) if !stores.is_empty() || !stories.is_empty() => {
-                    let _ = crate::connectors::react_patterns::create_react_concepts(&db.conn, &stores, &stories)
+                    let _ = crate::connectors::react_patterns::create_react_concepts(conn, &stores, &stories)
                         .map_err(|e| warn!("React concept creation: {e}"));
                 }
                 Err(e) => warn!("Story mapping: {e}"),
@@ -752,30 +579,6 @@ fn run_connectors_sequential(db: &mut Database, project_root: &Path) {
         }
         Err(e) => warn!("Zustand store detection: {e}"),
     }
-    match crate::connectors::spring::find_spring_routes(&db.conn, project_root) {
-        Ok(routes) => {
-            match crate::connectors::spring::find_spring_services(&db.conn, project_root) {
-                Ok(services) if !routes.is_empty() || !services.is_empty() => {
-                    let _ = crate::connectors::spring::register_spring_patterns(&db.conn, &routes, &services)
-                        .map_err(|e| warn!("Spring patterns: {e}"));
-                }
-                Err(e) => warn!("Spring services: {e}"),
-                _ => {}
-            }
-        }
-        Err(e) => warn!("Spring routes: {e}"),
-    }
-    let _ = crate::connectors::django::connect(db, project_root).map_err(|e| warn!("Django: {e}"));
-    let _ = crate::connectors::graphql::connect(db, project_root).map_err(|e| warn!("GraphQL: {e}"));
-    let _ = crate::connectors::message_queue::connect(db, project_root).map_err(|e| warn!("Message queue: {e}"));
-    let _ = crate::connectors::electron_ipc::connect(db, project_root).map_err(|e| warn!("Electron IPC: {e}"));
-    let _ = crate::connectors::go_routes::connect(&db.conn, project_root).map(|n| if n > 0 { info!("Go routes: {n}") });
-    let _ = crate::connectors::rails_routes::connect(&db.conn, project_root).map(|n| if n > 0 { info!("Rails routes: {n}") });
-    let _ = crate::connectors::laravel_routes::connect(&db.conn, project_root).map(|n| if n > 0 { info!("Laravel routes: {n}") });
-    let _ = crate::connectors::nestjs_routes::connect(&db.conn, project_root).map(|n| if n > 0 { info!("NestJS routes: {n}") });
-    let _ = crate::connectors::fastapi_routes::connect(&db.conn, project_root).map(|n| if n > 0 { info!("FastAPI routes: {n}") });
-    let _ = crate::connectors::spring_di::connect(&db.conn, project_root).map(|n| if n > 0 { info!("Spring DI: {n}") });
-    let _ = crate::connectors::angular_di::connect(&db.conn, project_root).map(|n| if n > 0 { info!("Angular DI: {n}") });
 }
 
 // ---------------------------------------------------------------------------

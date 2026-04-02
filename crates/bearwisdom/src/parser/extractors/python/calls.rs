@@ -40,6 +40,7 @@ pub(super) fn extract_calls_from_body(
                         Some(t.rsplit('.').next().unwrap_or(&t).to_string())
                     });
 
+                super::super::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                 if let Some(target_name) = target_name {
                     refs.push(ExtractedRef {
                         source_symbol_index,

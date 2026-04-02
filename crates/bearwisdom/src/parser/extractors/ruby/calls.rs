@@ -53,6 +53,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     }
 
                     let chain = build_chain(&child, src);
+                    super::super::emit_chain_type_ref(&chain, source_symbol_index, &child, refs);
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: mname,
