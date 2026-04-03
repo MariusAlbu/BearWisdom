@@ -135,20 +135,46 @@ fn match_ts_http_calls(db: &Database) -> Result<()> {
 /// Examples:
 ///   "/api/catalog/items/{id:int}"  → "catalog/items/{*}"
 ///   "/api/catalog/items/{id}"      → "catalog/items/{*}"
-///   "/api/v1/orders/{orderId}"     → "v1/orders/{*}"
+///   "/api/v1/orders/{orderId}"     → "orders/{*}"
+///   "http://localhost:8080/api/foo" → "foo"
 pub fn normalise_route(template: &str) -> String {
-    // Strip leading slash.
-    let t = template.trim_start_matches('/');
+    // Strip protocol + host if present (e.g. "http://localhost:8080/api/foo" → "/api/foo").
+    let t = if let Some(idx) = template.find("://") {
+        // Find the first / after the host.
+        template[idx + 3..]
+            .find('/')
+            .map(|i| &template[idx + 3 + i..])
+            .unwrap_or("")
+    } else {
+        template
+    };
 
-    // Strip common API prefixes.
+    // Strip leading slash.
+    let t = t.trim_start_matches('/');
+
+    // Strip common API prefixes: /api/, /api/v1/, /api/v2/, /API/
     let t = t
         .trim_start_matches("api/")
         .trim_start_matches("API/");
+    // Strip version prefixes: v1/, v2/, v3/
+    let t = if t.len() >= 3
+        && t.starts_with('v')
+        && t.as_bytes().get(1).map_or(false, |b| b.is_ascii_digit())
+        && t.as_bytes().get(2) == Some(&b'/')
+    {
+        &t[3..]
+    } else {
+        t
+    };
 
     let segments: Vec<String> = t
         .split('/')
+        .filter(|s| !s.is_empty())
         .map(|seg| {
             if seg.starts_with('{') && seg.ends_with('}') {
+                "{*}".to_string()
+            } else if seg.starts_with("${") || seg.starts_with(':') {
+                // Template literal params: ${id}, :id
                 "{*}".to_string()
             } else {
                 seg.to_lowercase()

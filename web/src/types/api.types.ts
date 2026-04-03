@@ -194,3 +194,34 @@ export interface FullTraceResult {
   total_symbols: number
   flow_jumps: number
 }
+
+// ---------------------------------------------------------------------------
+// MCP Audit log
+// ---------------------------------------------------------------------------
+
+export interface AuditRecord {
+  id: number
+  session_id: string
+  tool_name: string
+  params_json: string
+  response_json: string
+  duration_ms: number
+  token_estimate: number
+  ts: string
+}
+
+export interface AuditSessionSummary {
+  session_id: string
+  call_count: number
+  total_tokens: number
+  first_ts: string
+  last_ts: string
+}
+
+export interface AuditStats {
+  total_calls: number
+  total_tokens: number
+  avg_duration_ms: number
+  session_count: number
+  calls_by_tool: [string, number][]
+}

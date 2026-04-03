@@ -41,6 +41,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 # Error handling
 anyhow = "1"
 
+# Session UUID generation
+uuid = { version = "1", features = ["v4"] }
+
 # Path utilities
 sha2 = "0.10"
 dirs = "5"

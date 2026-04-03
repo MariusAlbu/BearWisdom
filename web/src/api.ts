@@ -14,6 +14,9 @@ import type {
   FlowEdgesResult,
   FlowStep,
   FullTraceResult,
+  AuditRecord,
+  AuditSessionSummary,
+  AuditStats,
 } from './types';
 
 const enc = encodeURIComponent;
@@ -132,4 +135,23 @@ export const api = {
     apiFetch<FullTraceResult>(
       `/api/full-trace?path=${enc(path)}${symbol ? `&symbol=${enc(symbol)}` : ''}&depth=${depth}&max_traces=${maxTraces}`,
     ),
+
+  auditSessions: (path: string) =>
+    apiFetch<AuditSessionSummary[]>(`/api/audit/sessions?path=${enc(path)}`),
+
+  auditCalls: (path: string, sessionId: string, limit = 100, offset = 0) =>
+    apiFetch<AuditRecord[]>(
+      `/api/audit/calls?path=${enc(path)}&session_id=${enc(sessionId)}&limit=${limit}&offset=${offset}`,
+    ),
+
+  auditStats: (path: string) =>
+    apiFetch<AuditStats>(`/api/audit/stats?path=${enc(path)}`),
+
+  deleteAuditSession: (path: string, sessionId: string) =>
+    apiFetch<{ deleted: number }>(`/api/audit/sessions/${enc(sessionId)}?path=${enc(path)}`, {
+      method: 'DELETE',
+    }),
+
+  auditStream: (path: string): EventSource =>
+    new EventSource(`/api/audit/stream?path=${enc(path)}`),
 };

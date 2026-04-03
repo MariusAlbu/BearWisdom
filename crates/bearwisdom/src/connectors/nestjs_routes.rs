@@ -51,6 +51,37 @@ pub struct NestRoute {
 // Public API
 // ---------------------------------------------------------------------------
 
+/// Extract NestJS routes without writing to the DB — for use by `NestjsRouteConnector`.
+pub(super) fn extract_nestjs_routes_pub(
+    conn: &Connection,
+    project_root: &Path,
+) -> Result<Vec<NestRoute>> {
+    let regexes = Regexes::build();
+
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'typescript'")
+        .context("Failed to prepare TypeScript files query")?;
+
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query TypeScript files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect TypeScript file rows")?;
+
+    let mut routes: Vec<NestRoute> = Vec::new();
+
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        extract_routes_from_source(conn, &source, file_id, &rel_path, &regexes, &mut routes);
+    }
+
+    Ok(routes)
+}
+
 /// Scan all indexed TypeScript files for NestJS route decorators and insert
 /// the discovered routes into the `routes` table.
 ///

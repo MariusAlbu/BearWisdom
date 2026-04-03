@@ -166,6 +166,16 @@ pub fn detect_queue_endpoints(
     let mut endpoints: Vec<QueueEndpoint> = Vec::new();
 
     for (file_id, rel_path, _language) in files {
+        // Skip vendored third-party libraries and generated bundles.
+        let lower_path = rel_path.to_lowercase();
+        if lower_path.contains("/wwwroot/lib/")
+            || lower_path.contains("/vendor/")
+            || lower_path.contains("/node_modules/")
+            || lower_path.ends_with(".min.js")
+        {
+            continue;
+        }
+
         let abs_path = project_root.join(&rel_path);
         let source = match std::fs::read_to_string(&abs_path) {
             Ok(s) => s,

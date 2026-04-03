@@ -4,9 +4,10 @@ import { Header } from './Header'
 import { KnowledgeTree } from './KnowledgeTree'
 import { FileViewer } from './FileViewer'
 import { FlowExplorer } from './FlowExplorer'
+import { Inspector } from './Inspector'
 import styles from './Explorer.module.css'
 
-type MainView = 'graph' | 'flow'
+type MainView = 'graph' | 'flow' | 'inspector'
 
 interface ExplorerProps {
   workspacePath: string
@@ -72,6 +73,12 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
         >
           Flow
         </button>
+        <button
+          className={`${styles.viewTab}${mainView === 'inspector' ? ' ' + styles.viewTabActive : ''}`}
+          onClick={() => { setMainView('inspector'); setFileView(null) }}
+        >
+          Inspector
+        </button>
       </div>
       <div className={styles.main}>
         {fileView ? (
@@ -82,6 +89,8 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
             loading={fileView.loading}
             onClose={() => setFileView(null)}
           />
+        ) : mainView === 'inspector' ? (
+          <Inspector workspacePath={workspacePath} />
         ) : mainView === 'flow' ? (
           <FlowExplorer
             workspacePath={workspacePath}

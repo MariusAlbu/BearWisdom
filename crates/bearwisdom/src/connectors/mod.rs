@@ -1,3 +1,19 @@
+pub mod connector_db;
+pub mod matcher;
+pub mod registry;
+pub mod traits;
+pub mod types;
+
+// --- New-architecture connector implementations ---
+pub mod event_connector;
+pub mod graphql_connector;
+pub mod grpc_connector;
+pub mod ipc_connector;
+pub mod mq_connector;
+pub mod rest_connector;
+pub mod route_connectors;
+pub mod di_connector;
+
 pub mod angular_di;
 pub mod django;
 pub mod dotnet_di;

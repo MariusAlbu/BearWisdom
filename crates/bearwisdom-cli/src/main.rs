@@ -386,6 +386,25 @@ enum Commands {
     },
 
     // ---- Quality ---------------------------------------------------------------
+    /// Re-index a project without running the embedder.
+    /// Equivalent to `open --no-embed` but outputs machine-readable JSON stats.
+    Reindex {
+        /// Path to the project root.
+        path: String,
+    },
+
+    /// Execute a raw SQL query against a project's index database.
+    /// Returns rows as a JSON array. For development and investigation only.
+    Sql {
+        /// Absolute path to the project root.
+        path: String,
+        /// SQL query to execute.
+        query: String,
+        /// Maximum rows to return (default: 200).
+        #[arg(long, default_value = "200")]
+        limit: usize,
+    },
+
     /// Run quality checks against baseline. Indexes each project, compares
     /// against quality-baseline.json, and reports regressions/improvements.
     QualityCheck {
@@ -506,6 +525,8 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::FullTrace { path, symbol, depth, max_traces } => {
             cmd_full_trace(&path, symbol.as_deref(), depth, max_traces)
         }
+        Commands::Reindex { path } => cmd_reindex(&path),
+        Commands::Sql { path, query, limit } => cmd_sql(&path, &query, limit),
         Commands::QualityCheck { baseline, reindex } => {
             cmd_quality_check(&baseline, reindex)
         }
@@ -1131,6 +1152,102 @@ fn resolve_model_dir(project_root: &Path) -> Option<PathBuf> {
 }
 
 // ---------------------------------------------------------------------------
+// Reindex
+// ---------------------------------------------------------------------------
+
+fn cmd_reindex(project_path: &str) -> Result<String> {
+    let root = PathBuf::from(project_path);
+    let db_path = resolve_db_path(&root)?;
+    let start = std::time::Instant::now();
+
+    eprintln!("Reindexing {} ...", root.display());
+
+    let mut db = Database::open_with_vec(&db_path)
+        .with_context(|| format!("Failed to open DB at {}", db_path.display()))?;
+
+    bearwisdom::full_index(&mut db, &root, None, None)
+        .with_context(|| format!("Index failed for {}", root.display()))?;
+
+    let conn = &db.conn;
+    let files: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
+    let symbols: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
+    let edges: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
+    let routes: i64 = conn.query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))?;
+    let flow_edges: i64 = conn.query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))?;
+    let unresolved: i64 = conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
+
+    let mut flow_edge_types: std::collections::BTreeMap<String, i64> =
+        std::collections::BTreeMap::new();
+    {
+        let mut stmt = conn.prepare("SELECT edge_type, COUNT(*) FROM flow_edges GROUP BY edge_type")?;
+        for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?.flatten() {
+            flow_edge_types.insert(row.0, row.1);
+        }
+    }
+
+    let elapsed_ms = start.elapsed().as_millis() as u64;
+    eprintln!("Done in {:.2}s: {files} files, {symbols} symbols, {edges} edges, {routes} routes, {flow_edges} flow_edges",
+        elapsed_ms as f64 / 1000.0);
+
+    ok_json(serde_json::json!({
+        "project": root.display().to_string(),
+        "duration_ms": elapsed_ms,
+        "files": files,
+        "symbols": symbols,
+        "edges": edges,
+        "routes": routes,
+        "flow_edges": flow_edges,
+        "unresolved_refs": unresolved,
+        "flow_edge_types": flow_edge_types,
+    }))
+}
+
+// ---------------------------------------------------------------------------
+// SQL
+// ---------------------------------------------------------------------------
+
+fn cmd_sql(project_path: &str, query: &str, limit: usize) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let conn = &db.conn;
+
+    let mut stmt = conn
+        .prepare(query)
+        .with_context(|| format!("Failed to prepare query: {query}"))?;
+
+    let col_count = stmt.column_count();
+    let col_names: Vec<String> = (0..col_count)
+        .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
+        .collect();
+
+    let mut rows: Vec<serde_json::Value> = Vec::new();
+
+    let mut result = stmt.query([]).context("Query execution failed")?;
+    while let Some(row) = result.next().context("Failed to iterate rows")? {
+        if rows.len() >= limit {
+            break;
+        }
+        let mut obj = serde_json::Map::new();
+        for (i, name) in col_names.iter().enumerate() {
+            let val: serde_json::Value = match row.get_ref(i)? {
+                rusqlite::types::ValueRef::Null => serde_json::Value::Null,
+                rusqlite::types::ValueRef::Integer(n) => serde_json::json!(n),
+                rusqlite::types::ValueRef::Real(f) => serde_json::json!(f),
+                rusqlite::types::ValueRef::Text(s) => {
+                    serde_json::Value::String(String::from_utf8_lossy(s).into_owned())
+                }
+                rusqlite::types::ValueRef::Blob(b) => {
+                    serde_json::Value::String(format!("<blob {} bytes>", b.len()))
+                }
+            };
+            obj.insert(name.clone(), val);
+        }
+        rows.push(serde_json::Value::Object(obj));
+    }
+
+    ok_json(serde_json::json!({ "rows": rows, "count": rows.len() }))
+}
+
+// ---------------------------------------------------------------------------
 // Quality check
 // ---------------------------------------------------------------------------
 
@@ -1183,6 +1300,32 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         let flow_edges: i64 = conn.query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))?;
         let unresolved: i64 =
             conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
+        let unresolved_flows: i64 = conn.query_row(
+            "SELECT COUNT(*) FROM connection_points cp
+             WHERE cp.direction = 'start'
+               AND NOT EXISTS (
+                   SELECT 1 FROM flow_edges fe
+                   WHERE fe.source_file_id = cp.file_id
+                     AND fe.source_line    = cp.line
+               )",
+            [],
+            |r| r.get(0),
+        )?;
+
+        // Per-type flow edge counts.
+        let mut flow_edge_types: std::collections::BTreeMap<String, i64> =
+            std::collections::BTreeMap::new();
+        {
+            let mut stmt = conn
+                .prepare("SELECT edge_type, COUNT(*) FROM flow_edges GROUP BY edge_type")
+                .unwrap();
+            let rows = stmt
+                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
+                .unwrap();
+            for row in rows.flatten() {
+                flow_edge_types.insert(row.0, row.1);
+            }
+        }
 
         // Compare against assertions.
         let assertions = &proj["assertions"];
@@ -1279,6 +1422,8 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
                 "routes": routes,
                 "flow_edges": flow_edges,
                 "unresolved_refs": unresolved,
+                "unresolved_flow_starts": unresolved_flows,
+                "flow_edge_types": flow_edge_types,
             },
             "regressions": proj_regressions,
             "improvements": proj_improvements,

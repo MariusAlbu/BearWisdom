@@ -30,9 +30,9 @@ use tracing::{debug, info};
 // ---------------------------------------------------------------------------
 
 pub(crate) struct RouteEntry {
-    http_method: &'static str,
-    route_template: String,
-    line: u32,
+    pub(crate) http_method: &'static str,
+    pub(crate) route_template: String,
+    pub(crate) line: u32,
 }
 
 // ---------------------------------------------------------------------------

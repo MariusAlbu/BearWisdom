@@ -426,6 +426,31 @@ CREATE INDEX IF NOT EXISTS idx_flow_edges_type
 CREATE INDEX IF NOT EXISTS idx_flow_url ON flow_edges(url_pattern);
 
 -- ============================================================
+-- CONNECTION POINTS  (connector architecture)
+-- ============================================================
+-- One row per extracted call site or handler, produced by Connector
+-- implementations. The resolution engine matches starts to stops
+-- within the same protocol to produce flow_edges.
+
+CREATE TABLE IF NOT EXISTS connection_points (
+    id        INTEGER PRIMARY KEY,
+    file_id   INTEGER NOT NULL REFERENCES files(id) ON DELETE CASCADE,
+    symbol_id INTEGER REFERENCES symbols(id) ON DELETE SET NULL,
+    line      INTEGER NOT NULL,
+    protocol  TEXT    NOT NULL,
+    direction TEXT    NOT NULL,
+    key       TEXT    NOT NULL,
+    method    TEXT    NOT NULL DEFAULT '',
+    framework TEXT    NOT NULL DEFAULT '',
+    metadata  TEXT,
+    UNIQUE(file_id, line, protocol, direction, key, method)
+);
+
+CREATE INDEX IF NOT EXISTS idx_cp_protocol_dir ON connection_points(protocol, direction);
+CREATE INDEX IF NOT EXISTS idx_cp_key          ON connection_points(key);
+CREATE INDEX IF NOT EXISTS idx_cp_file         ON connection_points(file_id);
+
+-- ============================================================
 -- SEARCH HISTORY
 -- ============================================================
 -- Tracks recent and saved searches for quick recall.
@@ -442,6 +467,29 @@ CREATE TABLE IF NOT EXISTS search_history (
 
 CREATE INDEX IF NOT EXISTS idx_history_type  ON search_history(query_type);
 CREATE INDEX IF NOT EXISTS idx_history_saved ON search_history(is_saved);
+
+-- ============================================================
+-- MCP AUDIT LOG
+-- ============================================================
+-- Tracks every MCP tool call: session, tool name, params, response,
+-- duration, and a token estimate (response bytes / 4).
+-- session_id is a UUID generated once per MCP stdio connection.
+
+CREATE TABLE IF NOT EXISTS mcp_audit (
+    id             INTEGER PRIMARY KEY,
+    session_id     TEXT    NOT NULL,
+    tool_name      TEXT    NOT NULL,
+    params_json    TEXT    NOT NULL,
+    response_json  TEXT    NOT NULL,
+    duration_ms    INTEGER NOT NULL,
+    token_estimate INTEGER NOT NULL DEFAULT 0,
+    ts             TEXT    NOT NULL DEFAULT (datetime('now'))
+);
+
+-- Composite index covers per-session queries ordered by call sequence.
+CREATE INDEX IF NOT EXISTS idx_audit_session ON mcp_audit(session_id, id);
+-- Covers timestamp-based range scans for the SSE tail query.
+CREATE INDEX IF NOT EXISTS idx_audit_ts ON mcp_audit(ts);
 ";
 
 // ---------------------------------------------------------------------------

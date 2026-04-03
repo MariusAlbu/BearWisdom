@@ -84,6 +84,9 @@ pub fn detect_http_calls(conn: &Connection, project_root: &Path) -> Result<Vec<D
     let mut calls: Vec<DetectedHttpCall> = Vec::new();
 
     for (file_id, rel_path) in files {
+        if is_test_or_config_file(&rel_path) {
+            continue;
+        }
         let abs_path = project_root.join(&rel_path);
         let source = match std::fs::read_to_string(&abs_path) {
             Ok(s) => s,
@@ -232,11 +235,11 @@ fn load_routes(conn: &Connection) -> Result<Vec<RouteRow>> {
 // ---------------------------------------------------------------------------
 
 fn build_fetch_regex() -> Regex {
-    // Matches: fetch("url"), fetch('url'), fetch(`url`)
-    // Rust regex does not support backreferences, so we use alternation
-    // for each quote type.
+    // Matches:
+    //   fetch("url"), fetch('url'), fetch(`url`)                    — direct
+    //   fetch(helper("url")), fetch(url('url')), fetch(fn(`url`))   — one wrapper
     Regex::new(
-        r#"fetch\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+        r#"fetch\s*\(\s*(?:\w+\s*\(\s*)?(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
     )
     .expect("fetch regex is valid")
 }
@@ -277,6 +280,19 @@ fn detect_angular_http(
         let line_no = (line_idx + 1) as u32;
         for cap in re.captures_iter(line_text) {
             let Some(raw_url) = extract_url_from_captures(&cap) else { continue };
+
+            // Skip partial string concatenations: `$http.get('api/foo/' + id)`.
+            // The regex match ends at the closing quote; if the next non-space
+            // character is `+`, this is only the first fragment of the URL.
+            let match_end = cap.get(0).map_or(0, |m| m.end());
+            if line_text[match_end..].trim_start().starts_with('+') {
+                continue;
+            }
+
+            if !looks_like_api_url(&raw_url) {
+                continue;
+            }
+
             let method = cap.name("method")
                 .map(|m| m.as_str().to_uppercase())
                 .unwrap_or_else(|| "GET".to_string());
@@ -304,6 +320,17 @@ fn detect_jquery_calls(
         let line_no = (line_idx + 1) as u32;
         for cap in re.captures_iter(line_text) {
             let Some(raw_url) = extract_url_from_captures(&cap) else { continue };
+
+            // Skip partial string concatenations.
+            let match_end = cap.get(0).map_or(0, |m| m.end());
+            if line_text[match_end..].trim_start().starts_with('+') {
+                continue;
+            }
+
+            if !looks_like_api_url(&raw_url) {
+                continue;
+            }
+
             let method = match cap.name("method").map(|m| m.as_str()) {
                 Some("ajax") => "GET".to_string(), // $.ajax — method is in options, default GET
                 Some("getJSON") => "GET".to_string(),
@@ -343,12 +370,35 @@ fn detect_in_source(
     re_axios: &Regex,
     out: &mut Vec<DetectedHttpCall>,
 ) {
-    for (line_idx, line_text) in source.lines().enumerate() {
+    // Named HTTP method wrappers: GET("/api/..."), POST('/url'), DELETE(`/url`)
+    // Common in custom fetch wrappers (e.g., Gitea's fetch module).
+    let re_named_method = Regex::new(
+        r#"(?:^|[;\s,=])(?P<method>GET|POST|PUT|DELETE|PATCH)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    )
+    .expect("named method regex");
+
+    // OpenAPI/generated SDK: { method: 'GET', url: '/api/...' } or
+    // { url: '/api/...', method: 'POST' }.
+    let re_sdk_url = Regex::new(
+        r#"url\s*:\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    )
+    .expect("sdk url regex");
+    let re_sdk_method = Regex::new(
+        r#"method\s*:\s*['"](?P<m>GET|POST|PUT|DELETE|PATCH|HEAD)['"]"#,
+    )
+    .expect("sdk method regex");
+
+    let lines: Vec<&str> = source.lines().collect();
+
+    for (line_idx, line_text) in lines.iter().enumerate() {
         let line_no = (line_idx + 1) as u32;
 
-        // fetch(url) — method defaults to GET unless { method: "X" } follows.
+        // fetch(url) or fetch(wrapper("url"))
         for cap in re_fetch.captures_iter(line_text) {
             if let Some(raw_url) = extract_url_from_captures(&cap) {
+                if !looks_like_api_url(&raw_url) {
+                    continue;
+                }
                 let method = extract_fetch_method(line_text);
                 let url_pattern = normalise_url_pattern(&raw_url);
 
@@ -368,6 +418,9 @@ fn detect_in_source(
             let Some(raw_url) = extract_url_from_captures(&cap) else {
                 continue;
             };
+            if !looks_like_api_url(&raw_url) {
+                continue;
+            }
             let method = cap["method"].to_uppercase();
             let url_pattern = normalise_url_pattern(&raw_url);
 
@@ -380,7 +433,147 @@ fn detect_in_source(
                 raw_url,
             });
         }
+
+        // Named method wrappers: GET("/api/..."), POST('/url')
+        for cap in re_named_method.captures_iter(line_text) {
+            let Some(raw_url) = extract_url_from_captures(&cap) else {
+                continue;
+            };
+            if !looks_like_api_url(&raw_url) {
+                continue;
+            }
+            let method = cap["method"].to_string();
+            let url_pattern = normalise_url_pattern(&raw_url);
+
+            out.push(DetectedHttpCall {
+                file_id,
+                symbol_id: None,
+                line: line_no,
+                http_method: method,
+                url_pattern,
+                raw_url,
+            });
+        }
+
+        // SDK/generated client: { method: 'GET', url: '/api/v1/items/' }
+        // Only emit when an explicit HTTP method is found nearby — prevents false
+        // positives from Angular nav data, React Router path objects, etc.
+        for cap in re_sdk_url.captures_iter(line_text) {
+            let Some(raw_url) = extract_url_from_captures(&cap) else {
+                continue;
+            };
+            // Skip partial string concatenations: `url: 'api/foo/' + id`.
+            let sdk_match_end = cap.get(0).map_or(0, |m| m.end());
+            if line_text[sdk_match_end..].trim_start().starts_with('+') {
+                continue;
+            }
+            if !looks_like_api_url(&raw_url) {
+                continue;
+            }
+            // Require an explicit method: 'X' within ±5 lines. Without it the
+            // `url:` key is almost certainly a router/nav path, not an API call.
+            let start = line_idx.saturating_sub(5);
+            let end = (line_idx + 6).min(lines.len());
+            let has_method = lines[start..end]
+                .iter()
+                .any(|l| re_sdk_method.is_match(l));
+            if !has_method {
+                continue;
+            }
+            let method = find_nearby_method(&lines, line_idx, 5, &re_sdk_method);
+            let url_pattern = normalise_url_pattern(&raw_url);
+
+            out.push(DetectedHttpCall {
+                file_id,
+                symbol_id: None,
+                line: line_no,
+                http_method: method,
+                url_pattern,
+                raw_url,
+            });
+        }
     }
+}
+
+/// Search ±window lines around `center` for a `method: 'X'` pattern.
+fn find_nearby_method(lines: &[&str], center: usize, window: usize, re: &Regex) -> String {
+    let start = center.saturating_sub(window);
+    let end = (center + window + 1).min(lines.len());
+    for line in &lines[start..end] {
+        if let Some(cap) = re.captures(line) {
+            return cap["m"].to_string();
+        }
+    }
+    "GET".to_string()
+}
+
+/// Heuristic: does this string look like an API URL path?
+///
+/// Used for TS/JS frontend detection where absolute external URLs cannot
+/// match local route stops and should be rejected.
+fn looks_like_api_url(s: &str) -> bool {
+    looks_like_api_url_inner(s, false)
+}
+
+/// Same as `looks_like_api_url` but also accepts absolute URLs whose path
+/// looks like an API call.  Used for backend-to-backend detection (Python,
+/// Go, Java, Ruby, C#) where service calls always use full URLs.
+fn looks_like_backend_api_url(s: &str) -> bool {
+    looks_like_api_url_inner(s, true)
+}
+
+fn looks_like_api_url_inner(s: &str, accept_absolute: bool) -> bool {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        if !accept_absolute {
+            return false;
+        }
+        // Extract the path component and re-check.
+        let after_scheme = s.find("://").map(|i| &s[i + 3..]).unwrap_or(s);
+        let path = after_scheme.find('/').map(|i| &after_scheme[i..]).unwrap_or("");
+        if path.is_empty() {
+            return false;
+        }
+        return looks_like_api_url_inner(path, false); // path check never accepts absolute
+    }
+
+    // Static asset extensions are not API calls.
+    let lower = s.to_lowercase();
+    if lower
+        .rsplit('/')
+        .next()
+        .unwrap_or("")
+        .contains('.')
+    {
+        let ext = lower.rsplit('.').next().unwrap_or("");
+        if matches!(
+            ext,
+            "svg" | "png" | "jpg" | "jpeg" | "gif" | "ico" | "webp"
+                | "woff" | "woff2" | "ttf" | "eot" | "otf"
+                | "css" | "js" | "ts" | "map"
+                | "html" | "htm" | "xml" | "json" | "txt" | "md" | "pdf"
+                | "mp3" | "mp4" | "wav" | "ogg" | "webm" | "m4a"
+                | "zip" | "tar" | "gz"
+        ) {
+            return false;
+        }
+    }
+
+    // Must start with / or contain a versioned API segment.
+    if s.starts_with('/') {
+        return true;
+    }
+    if s.contains("/api/") || s.contains("/v1/") || s.contains("/v2/") || s.contains("/v3/") {
+        return true;
+    }
+    // Relative API paths without a leading slash (common in Angular $http calls).
+    if s.starts_with("api/") || s.starts_with("v1/") || s.starts_with("v2/") || s.starts_with("v3/") {
+        return true;
+    }
+    // Template literal with path separator
+    if s.contains("/${") || s.contains("/{") {
+        return true;
+    }
+    false
 }
 
 /// Infer the HTTP method from a `fetch` call line.
@@ -406,6 +599,56 @@ fn normalise_url_pattern(raw: &str) -> String {
     // Replace template literal interpolations.
     let re_tmpl = Regex::new(r#"\$\{[^}]+\}"#).expect("template literal regex is valid");
     re_tmpl.replace_all(without_query, "{param}").into_owned()
+}
+
+/// Returns true if the file path looks like a test, spec, or config file.
+///
+/// These files contain URLs for test setup or environment config — not real
+/// API call sites that should produce flow edges.
+fn is_test_or_config_file(rel_path: &str) -> bool {
+    // Get the filename (last path component).
+    let filename = rel_path
+        .rsplit('/')
+        .next()
+        .or_else(|| rel_path.rsplit('\\').next())
+        .unwrap_or(rel_path);
+    let lower = filename.to_lowercase();
+
+    // *_test.ext, *.test.ext, *.spec.ext
+    if lower.contains("_test.") || lower.contains(".test.") || lower.contains(".spec.") {
+        return true;
+    }
+    // *.config.*, playwright.config.ts, vite.config.ts, etc.
+    if lower.contains(".config.") {
+        return true;
+    }
+    // __tests__/ or __mocks__/ directories
+    let lower_path = rel_path.to_lowercase();
+    if lower_path.contains("__tests__") || lower_path.contains("__mocks__") {
+        return true;
+    }
+    // Vendored/bundled third-party JS in typical locations.
+    if lower_path.contains("/wwwroot/lib/")
+        || lower_path.contains("/vendor/")
+        || lower_path.contains("/node_modules/")
+    {
+        return true;
+    }
+    // Minified bundles: *.min.js — these are compiled output, not source.
+    if lower.ends_with(".min.js") {
+        return true;
+    }
+    // E2E and Cypress test directories.
+    if lower_path.contains("/e2e/")
+        || lower_path.contains("/e2e-tests/")
+        || lower_path.contains("/cypress/")
+        || lower_path.contains("/playwright/")
+        || lower_path.contains("/tests/integration/")
+        || lower_path.contains("/tests/e2e/")
+    {
+        return true;
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -607,6 +850,9 @@ pub fn detect_http_calls_all_languages(
             .context("Failed to collect language file rows")?;
 
         for (file_id, rel_path) in files {
+            if is_test_or_config_file(&rel_path) {
+                continue;
+            }
             let abs_path = project_root.join(&rel_path);
             let source = match std::fs::read_to_string(&abs_path) {
                 Ok(s) => s,
@@ -640,6 +886,9 @@ pub fn detect_http_calls_all_languages(
                             matcher.implied_method.to_string()
                         };
 
+                        if !looks_like_backend_api_url(&raw_url) {
+                            continue;
+                        }
                         let url_pattern = normalise_url_pattern(&raw_url);
 
                         all_calls.push(DetectedHttpCall {

@@ -518,14 +518,25 @@ pub struct GoModData {
     pub require_paths: Vec<String>,
 }
 
-/// Find go.mod at the project root (it's always at root level, never nested).
+/// Find go.mod, checking the project root first, then immediate subdirectories
+/// (depth 1) to handle monorepos where Go lives in e.g. `server/` or `backend/`.
 pub fn find_go_mod(root: &Path) -> Option<std::path::PathBuf> {
     let candidate = root.join("go.mod");
     if candidate.is_file() {
-        Some(candidate)
-    } else {
-        None
+        return Some(candidate);
     }
+    // Check one level of subdirectories for monorepo layouts.
+    if let Ok(entries) = std::fs::read_dir(root) {
+        for entry in entries.flatten() {
+            if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                let nested = entry.path().join("go.mod");
+                if nested.is_file() {
+                    return Some(nested);
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Parse the `module` directive and `require` blocks from go.mod content.
@@ -1005,7 +1016,9 @@ pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
         }
 
         if in_array {
-            if trimmed.contains(']') {
+            // Only end the array on a standalone `]` — not on a dependency line
+            // that contains extras like `"celery[redis]~=5.6.2"`.
+            if trimmed.starts_with(']') {
                 in_array = false;
             }
             for name in extract_pep508_names(trimmed) {
@@ -1037,9 +1050,10 @@ fn extract_pep508_names(s: &str) -> Vec<String> {
     for part in s.split(',') {
         // Strip quotes, brackets, extras, version specs.
         let part = part.trim().trim_matches(|c| c == '"' || c == '\'' || c == ']');
-        // Name ends at the first of: `[`, `>`, `<`, `=`, `!`, `;`, `@`, ` `.
+        // Name ends at the first of: `[`, `>`, `<`, `=`, `~`, `!`, `;`, `@`, ` `.
+        // `~` handles the PEP 440 compatible-release specifier (`~=`).
         let end = part
-            .find(|c: char| matches!(c, '[' | '>' | '<' | '=' | '!' | ';' | '@' | ' '))
+            .find(|c: char| matches!(c, '[' | '>' | '<' | '=' | '~' | '!' | ';' | '@' | ' '))
             .unwrap_or(part.len());
         let name = part[..end].trim();
         if !name.is_empty()

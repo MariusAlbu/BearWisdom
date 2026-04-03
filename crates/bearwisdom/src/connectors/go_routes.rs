@@ -153,14 +153,14 @@ fn join_paths(prefix: &str, segment: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug)]
-struct GoRoute {
-    file_id: i64,
-    symbol_id: Option<i64>,
-    http_method: String,
-    route_template: String,
-    resolved_route: String,
-    handler_name: String,
-    line: u32,
+pub(super) struct GoRoute {
+    pub(super) file_id: i64,
+    pub(super) symbol_id: Option<i64>,
+    pub(super) http_method: String,
+    pub(super) route_template: String,
+    pub(super) resolved_route: String,
+    pub(super) handler_name: String,
+    pub(super) line: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -382,6 +382,43 @@ fn write_routes(conn: &Connection, routes: &[GoRoute]) -> Result<u32> {
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
+
+/// Extract Go routes without writing to the DB — for use by `GoRouteConnector`.
+pub(super) fn extract_go_routes_pub(
+    conn: &Connection,
+    project_root: &Path,
+) -> Result<Vec<GoRoute>> {
+    let re = Regexes {
+        handle_func: build_handle_func_regex(),
+        gin: build_gin_style_regex(),
+        chi: build_chi_style_regex(),
+        method_handle_func: build_method_handle_func_regex(),
+        group: build_group_regex(),
+    };
+
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'go'")
+        .context("Failed to prepare Go files query")?;
+
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query Go files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect Go file rows")?;
+
+    let mut routes: Vec<GoRoute> = Vec::new();
+
+    for (file_id, rel_path) in &files {
+        let abs_path = project_root.join(rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        extract_routes_from_source(&source, *file_id, conn, rel_path, &re, &mut routes);
+    }
+
+    Ok(routes)
+}
 
 /// Scan all indexed Go files for HTTP route registrations and insert them
 /// into the `routes` table.

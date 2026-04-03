@@ -132,6 +132,41 @@ impl LanguageResolver for RustResolver {
             return None;
         }
 
+        // `Self` → resolve to the enclosing struct/enum/trait.
+        if target == "Self" {
+            let enclosing = chain::find_enclosing_type(&ref_ctx.scope_chain, lookup)?;
+            let sym = lookup.by_qualified_name(&enclosing)?;
+            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "rust_self_type",
+                });
+            }
+            // For Calls to Self (e.g. Self::new()), look for a method
+            // on the enclosing type.
+            if edge_kind == EdgeKind::Calls {
+                // Try to find a constructor or associated function.
+                for child in lookup.in_namespace(&enclosing) {
+                    if child.name == "new"
+                        && matches!(child.kind.as_str(), "method" | "function" | "constructor")
+                    {
+                        return Some(Resolution {
+                            target_symbol_id: child.id,
+                            confidence: 0.95,
+                            strategy: "rust_self_constructor",
+                        });
+                    }
+                }
+            }
+            // Even if we can't find the exact method, resolve to the type itself.
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.90,
+                strategy: "rust_self_type_fallback",
+            });
+        }
+
         // Rust stdlib builtins are never in our index — fast exit.
         if builtins::is_rust_builtin(target) {
             return None;

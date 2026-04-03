@@ -23,19 +23,19 @@
 }
 
 .tooltipKind {
-  font-size: 11px;
+  font-size: 13px;
   margin-top: 2px;
 }
 
 .tooltipPath {
   font-family: 'Source Code Pro', monospace;
-  font-size: 10px;
+  font-size: 13px;
   color: var(--text-muted);
   margin-top: 3px;
 }
 
 .tooltipConcept {
-  font-size: 10px;
+  font-size: 13px;
   color: var(--teal);
   margin-top: 2px;
 }

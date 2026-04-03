@@ -13,6 +13,7 @@
 // a direct call to sqlite3_vec_init.
 // =============================================================================
 
+pub mod audit;
 pub mod schema;
 
 use crate::indexer::ref_cache::RefCache;

@@ -303,6 +303,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-subscriber",
+ "uuid",
 ]
 
 [[package]]
@@ -340,6 +341,7 @@ dependencies = [
  "bearwisdom",
  "clap",
  "dirs 6.0.0",
+ "futures",
  "rusqlite",
  "serde",
  "serde_json",

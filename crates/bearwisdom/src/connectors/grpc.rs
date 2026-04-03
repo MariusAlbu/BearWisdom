@@ -130,6 +130,17 @@ fn load_proto_files(conn: &rusqlite::Connection) -> Result<Vec<(i64, String)>> {
 ///
 /// Line numbers are 1-based and approximate — we count newlines up to each
 /// regex match position.
+///
+/// Public alias for use by the new `GrpcConnector`.
+pub(super) fn parse_proto_services_pub(
+    source: &str,
+    file_id: i64,
+    re_service: &Regex,
+    re_rpc: &Regex,
+) -> Vec<ProtoService> {
+    parse_proto_services(source, file_id, re_service, re_rpc)
+}
+
 fn parse_proto_services(
     source: &str,
     file_id: i64,

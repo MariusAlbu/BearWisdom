@@ -415,6 +415,174 @@ fn scan_file(
 // Public entry point
 // ---------------------------------------------------------------------------
 
+/// A route extracted from a Laravel file, ready for conversion to ConnectionPoint.
+pub(super) struct LaravelRoute {
+    pub(super) file_id: i64,
+    pub(super) symbol_id: Option<i64>,
+    pub(super) http_method: String,
+    pub(super) resolved_route: String,
+    pub(super) line: u32,
+}
+
+/// Extract Laravel routes without writing to the DB — for use by `LaravelRouteConnector`.
+pub(super) fn extract_laravel_routes_pub(
+    conn: &Connection,
+    project_root: &Path,
+) -> Result<Vec<LaravelRoute>> {
+    let re_explicit = build_explicit_route_regex();
+    let re_match_re = build_match_route_regex();
+    let re_resource = build_resource_regex();
+    let re_api_resource = build_api_resource_regex();
+    let re_prefix_re = build_prefix_regex();
+    let re_group_open = build_group_open_regex();
+    let re_group_close = build_group_close_regex();
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, path FROM files
+             WHERE language = 'php'
+               AND (path LIKE '%routes%' OR path LIKE '%Route%')",
+        )
+        .context("Failed to prepare Laravel route file query")?;
+
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query PHP route files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect PHP route file rows")?;
+
+    let mut result = Vec::new();
+
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        extract_laravel_routes_from_source(
+            conn,
+            file_id,
+            &source,
+            &re_explicit,
+            &re_match_re,
+            &re_resource,
+            &re_api_resource,
+            &re_prefix_re,
+            &re_group_open,
+            &re_group_close,
+            &mut result,
+        );
+    }
+
+    Ok(result)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn extract_laravel_routes_from_source(
+    conn: &Connection,
+    file_id: i64,
+    source: &str,
+    re_explicit: &Regex,
+    re_match_re: &Regex,
+    re_resource: &Regex,
+    re_api_resource: &Regex,
+    re_prefix_re: &Regex,
+    re_group_open: &Regex,
+    re_group_close: &Regex,
+    out: &mut Vec<LaravelRoute>,
+) {
+    let mut prefix_stack: Vec<String> = Vec::new();
+    let mut depth_stack: Vec<u32> = Vec::new();
+    let mut brace_depth: u32 = 0;
+
+    for (line_idx, line) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        let active_prefix = join_prefix_stack(&prefix_stack);
+
+        let pending_prefix: Option<String> = re_prefix_re
+            .captures(line)
+            .map(|cap| cap[1].to_string());
+
+        let opens_group = re_group_open.is_match(line);
+
+        if opens_group {
+            let seg = pending_prefix.unwrap_or_default();
+            prefix_stack.push(seg);
+            depth_stack.push(brace_depth);
+        }
+
+        for ch in line.chars() {
+            match ch {
+                '{' => brace_depth += 1,
+                '}' => {
+                    if brace_depth > 0 {
+                        brace_depth -= 1;
+                    }
+                    if let Some(&enter_depth) = depth_stack.last() {
+                        if brace_depth == enter_depth {
+                            prefix_stack.pop();
+                            depth_stack.pop();
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if opens_group || re_group_close.is_match(line) {
+            continue;
+        }
+
+        if let Some(cap) = re_explicit.captures(line) {
+            let verb = cap[1].to_uppercase();
+            let template = cap[2].to_string();
+            let resolved = resolve_route(&active_prefix, &template);
+            let symbol_id = resolve_symbol(conn, line);
+            out.push(LaravelRoute { file_id, symbol_id, http_method: verb, resolved_route: resolved, line: line_no });
+            continue;
+        }
+
+        if let Some(cap) = re_match_re.captures(line) {
+            let methods_raw = &cap[1];
+            let template = cap[2].to_string();
+            let resolved = resolve_route(&active_prefix, &template);
+            let symbol_id = resolve_symbol(conn, line);
+            let methods: Vec<String> = methods_raw
+                .split(',')
+                .filter_map(|s| {
+                    let trimmed = s.trim().trim_matches(|c: char| c == '\'' || c == '"');
+                    if trimmed.is_empty() { None } else { Some(trimmed.to_uppercase()) }
+                })
+                .collect();
+            for verb in methods {
+                out.push(LaravelRoute { file_id, symbol_id, http_method: verb, resolved_route: resolved.clone(), line: line_no });
+            }
+            continue;
+        }
+
+        if let Some(cap) = re_resource.captures(line) {
+            let name = cap[1].to_string();
+            let base = resource_base_path(&name, &active_prefix);
+            for (verb, suffix, _action) in RESOURCE_ROUTES {
+                let resolved = format!("{base}{suffix}");
+                out.push(LaravelRoute { file_id, symbol_id: None, http_method: verb.to_string(), resolved_route: resolved, line: line_no });
+            }
+            continue;
+        }
+
+        if let Some(cap) = re_api_resource.captures(line) {
+            let name = cap[1].to_string();
+            let base = resource_base_path(&name, &active_prefix);
+            for (verb, suffix, _action) in API_RESOURCE_ROUTES {
+                let resolved = format!("{base}{suffix}");
+                out.push(LaravelRoute { file_id, symbol_id: None, http_method: verb.to_string(), resolved_route: resolved, line: line_no });
+            }
+            continue;
+        }
+    }
+}
+
 /// Detect Laravel HTTP routes in all indexed PHP route files and write them
 /// to the `routes` table.
 ///

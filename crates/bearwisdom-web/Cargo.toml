@@ -28,3 +28,4 @@ sha2               = { workspace = true }
 dirs               = { workspace = true }
 rusqlite           = { workspace = true }
 clap               = { workspace = true }
+futures            = "0.3"
