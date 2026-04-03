@@ -33,7 +33,7 @@ pub(super) fn extract_calls_from_body(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| callee_name(callee, src));
-                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
+                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &callee, refs);
                     if !name.is_empty() && !is_csharp_keyword(&name) {
                         refs.push(ExtractedRef {
                             source_symbol_index,

@@ -30,7 +30,7 @@ mod extract_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
 
 // Re-export the resolver for registration in default_resolvers().

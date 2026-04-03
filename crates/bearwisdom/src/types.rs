@@ -383,6 +383,39 @@ impl DbMappingSource {
     }
 }
 
+/// Universal extraction result returned by all language plugins.
+pub struct ExtractionResult {
+    pub symbols: Vec<ExtractedSymbol>,
+    pub refs: Vec<ExtractedRef>,
+    pub routes: Vec<ExtractedRoute>,
+    pub db_sets: Vec<ExtractedDbSet>,
+    pub has_errors: bool,
+}
+
+impl ExtractionResult {
+    pub fn new(
+        symbols: Vec<ExtractedSymbol>,
+        refs: Vec<ExtractedRef>,
+        has_errors: bool,
+    ) -> Self {
+        Self { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors }
+    }
+
+    pub fn with_connectors(
+        symbols: Vec<ExtractedSymbol>,
+        refs: Vec<ExtractedRef>,
+        routes: Vec<ExtractedRoute>,
+        db_sets: Vec<ExtractedDbSet>,
+        has_errors: bool,
+    ) -> Self {
+        Self { symbols, refs, routes, db_sets, has_errors }
+    }
+
+    pub fn empty() -> Self {
+        Self { symbols: Vec::new(), refs: Vec::new(), routes: Vec::new(), db_sets: Vec::new(), has_errors: false }
+    }
+}
+
 /// Everything extracted from a single source file.
 #[derive(Debug)]
 pub struct ParsedFile {

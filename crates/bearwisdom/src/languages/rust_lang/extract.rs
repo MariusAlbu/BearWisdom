@@ -19,7 +19,7 @@
 
 
 use super::{calls, symbols, helpers, decorators, patterns};
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use tree_sitter::{Node, Parser};
 

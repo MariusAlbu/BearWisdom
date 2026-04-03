@@ -36,7 +36,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| node_text(name_node, src));
-                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
+                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index,

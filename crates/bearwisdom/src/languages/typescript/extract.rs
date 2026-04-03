@@ -10,7 +10,7 @@
 
 use super::{calls, decorators, helpers, imports, narrowing, params, symbols, types};
 
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::{Node, Parser};

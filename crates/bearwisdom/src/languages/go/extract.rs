@@ -27,7 +27,7 @@
 // =============================================================================
 
 use super::{symbols, helpers};
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use tree_sitter::{Node, Parser};
 

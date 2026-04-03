@@ -26,7 +26,7 @@
 
 use super::{calls, symbols, helpers, decorators};
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::{Node, Parser};
 

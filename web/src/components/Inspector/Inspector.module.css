@@ -1,0 +1,396 @@
+/* ============================================================
+   Inspector tab — MCP audit dashboard
+   ============================================================ */
+
+.inspector {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* ---------- Stats bar ---------- */
+
+.statsBar {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 16px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  height: 40px;
+  overflow: hidden;
+}
+
+.statItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 14px;
+  border-right: 1px solid var(--border);
+  height: 100%;
+}
+
+.statItem:first-child { padding-left: 0; }
+.statItem:last-child { border-right: none; }
+
+.statLabel {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+}
+
+.statValue {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--copper);
+}
+
+.statSavings {
+  color: #5ba85b;
+}
+
+/* ---------- Wrapper (stats + body) ---------- */
+
+.wrapper {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ---------- Body (sidebar + main) ---------- */
+
+.body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+}
+
+/* ---------- Session sidebar ---------- */
+
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  background: var(--bg-surface);
+  overflow-y: auto;
+}
+
+.sidebarTitle {
+  padding: 12px 14px 8px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.sessionItem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+}
+
+.sessionItem:hover { background: var(--bg-hover); }
+
+.sessionItemActive {
+  background: rgba(200, 145, 92, 0.08);
+  border-left: 2px solid var(--copper);
+}
+
+.sessionId {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  color: var(--teal);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sessionMeta {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.sessionCalls {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.sessionTokens {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  color: var(--copper);
+}
+
+.sessionBar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--bg-hover);
+  overflow: hidden;
+  margin-top: 2px;
+}
+
+.sessionBarFill {
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, var(--copper), var(--teal));
+  transition: width 0.4s ease;
+}
+
+.sessionDelete {
+  display: none;
+  margin-left: auto;
+  padding: 2px 5px;
+  font-size: 13px;
+  color: var(--text-faint);
+  background: none;
+  border: none;
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+  line-height: 1;
+}
+
+.sessionItem:hover .sessionDelete {
+  display: block;
+}
+
+.sessionDelete:hover {
+  color: #c87272;
+  background: rgba(200, 114, 114, 0.1);
+}
+
+.emptyState {
+  padding: 24px 12px;
+  font-size: 13px;
+  color: var(--text-faint);
+  text-align: center;
+  line-height: 1.5;
+}
+
+/* ---------- Call timeline ---------- */
+
+.timeline {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-width: 0;
+}
+
+.timelineHeader {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.callList {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.callRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  cursor: pointer;
+  transition: background 0.1s;
+  min-height: 40px;
+}
+
+.callRow:hover { background: var(--bg-hover); }
+
+.callRowActive {
+  background: rgba(200, 145, 92, 0.08);
+  border-left: 2px solid var(--copper);
+}
+
+.toolBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: 'Source Code Pro', monospace;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Tool category colors */
+.badge-search   { background: rgba(91, 141, 217, 0.15); color: #5b8dd9; }
+.badge-nav      { background: rgba(130, 100, 200, 0.15); color: #8264c8; }
+.badge-analysis { background: rgba(200, 145, 92, 0.15); color: var(--copper); }
+.badge-flow     { background: rgba(100, 180, 160, 0.15); color: var(--teal); }
+.badge-context  { background: rgba(100, 160, 100, 0.15); color: #64a064; }
+
+.callTs {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.callDuration {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+
+.callTokenBar {
+  flex: 1;
+  min-width: 60px;
+  max-width: 120px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.callTokenBw {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--copper);
+  transition: width 0.3s ease;
+}
+
+.callTokenNative {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(200, 145, 92, 0.2);
+  transition: width 0.3s ease;
+}
+
+/* ---------- Detail panel ---------- */
+
+.detail {
+  width: 380px;
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  overflow: hidden;
+  background: var(--bg-surface);
+}
+
+.detailHeader {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.detailTool {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--copper);
+}
+
+.detailMeta {
+  font-size: 13px;
+  color: var(--text-faint);
+  margin-top: 2px;
+}
+
+.detailBody {
+  flex: 1;
+  overflow-y: auto;
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.detailSection {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.detailSectionLabel {
+  font-size: 13px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--text-faint);
+}
+
+.jsonBlock {
+  font-family: 'Source Code Pro', monospace;
+  font-size: 13px;
+  line-height: 1.6;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  max-height: 240px;
+  overflow-y: auto;
+  white-space: pre;
+}
+
+.tokenTable {
+  font-size: 13px;
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.tokenTable td {
+  padding: 4px 0;
+  color: var(--text-secondary);
+}
+
+.tokenTable td:last-child {
+  text-align: right;
+  font-family: 'Source Code Pro', monospace;
+  color: var(--copper);
+}
+
+.tokenSavings {
+  color: #5ba85b !important;
+  font-weight: 700;
+}
+
+.nativeRow td {
+  color: var(--text-faint) !important;
+}
+
+.detailEmpty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  font-size: 14px;
+  color: var(--text-faint);
+  padding: 40px 20px;
+  text-align: center;
+  line-height: 1.6;
+}
+
+/* JSON syntax highlight */
+.jk { color: var(--teal); }
+.js { color: #8dd98d; }
+.jn { color: #d9a85b; }
+.jb { color: #d95b9a; }

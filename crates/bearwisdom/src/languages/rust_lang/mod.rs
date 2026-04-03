@@ -16,7 +16,7 @@ pub mod resolve;
 mod extract_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
 
 pub use resolve::RustResolver;

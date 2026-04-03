@@ -20,7 +20,7 @@
 
 pub mod registry;
 
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
 
 pub use registry::LanguageRegistry;
@@ -61,6 +61,7 @@ use std::sync::Arc;
 
 pub mod bash;
 pub mod c_lang;
+mod generic;
 pub mod csharp;
 pub mod dart;
 pub mod elixir;
@@ -131,6 +132,36 @@ pub fn default_resolvers() -> Vec<Arc<dyn crate::indexer::resolve::engine::Langu
 }
 
 // ---------------------------------------------------------------------------
+// Shared extraction utilities
+// ---------------------------------------------------------------------------
+
+/// When a call has a chain (e.g. `Foo::bar()`, `Foo.bar()`), emit a `TypeRef`
+/// for the type prefix — the segment before the final method name — if it
+/// looks like a type (starts with uppercase).
+pub fn emit_chain_type_ref(
+    chain: &Option<crate::types::MemberChain>,
+    source_symbol_index: usize,
+    func_node: &tree_sitter::Node,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
+    let c = match chain.as_ref() {
+        Some(c) if c.segments.len() >= 2 => c,
+        _ => return,
+    };
+    let type_seg = &c.segments[c.segments.len() - 2];
+    if type_seg.name.chars().next().map_or(false, |ch| ch.is_uppercase()) {
+        refs.push(crate::types::ExtractedRef {
+            source_symbol_index,
+            target_name: type_seg.name.clone(),
+            kind: crate::types::EdgeKind::TypeRef,
+            line: func_node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Generic fallback plugin
 // ---------------------------------------------------------------------------
 
@@ -164,7 +195,7 @@ impl LanguagePlugin for GenericPlugin {
     }
 
     fn extract(&self, source: &str, _file_path: &str, lang_id: &str) -> ExtractionResult {
-        match crate::parser::extractors::generic::extract(source, lang_id) {
+        match generic::extract::extract(source, lang_id) {
             Some(r) => ExtractionResult::new(r.symbols, r.refs, r.has_errors),
             None => ExtractionResult::empty(),
         }

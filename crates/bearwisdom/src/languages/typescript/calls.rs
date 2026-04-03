@@ -20,7 +20,7 @@ pub(super) fn extract_calls(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| callee_name_fallback(func_node, src));
 
-                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -46,7 +46,7 @@ pub(super) fn extract_calls(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| callee_name_fallback(tag, src));
-                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &tag, refs);
+                    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag, refs);
                     if !target_name.is_empty() && target_name != "undefined" {
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -82,7 +82,7 @@ pub(super) fn extract_calls(
                             .and_then(|c| c.segments.last())
                             .map(|s| s.name.clone())
                             .unwrap_or(tag_name);
-                        crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
+                        crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name: target,

@@ -36,7 +36,7 @@
 
 
 use super::{calls, symbols, helpers, decorators, types};
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::{
     EdgeKind, ExtractedDbSet, ExtractedRef, ExtractedRoute, ExtractedSymbol, SymbolKind,

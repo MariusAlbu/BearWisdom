@@ -19,7 +19,7 @@ mod extract_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::parser::extractors::ExtractionResult;
+use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
 
 pub use resolve::GoResolver;
