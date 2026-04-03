@@ -43,4 +43,8 @@ impl LanguagePlugin for GraphQlPlugin {
         let _ = source;
         ExtractionResult::empty()
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

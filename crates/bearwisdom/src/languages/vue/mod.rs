@@ -57,4 +57,8 @@ impl LanguagePlugin for VuePlugin {
         // Component invocations and event handler directives.
         &["element", "self_closing_tag", "directive_attribute"]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

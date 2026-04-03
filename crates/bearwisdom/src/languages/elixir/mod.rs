@@ -57,4 +57,8 @@ impl LanguagePlugin for ElixirPlugin {
             "binary_operator",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

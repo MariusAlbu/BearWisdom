@@ -76,4 +76,8 @@ impl LanguagePlugin for SwiftPlugin {
             "protocol_composition_type",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["Int", "Double", "Float", "String", "Bool", "Void", "Any", "AnyObject", "Never", "Optional", "Array", "Dictionary", "Set", "Error", "some"]
+    }
 }

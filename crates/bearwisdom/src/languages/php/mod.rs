@@ -81,4 +81,8 @@ impl LanguagePlugin for PhpPlugin {
             "intersection_type",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["int", "float", "string", "bool", "void", "null", "array", "object", "mixed", "never", "callable", "iterable", "self", "static", "parent", "true", "false"]
+    }
 }

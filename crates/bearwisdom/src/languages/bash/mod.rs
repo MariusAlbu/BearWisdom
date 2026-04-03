@@ -45,4 +45,8 @@ impl LanguagePlugin for BashPlugin {
             "command_substitution",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

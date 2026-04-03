@@ -79,4 +79,8 @@ impl LanguagePlugin for CLangPlugin {
             "import_declaration",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["int", "char", "void", "float", "double", "short", "long", "unsigned", "signed", "size_t", "bool", "auto"]
+    }
 }

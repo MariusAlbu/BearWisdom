@@ -76,4 +76,8 @@ impl LanguagePlugin for DartPlugin {
             "type_identifier",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["int", "double", "String", "bool", "void", "dynamic", "num", "Object", "Null", "Never", "Function", "Type"]
+    }
 }

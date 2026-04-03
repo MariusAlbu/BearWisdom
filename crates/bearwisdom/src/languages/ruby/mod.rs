@@ -66,4 +66,8 @@ impl LanguagePlugin for RubyPlugin {
             "constant",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

@@ -106,6 +106,7 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
 
         let sym_kinds: FxHashSet<&str> = plugin.symbol_node_kinds().iter().copied().collect();
         let ref_kinds: FxHashSet<&str> = plugin.ref_node_kinds().iter().copied().collect();
+        let builtins: FxHashSet<&str> = plugin.builtin_type_names().iter().copied().collect();
         let has_rules = !sym_kinds.is_empty() || !ref_kinds.is_empty();
 
         // Per-node-kind counters
@@ -141,8 +142,10 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
 
             walk_and_classify(
                 tree.root_node(),
+                content.as_bytes(),
                 &sym_kinds,
                 &ref_kinds,
+                &builtins,
                 &mut sym_kind_occurrences,
                 &mut ref_kind_occurrences,
                 &mut structural_counts,
@@ -302,8 +305,10 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
 
 fn walk_and_classify(
     node: tree_sitter::Node,
+    src: &[u8],
     sym_kinds: &FxHashSet<&str>,
     ref_kinds: &FxHashSet<&str>,
+    builtins: &FxHashSet<&str>,
     sym_counts: &mut FxHashMap<String, u64>,
     ref_counts: &mut FxHashMap<String, u64>,
     structural_counts: &mut FxHashMap<String, u64>,
@@ -314,7 +319,21 @@ fn walk_and_classify(
         let kind = node.kind();
         let line = node.start_position().row as u32;
 
-        if sym_kinds.contains(kind) {
+        // Skip builtin type_identifiers from the count — extractors correctly
+        // don't emit TypeRef for these, so including them inflates the denominator.
+        let is_type_id = kind == "type_identifier" || kind == "user_type"
+            || kind == "named_type" || kind == "constant";
+        if is_type_id && !builtins.is_empty() {
+            let text = node.utf8_text(src).unwrap_or("");
+            // For qualified types like "std.io.Result", check the last segment
+            let name = text.rsplit(&['.', ':', '\\'][..]).next().unwrap_or(text);
+            if builtins.contains(name) {
+                // Don't count this node — it's a builtin that extractors correctly skip
+            } else if ref_kinds.contains(kind) {
+                *ref_counts.entry(kind.to_string()).or_insert(0) += 1;
+                ref_by_line.entry(kind.to_string()).or_default().push(line);
+            }
+        } else if sym_kinds.contains(kind) {
             *sym_counts.entry(kind.to_string()).or_insert(0) += 1;
             sym_by_line
                 .entry(kind.to_string())
@@ -335,8 +354,10 @@ fn walk_and_classify(
     for child in node.children(&mut cursor) {
         walk_and_classify(
             child,
+            src,
             sym_kinds,
             ref_kinds,
+            builtins,
             sym_counts,
             ref_counts,
             structural_counts,

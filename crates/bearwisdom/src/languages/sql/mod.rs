@@ -52,4 +52,8 @@ impl LanguagePlugin for SqlPlugin {
             "type_name",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

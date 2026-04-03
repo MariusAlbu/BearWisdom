@@ -100,4 +100,8 @@ impl LanguagePlugin for TypeScriptPlugin {
             "tagged_template_expression",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["string", "number", "boolean", "void", "any", "unknown", "never", "undefined", "null", "object", "symbol", "bigint"]
+    }
 }

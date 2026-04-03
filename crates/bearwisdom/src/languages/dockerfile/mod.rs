@@ -52,4 +52,8 @@ impl LanguagePlugin for DockerfilePlugin {
             "from_instruction",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

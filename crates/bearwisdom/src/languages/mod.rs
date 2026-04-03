@@ -59,6 +59,11 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Node kinds that SHOULD produce refs/edges, per the extraction rules.
     /// Used by `bw coverage` to measure extraction completeness.
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+
+    /// Type names that are language builtins and should NOT produce TypeRef.
+    /// Used by `bw coverage` to exclude builtin type_identifiers from the
+    /// denominator — they're correctly skipped by extractors.
+    fn builtin_type_names(&self) -> &[&str] { &[] }
 }
 
 // ---------------------------------------------------------------------------

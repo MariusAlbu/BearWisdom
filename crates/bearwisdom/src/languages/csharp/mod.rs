@@ -92,4 +92,8 @@ impl LanguagePlugin for CSharpPlugin {
             "generic_name",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["int", "string", "bool", "void", "float", "double", "decimal", "byte", "sbyte", "short", "ushort", "uint", "long", "ulong", "char", "object", "dynamic", "var", "nint", "nuint"]
+    }
 }

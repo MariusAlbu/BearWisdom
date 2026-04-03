@@ -83,4 +83,8 @@ impl LanguagePlugin for RustLangPlugin {
             "abstract_type",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["bool", "char", "str", "i8", "i16", "i32", "i64", "i128", "isize", "u8", "u16", "u32", "u64", "u128", "usize", "f32", "f64", "Self"]
+    }
 }

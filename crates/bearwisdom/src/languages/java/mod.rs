@@ -83,4 +83,8 @@ impl LanguagePlugin for JavaPlugin {
             "extends_interfaces",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["int", "long", "short", "byte", "float", "double", "boolean", "char", "void", "var"]
+    }
 }

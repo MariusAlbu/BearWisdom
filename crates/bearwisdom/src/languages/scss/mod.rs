@@ -58,4 +58,8 @@ impl LanguagePlugin for ScssPlugin {
             "call_expression",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

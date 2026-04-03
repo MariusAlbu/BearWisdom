@@ -61,4 +61,8 @@ impl LanguagePlugin for JavascriptPlugin {
             "jsx_self_closing_element",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }

@@ -68,4 +68,8 @@ impl LanguagePlugin for PythonPlugin {
             "union_type",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["int", "float", "str", "bool", "bytes", "None", "list", "dict", "set", "tuple", "type", "object", "complex"]
+    }
 }

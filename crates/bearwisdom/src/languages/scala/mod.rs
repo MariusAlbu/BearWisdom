@@ -77,4 +77,8 @@ impl LanguagePlugin for ScalaPlugin {
             "infix_expression",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &["Int", "Long", "Double", "Float", "String", "Boolean", "Unit", "Any", "AnyRef", "AnyVal", "Nothing", "Null", "Char", "Byte", "Short"]
+    }
 }

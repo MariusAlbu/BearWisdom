@@ -65,4 +65,8 @@ impl LanguagePlugin for AngularPlugin {
             "event_binding",
         ]
     }
+
+    fn builtin_type_names(&self) -> &[&str] {
+        &[]
+    }
 }
