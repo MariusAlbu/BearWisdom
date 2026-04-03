@@ -73,6 +73,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
 use std::sync::Arc;
 
 pub mod angular;
+pub mod astro;
 pub mod bash;
 pub mod c_lang;
 mod generic;
@@ -88,6 +89,7 @@ pub mod javascript;
 pub mod kotlin;
 pub mod nix;
 pub mod php;
+pub mod prisma;
 pub mod proto;
 pub mod python;
 pub mod ruby;
@@ -95,9 +97,11 @@ pub mod rust_lang;
 pub mod scala;
 pub mod scss;
 pub mod sql;
+pub mod svelte;
 pub mod swift;
 pub mod typescript;
 pub mod vue;
+pub mod zig;
 
 /// Build the default language registry with all built-in plugins.
 ///
@@ -111,6 +115,7 @@ pub fn default_registry() -> LanguageRegistry {
     let mut reg = LanguageRegistry::new(generic);
 
     reg.register(Arc::new(angular::AngularPlugin));
+    reg.register(Arc::new(astro::AstroPlugin));
     reg.register(Arc::new(bash::BashPlugin));
     reg.register(Arc::new(c_lang::CLangPlugin));
     reg.register(Arc::new(csharp::CSharpPlugin));
@@ -125,6 +130,7 @@ pub fn default_registry() -> LanguageRegistry {
     reg.register(Arc::new(kotlin::KotlinPlugin));
     reg.register(Arc::new(nix::NixPlugin));
     reg.register(Arc::new(php::PhpPlugin));
+    reg.register(Arc::new(prisma::PrismaPlugin));
     reg.register(Arc::new(proto::ProtoPlugin));
     reg.register(Arc::new(python::PythonPlugin));
     reg.register(Arc::new(ruby::RubyPlugin));
@@ -132,9 +138,11 @@ pub fn default_registry() -> LanguageRegistry {
     reg.register(Arc::new(scala::ScalaPlugin));
     reg.register(Arc::new(scss::ScssPlugin));
     reg.register(Arc::new(sql::SqlPlugin));
+    reg.register(Arc::new(svelte::SveltePlugin));
     reg.register(Arc::new(swift::SwiftPlugin));
     reg.register(Arc::new(typescript::TypeScriptPlugin));
     reg.register(Arc::new(vue::VuePlugin));
+    reg.register(Arc::new(zig::ZigPlugin));
 
     reg
 }

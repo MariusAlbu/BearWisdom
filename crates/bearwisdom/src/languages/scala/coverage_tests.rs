@@ -326,3 +326,99 @@ fn ref_infix_expression() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Gap-coverage tests — nested contexts
+// ---------------------------------------------------------------------------
+
+#[test]
+fn symbol_val_in_function_block() {
+    // val_definition inside a function body block must be extracted.
+    let r = extract("def outer(): Int = {\n  val inner = 42\n  inner\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "inner"),
+        "expected nested val 'inner'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_nested_def_in_function_block() {
+    // function_definition inside a function body block.
+    let r = extract("def outer(): Int = {\n  def helper(x: Int): Int = x + 1\n  helper(5)\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "helper"),
+        "expected nested def 'helper'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_var_in_function_block() {
+    // var_definition inside a function body block.
+    let r = extract("def outer(): Unit = {\n  var count = 0\n  count += 1\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "count"),
+        "expected nested var 'count'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_val_in_val_block() {
+    // val_definition nested inside another val's block initializer.
+    let r = extract("val x = {\n  val inner = 1\n  inner\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "inner"),
+        "expected nested val 'inner' in val block; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_infix_in_function_block() {
+    // infix_expression inside a function body block emits Calls.
+    let r = extract("def f(xs: List[Int]): List[Int] = {\n  xs map (_ + 1)\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
+        "expected Calls 'map'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_extends_with_stable_type_identifier() {
+    // extends with fully-qualified type: `class Foo extends foo.Bar`
+    let r = extract("class Foo extends foo.Bar");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Bar" && rf.kind == EdgeKind::Inherits),
+        "expected Inherits 'Bar' from stable_type_identifier; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_extends_multiple_with_clauses() {
+    // `class Foo extends Bar with Baz with Qux`
+    let r = extract("class Foo extends Bar with Baz with Qux");
+    let refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Inherits || rf.kind == EdgeKind::Implements).collect();
+    assert!(
+        refs.iter().any(|rf| rf.target_name == "Bar"),
+        "expected Inherits 'Bar'; got {:?}", refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        refs.iter().any(|rf| rf.target_name == "Baz" || refs.iter().any(|rf2| rf2.target_name == "Qux")),
+        "expected Implements mixins; got {:?}", refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_given_definition_type_ref() {
+    // given_definition emits TypeRef for its return type.
+    let r = extract("given ord: Ordering[String] = Ordering.String");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Ordering" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef 'Ordering'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

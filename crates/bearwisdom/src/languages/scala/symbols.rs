@@ -660,17 +660,20 @@ pub(super) fn extract_extends_with_node(
     source_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    let kind = match node.kind() {
-        "extends_clause" => EdgeKind::Inherits,
-        "with_clause" => EdgeKind::Implements,
-        _ => return,
-    };
+    let is_extends = matches!(node.kind(), "extends_clause");
+    if !is_extends && node.kind() != "with_clause" {
+        return;
+    }
     let mut cursor = node.walk();
     let mut first = true;
     for child in node.children(&mut cursor) {
-        let name = type_name_from_node(&child, src);
-        if !name.is_empty() {
-            let edge = if kind == EdgeKind::Inherits && first {
+        // Collect all type names from this child, including multi-type compound nodes.
+        let names = collect_type_names_from_node(&child, src);
+        for name in names {
+            if name.is_empty() {
+                continue;
+            }
+            let edge = if is_extends && first {
                 first = false;
                 EdgeKind::Inherits
             } else {
@@ -685,6 +688,37 @@ pub(super) fn extract_extends_with_node(
                 chain: None,
             });
         }
+    }
+}
+
+/// Collect all type names from a node that may represent one or more types
+/// (e.g. a `compound_type` that contains multiple `type_identifier` nodes).
+fn collect_type_names_from_node(node: &Node, src: &[u8]) -> Vec<String> {
+    match node.kind() {
+        "type_identifier" | "identifier" => {
+            let n = type_name_from_node(node, src);
+            if n.is_empty() { vec![] } else { vec![n] }
+        }
+        "stable_type_identifier" => {
+            let full = super::helpers::node_text(*node, src);
+            let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
+            if simple.is_empty() { vec![] } else { vec![simple] }
+        }
+        "generic_type" => {
+            // The base type (before type args).
+            let n = type_name_from_node(node, src);
+            if n.is_empty() { vec![] } else { vec![n] }
+        }
+        "compound_type" | "with_type" => {
+            // compound_type may contain multiple types joined by `with`.
+            let mut names = Vec::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                names.extend(collect_type_names_from_node(&child, src));
+            }
+            names
+        }
+        _ => vec![],
     }
 }
 
@@ -705,8 +739,8 @@ pub(super) fn extract_extends_with(
             "extends_clause" => {
                 let mut ec = child.walk();
                 for type_node in child.children(&mut ec) {
-                    let name = type_name_from_node(&type_node, src);
-                    if !name.is_empty() {
+                    let names = collect_type_names_from_node(&type_node, src);
+                    for name in names {
                         let kind = if first_extends {
                             first_extends = false;
                             EdgeKind::Inherits
@@ -728,8 +762,8 @@ pub(super) fn extract_extends_with(
             "with_clause" => {
                 let mut wc = child.walk();
                 for type_node in child.children(&mut wc) {
-                    let name = type_name_from_node(&type_node, src);
-                    if !name.is_empty() {
+                    let names = collect_type_names_from_node(&type_node, src);
+                    for name in names {
                         refs.push(ExtractedRef {
                             source_symbol_index: source_idx,
                             target_name: name,

@@ -153,13 +153,17 @@ pub(super) fn extract_node<'a>(
                         // infix_expression or call_expression directly — handle the root too.
                         dispatch_body_node(body, src, sym_idx, refs);
                         extract_calls_from_body(&body, src, sym_idx, refs);
+                        // Recurse into the body with extract_node so that nested val/var/def
+                        // definitions inside blocks are extracted as symbols, and infix/call
+                        // expressions in deeply-nested blocks are visited.
+                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
 
             "val_definition" | "var_definition" | "val_declaration" | "var_declaration" => {
                 // Extract type annotation *before* pushing the symbol (so we have the right index).
-                if let Some(type_node) = child.child_by_field_name("type") {
+                let sym_idx = if let Some(type_node) = child.child_by_field_name("type") {
                     // For declarations, use parent_index; for definitions, we'll use the symbol we just created.
                     let idx_to_use = match child.kind() {
                         "val_definition" | "var_definition" => symbols.len(), // Will be the index of the symbol we push below
@@ -167,8 +171,19 @@ pub(super) fn extract_node<'a>(
                     };
                     push_val_var(&child, src, scope_tree, symbols, parent_index);
                     extract_type_refs_from_type_node(&type_node, src, idx_to_use, refs);
+                    idx_to_use
                 } else {
+                    let idx = symbols.len();
                     push_val_var(&child, src, scope_tree, symbols, parent_index);
+                    idx
+                };
+                // Recurse into the value expression for nested val/var/def definitions
+                // (e.g. `val x = { val inner = ...; inner }`) and call edges.
+                if matches!(child.kind(), "val_definition" | "var_definition") {
+                    if let Some(value_node) = child.child_by_field_name("value") {
+                        extract_calls_from_body(&value_node, src, sym_idx, refs);
+                        extract_node(value_node, src, scope_tree, symbols, refs, Some(sym_idx));
+                    }
                 }
             }
 
