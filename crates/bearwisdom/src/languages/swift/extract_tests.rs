@@ -114,6 +114,59 @@ struct Matrix {
     }
 
     #[test]
+    fn nested_class_property_extracted() {
+        // Properties inside nested types should be extracted
+        let src = r#"
+class Outer {
+    class Inner {
+        var value: String = ""
+        let constant: Int = 0
+    }
+    struct Config {
+        var timeout: Int = 30
+    }
+}
+"#;
+        let r = super::extract::extract(src);
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(r.symbols.iter().any(|s| s.name == "value"), "missing 'value': {:?}", names);
+        assert!(r.symbols.iter().any(|s| s.name == "timeout"), "missing 'timeout': {:?}", names);
+    }
+
+    #[test]
+    fn local_property_in_function_body_extracted() {
+        // Local property_declaration nodes inside function bodies should produce symbols
+        let src = r#"
+func setup() {
+    let timeout: Int = 30
+    var config = Config()
+    let nested: NestedType = NestedType()
+}
+"#;
+        let r = super::extract::extract(src);
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(r.symbols.iter().any(|s| s.name == "timeout"), "missing 'timeout': {:?}", names);
+    }
+
+    #[test]
+    fn swiftui_property_wrappers_extracted() {
+        // SwiftUI @State, @Binding, @Environment property wrappers should produce symbols
+        let src = r#"
+struct AppView: View {
+    @Environment(\.modelContext) private var context: ModelContext
+    @Binding var selectedTab: AppTab
+    @State var iosTabs = IOSTabs.shared
+    @State private var isPresented = false
+}
+"#;
+        let r = super::extract::extract(src);
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(r.symbols.iter().any(|s| s.name == "context"), "missing 'context': {:?}", names);
+        assert!(r.symbols.iter().any(|s| s.name == "selectedTab"), "missing 'selectedTab': {:?}", names);
+        assert!(r.symbols.iter().any(|s| s.name == "iosTabs"), "missing 'iosTabs': {:?}", names);
+    }
+
+    #[test]
     fn properties_in_extension_and_enum_bodies_extracted() {
         // Regression test: properties in extension and enum bodies must be extracted.
         let src = r#"

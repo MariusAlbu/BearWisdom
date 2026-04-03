@@ -91,6 +91,12 @@ pub(super) fn emit_annotation_ref_pub(
     emit_annotation(node, src, source_symbol_index, refs);
 }
 
+/// Public accessor to extract an annotation name — used by scan_all_type_refs
+/// in extract.rs to ensure every annotation node in the tree emits a TypeRef.
+pub(super) fn annotation_name_pub(node: &Node, src: &[u8]) -> Option<String> {
+    annotation_name(node, src)
+}
+
 /// Extract the annotation name.
 ///
 /// Kotlin annotation shape:

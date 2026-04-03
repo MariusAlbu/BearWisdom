@@ -144,6 +144,9 @@ pub(super) fn extract_node<'a>(
                         .or_else(|| find_child_by_kind(&child, "code_block"));
                     if let Some(b) = body {
                         extract_calls_from_body(&b, src, sym_idx, refs);
+                        // Recurse with extract_node to pick up property_declaration symbols
+                        // (local let/var) and nested function declarations inside the body.
+                        extract_node(b, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
@@ -180,12 +183,22 @@ pub(super) fn extract_node<'a>(
                         .or_else(|| find_child_by_kind(&child, "function_body"));
                     if let Some(b) = body {
                         extract_calls_from_body(&b, src, sym_idx, refs);
+                        // Recurse to pick up local property_declaration and nested
+                        // function declarations inside the initializer body.
+                        extract_node(b, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
 
             "deinit_declaration" => {
                 push_deinit(&child, src, scope_tree, symbols, parent_index);
+                // Recurse into body for local declarations.
+                let body = child.child_by_field_name("body")
+                    .or_else(|| find_child_by_kind(&child, "code_block"));
+                if let Some(b) = body {
+                    let sym_idx = parent_index.unwrap_or(symbols.len().saturating_sub(1));
+                    extract_node(b, src, scope_tree, symbols, refs, Some(sym_idx));
+                }
             }
 
             "guard_statement" => {
@@ -232,20 +245,24 @@ pub(super) fn extract_node<'a>(
             "subscript_declaration" => {
                 let idx = push_subscript(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
-                    // Recurse into the computed_property body for calls.
+                    // Recurse into the computed_property body for calls and local decls.
                     let body = find_child_by_kind(&child, "computed_property")
                         .or_else(|| find_child_by_kind(&child, "code_block"));
                     if let Some(b) = body {
                         extract_calls_from_body(&b, src, sym_idx, refs);
+                        extract_node(b, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
 
             // Call expressions outside a function body (e.g. computed property
             // defaults, top-level expressions, stored property initializers).
+            // Also recurse with extract_node so property_declaration and function_declaration
+            // nodes inside trailing closures (e.g. `foo { let x = ... }`) produce symbols.
             "call_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 extract_calls_from_body(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             // Standalone attribute at scope level (not already attached to a

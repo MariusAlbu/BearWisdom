@@ -133,19 +133,7 @@ pub(super) fn is_kotlin_builtin(name: &str) -> bool {
             | "Pair"
             | "Triple"
             | "Sequence"
-            // common annotations (treated as builtins — always on classpath)
-            | "Test"
-            | "BeforeEach"
-            | "AfterEach"
-            | "DisplayName"
-            | "Nested"
-            | "Composable"
+            // Kotlin stdlib serialization (kotlin.Serializable is stdlib)
             | "Serializable"
-            | "Inject"
-            | "Autowired"
-            | "Service"
-            | "Repository"
-            | "Controller"
-            | "Component"
     )
 }

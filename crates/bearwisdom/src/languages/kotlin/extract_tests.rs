@@ -111,3 +111,100 @@ class Circle : Drawable {
         );
         assert!(r.symbols.iter().any(|s| s.name == "Circle" && s.kind == SymbolKind::Class));
     }
+
+    #[test]
+    fn annotated_local_var_in_function_body() {
+        // @Annotation before local val/var in function body should emit TypeRef for annotation
+        let src = r#"
+fun foo() {
+    @Suppress("UNCHECKED_CAST")
+    val x: List<String> = listOf()
+}
+"#;
+        let r = extract::extract(src);
+        assert!(
+            r.refs.iter().any(|rf| rf.target_name == "Suppress"),
+            "expected Suppress annotation ref; refs: {:?}",
+            r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn init_block_property_extracted() {
+        // Properties inside init blocks should produce Property symbols
+        let src = r#"
+class Config {
+    val x: Int
+    init {
+        val temp: TempType = TempType()
+        x = temp.value
+    }
+}
+"#;
+        let r = extract::extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "temp"),
+            "expected 'temp' in init block; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn extension_property_extracted() {
+        // Extension properties on receiver types should produce Property symbols
+        let src = r#"
+val String.reversed: String get() = this.reversed()
+var Int.doubled: Int get() = this * 2
+"#;
+        let r = extract::extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "reversed"),
+            "extension property 'reversed' not found; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn lambda_body_property_extracted() {
+        // Properties inside lambda bodies (run, let, apply, etc.) should produce symbols
+        let src = r#"
+fun setup() {
+    run {
+        val config: Config = Config()
+        val timeout = 30
+    }
+    listOf(1, 2, 3).forEach { item ->
+        val doubled: Int = item * 2
+    }
+}
+"#;
+        let r = extract::extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "config"),
+            "expected 'config' in run block; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn annotated_property_emits_inject_ref() {
+        // @Inject annotation on property should emit TypeRef
+        let src = r#"
+@Component
+class Service {
+    @Inject
+    lateinit var repo: Repository
+}
+"#;
+        let r = extract::extract(src);
+        assert!(
+            r.symbols.iter().any(|s| s.name == "repo"),
+            "expected 'repo'; symbols: {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.refs.iter().any(|rf| rf.target_name == "Inject"),
+            "expected Inject annotation ref; refs: {:?}",
+            r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+        );
+    }

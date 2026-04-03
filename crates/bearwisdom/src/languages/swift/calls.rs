@@ -182,13 +182,15 @@ fn extract_all_type_identifiers(
         match child.kind() {
             "type_identifier" | "simple_identifier" => {
                 let name = node_text(child, src);
+                let line = child.start_position().row as u32;
                 // Only emit if not a builtin (builtins are always available).
                 if !name.is_empty() && !builtins::is_swift_builtin(&name) {
-                    // Avoid duplicate if this is the same as swift_type_name output.
-                    // Check if we already emitted a ref with this name from the parent.
-                    let already_emitted = refs.iter().rev().take(10).any(|r| {
+                    // Deduplicate only if same name AND same line — different lines
+                    // need separate refs so coverage correlation matches by line.
+                    let already_emitted = refs.iter().rev().take(5).any(|r| {
                         r.source_symbol_index == source_symbol_index
                             && r.target_name == name
+                            && r.line == line
                             && r.kind == EdgeKind::TypeRef
                     });
                     if !already_emitted {
@@ -196,7 +198,7 @@ fn extract_all_type_identifiers(
                             source_symbol_index,
                             target_name: name,
                             kind: EdgeKind::TypeRef,
-                            line: child.start_position().row as u32,
+                            line,
                             module: None,
                             chain: None,
                         });
