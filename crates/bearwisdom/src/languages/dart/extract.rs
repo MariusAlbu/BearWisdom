@@ -37,6 +37,13 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     visit(tree.root_node(), source, &mut symbols, &mut refs, None, "");
 
+    // Post-traversal: scan the ENTIRE tree for type_identifiers that the
+    // walker missed (in nested type arguments, casts, etc.).
+    // Use sym_idx=0 as fallback for top-level; most will match a symbol.
+    if !symbols.is_empty() {
+        scan_all_type_identifiers(tree.root_node(), source, 0, &mut refs);
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -193,25 +200,10 @@ fn visit(
 
             "ERROR" | "MISSING" => {}
             _ => {
-                // Universal type_identifier scanner — catches type_identifiers in ANY context
-                // not covered by the explicit arms above.
-                let mut uc = child.walk();
-                for grandchild in child.children(&mut uc) {
-                    if grandchild.kind() == "type_identifier" && grandchild.is_named() {
-                        let name = node_text(grandchild, src);
-                        if !name.is_empty() && !builtins::is_dart_builtin(&name) {
-                            if let Some(idx) = parent_index {
-                                refs.push(ExtractedRef {
-                                    source_symbol_index: idx,
-                                    target_name: name,
-                                    kind: EdgeKind::TypeRef,
-                                    line: grandchild.start_position().row as u32,
-                                    module: None,
-                                    chain: None,
-                                });
-                            }
-                        }
-                    }
+                // Universal type_identifier scanner — recursively finds ALL
+                // type_identifiers in this subtree before normal recursion.
+                if let Some(idx) = parent_index {
+                    scan_all_type_identifiers(child, src, idx, refs);
                 }
                 visit(child, src, symbols, refs, parent_index, qualified_prefix);
             }
@@ -307,6 +299,35 @@ fn extract_factory_constructor_at_visit(
                 });
             }
         }
+    }
+}
+
+/// Recursively scan ALL descendants of `node` for `type_identifier` and emit TypeRef.
+/// This is the "nuclear option" — ensures no type_identifier is missed regardless of
+/// how deeply nested it is (e.g., `Map<String, List<User>>` → finds `User`).
+fn scan_all_type_identifiers(
+    node: tree_sitter::Node,
+    src: &str,
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_identifier" && child.is_named() {
+            let name = node_text(child, src);
+            if !name.is_empty() && !builtins::is_dart_builtin(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: child.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        // Recurse into ALL children regardless
+        scan_all_type_identifiers(child, src, sym_idx, refs);
     }
 }
 
