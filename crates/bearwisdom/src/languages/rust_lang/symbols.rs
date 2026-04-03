@@ -186,6 +186,9 @@ pub(super) fn extract_enum_variants(
                     parent_index,
                 });
 
+                // Extract attributes on the enum variant (e.g. #[default], #[serde(rename="...")]).
+                super::decorators::extract_decorators(&child, source, sym_idx, refs);
+
                 // Emit TypeRefs for any typed fields in the variant body.
                 // Covers tuple variants `Error(ErrorKind)` and struct variants
                 // `Point { x: f32, y: f32 }` whose field types are type_identifiers.

@@ -463,3 +463,71 @@ fn coverage_field_declaration_nested_struct_emits_inner_fields() {
         "expected Field symbol 'A' from nested struct; fields: {fields:?}"
     );
 }
+
+// ---- var_spec with anonymous struct type → Field symbols -------------------
+
+#[test]
+fn coverage_var_spec_anonymous_struct_emits_field_symbols() {
+    // `var opts struct{ Verbose bool }` — the field_declaration nodes inside the
+    // anonymous struct type must produce Field symbols.
+    let src = "package main\nvar opts struct {\n\tVerbose bool\n\tOutput string\n}";
+    let r = extract::extract(src);
+    let fields: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Field)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        fields.contains(&"Verbose"),
+        "expected Field symbol 'Verbose' from anonymous struct in var_spec; fields: {fields:?}"
+    );
+    assert!(
+        fields.contains(&"Output"),
+        "expected Field symbol 'Output' from anonymous struct in var_spec; fields: {fields:?}"
+    );
+}
+
+// ---- type_spec with type parameters (generics) → Struct symbol -------------
+
+#[test]
+fn coverage_type_spec_generic_struct_emits_struct_symbol() {
+    // `type Result[T any] struct { Value T }` — the type_parameter_declaration
+    // between the name and the struct_type must be skipped when identifying the
+    // type body, so the symbol is still emitted as Struct (not TypeAlias).
+    let src = "package main\ntype Result[T any] struct { Value T }";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "Result");
+    assert!(
+        sym.is_some(),
+        "expected symbol 'Result' from generic type_spec; symbols: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        sym.unwrap().kind,
+        SymbolKind::Struct,
+        "expected Struct kind for generic struct type_spec"
+    );
+}
+
+// ---- type_declaration inside function body → Struct/Field symbols ----------
+
+#[test]
+fn coverage_type_declaration_in_function_body_emits_struct_and_fields() {
+    // `type inner struct { X int }` declared inside a function body must produce
+    // a Struct symbol and a Field symbol for X.
+    let src = "package main\nfunc f() {\n\ttype inner struct { X int }\n\t_ = inner{}\n}";
+    let r = extract::extract(src);
+    let struct_sym = r.symbols.iter().find(|s| s.name == "inner" && s.kind == SymbolKind::Struct);
+    assert!(
+        struct_sym.is_some(),
+        "expected Struct symbol 'inner' from type_declaration in function body; symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+    let field_sym = r.symbols.iter().find(|s| s.name == "X" && s.kind == SymbolKind::Field);
+    assert!(
+        field_sym.is_some(),
+        "expected Field symbol 'X' from type_declaration in function body; symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+}

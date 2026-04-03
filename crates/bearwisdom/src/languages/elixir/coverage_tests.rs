@@ -212,3 +212,26 @@ fn ref_pipe_operator_inside_function() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_pipe_with_capture_expression() {
+    // `|> &String.upcase/1` — capture expression on pipe right side should emit Calls.
+    let r = extract("defmodule M do\n  def f(list) do\n    list |> Enum.map(&String.upcase/1)\n  end\nend");
+    // We expect at least 'map' to be extracted as a Calls edge.
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
+        "expected Calls edge for piped 'map' with capture arg; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_pipe_with_bare_function() {
+    // `list |> upcase` — bare function reference on pipe right side.
+    let r = extract("defmodule M do\n  def f(list) do\n    list |> upcase()\n  end\nend");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "upcase" && rf.kind == EdgeKind::Calls),
+        "expected Calls edge for bare piped 'upcase'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

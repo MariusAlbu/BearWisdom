@@ -367,3 +367,40 @@ fn coverage_type_arguments_in_method_call() {
         r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---- field_declaration in anonymous class body → Field symbol ---------------
+
+#[test]
+fn coverage_field_declaration_in_anonymous_class_body_from_field_initializer() {
+    // A field initialized with an anonymous class must have its field_declarations
+    // inside the anonymous class body extracted as symbols.
+    //
+    // Previously `extract_nested_classes_from_body` was not called for field
+    // initializers, so anonymous class fields were silently dropped.
+    let src = r#"
+class Outer {
+    private Comparator<String> comparator = new Comparator<String>() {
+        private int multiplier = 1;
+        @Override
+        public int compare(String a, String b) { return a.compareTo(b); }
+    };
+}
+"#;
+    let r = super::extract::extract(src);
+    let syms: Vec<(&str, crate::types::SymbolKind)> = r
+        .symbols
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind))
+        .collect();
+    assert!(
+        syms.iter().any(|(n, k)| *n == "multiplier" && *k == crate::types::SymbolKind::Field),
+        "expected Field symbol 'multiplier' from anonymous class body in field initializer; symbols: {:?}",
+        syms
+    );
+    // The compare method inside the anonymous class should also be extracted.
+    assert!(
+        syms.iter().any(|(n, k)| *n == "compare" && *k == crate::types::SymbolKind::Method),
+        "expected Method symbol 'compare' from anonymous class body in field initializer; symbols: {:?}",
+        syms
+    );
+}

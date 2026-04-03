@@ -64,11 +64,15 @@ fn cov_singleton_method_produces_method_symbol() {
     assert_eq!(sym.unwrap().kind, SymbolKind::Method);
 }
 
-/// "singleton_class" → methods inside are extracted
+/// "singleton_class" → emits a Class symbol AND methods inside are extracted
 #[test]
 fn cov_singleton_class_body_methods_extracted() {
     let src = "class Repo\n  class << self\n    def all; end\n  end\nend\n";
     let r = extract::extract(src);
+    // The singleton_class itself should produce a Class symbol (named "<<self").
+    let sc_sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class && s.name.starts_with("<<"));
+    assert!(sc_sym.is_some(), "expected Class symbol for singleton_class, got: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    // Methods defined inside the singleton_class body must also be extracted.
     let sym = r.symbols.iter().find(|s| s.name == "all");
     assert!(sym.is_some(), "expected method 'all' from singleton_class body, got: {:?}", r.symbols);
 }

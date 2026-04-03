@@ -747,6 +747,8 @@ fn extract_pipe_calls(
 ///   `validate(record)`       → "validate"   (identifier call)
 ///   `Enum.map(fn ...)`       → "map"         (dot-access call)
 ///   `String.length`          → "length"      (dot access, no parens)
+///   `&String.upcase/1`       → "upcase"      (capture expression)
+///   `&validate/1`            → "validate"    (bare capture)
 fn extract_pipe_callee_name(node: &Node, src: &str) -> Option<String> {
     match node.kind() {
         "call" => {
@@ -783,6 +785,48 @@ fn extract_pipe_callee_name(node: &Node, src: &str) -> Option<String> {
         }
         "identifier" => Some(node_text(*node, src)),
         "alias" => Some(node_text(*node, src)),
+        // Capture expressions: `&String.upcase/1`, `&validate/1`
+        // tree-sitter: unary_operator("&", binary_operator(dot_or_ident, "/", integer))
+        "unary_operator" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "binary_operator" {
+                    // The left side of the `/` is the function reference.
+                    let children: Vec<_> = {
+                        let mut c = child.walk();
+                        child.children(&mut c).collect()
+                    };
+                    // Find `/` operator, take left side.
+                    if let Some(slash_pos) = children.iter().position(|c| node_text(*c, src) == "/") {
+                        if let Some(left) = children.get(slash_pos.saturating_sub(1)) {
+                            // `left` may be a `call` (dot call) or `identifier` or `dot`.
+                            return extract_pipe_callee_name(left, src);
+                        }
+                    }
+                    // No slash — treat the whole expression as the name source.
+                    return extract_pipe_callee_name(&child, src);
+                }
+                // `&identifier` without arity
+                if child.kind() == "identifier" {
+                    return Some(node_text(child, src));
+                }
+                if child.kind() == "call" || child.kind() == "dot" {
+                    return extract_pipe_callee_name(&child, src);
+                }
+            }
+            None
+        }
+        // `dot` node directly (qualified access without parens): `String.upcase`
+        "dot" => {
+            let mut cursor = node.walk();
+            let mut last_ident: Option<String> = None;
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" {
+                    last_ident = Some(node_text(child, src));
+                }
+            }
+            last_ident
+        }
         _ => None,
     }
 }

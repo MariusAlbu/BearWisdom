@@ -126,6 +126,9 @@ pub(super) fn extract_impl(
                 if let Some(sym) = extract_method_from_fn(&child, source, None, &impl_prefix) {
                     let idx = symbols.len();
                     symbols.push(sym);
+                    // Extract attributes on the method (e.g. #[test], #[tokio::test],
+                    // #[instrument]) — these are `attribute_item` previous siblings.
+                    super::decorators::extract_decorators(&child, source, idx, refs);
                     // Emit TypeRefs for parameter/return types in the signature.
                     super::symbols::extract_fn_signature_type_refs(&child, source, idx, refs);
                     {

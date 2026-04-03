@@ -83,6 +83,19 @@ fn extract_body_with_symbols_inner(
                 extract_refs_from_body(&child, source, enclosing_idx, refs);
             }
 
+            // `type inner struct { X int }` — type declaration inside a function body.
+            // Extracts Struct/Interface/TypeAlias symbols and their fields.
+            "type_declaration" => {
+                super::symbols::extract_type_declaration(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    Some(enclosing_idx),
+                    qualified_prefix,
+                );
+            }
+
             // `for i, v := range slice { ... }`
             "for_statement" => {
                 extract_for_range_vars(&child, source, enclosing_idx, qualified_prefix, symbols, refs);

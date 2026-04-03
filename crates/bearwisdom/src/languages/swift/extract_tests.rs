@@ -112,3 +112,30 @@ struct Matrix {
         assert!(targets.contains(&"Foundation"), "missing Foundation: {targets:?}");
         assert!(targets.contains(&"UIKit"), "missing UIKit: {targets:?}");
     }
+
+    #[test]
+    fn properties_in_extension_and_enum_bodies_extracted() {
+        // Regression test: properties in extension and enum bodies must be extracted.
+        let src = r#"
+class Foo {
+    var a: Int = 0
+}
+
+extension Foo {
+    var b: String { return "hello" }
+    func bar() {}
+}
+
+enum MyEnum {
+    case x
+    var label: String { return "" }
+    func method() {}
+}
+"#;
+        let r = super::extract::extract(src);
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(r.symbols.iter().any(|s| s.name == "b"), "missing 'b' from extension: {:?}", names);
+        assert!(r.symbols.iter().any(|s| s.name == "label"), "missing 'label' from enum: {:?}", names);
+        assert!(r.symbols.iter().any(|s| s.name == "bar"), "missing 'bar' function from extension: {:?}", names);
+        assert!(r.symbols.iter().any(|s| s.name == "method"), "missing 'method' function from enum: {:?}", names);
+    }

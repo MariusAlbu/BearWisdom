@@ -211,14 +211,38 @@ pub(super) fn extract_class_body(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "method_signature" | "function_signature" => {
+            "method_signature" => {
+                // A method_signature may wrap a factory_constructor_signature, constructor_signature,
+                // getter/setter, or regular function_signature.  Walk named children to decide.
+                let mut handled = false;
+                let mut mc = child.walk();
+                for inner in child.named_children(&mut mc) {
+                    match inner.kind() {
+                        "factory_constructor_signature" | "redirecting_factory_constructor_signature" => {
+                            extract_factory_constructor(&inner, src, symbols, parent_index, qualified_prefix);
+                            handled = true;
+                            break;
+                        }
+                        "constructor_signature" => {
+                            extract_constructor(&inner, src, symbols, parent_index, qualified_prefix);
+                            handled = true;
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                if !handled {
+                    extract_method(&child, src, symbols, refs, parent_index, qualified_prefix);
+                }
+            }
+            "function_signature" => {
                 extract_method(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "constructor_signature" => {
                 extract_constructor(&child, src, symbols, parent_index, qualified_prefix);
             }
             // `factory ClassName(...)` — emit as Constructor symbol.
-            "factory_constructor_signature" => {
+            "factory_constructor_signature" | "redirecting_factory_constructor_signature" => {
                 extract_factory_constructor(&child, src, symbols, parent_index, qualified_prefix);
             }
             "field_declaration" | "initialized_variable_definition" => {

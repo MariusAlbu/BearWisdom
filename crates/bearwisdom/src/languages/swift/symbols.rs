@@ -91,7 +91,75 @@ pub(super) fn recurse_enum_body(
                         }
                     }
                 }
+                // Properties (computed or stored) inside enums — push directly.
+                "property_declaration" | "stored_property" | "variable_declaration"
+                | "willSet_didSet_block" | "computed_property" => {
+                    let pre_len = symbols.len();
+                    push_property(&item, src, scope_tree, symbols, parent_index);
+                    let sym_idx = if symbols.len() > pre_len {
+                        pre_len
+                    } else {
+                        parent_index.unwrap_or(0)
+                    };
+                    if symbols.len() > pre_len {
+                        super::decorators::extract_decorators(&item, src, pre_len, refs);
+                    }
+                    super::calls::extract_all_type_identifiers_from_node(&item, src, sym_idx, refs);
+                    let body = item.child_by_field_name("value")
+                        .or_else(|| find_child_by_kind(&item, "computed_property"))
+                        .or_else(|| find_child_by_kind(&item, "code_block"));
+                    if let Some(b) = body {
+                        super::calls::extract_calls_from_body(&b, src, sym_idx, refs);
+                    }
+                }
+                // Functions and other declaration kinds — route through the standard walker.
+                // `extract_node` receives a PARENT node and iterates its children.  Since `item`
+                // is already the declaration node itself, we need a small wrapper: pass a synthetic
+                // parent whose only child is `item` — but tree-sitter nodes don't support that.
+                // Instead, call the individual dispatch functions directly for known kinds.
+                "function_declaration" => {
+                    let idx = push_function_decl(&item, src, scope_tree, symbols, parent_index);
+                    if let Some(sym_idx) = idx {
+                        super::decorators::extract_decorators(&item, src, sym_idx, refs);
+                        super::extract::extract_function_type_refs(&item, src, sym_idx, refs);
+                        let body = item.child_by_field_name("body")
+                            .or_else(|| find_child_by_kind(&item, "code_block"));
+                        if let Some(b) = body {
+                            super::calls::extract_calls_from_body(&b, src, sym_idx, refs);
+                        }
+                    }
+                }
+                "initializer_declaration" | "init_declaration" => {
+                    let idx = push_init(&item, src, scope_tree, symbols, parent_index);
+                    if let Some(sym_idx) = idx {
+                        let body = item.child_by_field_name("body")
+                            .or_else(|| find_child_by_kind(&item, "code_block"))
+                            .or_else(|| find_child_by_kind(&item, "function_body"));
+                        if let Some(b) = body {
+                            super::calls::extract_calls_from_body(&b, src, sym_idx, refs);
+                        }
+                    }
+                }
+                "typealias_declaration" => {
+                    push_typealias(&item, src, scope_tree, symbols, refs, parent_index);
+                }
+                "subscript_declaration" => {
+                    let idx = push_subscript(&item, src, scope_tree, symbols, parent_index);
+                    if let Some(sym_idx) = idx {
+                        let body = find_child_by_kind(&item, "computed_property")
+                            .or_else(|| find_child_by_kind(&item, "code_block"));
+                        if let Some(b) = body {
+                            super::calls::extract_calls_from_body(&b, src, sym_idx, refs);
+                        }
+                    }
+                }
+                "class_declaration" => {
+                    // Nested type declarations inside enums.
+                    handle_class_declaration(&item, src, scope_tree, symbols, refs, parent_index);
+                }
                 _ => {
+                    // For any other item, walk its children through extract_node so that
+                    // nested declarations inside wrappers are still found.
                     super::extract::extract_node(item, src, scope_tree, symbols, refs, parent_index);
                 }
             }

@@ -41,6 +41,39 @@ fn symbol_enum_class_body() {
 }
 
 #[test]
+fn symbol_property_in_enum_body() {
+    // Properties defined inside an enum body must be extracted as Property symbols.
+    let r = extract("enum Status {\n    case active\n    var label: String { return \"\" }\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "label"),
+        "expected property 'label' inside enum body; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_function_in_enum_body() {
+    // Functions defined inside an enum body must be extracted.
+    let r = extract("enum Color {\n    case red\n    func describe() -> String { return \"\" }\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "describe"),
+        "expected function 'describe' inside enum body; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_property_in_extension_body() {
+    // Properties defined inside an extension body must be extracted.
+    let r = extract("class Foo {}\nextension Foo {\n    var bar: Int { return 0 }\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "bar"),
+        "expected property 'bar' inside extension body; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn symbol_function_declaration() {
     let r = extract("func greet() {}");
     assert!(

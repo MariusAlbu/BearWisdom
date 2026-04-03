@@ -742,3 +742,42 @@ fn coverage_let_declaration_generic_type_annotation_emits_type_ref() {
         "expected TypeRef to Item from Vec<Item> in let binding; refs: {type_refs:?}"
     );
 }
+
+// ---- attribute_item on impl method → TypeRef --------------------------------
+
+#[test]
+fn coverage_attribute_item_on_impl_method_emits_type_ref() {
+    // `#[tokio::test]` on an impl method must produce a TypeRef, ensuring that
+    // attribute_item nodes on methods inside impl blocks are extracted.
+    let src = "struct Server;\nimpl Server {\n    #[tokio::test]\n    fn test_run(&self) {}\n}";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"test"),
+        "expected TypeRef to 'test' from #[tokio::test] on impl method; refs: {type_refs:?}"
+    );
+}
+
+// ---- attribute_item on enum variant → TypeRef --------------------------------
+
+#[test]
+fn coverage_attribute_item_on_enum_variant_emits_type_ref() {
+    // `#[default]` on an enum variant must produce a TypeRef.
+    let src = "#[derive(Default)]\nenum Color {\n    #[default]\n    Red,\n    Blue,\n}";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"default"),
+        "expected TypeRef to 'default' from #[default] on enum variant; refs: {type_refs:?}"
+    );
+}

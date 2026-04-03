@@ -506,7 +506,14 @@ fn extract_type_spec(
     // `named_children` now holds [type_body] (after removing the name node).
     // For `type Foo = Bar` the `=` is an anonymous node so it doesn't appear
     // in named_children; the type body is still the first (and only) remaining.
-    let type_node = match named_children.into_iter().next() {
+    //
+    // For generic types like `type Result[T any] struct { ... }`, tree-sitter-go
+    // emits a `type_parameter_list` or `type_parameter_declaration` node BEFORE
+    // the actual type body.  Skip over those so we find the struct_type / interface_type.
+    let type_node = match named_children
+        .into_iter()
+        .find(|n| !matches!(n.kind(), "type_parameter_list" | "type_parameter_declaration" | "type_constraints"))
+    {
         Some(n) => n,
         None => return,
     };
@@ -1151,6 +1158,7 @@ fn extract_const_var_spec(
 ) {
     let mut names: Vec<(String, u32, u32)> = Vec::new();
     let mut type_text: Option<String> = None;
+    let mut type_node_for_struct: Option<Node> = None;
     let mut past_names = false;
 
     let mut cursor = node.walk();
@@ -1172,6 +1180,12 @@ fn extract_const_var_spec(
                 ));
             }
             _ if !past_names && type_text.is_none() && !names.is_empty() => {
+                // When the declared type is an anonymous struct (e.g.
+                // `var opts struct { Verbose bool }`), remember the node so we
+                // can extract its field_declaration children below.
+                if child.kind() == "struct_type" {
+                    type_node_for_struct = Some(child);
+                }
                 type_text = Some(node_text(&child, source));
                 past_names = true;
             }
@@ -1203,9 +1217,10 @@ fn extract_const_var_spec(
             format!("{keyword} {name}")
         };
 
+        let var_idx = symbols.len();
         symbols.push(ExtractedSymbol {
-            name,
-            qualified_name,
+            name: name.clone(),
+            qualified_name: qualified_name.clone(),
             kind: SymbolKind::Variable,
             visibility,
             start_line,
@@ -1217,6 +1232,20 @@ fn extract_const_var_spec(
             scope_path: scope_from_prefix(qualified_prefix),
             parent_index,
         });
+
+        // When the declared type is an anonymous struct, extract its fields as
+        // Field symbols scoped to the variable (e.g. `var opts struct{ Verbose bool }`
+        // → Field symbols `opts.Verbose`).
+        if let Some(ref struct_node) = type_node_for_struct {
+            extract_struct_fields(
+                struct_node,
+                source,
+                symbols,
+                refs,
+                Some(var_idx),
+                &qualified_name,
+            );
+        }
     }
 }
 

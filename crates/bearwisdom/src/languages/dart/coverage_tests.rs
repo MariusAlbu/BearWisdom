@@ -279,3 +279,25 @@ fn ref_factory_constructor_signature_produces_constructor() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_factory_constructor_named_produces_constructor() {
+    // Named factory constructor: `factory Response.fromJson(...)` — must emit Constructor.
+    let r = extract("class Response {\n  final int status;\n  Response(this.status);\n  factory Response.fromJson(Map<String, dynamic> json) {\n    return Response(200);\n  }\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor),
+        "expected Constructor from named factory constructor; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_redirecting_factory_constructor_produces_constructor() {
+    // Redirecting factory constructor: `factory Foo.named() = Foo._internal;`
+    let r = extract("class Foo {\n  Foo._internal();\n  factory Foo.named() = Foo._internal;\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor),
+        "expected Constructor from redirecting factory constructor; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}

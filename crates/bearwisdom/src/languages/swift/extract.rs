@@ -316,20 +316,35 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
-            // enum_class_body / enum_body encountered directly — recurse into all items.
-            // Handles enums with methods, properties, and nested cases.
+            // enum_class_body / enum_body encountered directly (e.g. when extract_node is
+            // called on a class_declaration body that is an enum body, or via the _ fallback).
+            // Dispatch each item to the correct handler: properties get push_property directly,
+            // everything else recurses normally.  Enum cases are handled by extract_node
+            // recursing into enum_case_declaration/enum_entry children.
             "enum_class_body" | "enum_body" => {
                 let mut ec = child.walk();
                 for item in child.children(&mut ec) {
                     match item.kind() {
-                        "enum_case_declaration" | "enum_entry" => {
-                            // Enum cases — extract symbols via the standard path.
-                            extract_node(item, src, scope_tree, symbols, refs, parent_index);
+                        // Properties (computed or stored) inside enums — push directly.
+                        "property_declaration" | "stored_property" | "variable_declaration"
+                        | "willSet_didSet_block" | "computed_property" => {
+                            let pre_len = symbols.len();
+                            symbols::push_property(&item, src, scope_tree, symbols, parent_index);
+                            let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                            if symbols.len() > pre_len {
+                                decorators::extract_decorators(&item, src, pre_len, refs);
+                            }
+                            calls::extract_all_type_identifiers_from_node(&item, src, sym_idx, refs);
+                            let body = item.child_by_field_name("value")
+                                .or_else(|| find_child_by_kind(&item, "computed_property"))
+                                .or_else(|| find_child_by_kind(&item, "code_block"));
+                            if let Some(b) = body {
+                                calls::extract_calls_from_body(&b, src, sym_idx, refs);
+                            }
                         }
                         _ => {
-                            // Methods, properties, nested types inside enum.
+                            // Recurse for enum cases, functions, nested types, etc.
                             extract_node(item, src, scope_tree, symbols, refs, parent_index);
-                            // Also scan for type_identifiers.
                             if let Some(sym_idx) = parent_index {
                                 calls::extract_all_type_identifiers_from_node(&item, src, sym_idx, refs);
                             }
@@ -363,7 +378,7 @@ pub(super) fn extract_node<'a>(
 /// Swift grammar (tree-sitter-swift 0.7.1):
 ///   `function_declaration` has `parameter` as direct named children,
 ///   and `return_type` as a field (not a `function_return_type` child node).
-fn extract_function_type_refs(
+pub(super) fn extract_function_type_refs(
     node: &Node,
     src: &[u8],
     source_symbol_index: usize,

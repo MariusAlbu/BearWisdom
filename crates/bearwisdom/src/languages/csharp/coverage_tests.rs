@@ -436,3 +436,19 @@ fn coverage_generic_name() {
         r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---- attribute on property_declaration → TypeRef ---------------------------
+
+#[test]
+fn coverage_attribute_on_property_declaration_emits_type_ref() {
+    // Attributes on properties (e.g. [Required], [JsonProperty]) must produce
+    // TypeRef edges.  Previously `extract_decorators` was not called for
+    // `property_declaration` nodes.
+    let src = "public class Entity {\n    [Required]\n    public string Name { get; set; }\n}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Required" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef for [Required] attribute on property; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}

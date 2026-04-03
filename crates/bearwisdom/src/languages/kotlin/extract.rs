@@ -103,6 +103,7 @@ pub(super) fn extract_node<'a>(
             "companion_object" => {
                 let idx = push_companion_object(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
                     extract_delegation_specifiers(&child, src, sym_idx, refs);
                     // `class_body` is a non-field child of companion_object.
                     if let Some(body) = find_child_by_kind(&child, "class_body") {
@@ -144,6 +145,9 @@ pub(super) fn extract_node<'a>(
                     if let Some(b) = body {
                         extract_calls_from_body(&b, src, sym_idx, refs);
                         extract_lambda_params(&b, src, sym_idx, symbols);
+                        // Recurse with extract_node so local property_declaration nodes inside
+                        // the function body produce Property symbols (val/var inside functions).
+                        extract_node(b, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
@@ -159,6 +163,8 @@ pub(super) fn extract_node<'a>(
                 let pre_len = symbols.len();
                 push_property_decl(&child, src, scope_tree, symbols, parent_index);
                 let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                // Emit TypeRef edges for annotations on this property (@Inject, @Autowired, etc.).
+                extract_decorators(&child, src, sym_idx, refs);
                 // In kotlin-ng, the declared type lives inside:
                 //   property_declaration → variable_declaration → type → user_type | nullable_type | ...
                 // Run the full calls extractor over the property_declaration node so

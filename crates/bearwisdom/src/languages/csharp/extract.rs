@@ -388,6 +388,10 @@ fn extract_node_inner(
 
             "property_declaration" => {
                 symbols::push_property_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
+                // Emit TypeRef edges for attributes on the property
+                // (e.g. [Required], [JsonProperty("name")], [Key]).
+                let prop_idx = if !symbols.is_empty() { symbols.len() - 1 } else { 0 };
+                decorators::extract_decorators(child, src, prop_idx, refs);
                 // Expression-body property: `public int Count => _items.Count();`
                 // tree-sitter: property_declaration → arrow_expression_clause (field: "value")
                 // Also handles `= expr;` initializer (also field: "value").

@@ -261,6 +261,40 @@ pub(super) fn extract_node(
                 for declarator in child.children(&mut fd_cursor) {
                     if declarator.kind() == "variable_declarator" {
                         if let Some(init) = declarator.child_by_field_name("value") {
+                            // Extract anonymous class bodies from the initializer.
+                            // `Runnable r = new Runnable() { void run() {} };`
+                            // The init value may itself BE an object_creation_expression with
+                            // an inline class_body, or it may contain one nested deeper.
+                            if init.kind() == "object_creation_expression" {
+                                // Directly scan for a class_body child.
+                                let mut oc = init.walk();
+                                for oc_child in init.children(&mut oc) {
+                                    if oc_child.kind() == "class_body"
+                                        || oc_child.kind() == "anonymous_class_body"
+                                    {
+                                        extract_node(
+                                            oc_child,
+                                            src,
+                                            scope_tree,
+                                            package,
+                                            symbols,
+                                            refs,
+                                            parent_index,
+                                        );
+                                    }
+                                }
+                            } else {
+                                // Recurse into the init value for nested anonymous classes.
+                                extract_nested_classes_from_body(
+                                    &init,
+                                    src,
+                                    scope_tree,
+                                    package,
+                                    symbols,
+                                    refs,
+                                    parent_index,
+                                );
+                            }
                             calls::extract_calls_from_body(&init, src, parent_index.unwrap_or(0), refs);
                         }
                     }

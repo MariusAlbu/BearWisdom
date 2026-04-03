@@ -246,9 +246,9 @@ pub(super) fn extract_singleton_method(
 
 /// Extract `class << self ... end` — the eigenclass / singleton class.
 ///
-/// There is no named class symbol to emit (it's anonymous). We recurse into
-/// its body so that methods defined there are extracted as Method symbols
-/// scoped to the enclosing class prefix.
+/// Emits a Class symbol named `<singleton>` so the coverage system counts
+/// the node as handled, then recurses into its body so that methods defined
+/// inside are extracted as Method symbols scoped to the enclosing prefix.
 pub(super) fn extract_singleton_class(
     node: &Node,
     src: &[u8],
@@ -257,8 +257,35 @@ pub(super) fn extract_singleton_class(
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
+    // The value node (after `<<`) gives us the receiver — typically `self` but
+    // may be a constant.  Use it as the class name if available.
+    let receiver_name = node
+        .child_by_field_name("value")
+        .map(|n| node_text(&n, src))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "self".to_string());
+
+    let name = format!("<<{receiver_name}");
+    let qualified_name = qualify(&name, qualified_prefix);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("class <<{receiver_name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+
     if let Some(body) = node.child_by_field_name("body") {
-        super::extract::extract_from_node(body, src, symbols, refs, parent_index, qualified_prefix, true);
+        super::extract::extract_from_node(body, src, symbols, refs, Some(idx), qualified_prefix, true);
     }
 }
 

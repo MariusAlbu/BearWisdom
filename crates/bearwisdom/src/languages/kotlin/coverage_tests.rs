@@ -378,3 +378,25 @@ fn ref_multiple_annotations() {
         "expected TypeRef to Component"
     );
 }
+
+#[test]
+fn ref_annotation_on_companion_object() {
+    // @JvmStatic annotation on companion object should emit TypeRef
+    let r = extract("class C {\n    @JvmField\n    companion object {}\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "JvmField" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef JvmField on companion_object; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_property_in_function_body() {
+    // property_declaration inside a function body should produce a Property symbol
+    let r = extract("fun setup() {\n    val timeout: Int = 30\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "timeout"),
+        "expected Property timeout from local val; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
