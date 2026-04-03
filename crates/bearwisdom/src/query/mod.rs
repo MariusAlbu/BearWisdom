@@ -13,6 +13,7 @@ pub mod context;
 pub mod diagnostics;
 pub mod investigate;
 pub mod search;
+pub mod coverage;
 pub mod full_trace;
 pub mod subgraph;
 pub mod symbol_info;

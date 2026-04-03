@@ -405,6 +405,21 @@ enum Commands {
         limit: usize,
     },
 
+    /// Analyze tree-sitter extraction coverage for a project.
+    /// Shows which node kinds appear in real code and how many symbols/refs
+    /// the extractor produces per language.
+    Coverage {
+        /// Project root path.
+        #[arg(long)]
+        project: String,
+        /// Only show this language (e.g., "typescript").
+        #[arg(long)]
+        lang: Option<String>,
+        /// Show top N node kinds per language (default: 30).
+        #[arg(long, default_value = "30")]
+        top: usize,
+    },
+
     /// Run quality checks against baseline. Indexes each project, compares
     /// against quality-baseline.json, and reports regressions/improvements.
     QualityCheck {
@@ -527,6 +542,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
         }
         Commands::Reindex { path } => cmd_reindex(&path),
         Commands::Sql { path, query, limit } => cmd_sql(&path, &query, limit),
+        Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
         Commands::QualityCheck { baseline, reindex } => {
             cmd_quality_check(&baseline, reindex)
         }
@@ -1443,6 +1459,52 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         "improvements": improvements,
         "projects": project_results,
     }))
+}
+
+// ---------------------------------------------------------------------------
+// Coverage analysis
+// ---------------------------------------------------------------------------
+
+fn cmd_coverage(project: &str, lang_filter: Option<&str>, top: usize) -> Result<String> {
+    let project_root = std::path::Path::new(project);
+    if !project_root.is_dir() {
+        anyhow::bail!("Project path does not exist: {project}");
+    }
+
+    let results = bearwisdom::query::coverage::analyze_coverage(project_root);
+
+    let filtered: Vec<_> = if let Some(lang) = lang_filter {
+        results.into_iter().filter(|r| r.language == lang).collect()
+    } else {
+        results
+    };
+
+    if filtered.is_empty() {
+        return ok_json(serde_json::json!({"languages": [], "message": "No languages with grammars found"}));
+    }
+
+    // Build a summary for each language
+    let mut summaries = Vec::new();
+    for cov in &filtered {
+        let top_kinds: Vec<_> = cov.node_kind_freq.iter().take(top).collect();
+
+        summaries.push(serde_json::json!({
+            "language": cov.language,
+            "files": cov.file_count,
+            "total_named_nodes": cov.total_named_nodes,
+            "unique_node_kinds": cov.unique_node_kinds,
+            "symbols_extracted": cov.symbols_extracted,
+            "refs_extracted": cov.refs_extracted,
+            "extraction_rate": if cov.total_named_nodes > 0 {
+                format!("{:.1}%", (cov.symbols_extracted + cov.refs_extracted) as f64 / cov.total_named_nodes as f64 * 100.0)
+            } else {
+                "N/A".to_string()
+            },
+            "top_node_kinds": top_kinds,
+        }));
+    }
+
+    ok_json(serde_json::json!({"languages": summaries}))
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.
