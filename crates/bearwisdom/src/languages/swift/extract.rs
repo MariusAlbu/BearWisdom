@@ -286,9 +286,23 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
+            // type_identifier at declaration level — emit TypeRef and recurse for nested contexts.
+            "type_identifier" | "simple_identifier" => {
+                if let Some(sym_idx) = parent_index {
+                    calls::extract_type_ref_from_swift_type(&child, src, sym_idx, refs);
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {
+                // For any other node, always check for type_identifier children.
+                // This ensures we catch type_identifiers in parameter lists, generic constraints,
+                // type bounds, and other type-bearing contexts.
+                if let Some(sym_idx) = parent_index {
+                    calls::extract_all_type_identifiers_from_node(&child, src, sym_idx, refs);
+                }
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
         }

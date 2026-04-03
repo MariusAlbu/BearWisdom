@@ -161,6 +161,16 @@ pub(super) fn extract_type_ref_from_swift_type(
 
 /// Walk a type node recursively and emit TypeRef for every type_identifier found.
 /// This ensures comprehensive coverage of generic parameters, nested types, etc.
+/// Public version for use in extract.rs.
+pub(super) fn extract_all_type_identifiers_from_node(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    extract_all_type_identifiers(node, src, source_symbol_index, refs);
+}
+
 fn extract_all_type_identifiers(
     node: &Node,
     src: &[u8],
