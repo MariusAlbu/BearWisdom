@@ -614,3 +614,167 @@ fn coverage_instanceof_still_works_after_binary_expression_removal() {
         r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Gap-closure tests — object_type recursion for sym gaps
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_property_signature_in_union_type_alias() {
+    // property_signature inside a union member of a type alias should produce symbols.
+    let r = extract::extract(
+        "type T = { host: string } | { port: number };",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "host"),
+        "property_signature in union object_type should produce Property symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "port"),
+        "property_signature in second union object_type should produce Property symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_property_signature_in_intersection_type_alias() {
+    // property_signature inside an intersection member of a type alias should produce symbols.
+    let r = extract::extract(
+        "type T = BaseType & { extra: string };",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "extra"),
+        "property_signature in intersection object_type should produce Property symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_method_signature_in_union_type_alias() {
+    // method_signature inside a union member should produce Method symbol.
+    let r = extract::extract(
+        "type Service = { find(id: number): User } | { search(q: string): User[] };",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "find"),
+        "method_signature in union object_type should produce Method symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_call_signature_in_type_alias() {
+    // call_signature inside a type alias object_type should produce a Method symbol.
+    let r = extract::extract(
+        "type Callable = { (x: number): string; };",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "call"),
+        "call_signature in type alias object_type should produce Method symbol named 'call'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_index_signature_in_type_alias() {
+    // index_signature inside a type alias object_type should produce a Property symbol.
+    let r = extract::extract(
+        "type Lookup = { [key: string]: User };",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name.contains("key")),
+        "index_signature in type alias object_type should produce Property symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Gap-closure tests — ref coverage for type_annotation / as_expression /
+// satisfies_expression in deeply nested expression contexts
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_type_annotation_in_ternary_arrow_param() {
+    // type_annotation in an arrow function inside a ternary — deeply nested.
+    let r = extract::extract(
+        "const h = flag ? (req: Request) => req.url : (req: Request) => null;",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Request"),
+        "type_annotation in ternary arrow param should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_as_expression_in_ternary() {
+    // as_expression inside a ternary should produce TypeRef.
+    let r = extract::extract(
+        "const x = flag ? (val as AdminUser) : null;",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
+        "as_expression in ternary should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_as_expression_in_array_literal() {
+    // as_expression inside an array literal.
+    let r = extract::extract(
+        "const items = [x as Widget, y as Widget];",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Widget"),
+        "as_expression in array literal should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_satisfies_expression_at_module_scope() {
+    // satisfies_expression at module scope should produce TypeRef.
+    let r = extract::extract(
+        "const config = { debug: false } satisfies AppConfig;",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AppConfig"),
+        "satisfies_expression at module scope should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_satisfies_expression_in_function_body() {
+    // satisfies_expression inside a function body.
+    let r = extract::extract(
+        "function setup() { return { key: 'val' } satisfies ServiceConfig; }",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "ServiceConfig"),
+        "satisfies_expression in function body should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
