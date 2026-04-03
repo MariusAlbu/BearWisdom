@@ -15,6 +15,7 @@
 use crate::db::Database;
 use crate::indexer::full;
 use crate::indexer::resolve;
+use crate::languages;
 use crate::types::ParsedFile;
 use crate::walker::{self, WalkedFile};
 use anyhow::{Context, Result};
@@ -213,8 +214,9 @@ pub fn incremental_index(
     }
 
         // Step 3: Parse changed/new files (parallel).
+    let registry = languages::default_registry();
     let parse_results: Vec<Result<ParsedFile>> =
-        files_to_parse.par_iter().map(full::parse_file).collect();
+        files_to_parse.par_iter().map(|w| full::parse_file(w, &registry)).collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files_to_parse.len());
     for (walked, result) in files_to_parse.iter().zip(parse_results) {
@@ -595,8 +597,9 @@ pub fn reindex_files(
     }
 
         // Parse changed/new files (parallel via Rayon, mirroring incremental_index).
+    let registry = languages::default_registry();
     let parse_results: Vec<Result<ParsedFile>> =
-        files_to_parse.par_iter().map(full::parse_file).collect();
+        files_to_parse.par_iter().map(|w| full::parse_file(w, &registry)).collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files_to_parse.len());
     for (walked, result) in files_to_parse.iter().zip(parse_results) {
@@ -765,8 +768,9 @@ pub fn reindex_files(
                 })
                 .collect();
 
+            let affected_registry = languages::default_registry();
             let affected_results: Vec<Result<ParsedFile>> =
-                affected_walked.par_iter().map(full::parse_file).collect();
+                affected_walked.par_iter().map(|w| full::parse_file(w, &affected_registry)).collect();
             let mut affected_parsed: Vec<ParsedFile> = Vec::new();
             for (walked, result) in affected_walked.iter().zip(affected_results) {
                 match result {

@@ -631,11 +631,25 @@ impl ResolutionEngine {
         let mut engine = Self {
             resolvers: FxHashMap::default(),
         };
-        for resolver in super::rules::default_resolvers() {
+        // Source resolvers from the language plugin system.
+        // During migration, the old rules::default_resolvers() is also available
+        // but this is the primary source now.
+        for resolver in crate::languages::default_resolvers() {
             for &lang_id in resolver.language_ids() {
                 engine
                     .resolvers
                     .insert(lang_id.to_string(), Arc::clone(&resolver));
+            }
+        }
+        // Also load any remaining resolvers from the old rules module
+        // that haven't been migrated yet (temporary compatibility).
+        for resolver in super::rules::default_resolvers() {
+            for &lang_id in resolver.language_ids() {
+                // Don't overwrite — languages:: takes priority
+                engine
+                    .resolvers
+                    .entry(lang_id.to_string())
+                    .or_insert_with(|| Arc::clone(&resolver));
             }
         }
         engine

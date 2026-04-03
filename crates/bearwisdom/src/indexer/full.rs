@@ -20,7 +20,7 @@
 
 use crate::db::Database;
 use crate::indexer::resolve;
-use crate::parser::extractors::{csharp, generic, go, java, python, rust, typescript};
+use crate::languages::{self, LanguageRegistry};
 use crate::types::{IndexStats, ParsedFile};
 use crate::walker::{self, WalkedFile};
 use anyhow::{Context, Result};
@@ -141,10 +141,12 @@ pub fn full_index(
     }
 
     // --- Steps 2-3: Read + parse (parallel via Rayon) ---
-    // Each file gets its own tree-sitter Parser inside parse_file() — Parser is
-    // not Send, but creating one per closure call is cheap and safe.
+    // Build the language registry once — each plugin provides its grammar,
+    // scope config, and extraction logic.  parse_file delegates to the plugin.
+    let registry = languages::default_registry();
     emit("parsing", 0.0, Some(&format!("0/{} files", files.len())));
-    let results: Vec<Result<ParsedFile>> = files.par_iter().map(parse_file).collect();
+    let results: Vec<Result<ParsedFile>> =
+        files.par_iter().map(|w| parse_file(w, &registry)).collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
     let mut files_with_errors = 0u32;
@@ -300,7 +302,7 @@ pub fn full_index(
 // Parse a single file
 // ---------------------------------------------------------------------------
 
-pub(crate) fn parse_file(walked: &WalkedFile) -> Result<ParsedFile> {
+pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
     let content = std::fs::read_to_string(&walked.absolute_path)
         .with_context(|| format!("Cannot read {}", walked.relative_path))?;
 
@@ -314,85 +316,12 @@ pub(crate) fn parse_file(walked: &WalkedFile) -> Result<ParsedFile> {
     let size = content.len() as u64;
     let line_count = content.lines().count() as u32;
 
-    let (symbols, refs, routes, db_sets, has_errors) = match walked.language {
-        // ---- lang-core: C#, TypeScript, JavaScript ----------------------------
-        "csharp" => {
-            let r = csharp::extract(&content);
-            (r.symbols, r.refs, r.routes, r.db_sets, r.has_errors)
-        }
-        "typescript" | "tsx" => {
-            // .tsx files are stored as language "typescript" but need the TSX grammar
-            // to parse JSX elements.  Check the file extension.
-            let is_tsx = walked.relative_path.ends_with(".tsx") || walked.language == "tsx";
-            let r = typescript::extract(&content, is_tsx);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "javascript" | "jsx" => {
-            let r = crate::parser::extractors::javascript::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        // ---- lang-systems: Rust, Go, C, C++ -----------------------------------
-        "rust" => {
-            let r = rust::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "go" => {
-            let r = go::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "c" | "cpp" => {
-            let r = crate::parser::extractors::c_lang::extract(&content, walked.language);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        // ---- lang-jvm: Java, Kotlin, Scala ------------------------------------
-        "java" => {
-            let r = java::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "kotlin" => {
-            let r = crate::parser::extractors::kotlin::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "scala" => {
-            let r = crate::parser::extractors::scala::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        // ---- lang-scripting: Python, Ruby, PHP, Bash, Elixir ------------------
-        "python" => {
-            let r = python::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "ruby" => {
-            let r = crate::parser::extractors::ruby::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "php" => {
-            let r = crate::parser::extractors::php::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "shell" => {
-            let r = crate::parser::extractors::bash::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "elixir" => {
-            let r = crate::parser::extractors::elixir::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        // ---- lang-mobile: Swift, Dart -----------------------------------------
-        "swift" => {
-            let r = crate::parser::extractors::swift::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        "dart" => {
-            let r = crate::parser::extractors::dart::extract(&content);
-            (r.symbols, r.refs, vec![], vec![], r.has_errors)
-        }
-        // ---- Generic fallback (all languages with a grammar) ------------------
-        _ => match generic::extract(&content, walked.language) {
-            Some(r) => (r.symbols, r.refs, vec![], vec![], r.has_errors),
-            None => (vec![], vec![], vec![], vec![], false),
-        },
-    };
+    // Dispatch to the language plugin (dedicated or generic fallback).
+    let r = registry.get(walked.language).extract(
+        &content,
+        &walked.relative_path,
+        walked.language,
+    );
 
     Ok(ParsedFile {
         path: walked.relative_path.clone(),
@@ -400,12 +329,12 @@ pub(crate) fn parse_file(walked: &WalkedFile) -> Result<ParsedFile> {
         content_hash: hash,
         size,
         line_count,
-        symbols,
-        refs,
-        routes,
-        db_sets,
+        symbols: r.symbols,
+        refs: r.refs,
+        routes: r.routes,
+        db_sets: r.db_sets,
         content: Some(content),
-        has_errors,
+        has_errors: r.has_errors,
     })
 }
 
