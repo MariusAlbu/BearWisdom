@@ -57,6 +57,11 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_node(root, src, &scope_tree, &mut symbols, &mut refs, None);
 
+    // Post-traversal: scan the entire CST for type_identifier nodes and emit
+    // TypeRef for any that the top-down walker didn't reach (e.g., inside
+    // interpolated expressions, complex type projections, or error subtrees).
+    scan_all_type_refs(root, src, &mut refs);
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -470,6 +475,48 @@ fn dispatch_body_node(
             }
         }
         _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Post-traversal full-tree type reference scan
+// ---------------------------------------------------------------------------
+
+/// Walk the entire CST and emit TypeRef edges for every `type_identifier` node
+/// found. This catches type references that the top-down walker misses due to
+/// structural gaps (e.g., type parameters in nested positions, string
+/// interpolation types, or any node kind not explicitly handled above).
+///
+/// Deduplication is handled at resolution — over-emitting is always safe.
+fn scan_all_type_refs(node: tree_sitter::Node, src: &[u8], refs: &mut Vec<ExtractedRef>) {
+    scan_type_refs_inner(node, src, 0, refs);
+}
+
+fn scan_type_refs_inner(
+    node: tree_sitter::Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if node.kind() == "type_identifier" {
+        let name = helpers::node_text(node, src);
+        if !name.is_empty() && !super::builtins::is_scala_builtin(&name) {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: name,
+                kind: crate::types::EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+        // type_identifier is a leaf — no children to recurse into.
+        return;
+    }
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        scan_type_refs_inner(child, src, source_symbol_index, refs);
     }
 }
 

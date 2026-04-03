@@ -40,7 +40,15 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut syms = Vec::new();
     let mut refs = Vec::new();
 
-    extract_from_node(tree.root_node(), source, &mut syms, &mut refs, None, "", false);
+    let root = tree.root_node();
+
+    extract_from_node(root, source, &mut syms, &mut refs, None, "", false);
+
+    // Second pass: scan the full CST for `type` nodes and emit TypeRef for
+    // each non-builtin identifier found inside a type annotation context.
+    if !syms.is_empty() {
+        scan_type_annotation_nodes(root, source, 0, &mut refs);
+    }
 
     let has_errors = tree.root_node().has_error();
     ExtractionResult::new(syms, refs, has_errors)
@@ -286,6 +294,71 @@ fn emit_type_ref_from_annotation(
             for child in node.children(&mut cursor) {
                 if child.is_named() {
                     emit_type_ref_from_annotation(&child, source, source_symbol_index, refs);
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Full-tree type annotation scan
+// ---------------------------------------------------------------------------
+
+/// Recursively scan the entire CST for `type` nodes (Python type annotation
+/// wrappers) and emit a TypeRef for the identifier inside each one.
+///
+/// Python grammar uses a `type` node to wrap type annotation expressions such
+/// as `-> Foo` or `: Bar`. This catches all parameter and return type
+/// annotations anywhere in the file, including inside nested functions and
+/// lambdas that the main walker does not descend into.
+fn scan_type_annotation_nodes(
+    node: tree_sitter::Node,
+    source: &str,
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type" && child.is_named() {
+            // Extract the first identifier from this type annotation node.
+            emit_type_ref_from_type_node(&child, source, sym_idx, refs);
+            // Still recurse — annotations can nest (e.g. `Optional[List[Foo]]`).
+        }
+        scan_type_annotation_nodes(child, source, sym_idx, refs);
+    }
+}
+
+/// Walk a `type` node and emit TypeRef for any identifier inside it that is
+/// not a Python builtin type.
+fn emit_type_ref_from_type_node(
+    node: &tree_sitter::Node,
+    source: &str,
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::builtins::is_python_builtin;
+    match node.kind() {
+        "identifier" => {
+            let name = node_text(node, source);
+            if !name.is_empty() && !is_python_builtin(&name)
+                && !matches!(name.as_str(), "int" | "float" | "str" | "bool" | "bytes"
+                    | "None" | "list" | "dict" | "set" | "tuple" | "type" | "object" | "complex")
+            {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    emit_type_ref_from_type_node(&child, source, sym_idx, refs);
                 }
             }
         }

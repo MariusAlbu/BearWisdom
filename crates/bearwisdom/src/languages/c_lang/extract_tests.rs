@@ -384,3 +384,74 @@ class Repo {
             .collect();
         assert!(refs_names.contains(&"User"), "missing User TypeRef: {refs_names:?}");
     }
+
+    // =========================================================================
+    // type_identifier in simple declarations (post-traversal scan)
+    // =========================================================================
+
+    #[test]
+    fn c_simple_type_identifier_field_emits_typeref() {
+        let src = r#"
+struct Request {
+    Session* session;
+    UserContext ctx;
+};
+"#;
+        let r = extract::extract(src, "c");
+        let type_refs: Vec<&str> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(type_refs.contains(&"Session"), "missing Session TypeRef: {type_refs:?}");
+        assert!(type_refs.contains(&"UserContext"), "missing UserContext TypeRef: {type_refs:?}");
+    }
+
+    #[test]
+    fn c_primitive_type_field_does_not_emit_typeref() {
+        let src = r#"
+struct Point {
+    int x;
+    float y;
+    double z;
+};
+"#;
+        let r = extract::extract(src, "c");
+        // Primitives should NOT produce TypeRef edges
+        let type_refs: Vec<&str> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(!type_refs.contains(&"int"), "int should not produce TypeRef: {type_refs:?}");
+        assert!(!type_refs.contains(&"float"), "float should not produce TypeRef: {type_refs:?}");
+    }
+
+    #[test]
+    fn cpp_function_param_types_emit_typerefs() {
+        let src = r#"
+class EventBus {};
+class Handler {};
+
+void subscribe(EventBus* bus, Handler* handler) {}
+"#;
+        let r = extract::extract(src, "cpp");
+        let type_refs: Vec<&str> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(type_refs.contains(&"EventBus"), "missing EventBus TypeRef: {type_refs:?}");
+        assert!(type_refs.contains(&"Handler"), "missing Handler TypeRef: {type_refs:?}");
+    }
+
+    #[test]
+    fn cpp_function_return_type_emits_typeref() {
+        let src = r#"
+class Result {};
+Result compute() { return Result(); }
+"#;
+        let r = extract::extract(src, "cpp");
+        let type_refs: Vec<&str> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(type_refs.contains(&"Result"), "missing Result TypeRef: {type_refs:?}");
+    }

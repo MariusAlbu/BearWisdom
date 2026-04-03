@@ -67,6 +67,13 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
 
     extract_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None);
 
+    // Post-traversal full-tree scan: catch every type_identifier and generic_type
+    // base name that the main walker may have missed (e.g. deeply nested generic
+    // arguments, conditional types, mapped types, etc.).
+    if !symbols.is_empty() {
+        scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
+    }
+
     ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -502,6 +509,68 @@ fn is_ts_primitive(name: &str) -> bool {
         "string" | "number" | "boolean" | "void" | "any" | "unknown" | "never"
             | "undefined" | "null" | "object" | "symbol" | "bigint"
     )
+}
+
+/// Recursively scan ALL descendants of `node` for `type_identifier` and
+/// `generic_type` nodes, emitting a `TypeRef` for each non-primitive name found.
+///
+/// This is the "nuclear option" post-traversal pass that ensures no type
+/// reference is missed regardless of nesting depth (e.g.
+/// `Map<string, Promise<UserDto>>` — finds `UserDto`).
+fn scan_all_type_identifiers(
+    node: tree_sitter::Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" if child.is_named() => {
+                let name = helpers::node_text(child, src);
+                if !name.is_empty() && !is_ts_primitive(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // type_identifier is a leaf — no children to recurse into.
+            }
+            "generic_type" if child.is_named() => {
+                // Extract the base type name from the generic, e.g. `Promise<User>` → `Promise`.
+                // The first named child of generic_type is the base type_identifier.
+                let base_opt = child.child_by_field_name("name").or_else(|| {
+                    let children: Vec<_> = {
+                        let mut gc = child.walk();
+                        child.children(&mut gc).collect()
+                    };
+                    children.into_iter().find(|c| c.kind() == "type_identifier")
+                });
+                if let Some(base) = base_opt {
+                    let name = helpers::node_text(base, src);
+                    if !name.is_empty() && !is_ts_primitive(&name) {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: base.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                // Still recurse so type arguments inside are also scanned.
+                scan_all_type_identifiers(child, src, sym_idx, refs);
+            }
+            _ => {
+                scan_all_type_identifiers(child, src, sym_idx, refs);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

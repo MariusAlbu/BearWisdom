@@ -22,6 +22,10 @@
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
+/// HTML tag-name fragments that start with an uppercase letter but are NOT
+/// Angular components.  Covers HTML5 void/meta tags and SGML relics.
+const BUILTIN_HTML_TAGS: &[&str] = &["DOCTYPE", "CDATA"];
+
 pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
     let language: tree_sitter::Language = tree_sitter_html::LANGUAGE.into();
     let mut parser = Parser::new();
@@ -96,6 +100,18 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
         refs.push(ExtractedRef {
             source_symbol_index: 0,
             target_name: pascal,
+            kind: EdgeKind::Calls,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    } else if tag.chars().next().map_or(false, |c| c.is_uppercase())
+        && !BUILTIN_HTML_TAGS.contains(&tag.as_str())
+    {
+        // PascalCase tags (e.g. <UserCard>, <MatButton>) — component usages
+        refs.push(ExtractedRef {
+            source_symbol_index: 0,
+            target_name: tag,
             kind: EdgeKind::Calls,
             line: node.start_position().row as u32,
             module: None,
@@ -332,4 +348,70 @@ fn is_valid_identifier(s: &str) -> bool {
 /// In practice Angular apps use their own selectors — this is just a guard.
 fn is_html5_custom_element_builtin(_tag: &str) -> bool {
     false
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::EdgeKind;
+
+    fn calls_targets(src: &str) -> Vec<String> {
+        let r = extract(src, "test.component.html");
+        r.refs
+            .into_iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| rf.target_name)
+            .collect()
+    }
+
+    #[test]
+    fn kebab_case_component_emits_call() {
+        let src = r#"<app-header></app-header>"#;
+        let targets = calls_targets(src);
+        assert!(targets.contains(&"AppHeader".to_string()), "missing AppHeader: {targets:?}");
+    }
+
+    #[test]
+    fn pascal_case_component_emits_call() {
+        let src = r#"<UserCard [user]="currentUser"></UserCard>"#;
+        let targets = calls_targets(src);
+        assert!(targets.contains(&"UserCard".to_string()), "missing UserCard: {targets:?}");
+    }
+
+    #[test]
+    fn pascal_case_self_closing_emits_call() {
+        let src = r#"<MatButton (click)="save()">Save</MatButton>"#;
+        let targets = calls_targets(src);
+        assert!(targets.contains(&"MatButton".to_string()), "missing MatButton: {targets:?}");
+    }
+
+    #[test]
+    fn standard_html_tag_does_not_emit_call() {
+        let src = r#"<div><p>Hello</p></div>"#;
+        let targets = calls_targets(src);
+        // lowercase HTML tags should NOT produce Calls edges
+        assert!(!targets.contains(&"Div".to_string()), "div should not produce Calls: {targets:?}");
+        assert!(!targets.contains(&"div".to_string()), "div should not produce Calls: {targets:?}");
+    }
+
+    #[test]
+    fn event_binding_emits_call() {
+        let src = r#"<button (click)="handleClick()">Click</button>"#;
+        let targets = calls_targets(src);
+        assert!(targets.contains(&"handleClick".to_string()), "missing handleClick: {targets:?}");
+    }
+
+    #[test]
+    fn structural_directive_emits_call() {
+        let src = r#"<div *ngIf="condition">Content</div>"#;
+        let targets = calls_targets(src);
+        assert!(
+            targets.iter().any(|t| t.contains("NgIf") || t.contains("ngIf")),
+            "missing ngIf directive: {targets:?}"
+        );
+    }
 }

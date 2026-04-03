@@ -58,6 +58,14 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_js_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None);
 
+    // Post-traversal full-tree scan: catch every type_identifier node that the
+    // main walker missed (e.g. JSDoc-annotated variables, class heritage in
+    // unusual positions, etc.).  JS has no type system so hits are sparse but
+    // the scan is cheap and ensures coverage is symmetric with TypeScript.
+    if !symbols.is_empty() {
+        scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -1280,6 +1288,42 @@ fn extract_catch_variable(
         scope_path,
         parent_index,
     });
+}
+
+// ---------------------------------------------------------------------------
+// Post-traversal full-tree type_identifier scanner
+// ---------------------------------------------------------------------------
+
+/// Recursively scan ALL descendants of `node` for `type_identifier` nodes and
+/// emit a `TypeRef` for each one found.
+///
+/// JavaScript has no type system, so hits are rare (JSDoc-annotated bindings,
+/// class heritage identifiers), but the scan is cheap and ensures parity with
+/// the TypeScript extractor.
+fn scan_all_type_identifiers(
+    node: tree_sitter::Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_identifier" && child.is_named() {
+            let name = node_text(child, src);
+            if !name.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: crate::types::EdgeKind::TypeRef,
+                    line: child.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        // Recurse into ALL children regardless.
+        scan_all_type_identifiers(child, src, sym_idx, refs);
+    }
 }
 
 // ---------------------------------------------------------------------------

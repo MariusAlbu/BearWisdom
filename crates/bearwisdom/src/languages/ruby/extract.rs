@@ -52,6 +52,13 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_from_node(root, src, &mut symbols, &mut refs, None, "", false);
 
+    // Second pass: scan the full CST for `constant` and `scope_resolution` nodes,
+    // emitting TypeRef for each one found anywhere in the file (including inside
+    // method bodies that the main walker does not descend into directly).
+    if !symbols.is_empty() {
+        scan_all_constants(root, src, 0, &mut refs);
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -219,6 +226,60 @@ pub(super) fn extract_from_node(
                 );
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Full-tree constant scan
+// ---------------------------------------------------------------------------
+
+/// Recursively scan the entire CST and emit a TypeRef for every `constant` or
+/// `scope_resolution` node found anywhere in the file.
+///
+/// Ruby has no static type system, so all constants (PascalCase names like
+/// `User`, `ActiveRecord::Base`) are user-defined classes or modules.
+fn scan_all_constants(
+    node: tree_sitter::Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "constant" if child.is_named() => {
+                let name = super::helpers::node_text(&child, src);
+                if !name.is_empty() {
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "scope_resolution" if child.is_named() => {
+                // `Foo::Bar` — extract the rightmost constant segment.
+                let full = super::helpers::node_text(&child, src);
+                let name = full.rsplit("::").next().unwrap_or(&full).to_string();
+                if !name.is_empty() {
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // Don't recurse into scope_resolution — we already extracted the name.
+                continue;
+            }
+            _ => {}
+        }
+        scan_all_constants(child, src, sym_idx, refs);
     }
 }
 

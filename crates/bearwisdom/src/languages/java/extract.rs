@@ -94,6 +94,13 @@ pub fn extract(source: &str) -> ExtractionResult {
         None,
     );
 
+    // Post-traversal full-tree scan: catch every type_identifier that the main
+    // walker missed (e.g. deeply-nested generic type arguments, cast expressions,
+    // annotation type names, wildcard bounds, etc.).
+    if !symbols.is_empty() {
+        scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
+    }
+
     ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -319,6 +326,44 @@ fn extract_nested_classes_from_body(
                 extract_nested_classes_from_body(&child, src, scope_tree, package, symbols, refs, parent_index);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Post-traversal full-tree type_identifier scanner
+// ---------------------------------------------------------------------------
+
+/// Recursively scan ALL descendants of `node` for `type_identifier` nodes and
+/// emit a `TypeRef` for each non-primitive name found.
+///
+/// This is the "nuclear option" post-traversal pass that ensures no type
+/// reference is missed regardless of nesting depth (e.g.
+/// `List<Map<String, UserDto>>` — finds `UserDto`).
+fn scan_all_type_identifiers(
+    node: tree_sitter::Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::builtins::is_java_builtin;
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_identifier" && child.is_named() {
+            let name = helpers::node_text(child, src);
+            if !name.is_empty() && !is_java_builtin(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: crate::types::EdgeKind::TypeRef,
+                    line: child.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        // Recurse into ALL children regardless.
+        scan_all_type_identifiers(child, src, sym_idx, refs);
     }
 }
 

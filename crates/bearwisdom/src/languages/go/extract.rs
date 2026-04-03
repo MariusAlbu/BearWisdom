@@ -72,6 +72,12 @@ pub fn extract(source: &str) -> ExtractionResult {
 
     extract_from_node(root, source, &mut symbols, &mut refs, None, qualified_prefix);
 
+    // Second pass: scan the full CST for type_identifier and qualified_type nodes,
+    // emitting TypeRef for each non-builtin type found anywhere in the file.
+    if !symbols.is_empty() {
+        scan_all_type_identifiers(root, source, 0, &mut refs);
+    }
+
     let has_errors = root.has_error();
     ExtractionResult::new(symbols, refs, has_errors)
 }
@@ -189,6 +195,57 @@ fn extract_from_node(
                 extract_from_node(child, source, symbols, refs, parent_index, qualified_prefix);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Full-tree type_identifier scan
+// ---------------------------------------------------------------------------
+
+/// Recursively scan the entire CST and emit a TypeRef for every `type_identifier`
+/// or `qualified_type` node that is not a Go builtin type.
+fn scan_all_type_identifiers(
+    node: tree_sitter::Node,
+    source: &str,
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" if child.is_named() => {
+                let name = helpers::node_text(&child, source);
+                if !name.is_empty() && !helpers::is_go_builtin_type(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "qualified_type" if child.is_named() => {
+                // `pkg.Type` — extract last segment as the type name.
+                let text = helpers::node_text(&child, source);
+                let name = text.rsplit('.').next().unwrap_or(&text).to_string();
+                if !name.is_empty() && !helpers::is_go_builtin_type(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // Don't recurse into qualified_type children — we already extracted the name.
+                continue;
+            }
+            _ => {}
+        }
+        scan_all_type_identifiers(child, source, sym_idx, refs);
     }
 }
 

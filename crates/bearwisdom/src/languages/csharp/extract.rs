@@ -130,6 +130,14 @@ pub fn extract(source: &str) -> ExtractionResult {
         None, // no parent symbol yet
     );
 
+    // Post-traversal full-tree scan: walk every type-position node and emit
+    // TypeRef for identifier/generic_name children that the main walker missed
+    // (e.g. deeply-nested generic arguments, as-casts, typeof expressions,
+    // pattern-matching type patterns, etc.).
+    if !symbols.is_empty() {
+        scan_all_type_positions(root, src_bytes, 0, &mut refs);
+    }
+
     // Collect using directives for qualification context.
     let usings: Vec<String> = refs
         .iter()
@@ -523,6 +531,108 @@ fn extract_node_inner(
                 extract_node(*child, src, scope_tree, symbols, refs, routes, db_sets, effective_parent_index);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Post-traversal full-tree type-position scanner (C#)
+// ---------------------------------------------------------------------------
+
+/// Recursively walk every node in the tree.  When we encounter a node whose
+/// kind is a recognised **type-position** container, scan its children for
+/// `identifier` and `generic_name` nodes and emit `TypeRef` edges.
+///
+/// C# grammar does not use `type_identifier` — named types appear as plain
+/// `identifier` or `generic_name` nodes that are children of type-position
+/// nodes such as `type_argument_list`, `base_list`, `nullable_type`, etc.
+/// Scanning only inside those containers avoids false positives from the
+/// many non-type identifiers (variable names, method names, …).
+fn scan_all_type_positions(
+    node: tree_sitter::Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::helpers::{is_builtin_type, node_text};
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            // These node kinds directly contain type references as children.
+            "type_argument_list"
+            | "base_list"
+            | "nullable_type"
+            | "array_type"
+            | "ref_type"
+            | "pointer_type"
+            | "tuple_type" => {
+                // Scan immediate children for identifier / generic_name.
+                let mut tc = child.walk();
+                for grandchild in child.children(&mut tc) {
+                    emit_csharp_type_ref(grandchild, src, sym_idx, refs);
+                }
+                // Recurse so deeply-nested type arguments are also found.
+                scan_all_type_positions(child, src, sym_idx, refs);
+            }
+
+            // `generic_name` always contains type arguments — recurse into it.
+            "generic_name" => {
+                emit_csharp_type_ref(child, src, sym_idx, refs);
+                scan_all_type_positions(child, src, sym_idx, refs);
+            }
+
+            _ => {
+                scan_all_type_positions(child, src, sym_idx, refs);
+            }
+        }
+    }
+}
+
+/// Emit a `TypeRef` for an `identifier` or `generic_name` node if the name is
+/// not a C# builtin / keyword.
+fn emit_csharp_type_ref(
+    node: tree_sitter::Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::helpers::{is_builtin_type, node_text};
+    use super::calls::is_csharp_keyword;
+
+    match node.kind() {
+        "identifier" if node.is_named() => {
+            let name = node_text(node, src);
+            if !name.is_empty() && !is_builtin_type(&name) && !is_csharp_keyword(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        "generic_name" if node.is_named() => {
+            // Extract the outer identifier (e.g. `List` from `List<T>`).
+            let mut gc = node.walk();
+            for id_child in node.children(&mut gc) {
+                if id_child.kind() == "identifier" && id_child.is_named() {
+                    let name = node_text(id_child, src);
+                    if !name.is_empty() && !is_builtin_type(&name) && !is_csharp_keyword(&name) {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: id_child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+        }
+        _ => {}
     }
 }
 

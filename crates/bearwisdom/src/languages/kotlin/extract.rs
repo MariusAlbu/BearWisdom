@@ -57,6 +57,10 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_node(root, src, &scope_tree, &mut symbols, &mut refs, None);
 
+    // Post-traversal: scan the entire CST for user_type / nullable_type nodes
+    // and emit TypeRef for any type names not already captured by the walker.
+    scan_all_type_refs(root, src, &mut refs);
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -328,6 +332,86 @@ fn annotation_type_name(node: &Node, src: &[u8]) -> Option<String> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Post-traversal full-tree type reference scan
+// ---------------------------------------------------------------------------
+
+/// Walk the entire CST and emit TypeRef edges for every `user_type` and
+/// `nullable_type` node found. This catches type references that the
+/// top-down walker misses (e.g., in complex expressions, lambda return
+/// types, type projections, or error-recovery subtrees).
+///
+/// Deduplication happens at the resolution stage — emitting extras here
+/// is safe and ensures we never under-count type edges.
+fn scan_all_type_refs(node: tree_sitter::Node, src: &[u8], refs: &mut Vec<ExtractedRef>) {
+    scan_type_refs_inner(node, src, 0, refs);
+}
+
+fn scan_type_refs_inner(
+    node: tree_sitter::Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match node.kind() {
+        "user_type" => {
+            let name = calls::kotlin_type_name(&node, src);
+            if !name.is_empty() && !super::builtins::is_kotlin_builtin(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+            // Still recurse: user_type can nest type_arguments → user_type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                scan_type_refs_inner(child, src, source_symbol_index, refs);
+            }
+        }
+        "nullable_type" => {
+            // nullable_type wraps a user_type or other type — extract the inner name.
+            let name = calls::kotlin_type_name(&node, src);
+            if !name.is_empty() && !super::builtins::is_kotlin_builtin(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                scan_type_refs_inner(child, src, source_symbol_index, refs);
+            }
+        }
+        "type_identifier" => {
+            let name = helpers::node_text(node, src);
+            if !name.is_empty() && !super::builtins::is_kotlin_builtin(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                scan_type_refs_inner(child, src, source_symbol_index, refs);
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

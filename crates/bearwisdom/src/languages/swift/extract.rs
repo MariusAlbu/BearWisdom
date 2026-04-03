@@ -60,6 +60,10 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_node(root, src, &scope_tree, &mut symbols, &mut refs, None);
 
+    // Post-traversal: scan the entire CST for type_identifier / simple_identifier
+    // nodes and emit TypeRef for any missed by the top-down walker.
+    calls::extract_all_type_identifiers_from_node(&root, src, 0, &mut refs);
+
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 

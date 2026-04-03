@@ -57,14 +57,22 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut syms = Vec::new();
     let mut refs = Vec::new();
 
+    let root = tree.root_node();
+
     extract_from_node(
-        tree.root_node(),
+        root,
         source,
         &mut syms,
         &mut refs,
         None,
         "",
     );
+
+    // Second pass: scan the full CST for type_identifier and scoped_type_identifier
+    // nodes, emitting TypeRef for each non-primitive type found anywhere in the file.
+    if !syms.is_empty() {
+        scan_all_type_identifiers(root, source, 0, &mut refs);
+    }
 
     let has_errors = tree.root_node().has_error();
     ExtractionResult::new(syms, refs, has_errors)
@@ -277,6 +285,62 @@ fn extract_from_node(
                 );
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Full-tree type_identifier scan
+// ---------------------------------------------------------------------------
+
+/// Recursively scan the entire CST and emit a TypeRef for every `type_identifier`
+/// or `scoped_type_identifier` node that is not a Rust primitive.
+fn scan_all_type_identifiers(
+    node: tree_sitter::Node,
+    source: &str,
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" if child.is_named() => {
+                let name = helpers::node_text(&child, source);
+                if !name.is_empty() && !symbols::is_rust_primitive(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "scoped_type_identifier" if child.is_named() => {
+                // `foo::Bar` — extract the leaf name (last segment).
+                let name = child
+                    .child_by_field_name("name")
+                    .map(|n| helpers::node_text(&n, source))
+                    .unwrap_or_else(|| {
+                        let text = helpers::node_text(&child, source);
+                        text.rsplit("::").next().unwrap_or(&text).to_string()
+                    });
+                if !name.is_empty() && !symbols::is_rust_primitive(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // Don't recurse into scoped_type_identifier children — we already extracted the leaf.
+                continue;
+            }
+            _ => {}
+        }
+        scan_all_type_identifiers(child, source, sym_idx, refs);
     }
 }
 

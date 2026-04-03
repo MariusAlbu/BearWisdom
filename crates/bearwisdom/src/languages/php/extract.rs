@@ -50,6 +50,10 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_from_node(root, src, &mut syms, &mut refs, None, "", "");
 
+    // Post-traversal: scan the entire CST for named_type and qualified_name
+    // nodes in type positions, emitting TypeRef for any missed by the walker.
+    scan_all_type_refs(root, src, &mut refs);
+
     super::ExtractionResult::new(syms, refs, has_errors)
 }
 
@@ -256,6 +260,89 @@ pub(super) fn extract_from_node(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Post-traversal full-tree type reference scan
+// ---------------------------------------------------------------------------
+
+/// Walk the entire CST and emit TypeRef edges for every `named_type` and
+/// `qualified_name` node found in type positions. This catches type references
+/// in parameter type declarations, return types, property types, and catch
+/// clauses that the top-down walker may have missed.
+///
+/// PHP primitives (int, float, string, bool, void, null, array, object,
+/// mixed, never, callable, iterable, self, static, parent, true, false) are
+/// filtered out — they are always available and never in the project index.
+fn scan_all_type_refs(node: tree_sitter::Node, src: &[u8], refs: &mut Vec<crate::types::ExtractedRef>) {
+    scan_type_refs_inner(node, src, 0, refs);
+}
+
+fn scan_type_refs_inner(
+    node: tree_sitter::Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
+    match node.kind() {
+        "named_type" => {
+            // named_type is a leaf (or contains a name/qualified_name child).
+            // Try the direct text first; if it contains a child, use that.
+            let raw = super::helpers::node_text(&node, src);
+            // Extract the simple name (last segment after `\`).
+            let name = raw
+                .trim_start_matches('\\')
+                .rsplit('\\')
+                .next()
+                .unwrap_or(&raw)
+                .to_string();
+            if !name.is_empty() && !is_php_primitive(&name) {
+                refs.push(crate::types::ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: crate::types::EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        "qualified_name" => {
+            let raw = super::helpers::node_text(&node, src);
+            let name = raw
+                .trim_start_matches('\\')
+                .rsplit('\\')
+                .next()
+                .unwrap_or(&raw)
+                .to_string();
+            if !name.is_empty() && !is_php_primitive(&name) {
+                refs.push(crate::types::ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: crate::types::EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                scan_type_refs_inner(child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Return true for PHP built-in types that are never in the project index.
+fn is_php_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "int" | "float" | "string" | "bool" | "void" | "null"
+            | "array" | "object" | "mixed" | "never" | "callable"
+            | "iterable" | "self" | "static" | "parent" | "true" | "false"
+    )
 }
 
 // ---------------------------------------------------------------------------
