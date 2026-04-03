@@ -325,3 +325,45 @@ fn coverage_extends_interfaces() {
         r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn coverage_field_declaration_type_ref() {
+    // field_declaration with a generic type should emit TypeRef for both the base type and arg.
+    let src = "import java.util.List;\nclass C { private List<User> users; }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "List" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef for List from field_declaration; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef for User (type argument) from field_declaration; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_field_declaration_annotation() {
+    // Annotations on field declarations should produce TypeRef edges.
+    let src = "class C { @Autowired private UserService userService; }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Autowired" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef for @Autowired annotation on field; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_type_arguments_in_method_call() {
+    // type_arguments inside a method_invocation: Collections.<String>emptyList()
+    let src = "class C { void m() { java.util.Collections.<String>emptyList(); } }";
+    let r = refs(src);
+    // At minimum should produce a Calls edge.
+    assert!(
+        r.iter().any(|r| r.target_name == "emptyList" && r.kind == EdgeKind::Calls),
+        "expected Calls edge for emptyList; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}

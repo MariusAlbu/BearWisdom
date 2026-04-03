@@ -152,7 +152,15 @@ pub(super) fn extract_node<'a>(
             }
 
             "property_declaration" => {
+                let pre_len = symbols.len();
                 push_property_decl(&child, src, scope_tree, symbols, parent_index);
+                let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                // In kotlin-ng, the declared type lives inside:
+                //   property_declaration → variable_declaration → type → user_type | nullable_type | ...
+                // Run the full calls extractor over the property_declaration node so
+                // the `user_type | nullable_type` arms in extract_calls_from_body
+                // pick up all type refs, including in the initializer expression.
+                calls::extract_calls_from_body(&child, src, sym_idx, refs);
             }
 
             // `typealias Foo = Bar` — field `type` holds the identifier name.

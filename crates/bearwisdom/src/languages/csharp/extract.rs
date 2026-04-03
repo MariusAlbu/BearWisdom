@@ -387,12 +387,33 @@ fn extract_node_inner(
                     calls::extract_calls_from_body(&val, src, effective_parent_index.unwrap_or(0), refs);
                 }
                 // Property with get/set accessors that have expression bodies or blocks.
+                // Each accessor_declaration emits a Method symbol AND has its calls extracted.
                 if let Some(accessors) = child.child_by_field_name("accessors") {
                     let mut ac = accessors.walk();
                     for accessor in accessors.children(&mut ac) {
                         if accessor.kind() == "accessor_declaration" {
+                            let accessor_idx = symbols::push_accessor_decl(
+                                &accessor,
+                                src,
+                                scope_tree,
+                                symbols,
+                                effective_parent_index,
+                            );
+                            let body_owner = accessor_idx.unwrap_or(effective_parent_index.unwrap_or(0));
+                            // Accessor body can be a block_body or arrow_expression_clause.
                             if let Some(body) = accessor.child_by_field_name("body") {
-                                calls::extract_calls_from_body(&body, src, effective_parent_index.unwrap_or(0), refs);
+                                calls::extract_calls_from_body(&body, src, body_owner, refs);
+                            } else {
+                                // Fallback: scan children for block/arrow body.
+                                let mut ackc = accessor.walk();
+                                for acc_child in accessor.children(&mut ackc) {
+                                    match acc_child.kind() {
+                                        "block" | "arrow_expression_clause" => {
+                                            calls::extract_calls_from_body(&acc_child, src, body_owner, refs);
+                                        }
+                                        _ => {}
+                                    }
+                                }
                             }
                         }
                     }

@@ -305,3 +305,105 @@ fn coverage_type_identifier_in_function_param_emits_type_ref() {
         "expected TypeRef to Request from param type_identifier; refs: {type_refs:?}"
     );
 }
+
+// ---- selector_expression (standalone, not in call) -------------------------
+
+#[test]
+fn coverage_selector_expression_standalone_emits_calls_edge() {
+    // `pkg.Var` used as a value expression (not called) should emit a Calls edge.
+    let src = "package main\nfunc f() { _ = http.StatusOK }";
+    let r = extract::extract(src);
+    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    assert!(
+        calls.iter().any(|r| r.target_name == "StatusOK"),
+        "expected Calls edge to StatusOK from standalone selector_expression; calls: {:?}",
+        calls.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- qualified_type in body → TypeRef --------------------------------------
+
+#[test]
+fn coverage_qualified_type_in_body_emits_type_ref() {
+    // `var x pkg.Type` inside a function — qualified_type should emit a TypeRef.
+    let src = "package main\nfunc f() { var req http.Request\n_ = req }";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"Request"),
+        "expected TypeRef to Request from qualified_type in body; refs: {type_refs:?}"
+    );
+}
+
+// ---- type_identifier in body → TypeRef -------------------------------------
+
+#[test]
+fn coverage_type_identifier_in_body_var_decl_emits_type_ref() {
+    // `var x User` inside a function body should emit a TypeRef to User.
+    let src = "package main\nfunc f() { var u User\n_ = u }";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"User"),
+        "expected TypeRef to User from type_identifier in body var; refs: {type_refs:?}"
+    );
+}
+
+// ---- var_declaration inside function body → Variable symbol ----------------
+
+#[test]
+fn coverage_var_decl_in_function_body_emits_variable_symbol() {
+    // `var x int` inside a function body should emit a Variable symbol.
+    let src = "package main\nfunc f() { var count int\n_ = count }";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "count" && s.kind == SymbolKind::Variable);
+    assert!(
+        sym.is_some(),
+        "expected Variable symbol 'count' from var_declaration in body; symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---- var_spec with user-defined type → TypeRef ----------------------------
+
+#[test]
+fn coverage_var_spec_named_type_emits_type_ref() {
+    // `var DefaultHandler Handler` at package level should emit a TypeRef to Handler.
+    let src = "package main\nvar DefaultHandler Handler";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"Handler"),
+        "expected TypeRef to Handler from var_spec type; refs: {type_refs:?}"
+    );
+}
+
+// ---- field_declaration with qualified embedded type → Field symbol ---------
+
+#[test]
+fn coverage_field_declaration_qualified_embedded_type_emits_field() {
+    // `sync.Mutex` as an embedded field — should emit a Field symbol and Inherits edge.
+    let src = "package main\ntype Server struct { sync.Mutex\nName string }";
+    let r = extract::extract(src);
+    let field = r.symbols.iter().find(|s| s.name == "Mutex" && s.kind == SymbolKind::Field);
+    assert!(
+        field.is_some(),
+        "expected Field symbol 'Mutex' from qualified embedded type; symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+}

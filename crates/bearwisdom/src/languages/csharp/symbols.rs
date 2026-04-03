@@ -389,6 +389,67 @@ pub(super) fn push_property_decl(
     }
 }
 
+/// Emit a Method symbol for an `accessor_declaration` (get/set/init) inside a
+/// property or indexer body.
+///
+/// `accessor_declaration` has no `name` field in tree-sitter-c-sharp — the
+/// accessor kind is an anonymous keyword token ("get", "set", "init", "add",
+/// "remove").  We scan the children for that keyword to build the name.
+///
+/// The resulting symbol is named `<PropertyName>.get` (or `.set`/`.init`), but
+/// for simplicity we use the raw accessor keyword as the name and qualify it
+/// under the enclosing property scope.
+pub(super) fn push_accessor_decl(
+    accessor_node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // The accessor keyword ("get", "set", "init", "add", "remove") is the
+    // first non-attribute token child.
+    let accessor_kind = {
+        let mut cursor = accessor_node.walk();
+        let mut found: Option<String> = None;
+        for child in accessor_node.children(&mut cursor) {
+            match child.kind() {
+                "get" | "set" | "init" | "add" | "remove" => {
+                    found = Some(node_text(child, src));
+                    break;
+                }
+                _ => {}
+            }
+        }
+        found?
+    };
+
+    // Qualify under the enclosing property scope (one level up).
+    let parent_scope = if accessor_node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, accessor_node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = scope_tree::qualify(&accessor_kind, parent_scope);
+    let scope_path = scope_tree::scope_path(parent_scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: accessor_kind.clone(),
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility: detect_visibility(accessor_node, src),
+        start_line: accessor_node.start_position().row as u32,
+        end_line: accessor_node.end_position().row as u32,
+        start_col: accessor_node.start_position().column as u32,
+        end_col: accessor_node.end_position().column as u32,
+        signature: Some(accessor_kind),
+        doc_comment: None,
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
 pub(super) fn push_field_decl(
     node: &Node,
     src: &[u8],

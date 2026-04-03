@@ -182,7 +182,7 @@ pub(super) fn extract_class_body(
                 extract_method(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "property_declaration" => {
-                extract_property_declaration(&child, src, symbols, parent_index, qualified_prefix);
+                extract_property_declaration(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "use_declaration" => {
                 extract_trait_use(&child, src, refs, symbols.len());
@@ -249,6 +249,15 @@ pub(super) fn extract_method(
     // Promoted params live in the `parameters` child of the method declaration.
     if let Some(params) = node.child_by_field_name("parameters") {
         extract_promoted_params(&params, src, symbols, refs, Some(idx), qualified_prefix);
+    }
+
+    // Return type: `function foo(): ReturnType`
+    if let Some(ret) = node.child_by_field_name("return_type") {
+        use super::calls::extract_type_refs_from_php_type;
+        // The return_type field points to a `named_type_list` or type node.
+        // In tree-sitter-php the return type may be wrapped in a `named_type` or
+        // directly be `named_type`/`union_type`/etc.
+        extract_php_return_type_refs(&ret, src, refs, idx);
     }
 
     if let Some(body) = node.child_by_field_name("body") {
@@ -388,8 +397,48 @@ pub(super) fn extract_function(
         extract_param_type_refs(&params, src, refs, idx);
     }
 
+    // Return type hint.
+    if let Some(ret) = node.child_by_field_name("return_type") {
+        extract_php_return_type_refs(&ret, src, refs, idx);
+    }
+
     if let Some(body) = node.child_by_field_name("body") {
         extract_calls_from_body(&body, src, idx, refs);
+    }
+}
+
+/// Extract TypeRef edges from a PHP return type node.
+///
+/// The `return_type` field in tree-sitter-php points to a `:` token followed by
+/// the actual type node.  We scan children to find the type and delegate to
+/// `extract_type_refs_from_php_type`.
+fn extract_php_return_type_refs(
+    ret_node: &tree_sitter::Node,
+    src: &[u8],
+    refs: &mut Vec<ExtractedRef>,
+    source_symbol_index: usize,
+) {
+    use super::calls::extract_type_refs_from_php_type;
+    // The return_type field may directly be a named_type or may contain the
+    // type as a child (grammar version dependent).
+    match ret_node.kind() {
+        "named_type" | "nullable_type" | "union_type" | "intersection_type"
+        | "disjunctive_normal_form_type" => {
+            extract_type_refs_from_php_type(ret_node, src, refs, source_symbol_index);
+        }
+        _ => {
+            // Walk children to find the actual type node.
+            let mut cursor = ret_node.walk();
+            for child in ret_node.children(&mut cursor) {
+                match child.kind() {
+                    "named_type" | "nullable_type" | "union_type" | "intersection_type"
+                    | "disjunctive_normal_form_type" => {
+                        extract_type_refs_from_php_type(&child, src, refs, source_symbol_index);
+                    }
+                    _ => {}
+                }
+            }
+        }
     }
 }
 
@@ -397,10 +446,31 @@ pub(super) fn extract_property_declaration(
     node: &Node,
     src: &[u8],
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
 ) {
+    use super::calls::extract_type_refs_from_php_type;
+
     let visibility = extract_visibility(node, src);
+
+    // The property type hint is a direct child of the property_declaration node.
+    // (Not inside property_element — it's a sibling of property_element.)
+    let type_node_opt: Option<tree_sitter::Node> = {
+        let mut cc = node.walk();
+        let mut found = None;
+        for child in node.children(&mut cc) {
+            match child.kind() {
+                "named_type" | "nullable_type" | "union_type" | "intersection_type"
+                | "disjunctive_normal_form_type" => {
+                    found = Some(child);
+                    break;
+                }
+                _ => {}
+            }
+        }
+        found
+    };
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -411,6 +481,7 @@ pub(super) fn extract_property_declaration(
                     let raw = node_text(&var, src);
                     let name = raw.trim_start_matches('$').to_string();
                     let qualified_name = qualify(&name, qualified_prefix);
+                    let prop_idx = symbols.len();
                     symbols.push(ExtractedSymbol {
                         name,
                         qualified_name,
@@ -425,6 +496,10 @@ pub(super) fn extract_property_declaration(
                         scope_path: scope_from_prefix(qualified_prefix),
                         parent_index,
                     });
+                    // Emit TypeRef for the property type hint.
+                    if let Some(tn) = type_node_opt {
+                        extract_type_refs_from_php_type(&tn, src, refs, prop_idx);
+                    }
                     break;
                 }
             }

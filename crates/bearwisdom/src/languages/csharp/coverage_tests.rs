@@ -246,13 +246,25 @@ fn coverage_file_scoped_namespace_declaration() {
 
 #[test]
 fn coverage_accessor_declaration() {
-    // accessor_declaration appears inside property with explicit bodies
+    // accessor_declaration appears inside property with explicit bodies.
+    // Each get/set accessor should produce a Method symbol in addition to the Property.
     let src = "class C { private int _x; public int X { get { return _x; } set { _x = value; } } }";
     let s = sym(src);
     // The property itself should be extracted
     assert!(
         s.iter().any(|s| s.name == "X" && s.kind == SymbolKind::Property),
         "expected Property symbol X (with accessors); got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    // Each accessor should produce a Method symbol named "get" / "set".
+    assert!(
+        s.iter().any(|s| s.name == "get" && s.kind == SymbolKind::Method),
+        "expected Method symbol 'get' from accessor_declaration; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        s.iter().any(|s| s.name == "set" && s.kind == SymbolKind::Method),
+        "expected Method symbol 'set' from accessor_declaration; got: {:?}",
         s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

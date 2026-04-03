@@ -195,6 +195,39 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
 
+            // `Foo::Bar` — scope resolution outside a `call` node (e.g. as
+            // the receiver of a standalone expression or inside an assignment).
+            // Emit TypeRef for the full qualified constant chain.
+            "scope_resolution" => {
+                let type_name = node_text(&child, src);
+                if !type_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // Do NOT recurse further — constituent parts are captured above.
+            }
+
+            // Bare constant reference (e.g. `MyClass`, `RAILS_ENV`).
+            "constant" => {
+                let type_name = node_text(&child, src);
+                if !type_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));

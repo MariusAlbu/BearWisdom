@@ -38,6 +38,32 @@ pub(super) fn extract_calls_from_body(
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+
+            // `obj.method` or `obj.method()` — emit Calls for the navigation
+            // expression when it is not itself wrapped in a call_expression.
+            // `call_expression` already handles the `call_expression(navigation_expression)`
+            // pattern; this arm catches standalone navigation access.
+            "navigation_expression" => {
+                let chain = build_chain(&child, src);
+                if let Some(ref c) = chain {
+                    if let Some(seg) = c.segments.last() {
+                        let target = seg.name.clone();
+                        if !target.is_empty() {
+                            crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &child, refs);
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: target,
+                                kind: EdgeKind::Calls,
+                                line: child.start_position().row as u32,
+                                module: None,
+                                chain,
+                            });
+                        }
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
             // Extract TypeRef edges from `is` checks inside when expressions.
             "when_expression" => {
                 extract_when_patterns(&child, src, source_symbol_index, refs);
@@ -55,6 +81,13 @@ pub(super) fn extract_calls_from_body(
                 if let Some(type_node) = child.child_by_field_name("right") {
                     extract_type_ref_from_type_node(&type_node, src, source_symbol_index, refs);
                 }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // Type references in variable declarations, return types, local vars.
+            "user_type" | "nullable_type" => {
+                extract_type_ref_from_type_node(&child, src, source_symbol_index, refs);
+                // user_type can contain type_arguments — recurse so generic args
+                // (e.g. `List<MyClass>`) also emit TypeRef edges.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             // `"Hello ${expr}"` — recurse into interpolated expressions.

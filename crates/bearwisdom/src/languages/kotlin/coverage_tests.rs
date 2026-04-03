@@ -248,3 +248,36 @@ fn ref_navigation_expression() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_user_type_in_property_body() {
+    // user_type inside property initializer should emit TypeRef.
+    let r = extract("class C {\n    val items: List<String> = listOf()\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "List" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef List from property declaration; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_primary_constructor_emits_symbol() {
+    // primary_constructor should produce a Constructor symbol.
+    let r = extract("class Service(val repo: Repository)");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor),
+        "expected Constructor symbol from primary_constructor; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_enum_entry_produces_member() {
+    // enum_entry should produce EnumMember symbols.
+    let r = extract("enum class Status { ACTIVE, INACTIVE }");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "ACTIVE" || s.name == "INACTIVE"),
+        "expected EnumMember from enum_entry; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}

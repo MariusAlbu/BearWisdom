@@ -85,6 +85,49 @@ pub(super) fn extract_calls_from_body(
                 }
             }
 
+            // Type references that appear anywhere inside function/closure bodies:
+            //   - local variable type annotations  (`let x: MyType = ...`)
+            //   - explicit type casts              (`x as! MyType`)
+            //   - generic argument lists           (`Array<MyType>`)
+            //   - inheritance specifiers on nested types
+            "user_type" | "optional_type" | "metatype_type" => {
+                extract_type_ref_from_swift_type(&child, src, source_symbol_index, refs);
+                // Recurse so generic type arguments inside user_type also emit refs.
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
+            // `SomeProtocol & AnotherProtocol` — emit a ref per component.
+            "protocol_composition_type" => {
+                extract_protocol_composition_refs(&child, src, source_symbol_index, refs);
+            }
+
+            // `var x: MyType` or `let x: MyType` — type annotation inside body.
+            "type_annotation" => {
+                if let Some(type_node) = child.child_by_field_name("type")
+                    .or_else(|| child.named_child(0))
+                {
+                    if type_node.kind() == "protocol_composition_type" {
+                        extract_protocol_composition_refs(&type_node, src, source_symbol_index, refs);
+                    } else {
+                        extract_type_ref_from_swift_type(&type_node, src, source_symbol_index, refs);
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
+            // `inheritance_specifier` in nested class/struct bodies.
+            "inheritance_specifier" | "type_inheritance_clause" => {
+                let mut ic = child.walk();
+                for inner in child.children(&mut ic) {
+                    match inner.kind() {
+                        "user_type" | "type_identifier" | "simple_identifier" => {
+                            extract_type_ref_from_swift_type(&inner, src, source_symbol_index, refs);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }

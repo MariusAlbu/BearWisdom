@@ -49,6 +49,31 @@ pub(super) fn extract_dart_calls(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
+            // Type references in type annotations, variable declarations, etc.
+            // These appear throughout function bodies and class members.
+            "type_identifier" => {
+                emit_dart_type_ref(child, src, source_symbol_index, refs);
+                // Do not recurse — type_identifier is a leaf.
+            }
+
+            // Generic type arguments: `List<MyType>`, `Map<String, MyModel>`.
+            // type_arguments → type_argument_list → type_not_void (type_identifier, ...)
+            "type_arguments" => {
+                extract_type_arguments_refs(&child, src, source_symbol_index, refs);
+            }
+
+            // `x is MyType` — emit TypeRef for the test type.
+            "type_test_expression" | "is_expression" => {
+                extract_type_test_refs(&child, src, source_symbol_index, refs);
+                extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+
+            // `const Foo(...)` — emit TypeRef/Calls for the constructed type.
+            "const_object_expression" => {
+                extract_const_object_refs(&child, src, source_symbol_index, refs);
+                extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+
             // Legacy node names (kept for compatibility with older grammars or future use)
             "invocation_expression" | "function_invocation" => {
                 let callee_node_opt = child
@@ -616,5 +641,107 @@ fn build_chain_inner(node: Node, src: &str, segments: &mut Vec<ChainSegment>) ->
         }
 
         _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Type reference helpers added for coverage gap fixes
+// ---------------------------------------------------------------------------
+
+/// Emit TypeRef edges for all type_identifier nodes inside a `type_arguments`
+/// node (e.g. `List<MyModel>`, `Map<String, UserDto>`).
+pub(super) fn extract_type_arguments_refs(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                emit_dart_type_ref(child, src, source_symbol_index, refs);
+            }
+            // Recurse into nested type nodes (e.g. `Map<String, List<Foo>>`).
+            "type_arguments" | "type_not_void" | "function_type" => {
+                extract_type_arguments_refs(&child, src, source_symbol_index, refs);
+            }
+            _ => {
+                extract_type_arguments_refs(&child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Emit TypeRef edges from a `type_test_expression` / `is_expression` node.
+/// Dart: `x is MyType` — tree-sitter-dart 0.1 represents this as:
+///   type_test_expression → [..., type_test]
+///   type_test → ["is", type_not_void]
+///   type_not_void → type_identifier | ...
+pub(super) fn extract_type_test_refs(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_test" => {
+                let mut tc = child.walk();
+                for inner in child.children(&mut tc) {
+                    match inner.kind() {
+                        "type_identifier" | "identifier" => {
+                            emit_dart_type_ref(inner, src, source_symbol_index, refs);
+                        }
+                        "type_not_void" | "type_not_void_not_function" => {
+                            // Walk into type_not_void for the type_identifier.
+                            let mut vc = inner.walk();
+                            for vchild in inner.children(&mut vc) {
+                                if vchild.kind() == "type_identifier" || vchild.kind() == "identifier" {
+                                    emit_dart_type_ref(vchild, src, source_symbol_index, refs);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "type_identifier" | "identifier" => {
+                emit_dart_type_ref(child, src, source_symbol_index, refs);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Emit TypeRef/Calls edges from a `const_object_expression` node.
+/// Dart: `const Foo(...)` or `const package.Foo(...)`.
+pub(super) fn extract_const_object_refs(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Walk children for type_identifier (the class being constructed).
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let name = node_text(child, src);
+                if !name.is_empty() && name != "const" {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::Calls,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                    return;
+                }
+            }
+            _ => {}
+        }
     }
 }

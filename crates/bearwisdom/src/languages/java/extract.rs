@@ -228,7 +228,18 @@ pub(super) fn extract_node(
             }
 
             "field_declaration" | "constant_declaration" => {
+                let field_start_idx = symbols.len();
                 symbols::push_field_decl(&child, src, scope_tree, package, symbols, parent_index);
+                // Emit annotations on field declarations as TypeRef edges.
+                // In tree-sitter-java, annotations on fields appear inside a `modifiers` child.
+                let sym_idx = if symbols.len() > field_start_idx {
+                    field_start_idx
+                } else {
+                    parent_index.unwrap_or(0)
+                };
+                decorators::extract_decorators(&child, src, sym_idx, refs);
+                // Emit TypeRef for the field's declared type (including generic args).
+                symbols::extract_field_type_refs(&child, src, sym_idx, refs);
                 // Extract calls from field/constant initializers, e.g.:
                 //   private static final List<X> LIST = buildList();
                 //   private final Foo foo = new Foo();

@@ -217,13 +217,28 @@ pub(super) fn extract_class_body(
             "constructor_signature" => {
                 extract_constructor(&child, src, symbols, parent_index, qualified_prefix);
             }
+            // `factory ClassName(...)` — emit as Constructor symbol.
+            "factory_constructor_signature" => {
+                extract_factory_constructor(&child, src, symbols, parent_index, qualified_prefix);
+            }
             "field_declaration" | "initialized_variable_definition" => {
+                let pre_len = symbols.len();
                 extract_field(&child, src, symbols, parent_index, qualified_prefix);
+                // Emit TypeRef for the field's type annotation by routing through
+                // extract_dart_calls which handles type_identifier at every level.
+                let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
+                extract_dart_calls(&child, src, sym_idx, refs);
             }
             "getter_signature" | "setter_signature" => {
                 extract_getter_setter(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             "static_final_declaration_list" | "declaration" => {
+                // A `declaration` may contain `type_identifier` (the field/variable
+                // declared type) plus `initialized_identifier_list` or
+                // `function_signature` etc.  Route through extract_dart_calls
+                // first to capture type refs, then recurse for symbols.
+                let sym_idx = parent_index.unwrap_or(0);
+                extract_dart_calls(&child, src, sym_idx, refs);
                 extract_class_body(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
             _ => {
@@ -629,6 +644,116 @@ pub(super) fn extract_getter_setter(
     if let Some(body) = node.next_sibling() {
         if body.kind() == "function_body" || body.kind() == "block" {
             extract_dart_calls(&body, src, idx, refs);
+        }
+    }
+}
+
+/// Emit a Constructor symbol for a `factory_constructor_signature` node.
+/// Dart: `factory ClassName.namedCtor(params) => ...`
+fn extract_factory_constructor(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    // The constructor name is a `type_identifier` or `qualified_name` child.
+    // For named constructors: `ClassName.namedCtor` — take the last identifier.
+    let mut name: Option<String> = None;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let t = node_text(child, src);
+                if !t.is_empty() && t != "factory" {
+                    name = Some(t);
+                    break;
+                }
+            }
+            "qualified_name" => {
+                // `ClassName.namedCtor` — take the last identifier.
+                let mut last: Option<String> = None;
+                let mut qc = child.walk();
+                for inner in child.children(&mut qc) {
+                    if inner.kind() == "identifier" || inner.kind() == "type_identifier" {
+                        last = Some(node_text(inner, src));
+                    }
+                }
+                if let Some(n) = last {
+                    name = Some(n);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let name = match name {
+        Some(n) => n,
+        None => return,
+    };
+    let qualified_name = qualify(&name, qualified_prefix);
+    let visibility = if name.starts_with('_') {
+        Some(Visibility::Private)
+    } else {
+        Some(Visibility::Public)
+    };
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Constructor,
+        visibility,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("factory {name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+}
+
+/// Emit TypeRef edges for the declared type of a field declaration.
+/// Handles `UserService service;` where `UserService` is a `type_identifier`.
+/// The type node may be wrapped in `type_not_void`, `declared_type`, etc.
+fn emit_field_type_refs(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::calls::emit_dart_type_ref;
+    // Recursively walk the field declaration looking for the first type_identifier
+    // that is NOT a keyword or the variable name.
+    emit_field_type_refs_inner(node, src, source_symbol_index, refs, &mut false);
+
+    fn emit_field_type_refs_inner(
+        node: &tree_sitter::Node,
+        src: &str,
+        source_symbol_index: usize,
+        refs: &mut Vec<ExtractedRef>,
+        found: &mut bool,
+    ) {
+        if *found { return; }
+        match node.kind() {
+            "type_identifier" => {
+                let name = node_text(*node, src);
+                if !name.is_empty() && !matches!(name.as_str(), "final" | "static" | "late" | "const" | "var" | "void") {
+                    emit_dart_type_ref(*node, src, source_symbol_index, refs);
+                    *found = true;
+                }
+            }
+            // Stop recursing into these — they are the variable name/initializer, not the type.
+            "initialized_identifier" | "initialized_identifier_list" | "identifier" => {
+                // Don't recurse further — identifiers here are variable names.
+            }
+            _ => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if *found { break; }
+                    emit_field_type_refs_inner(&child, src, source_symbol_index, refs, found);
+                }
+            }
         }
     }
 }

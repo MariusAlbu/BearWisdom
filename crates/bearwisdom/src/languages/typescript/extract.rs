@@ -12,7 +12,7 @@ use super::{calls, decorators, helpers, imports, narrowing, params, symbols, typ
 
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
-use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -121,6 +121,10 @@ fn extract_node(
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
+                        // Also recurse with extract_node so nested lexical_declaration,
+                        // catch_clause, for_in_statement, etc. inside the body produce
+                        // their symbols and type refs.
+                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
@@ -165,6 +169,9 @@ fn extract_node(
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
+                        // Also recurse with extract_node so nested lexical_declaration,
+                        // catch_clause, for_in_statement, etc. produce symbols and type refs.
+                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
@@ -215,7 +222,18 @@ fn extract_node(
             }
 
             "type_alias_declaration" => {
+                let idx = symbols.len();
                 symbols::push_type_alias(&child, src, scope_tree, symbols, refs, parent_index);
+                // If the type alias value is an object_type (e.g. `type Foo = { prop: T; }`),
+                // recurse into it so property_signature / method_signature nodes inside it
+                // produce Property and Method symbols.
+                if symbols.len() > idx {
+                    if let Some(value) = child.child_by_field_name("value") {
+                        if value.kind() == "object_type" {
+                            extract_node(value, src, scope_tree, symbols, refs, Some(idx));
+                        }
+                    }
+                }
             }
 
             "enum_declaration" => {
@@ -301,6 +319,8 @@ fn extract_node(
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
+                        // Also recurse for nested declarations inside the generator body.
+                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                 }
             }
@@ -369,11 +389,107 @@ fn extract_node(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
+            // `expr as Type` — emit TypeRef for the asserted type.
+            // Also recurse for nested calls/declarations inside the expression.
+            "as_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                symbols::extract_type_ref_from_as_expression(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // `expr satisfies Type` — emit TypeRef for the asserted type.
+            "satisfies_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                symbols::extract_type_ref_from_satisfies_expression(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // `<Type>expr` — emit TypeRef for the asserted type (TSX-invalid form).
+            "type_assertion" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                symbols::extract_type_ref_from_type_assertion(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // `x instanceof Foo` — emit TypeRef for the constructor.
+            // Also handles non-instanceof binary expressions via recursion.
+            "binary_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                // Check for instanceof without re-importing narrowing internals.
+                let has_instanceof = (0..child.child_count()).any(|i| {
+                    child.child(i).map(|c| c.kind() == "instanceof").unwrap_or(false)
+                });
+                if has_instanceof {
+                    if let Some(right) = child.child_by_field_name("right") {
+                        let type_name = helpers::node_text(right, src);
+                        if !type_name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: type_name,
+                                kind: EdgeKind::TypeRef,
+                                line: right.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // Standalone `type_annotation` nodes encountered during recursion
+            // (e.g. in arrow function parameters, destructuring patterns, etc.)
+            // that aren't covered by a dedicated handler above.
+            "type_annotation" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                types::extract_type_ref_from_annotation(&child, src, sym_idx, refs);
+                // No further recursion needed — extract_type_ref_from_annotation
+                // fully handles the annotation subtree.
+            }
+
+            // `type_identifier` encountered during recursion in expression contexts
+            // (not as a declaration name). Emit a TypeRef unless it's a primitive.
+            // Covers: type references in variable type annotations via `as`, generics,
+            // template literal types, and other places where type_annotation handlers
+            // don't fire.
+            "type_identifier" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                let name = helpers::node_text(child, src);
+                if !name.is_empty() && !is_ts_primitive(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // type_identifier is a leaf — no children to recurse into.
+            }
+
             _ => {
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Return true if `name` is a TypeScript primitive type keyword.
+///
+/// These must not be emitted as TypeRef edges — they are language keywords,
+/// not references to user-defined or library symbols.
+#[inline]
+fn is_ts_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "string" | "number" | "boolean" | "void" | "any" | "unknown" | "never"
+            | "undefined" | "null" | "object" | "symbol" | "bigint"
+    )
 }
 
 // ---------------------------------------------------------------------------

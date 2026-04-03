@@ -53,6 +53,36 @@ fn extract_body_with_symbols_inner(
                 // Don't recurse further — extract_short_var_decl handles its RHS.
             }
 
+            // `var x Type = val` — explicit var declaration inside a function body.
+            "var_declaration" => {
+                super::symbols::extract_const_var_decl(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    Some(enclosing_idx),
+                    qualified_prefix,
+                    "var",
+                    "var_spec",
+                );
+                extract_refs_from_body(&child, source, enclosing_idx, refs);
+            }
+
+            // `const x = val` — explicit const declaration inside a function body.
+            "const_declaration" => {
+                super::symbols::extract_const_var_decl(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    Some(enclosing_idx),
+                    qualified_prefix,
+                    "const",
+                    "const_spec",
+                );
+                extract_refs_from_body(&child, source, enclosing_idx, refs);
+            }
+
             // `for i, v := range slice { ... }`
             "for_statement" => {
                 extract_for_range_vars(&child, source, enclosing_idx, qualified_prefix, symbols, refs);
@@ -213,7 +243,9 @@ pub(super) fn extract_refs_from_body(
             }
             "composite_literal" => {
                 extract_composite_literal_ref(&child, source, source_symbol_index, refs);
-                // Recurse into body for nested composites / calls.
+                // Recurse into the literal body — both `literal_value` (the outer
+                // brace block) and `keyed_element` / `element` nodes inside it so
+                // that nested calls, composite literals, and type refs are captured.
                 let mut bcursor = child.walk();
                 for body_child in child.children(&mut bcursor) {
                     if body_child.kind() == "literal_value" {
@@ -237,6 +269,70 @@ pub(super) fn extract_refs_from_body(
             "type_switch_statement" => {
                 extract_type_switch_refs(&child, source, source_symbol_index, refs);
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
+            // `pkg.Field` or `pkg.Func` used as a value (not as the callee of a
+            // call_expression — those are handled inside `extract_call_ref`).
+            // Emit a Calls ref so the selector appears in the graph.
+            "selector_expression" => {
+                // Emit a Calls edge for the field/method name.
+                let named_count = child.named_child_count();
+                if named_count >= 2 {
+                    let field = child.named_child(named_count - 1);
+                    if let Some(field_node) = field {
+                        let name = node_text(&field_node, source);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::Calls,
+                                line: field_node.start_position().row as u32,
+                                module: None,
+                                chain: build_chain(child, source),
+                            });
+                        }
+                    }
+                }
+                extract_refs_from_body(&child, source, source_symbol_index, refs);
+            }
+
+            // `pkg.Type` in a type position — emit a TypeRef for the leaf name.
+            "qualified_type" => {
+                let leaf = (0..child.named_child_count())
+                    .filter_map(|i| child.named_child(i))
+                    .filter(|c| c.kind() == "type_identifier")
+                    .last();
+                if let Some(n) = leaf {
+                    let name = node_text(&n, source);
+                    if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: n.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+
+            // Standalone `type_identifier` in an expression — variable declarations,
+            // type switch case arms, cast targets, etc.  Emit a TypeRef when the
+            // name is not a builtin.
+            "type_identifier" => {
+                let name = node_text(&child, source);
+                if !name.is_empty() && !super::helpers::is_go_builtin_type(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                // type_identifier is a leaf — no children to recurse into.
             }
 
             // `string(bytes)`, `int64(x)` — type conversion expression.

@@ -79,6 +79,26 @@ fn visit(
         } else if child.kind() == "unary_operator" {
             // Module attributes: `@moduledoc "..."`, `@doc "..."`, `@spec name(...)`
             dispatch_attribute(&child, src, symbols, refs, parent_index, qualified_prefix);
+        } else if child.kind() == "binary_operator" {
+            // Pipe operators and other binary expressions at module scope.
+            let sym_idx = parent_index.unwrap_or(0);
+            extract_pipe_calls(&child, src, sym_idx, refs);
+            visit(child, src, symbols, refs, parent_index, qualified_prefix);
+        } else if child.kind() == "alias" {
+            // Module reference in module-level expression (e.g., `MyApp.Repo` in attributes).
+            let sym_idx = parent_index.unwrap_or(0);
+            let name = node_text(child, src);
+            if !name.is_empty() {
+                let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: simple,
+                    kind: EdgeKind::TypeRef,
+                    line: child.start_position().row as u32,
+                    module: if name.contains('.') { Some(name) } else { None },
+                    chain: None,
+                });
+            }
         } else {
             visit(child, src, symbols, refs, parent_index, qualified_prefix);
         }
@@ -128,7 +148,9 @@ fn dispatch_call(
                 module: None,
                 chain: None,
             });
-            // Still recurse for nested defs / aliases inside do-block
+            // For dot calls (e.g. `Enum.map`), also emit a TypeRef for the receiver module.
+            extract_dot_call_module_ref(node, src, sym_idx, refs);
+            // Still recurse for nested defs / aliases inside do-block and arguments.
             visit(*node, src, symbols, refs, parent_index, qualified_prefix);
         }
     }
@@ -486,6 +508,9 @@ fn extract_calls_recursive(
                             module: None,
                             chain: None,
                         });
+                        // For dot calls like `Enum.map(...)`, also emit a TypeRef for
+                        // the module part (the `alias` node before the dot).
+                        extract_dot_call_module_ref(&child, src, source_symbol_index, refs);
                     }
                 }
                 extract_calls_recursive(&child, src, source_symbol_index, refs);
@@ -495,6 +520,23 @@ fn extract_calls_recursive(
             "binary_operator" => {
                 extract_pipe_calls(&child, src, source_symbol_index, refs);
                 extract_calls_recursive(&child, src, source_symbol_index, refs);
+            }
+
+            // `alias` node (a capitalized module reference like `Enum`, `MyApp.User`).
+            // Emit a TypeRef so that module references in expressions are tracked.
+            "alias" => {
+                let name = node_text(child, src);
+                if !name.is_empty() {
+                    let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: simple,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: if name.contains('.') { Some(name) } else { None },
+                        chain: None,
+                    });
+                }
             }
 
             // Anonymous functions: `fn arg -> body end` — recurse into stab_clause bodies.
@@ -521,6 +563,46 @@ fn extract_calls_recursive(
             _ => {
                 extract_calls_recursive(&child, src, source_symbol_index, refs);
             }
+        }
+    }
+}
+
+/// For a dot call like `Enum.map(...)`, emit a TypeRef to the receiver module.
+///
+/// The tree-sitter-elixir `call` node for `Enum.map(...)` has a `dot` child
+/// whose first named child is the module (`alias` or `identifier`).
+fn extract_dot_call_module_ref(
+    call_node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = call_node.walk();
+    for child in call_node.children(&mut cursor) {
+        if child.kind() == "dot" {
+            // `dot` → receiver (alias/identifier) . function_name
+            let mut dc = child.walk();
+            for dc_child in child.children(&mut dc) {
+                match dc_child.kind() {
+                    "alias" | "identifier" => {
+                        let name = node_text(dc_child, src);
+                        if !name.is_empty() {
+                            let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: simple,
+                                kind: EdgeKind::TypeRef,
+                                line: dc_child.start_position().row as u32,
+                                module: if name.contains('.') { Some(name) } else { None },
+                                chain: None,
+                            });
+                        }
+                        return; // only the receiver, not the function name
+                    }
+                    _ => {}
+                }
+            }
+            return;
         }
     }
 }

@@ -147,6 +147,19 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 extract_class_literal_ref(&child, src, source_symbol_index, refs);
             }
 
+            // `List<User>` — generic type in expression context.
+            // Emit TypeRef for the base type and each type argument.
+            "generic_type" => {
+                super::symbols::extract_type_refs_recursive(child, src, source_symbol_index, refs);
+                // Don't recurse further — handled above recursively.
+            }
+
+            // `<String, Integer>` — standalone type_arguments (generic method calls).
+            // Emit TypeRef for each type argument.
+            "type_arguments" => {
+                super::symbols::extract_type_refs_recursive(child, src, source_symbol_index, refs);
+            }
+
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));

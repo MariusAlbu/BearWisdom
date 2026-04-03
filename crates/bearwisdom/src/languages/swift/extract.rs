@@ -201,17 +201,19 @@ pub(super) fn extract_node<'a>(
             "property_declaration" | "stored_property" | "variable_declaration" => {
                 let pre_len = symbols.len();
                 push_property(&child, src, scope_tree, symbols, parent_index);
+                let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
                 if symbols.len() > pre_len {
-                    extract_decorators(&child, src, pre_len, refs);
-                    // Emit TypeRef for the property's type annotation (e.g. `var x: MyClass`).
-                    extract_function_type_refs(&child, src, pre_len, refs);
-                    // Extract calls from the property initializer value.
-                    let sym_idx = pre_len;
-                    let body = child.child_by_field_name("value")
-                        .or_else(|| find_child_by_kind(&child, "computed_property"));
-                    if let Some(b) = body {
-                        calls::extract_calls_from_body(&b, src, sym_idx, refs);
-                    }
+                    extract_decorators(&child, src, sym_idx, refs);
+                }
+                // Always extract type annotation refs — even if no symbol was pushed
+                // (e.g. access-control filters) the TypeRef is still valuable.
+                extract_function_type_refs(&child, src, sym_idx, refs);
+                // Extract calls from the property initializer value or computed body.
+                let body = child.child_by_field_name("value")
+                    .or_else(|| find_child_by_kind(&child, "computed_property"))
+                    .or_else(|| find_child_by_kind(&child, "code_block"));
+                if let Some(b) = body {
+                    calls::extract_calls_from_body(&b, src, sym_idx, refs);
                 }
             }
 

@@ -392,3 +392,144 @@ fn coverage_tagged_template_expression() {
         r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Gap-closure tests — new coverage from extract.rs changes
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_lexical_declaration_inside_function_body() {
+    // `const` inside a function body should produce a Variable symbol.
+    let r = extract::extract(
+        "function run() { const db: Database = connect(); }",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "db"),
+        "lexical_declaration inside function body should produce Variable symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_lexical_declaration_inside_if_block() {
+    // `const` inside an if block (inside a function) should still produce a Variable symbol.
+    let r = extract::extract(
+        "function run(flag: boolean) { if (flag) { const result: QueryResult = fetch(); } }",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "result"),
+        "lexical_declaration inside if block should produce Variable symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_call_expression_in_arrow_function_argument() {
+    // Calls inside arrow function arguments passed to other calls should be captured.
+    let r = extract::extract(
+        "function run(items: Item[]) { items.forEach(item => processItem(item)); }",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::Calls && r.target_name == "processItem"),
+        "call_expression inside arrow function argument should produce Calls ref; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_type_identifier_in_nested_context() {
+    // type_identifier in a complex type expression that may not go through a
+    // dedicated type_annotation handler should still produce a TypeRef.
+    let r = extract::extract(
+        "const x: Array<UserProfile> = [];",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "UserProfile"),
+        "type_identifier in generic type argument should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_property_signature_in_type_alias_object_type() {
+    // property_signature inside a type alias object literal should produce a Property symbol.
+    let r = extract::extract(
+        "type Config = { host: string; port: number; };",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "host"),
+        "property_signature in type alias object_type should produce Property symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_method_signature_in_type_alias_object_type() {
+    // method_signature inside a type alias object literal should produce a Method symbol.
+    let r = extract::extract(
+        "type Service = { find(id: number): User; };",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "find"),
+        "method_signature in type alias object_type should produce Method symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_as_expression_deeply_nested() {
+    // as_expression inside a return statement inside a method body.
+    let r = extract::extract(
+        "class Svc { handle(x: unknown) { return (x as AdminUser).doStuff(); } }",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
+        "as_expression deeply nested should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_binary_expression_instanceof_at_module_scope() {
+    // instanceof at module scope (not inside a function) should produce TypeRef.
+    let r = extract::extract(
+        "const isAdmin = user instanceof AdminUser;",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
+        "instanceof at module scope should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_type_annotation_in_arrow_function_param() {
+    // Type annotation on an arrow function parameter should produce TypeRef.
+    let r = extract::extract(
+        "const handler = (req: Request) => req.body;",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Request"),
+        "type_annotation in arrow function param should produce TypeRef; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}

@@ -611,3 +611,75 @@ fn coverage_abstract_type_in_fn_param_emits_type_ref() {
         "expected TypeRef to Handler from abstract_type (impl Handler) in param; refs: {type_refs:?}"
     );
 }
+
+// ---- impl_item: Implements edge for `impl Trait for Type` ------------------
+
+#[test]
+fn coverage_impl_item_trait_for_type_emits_implements_edge() {
+    // `impl Display for Foo` — should emit an Implements edge to Display.
+    let src = "struct Foo;\ntrait Display { fn fmt(&self); }\nimpl Display for Foo { fn fmt(&self) {} }";
+    let r = extract::extract(src);
+    let implements: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Implements)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        implements.contains(&"Display"),
+        "expected Implements edge to Display from impl Trait for Type; refs: {implements:?}"
+    );
+}
+
+#[test]
+fn coverage_impl_item_inherent_no_implements_edge() {
+    // `impl Foo { ... }` (no trait) — should NOT emit an Implements edge.
+    let src = "struct Foo;\nimpl Foo { fn new() -> Self { Foo } }";
+    let r = extract::extract(src);
+    let implements: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Implements)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        implements.is_empty(),
+        "expected no Implements edge from inherent impl; got: {implements:?}"
+    );
+}
+
+// ---- let_declaration type annotation → TypeRef ----------------------------
+
+#[test]
+fn coverage_let_declaration_type_annotation_emits_type_ref() {
+    // `let x: MyType = ...` — the explicit type annotation should produce a TypeRef.
+    let src = "fn f() { let x: MyType = todo!(); let _ = x; }";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"MyType"),
+        "expected TypeRef to MyType from let declaration type annotation; refs: {type_refs:?}"
+    );
+}
+
+#[test]
+fn coverage_let_declaration_generic_type_annotation_emits_type_ref() {
+    // `let items: Vec<Item> = ...` — Item inside generic type args should produce TypeRef.
+    let src = "fn f() { let items: Vec<Item> = vec![]; let _ = items; }";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"Item"),
+        "expected TypeRef to Item from Vec<Item> in let binding; refs: {type_refs:?}"
+    );
+}

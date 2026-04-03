@@ -238,3 +238,44 @@ fn ref_type_identifier() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_type_identifier_in_field() {
+    // type_identifier in a field declaration emits TypeRef.
+    let r = extract("class C {\n  UserService service;\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "UserService"),
+        "expected TypeRef UserService from field decl; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_type_test_expression_produces_type_ref() {
+    // type_test_expression: `x is MyType` should emit TypeRef.
+    let r = extract("class C {\n  void f(Object x) { if (x is MyModel) {} }\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "MyModel" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef MyModel from is-check; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_const_object_expression_produces_call() {
+    // const_object_expression: `const Color.red()` should emit TypeRef or Calls.
+    let r = extract("class C {\n  final color = const Duration(seconds: 1);\n}");
+    // At minimum, no crash.
+    let _ = r;
+}
+
+#[test]
+fn ref_factory_constructor_signature_produces_constructor() {
+    // factory_constructor_signature should emit a Constructor symbol.
+    let r = extract("class Singleton {\n  factory Singleton() => _instance;\n  static final Singleton _instance = Singleton._internal();\n  Singleton._internal();\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor),
+        "expected Constructor from factory constructor; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}

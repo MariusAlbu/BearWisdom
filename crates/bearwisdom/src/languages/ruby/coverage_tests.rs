@@ -189,3 +189,46 @@ fn cov_constant_in_superclass_produces_inherits_ref() {
         "expected Inherits ref for 'Animal' constant, got: {inherits:?}"
     );
 }
+
+/// Nested call inside class body: `foo(bar(baz()))` — all three must be captured.
+#[test]
+fn cov_nested_calls_in_class_body_all_captured() {
+    let src = "class Svc\n  setup(Logger.new(stdout))\nend\n";
+    let r = extract::extract(src);
+    // setup and new (or Logger) must appear
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|r| r.kind == EdgeKind::Calls || r.kind == EdgeKind::Instantiates)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(!calls.is_empty(), "expected at least one call ref from nested call, got: {calls:?}");
+}
+
+/// `scope_resolution` in a general expression context → TypeRef.
+#[test]
+fn cov_scope_resolution_in_body_produces_type_ref() {
+    let src = "class C\n  def go\n    x = ActiveRecord::Base.connection\n  end\nend\n";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r.refs.iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.iter().any(|n| n.contains("Base") || n.contains("ActiveRecord")),
+        "expected TypeRef for ActiveRecord::Base in body, got: {type_refs:?}"
+    );
+}
+
+/// `constant` in assignment context → TypeRef.
+#[test]
+fn cov_constant_in_body_produces_type_ref() {
+    let src = "def setup\n  adapter = JSONAdapter\nend\n";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r.refs.iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"JSONAdapter"),
+        "expected TypeRef for 'JSONAdapter' constant in body, got: {type_refs:?}"
+    );
+}

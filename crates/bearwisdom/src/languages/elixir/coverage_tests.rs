@@ -185,3 +185,30 @@ fn ref_alias_node_type_ref() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_alias_node_in_function_body() {
+    // `alias` grammar nodes (module references) in function bodies emit TypeRef edges.
+    let r = extract("defmodule M do\n  def f do\n    Repo.all(User)\n  end\nend");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && (rf.target_name == "Repo" || rf.target_name == "User")),
+        "expected TypeRef for module reference in function body; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_pipe_operator_inside_function() {
+    // `|>` pipe chains inside def bodies emit Calls edges for each piped function.
+    let r = extract("defmodule M do\n  def transform(list) do\n    list\n    |> Enum.map(fn x -> x * 2 end)\n    |> Enum.filter(fn x -> x > 0 end)\n  end\nend");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
+        "expected Calls edge for piped 'map'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "filter" && rf.kind == EdgeKind::Calls),
+        "expected Calls edge for piped 'filter'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

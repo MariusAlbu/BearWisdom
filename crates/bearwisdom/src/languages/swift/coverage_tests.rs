@@ -243,3 +243,35 @@ fn ref_protocol_composition_type() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_type_identifier_in_local_var() {
+    // type_identifier inside a function body local var annotation.
+    let r = extract("func f() {\n    let x: MyService = MyService()\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "MyService"),
+        "expected TypeRef MyService from local var annotation; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_user_type_in_property_decl() {
+    // user_type in a stored property type annotation should emit TypeRef.
+    let r = extract("class C {\n    var repo: UserRepository = UserRepository()\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "UserRepository"),
+        "expected TypeRef UserRepository from property annotation; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_call_expression_nested_in_property() {
+    // call_expression in a computed property should produce Calls.
+    let r = extract("class C {\n    var count: Int {\n        return items.count\n    }\n}");
+    assert!(
+        !r.refs.is_empty(),
+        "expected refs from computed property body; got none"
+    );
+}

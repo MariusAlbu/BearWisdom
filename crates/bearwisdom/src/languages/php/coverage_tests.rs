@@ -280,3 +280,33 @@ fn cov_intersection_type_in_param_produces_type_refs() {
         "expected TypeRef from intersection_type in param, got: {type_refs:?}"
     );
 }
+
+/// "named_type" on property declaration → TypeRef
+#[test]
+fn cov_named_type_on_property_declaration_produces_type_ref() {
+    let src = "<?php class Foo { public User $user; }\n";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r.refs.iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"User"),
+        "expected TypeRef for 'User' named_type on property, got: {type_refs:?}"
+    );
+}
+
+/// "named_type" on function return type → TypeRef
+#[test]
+fn cov_named_type_on_return_type_produces_type_ref() {
+    let src = "<?php class Svc { public function getUser(): User { return new User(); } }\n";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r.refs.iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"User"),
+        "expected TypeRef for 'User' named_type as return type, got: {type_refs:?}"
+    );
+}

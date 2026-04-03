@@ -627,6 +627,17 @@ fn extract_field_declaration(
                 // `*EmbeddedType`
                 embedded_type = Some(pointer_type_name(&child, source));
             }
+            // `pkg.Type` embedded field (e.g. `http.Handler`, `sync.Mutex`).
+            "qualified_type" if field_names.is_empty() && type_text.is_none() => {
+                let leaf = (0..child.named_child_count())
+                    .filter_map(|i| child.named_child(i))
+                    .filter(|c| c.kind() == "type_identifier")
+                    .last();
+                embedded_type = Some(match leaf {
+                    Some(n) => node_text(&n, source),
+                    None => node_text(&child, source),
+                });
+            }
             "raw_string_literal" => {
                 // Struct tag: `json:"name" db:"col"`
                 let raw = node_text(&child, source);
@@ -637,10 +648,8 @@ fn extract_field_declaration(
             }
             _ => {
                 // Any other named child after field_identifier(s) is the type.
-                if !field_names.is_empty() || type_text.is_none() {
-                    if !field_names.is_empty() {
-                        type_text = Some(node_text(&child, source));
-                    }
+                if !field_names.is_empty() {
+                    type_text = Some(node_text(&child, source));
                 }
             }
         }
@@ -921,6 +930,7 @@ pub(super) fn extract_const_var_decl(
     node: &Node,
     source: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
     keyword: &str,
@@ -933,6 +943,7 @@ pub(super) fn extract_const_var_decl(
                 &child,
                 source,
                 symbols,
+                refs,
                 parent_index,
                 qualified_prefix,
                 keyword,
@@ -947,6 +958,7 @@ fn extract_const_var_spec(
     node: &Node,
     source: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
     keyword: &str,
@@ -978,6 +990,21 @@ fn extract_const_var_spec(
                 past_names = true;
             }
             _ => {}
+        }
+    }
+
+    // Emit TypeRef for a declared type that references a user-defined symbol.
+    // We do this once, not per-name, because all names share the same type.
+    if let Some(ref t) = type_text {
+        if !t.is_empty() && !is_go_builtin_type(t) {
+            refs.push(ExtractedRef {
+                source_symbol_index: parent_index.unwrap_or(0),
+                target_name: t.clone(),
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
         }
     }
 

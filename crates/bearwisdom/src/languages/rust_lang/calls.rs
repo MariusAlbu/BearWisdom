@@ -14,6 +14,10 @@ use tree_sitter::Node;
 
 /// Process an `impl_item` — not a symbol itself, but the container for methods.
 /// The implementing type name becomes the qualified prefix for its methods.
+///
+/// When the form is `impl Trait for Type`, emit an `Implements` edge from the
+/// implementing type symbol back to the trait name, so the graph tracks which
+/// structs implement which traits.
 pub(super) fn extract_impl(
     node: &Node,
     source: &str,
@@ -26,6 +30,26 @@ pub(super) fn extract_impl(
         None => return,
     };
     let type_name = node_text(&type_node, source);
+
+    // `impl Trait for Type` — emit an Implements edge from the implementing type
+    // back to the trait.  The trait name lives in the `trait` field.
+    if let Some(trait_node) = node.child_by_field_name("trait") {
+        let trait_name = rust_type_node_name(&trait_node, source);
+        if !trait_name.is_empty() {
+            // Use the current symbol count as a pseudo-source; the implementing
+            // type is not itself a new symbol here, but the edge still needs an
+            // origin.  We use the last emitted symbol index (or 0 if none yet).
+            let source_idx = symbols.len().saturating_sub(1);
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: trait_name,
+                kind: EdgeKind::Implements,
+                line: trait_node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
 
     let impl_prefix = if outer_prefix.is_empty() {
         type_name
@@ -235,9 +259,19 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
 
-            // `let x: T = expr;` — emit a Variable symbol for the binding pattern
-            // and recurse into the value expression for nested calls.
+            // `let x: T = expr;` — emit a Variable symbol for the binding pattern,
+            // a TypeRef for the explicit type annotation (if any), and recurse
+            // into the value expression for nested calls.
             "let_declaration" => {
+                // Emit TypeRef for the declared type: `let x: MyType = ...`
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    super::symbols::extract_type_refs_from_type_node(
+                        &type_node,
+                        source,
+                        source_symbol_index,
+                        refs,
+                    );
+                }
                 if let Some(syms) = symbols.as_deref_mut() {
                     // Reuse the pattern extractor — handles identifiers, tuple patterns, etc.
                     // `let_declaration` and `let_condition` share the same `pattern` field.
@@ -312,6 +346,20 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     // appears as a dependency, not just the method.
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func, refs);
 
+                    // Turbofish: `foo::<T>()` or `Vec::<String>::new()` —
+                    // the function node may be a `generic_function` containing
+                    // type_arguments.  Walk those args for TypeRefs.
+                    if func.kind() == "generic_function" {
+                        if let Some(type_args) = func.child_by_field_name("type_arguments") {
+                            super::symbols::extract_type_refs_from_type_node(
+                                &type_args,
+                                source,
+                                source_symbol_index,
+                                refs,
+                            );
+                        }
+                    }
+
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -323,6 +371,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         });
                     }
                 }
+                // Recurse into the entire call node (function + arguments) so that
+                // nested calls in the callee chain and closure arguments are all found.
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
                 } else {

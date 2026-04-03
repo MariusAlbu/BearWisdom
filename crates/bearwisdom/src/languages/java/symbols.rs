@@ -312,6 +312,114 @@ pub(super) fn push_field_decl(
     }
 }
 
+/// Emit TypeRef edges for a `field_declaration` or `constant_declaration`'s
+/// declared type, including generic type arguments.
+///
+/// For `private List<User> users;` → TypeRef to `List` and TypeRef to `User`.
+pub(super) fn extract_field_type_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if let Some(type_node) = node.child_by_field_name("type") {
+        extract_type_refs_recursive(type_node, src, source_symbol_index, refs);
+    }
+}
+
+/// Recursively extract TypeRef edges from a Java type node.
+///
+/// Handles: `type_identifier`, `generic_type`, `scoped_type_identifier`,
+/// `array_type`, `annotated_type`, `wildcard_type`, `type_arguments`.
+pub(super) fn extract_type_refs_recursive(
+    type_node: Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match type_node.kind() {
+        "type_identifier" => {
+            let name = node_text(type_node, src);
+            if !name.is_empty() && !is_java_primitive(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: type_node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        "generic_type" => {
+            // e.g. `List<User>` → emit TypeRef for "List" and recurse into type_arguments.
+            let mut cursor = type_node.walk();
+            for child in type_node.children(&mut cursor) {
+                match child.kind() {
+                    "type_identifier" | "scoped_type_identifier" => {
+                        let name = type_node_simple_name(child, src);
+                        if !name.is_empty() && !is_java_primitive(&name) {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::TypeRef,
+                                line: child.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                    "type_arguments" => {
+                        extract_type_refs_recursive(child, src, source_symbol_index, refs);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        "type_arguments" => {
+            // e.g. `<String, Integer>` — recurse into each argument.
+            let mut cursor = type_node.walk();
+            for child in type_node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_type_refs_recursive(child, src, source_symbol_index, refs);
+                }
+            }
+        }
+        "scoped_type_identifier" => {
+            let name = type_node_simple_name(type_node, src);
+            if !name.is_empty() && !is_java_primitive(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: type_node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        "array_type" => {
+            let mut cursor = type_node.walk();
+            for child in type_node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_type_refs_recursive(child, src, source_symbol_index, refs);
+                    break;
+                }
+            }
+        }
+        "annotated_type" | "wildcard" => {
+            // Recurse into inner type.
+            let mut cursor = type_node.walk();
+            for child in type_node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_type_refs_recursive(child, src, source_symbol_index, refs);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Import extraction
 // ---------------------------------------------------------------------------

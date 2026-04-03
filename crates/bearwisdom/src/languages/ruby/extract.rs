@@ -124,6 +124,51 @@ pub(super) fn extract_from_node(
                     inside_class,
                     symbols,
                 );
+                // Also recurse into the call's children so nested calls in
+                // arguments (e.g. `foo(bar(baz()))`) at class/module body level
+                // are captured.  extract_call_statement only handles one level.
+                let sym_idx = parent_index.unwrap_or(0);
+                super::calls::extract_calls_from_body(
+                    &child,
+                    src,
+                    sym_idx,
+                    refs,
+                );
+            }
+
+            // `Foo::Bar` — scope resolution used as a type reference (e.g. in
+            // assignments, conditionals, or as standalone constant refs).
+            "scope_resolution" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                let type_name = super::helpers::node_text(&child, src);
+                if !type_name.is_empty() {
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: type_name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+
+            // Bare constant reference (e.g. `TIMEOUT`, `MyClass`) — emit TypeRef
+            // when encountered outside a method body (inside method bodies the
+            // `extract_calls_from_body` path handles them via the `call` arm).
+            "constant" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                let type_name = super::helpers::node_text(&child, src);
+                if !type_name.is_empty() {
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: type_name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
             }
 
             // `include Foo` / `extend Bar` / `prepend Mixin` — bare command at

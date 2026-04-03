@@ -52,8 +52,23 @@ pub(super) fn extract_enum_class_body(
     for child in body.children(&mut cursor) {
         match child.kind() {
             "enum_entry" => {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let name = node_text(name_node, src);
+                // tree-sitter-kotlin-ng may use a `name` field or a direct
+                // `simple_identifier` child — handle both.
+                let name_opt = child.child_by_field_name("name")
+                    .map(|n| node_text(n, src))
+                    .or_else(|| {
+                        let mut cc = child.walk();
+                        for inner in child.children(&mut cc) {
+                            if inner.kind() == "simple_identifier" || inner.kind() == "identifier" {
+                                let t = node_text(inner, src);
+                                if !t.is_empty() {
+                                    return Some(t);
+                                }
+                            }
+                        }
+                        None
+                    });
+                if let Some(name) = name_opt {
                     let qualified_name = if enum_qname.is_empty() {
                         name.clone()
                     } else {
@@ -278,6 +293,7 @@ pub(super) fn push_companion_object(
 /// Extract Variable symbols (and TypeRef edges) from a `primary_constructor`'s
 /// `class_parameters`. Parameters with `val`/`var` modifiers also become
 /// Property symbols (Kotlin primary-constructor promotion).
+/// Also emits a Constructor symbol for the primary constructor itself.
 pub(super) fn extract_primary_constructor_params(
     node: &Node,
     src: &[u8],
@@ -290,6 +306,35 @@ pub(super) fn extract_primary_constructor_params(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "primary_constructor" {
+            // Emit a Constructor symbol for the primary constructor.
+            let class_name = parent_index
+                .and_then(|i| symbols.get(i))
+                .map(|s| s.name.clone())
+                .unwrap_or_else(|| "constructor".to_string());
+
+            let scope = enclosing_scope(scope_tree, child.start_byte(), child.end_byte());
+            let qualified_name = scope_tree::qualify(&class_name, scope);
+            let scope_path = scope_tree::scope_path(scope);
+
+            let params_text = find_child_by_kind(&child, "class_parameters")
+                .map(|p| node_text(p, src))
+                .unwrap_or_default();
+
+            symbols.push(ExtractedSymbol {
+                name: class_name.clone(),
+                qualified_name,
+                kind: SymbolKind::Constructor,
+                visibility: detect_visibility(&child, src),
+                start_line: child.start_position().row as u32,
+                end_line: child.end_position().row as u32,
+                start_col: child.start_position().column as u32,
+                end_col: child.end_position().column as u32,
+                signature: Some(format!("{class_name}{params_text}")),
+                doc_comment: extract_doc_comment(&child, src),
+                scope_path,
+                parent_index,
+            });
+
             let mut pc = child.walk();
             for inner in child.children(&mut pc) {
                 if inner.kind() == "class_parameters" {

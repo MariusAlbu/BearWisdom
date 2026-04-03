@@ -60,8 +60,23 @@ pub(super) fn extract_calls_from_body(
                             chain: None,
                         });
                     }
+                    // Also emit TypeRefs for type arguments: `new Dictionary<string, Foo>()`
+                    super::types::extract_type_refs_from_type_node(type_node, src, source_symbol_index, refs);
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `generic_name` in expression position (e.g. method type arguments `Method<Foo>()`,
+            // type constraint expressions, etc.) — emit TypeRef for both the name and its args.
+            "generic_name" => {
+                super::types::extract_type_refs_from_type_node(child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `type_argument_list` in expression position — emit TypeRef for each argument.
+            "type_argument_list" => {
+                let mut cursor2 = child.walk();
+                for arg in child.children(&mut cursor2) {
+                    super::types::extract_type_refs_from_type_node(arg, src, source_symbol_index, refs);
+                }
             }
             // `user is Admin admin` / `user is Admin` — is_expression or
             // is_pattern_expression (tree-sitter-c-sharp uses both node kinds
