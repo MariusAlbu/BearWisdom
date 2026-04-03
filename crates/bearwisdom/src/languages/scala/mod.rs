@@ -39,4 +39,38 @@ impl LanguagePlugin for ScalaPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "class_definition",
+            "object_definition",
+            "trait_definition",
+            "enum_definition",
+            "full_enum_case",
+            "simple_enum_case",
+            "function_definition",
+            "function_declaration",
+            "val_definition",
+            "var_definition",
+            "val_declaration",
+            "var_declaration",
+            "type_definition",
+            "given_definition",
+            "package_clause",
+            "package_object",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call_expression",
+            "instance_expression",
+            "import_declaration",
+            "export_declaration",
+            "type_identifier",
+            "type_arguments",
+            "extends_clause",
+            "infix_expression",
+        ]
+    }
 }

@@ -44,4 +44,22 @@ impl LanguagePlugin for RubyPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "class",
+            "module",
+            "method",
+            "singleton_method",
+            "singleton_class",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call",
+            "scope_resolution",
+            "constant",
+        ]
+    }
 }

@@ -36,4 +36,19 @@ impl LanguagePlugin for ElixirPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        // Elixir's grammar is minimal — all constructs are `call` nodes.
+        // Symbol extraction matches on call.target identifier text.
+        &["call"]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call",
+            "dot",
+            "alias",
+            "binary_operator",
+        ]
+    }
 }

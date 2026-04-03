@@ -31,4 +31,30 @@ impl LanguagePlugin for JavascriptPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "class_declaration",
+            "class",
+            "function_declaration",
+            "generator_function_declaration",
+            "function_expression",
+            "method_definition",
+            "variable_declaration",
+            "lexical_declaration",
+            "field_definition",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call_expression",
+            "new_expression",
+            "import_statement",
+            "export_statement",
+            "class_heritage",
+            "jsx_opening_element",
+            "jsx_self_closing_element",
+        ]
+    }
 }

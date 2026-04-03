@@ -37,4 +37,25 @@ impl LanguagePlugin for ScssPlugin {
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "mixin_statement",
+            "function_statement",
+            "rule_set",
+            "keyframes_statement",
+            "placeholder",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "include_statement",
+            "extend_statement",
+            "use_statement",
+            "forward_statement",
+            "import_statement",
+            "call_expression",
+        ]
+    }
 }

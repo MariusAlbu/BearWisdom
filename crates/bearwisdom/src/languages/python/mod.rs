@@ -40,4 +40,28 @@ impl LanguagePlugin for PythonPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "class_definition",
+            "function_definition",
+            "decorated_definition",
+            "assignment",
+            "type_alias_statement",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call",
+            "import_statement",
+            "import_from_statement",
+            "future_import_statement",
+            "typed_parameter",
+            "typed_default_parameter",
+            "type",
+            "generic_type",
+            "union_type",
+        ]
+    }
 }

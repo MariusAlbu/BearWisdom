@@ -39,4 +39,37 @@ impl LanguagePlugin for KotlinPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "class_declaration",
+            "object_declaration",
+            "companion_object",
+            "function_declaration",
+            "secondary_constructor",
+            "primary_constructor",
+            "property_declaration",
+            "getter",
+            "setter",
+            "type_alias",
+            "enum_entry",
+            "class_parameter",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call_expression",
+            "constructor_invocation",
+            "import_header",
+            "delegation_specifier",
+            "user_type",
+            "nullable_type",
+            "type_arguments",
+            "as_expression",
+            "check_expression",
+            "annotation",
+            "navigation_expression",
+        ]
+    }
 }

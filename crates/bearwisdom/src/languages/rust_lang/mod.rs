@@ -41,4 +41,42 @@ impl LanguagePlugin for RustLangPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "struct_item",
+            "enum_item",
+            "enum_variant",
+            "trait_item",
+            "impl_item",
+            "function_item",
+            "function_signature_item",
+            "const_item",
+            "static_item",
+            "type_item",
+            "associated_type",
+            "mod_item",
+            "field_declaration",
+            "union_item",
+            "macro_definition",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call_expression",
+            "macro_invocation",
+            "struct_expression",
+            "use_declaration",
+            "impl_item",
+            "type_cast_expression",
+            "type_arguments",
+            "attribute_item",
+            "trait_bounds",
+            "scoped_type_identifier",
+            "type_identifier",
+            "dynamic_type",
+            "abstract_type",
+        ]
+    }
 }

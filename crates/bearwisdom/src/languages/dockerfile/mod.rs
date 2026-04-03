@@ -36,4 +36,20 @@ impl LanguagePlugin for DockerfilePlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "from_instruction",
+            "arg_instruction",
+            "env_instruction",
+            "label_instruction",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "copy_instruction",
+            "from_instruction",
+        ]
+    }
 }

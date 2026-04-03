@@ -34,4 +34,22 @@ impl LanguagePlugin for SqlPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "create_table_stmt",
+            "create_view_stmt",
+            "create_trigger_stmt",
+            "column_def",
+            "common_table_expression",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "table_or_subquery",
+            "foreign_key_clause",
+            "type_name",
+        ]
+    }
 }

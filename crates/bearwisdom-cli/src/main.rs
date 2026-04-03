@@ -1465,7 +1465,7 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
 // Coverage analysis
 // ---------------------------------------------------------------------------
 
-fn cmd_coverage(project: &str, lang_filter: Option<&str>, top: usize) -> Result<String> {
+fn cmd_coverage(project: &str, lang_filter: Option<&str>, _top: usize) -> Result<String> {
     let project_root = std::path::Path::new(project);
     if !project_root.is_dir() {
         anyhow::bail!("Project path does not exist: {project}");
@@ -1483,24 +1483,31 @@ fn cmd_coverage(project: &str, lang_filter: Option<&str>, top: usize) -> Result<
         return ok_json(serde_json::json!({"languages": [], "message": "No languages with grammars found"}));
     }
 
-    // Build a summary for each language
     let mut summaries = Vec::new();
     for cov in &filtered {
-        let top_kinds: Vec<_> = cov.node_kind_freq.iter().take(top).collect();
+        let has_rules = cov.symbol_coverage.percent >= 0.0;
 
         summaries.push(serde_json::json!({
             "language": cov.language,
             "files": cov.file_count,
-            "total_named_nodes": cov.total_named_nodes,
-            "unique_node_kinds": cov.unique_node_kinds,
             "symbols_extracted": cov.symbols_extracted,
             "refs_extracted": cov.refs_extracted,
-            "extraction_rate": if cov.total_named_nodes > 0 {
-                format!("{:.1}%", (cov.symbols_extracted + cov.refs_extracted) as f64 / cov.total_named_nodes as f64 * 100.0)
-            } else {
-                "N/A".to_string()
+            "has_rules": has_rules,
+            "symbol_coverage": {
+                "percent": format!("{:.1}%", cov.symbol_coverage.percent.max(0.0)),
+                "matched": cov.symbol_coverage.matched_nodes,
+                "expected": cov.symbol_coverage.expected_nodes,
+                "kinds_seen": format!("{}/{}", cov.symbol_coverage.declared_kinds_seen, cov.symbol_coverage.declared_kinds_total),
             },
-            "top_node_kinds": top_kinds,
+            "ref_coverage": {
+                "percent": format!("{:.1}%", cov.ref_coverage.percent.max(0.0)),
+                "matched": cov.ref_coverage.matched_nodes,
+                "expected": cov.ref_coverage.expected_nodes,
+                "kinds_seen": format!("{}/{}", cov.ref_coverage.declared_kinds_seen, cov.ref_coverage.declared_kinds_total),
+            },
+            "symbol_kinds": cov.symbol_kinds,
+            "ref_kinds": cov.ref_kinds,
+            "structural_top": cov.structural_top,
         }));
     }
 

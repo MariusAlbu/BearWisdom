@@ -46,4 +46,15 @@ impl LanguagePlugin for VuePlugin {
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        // Vue SFC: symbols come from script block; at the grammar level only
+        // the component-level element is meaningful.
+        &["script_element", "template_element"]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        // Component invocations and event handler directives.
+        &["element", "self_closing_tag", "directive_attribute"]
+    }
 }

@@ -30,4 +30,19 @@ impl LanguagePlugin for BashPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "function_definition",
+            "variable_assignment",
+            "declaration_command",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "command",
+            "command_substitution",
+        ]
+    }
 }

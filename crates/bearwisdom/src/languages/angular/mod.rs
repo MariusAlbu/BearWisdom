@@ -47,4 +47,22 @@ impl LanguagePlugin for AngularPlugin {
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        // Angular templates define no symbols of their own.
+        &[]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        // Component selector tags and pipe calls produce Calls edges.
+        &[
+            "element",
+            "self_closing_tag",
+            "pipe_call",
+            "call_expression",
+            "interpolation",
+            "property_binding",
+            "event_binding",
+        ]
+    }
 }

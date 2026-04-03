@@ -40,4 +40,43 @@ impl LanguagePlugin for CLangPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         extract::extract(source, lang_id)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        // Shared C and C++ node kinds; C++ adds class_specifier, namespace_definition,
+        // alias_declaration, concept_definition on top.
+        &[
+            "function_definition",
+            "declaration",
+            "struct_specifier",
+            "union_specifier",
+            "enum_specifier",
+            "enumerator",
+            "field_declaration",
+            "type_definition",
+            "preproc_def",
+            "preproc_function_def",
+            // C++ additions
+            "class_specifier",
+            "namespace_definition",
+            "namespace_alias_definition",
+            "alias_declaration",
+            "concept_definition",
+            "template_declaration",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call_expression",
+            "new_expression",
+            "preproc_include",
+            "type_identifier",
+            "base_class_clause",
+            "cast_expression",
+            "sizeof_expression",
+            "template_argument_list",
+            // C++ import (C++20 modules)
+            "import_declaration",
+        ]
+    }
 }

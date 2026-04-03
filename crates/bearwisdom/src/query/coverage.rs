@@ -1,51 +1,88 @@
 //! Tree-sitter extraction coverage analysis.
 //!
-//! For each language in a project, parse every file with tree-sitter, walk all
-//! CST nodes, and report which node kinds appear in real code vs. how many
-//! symbols/refs the extractor produces. This identifies extraction gaps.
+//! Measures how well our extractors handle the node kinds that MATTER — the
+//! ones declared in `symbol_node_kinds()` and `ref_node_kinds()` on each
+//! `LanguagePlugin`. These declarations come from the extraction rules
+//! (`research/tree-sitter/languages/<lang>_rules.md`).
+//!
+//! Coverage = (matched nodes / expected nodes) for symbol-producing and
+//! ref-producing node kinds separately.
 
-use crate::languages::{self, LanguageRegistry};
-use crate::parser::languages as grammar_loader;
+use crate::languages::{self, LanguagePlugin, LanguageRegistry};
 use crate::walker::{self, WalkedFile};
-use rustc_hash::FxHashMap;
+use rustc_hash::{FxHashMap, FxHashSet};
 use serde::Serialize;
 use std::path::Path;
 use tree_sitter::Parser;
 
-/// Coverage stats for a single language across all its files in a project.
+// ---------------------------------------------------------------------------
+// Result types
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Serialize)]
 pub struct LanguageCoverage {
     pub language: String,
     pub file_count: usize,
-    pub total_named_nodes: u64,
-    pub unique_node_kinds: usize,
-    /// Number of node kinds that exist in the grammar but never appeared in any file.
-    pub grammar_node_count: Option<usize>,
+
+    // Raw extraction counts
     pub symbols_extracted: u64,
     pub refs_extracted: u64,
-    /// Node kind → occurrence count, sorted descending by frequency.
-    pub node_kind_freq: Vec<NodeKindStat>,
+
+    // Rules-based coverage
+    pub symbol_coverage: CoverageDetail,
+    pub ref_coverage: CoverageDetail,
+
+    /// Per-node-kind breakdown for symbol-producing kinds.
+    pub symbol_kinds: Vec<NodeKindCoverage>,
+    /// Per-node-kind breakdown for ref-producing kinds.
+    pub ref_kinds: Vec<NodeKindCoverage>,
+    /// Node kinds that appear frequently but are NOT in symbol/ref rules (structural).
+    pub structural_top: Vec<NodeKindCount>,
 }
 
 #[derive(Debug, Serialize)]
-pub struct NodeKindStat {
-    pub kind: String,
-    pub count: u64,
-    /// True if at least one extracted symbol has start_line matching a node of this kind.
-    pub produces_symbol: bool,
+pub struct CoverageDetail {
+    /// Total CST nodes of expected kinds found in real code.
+    pub expected_nodes: u64,
+    /// How many of those produced an extraction (matched by line number).
+    pub matched_nodes: u64,
+    /// Coverage percentage (matched / expected * 100).
+    pub percent: f64,
+    /// Number of declared node kinds that appear in the project.
+    pub declared_kinds_seen: usize,
+    /// Number of declared node kinds total.
+    pub declared_kinds_total: usize,
 }
 
-/// Run coverage analysis on a project.
+#[derive(Debug, Serialize)]
+pub struct NodeKindCoverage {
+    pub kind: String,
+    /// Total occurrences of this node kind in the project.
+    pub occurrences: u64,
+    /// How many occurrences produced a matching extraction.
+    pub matched: u64,
+    /// Coverage percentage for this specific node kind.
+    pub percent: f64,
+}
+
+#[derive(Debug, Serialize)]
+pub struct NodeKindCount {
+    pub kind: String,
+    pub count: u64,
+}
+
+// ---------------------------------------------------------------------------
+// Analysis
+// ---------------------------------------------------------------------------
+
 pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
     let registry = languages::default_registry();
 
-    // Walk files
     let files = match walker::walk(project_root) {
         Ok(f) => f,
         Err(_) => return vec![],
     };
 
-    // Group files by language
     let mut by_language: FxHashMap<String, Vec<WalkedFile>> = FxHashMap::default();
     for file in files {
         by_language
@@ -57,25 +94,31 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
     let mut results: Vec<LanguageCoverage> = Vec::new();
 
     for (lang, files) in &by_language {
-        // Skip non-code languages
-        if matches!(
-            lang.as_str(),
-            "json" | "yaml" | "xml" | "markdown" | "toml" | "css" | "html" | "sql"
-        ) {
+        if matches!(lang.as_str(), "json" | "yaml" | "xml" | "markdown" | "toml") {
             continue;
         }
 
-        let grammar = registry.grammar(lang);
-        if grammar.is_none() {
-            continue;
-        }
-        let grammar = grammar.unwrap();
+        let plugin = registry.get(lang);
+        let grammar = match plugin.grammar(lang) {
+            Some(g) => g,
+            None => continue,
+        };
 
-        let mut node_kind_counts: FxHashMap<String, u64> = FxHashMap::default();
-        let mut total_named_nodes: u64 = 0;
+        let sym_kinds: FxHashSet<&str> = plugin.symbol_node_kinds().iter().copied().collect();
+        let ref_kinds: FxHashSet<&str> = plugin.ref_node_kinds().iter().copied().collect();
+        let has_rules = !sym_kinds.is_empty() || !ref_kinds.is_empty();
+
+        // Per-node-kind counters
+        let mut sym_kind_occurrences: FxHashMap<String, u64> = FxHashMap::default();
+        let mut ref_kind_occurrences: FxHashMap<String, u64> = FxHashMap::default();
+        let mut structural_counts: FxHashMap<String, u64> = FxHashMap::default();
+
+        // Per-node-kind match counters (line-based correlation)
+        let mut sym_kind_matched: FxHashMap<String, u64> = FxHashMap::default();
+        let mut ref_kind_matched: FxHashMap<String, u64> = FxHashMap::default();
+
         let mut total_symbols: u64 = 0;
         let mut total_refs: u64 = 0;
-        let mut symbol_line_set: FxHashMap<String, Vec<u32>> = FxHashMap::default();
 
         for walked in files {
             let content = match std::fs::read_to_string(&walked.absolute_path) {
@@ -83,7 +126,6 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
                 Err(_) => continue,
             };
 
-            // Parse with tree-sitter
             let mut parser = Parser::new();
             if parser.set_language(&grammar).is_err() {
                 continue;
@@ -93,46 +135,153 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
                 None => continue,
             };
 
-            // Walk ALL named nodes and count their kinds
-            walk_named_nodes(tree.root_node(), &mut node_kind_counts, &mut total_named_nodes);
+            // Collect all node occurrences with their lines
+            let mut sym_nodes_by_line: FxHashMap<String, Vec<u32>> = FxHashMap::default();
+            let mut ref_nodes_by_line: FxHashMap<String, Vec<u32>> = FxHashMap::default();
+
+            walk_and_classify(
+                tree.root_node(),
+                &sym_kinds,
+                &ref_kinds,
+                &mut sym_kind_occurrences,
+                &mut ref_kind_occurrences,
+                &mut structural_counts,
+                &mut sym_nodes_by_line,
+                &mut ref_nodes_by_line,
+            );
 
             // Run the extractor
-            let plugin = registry.get(lang);
             let result = plugin.extract(&content, &walked.relative_path, lang);
-
             total_symbols += result.symbols.len() as u64;
             total_refs += result.refs.len() as u64;
 
-            // Record which lines have symbols (for correlation)
+            // Correlate: for each extracted symbol, check if a symbol-producing
+            // node exists at the same line
+            let mut sym_lines_used: FxHashSet<(String, u32)> = FxHashSet::default();
             for sym in &result.symbols {
-                symbol_line_set
-                    .entry(walked.relative_path.clone())
-                    .or_default()
-                    .push(sym.start_line);
+                for (kind, lines) in &sym_nodes_by_line {
+                    if lines.contains(&sym.start_line)
+                        && !sym_lines_used.contains(&(kind.clone(), sym.start_line))
+                    {
+                        *sym_kind_matched.entry(kind.clone()).or_insert(0) += 1;
+                        sym_lines_used.insert((kind.clone(), sym.start_line));
+                        break;
+                    }
+                }
+            }
+
+            // Correlate: for each extracted ref, check if a ref-producing
+            // node exists at the same line
+            let mut ref_lines_used: FxHashSet<(String, u32)> = FxHashSet::default();
+            for eref in &result.refs {
+                for (kind, lines) in &ref_nodes_by_line {
+                    if lines.contains(&eref.line)
+                        && !ref_lines_used.contains(&(kind.clone(), eref.line))
+                    {
+                        *ref_kind_matched.entry(kind.clone()).or_insert(0) += 1;
+                        ref_lines_used.insert((kind.clone(), eref.line));
+                        break;
+                    }
+                }
             }
         }
 
-        // Build frequency list
-        let mut freq: Vec<NodeKindStat> = node_kind_counts
-            .into_iter()
-            .map(|(kind, count)| NodeKindStat {
-                kind,
-                count,
-                produces_symbol: false, // We'll refine this later
+        // Build per-kind coverage stats
+        let sym_kinds_detail: Vec<NodeKindCoverage> = plugin
+            .symbol_node_kinds()
+            .iter()
+            .filter_map(|&kind| {
+                let occ = *sym_kind_occurrences.get(kind).unwrap_or(&0);
+                if occ == 0 {
+                    return None;
+                }
+                let matched = *sym_kind_matched.get(kind).unwrap_or(&0);
+                Some(NodeKindCoverage {
+                    kind: kind.to_string(),
+                    occurrences: occ,
+                    matched,
+                    percent: if occ > 0 {
+                        matched as f64 / occ as f64 * 100.0
+                    } else {
+                        0.0
+                    },
+                })
             })
             .collect();
-        freq.sort_by(|a, b| b.count.cmp(&a.count));
-        let unique = freq.len();
+
+        let ref_kinds_detail: Vec<NodeKindCoverage> = plugin
+            .ref_node_kinds()
+            .iter()
+            .filter_map(|&kind| {
+                let occ = *ref_kind_occurrences.get(kind).unwrap_or(&0);
+                if occ == 0 {
+                    return None;
+                }
+                let matched = *ref_kind_matched.get(kind).unwrap_or(&0);
+                Some(NodeKindCoverage {
+                    kind: kind.to_string(),
+                    occurrences: occ,
+                    matched,
+                    percent: if occ > 0 {
+                        matched as f64 / occ as f64 * 100.0
+                    } else {
+                        0.0
+                    },
+                })
+            })
+            .collect();
+
+        // Aggregate coverage
+        let sym_expected: u64 = sym_kinds_detail.iter().map(|k| k.occurrences).sum();
+        let sym_matched: u64 = sym_kinds_detail.iter().map(|k| k.matched).sum();
+        let ref_expected: u64 = ref_kinds_detail.iter().map(|k| k.occurrences).sum();
+        let ref_matched: u64 = ref_kinds_detail.iter().map(|k| k.matched).sum();
+
+        let sym_seen = sym_kinds_detail.len();
+        let ref_seen = ref_kinds_detail.len();
+
+        // Top structural nodes (not in rules)
+        let mut structural: Vec<NodeKindCount> = structural_counts
+            .into_iter()
+            .map(|(kind, count)| NodeKindCount { kind, count })
+            .collect();
+        structural.sort_by(|a, b| b.count.cmp(&a.count));
+        structural.truncate(15);
 
         results.push(LanguageCoverage {
             language: lang.clone(),
             file_count: files.len(),
-            total_named_nodes,
-            unique_node_kinds: unique,
-            grammar_node_count: None,
             symbols_extracted: total_symbols,
             refs_extracted: total_refs,
-            node_kind_freq: freq,
+            symbol_coverage: CoverageDetail {
+                expected_nodes: sym_expected,
+                matched_nodes: sym_matched,
+                percent: if sym_expected > 0 {
+                    sym_matched as f64 / sym_expected as f64 * 100.0
+                } else if !has_rules {
+                    -1.0 // no rules declared
+                } else {
+                    0.0
+                },
+                declared_kinds_seen: sym_seen,
+                declared_kinds_total: plugin.symbol_node_kinds().len(),
+            },
+            ref_coverage: CoverageDetail {
+                expected_nodes: ref_expected,
+                matched_nodes: ref_matched,
+                percent: if ref_expected > 0 {
+                    ref_matched as f64 / ref_expected as f64 * 100.0
+                } else if !has_rules {
+                    -1.0
+                } else {
+                    0.0
+                },
+                declared_kinds_seen: ref_seen,
+                declared_kinds_total: plugin.ref_node_kinds().len(),
+            },
+            symbol_kinds: sym_kinds_detail,
+            ref_kinds: ref_kinds_detail,
+            structural_top: structural,
         });
     }
 
@@ -140,17 +289,48 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
     results
 }
 
-fn walk_named_nodes(
+fn walk_and_classify(
     node: tree_sitter::Node,
-    counts: &mut FxHashMap<String, u64>,
-    total: &mut u64,
+    sym_kinds: &FxHashSet<&str>,
+    ref_kinds: &FxHashSet<&str>,
+    sym_counts: &mut FxHashMap<String, u64>,
+    ref_counts: &mut FxHashMap<String, u64>,
+    structural_counts: &mut FxHashMap<String, u64>,
+    sym_by_line: &mut FxHashMap<String, Vec<u32>>,
+    ref_by_line: &mut FxHashMap<String, Vec<u32>>,
 ) {
     if node.is_named() {
-        *counts.entry(node.kind().to_string()).or_insert(0) += 1;
-        *total += 1;
+        let kind = node.kind();
+        let line = node.start_position().row as u32;
+
+        if sym_kinds.contains(kind) {
+            *sym_counts.entry(kind.to_string()).or_insert(0) += 1;
+            sym_by_line
+                .entry(kind.to_string())
+                .or_default()
+                .push(line);
+        } else if ref_kinds.contains(kind) {
+            *ref_counts.entry(kind.to_string()).or_insert(0) += 1;
+            ref_by_line
+                .entry(kind.to_string())
+                .or_default()
+                .push(line);
+        } else {
+            *structural_counts.entry(kind.to_string()).or_insert(0) += 1;
+        }
     }
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        walk_named_nodes(child, counts, total);
+        walk_and_classify(
+            child,
+            sym_kinds,
+            ref_kinds,
+            sym_counts,
+            ref_counts,
+            structural_counts,
+            sym_by_line,
+            ref_by_line,
+        );
     }
 }

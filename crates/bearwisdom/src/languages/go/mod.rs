@@ -44,4 +44,31 @@ impl LanguagePlugin for GoPlugin {
         let _ = (file_path, lang_id);
         extract::extract(source)
     }
+
+    fn symbol_node_kinds(&self) -> &[&str] {
+        &[
+            "function_declaration",
+            "method_declaration",
+            "type_spec",
+            "type_alias",
+            "const_spec",
+            "var_spec",
+            "field_declaration",
+            "method_elem",
+            "package_clause",
+        ]
+    }
+
+    fn ref_node_kinds(&self) -> &[&str] {
+        &[
+            "call_expression",
+            "import_spec",
+            "composite_literal",
+            "type_conversion_expression",
+            "type_assertion_expression",
+            "selector_expression",
+            "qualified_type",
+            "type_identifier",
+        ]
+    }
 }

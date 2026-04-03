@@ -51,6 +51,14 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// - `file_path`: relative path (used for heuristics like `.tsx` detection)
     /// - `lang_id`: the language ID from detection (e.g., "typescript" or "tsx")
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult;
+
+    /// Node kinds that SHOULD produce symbols, per the extraction rules.
+    /// Used by `bw coverage` to measure extraction completeness.
+    fn symbol_node_kinds(&self) -> &[&str] { &[] }
+
+    /// Node kinds that SHOULD produce refs/edges, per the extraction rules.
+    /// Used by `bw coverage` to measure extraction completeness.
+    fn ref_node_kinds(&self) -> &[&str] { &[] }
 }
 
 // ---------------------------------------------------------------------------
