@@ -719,7 +719,21 @@ pub(super) fn extract_trait_use(
     for child in node.children(&mut cursor) {
         if child.kind() == "qualified_name" || child.kind() == "name" {
             let full = node_text(&child, src);
-            push_fq_import(full, child.start_position().row as u32, refs, current_symbol_count);
+            let parts: Vec<&str> = full.split('\\').collect();
+            let target = parts.last().unwrap_or(&full.as_str()).to_string();
+            let module = if parts.len() > 1 {
+                Some(parts[..parts.len() - 1].join("\\"))
+            } else {
+                None
+            };
+            refs.push(ExtractedRef {
+                source_symbol_index: current_symbol_count.saturating_sub(1),
+                target_name: target,
+                kind: EdgeKind::Implements,
+                line: child.start_position().row as u32,
+                module,
+                chain: None,
+            });
         }
     }
 }

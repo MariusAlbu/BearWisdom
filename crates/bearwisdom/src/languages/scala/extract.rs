@@ -185,6 +185,20 @@ pub(super) fn extract_node<'a>(
                 }
             }
 
+            // Call expressions outside a function body (e.g. val/var initializers,
+            // top-level statements, object body expressions).
+            "call_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                dispatch_body_node(child, src, sym_idx, refs);
+                extract_calls_from_body(&child, src, sym_idx, refs);
+            }
+
+            "infix_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                dispatch_body_node(child, src, sym_idx, refs);
+                extract_calls_from_body(&child, src, sym_idx, refs);
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {

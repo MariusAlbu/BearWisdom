@@ -171,6 +171,34 @@ fn extract_node(
 
             "public_field_definition" | "field_definition" => {
                 symbols::push_ts_field(&child, src, scope_tree, symbols, refs, parent_index);
+                // Extract calls from the field initializer value, if present.
+                // e.g. `private logger = createLogger()` — call in field initializer.
+                //
+                // The "value" field of public_field_definition is the initializer
+                // expression itself (not a body container).  We need to handle it
+                // differently depending on what kind of expression it is:
+                // - call_expression → emit_call_ref directly, then recurse into args
+                // - new_expression  → emit_new_ref directly
+                // - anything else   → recurse with extract_calls for nested calls
+                let sym_idx = parent_index.unwrap_or(0);
+                if let Some(value) = child.child_by_field_name("value") {
+                    match value.kind() {
+                        "call_expression" => {
+                            calls::emit_call_ref(&value, src, sym_idx, refs);
+                            // Recurse into arguments for nested calls.
+                            calls::extract_calls(&value, src, sym_idx, refs);
+                        }
+                        "new_expression" => {
+                            calls::emit_new_ref(&value, src, sym_idx, refs);
+                            calls::extract_calls(&value, src, sym_idx, refs);
+                        }
+                        _ => {
+                            // For other expressions (method chains, conditionals, etc.)
+                            // use extract_calls which recursively finds call_expression nodes.
+                            calls::extract_calls(&value, src, sym_idx, refs);
+                        }
+                    }
+                }
             }
 
             // Interface property signatures: `db: Database;`
@@ -197,6 +225,11 @@ fn extract_node(
             "lexical_declaration" | "variable_declaration" => {
                 // `const Foo = ...` / `let bar = ...`
                 symbols::push_variable_decl(&child, src, scope_tree, symbols, refs, parent_index);
+                // Also recurse so that `new_expression` and `call_expression` arms fire
+                // for initializers that weren't inlined into push_variable_decl.
+                // push_variable_decl handles TypeRef/chain inference for the initializer,
+                // but Calls/Instantiates edges for nested calls come from extract_node.
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             "import_statement" => {
@@ -311,6 +344,29 @@ fn extract_node(
             // and extract TypeRef for the value type.
             "index_signature" => {
                 symbols::push_index_signature(&child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // Call expressions at any level not already handled by extract_calls
+            // from inside a function/method body.  This captures top-level calls,
+            // calls in class static blocks, IIFE patterns, decorator arguments
+            // that reach here, etc.
+            //
+            // Use parent_index.unwrap_or(0) — attributes the call to the nearest
+            // enclosing named symbol, or the first symbol in the file when at
+            // module scope.
+            "call_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                calls::emit_call_ref(&child, src, sym_idx, refs);
+                // Continue recursing into children (e.g. arguments may contain
+                // further nested call_expressions at this level).
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // `new Foo(...)` at module scope or inside field initializers.
+            "new_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                calls::emit_new_ref(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             _ => {

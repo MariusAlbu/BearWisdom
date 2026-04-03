@@ -797,3 +797,59 @@ def handle(event):
             "expected dict pattern value bindings, got: {vars:?}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Module-level call coverage
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn module_level_call_emits_calls_edge() {
+        let source = "setup_logging()\n";
+        let r = extract::extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"setup_logging"),
+            "expected Calls edge for module-level call, got: {calls:?}"
+        );
+    }
+
+    #[test]
+    fn module_level_method_call_emits_calls_edge() {
+        let source = "app.run(debug=True)\n";
+        let r = extract::extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"run"),
+            "expected Calls edge for module-level method call, got: {calls:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Type annotation at module level
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn module_level_annotated_assignment_emits_type_ref() {
+        let source = "items: List[str] = []\n";
+        let r = extract::extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"List") || type_refs.contains(&"str"),
+            "expected TypeRef from module-level annotation, got: {type_refs:?}"
+        );
+    }

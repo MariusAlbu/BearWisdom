@@ -218,6 +218,29 @@ pub(super) fn extract_from_node(
                 );
             }
 
+            // Direct call expressions that appear outside an expression_statement
+            // (e.g. as the direct body of a namespace block, or in some PHP
+            // grammar variants).  Delegate to the body extractor so all call
+            // kinds (function call, method call, new) are captured uniformly.
+            "function_call_expression"
+            | "member_call_expression"
+            | "nullsafe_member_call_expression"
+            | "static_call_expression"
+            | "object_creation_expression" => {
+                calls::extract_calls_from_body(
+                    &child,
+                    src,
+                    parent_index.unwrap_or(0),
+                    refs,
+                );
+            }
+
+            // `use TraitName;` inside a class body at top-level traversal
+            // (when encountered outside of a class's declaration_list walk).
+            "use_declaration" => {
+                calls::extract_trait_use(&child, src, refs, symbols.len());
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {

@@ -282,6 +282,30 @@ pub(super) fn extract_call_statement(
             extract_require(node, src, refs, current_symbol_count, method_name.as_deref());
         }
 
+        // `include Foo` / `extend Bar` / `prepend Mixin` — emit Implements edge
+        // to the mixin module.  Works at any scope level (class body, module
+        // body, or top-level) by using `current_symbol_count` as the source.
+        Some("include") | Some("extend") | Some("prepend") => {
+            if let Some(args) = node.child_by_field_name("arguments") {
+                let mut c = args.walk();
+                for arg in args.children(&mut c) {
+                    if arg.is_named() {
+                        let name = node_text(&arg, src);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: current_symbol_count.saturating_sub(1),
+                                target_name: name,
+                                kind: EdgeKind::Implements,
+                                line: arg.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         Some(m) if ATTR_MACROS.contains(&m) => {
             if inside_class {
                 extract_attr_macro(node, src, symbols, parent_index, m);

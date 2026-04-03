@@ -78,6 +78,19 @@ fn emit_attribute(
     }
 }
 
+/// Emit a TypeRef for a single `attribute` node directly.
+///
+/// Unlike `extract_decorators` (which walks a declaration node's children for
+/// attributes), this operates directly on the attribute node itself.
+pub(super) fn emit_single_attribute(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    emit_attribute(node, src, source_symbol_index, refs);
+}
+
 /// Extract the attribute name from an `attribute` node.
 ///
 /// The Swift grammar puts the name as a `simple_identifier` or `user_type`

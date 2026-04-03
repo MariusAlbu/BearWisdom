@@ -361,6 +361,102 @@ fn index_signature_emits_type_ref_for_value() {
 }
 
 // ---------------------------------------------------------------------------
+// Top-level / field-initializer call extraction (new coverage)
+// ---------------------------------------------------------------------------
+
+/// Debug: dump the AST for field initializer to confirm node kinds and field names.
+#[test]
+fn debug_field_init_ast() {
+    let src = "class Svc { private logger = createLogger(); }";
+    let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&language).unwrap();
+    let tree = parser.parse(src, None).unwrap();
+
+    fn dump(node: tree_sitter::Node, src_bytes: &[u8], depth: usize) {
+        let text = if node.child_count() == 0 {
+            format!(" = {:?}", std::str::from_utf8(&src_bytes[node.byte_range()]).unwrap_or("?"))
+        } else {
+            String::new()
+        };
+        println!("{:indent$}[{}]{}", "", node.kind(), text, indent = depth * 2);
+        // For field definitions, check named fields
+        if node.kind() == "public_field_definition" {
+            println!("{:indent$}  -> value field: {:?}", "", node.child_by_field_name("value").map(|n| n.kind()), indent = depth * 2);
+            println!("{:indent$}  -> named children: {}", "", {
+                let mut cursor2 = node.walk();
+                node.named_children(&mut cursor2).map(|n| n.kind()).collect::<Vec<_>>().join(", ")
+            }, indent = depth * 2);
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            dump(child, src_bytes, depth + 1);
+        }
+    }
+    println!("\n=== AST for field initializer ===");
+    dump(tree.root_node(), src.as_bytes(), 0);
+    // Also show what refs we extract:
+    let r = refs(src);
+    println!("Refs extracted: {r:?}");
+}
+
+#[test]
+fn toplevel_call_emits_calls_ref() {
+    // `setupDatabase();` at module scope — no enclosing function.
+    let src = "setupDatabase();";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "setupDatabase" && r.kind == EdgeKind::Calls),
+        "expected Calls ref for top-level call, got: {r:?}"
+    );
+}
+
+#[test]
+fn field_initializer_call_emits_calls_ref() {
+    // `private logger = createLogger()` — call inside a class field initializer.
+    let src = "class Svc { private logger = createLogger(); }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "createLogger" && r.kind == EdgeKind::Calls),
+        "expected Calls ref from field initializer, got: {r:?}"
+    );
+}
+
+#[test]
+fn new_expression_at_toplevel_emits_instantiates_ref() {
+    // `new EventEmitter()` at module scope.
+    let src = "const emitter = new EventEmitter();";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "EventEmitter" && r.kind == EdgeKind::Instantiates),
+        "expected Instantiates ref for new_expression, got: {r:?}"
+    );
+}
+
+#[test]
+fn new_expression_in_method_body_emits_instantiates_ref() {
+    // `new Error(msg)` inside a method body — handled via extract_calls.
+    let src = "class Svc { fail(msg: string) { throw new Error(msg); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Error" && r.kind == EdgeKind::Instantiates),
+        "expected Instantiates ref for new Error inside method, got: {r:?}"
+    );
+}
+
+#[test]
+fn method_call_chain_toplevel_emits_calls_ref() {
+    // `this.repo.findOne(1)` at module scope is unusual but shouldn't panic.
+    // More usefully: `console.log(x)` at the top level of a script.
+    let src = "console.log('hello');";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "log" && r.kind == EdgeKind::Calls),
+        "expected Calls ref for console.log at module scope, got: {r:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // Node-kind coverage diagnostic
 // ---------------------------------------------------------------------------
 

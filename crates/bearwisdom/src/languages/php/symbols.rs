@@ -566,6 +566,18 @@ pub(super) fn extract_expression_statement(
             | "require_once_expression" => {
                 super::calls::extract_include_require(&child, src, refs, source_idx);
             }
+            // Direct call-site nodes: pass the whole statement so that
+            // `extract_calls_from_body` sees the call node as a child.
+            "function_call_expression"
+            | "member_call_expression"
+            | "nullsafe_member_call_expression"
+            | "static_call_expression"
+            | "object_creation_expression" => {
+                // Pass the expression_statement as the parent so the call node
+                // is seen as a child and matched by the extractor's match arms.
+                extract_calls_from_body(node, src, source_idx, refs);
+                break; // one call per expression_statement is sufficient
+            }
             _ => {
                 extract_calls_from_body(&child, src, source_idx, refs);
             }

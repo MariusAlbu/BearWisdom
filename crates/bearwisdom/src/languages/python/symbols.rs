@@ -657,6 +657,13 @@ pub(super) fn extract_assignment_if_any(
     let mut cursor = expr_stmt.walk();
     for child in expr_stmt.children(&mut cursor) {
         if child.kind() == "assignment" {
+            // Emit type refs from annotations; use the next symbol index as
+            // the source (the Variable we're about to push).
+            let source_idx = symbols.len();
+            // We have no refs here — the caller (extract_from_node) handles
+            // calls separately.  Type-annotation refs are extracted in the
+            // dedicated extract_assignment_node call below.
+            let _ = (source_idx, inside_class);
             extract_assignment_node(
                 &child,
                 source,

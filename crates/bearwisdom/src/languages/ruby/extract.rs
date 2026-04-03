@@ -126,6 +126,28 @@ pub(super) fn extract_from_node(
                 );
             }
 
+            // `include Foo` / `extend Bar` / `prepend Mixin` — bare command at
+            // module or class body level.  tree-sitter-ruby parses these as
+            // `call` in most contexts, but `command` nodes appear for no-paren
+            // method calls that are not syntactically calls.
+            "command" => {
+                super::calls::extract_calls_from_body(
+                    &child,
+                    src,
+                    parent_index.unwrap_or(0),
+                    refs,
+                );
+            }
+
+            "command_call" => {
+                super::calls::extract_calls_from_body(
+                    &child,
+                    src,
+                    parent_index.unwrap_or(0),
+                    refs,
+                );
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {

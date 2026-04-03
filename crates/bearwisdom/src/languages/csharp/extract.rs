@@ -380,10 +380,41 @@ fn extract_node_inner(
 
             "property_declaration" => {
                 symbols::push_property_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
+                // Expression-body property: `public int Count => _items.Count();`
+                // tree-sitter: property_declaration → arrow_expression_clause (field: "value")
+                // Also handles `= expr;` initializer (also field: "value").
+                if let Some(val) = child.child_by_field_name("value") {
+                    calls::extract_calls_from_body(&val, src, effective_parent_index.unwrap_or(0), refs);
+                }
+                // Property with get/set accessors that have expression bodies or blocks.
+                if let Some(accessors) = child.child_by_field_name("accessors") {
+                    let mut ac = accessors.walk();
+                    for accessor in accessors.children(&mut ac) {
+                        if accessor.kind() == "accessor_declaration" {
+                            if let Some(body) = accessor.child_by_field_name("body") {
+                                calls::extract_calls_from_body(&body, src, effective_parent_index.unwrap_or(0), refs);
+                            }
+                        }
+                    }
+                }
             }
 
             "field_declaration" => {
                 symbols::push_field_decl(child, src, scope_tree, symbols, refs, effective_parent_index);
+                // Extract calls from field initializers, e.g.:
+                //   private readonly IFoo _foo = new Foo();
+                //   private static readonly List<X> _list = BuildList();
+                // tree-sitter: field_declaration → variable_declaration → variable_declarator → equals_value_clause
+                if let Some(var_decl) = child.children(&mut child.walk()).find(|c| c.kind() == "variable_declaration") {
+                    let mut vd_cursor = var_decl.walk();
+                    for declarator in var_decl.children(&mut vd_cursor) {
+                        if declarator.kind() == "variable_declarator" {
+                            if let Some(init) = declarator.child_by_field_name("value") {
+                                calls::extract_calls_from_body(&init, src, effective_parent_index.unwrap_or(0), refs);
+                            }
+                        }
+                    }
+                }
             }
 
             "event_field_declaration" => {
@@ -450,6 +481,12 @@ fn extract_node_inner(
                         calls::extract_body_variable_symbols(&body, src, scope_tree, symbols, Some(sym_idx));
                     }
                 }
+            }
+
+            // C# 9+ top-level statements — the entire program body lives at file scope.
+            // `global_statement` wraps each top-level statement in the compilation_unit.
+            "global_statement" => {
+                calls::extract_calls_from_body(child, src, effective_parent_index.unwrap_or(0), refs);
             }
 
             "using_directive" => {

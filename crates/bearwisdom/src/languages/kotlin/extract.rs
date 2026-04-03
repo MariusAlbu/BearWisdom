@@ -6,7 +6,7 @@
 use super::{calls, symbols, helpers, decorators};
 use super::calls::extract_calls_from_body;
 use super::decorators::{extract_decorators, extract_lambda_params, extract_when_patterns};
-use super::helpers::{classify_class, find_child_by_kind};
+use super::helpers::{classify_class, find_child_by_kind, node_text};
 use super::symbols::{
     emit_import, extract_class_body, extract_delegation_specifiers, extract_imports,
     extract_primary_constructor_params, extract_type_parameter_bounds,
@@ -15,7 +15,7 @@ use super::symbols::{
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
-use crate::types::{ExtractedRef, ExtractedSymbol, SymbolKind};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -159,6 +159,19 @@ pub(super) fn extract_node<'a>(
                 push_secondary_constructor(&child, src, scope_tree, symbols, parent_index);
             }
 
+            // Call expressions that appear outside a function body (e.g. property
+            // initializers, top-level statements, delegate expressions).
+            "call_expression" | "navigation_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                extract_calls_from_body(&child, src, sym_idx, refs);
+            }
+
+            // Standalone annotations at the current scope level — emit TypeRef.
+            "annotation" | "file_annotation" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                emit_annotation_ref(&child, src, sym_idx, refs);
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {
@@ -169,6 +182,66 @@ pub(super) fn extract_node<'a>(
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// Annotation TypeRef emission (for standalone annotations at scope level)
 // ---------------------------------------------------------------------------
 
+/// Emit a TypeRef for a standalone `annotation` or `file_annotation` node.
+///
+/// This handles annotations that appear outside of a `modifiers` node (e.g.
+/// file-level annotations, or annotations on property delegates). Annotations
+/// inside `modifiers` are already handled by `extract_decorators`.
+fn emit_annotation_ref(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if let Some(name) = annotation_type_name(node, src) {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: name,
+            kind: EdgeKind::TypeRef,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+fn annotation_type_name(node: &Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "user_type" => {
+                // user_type → simple_user_type+ → simple_identifier
+                let name = calls::kotlin_type_name(&child, src);
+                if !name.is_empty() {
+                    return Some(name);
+                }
+            }
+            "constructor_invocation" => {
+                let mut cc = child.walk();
+                for inner in child.children(&mut cc) {
+                    if inner.kind() == "user_type" {
+                        let name = calls::kotlin_type_name(&inner, src);
+                        if !name.is_empty() {
+                            return Some(name);
+                        }
+                    }
+                }
+            }
+            "simple_identifier" | "identifier" | "type_identifier" => {
+                let t = node_text(child, src);
+                if !t.is_empty() {
+                    return Some(t);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------

@@ -4,6 +4,7 @@
 
 
 use super::{symbols, decorators};
+use super::calls::extract_dart_calls;
 use super::decorators::{extract_cascade_calls, extract_decorators};
 use super::symbols::{
     extract_class, extract_enum, extract_extension, extract_import_directive, extract_mixin,
@@ -111,9 +112,26 @@ fn visit(
             "expression_statement" | "return_statement" => {
                 if let Some(sym_idx) = parent_index {
                     extract_cascade_calls(&child, src, sym_idx, refs);
+                    // Also extract direct invocation expressions in statements.
+                    extract_dart_calls(&child, src, sym_idx, refs);
                 }
                 visit(child, src, symbols, refs, parent_index, qualified_prefix);
             }
+
+            // Direct invocation/function-call expressions outside a statement wrapper.
+            "invocation_expression" | "function_invocation" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                extract_dart_calls(&child, src, sym_idx, refs);
+            }
+
+            // Function/method body nodes — extract calls within.
+            "function_body" | "function_expression_body" | "block" => {
+                if let Some(sym_idx) = parent_index {
+                    extract_dart_calls(&child, src, sym_idx, refs);
+                }
+                visit(child, src, symbols, refs, parent_index, qualified_prefix);
+            }
+
             "ERROR" | "MISSING" => {}
             _ => {
                 visit(child, src, symbols, refs, parent_index, qualified_prefix);

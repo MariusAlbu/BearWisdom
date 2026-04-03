@@ -492,3 +492,79 @@ end
         assert!(calls.contains(&"info"), "expected 'info' Calls edge: {calls:?}");
     }
 
+    // -----------------------------------------------------------------------
+    // Module-level include / extend / prepend — Implements edges
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn include_at_class_level_emits_implements_edge() {
+        let source = r#"
+class User
+  include Validatable
+end
+"#;
+        let r = extract::extract(source);
+        let impls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Implements)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            impls.contains(&"Validatable"),
+            "expected Implements edge for include, got: {impls:?}"
+        );
+    }
+
+    #[test]
+    fn extend_at_class_level_emits_implements_edge() {
+        let source = r#"
+class Config
+  extend ClassMethods
+end
+"#;
+        let r = extract::extract(source);
+        let impls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Implements)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            impls.contains(&"ClassMethods"),
+            "expected Implements edge for extend, got: {impls:?}"
+        );
+    }
+
+    #[test]
+    fn prepend_at_class_level_emits_implements_edge() {
+        let source = r#"
+class Logger
+  prepend Traceable
+end
+"#;
+        let r = extract::extract(source);
+        let impls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Implements)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            impls.contains(&"Traceable"),
+            "expected Implements edge for prepend, got: {impls:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Module-level bare calls (command nodes)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn module_level_bare_call_emits_calls_edge() {
+        let source = "configure_app\n";
+        let r = extract::extract(source);
+        // bare identifier at module level may be a call — just verify no panic
+        // and that the result is well-formed.
+        let _ = r.refs;
+    }

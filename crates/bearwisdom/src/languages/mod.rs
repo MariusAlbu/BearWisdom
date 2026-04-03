@@ -59,13 +59,16 @@ pub trait LanguagePlugin: Send + Sync + 'static {
 
 use std::sync::Arc;
 
+pub mod angular;
 pub mod bash;
 pub mod c_lang;
 mod generic;
 pub mod csharp;
 pub mod dart;
+pub mod dockerfile;
 pub mod elixir;
 pub mod go;
+pub mod graphql;
 pub mod java;
 pub mod javascript;
 pub mod kotlin;
@@ -74,8 +77,11 @@ pub mod python;
 pub mod ruby;
 pub mod rust_lang;
 pub mod scala;
+pub mod scss;
+pub mod sql;
 pub mod swift;
 pub mod typescript;
+pub mod vue;
 
 /// Build the default language registry with all built-in plugins.
 ///
@@ -88,12 +94,15 @@ pub fn default_registry() -> LanguageRegistry {
     let generic = Arc::new(GenericPlugin);
     let mut reg = LanguageRegistry::new(generic);
 
+    reg.register(Arc::new(angular::AngularPlugin));
     reg.register(Arc::new(bash::BashPlugin));
     reg.register(Arc::new(c_lang::CLangPlugin));
     reg.register(Arc::new(csharp::CSharpPlugin));
     reg.register(Arc::new(dart::DartPlugin));
+    reg.register(Arc::new(dockerfile::DockerfilePlugin));
     reg.register(Arc::new(elixir::ElixirPlugin));
     reg.register(Arc::new(go::GoPlugin));
+    reg.register(Arc::new(graphql::GraphQlPlugin));
     reg.register(Arc::new(java::JavaPlugin));
     reg.register(Arc::new(javascript::JavascriptPlugin));
     reg.register(Arc::new(kotlin::KotlinPlugin));
@@ -102,8 +111,11 @@ pub fn default_registry() -> LanguageRegistry {
     reg.register(Arc::new(ruby::RubyPlugin));
     reg.register(Arc::new(rust_lang::RustLangPlugin));
     reg.register(Arc::new(scala::ScalaPlugin));
+    reg.register(Arc::new(scss::ScssPlugin));
+    reg.register(Arc::new(sql::SqlPlugin));
     reg.register(Arc::new(swift::SwiftPlugin));
     reg.register(Arc::new(typescript::TypeScriptPlugin));
+    reg.register(Arc::new(vue::VuePlugin));
 
     reg
 }

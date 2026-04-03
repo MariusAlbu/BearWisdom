@@ -116,19 +116,18 @@ fn dispatch_call(
         "use" => extract_directive(node, src, symbols.len(), refs, "use"),
         "require" => extract_directive(node, src, symbols.len(), refs, "require"),
         _ => {
-            // Generic call — only record if we are inside a function
-            // (parent_index being Some is a reasonable proxy for that).
-            if let Some(pi) = parent_index {
-                let name = callee.rsplit('.').next().unwrap_or(&callee).to_string();
-                refs.push(ExtractedRef {
-                    source_symbol_index: pi,
-                    target_name: name,
-                    kind: EdgeKind::Calls,
-                    line: node.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
-            }
+            // Generic call — emit Calls edge from the enclosing symbol (or symbol 0
+            // as a fallback for module-level calls that have no enclosing function).
+            let sym_idx = parent_index.unwrap_or(0);
+            let name = callee.rsplit('.').next().unwrap_or(&callee).to_string();
+            refs.push(ExtractedRef {
+                source_symbol_index: sym_idx,
+                target_name: name,
+                kind: EdgeKind::Calls,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
             // Still recurse for nested defs / aliases inside do-block
             visit(*node, src, symbols, refs, parent_index, qualified_prefix);
         }

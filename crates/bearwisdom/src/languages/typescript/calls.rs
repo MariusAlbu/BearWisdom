@@ -2,6 +2,65 @@ use super::helpers::node_text;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
+/// Emit a Calls ref for a single `call_expression` node.
+///
+/// This is used from `extract_node` to capture calls at any AST level that the
+/// recursive visitor traverses (top-level statements, field initializers, etc.)
+/// without re-walking the entire subtree (the caller handles recursion).
+pub(super) fn emit_call_ref(
+    call_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if let Some(func_node) = call_node.child_by_field_name("function") {
+        let chain = build_chain(func_node, src);
+        let target_name = chain
+            .as_ref()
+            .and_then(|c| c.segments.last())
+            .map(|s| s.name.clone())
+            .unwrap_or_else(|| callee_name_fallback(func_node, src));
+
+        crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+        if !target_name.is_empty() && target_name != "undefined" {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name,
+                kind: EdgeKind::Calls,
+                line: func_node.start_position().row as u32,
+                module: None,
+                chain,
+            });
+        }
+    }
+}
+
+/// Emit an Instantiates ref for a single `new_expression` node.
+pub(super) fn emit_new_ref(
+    new_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if let Some(constructor) = new_node.child_by_field_name("constructor") {
+        let name = match constructor.kind() {
+            "identifier" | "type_identifier" => node_text(constructor, src),
+            "member_expression" => callee_name_fallback(constructor, src),
+            _ => return,
+        };
+        if !name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: name,
+                kind: EdgeKind::Instantiates,
+                line: constructor.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+}
+
 pub(super) fn extract_calls(
     node: &Node,
     src: &[u8],
@@ -32,6 +91,10 @@ pub(super) fn extract_calls(
                         });
                     }
                 }
+                extract_calls(&child, src, source_symbol_index, refs);
+            }
+            "new_expression" => {
+                emit_new_ref(&child, src, source_symbol_index, refs);
                 extract_calls(&child, src, source_symbol_index, refs);
             }
             // `sql\`SELECT ...\`` / `gql\`query { ... }\`` — tagged template expression.

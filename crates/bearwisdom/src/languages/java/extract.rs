@@ -229,6 +229,24 @@ pub(super) fn extract_node(
 
             "field_declaration" | "constant_declaration" => {
                 symbols::push_field_decl(&child, src, scope_tree, package, symbols, parent_index);
+                // Extract calls from field/constant initializers, e.g.:
+                //   private static final List<X> LIST = buildList();
+                //   private final Foo foo = new Foo();
+                // tree-sitter: field_declaration → variable_declarator → (field: "value")
+                let mut fd_cursor = child.walk();
+                for declarator in child.children(&mut fd_cursor) {
+                    if declarator.kind() == "variable_declarator" {
+                        if let Some(init) = declarator.child_by_field_name("value") {
+                            calls::extract_calls_from_body(&init, src, parent_index.unwrap_or(0), refs);
+                        }
+                    }
+                }
+            }
+
+            // `static { ... }` — static initializer block; calls are attributed to
+            // the enclosing class (parent_index).
+            "static_initializer" => {
+                calls::extract_calls_from_body(&child, src, parent_index.unwrap_or(0), refs);
             }
 
             "ERROR" | "MISSING" => {

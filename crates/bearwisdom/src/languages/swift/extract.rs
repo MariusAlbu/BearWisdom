@@ -195,6 +195,20 @@ pub(super) fn extract_node<'a>(
                 }
             }
 
+            // Call expressions outside a function body (e.g. computed property
+            // defaults, top-level expressions, stored property initializers).
+            "call_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                extract_calls_from_body(&child, src, sym_idx, refs);
+            }
+
+            // Standalone attribute at scope level (not already attached to a
+            // declaration handled above) — emit TypeRef to the attribute type.
+            "attribute" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                decorators::emit_single_attribute(&child, src, sym_idx, refs);
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {

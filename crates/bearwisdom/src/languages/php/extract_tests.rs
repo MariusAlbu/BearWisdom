@@ -262,3 +262,72 @@ class Processor {
             "expected TypeRef from DNF type: {type_refs:?}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Trait use — Implements edge
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn trait_use_in_class_emits_implements_edge() {
+        let source = r#"<?php
+class User {
+    use Timestampable;
+    use SoftDeletes;
+}
+"#;
+        let r = extract::extract(source);
+        let impls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Implements)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            impls.contains(&"Timestampable"),
+            "expected Implements for Timestampable: {impls:?}"
+        );
+        assert!(
+            impls.contains(&"SoftDeletes"),
+            "expected Implements for SoftDeletes: {impls:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Top-level function call — Calls edge
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn top_level_function_call_emits_calls_edge() {
+        let source = "<?php\nsetup_database();\n";
+        let r = extract::extract(source);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"setup_database"),
+            "expected Calls edge for top-level function call, got: {calls:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Top-level new — Instantiates edge
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn top_level_new_emits_instantiates_edge() {
+        let source = "<?php\n$app = new Application();\n";
+        let r = extract::extract(source);
+        let inst: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Instantiates)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            inst.contains(&"Application"),
+            "expected Instantiates edge for top-level new, got: {inst:?}"
+        );
+    }

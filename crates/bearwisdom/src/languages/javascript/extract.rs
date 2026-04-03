@@ -113,6 +113,26 @@ fn extract_js_node(
 
             "field_definition" => {
                 push_field(&child, src, scope_tree, symbols, parent_index);
+                // Extract calls from the field initializer value, if present.
+                // The "value" field is the initializer expression itself, so we
+                // need emit_call_ref_js / emit_new_ref_js for direct call nodes,
+                // then extract_calls to pick up any nested calls in arguments.
+                if let Some(value) = child.child_by_field_name("value") {
+                    let sym_idx = parent_index.unwrap_or(0);
+                    match value.kind() {
+                        "call_expression" => {
+                            emit_call_ref_js(&value, src, sym_idx, refs);
+                            extract_calls(&value, src, sym_idx, refs);
+                        }
+                        "new_expression" => {
+                            emit_new_ref_js(&value, src, sym_idx, refs);
+                            extract_calls(&value, src, sym_idx, refs);
+                        }
+                        _ => {
+                            extract_calls(&value, src, sym_idx, refs);
+                        }
+                    }
+                }
             }
 
             "lexical_declaration" | "variable_declaration" => {
@@ -144,6 +164,25 @@ fn extract_js_node(
             // `exports.X = ...` assignments.
             "expression_statement" => {
                 extract_module_exports(&child, src, symbols.len(), refs);
+                extract_js_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // Call expressions at any level not already handled by extract_calls
+            // from inside a function/method body.  Captures top-level calls,
+            // IIFE patterns, calls inside field initializers, etc.
+            //
+            // Use parent_index.unwrap_or(0) so the call is attributed to the
+            // nearest enclosing named symbol or the first symbol in the file.
+            "call_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                emit_call_ref_js(&child, src, sym_idx, refs);
+                extract_js_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // `new Foo(...)` at module scope or in field initializers.
+            "new_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                emit_new_ref_js(&child, src, sym_idx, refs);
                 extract_js_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
@@ -621,6 +660,11 @@ fn extract_js_node_inner(
             }
             "field_definition" => {
                 push_field(&child, src, scope_tree, symbols, parent_index);
+                // Extract calls from the field initializer value, if present.
+                if let Some(value) = child.child_by_field_name("value") {
+                    let sym_idx = parent_index.unwrap_or(0);
+                    extract_calls(&value, src, sym_idx, refs);
+                }
             }
             _ => {
                 extract_js_node_inner(child, src, scope_tree, symbols, refs, parent_index);
@@ -863,6 +907,77 @@ fn callee_name(node: Node, src: &[u8]) -> String {
             let t = node_text(node, src);
             t.rsplit('.').next().unwrap_or(&t).to_string()
         }
+    }
+}
+
+/// Emit a Calls ref for a single `call_expression` node.
+///
+/// Mirrors the TypeScript `calls::emit_call_ref` but uses the JS-local
+/// `callee_name` helper and handles `require`/`import` as Imports edges.
+fn emit_call_ref_js(
+    call_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<Ref>,
+) {
+    let Some(func_node) = call_node.child_by_field_name("function") else {
+        return;
+    };
+    let callee = callee_name(func_node, src);
+    if callee == "require" {
+        if let Some(module) = extract_require_path(call_node, src) {
+            refs.push(Ref {
+                source_symbol_index,
+                target_name: module.clone(),
+                kind: EdgeKind::Imports,
+                line: call_node.start_position().row as u32,
+                module: Some(module),
+                chain: None,
+            });
+        }
+    } else if callee == "import" {
+        if let Some(module) = extract_first_string_arg(call_node, src) {
+            refs.push(Ref {
+                source_symbol_index,
+                target_name: module.clone(),
+                kind: EdgeKind::Imports,
+                line: call_node.start_position().row as u32,
+                module: Some(module),
+                chain: None,
+            });
+        }
+    } else if !callee.is_empty() {
+        refs.push(Ref {
+            source_symbol_index,
+            target_name: callee,
+            kind: EdgeKind::Calls,
+            line: func_node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+/// Emit a Calls ref for a single `new_expression` node.
+fn emit_new_ref_js(
+    new_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<Ref>,
+) {
+    let Some(constructor) = new_node.child_by_field_name("constructor") else {
+        return;
+    };
+    let name = callee_name(constructor, src);
+    if !name.is_empty() {
+        refs.push(Ref {
+            source_symbol_index,
+            target_name: name,
+            kind: EdgeKind::Calls,
+            line: constructor.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
     }
 }
 

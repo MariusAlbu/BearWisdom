@@ -4,8 +4,9 @@
 
 
 use super::{calls, symbols};
-use crate::types::ExtractionResult;
+use crate::types::{EdgeKind, ExtractionResult};
 use crate::types::{ExtractedRef, ExtractedSymbol};
+use super::helpers::node_text;
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -129,6 +130,34 @@ pub(super) fn extract_from_node(
                     qualified_prefix,
                     inside_class,
                 );
+                // Also extract any call expressions inside the statement (e.g.
+                // `foo()` or `bar.baz()` at module/class body level).
+                calls::extract_calls_from_body(
+                    &child,
+                    source,
+                    parent_index.unwrap_or(0),
+                    refs,
+                );
+                // Extract TypeRef from variable type annotations:
+                // `items: List[str] = []` — the `assignment.type` field.
+                extract_annotation_type_refs(
+                    &child,
+                    source,
+                    parent_index.unwrap_or(0),
+                    refs,
+                );
+            }
+
+            // `foo()` / `bar.baz()` at module or class body level.
+            // `call` can also appear as a direct child when not wrapped in
+            // `expression_statement` (rare but possible in some parse trees).
+            "call" => {
+                calls::extract_calls_from_body(
+                    &child,
+                    source,
+                    parent_index.unwrap_or(0),
+                    refs,
+                );
             }
 
             // `with open('f') as fh:` — context manager
@@ -171,6 +200,66 @@ pub(super) fn extract_from_node(
                     qualified_prefix,
                     inside_class,
                 );
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Annotation TypeRef helper
+// ---------------------------------------------------------------------------
+
+/// Walk an `expression_statement` for annotated assignments and emit a
+/// `TypeRef` edge for the type annotation.
+///
+/// ```python
+/// items: List[str] = []      # assignment with `type` field
+/// count: int                  # bare annotation (no value)
+/// ```
+fn extract_annotation_type_refs(
+    expr_stmt: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = expr_stmt.walk();
+    for child in expr_stmt.children(&mut cursor) {
+        if child.kind() == "assignment" {
+            if let Some(type_node) = child.child_by_field_name("type") {
+                emit_type_ref_from_annotation(&type_node, source, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+fn emit_type_ref_from_annotation(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match node.kind() {
+        "identifier" => {
+            let name = node_text(node, source);
+            if !name.is_empty()
+                && !matches!(name.as_str(), "None" | "int" | "str" | "float" | "bool" | "bytes")
+            {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    emit_type_ref_from_annotation(&child, source, source_symbol_index, refs);
+                }
             }
         }
     }
