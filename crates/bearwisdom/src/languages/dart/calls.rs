@@ -715,7 +715,7 @@ pub(super) fn extract_type_test_refs(
     }
 }
 
-/// Emit TypeRef/Calls edges from a `const_object_expression` node.
+/// Emit TypeRef/Instantiates edges from a `const_object_expression` node.
 /// Dart: `const Foo(...)` or `const package.Foo(...)`.
 pub(super) fn extract_const_object_refs(
     node: &Node,
@@ -733,7 +733,7 @@ pub(super) fn extract_const_object_refs(
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: name,
-                        kind: EdgeKind::Calls,
+                        kind: EdgeKind::Instantiates,
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,

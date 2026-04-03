@@ -160,6 +160,16 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 super::symbols::extract_type_refs_recursive(child, src, source_symbol_index, refs);
             }
 
+            // `condition ? trueExpr : falseExpr` — ternary/conditional expression.
+            // Both branches may contain method calls or stream chains.
+            "conditional_expression" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));

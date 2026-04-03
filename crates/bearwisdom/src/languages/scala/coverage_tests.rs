@@ -241,6 +241,73 @@ fn ref_type_arguments() {
 }
 
 #[test]
+fn ref_type_annotation_in_val() {
+    // type_identifier in val type annotation: `val x: String`
+    let r = extract("val name: String = \"Alice\"");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef to String in val annotation; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_type_annotation_in_var() {
+    // type_identifier in var type annotation: `var count: Int`
+    let r = extract("var counter: Int = 0");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Int" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef to Int in var annotation; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_return_type_in_function() {
+    // type_identifier in function return type: `def f(): String`
+    let r = extract("def greet(): String = \"Hi\"");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef to String in return type; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_parameter_type_in_function() {
+    // type_identifier in function parameter: `def f(name: String)`
+    let r = extract("def greet(name: String): String = \"Hi \" + name");
+    assert!(
+        r.refs.iter().filter(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef).count() >= 1,
+        "expected TypeRef to String in parameter or return type; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_generic_type_in_val() {
+    // type_arguments in val annotation: `val items: List[User]`
+    let r = extract("class User\nval items: List[User] = List()");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "User" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef to User in List[User]; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_nested_generic_types() {
+    // nested type arguments: `val m: Map[String, List[Int]]`
+    let r = extract("val m: Map[String, List[Int]] = Map()");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Map" && rf.kind == EdgeKind::TypeRef)
+            || r.refs.iter().any(|rf| rf.target_name == "List" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef to Map or List; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
 fn ref_extends_clause() {
     let r = extract("class Dog extends Animal");
     assert!(

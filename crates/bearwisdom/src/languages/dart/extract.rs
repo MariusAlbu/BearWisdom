@@ -3,15 +3,16 @@
 // =============================================================================
 
 
-use super::{symbols, decorators};
+use super::builtins;
 use super::calls::extract_dart_calls;
 use super::decorators::{extract_cascade_calls, extract_decorators};
 use super::symbols::{
     extract_class, extract_enum, extract_extension, extract_import_directive, extract_mixin,
     extract_part_directive, extract_top_level_function, extract_typedef, extract_variable,
 };
+use super::helpers::node_text;
 
-use crate::types::{ExtractedRef, ExtractedSymbol};
+use crate::types::{ExtractedRef, ExtractedSymbol, EdgeKind};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -136,6 +137,30 @@ fn visit(
                 if let Some(sym_idx) = parent_index {
                     extract_dart_calls(&child, src, sym_idx, refs);
                 }
+                visit(child, src, symbols, refs, parent_index, qualified_prefix);
+            }
+
+            // Catch-all for type_identifier nodes at any recursion level.
+            // Emit TypeRef unless it's a Dart builtin.
+            "type_identifier" => {
+                let name = node_text(child, src);
+                if !name.is_empty() && !builtins::is_dart_builtin(&name) {
+                    if let Some(sym_idx) = parent_index {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                // type_identifier is a leaf — no children to recurse into.
+            }
+
+            // Ensure type_arguments nodes (generics like <User>) are recursed into.
+            "type_arguments" => {
                 visit(child, src, symbols, refs, parent_index, qualified_prefix);
             }
 

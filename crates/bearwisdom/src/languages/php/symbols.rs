@@ -349,8 +349,22 @@ pub(super) fn extract_param_type_refs(
     for child in params_node.children(&mut cursor) {
         match child.kind() {
             "simple_parameter" | "variadic_parameter" => {
+                // Type hint may be in `type` field or directly as a child node
+                // (grammar depends on tree-sitter-php version).
                 if let Some(type_node) = child.child_by_field_name("type") {
                     extract_type_refs_from_php_type(&type_node, src, refs, source_symbol_index);
+                } else {
+                    // Fallback: scan children for type nodes directly.
+                    let mut p_cursor = child.walk();
+                    for p_child in child.children(&mut p_cursor) {
+                        match p_child.kind() {
+                            "named_type" | "nullable_type" | "union_type"
+                            | "intersection_type" | "disjunctive_normal_form_type" => {
+                                extract_type_refs_from_php_type(&p_child, src, refs, source_symbol_index);
+                            }
+                            _ => {}
+                        }
+                    }
                 }
             }
             _ => {}

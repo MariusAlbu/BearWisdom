@@ -1011,3 +1011,43 @@ func dispatch(q Queue) {
         );
     }
 
+    #[test]
+    fn function_signature_types_are_type_refs() {
+        // Verify that parameter and return types emit TypeRef edges.
+        // This is a fix for the ~25% coverage gap for type_identifier.
+        let src = r#"
+func FindUser(id string, filter *AdminFilter) (User, error) {
+    return User{}, nil
+}
+"#;
+        let r = extract::extract(src);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(type_refs.contains(&"AdminFilter"), "Should extract parameter type AdminFilter");
+        assert!(type_refs.contains(&"User"), "Should extract return type User");
+    }
+
+    #[test]
+    fn method_receiver_and_param_types() {
+        // Verify that method receiver types and parameter types are extracted.
+        let src = r#"
+func (repo *Repository) FindById(ctx Context, id string) (*Record, error) {
+    return nil, nil
+}
+"#;
+        let r = extract::extract(src);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(type_refs.contains(&"Repository"), "Should extract receiver type");
+        assert!(type_refs.contains(&"Context"), "Should extract parameter type");
+        assert!(type_refs.contains(&"Record"), "Should extract return type");
+    }
+

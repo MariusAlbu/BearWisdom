@@ -624,6 +624,27 @@ try { throw new Error('fail'); } catch (e: unknown) { } finally { }
 namespace NS { export const x = 1; }
 "#;
 
+/// Verify that type_identifiers inside generic_type nodes are extracted.
+/// This is a fix for the 66.7% → ~100% coverage gap for type_identifier.
+#[test]
+fn extracts_type_identifiers_from_generic_types() {
+    let src = r#"
+class Repo {
+  items: Repository<User>[] = [];
+  cached: Map<string, Item> = new Map();
+}
+"#;
+    let all_refs = refs(src);
+    let type_refs: Vec<&str> = all_refs.iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(type_refs.contains(&"Repository"), "Should extract Repository from generic");
+    assert!(type_refs.contains(&"User"), "Should extract User from generic argument");
+    assert!(type_refs.contains(&"Map"), "Should extract Map from generic");
+    assert!(type_refs.contains(&"Item"), "Should extract Item from generic argument");
+}
+
 /// Parse the comprehensive sample, enumerate all node kinds tree-sitter
 /// produces, and report which top-level-statement kinds are NOT in
 /// `handled_kinds()`.  This test never fails — it's a diagnostic tool.

@@ -150,7 +150,17 @@ fn dispatch_call(
             });
             // For dot calls (e.g. `Enum.map`), also emit a TypeRef for the receiver module.
             extract_dot_call_module_ref(node, src, sym_idx, refs);
-            // Still recurse for nested defs / aliases inside do-block and arguments.
+
+            // Extract calls from nested function blocks (e.g., inside Enum.map's fn...end).
+            // This ensures we capture all function calls within blocks and arguments.
+            let do_block_idx = find_do_block_index(node);
+            if let Some(i) = do_block_idx {
+                if let Some(do_block) = node.child(i) {
+                    extract_calls_recursive(&do_block, src, sym_idx, refs);
+                }
+            }
+
+            // Still recurse for nested defs / aliases inside arguments.
             visit(*node, src, symbols, refs, parent_index, qualified_prefix);
         }
     }

@@ -443,8 +443,20 @@ fn extract_node(
             "type_annotation" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 types::extract_type_ref_from_annotation(&child, src, sym_idx, refs);
-                // No further recursion needed — extract_type_ref_from_annotation
-                // fully handles the annotation subtree.
+                // Recursively walk all children to catch type_identifiers and other types
+                // nested inside generic_type, union_type, etc. that extract_type_ref_from_annotation
+                // may have handled but children not yet extracted.
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // `generic_type` encountered during recursion — recurse to catch all inner types.
+            // This handles cases like generic types in field initializers and other
+            // non-body expression contexts.
+            "generic_type" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                types::extract_type_ref_from_annotation(&child, src, sym_idx, refs);
+                // Recurse to handle nested types within type arguments.
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             // `type_identifier` encountered during recursion in expression contexts

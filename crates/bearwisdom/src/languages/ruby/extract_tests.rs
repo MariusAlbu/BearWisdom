@@ -568,3 +568,27 @@ end
         // and that the result is well-formed.
         let _ = r.refs;
     }
+
+    #[test]
+    fn deeply_nested_blocks_with_multiple_levels() {
+        let source = r#"
+class Processor
+  def process
+    [1, 2, 3].each do |item|
+      transform(item) do |result|
+        result.save
+      end
+    end
+  end
+end
+"#;
+        let r = extract::extract(source);
+        let calls: Vec<&str> = r.refs.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        // Verify all three levels of calls are captured
+        assert!(calls.contains(&"each"), "expected 'each', got: {calls:?}");
+        assert!(calls.contains(&"transform"), "expected 'transform', got: {calls:?}");
+        assert!(calls.contains(&"save"), "expected 'save' inside nested block, got: {calls:?}");
+    }

@@ -271,25 +271,45 @@ pub(super) fn extract_refs_from_body(
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
             }
 
-            // `pkg.Field` or `pkg.Func` used as a value (not as the callee of a
-            // call_expression — those are handled inside `extract_call_ref`).
-            // Emit a Calls ref so the selector appears in the graph.
+            // `pkg.Field` or `pkg.Func` or `pkg.Type` — depending on context:
+            // - As callee of call_expression → handled in extract_call_ref
+            // - As type in var/const/func signature → emit TypeRef
+            // - Otherwise (field reference, value) → emit Calls
             "selector_expression" => {
-                // Emit a Calls edge for the field/method name.
                 let named_count = child.named_child_count();
                 if named_count >= 2 {
                     let field = child.named_child(named_count - 1);
                     if let Some(field_node) = field {
                         let name = node_text(&field_node, source);
                         if !name.is_empty() {
-                            refs.push(ExtractedRef {
-                                source_symbol_index,
-                                target_name: name,
-                                kind: EdgeKind::Calls,
-                                line: field_node.start_position().row as u32,
-                                module: None,
-                                chain: build_chain(child, source),
-                            });
+                            // Check if parent is a call_expression (meaning this is the callee).
+                            // If so, it's handled by extract_call_ref and we skip it here.
+                            let is_call_callee = child.parent()
+                                .map(|p| p.kind() == "call_expression")
+                                .unwrap_or(false);
+
+                            if !is_call_callee {
+                                // Check if this is in a type position (parameter type, return type, etc.)
+                                let is_type_context = is_in_type_context(&child);
+                                let edge_kind = if is_type_context {
+                                    EdgeKind::TypeRef
+                                } else {
+                                    EdgeKind::Calls
+                                };
+
+                                refs.push(ExtractedRef {
+                                    source_symbol_index,
+                                    target_name: name,
+                                    kind: edge_kind,
+                                    line: field_node.start_position().row as u32,
+                                    module: None,
+                                    chain: if edge_kind == EdgeKind::Calls {
+                                        build_chain(child, source)
+                                    } else {
+                                        None
+                                    },
+                                });
+                            }
                         }
                     }
                 }
@@ -883,6 +903,62 @@ pub(super) fn extract_type_switch_refs(
     }
 }
 
+/// Check if a selector_expression node is in a type context
+/// (e.g., parameter type, return type, var type, cast target).
+fn is_in_type_context(node: &Node) -> bool {
+    let mut current = node.parent();
+    while let Some(parent) = current {
+        match parent.kind() {
+            // Type positions in parameter declarations
+            "parameter_declaration" => {
+                // The type field of a parameter is in a type context
+                if let Some(type_field) = parent.child_by_field_name("type") {
+                    if type_field.id() == node.id() || ancestor_of(&type_field, node) {
+                        return true;
+                    }
+                }
+            }
+            // Type positions in var/const declarations
+            "const_spec" | "var_spec" => {
+                // The type field is in a type context
+                if let Some(type_field) = parent.child_by_field_name("type") {
+                    if type_field.id() == node.id() || ancestor_of(&type_field, node) {
+                        return true;
+                    }
+                }
+            }
+            // Type in type conversion expression
+            "type_conversion_expression" => {
+                if let Some(type_field) = parent.child_by_field_name("type") {
+                    if type_field.id() == node.id() || ancestor_of(&type_field, node) {
+                        return true;
+                    }
+                }
+            }
+            // result / return type
+            "result" => return true,
+            // Stop searching at function/method boundaries
+            "function_declaration" | "method_declaration" => break,
+            // Most other contexts are value contexts; keep searching
+            _ => {}
+        }
+        current = parent.parent();
+    }
+    false
+}
+
+/// Check if `ancestor` is an ancestor of `node`.
+fn ancestor_of(ancestor: &Node, node: &Node) -> bool {
+    let mut current = node.parent();
+    while let Some(p) = current {
+        if p.id() == ancestor.id() {
+            return true;
+        }
+        current = p.parent();
+    }
+    false
+}
+
 /// Extract a simple type name from a Go type node, dereferencing pointer types.
 fn go_type_node_name(node: &Node, source: &str) -> String {
     match node.kind() {
@@ -903,5 +979,71 @@ fn go_type_node_name(node: &Node, source: &str) -> String {
                 .unwrap_or_else(|| node_text(node, source))
         }
         _ => String::new(),
+    }
+}
+
+/// Extract TypeRef edges from function/method parameter types and return types.
+///
+/// Walks the parameter_list and result nodes, emitting TypeRef for each
+/// non-builtin type found.
+pub(super) fn extract_fn_signature_type_refs(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Extract param types.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "parameter_list" {
+            extract_type_refs_from_param_list(&child, source, source_symbol_index, refs);
+        } else if child.kind() == "result" {
+            // result can be a single type or a parameter_list for multiple return types.
+            if let Some(plist) = child.child_by_field_name("parameters") {
+                extract_type_refs_from_param_list(&plist, source, source_symbol_index, refs);
+            } else {
+                // Single return type — the first named child.
+                if let Some(first) = child.named_child(0) {
+                    let type_name = go_type_node_name(&first, source);
+                    if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: type_name,
+                            kind: EdgeKind::TypeRef,
+                            line: first.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn extract_type_refs_from_param_list(
+    param_list: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = param_list.walk();
+    for child in param_list.children(&mut cursor) {
+        if child.kind() == "parameter_declaration" {
+            // Extract the type from the parameter declaration.
+            if let Some(type_node) = child.child_by_field_name("type") {
+                let type_name = go_type_node_name(&type_node, source);
+                if !type_name.is_empty() && !super::helpers::is_go_builtin_type(&type_name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: type_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
     }
 }

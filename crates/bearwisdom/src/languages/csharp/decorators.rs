@@ -44,6 +44,53 @@ pub(super) fn extract_decorators(
             extract_from_attribute_list(&child, src, source_symbol_index, refs);
         }
     }
+
+    // For methods, also extract attributes on parameters and return values.
+    extract_parameter_and_return_attributes(node, src, source_symbol_index, refs);
+}
+
+/// Extract attributes from method parameters and return value.
+///
+/// In C#, attributes can appear on parameters: `void M([Required] int x) { }`
+/// and on return values: `[return: NotNull] string Get() { }`
+fn extract_parameter_and_return_attributes(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Look for parameter_list (method/constructor parameters).
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "parameter_list" => {
+                // Iterate all parameters.
+                let mut pl_cursor = child.walk();
+                for param in child.children(&mut pl_cursor) {
+                    if param.kind() == "parameter" {
+                        // Parameters may have attribute_list children.
+                        let mut p_cursor = param.walk();
+                        for p_child in param.children(&mut p_cursor) {
+                            if p_child.kind() == "attribute_list" {
+                                extract_from_attribute_list(&p_child, src, source_symbol_index, refs);
+                            }
+                        }
+                    }
+                }
+            }
+            // Return type with attributes: `[return: NotNull] Type MethodName() { }`
+            // The return type node may contain attribute_list.
+            "return_type" | "type" => {
+                let mut rt_cursor = child.walk();
+                for rt_child in child.children(&mut rt_cursor) {
+                    if rt_child.kind() == "attribute_list" {
+                        extract_from_attribute_list(&rt_child, src, source_symbol_index, refs);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -57,6 +104,7 @@ fn extract_from_attribute_list(
     refs: &mut Vec<ExtractedRef>,
 ) {
     let mut cursor = attr_list.walk();
+    // Iterate ALL attributes in the list, not just the first.
     for child in attr_list.children(&mut cursor) {
         if child.kind() == "attribute" {
             if let Some((name, first_arg)) = parse_attribute(&child, src) {

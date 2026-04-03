@@ -90,6 +90,26 @@ pub(super) fn extract_calls_from_body(
                 // (e.g. `List<MyClass>`) also emit TypeRef edges.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+            // Generic type arguments: `List<String>`, `Map<K, V>`, etc.
+            // Extract TypeRefs from inside the angle brackets.
+            "type_arguments" => {
+                let mut tc = child.walk();
+                for arg in child.children(&mut tc) {
+                    match arg.kind() {
+                        "type" | "user_type" | "nullable_type" | "function_type"
+                        | "non_nullable_type" | "parenthesized_type" => {
+                            extract_type_ref_from_type_node(&arg, src, source_symbol_index, refs);
+                        }
+                        _ => {}
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // Explicit type wrappers that we need to recursively process.
+            "type" | "non_nullable_type" | "parenthesized_type" | "function_type" => {
+                extract_type_ref_from_type_node(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
             // `"Hello ${expr}"` — recurse into interpolated expressions.
             "string_literal" => {
                 let mut sc = child.walk();
@@ -151,7 +171,7 @@ pub(super) fn kotlin_type_name(node: &Node, src: &[u8]) -> String {
             }
             last
         }
-        "type" | "nullable_type" => {
+        "type" | "nullable_type" | "non_nullable_type" | "parenthesized_type" | "function_type" => {
             // Recurse into the inner type.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {

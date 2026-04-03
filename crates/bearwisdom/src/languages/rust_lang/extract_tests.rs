@@ -564,3 +564,49 @@ impl Container for Wrapper {
         let _ = r.refs;
     }
 
+    #[test]
+    fn derive_trait_refs() {
+        // Verify that each trait in #[derive(...)] is emitted as TypeRef.
+        // This is a fix for the ~59% coverage gap for attribute_item.
+        let src = r#"
+#[derive(Debug, Clone, Serialize)]
+struct Point {
+    x: i32,
+    y: i32,
+}
+"#;
+        let r = extract::extract(src);
+        let trait_names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(trait_names.contains(&"Debug"), "Should extract Debug trait from derive");
+        assert!(trait_names.contains(&"Clone"), "Should extract Clone trait from derive");
+        assert!(trait_names.contains(&"Serialize"), "Should extract Serialize trait from derive");
+    }
+
+    #[test]
+    fn scoped_type_identifier_in_patterns() {
+        // Verify that scoped type identifiers like std::io::Result are extracted.
+        // This is a fix for the ~29% coverage gap for scoped_type_identifier.
+        let src = r#"
+fn process() {
+    let result: std::io::Result<Data> = Ok(Data {});
+    match result {
+        Ok(data) => {},
+        Err(_) => {},
+    }
+}
+"#;
+        let r = extract::extract(src);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef && r.target_name.contains("::"))
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(!type_refs.is_empty(), "Should extract scoped type identifiers");
+    }
+

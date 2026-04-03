@@ -136,6 +136,18 @@ pub(super) fn extract_from_node(
                 );
             }
 
+            // `method_call` is an alternative grammar node for method calls (tree-sitter-ruby
+            // may parse some calls as `method_call` instead of `call`). Extract calls from it.
+            "method_call" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                super::calls::extract_calls_from_body(
+                    &child,
+                    src,
+                    sym_idx,
+                    refs,
+                );
+            }
+
             // `Foo::Bar` — scope resolution used as a type reference (e.g. in
             // assignments, conditionals, or as standalone constant refs).
             "scope_resolution" => {

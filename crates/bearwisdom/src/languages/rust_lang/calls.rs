@@ -390,6 +390,37 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
 
+            // `type_identifier` encountered in expression contexts (match arms, closures, etc.)
+            // Emit TypeRef for the type name.
+            "type_identifier" => {
+                let name = node_text(&child, source);
+                if !name.is_empty() && !is_rust_primitive(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+
+            // `scoped_type_identifier` like `std::io::Result` in match arms or type contexts
+            "scoped_type_identifier" => {
+                let name = node_text(&child, source);
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+
             _ => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
@@ -764,6 +795,18 @@ fn build_module_path(prefix: &str, path: &str) -> String {
 // ---------------------------------------------------------------------------
 // Type name extraction helper (for type_cast_expression targets)
 // ---------------------------------------------------------------------------
+
+/// Check if a name is a Rust primitive type keyword.
+fn is_rust_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+            | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+            | "f32" | "f64"
+            | "bool" | "char" | "str" | "never"
+            | "unit" | "Self"
+    )
+}
 
 /// Extract a simple type name from a Rust type node, unwrapping references and
 /// generic wrappers to their base name.

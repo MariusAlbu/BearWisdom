@@ -281,3 +281,100 @@ fn ref_enum_entry_produces_member() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_generic_type_arguments() {
+    // Type arguments inside generics should emit TypeRef for each type param.
+    let r = extract("class Box {\n    val items: List<String> = listOf()\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "List"),
+        "expected TypeRef to List; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "String"),
+        "expected TypeRef to String inside List<...>; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_nested_generic_types() {
+    // Nested generics: Map<String, List<Int>>
+    let r = extract("class C {\n    val data: Map<String, List<Int>> = mapOf()\n}");
+    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "Map"),
+        "expected TypeRef to Map"
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "String"),
+        "expected TypeRef to String"
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "List"),
+        "expected TypeRef to List"
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "Int"),
+        "expected TypeRef to Int"
+    );
+}
+
+#[test]
+fn ref_callable_type_annotations() {
+    // Function types: (String, Int) -> Boolean
+    let r = extract("class C {\n    val fn: (String, Int) -> Boolean = { _, _ -> true }\n}");
+    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "String"),
+        "expected TypeRef to String in function type; got {:?}",
+        type_refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "Int"),
+        "expected TypeRef to Int in function type"
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "Boolean"),
+        "expected TypeRef to Boolean in function type"
+    );
+}
+
+#[test]
+fn ref_annotation_on_class() {
+    // @Service annotation should emit TypeRef
+    let r = extract("@Service\nclass MyService {}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Service" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef to Service annotation; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_annotation_on_property() {
+    // @Inject annotation on property should emit TypeRef
+    let r = extract("class C {\n    @Inject\n    lateinit var service: Service\n}");
+    let service_refs: Vec<_> = r.refs.iter().filter(|rf| rf.target_name == "Service").collect();
+    assert!(
+        service_refs.len() >= 1,
+        "expected at least one TypeRef to Service (annotation and property type); got {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_multiple_annotations() {
+    // Multiple annotations should each emit TypeRef
+    let r = extract("@Service\n@Component\nclass MyService {}");
+    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "Service"),
+        "expected TypeRef to Service"
+    );
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "Component"),
+        "expected TypeRef to Component"
+    );
+}

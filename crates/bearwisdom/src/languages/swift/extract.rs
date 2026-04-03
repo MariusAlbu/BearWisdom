@@ -247,6 +247,45 @@ pub(super) fn extract_node<'a>(
                 decorators::emit_single_attribute(&child, src, sym_idx, refs);
             }
 
+            // user_type nodes that appear at statement/declaration level — extract type refs.
+            // This catches generic type arguments and type parameters.
+            "user_type" | "optional_type" | "array_type" | "dictionary_type" | "function_type" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                calls::extract_type_ref_from_swift_type(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // inheritance_specifier and type_inheritance_clause at declaration level.
+            "inheritance_specifier" | "type_inheritance_clause" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                // Walk the inheritance specifier and emit TypeRef for each inherited type.
+                let mut ic = child.walk();
+                for inherited in child.children(&mut ic) {
+                    match inherited.kind() {
+                        "user_type" | "type_identifier" | "simple_identifier" => {
+                            calls::extract_type_ref_from_swift_type(&inherited, src, sym_idx, refs);
+                        }
+                        _ => {}
+                    }
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // type_annotation at declaration level (type ascriptions).
+            "type_annotation" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                if let Some(type_node) = child.child_by_field_name("type")
+                    .or_else(|| child.named_child(0))
+                {
+                    if type_node.kind() == "protocol_composition_type" {
+                        calls::extract_protocol_composition_refs(&type_node, src, sym_idx, refs);
+                    } else {
+                        calls::extract_type_ref_from_swift_type(&type_node, src, sym_idx, refs);
+                    }
+                }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
             "ERROR" | "MISSING" => {}
 
             _ => {

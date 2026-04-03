@@ -45,6 +45,7 @@ pub(super) fn extract_calls_from_body(
                         });
                     }
                 }
+                // Recurse into arguments and method chain — calls may be nested.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             "object_creation_expression" => {
@@ -186,6 +187,22 @@ pub(super) fn extract_calls_from_body(
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_calls_from_body(&body, src, source_symbol_index, refs);
                 }
+            }
+            // `x => x.Name` — lambda expression body (single expression form).
+            // Also handle `(x, y) => Compute(x, y)` — lambda body may contain calls.
+            "lambda_expression" => {
+                // Recurse into lambda body to find nested calls.
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `condition ? trueExpr : falseExpr` — ternary expression.
+            // Both branches may contain method calls.
+            "conditional_expression" => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // `obj?.Property?.Method()` — null-conditional chain.
+            // Recurse to find all calls in the chain.
+            "null_conditional_member_access_expression" | "null_conditional_invocation_expression" => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);

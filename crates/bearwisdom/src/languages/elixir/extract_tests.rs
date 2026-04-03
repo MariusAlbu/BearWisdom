@@ -170,3 +170,32 @@ end
         );
     }
 
+    #[test]
+    fn deeply_nested_function_calls_in_anonymous_functions() {
+        let src = r#"
+defmodule DataProcessor do
+  def process_items(items) do
+    Enum.map(items, fn item ->
+      transform(item)
+      |> validate()
+      |> persist()
+    end)
+  end
+
+  defp transform(x), do: x
+  defp validate(x), do: x
+  defp persist(x), do: x
+end
+"#;
+        let r = extract::extract(src);
+        let calls: Vec<&str> = r.refs.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        // Verify all calls including those in anonymous functions are captured
+        assert!(calls.contains(&"map"), "expected 'map' call: {calls:?}");
+        assert!(calls.contains(&"transform"), "expected 'transform' call: {calls:?}");
+        assert!(calls.contains(&"validate"), "expected 'validate' call: {calls:?}");
+        assert!(calls.contains(&"persist"), "expected 'persist' call: {calls:?}");
+    }
+

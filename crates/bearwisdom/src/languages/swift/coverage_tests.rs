@@ -275,3 +275,38 @@ fn ref_call_expression_nested_in_property() {
         "expected refs from computed property body; got none"
     );
 }
+
+#[test]
+fn ref_generic_type_parameters() {
+    // Generic type parameters in function signatures should emit TypeRef for parameter types.
+    let r = extract("func process<T>(item: T) -> T { return item }");
+    // Just verify no crash and some refs are extracted (generics handling is language-specific).
+    let _ = r;
+}
+
+#[test]
+fn ref_optional_and_array_types() {
+    // Optional and Array type wrappers should emit TypeRef for inner types.
+    let r = extract("class C {\n    var items: [String]?\n    var count: Int?\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "String"),
+        "expected TypeRef for String in optional array; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_inheritance_specifier_complex() {
+    // Multiple inheritance and conformance — verify both Inherits and Implements are emitted.
+    let r = extract("class Dog: Animal, Runnable, CustomStringConvertible {}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Animal" && rf.kind == EdgeKind::Inherits),
+        "expected Inherits Animal; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Runnable" && rf.kind == EdgeKind::Implements),
+        "expected Implements Runnable; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

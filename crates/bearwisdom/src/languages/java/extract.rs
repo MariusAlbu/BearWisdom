@@ -208,6 +208,9 @@ pub(super) fn extract_node(
                         symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                     if let Some(body) = child.child_by_field_name("body") {
+                        // First, walk the method body to extract any nested classes (e.g., anonymous classes).
+                        extract_nested_classes_from_body(&body, src, scope_tree, package, symbols, refs, Some(sym_idx));
+                        // Then extract calls.
                         calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
                     }
                 }
@@ -222,6 +225,9 @@ pub(super) fn extract_node(
                         symbols::extract_java_typed_params_as_symbols(&params, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
                     if let Some(body) = child.child_by_field_name("body") {
+                        // First, walk the constructor body to extract any nested classes (e.g., anonymous classes).
+                        extract_nested_classes_from_body(&body, src, scope_tree, package, symbols, refs, Some(sym_idx));
+                        // Then extract calls.
                         calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
                     }
                 }
@@ -266,6 +272,51 @@ pub(super) fn extract_node(
 
             _ => {
                 extract_node(child, src, scope_tree, package, symbols, refs, parent_index);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Nested class extraction (from method/constructor bodies)
+// ---------------------------------------------------------------------------
+
+/// Walk a method/constructor body and extract any nested classes
+/// (including anonymous classes created via `new Type() { ... }`).
+fn extract_nested_classes_from_body(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    package: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            // Handle anonymous classes: `new MyInterface() { void method() {} }`
+            // The anonymous_class_body directly contains field and method declarations.
+            "object_creation_expression" => {
+                let mut oc = child.walk();
+                for oc_child in child.children(&mut oc) {
+                    if oc_child.kind() == "class_body" || oc_child.kind() == "anonymous_class_body" {
+                        // Extract from the anonymous class body.
+                        extract_node(
+                            oc_child,
+                            src,
+                            scope_tree,
+                            package,
+                            symbols,
+                            refs,
+                            parent_index,
+                        );
+                    }
+                }
+            }
+            // Recursively walk any other nodes that may contain nested classes.
+            _ => {
+                extract_nested_classes_from_body(&child, src, scope_tree, package, symbols, refs, parent_index);
             }
         }
     }

@@ -53,12 +53,17 @@ pub(super) fn extract_decorators(
         if let Some((name, first_arg)) = parse_attribute_item(&attr_item, source) {
             refs.push(ExtractedRef {
                 source_symbol_index,
-                target_name: name,
+                target_name: name.clone(),
                 kind: EdgeKind::TypeRef,
                 line: attr_item.start_position().row as u32,
                 module: first_arg,
                 chain: None,
             });
+
+            // For #[derive(...)], also extract each derived trait as a TypeRef
+            if name == "derive" {
+                extract_derive_trait_refs(&attr_item, source, source_symbol_index, refs);
+            }
         }
     }
 }
@@ -105,6 +110,79 @@ fn parse_attribute(attr: &Node, source: &str) -> Option<(String, Option<String>)
         .and_then(|tt| extract_first_string_from_token_tree(&tt, source));
 
     Some((name, first_arg))
+}
+
+/// Extract all trait names from a #[derive(...)] attribute as TypeRef edges.
+///
+/// For `#[derive(Debug, Clone, Serialize)]`, emits TypeRef for Debug, Clone, Serialize.
+fn extract_derive_trait_refs(
+    attr_item: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = attr_item.walk();
+    for child in attr_item.children(&mut cursor) {
+        if child.kind() == "attribute" {
+            // Walk the attribute's children for the token_tree argument
+            let mut ac = child.walk();
+            for ac_child in child.children(&mut ac) {
+                if ac_child.kind() == "token_tree" {
+                    extract_trait_names_from_token_tree(&ac_child, source, source_symbol_index, refs);
+                    break;
+                }
+            }
+            break;
+        }
+    }
+}
+
+/// Recursively extract trait names from a derive token_tree.
+///
+/// For `(Debug, Clone, Serialize)`, emits TypeRef for each identifier.
+fn extract_trait_names_from_token_tree(
+    tt: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = tt.walk();
+    for child in tt.children(&mut cursor) {
+        match child.kind() {
+            "identifier" => {
+                let trait_name = node_text(&child, source);
+                if !trait_name.is_empty() && trait_name != "," {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: trait_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "scoped_identifier" => {
+                // e.g., `serde::Serialize` — extract the full path
+                let full_name = node_text(&child, source);
+                if !full_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: full_name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "token_tree" => {
+                // Nested parens; recurse
+                extract_trait_names_from_token_tree(&child, source, source_symbol_index, refs);
+            }
+            _ => {}
+        }
+    }
 }
 
 /// Recursively scan a `token_tree` for the first string literal.

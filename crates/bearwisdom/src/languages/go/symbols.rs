@@ -143,6 +143,9 @@ pub(super) fn extract_function_declaration(
         parent_index,
     });
 
+    // Extract TypeRef edges from parameter and return types.
+    super::calls::extract_fn_signature_type_refs(node, source, idx, refs);
+
     // Extract typed parameters as Property symbols scoped to this function.
     if let Some(params) = params_opt {
         extract_go_typed_params_as_symbols(&params, source, symbols, refs, Some(idx), &qualified_name);
@@ -240,6 +243,9 @@ pub(super) fn extract_method_declaration(
         scope_path: scope_from_prefix(&method_prefix),
         parent_index,
     });
+
+    // Extract TypeRef edges from parameter and return types.
+    super::calls::extract_fn_signature_type_refs(node, source, idx, refs);
 
     // Extract typed parameters as Property symbols scoped to this method.
     if let Some(params) = params_opt {

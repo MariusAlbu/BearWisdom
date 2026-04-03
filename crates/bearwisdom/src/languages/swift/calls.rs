@@ -3,6 +3,7 @@
 // =============================================================================
 
 use super::helpers::{call_target_name, node_text};
+use super::builtins;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
@@ -152,6 +153,51 @@ pub(super) fn extract_type_ref_from_swift_type(
             module: None,
             chain: None,
         });
+    }
+    // Recursively walk the entire type subtree to catch ALL type_identifier nodes,
+    // including in generic arguments and nested type expressions.
+    extract_all_type_identifiers(node, src, source_symbol_index, refs);
+}
+
+/// Walk a type node recursively and emit TypeRef for every type_identifier found.
+/// This ensures comprehensive coverage of generic parameters, nested types, etc.
+fn extract_all_type_identifiers(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "simple_identifier" => {
+                let name = node_text(child, src);
+                // Only emit if not a builtin (builtins are always available).
+                if !name.is_empty() && !builtins::is_swift_builtin(&name) {
+                    // Avoid duplicate if this is the same as swift_type_name output.
+                    // Check if we already emitted a ref with this name from the parent.
+                    let already_emitted = refs.iter().rev().take(10).any(|r| {
+                        r.source_symbol_index == source_symbol_index
+                            && r.target_name == name
+                            && r.kind == EdgeKind::TypeRef
+                    });
+                    if !already_emitted {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+            _ => {
+                // Recurse into children to find nested type_identifier nodes.
+                extract_all_type_identifiers(&child, src, source_symbol_index, refs);
+            }
+        }
     }
 }
 

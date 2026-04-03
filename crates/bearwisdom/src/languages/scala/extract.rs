@@ -125,13 +125,19 @@ pub(super) fn extract_node<'a>(
 
             // Abstract method declaration in trait/class (no body).
             "function_declaration" => {
-                push_function_def(&child, src, scope_tree, symbols, parent_index);
+                let idx = push_function_def(&child, src, scope_tree, symbols, parent_index);
+                // Extract TypeRef from return type and parameter types in declarations.
+                if let Some(sym_idx) = idx {
+                    extract_type_refs_from_function(&child, src, sym_idx, refs);
+                }
             }
 
             "function_definition" => {
                 let idx = push_function_def(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
+                    // Extract TypeRef from return type and parameter types.
+                    extract_type_refs_from_function(&child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         // If the body IS a match_expression (e.g. `def f = x match {...}`),
                         // extract patterns directly; extract_calls_from_body only sees children.
@@ -147,7 +153,18 @@ pub(super) fn extract_node<'a>(
             }
 
             "val_definition" | "var_definition" | "val_declaration" | "var_declaration" => {
-                push_val_var(&child, src, scope_tree, symbols, parent_index);
+                // Extract type annotation *before* pushing the symbol (so we have the right index).
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    // For declarations, use parent_index; for definitions, we'll use the symbol we just created.
+                    let idx_to_use = match child.kind() {
+                        "val_definition" | "var_definition" => symbols.len(), // Will be the index of the symbol we push below
+                        _ => parent_index.unwrap_or(0), // For declarations
+                    };
+                    push_val_var(&child, src, scope_tree, symbols, parent_index);
+                    extract_type_refs_from_type_node(&type_node, src, idx_to_use, refs);
+                } else {
+                    push_val_var(&child, src, scope_tree, symbols, parent_index);
+                }
             }
 
             // Scala `type` alias / abstract type member.
@@ -183,11 +200,12 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
-            // for-expression / for-comprehension — extract embedded calls.
+            // for-expression / for-comprehension — extract embedded calls and type refs.
             "for_expression" => {
                 if let Some(sym_idx) = parent_index {
                     extract_calls_from_body(&child, src, sym_idx, refs);
                 }
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             // Call expressions outside a function body (e.g. val/var initializers,
@@ -216,6 +234,93 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Type reference extraction helpers
+// ---------------------------------------------------------------------------
+
+/// Extract TypeRef edges from a type annotation node (e.g., the `: String` part).
+/// Recursively handles generic_type, compound_type, etc.
+/// NOTE: We extract ALL type identifiers, including builtins. Filtering happens in resolution.
+fn extract_type_refs_from_type_node(
+    type_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Handle the type_node itself if it's a type_identifier.
+    if type_node.kind() == "type_identifier" {
+        let name = helpers::node_text(*type_node, src);
+        if !name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: name,
+                kind: crate::types::EdgeKind::TypeRef,
+                line: type_node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+        return;
+    }
+
+    let mut cursor = type_node.walk();
+    for child in type_node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" => {
+                let name = helpers::node_text(child, src);
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "generic_type" => {
+                // Recurse into generic_type to find type_identifier and type_arguments.
+                extract_type_refs_from_type_node(&child, src, source_symbol_index, refs);
+            }
+            "type_arguments" => {
+                // Recurse into type arguments (e.g., `List[User]` → process `User`).
+                extract_type_refs_from_type_node(&child, src, source_symbol_index, refs);
+            }
+            "compound_type" | "annotated_type" | "with_type" => {
+                // Recurse into compound types.
+                extract_type_refs_from_type_node(&child, src, source_symbol_index, refs);
+            }
+            "function_type" => {
+                // Function types may have parameter and return type nodes.
+                extract_type_refs_from_type_node(&child, src, source_symbol_index, refs);
+            }
+            _ => {
+                // Recurse into other node types to find nested type_identifier nodes.
+                extract_type_refs_from_type_node(&child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Extract TypeRef edges from function parameter and return types.
+fn extract_type_refs_from_function(
+    func_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Extract return type.
+    if let Some(ret_type) = func_node.child_by_field_name("return_type") {
+        extract_type_refs_from_type_node(&ret_type, src, source_symbol_index, refs);
+    }
+
+    // Extract parameter types.
+    if let Some(params) = func_node.child_by_field_name("parameters") {
+        extract_type_refs_from_type_node(&params, src, source_symbol_index, refs);
     }
 }
 

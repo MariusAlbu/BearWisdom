@@ -33,6 +33,8 @@ pub(super) fn extract_calls_from_body(
                         chain,
                     });
                 }
+                // Recurse into the object expression and arguments to find nested calls.
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
 
             "static_call_expression" | "scoped_call_expression" => {
@@ -49,6 +51,8 @@ pub(super) fn extract_calls_from_body(
                         chain,
                     });
                 }
+                // Recurse into arguments to find nested calls.
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
 
             "object_creation_expression" => {

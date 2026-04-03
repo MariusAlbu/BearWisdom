@@ -112,8 +112,50 @@ pub(super) fn extract_calls_from_body(
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
 
+            // type_arguments may appear in expressions (e.g. generic method calls).
+            "type_arguments" => {
+                extract_type_refs_from_type_arguments(&child, src, source_symbol_index, refs);
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Extract TypeRef edges from type_arguments node (e.g., `List[User]` → TypeRef to User).
+/// NOTE: We extract ALL type identifiers, including builtins. Filtering happens in resolution.
+fn extract_type_refs_from_type_arguments(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" => {
+                let name = node_text(child, src);
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "generic_type" | "compound_type" | "function_type" | "type_arguments" => {
+                // Recurse into nested types.
+                extract_type_refs_from_type_arguments(&child, src, source_symbol_index, refs);
+            }
+            _ => {
+                // Keep recursing to find type_identifier nodes.
+                extract_type_refs_from_type_arguments(&child, src, source_symbol_index, refs);
             }
         }
     }
