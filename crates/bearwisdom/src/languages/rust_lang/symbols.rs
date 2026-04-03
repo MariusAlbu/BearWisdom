@@ -5,7 +5,7 @@
 use super::helpers::{
     detect_visibility, extract_doc_comment, extract_signature, node_text, qualify, scope_from_prefix,
 };
-use crate::types::{ExtractedSymbol, SymbolKind};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use tree_sitter::Node;
 
 pub(super) fn extract_function(
@@ -378,4 +378,335 @@ pub(super) fn extract_mod(
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
     })
+}
+
+// ---------------------------------------------------------------------------
+// Struct field extraction
+// ---------------------------------------------------------------------------
+
+/// Walk the body of a `struct_item` or `union_item` and emit `Field` symbols
+/// for each declared field, plus `TypeRef` edges for named (non-primitive) types.
+///
+/// tree-sitter-rust shape:
+/// ```text
+/// struct_item
+///   name: identifier "MyStruct"
+///   body: field_declaration_list
+///     field_declaration
+///       name: field_identifier  "field_name"
+///       type: _type             SomeType
+/// ```
+pub(super) fn extract_struct_fields(
+    struct_node: &Node,
+    source: &str,
+    struct_sym_index: usize,
+    qualified_prefix: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let body = match struct_node.child_by_field_name("body") {
+        Some(b) => b,
+        None => return,
+    };
+
+    let mut cursor = body.walk();
+    for child in body.children(&mut cursor) {
+        if child.kind() != "field_declaration" {
+            continue;
+        }
+
+        let name_node = match child.child_by_field_name("name") {
+            Some(n) => n,
+            None => continue,
+        };
+        let field_name = node_text(&name_node, source);
+        if field_name.is_empty() {
+            continue;
+        }
+
+        let qualified_name = qualify(&field_name, qualified_prefix);
+        let visibility = detect_visibility(&child);
+
+        // Build a concise signature: `field_name: TypeText`
+        let sig = if let Some(type_node) = child.child_by_field_name("type") {
+            let type_text = node_text(&type_node, source);
+            Some(format!("{field_name}: {type_text}"))
+        } else {
+            Some(field_name.clone())
+        };
+
+        symbols.push(ExtractedSymbol {
+            name: field_name.clone(),
+            qualified_name,
+            kind: SymbolKind::Field,
+            visibility,
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: child.end_position().column as u32,
+            signature: sig,
+            doc_comment: extract_doc_comment(&child, source),
+            scope_path: scope_from_prefix(qualified_prefix),
+            parent_index: Some(struct_sym_index),
+        });
+
+        // Emit TypeRef for non-primitive field types.
+        if let Some(type_node) = child.child_by_field_name("type") {
+            extract_type_refs_from_type_node(&type_node, source, struct_sym_index, refs);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Function/method signature type extraction
+// ---------------------------------------------------------------------------
+
+/// Emit TypeRef edges for all named types in a function/method signature:
+/// parameter types and return type.
+///
+/// This covers `type_identifier`, `scoped_type_identifier`, `generic_type`,
+/// `reference_type`, `pointer_type`, `dynamic_trait_type` (`dyn Trait`), and
+/// `abstract_type` (`impl Trait`) nodes found in the parameter list and
+/// return type.
+pub(super) fn extract_fn_signature_type_refs(
+    fn_node: &Node,
+    source: &str,
+    sym_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Walk parameter list.
+    if let Some(params) = fn_node.child_by_field_name("parameters") {
+        let mut cursor = params.walk();
+        for child in params.children(&mut cursor) {
+            match child.kind() {
+                "parameter" | "self_parameter" | "variadic_parameter" => {
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        extract_type_refs_from_type_node(&type_node, source, sym_index, refs);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // Walk return type.
+    if let Some(ret) = fn_node.child_by_field_name("return_type") {
+        extract_type_refs_from_type_node(&ret, source, sym_index, refs);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Generic type node → TypeRef walker
+// ---------------------------------------------------------------------------
+
+/// Recursively walk a Rust type node and emit `TypeRef` edges for every
+/// named (non-primitive) type referenced within it.
+///
+/// Handles:
+/// - `type_identifier`          → direct named type `Foo`
+/// - `scoped_type_identifier`   → `foo::Bar` — leaf name only
+/// - `generic_type`             → `Vec<T>` — base + type arguments
+/// - `type_arguments`           → `<T, U>` — each argument type
+/// - `reference_type`           → `&T`, `&mut T`
+/// - `pointer_type`             → `*const T`, `*mut T`
+/// - `dynamic_trait_type`       → `dyn Error + Send`
+/// - `abstract_type`            → `impl Trait`
+/// - `array_type`               → `[T; N]`
+/// - `tuple_type`               → `(A, B)`
+/// - `optional_type`            → `Option<T>` (if present as distinct node)
+pub(super) fn extract_type_refs_from_type_node(
+    node: &Node,
+    source: &str,
+    sym_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match node.kind() {
+        "type_identifier" => {
+            let name = node_text(node, source);
+            if !name.is_empty() && !is_rust_primitive(&name) {
+                refs.push(make_type_ref(sym_index, name, node.start_position().row as u32));
+            }
+        }
+
+        "scoped_type_identifier" => {
+            // `foo::Bar` — emit a TypeRef for the leaf name.
+            let name = node
+                .child_by_field_name("name")
+                .map(|n| node_text(&n, source))
+                .unwrap_or_else(|| {
+                    let text = node_text(node, source);
+                    text.rsplit("::").next().unwrap_or(&text).to_string()
+                });
+            if !name.is_empty() && !is_rust_primitive(&name) {
+                refs.push(make_type_ref(sym_index, name, node.start_position().row as u32));
+            }
+        }
+
+        "generic_type" => {
+            // `Vec<T>` — emit TypeRef for the base type, then recurse into type_arguments.
+            if let Some(base) = node.child_by_field_name("type") {
+                extract_type_refs_from_type_node(&base, source, sym_index, refs);
+            }
+            if let Some(args) = node.child_by_field_name("type_arguments") {
+                extract_type_refs_from_type_node(&args, source, sym_index, refs);
+            }
+        }
+
+        "type_arguments" => {
+            // `<A, B, C>` — recurse into each child type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_type_refs_from_type_node(&child, source, sym_index, refs);
+                }
+            }
+        }
+
+        "reference_type" | "pointer_type" => {
+            // `&T`, `&mut T`, `*const T` — recurse into the inner type.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() && child.kind() != "mutable_specifier" && child.kind() != "lifetime" {
+                    extract_type_refs_from_type_node(&child, source, sym_index, refs);
+                }
+            }
+        }
+
+        "dynamic_type" | "dynamic_trait_type" => {
+            // `dyn Error + Send` — emit TypeRef for each trait name.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_type_refs_from_type_node(&child, source, sym_index, refs);
+                }
+            }
+        }
+
+        "abstract_type" => {
+            // `impl Trait` — emit TypeRef for the trait.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_type_refs_from_type_node(&child, source, sym_index, refs);
+                }
+            }
+        }
+
+        "array_type" => {
+            if let Some(elem) = node.child_by_field_name("element") {
+                extract_type_refs_from_type_node(&elem, source, sym_index, refs);
+            }
+        }
+
+        "tuple_type" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_type_refs_from_type_node(&child, source, sym_index, refs);
+                }
+            }
+        }
+
+        // trait_bounds in a scoped context: `T: Clone + Send`
+        "trait_bounds" => {
+            super::patterns::extract_trait_bounds(node, source, sym_index, refs);
+        }
+
+        // Lifetime annotations — no TypeRef needed.
+        "lifetime" => {}
+
+        _ => {
+            // Generic recursion for any other container node.
+            if node.is_named() && node.child_count() > 0 {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if child.is_named() {
+                        extract_type_refs_from_type_node(&child, source, sym_index, refs);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index: sym_index,
+        target_name: name,
+        kind: EdgeKind::TypeRef,
+        line,
+        module: None,
+        chain: None,
+    }
+}
+
+/// Heuristic: return `true` for Rust scalar primitives that we don't want to
+/// emit TypeRef edges for.  We keep this narrow so that stdlib types such as
+/// `Vec`, `Arc`, `Box`, `Option`, etc. do produce TypeRef edges — they are
+/// legitimate cross-symbol references (generic containers, trait objects, etc.).
+fn is_rust_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "bool" | "char" | "str" | "String"
+        | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
+        | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
+        | "f32" | "f64"
+        | "Self" | "self" | "()" | "!" | "never"
+    )
+}
+
+// ---------------------------------------------------------------------------
+// Associated type extraction in trait body
+// ---------------------------------------------------------------------------
+
+/// Extract `associated_type` nodes from a trait body, emitting TypeAlias symbols.
+///
+/// tree-sitter-rust shape (inside `trait_item` body):
+/// ```text
+/// associated_type
+///   name: identifier  "Output"
+///   [bounds: trait_bounds]
+/// ```
+pub(super) fn extract_trait_associated_types(
+    trait_body: &Node,
+    source: &str,
+    trait_sym_index: usize,
+    qualified_prefix: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = trait_body.walk();
+    for child in trait_body.children(&mut cursor) {
+        if child.kind() != "associated_type" {
+            continue;
+        }
+        let name_node = match child.child_by_field_name("name") {
+            Some(n) => n,
+            None => continue,
+        };
+        let name = node_text(&name_node, source);
+        if name.is_empty() {
+            continue;
+        }
+        let qualified_name = qualify(&name, qualified_prefix);
+        let sym_idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::TypeAlias,
+            visibility: None,
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: child.end_position().column as u32,
+            signature: Some(format!("type {name}")),
+            doc_comment: extract_doc_comment(&child, source),
+            scope_path: scope_from_prefix(qualified_prefix),
+            parent_index: Some(trait_sym_index),
+        });
+        // Emit TypeRef for bounds if present.
+        if let Some(bounds) = child.child_by_field_name("bounds") {
+            super::patterns::extract_trait_bounds(&bounds, source, sym_idx, refs);
+        }
+    }
 }

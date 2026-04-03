@@ -1,0 +1,327 @@
+// =============================================================================
+// java/coverage_tests.rs — One test per node kind in symbol_node_kinds()
+// and ref_node_kinds() declared in java/mod.rs.
+// =============================================================================
+
+use super::extract;
+use crate::types::{EdgeKind, SymbolKind};
+
+fn sym(src: &str) -> Vec<crate::types::ExtractedSymbol> {
+    extract::extract(src).symbols
+}
+fn refs(src: &str) -> Vec<crate::types::ExtractedRef> {
+    extract::extract(src).refs
+}
+
+// ---------------------------------------------------------------------------
+// symbol_node_kinds
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_class_declaration() {
+    let src = "public class Foo {}";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "Foo" && s.kind == SymbolKind::Class),
+        "expected Class symbol Foo; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_interface_declaration() {
+    let src = "public interface IRepository {}";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "IRepository" && s.kind == SymbolKind::Interface),
+        "expected Interface symbol IRepository; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_enum_declaration() {
+    let src = "public enum Status { ACTIVE, INACTIVE }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "Status" && s.kind == SymbolKind::Enum),
+        "expected Enum symbol Status; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_enum_constant() {
+    let src = "public enum Status { ACTIVE, INACTIVE }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "ACTIVE" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember symbol ACTIVE; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        s.iter().any(|s| s.name == "INACTIVE" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember symbol INACTIVE; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_record_declaration() {
+    let src = "public record Point(int x, int y) {}";
+    let s = sym(src);
+    // record maps to Class in the extractor
+    assert!(
+        s.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Class),
+        "expected Class(record) symbol Point; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_annotation_type_declaration() {
+    let src = "public @interface MyAnnotation { String value() default \"\"; }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "MyAnnotation" && s.kind == SymbolKind::Interface),
+        "expected Interface symbol (annotation type) MyAnnotation; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_method_declaration() {
+    let src = "class C { void doWork() {} }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "doWork" && s.kind == SymbolKind::Method),
+        "expected Method symbol doWork; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_constructor_declaration() {
+    let src = "class Service { public Service(String name) {} }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "Service" && s.kind == SymbolKind::Constructor),
+        "expected Constructor symbol Service; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_compact_constructor_declaration() {
+    // Java 16+ records have compact constructors (no parameter list)
+    let src = "public record Point(int x, int y) { Point { if (x < 0) throw new IllegalArgumentException(); } }";
+    let s = sym(src);
+    // The record itself should be extracted; compact constructor may or may not emit a separate symbol
+    assert!(
+        s.iter().any(|s| s.name == "Point"),
+        "expected Point symbol from record with compact constructor; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_field_declaration() {
+    let src = "class C { private String name; }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "name" && s.kind == SymbolKind::Field),
+        "expected Field symbol name; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_constant_declaration() {
+    let src = "class C { public static final int MAX = 100; }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "MAX" && s.kind == SymbolKind::Field),
+        "expected Field(constant) symbol MAX; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_annotation_type_element_declaration() {
+    // annotation_type_element_declaration — elements inside @interface
+    let src = "public @interface Config { String value() default \"\"; int timeout() default 30; }";
+    let s = sym(src);
+    // The annotation type itself should be extracted
+    assert!(
+        s.iter().any(|s| s.name == "Config"),
+        "expected Config annotation type symbol; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_package_declaration() {
+    let src = "package com.example.service;\nclass X {}";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.kind == SymbolKind::Namespace),
+        "expected Namespace symbol from package_declaration; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    let ns = s.iter().find(|s| s.kind == SymbolKind::Namespace).unwrap();
+    assert_eq!(ns.qualified_name, "com.example.service",
+        "package qualified_name mismatch");
+}
+
+// ---------------------------------------------------------------------------
+// ref_node_kinds
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_method_invocation() {
+    let src = "class C { void m() { System.out.println(); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "println" && r.kind == EdgeKind::Calls),
+        "expected Calls edge for println; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_object_creation_expression() {
+    let src = "class C { void m() { new ArrayList(); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "ArrayList" && r.kind == EdgeKind::Instantiates),
+        "expected Instantiates edge for ArrayList; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_import_declaration() {
+    let src = "import java.util.List;";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "List" && r.kind == EdgeKind::Imports),
+        "expected Imports edge for List; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_type_arguments() {
+    // Generic type arguments should produce TypeRef edges
+    let src = "class C { void m() { java.util.List<Widget> list = new java.util.ArrayList<>(); } }";
+    let r = refs(src);
+    // Should have Instantiates for ArrayList at minimum
+    assert!(
+        r.iter().any(|r| r.kind == EdgeKind::Instantiates),
+        "expected Instantiates edge from object_creation_expression with type_arguments; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_instanceof_expression() {
+    let src = "class C { void m(Object o) { if (o instanceof Admin) {} } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef edge from instanceof_expression for Admin; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_method_reference() {
+    let src = "class C { void m() { users.stream().map(User::getName); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "getName" && r.kind == EdgeKind::Calls),
+        "expected Calls edge from method_reference for getName; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_cast_expression() {
+    let src = "class C { void m(Object o) { Admin a = (Admin) o; } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef edge from cast_expression for Admin; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_annotation_marker() {
+    // marker_annotation (no arguments)
+    let src = "@Service\npublic class UserService {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Service" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef edge for @Service annotation; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_annotation_with_args() {
+    // annotation (with arguments)
+    let src = "public class C { @GetMapping(\"/users/{id}\") public void get() {} }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "GetMapping" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef edge for @GetMapping annotation; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_superclass() {
+    // superclass field on class_declaration → Inherits edge
+    let src = "public class UserService extends BaseService {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "BaseService" && r.kind == EdgeKind::Inherits),
+        "expected Inherits edge for BaseService (superclass); refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_super_interfaces() {
+    // super_interfaces → class implements → Implements edges
+    let src = "public class Svc extends Base implements Runnable, Serializable {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Runnable" && r.kind == EdgeKind::Implements),
+        "expected Implements edge for Runnable (super_interfaces); refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.iter().any(|r| r.target_name == "Serializable" && r.kind == EdgeKind::Implements),
+        "expected Implements edge for Serializable (super_interfaces); refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_extends_interfaces() {
+    // extends_interfaces → interface extends → Implements edges
+    let src = "public interface ExtendedRepo extends Repository, ReadOnly {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Repository" && r.kind == EdgeKind::Implements),
+        "expected Implements edge for Repository (extends_interfaces); refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.iter().any(|r| r.target_name == "ReadOnly" && r.kind == EdgeKind::Implements),
+        "expected Implements edge for ReadOnly (extends_interfaces); refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}

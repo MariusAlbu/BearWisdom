@@ -89,10 +89,17 @@ fn visit(
                     extract_top_level_function(&child, src, symbols, parent_index, qualified_prefix);
                     if symbols.len() > pre_len {
                         extract_decorators(&child, src, pre_len, refs);
+                        // Extract calls from the sibling function_body (top-level function).
+                        let fn_idx = pre_len;
+                        if let Some(body) = child.next_sibling() {
+                            if body.kind() == "function_body" || body.kind() == "function_expression_body" || body.kind() == "block" {
+                                extract_dart_calls(&body, src, fn_idx, refs);
+                            }
+                        }
                     }
                 }
             }
-            "import_or_export" | "library_import" => {
+            "import_or_export" | "library_import" | "library_export" => {
                 extract_import_directive(&child, src, symbols.len(), refs);
             }
             "part_directive" | "part_of_directive" => {

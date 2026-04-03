@@ -27,7 +27,10 @@ pub(super) fn call_identifier(node: &Node, src: &str) -> Option<String> {
         match child.kind() {
             "identifier" => return Some(node_text(child, src)),
             "alias" => return Some(node_text(child, src)),
-            "dot" | "." => {}
+            // `Enum.map(...)` — `dot` node: extract the last identifier (function name).
+            "dot" => {
+                return dot_function_name(&child, src);
+            }
             _ => {}
         }
         if child.kind() != "comment" {
@@ -40,6 +43,19 @@ pub(super) fn call_identifier(node: &Node, src: &str) -> Option<String> {
         .take_while(|c| c.is_alphanumeric() || *c == '_')
         .collect();
     if first_word.is_empty() { None } else { Some(first_word) }
+}
+
+/// Extract the function name from a `dot` node (`Module.function` → "function").
+pub(super) fn dot_function_name(dot_node: &Node, src: &str) -> Option<String> {
+    // `dot` structure: receiver (alias/identifier) `.` function_name (identifier)
+    let mut cursor = dot_node.walk();
+    let mut last_ident: Option<String> = None;
+    for child in dot_node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            last_ident = Some(node_text(child, src));
+        }
+    }
+    last_ident
 }
 
 /// Extract the module name from `defmodule ModuleName do ... end`.
@@ -120,6 +136,31 @@ pub(super) fn function_name_arity(node: &Node, src: &str) -> (String, usize) {
                                 .or_else(|| first_child_text_of_kind(&arg, src, "identifier"));
                             if let Some(name) = nn_text {
                                 return (name, 0);
+                            }
+                        }
+                        // `defguard is_pos(x) when x > 0` — the arguments contain a
+                        // `binary_operator` whose operator is `when` and whose `left`
+                        // field is the actual function call `is_pos(x)`.
+                        if arg.kind() == "binary_operator" {
+                            // Check if this is a `when` guard.
+                            let is_when = {
+                                let mut bc = arg.walk();
+                                let found = arg.children(&mut bc).any(|c| node_text(c, src) == "when");
+                                found
+                            };
+                            if is_when {
+                                if let Some(left) = arg.child_by_field_name("left") {
+                                    if left.kind() == "call" {
+                                        let nn_text = left.child_by_field_name("target")
+                                            .map(|n| node_text(n, src))
+                                            .or_else(|| first_child_text_of_kind(&left, src, "identifier"));
+                                        if let Some(name) = nn_text {
+                                            return (name, 0);
+                                        }
+                                    } else if left.kind() == "identifier" {
+                                        return (node_text(left, src), 0);
+                                    }
+                                }
                             }
                         }
                     }

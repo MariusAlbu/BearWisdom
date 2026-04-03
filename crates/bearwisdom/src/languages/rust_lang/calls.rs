@@ -45,6 +45,8 @@ pub(super) fn extract_impl(
                 if let Some(sym) = extract_method_from_fn(&child, source, None, &impl_prefix) {
                     let idx = symbols.len();
                     symbols.push(sym);
+                    // Emit TypeRefs for parameter/return types in the signature.
+                    super::symbols::extract_fn_signature_type_refs(&child, source, idx, refs);
                     {
                         let mut wc = child.walk();
                         for gc in child.children(&mut wc) {

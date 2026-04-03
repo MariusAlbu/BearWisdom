@@ -155,6 +155,11 @@ pub(super) fn extract_node<'a>(
                 push_property_decl(&child, src, scope_tree, symbols, parent_index);
             }
 
+            // `typealias Foo = Bar` — field `type` holds the identifier name.
+            "type_alias" => {
+                push_type_decl_alias(&child, src, scope_tree, symbols, parent_index);
+            }
+
             "secondary_constructor" => {
                 push_secondary_constructor(&child, src, scope_tree, symbols, parent_index);
             }
@@ -179,6 +184,67 @@ pub(super) fn extract_node<'a>(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// TypeAlias symbol emission
+// ---------------------------------------------------------------------------
+
+/// Emit a TypeAlias symbol for `typealias Name = Type`.
+/// In tree-sitter-kotlin-ng, `type_alias` has a `type` field holding an
+/// `identifier` that IS the alias name (not the aliased type).
+fn push_type_decl_alias(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    // The `type` field in the Kotlin ng grammar holds the alias name identifier.
+    let name = node
+        .child_by_field_name("type")
+        .map(|n| helpers::node_text(n, src))
+        .or_else(|| {
+            // Fallback: first identifier-like child
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "identifier" | "simple_identifier" | "type_identifier" => {
+                        let t = helpers::node_text(child, src);
+                        if !t.is_empty() && !matches!(t.as_str(), "typealias" | "=") {
+                            return Some(t);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            None
+        });
+    let name = match name {
+        Some(n) if !n.is_empty() => n,
+        _ => return,
+    };
+
+    use crate::parser::scope_tree as st;
+    use crate::types::Visibility;
+    let scope = helpers::enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = st::qualify(&name, scope);
+    let scope_path = st::scope_path(scope);
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("typealias {name}")),
+        doc_comment: None,
+        scope_path,
+        parent_index,
+    });
 }
 
 // ---------------------------------------------------------------------------

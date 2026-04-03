@@ -38,6 +38,23 @@ pub(super) fn extract_calls_from_body(
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
 
+            // `expr is Type` — emit TypeRef for the checked type.
+            "check_expression" => {
+                let named: Vec<_> = {
+                    let mut nc = child.walk();
+                    child.named_children(&mut nc).collect()
+                };
+                // check_expression: [expression, check_operator, type]
+                // The last named child is the type.
+                if let Some(type_node) = named.last() {
+                    let kind = type_node.kind();
+                    if kind != "is_operator" && kind != "is" && kind != "check_operator" {
+                        extract_type_ref_from_swift_type(type_node, src, source_symbol_index, refs);
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
             // `expr as Type` — emit TypeRef for the cast type.
             // In tree-sitter-swift the type is the last named child (after as_operator).
             "as_expression" => {
@@ -150,7 +167,45 @@ pub(super) fn swift_type_name(node: &Node, src: &[u8]) -> String {
             String::new()
         }
         "type_identifier" | "simple_identifier" | "identifier" => node_text(*node, src),
+        // `SomeProtocol & AnotherProtocol` — emit the first component
+        "protocol_composition_type" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let n = swift_type_name(&child, src);
+                if !n.is_empty() {
+                    return n;
+                }
+            }
+            String::new()
+        }
         _ => String::new(),
+    }
+}
+
+/// Emit TypeRef edges for ALL type components in a protocol_composition_type.
+pub(super) fn extract_protocol_composition_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if node.kind() != "protocol_composition_type" {
+        extract_type_ref_from_swift_type(node, src, source_symbol_index, refs);
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let n = swift_type_name(&child, src);
+        if !n.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: n,
+                kind: crate::types::EdgeKind::TypeRef,
+                line: child.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
     }
 }
 

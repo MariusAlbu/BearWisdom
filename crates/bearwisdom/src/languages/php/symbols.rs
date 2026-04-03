@@ -442,8 +442,20 @@ pub(super) fn extract_const_declaration(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "const_element" {
-            if let Some(name_node) = child.child_by_field_name("name") {
+            // Try `name` field first; fall back to first `name`-kind node.
+            let name_node_opt = child.child_by_field_name("name").or_else(|| {
+                // Collect to avoid cursor lifetime issue.
+                let children: Vec<_> = {
+                    let mut cc = child.walk();
+                    child.children(&mut cc).collect()
+                };
+                children.into_iter().find(|c| c.kind() == "name")
+            });
+            if let Some(name_node) = name_node_opt {
                 let name = node_text(&name_node, src);
+                if name.is_empty() {
+                    continue;
+                }
                 let qualified_name = qualify(&name, qualified_prefix);
                 symbols.push(ExtractedSymbol {
                     name,

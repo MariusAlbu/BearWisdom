@@ -155,29 +155,43 @@ pub(super) fn extract_enum(
         parent_index,
     });
 
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
+    // Enum constants live inside an `enum_body` child (Dart grammar 0.1).
+    // Walk the direct children first; if we find an enum_body, recurse into it.
+    let extract_constant = |child: &tree_sitter::Node, symbols: &mut Vec<ExtractedSymbol>| {
+        let member_name = get_field_text(child, src, "name")
+            .or_else(|| first_child_text_of_kind(child, src, "identifier"))
+            .unwrap_or_default();
+        if member_name.is_empty() {
+            return;
+        }
+        symbols.push(ExtractedSymbol {
+            name: member_name.clone(),
+            qualified_name: format!("{qualified_name}.{member_name}"),
+            kind: SymbolKind::EnumMember,
+            visibility: Some(Visibility::Public),
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: child.end_position().column as u32,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some(qualified_name.clone()),
+            parent_index: Some(idx),
+        });
+    };
+
+    // Check both direct children and those inside `enum_body`.
+    let mut outer = node.walk();
+    for child in node.children(&mut outer) {
         if child.kind() == "enum_constant" {
-            let member_name = get_field_text(&child, src, "name")
-                .or_else(|| first_child_text_of_kind(&child, src, "identifier"))
-                .unwrap_or_default();
-            if member_name.is_empty() {
-                continue;
+            extract_constant(&child, symbols);
+        } else if child.kind() == "enum_body" {
+            let mut inner_cursor = child.walk();
+            for item in child.children(&mut inner_cursor) {
+                if item.kind() == "enum_constant" {
+                    extract_constant(&item, symbols);
+                }
             }
-            symbols.push(ExtractedSymbol {
-                name: member_name.clone(),
-                qualified_name: format!("{qualified_name}.{member_name}"),
-                kind: SymbolKind::EnumMember,
-                visibility: Some(Visibility::Public),
-                start_line: child.start_position().row as u32,
-                end_line: child.end_position().row as u32,
-                start_col: child.start_position().column as u32,
-                end_col: child.end_position().column as u32,
-                signature: None,
-                doc_comment: None,
-                scope_path: Some(qualified_name.clone()),
-                parent_index: Some(idx),
-            });
         }
     }
 }
@@ -236,8 +250,28 @@ fn extract_method(
         }
     }
 
-    let name = match get_field_text(node, src, "name")
-        .or_else(|| first_child_text_of_kind(node, src, "identifier"))
+    // `method_signature` wraps a `function_signature` child in Dart grammar 0.1.
+    // The name field lives on `function_signature`, not on `method_signature`.
+    // For `method_signature`, delegate name lookup to its `function_signature` child.
+    let sig_node: Node = if node.kind() == "method_signature" {
+        let mut found: Option<Node> = None;
+        let mut c = node.walk();
+        for child in node.named_children(&mut c) {
+            if child.kind() == "function_signature" {
+                found = Some(child);
+                break;
+            }
+        }
+        match found {
+            Some(fs) => fs,
+            None => *node,  // Fallback to method_signature itself
+        }
+    } else {
+        *node
+    };
+
+    let name = match get_field_text(&sig_node, src, "name")
+        .or_else(|| first_child_text_of_kind(&sig_node, src, "identifier"))
     {
         Some(n) => n,
         None => return,
@@ -267,6 +301,7 @@ fn extract_method(
         parent_index,
     });
 
+    // The function body is the next sibling of `node` (method_signature) within class_member.
     if let Some(body) = node.next_sibling() {
         if body.kind() == "function_body" || body.kind() == "block" {
             extract_dart_calls(&body, src, idx, refs);
@@ -443,7 +478,7 @@ fn extract_import_spec_recursive(
     refs: &mut Vec<ExtractedRef>,
 ) {
     let k = node.kind();
-    if k == "import_specification" || k == "library_import" || k == "import_or_export" {
+    if k == "import_specification" || k == "library_import" || k == "import_or_export" || k == "library_export" {
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let ck = child.kind();
@@ -469,7 +504,7 @@ fn extract_import_spec_recursive(
                     module: Some(module),
                     chain: None,
                 });
-            } else if ck == "import_specification" || ck == "library_import" {
+            } else if ck == "import_specification" || ck == "library_import" || ck == "library_export" {
                 extract_import_spec_recursive(&child, src, current_symbol_count, refs);
             }
         }

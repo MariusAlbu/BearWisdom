@@ -11,8 +11,8 @@ use super::decorators::{
 };
 use super::helpers::find_child_by_kind;
 use super::symbols::{
-    extract_type_inheritance, handle_class_declaration, push_deinit, push_extension,
-    push_function_decl, push_import, push_init, push_property, push_subscript,
+    extract_type_inheritance, handle_class_declaration, push_associatedtype, push_deinit,
+    push_extension, push_function_decl, push_import, push_init, push_property, push_subscript,
     push_type_decl, push_typealias, recurse_into_body,
 };
 
@@ -135,20 +135,47 @@ pub(super) fn extract_node<'a>(
                 let idx = push_function_decl(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
-                    if let Some(body) = child.child_by_field_name("body") {
-                        extract_calls_from_body(&body, src, sym_idx, refs);
-                    } else if let Some(body) = find_child_by_kind(&child, "code_block") {
-                        extract_calls_from_body(&body, src, sym_idx, refs);
+                    extract_function_type_refs(&child, src, sym_idx, refs);
+                    let body = child.child_by_field_name("body")
+                        .or_else(|| find_child_by_kind(&child, "code_block"));
+                    if let Some(b) = body {
+                        extract_calls_from_body(&b, src, sym_idx, refs);
                     }
                 }
             }
 
-            "initializer_declaration" => {
+            // Protocol member declarations (no body — abstract requirements).
+            "protocol_function_declaration" => {
+                let idx = push_function_decl(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    extract_decorators(&child, src, sym_idx, refs);
+                    extract_function_type_refs(&child, src, sym_idx, refs);
+                }
+            }
+
+            "protocol_property_declaration" => {
+                let pre_len = symbols.len();
+                push_property(&child, src, scope_tree, symbols, parent_index);
+                if symbols.len() > pre_len {
+                    extract_decorators(&child, src, pre_len, refs);
+                }
+            }
+
+            "associatedtype_declaration" => {
+                // Emit as TypeAlias — just push a simple symbol for the associatedtype.
+                push_associatedtype(&child, src, scope_tree, symbols, parent_index);
+            }
+
+            // Both possible grammar node names for initializer declarations.
+            "initializer_declaration" | "init_declaration" => {
                 let idx = push_init(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
-                    if let Some(body) = find_child_by_kind(&child, "code_block") {
-                        extract_calls_from_body(&body, src, sym_idx, refs);
+                    let body = child.child_by_field_name("body")
+                        .or_else(|| find_child_by_kind(&child, "code_block"))
+                        .or_else(|| find_child_by_kind(&child, "function_body"));
+                    if let Some(b) = body {
+                        extract_calls_from_body(&b, src, sym_idx, refs);
                     }
                 }
             }
@@ -176,6 +203,15 @@ pub(super) fn extract_node<'a>(
                 push_property(&child, src, scope_tree, symbols, parent_index);
                 if symbols.len() > pre_len {
                     extract_decorators(&child, src, pre_len, refs);
+                    // Emit TypeRef for the property's type annotation (e.g. `var x: MyClass`).
+                    extract_function_type_refs(&child, src, pre_len, refs);
+                    // Extract calls from the property initializer value.
+                    let sym_idx = pre_len;
+                    let body = child.child_by_field_name("value")
+                        .or_else(|| find_child_by_kind(&child, "computed_property"));
+                    if let Some(b) = body {
+                        calls::extract_calls_from_body(&b, src, sym_idx, refs);
+                    }
                 }
             }
 
@@ -214,6 +250,110 @@ pub(super) fn extract_node<'a>(
             _ => {
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Function type reference extraction
+// ---------------------------------------------------------------------------
+
+/// Walk the parameters and return type of a function / protocol function
+/// declaration and emit TypeRef edges for all named types found.
+///
+/// Swift grammar (tree-sitter-swift 0.7.1):
+///   `function_declaration` has `parameter` as direct named children,
+///   and `return_type` as a field (not a `function_return_type` child node).
+fn extract_function_type_refs(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Return type is stored in the `return_type` field.
+    if let Some(ret_type) = node.child_by_field_name("return_type") {
+        if ret_type.kind() == "protocol_composition_type" {
+            calls::extract_protocol_composition_refs(&ret_type, src, source_symbol_index, refs);
+        } else {
+            calls::extract_type_ref_from_swift_type(&ret_type, src, source_symbol_index, refs);
+        }
+    }
+
+    // Parameters are direct named children of kind `parameter`.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "parameter" => {
+                extract_param_type_refs(&child, src, source_symbol_index, refs);
+            }
+            // Fallback: older grammar wraps parameters in a clause.
+            "parameter_clause" | "function_value_parameters" => {
+                let mut pc = child.walk();
+                for param in child.children(&mut pc) {
+                    match param.kind() {
+                        "parameter" | "function_value_parameter" | "optional_parameter" => {
+                            extract_param_type_refs(&param, src, source_symbol_index, refs);
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            // Direct type annotation at declaration level (protocol property, etc.)
+            "type_annotation" => {
+                if let Some(type_node) = child.child_by_field_name("type")
+                    .or_else(|| child.child_by_field_name("name"))
+                {
+                    if type_node.kind() == "protocol_composition_type" {
+                        calls::extract_protocol_composition_refs(&type_node, src, source_symbol_index, refs);
+                    } else {
+                        calls::extract_type_ref_from_swift_type(&type_node, src, source_symbol_index, refs);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+fn extract_param_type_refs(
+    param: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // The parameter's type is in the `type` field (tree-sitter-swift 0.7.1).
+    if let Some(type_node) = param.child_by_field_name("type") {
+        if type_node.kind() == "protocol_composition_type" {
+            calls::extract_protocol_composition_refs(&type_node, src, source_symbol_index, refs);
+        } else {
+            calls::extract_type_ref_from_swift_type(&type_node, src, source_symbol_index, refs);
+        }
+        return;
+    }
+
+    // Fallback: scan named children.
+    let mut cursor = param.walk();
+    for child in param.children(&mut cursor) {
+        match child.kind() {
+            "type_annotation" => {
+                if let Some(type_node) = child.child_by_field_name("type")
+                    .or_else(|| child.child_by_field_name("name"))
+                {
+                    if type_node.kind() == "protocol_composition_type" {
+                        calls::extract_protocol_composition_refs(&type_node, src, source_symbol_index, refs);
+                    } else {
+                        calls::extract_type_ref_from_swift_type(&type_node, src, source_symbol_index, refs);
+                    }
+                }
+            }
+            "user_type" | "optional_type" | "array_type" | "dictionary_type"
+            | "function_type" => {
+                calls::extract_type_ref_from_swift_type(&child, src, source_symbol_index, refs);
+            }
+            "protocol_composition_type" => {
+                calls::extract_protocol_composition_refs(&child, src, source_symbol_index, refs);
+            }
+            _ => {}
         }
     }
 }

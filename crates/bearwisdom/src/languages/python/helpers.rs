@@ -122,6 +122,44 @@ pub(super) fn extract_python_type_name(node: &Node, source: &str) -> String {
                 .map(|v| extract_python_type_name(&v, source))
                 .unwrap_or_default()
         }
+        // `type` wrapper node: recurse into first named child.
+        // In tree-sitter-python, `typed_parameter` type fields are wrapped in a
+        // `type` node that contains the actual annotation expression.
+        "type" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    let name = extract_python_type_name(&child, source);
+                    if !name.is_empty() {
+                        return name;
+                    }
+                }
+            }
+            String::new()
+        }
+        // PEP 604 union `Admin | Guest` — binary_operator with `|`.
+        // Return the left-hand type as the primary type ref; the caller is
+        // responsible for walking the full union if multiple TypeRefs are needed.
+        "binary_operator" | "union_type" => {
+            // Try `left` field first (binary_operator), else first identifier.
+            if let Some(left) = node.child_by_field_name("left") {
+                let name = extract_python_type_name(&left, source);
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+            // Fallback: first identifier child.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" {
+                    let name = node_text(&child, source);
+                    if !name.is_empty() && name != "None" {
+                        return name;
+                    }
+                }
+            }
+            String::new()
+        }
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {

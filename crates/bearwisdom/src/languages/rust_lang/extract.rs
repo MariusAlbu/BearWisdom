@@ -93,6 +93,8 @@ fn extract_from_node(
                     let idx = symbols.len();
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
+                    // Emit TypeRefs for parameter types and return type.
+                    symbols::extract_fn_signature_type_refs(&child, source, idx, refs);
                     // where-clause and type-parameter bounds → TypeRef edges.
                     // Iterate children by kind rather than field_name to avoid
                     // grammar-version sensitivity.
@@ -123,8 +125,11 @@ fn extract_from_node(
                     symbols::extract_struct(&child, source, parent_index, qualified_prefix)
                 {
                     let idx = symbols.len();
+                    let struct_prefix = helpers::qualify(&sym.name, qualified_prefix);
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
+                    // Extract field symbols and TypeRefs for field types.
+                    symbols::extract_struct_fields(&child, source, idx, &struct_prefix, symbols, refs);
                 }
             }
 
@@ -151,6 +156,8 @@ fn extract_from_node(
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
+                        // Extract associated types declared in the trait body.
+                        symbols::extract_trait_associated_types(&body, source, idx, &new_prefix, symbols, refs);
                         extract_from_node(body, source, symbols, refs, Some(idx), &new_prefix);
                     }
                 }

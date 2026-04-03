@@ -188,11 +188,29 @@ pub(super) fn push_property_decl(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    let name_node = match node.child_by_field_name("name") {
+    // In tree-sitter-kotlin-ng, `property_declaration` has no `name` field.
+    // The identifier is inside a `variable_declaration` child.
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .or_else(|| {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "variable_declaration" {
+                    let mut cc = child.walk();
+                    for inner in child.children(&mut cc) {
+                        if inner.kind() == "identifier" || inner.kind() == "simple_identifier" {
+                            return Some(node_text(inner, src));
+                        }
+                    }
+                }
+            }
+            None
+        });
+    let name = match name {
         Some(n) => n,
         None    => return,
     };
-    let name = node_text(name_node, src);
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
     let qualified_name = scope_tree::qualify(&name, scope);
@@ -390,17 +408,22 @@ pub(super) fn extract_type_parameter_bounds(
             let mut tc = child.walk();
             for tp in child.children(&mut tc) {
                 if tp.kind() == "type_parameter" {
-                    // type_parameter children: identifier, type_parameter_modifiers?, type?
-                    // The `type` child is the upper bound.
+                    // In Kotlin-ng 1.1, `type` is a supertype — the actual bound node
+                    // is a concrete subtype (user_type, nullable_type, function_type, etc.).
+                    // Iterate ALL children and emit TypeRef for any known type node.
                     let mut ic = tp.walk();
                     for inner in tp.children(&mut ic) {
-                        if inner.kind() == "type" {
-                            super::calls::extract_type_ref_from_type_node(
-                                &inner,
-                                src,
-                                source_symbol_index,
-                                refs,
-                            );
+                        match inner.kind() {
+                            "type" | "user_type" | "nullable_type" | "function_type"
+                            | "non_nullable_type" | "parenthesized_type" => {
+                                super::calls::extract_type_ref_from_type_node(
+                                    &inner,
+                                    src,
+                                    source_symbol_index,
+                                    refs,
+                                );
+                            }
+                            _ => {}
                         }
                     }
                 }

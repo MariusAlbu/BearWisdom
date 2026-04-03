@@ -97,7 +97,8 @@ pub(super) fn extract_type_ref_from_type_node(
 pub(super) fn kotlin_type_name(node: &Node, src: &[u8]) -> String {
     match node.kind() {
         "user_type" => {
-            // user_type → simple_user_type+ — take the last segment's identifier.
+            // Kotlin-ng 1.1: user_type → identifier (direct child, not simple_user_type)
+            // Older Kotlin grammar: user_type → simple_user_type+
             let mut last = String::new();
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -110,6 +111,8 @@ pub(super) fn kotlin_type_name(node: &Node, src: &[u8]) -> String {
                         }
                     }
                 } else if child.kind() == "simple_identifier" || child.kind() == "identifier" {
+                    last = node_text(child, src);
+                } else if child.kind() == "type_identifier" {
                     last = node_text(child, src);
                 }
             }

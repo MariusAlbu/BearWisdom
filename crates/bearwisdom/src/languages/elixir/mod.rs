@@ -10,6 +10,10 @@ pub mod resolve;
 #[path = "extract_tests.rs"]
 mod extract_tests;
 
+#[cfg(test)]
+#[path = "coverage_tests.rs"]
+mod coverage_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;

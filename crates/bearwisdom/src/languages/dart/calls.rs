@@ -49,6 +49,7 @@ pub(super) fn extract_dart_calls(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
+            // Legacy node names (kept for compatibility with older grammars or future use)
             "invocation_expression" | "function_invocation" => {
                 let callee_node_opt = child
                     .child_by_field_name("function")
@@ -77,23 +78,102 @@ pub(super) fn extract_dart_calls(
                 extract_dart_calls(&child, src, source_symbol_index, refs);
             }
 
+            // Dart grammar 0.1: function calls are `postfix_expression` with selector(s).
+            // `bar()` → postfix_expression [identifier("bar"), selector(argument_part(arguments))]
+            // `obj.bar()` → postfix_expression [identifier("obj"), selector(unconditional_assignable_selector), selector(argument_part)]
+            "postfix_expression" => {
+                extract_postfix_call(&child, src, source_symbol_index, refs);
+                extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+
+            // Alternative Dart call representation:
+            // Dart grammar 0.1 often parses calls without a `postfix_expression` wrapper.
+            // Instead, the `identifier` and `selector(argument_part(...))` appear as direct
+            // siblings inside their container node.  This occurs in:
+            //   expression_statement  — `bar();`
+            //   initialized_variable_definition — `var d = Dog();`
+            //   return_statement — `return f();`
+            // Handle all of these uniformly.
+            "expression_statement" | "initialized_variable_definition" | "return_statement" => {
+                extract_inline_call_from_statement(&child, src, source_symbol_index, refs);
+                extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+
+            // `new Dog(args)` — emit Calls edge to the constructed type.
+            "new_expression" => {
+                extract_new_expression_ref(&child, src, source_symbol_index, refs);
+                extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+
+            // `Dog()` — implicit constructor invocation (no `new` keyword).
+            // `constructor_invocation` has `type` field (type_identifier) + `arguments`.
+            "constructor_invocation" => {
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    let name = match type_node.kind() {
+                        "type_identifier" | "identifier" => node_text(type_node, src),
+                        _ => {
+                            let mut found = String::new();
+                            let mut c = type_node.walk();
+                            for inner in type_node.named_children(&mut c) {
+                                if inner.kind() == "type_identifier" || inner.kind() == "identifier" {
+                                    found = node_text(inner, src);
+                                    break;
+                                }
+                            }
+                            found
+                        }
+                    };
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::Calls,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+
             // `expr as Type` — emit TypeRef for the cast type.
-            // The type is inside the `type_cast` child of `type_cast_expression`.
+            // Dart grammar 0.1 structure:
+            //   type_cast_expression → [..., type_cast]
+            //   type_cast            → ["as", type_identifier | function_type | ...]
             "type_cast_expression" => {
+                // Find the `type_cast` child which holds the target type.
                 let mut tc = child.walk();
+                let mut emitted = false;
                 for inner in child.named_children(&mut tc) {
                     if inner.kind() == "type_cast" {
-                        emit_dart_type_ref(inner, src, source_symbol_index, refs);
+                        // Walk type_cast for type_identifier.
+                        let mut ic = inner.walk();
+                        for grandchild in inner.named_children(&mut ic) {
+                            if grandchild.kind() == "type_identifier" || grandchild.kind() == "identifier" {
+                                emit_dart_type_ref(grandchild, src, source_symbol_index, refs);
+                                emitted = true;
+                                break;
+                            }
+                        }
                         break;
+                    }
+                }
+                // Fallback: direct type_identifier in children
+                if !emitted {
+                    let mut tc2 = child.walk();
+                    for inner in child.named_children(&mut tc2) {
+                        if inner.kind() == "type_identifier" || inner.kind() == "identifier" {
+                            emit_dart_type_ref(inner, src, source_symbol_index, refs);
+                            break;
+                        }
                     }
                 }
                 extract_dart_calls(&child, src, source_symbol_index, refs);
             }
 
             // `catch (e SpecificException)` — emit TypeRef for the exception type.
-            // `catch_clause` has `exception` field (identifier) and may have type in sibling.
             "on_part" => {
-                // `on Type catch (e) { }` — `on_part` has `type_identifier` children.
                 let mut oc = child.walk();
                 for inner in child.named_children(&mut oc) {
                     if inner.kind() == "type_identifier" || inner.kind() == "identifier" {
@@ -104,8 +184,7 @@ pub(super) fn extract_dart_calls(
                 extract_dart_calls(&child, src, source_symbol_index, refs);
             }
 
-            // String interpolation — `"Hello $name"` or `"${expr}"`.
-            // Recurse into `template_substitution` children of string literals.
+            // String interpolation
             "string_literal_double_quotes"
             | "string_literal_single_quotes"
             | "string_literal_double_quotes_multiple"
@@ -120,6 +199,278 @@ pub(super) fn extract_dart_calls(
 
             _ => {
                 extract_dart_calls(&child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Extract a Calls ref from a `postfix_expression` that has an argument selector
+/// (i.e. is an actual function/method invocation, not just a property access).
+///
+/// Dart grammar 0.1 structure:
+///   `bar()`        → postfix_expression [ assignable_expression(identifier("bar")),
+///                                         selector(argument_part(arguments)) ]
+///   `obj.bar()`   → postfix_expression [ assignable_expression(identifier("obj")),
+///                                         selector(unconditional_assignable_selector(".",identifier("bar"))),
+///                                         selector(argument_part(arguments)) ]
+fn extract_postfix_call(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Collect all direct children upfront to avoid borrow conflicts.
+    let children: Vec<tree_sitter::Node> = {
+        let mut c = node.walk();
+        node.children(&mut c).collect()
+    };
+
+    // Check if any selector child contains an argument_part/arguments (= a function call).
+    let has_call_selector = children.iter().any(|child| {
+        if child.kind() == "selector" {
+            let grandchildren: Vec<_> = {
+                let mut sc = child.walk();
+                child.children(&mut sc).collect::<Vec<_>>()
+            };
+            grandchildren.iter().any(|s| s.kind() == "argument_part" || s.kind() == "arguments")
+        } else {
+            false
+        }
+    });
+
+    if !has_call_selector {
+        return;
+    }
+
+    // Find the callee: last member name from non-argument selectors, or base identifier.
+    let mut last_member: Option<String> = None;
+    let mut callee_from_base: Option<String> = None;
+
+    if let Some(base) = children.first() {
+        // The base is typically `assignable_expression` wrapping an identifier.
+        callee_from_base = ident_from_assignable(*base, src);
+    }
+
+    for child in children.iter().skip(1) {
+        if child.kind() == "selector" {
+            let selector_children: Vec<_> = {
+                let mut sc = child.walk();
+                child.children(&mut sc).collect()
+            };
+            for s in &selector_children {
+                match s.kind() {
+                    "unconditional_assignable_selector" | "conditional_assignable_selector" => {
+                        let sub: Vec<_> = {
+                            let mut uc = s.walk();
+                            s.children(&mut uc).collect()
+                        };
+                        for u in &sub {
+                            if u.kind() == "identifier" || u.kind() == "type_identifier" {
+                                last_member = Some(node_text(*u, src));
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    let target = last_member.or(callee_from_base).unwrap_or_default();
+    if !target.is_empty() {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target,
+            kind: EdgeKind::Calls,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+/// Handle the Dart grammar 0.1 pattern where a function call is represented as:
+///   expression_statement [ identifier("bar"), selector(argument_part(arguments)) ]
+/// instead of the expected postfix_expression wrapper.
+///
+/// This occurs for simple bare function calls like `bar()` and method calls like
+/// `obj.method()` where the grammar places identifier + selector directly inside the
+/// statement node without a postfix_expression wrapper.
+/// Handle the Dart grammar 0.1 pattern where a function call is represented as:
+///   container [ ..., identifier("callee"), selector(argument_part(arguments)), ... ]
+/// instead of the expected postfix_expression wrapper.
+///
+/// Strategy: find the index of the first `selector(argument_part)` in the children list,
+/// then take the last `identifier` or `type_identifier` that appears before that selector.
+/// This correctly handles:
+///   `bar()` → expression_statement(identifier("bar"), selector(...))
+///   `var d = Dog()` → initialized_variable_definition(var, identifier("d"), =, identifier("Dog"), selector(...))
+fn extract_inline_call_from_statement(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let children: Vec<tree_sitter::Node> = {
+        let mut c = node.walk();
+        node.children(&mut c).collect()
+    };
+
+    // Find index of first selector with argument_part (= the call site).
+    let call_selector_idx = children.iter().position(|child| {
+        if child.kind() == "selector" {
+            let grandchildren: Vec<_> = {
+                let mut sc = child.walk();
+                child.children(&mut sc).collect::<Vec<_>>()
+            };
+            grandchildren.iter().any(|s| s.kind() == "argument_part" || s.kind() == "arguments")
+        } else {
+            false
+        }
+    });
+
+    let call_idx = match call_selector_idx {
+        Some(i) => i,
+        None => return, // No function call selector found
+    };
+
+    // The callee: last identifier/type_identifier appearing before the call selector.
+    // Also scan selector children for member access (obj.method()).
+    let mut callee_ident: Option<String> = None;
+    let mut last_member: Option<String> = None;
+
+    // Scan children before the call selector for the last identifier.
+    for child in &children[..call_idx] {
+        match child.kind() {
+            "identifier" | "type_identifier" => {
+                callee_ident = Some(node_text(*child, src));
+            }
+            "assignable_expression" => {
+                if let Some(name) = ident_from_assignable(*child, src) {
+                    callee_ident = Some(name);
+                }
+            }
+            "selector" => {
+                // Non-argument selectors before the call selector = member access.
+                let selector_children: Vec<_> = {
+                    let mut sc = child.walk();
+                    child.children(&mut sc).collect()
+                };
+                for s in &selector_children {
+                    match s.kind() {
+                        "unconditional_assignable_selector" | "conditional_assignable_selector" => {
+                            let sub: Vec<_> = {
+                                let mut uc = s.walk();
+                                s.children(&mut uc).collect()
+                            };
+                            for u in &sub {
+                                if u.kind() == "identifier" || u.kind() == "type_identifier" {
+                                    last_member = Some(node_text(*u, src));
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let target = last_member.or(callee_ident).unwrap_or_default();
+    if !target.is_empty() {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target,
+            kind: EdgeKind::Calls,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
+}
+
+/// Extract the base identifier from an `assignable_expression` node (or plain identifier).
+fn ident_from_assignable(node: tree_sitter::Node, src: &str) -> Option<String> {
+    match node.kind() {
+        "identifier" | "type_identifier" => Some(node_text(node, src)),
+        "assignable_expression" => {
+            // Walk named children looking for an identifier.
+            let mut c = node.walk();
+            for child in node.named_children(&mut c) {
+                match child.kind() {
+                    "identifier" | "type_identifier" => return Some(node_text(child, src)),
+                    _ => {}
+                }
+            }
+            // Fallback: first named child recursion
+            let mut c2 = node.walk();
+            for child in node.named_children(&mut c2) {
+                if let Some(name) = ident_from_assignable(child, src) {
+                    return Some(name);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+/// Emit a Calls edge for `new Dog(args)`.
+///
+/// `new_expression` stores the type in the `type` field (a `type_identifier`)
+/// and the arguments in the `arguments` field.  There are NO named children;
+/// the type must be accessed via `child_by_field_name("type")`.
+fn extract_new_expression_ref(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Try the `type` field first (Dart grammar 0.1).
+    if let Some(type_node) = node.child_by_field_name("type") {
+        let name = match type_node.kind() {
+            "type_identifier" | "identifier" => node_text(type_node, src),
+            _ => {
+                // Walk into type_arguments → type_identifier
+                let mut found = String::new();
+                let mut c = type_node.walk();
+                for child in type_node.named_children(&mut c) {
+                    if child.kind() == "type_identifier" || child.kind() == "identifier" {
+                        found = node_text(child, src);
+                        break;
+                    }
+                }
+                found
+            }
+        };
+        if !name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: name,
+                kind: EdgeKind::Calls,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+            return;
+        }
+    }
+    // Fallback: walk all children for type_identifier.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_identifier" || child.kind() == "identifier" {
+            let name = node_text(child, src);
+            if !name.is_empty() && name != "new" {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::Calls,
+                    line: child.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+                return;
             }
         }
     }

@@ -19,7 +19,7 @@ pub(super) fn extract_calls_from_body(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "member_call_expression" => {
+            "member_call_expression" | "nullsafe_member_call_expression" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);
@@ -35,7 +35,7 @@ pub(super) fn extract_calls_from_body(
                 }
             }
 
-            "static_call_expression" => {
+            "static_call_expression" | "scoped_call_expression" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);

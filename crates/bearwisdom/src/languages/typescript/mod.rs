@@ -22,6 +22,10 @@ mod chain;
 pub mod resolve;
 
 #[cfg(test)]
+#[path = "coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 #[path = "extract_tests.rs"]
 mod extract_tests;
 

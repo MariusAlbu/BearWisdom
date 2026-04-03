@@ -347,17 +347,86 @@ pub(super) fn extract_type_declaration(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "type_spec" {
-            extract_type_spec(
-                &child,
-                source,
-                symbols,
-                refs,
-                parent_index,
-                qualified_prefix,
-            );
+        match child.kind() {
+            "type_spec" => {
+                extract_type_spec(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                );
+            }
+            // `type Foo = Bar` — tree-sitter-go 0.23+ uses a distinct `type_alias` node.
+            // Fields: `name` (type_identifier), `type` (_type)
+            "type_alias" => {
+                extract_type_alias_decl(
+                    &child,
+                    source,
+                    symbols,
+                    parent_index,
+                    qualified_prefix,
+                );
+            }
+            _ => {}
         }
     }
+}
+
+/// Extract a `type_alias` node (`type Foo = Bar`).
+///
+/// tree-sitter-go shape:
+/// ```text
+/// type_alias
+///   name: type_identifier   "Foo"
+///   "="                     (anonymous)
+///   type: _type             "Bar"
+/// ```
+fn extract_type_alias_decl(
+    node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    let name_node = match node.child_by_field_name("name") {
+        Some(n) => n,
+        None => return,
+    };
+    let name = node_text(&name_node, source);
+    if name.is_empty() {
+        return;
+    }
+
+    let type_text = node
+        .child_by_field_name("type")
+        .map(|n| node_text(&n, source))
+        .unwrap_or_default();
+
+    let qualified_name = qualify(&name, qualified_prefix);
+    let visibility = go_visibility(&name);
+    let doc_comment = extract_go_doc_comment(node, source);
+    let sig = if type_text.is_empty() {
+        format!("type {name} =")
+    } else {
+        format!("type {name} = {type_text}")
+    };
+
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(sig),
+        doc_comment,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
 }
 
 /// `type_spec` children (positional, named):
@@ -607,6 +676,22 @@ fn extract_field_declaration(
     } else {
         // Named fields.
         let type_str = type_text.unwrap_or_default();
+
+        // Emit a TypeRef for the field's type when it is a user-defined
+        // named type (i.e., a type_identifier that is not a Go builtin).
+        // We do this once per field_declaration regardless of how many
+        // field names are listed (they all share the same type).
+        if !type_str.is_empty() && !is_go_builtin_type(&type_str) {
+            refs.push(ExtractedRef {
+                source_symbol_index: parent_index.unwrap_or(0),
+                target_name: type_str.clone(),
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+
         for field_name in field_names {
             let vis = go_visibility(&field_name);
             let sig = if type_str.is_empty() {

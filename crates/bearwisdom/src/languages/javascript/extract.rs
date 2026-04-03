@@ -508,9 +508,17 @@ fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                         });
-                        // require('foo') → Imports edge
                         if let Some(init_node) = &init {
-                            try_emit_require(init_node, src, idx, refs);
+                            match init_node.kind() {
+                                // `const x = new Foo()` → Calls edge (JS convention)
+                                "new_expression" => {
+                                    emit_new_ref_js(init_node, src, idx, refs);
+                                }
+                                // `const x = require('foo')` → Imports edge (and others)
+                                _ => {
+                                    try_emit_require(init_node, src, idx, refs);
+                                }
+                            }
                         }
                     }
                 }

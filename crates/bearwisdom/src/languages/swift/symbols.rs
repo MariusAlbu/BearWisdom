@@ -297,7 +297,7 @@ pub(super) fn push_property(
 ) {
     let name_opt = node
         .child_by_field_name("name")
-        .map(|n| node_text(n, src))
+        .and_then(|n| extract_name_from_pattern(n, src))
         .or_else(|| {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -305,11 +305,8 @@ pub(super) fn push_property(
                     return Some(node_text(child, src));
                 }
                 if child.kind() == "pattern" {
-                    let mut pc = child.walk();
-                    for inner in child.children(&mut pc) {
-                        if inner.kind() == "simple_identifier" {
-                            return Some(node_text(inner, src));
-                        }
+                    if let Some(name) = extract_name_from_pattern(child, src) {
+                        return Some(name);
                     }
                 }
             }
@@ -585,6 +582,52 @@ fn push_enum_member(
     });
 }
 
+/// Emit a TypeAlias symbol for `associatedtype Element` in a protocol.
+pub(super) fn push_associatedtype(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    // `associatedtype_declaration` has a `name` field or a simple_identifier/type_identifier child.
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .or_else(|| {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "type_identifier" || child.kind() == "simple_identifier" {
+                    return Some(node_text(child, src));
+                }
+            }
+            None
+        });
+    let name = match name {
+        Some(n) if !n.is_empty() => n,
+        _ => return,
+    };
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("associatedtype {name}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+}
+
 /// Dispatch the `class_declaration` node to the correct handler.
 pub(super) fn handle_class_declaration(
     child: &Node,
@@ -605,5 +648,38 @@ pub(super) fn handle_class_declaration(
         recurse_enum_body(child, src, scope_tree, symbols, refs, idx);
     } else {
         recurse_into_body(child, src, scope_tree, symbols, refs, idx);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Extract the bare identifier name from a Swift `pattern` node (or plain identifier).
+///
+/// The `pattern` node in tree-sitter-swift 0.7.1 has a `bound_identifier` field
+/// that points to the `simple_identifier` holding the variable name.  For example,
+/// `var name: String { get }` has name → pattern(bound_identifier: simple_identifier("name")).
+pub(super) fn extract_name_from_pattern(node: tree_sitter::Node, src: &[u8]) -> Option<String> {
+    match node.kind() {
+        "simple_identifier" | "identifier" => Some(node_text(node, src)),
+        "pattern" => {
+            // Preferred: `bound_identifier` field.
+            if let Some(bi) = node.child_by_field_name("bound_identifier") {
+                let t = node_text(bi, src);
+                if !t.is_empty() {
+                    return Some(t);
+                }
+            }
+            // Fallback: first simple_identifier named child.
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if child.kind() == "simple_identifier" || child.kind() == "identifier" {
+                    return Some(node_text(child, src));
+                }
+            }
+            None
+        }
+        _ => None,
     }
 }

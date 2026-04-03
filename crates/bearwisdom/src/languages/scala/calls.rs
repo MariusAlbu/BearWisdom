@@ -67,6 +67,46 @@ pub(super) fn extract_calls_from_body(
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
 
+            // `new Dog(args)` — emit TypeRef to the constructed type.
+            "instance_expression" => {
+                // Find the type_identifier child (the class name).
+                let mut ic = child.walk();
+                for inner in child.children(&mut ic) {
+                    match inner.kind() {
+                        "type_identifier" => {
+                            let name = node_text(inner, src);
+                            if !name.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index,
+                                    target_name: name,
+                                    kind: EdgeKind::Calls,
+                                    line: inner.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                        }
+                        // `stable_type_identifier` = qualified type like `foo.Bar`
+                        "stable_type_identifier" => {
+                            let name = node_text(inner, src);
+                            let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                            if !simple.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index,
+                                    target_name: simple,
+                                    kind: EdgeKind::Calls,
+                                    line: inner.start_position().row as u32,
+                                    module: Some(name),
+                                    chain: None,
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+
             // Lambda expressions: `x => expr`, `(x, y) => expr` — recurse into body.
             "lambda_expression" => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);

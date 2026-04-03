@@ -15,6 +15,10 @@ pub mod resolve;
 mod extract_tests;
 
 #[cfg(test)]
+#[path = "coverage_tests.rs"]
+mod coverage_tests;
+
+#[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
 

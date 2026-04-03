@@ -3,7 +3,7 @@
 // =============================================================================
 
 
-use super::{calls, symbols};
+use super::{calls, helpers, symbols};
 use crate::types::{EdgeKind, ExtractionResult};
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use super::helpers::node_text;
@@ -105,6 +105,33 @@ pub(super) fn extract_from_node(
 
             "import_from_statement" => {
                 calls::extract_import_from_statement(&child, source, refs, symbols.len());
+            }
+
+            // `from __future__ import annotations` — emit Imports refs for
+            // each imported name.  The grammar has no `module_name` field;
+            // instead the `__future__` keyword is a bare node, and the imported
+            // names appear as `dotted_name` or `identifier` children.
+            "future_import_statement" => {
+                let current_idx = symbols.len();
+                let mut cursor = child.walk();
+                for fc in child.children(&mut cursor) {
+                    match fc.kind() {
+                        "dotted_name" | "identifier" => {
+                            let name = helpers::node_text(&fc, source);
+                            if !name.is_empty() && name != "__future__" {
+                                refs.push(crate::types::ExtractedRef {
+                                    source_symbol_index: current_idx,
+                                    target_name: name,
+                                    kind: crate::types::EdgeKind::Imports,
+                                    line: fc.start_position().row as u32,
+                                    module: Some("__future__".to_string()),
+                                    chain: None,
+                                });
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
 
             // `type Point = tuple[int, int]` (Python 3.12+)

@@ -123,6 +123,11 @@ pub(super) fn extract_node<'a>(
                 extract_enum_body(&child, src, scope_tree, symbols, refs, idx);
             }
 
+            // Abstract method declaration in trait/class (no body).
+            "function_declaration" => {
+                push_function_def(&child, src, scope_tree, symbols, parent_index);
+            }
+
             "function_definition" => {
                 let idx = push_function_def(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
@@ -141,7 +146,7 @@ pub(super) fn extract_node<'a>(
                 }
             }
 
-            "val_definition" | "var_definition" => {
+            "val_definition" | "var_definition" | "val_declaration" | "var_declaration" => {
                 push_val_var(&child, src, scope_tree, symbols, parent_index);
             }
 
@@ -196,6 +201,12 @@ pub(super) fn extract_node<'a>(
             "infix_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 dispatch_body_node(child, src, sym_idx, refs);
+                extract_calls_from_body(&child, src, sym_idx, refs);
+            }
+
+            // `new Dog(args)` at expression level
+            "instance_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
                 extract_calls_from_body(&child, src, sym_idx, refs);
             }
 
@@ -258,6 +269,42 @@ fn dispatch_body_node(
                         module: None,
                         chain,
                     });
+                }
+            }
+        }
+        // `new Dog(args)` as a direct function body expression.
+        "instance_expression" => {
+            let mut ic = node.walk();
+            for inner in node.children(&mut ic) {
+                match inner.kind() {
+                    "type_identifier" => {
+                        let name = node_text(inner, src);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: crate::types::EdgeKind::Calls,
+                                line: inner.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                    "stable_type_identifier" => {
+                        let full = node_text(inner, src);
+                        let simple = full.rsplit('.').next().unwrap_or(&full).to_string();
+                        if !simple.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: simple,
+                                kind: crate::types::EdgeKind::Calls,
+                                line: inner.start_position().row as u32,
+                                module: Some(full),
+                                chain: None,
+                            });
+                        }
+                    }
+                    _ => {}
                 }
             }
         }
