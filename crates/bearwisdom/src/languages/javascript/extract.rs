@@ -663,7 +663,19 @@ fn extract_js_node_inner(
                 // Extract calls from the field initializer value, if present.
                 if let Some(value) = child.child_by_field_name("value") {
                     let sym_idx = parent_index.unwrap_or(0);
-                    extract_calls(&value, src, sym_idx, refs);
+                    match value.kind() {
+                        "call_expression" => {
+                            emit_call_ref_js(&value, src, sym_idx, refs);
+                            extract_calls(&value, src, sym_idx, refs);
+                        }
+                        "new_expression" => {
+                            emit_new_ref_js(&value, src, sym_idx, refs);
+                            extract_calls(&value, src, sym_idx, refs);
+                        }
+                        _ => {
+                            extract_calls(&value, src, sym_idx, refs);
+                        }
+                    }
                 }
             }
             _ => {

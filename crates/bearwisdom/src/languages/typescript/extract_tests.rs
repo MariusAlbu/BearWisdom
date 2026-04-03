@@ -364,42 +364,6 @@ fn index_signature_emits_type_ref_for_value() {
 // Top-level / field-initializer call extraction (new coverage)
 // ---------------------------------------------------------------------------
 
-/// Debug: dump the AST for field initializer to confirm node kinds and field names.
-#[test]
-fn debug_field_init_ast() {
-    let src = "class Svc { private logger = createLogger(); }";
-    let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
-    let mut parser = tree_sitter::Parser::new();
-    parser.set_language(&language).unwrap();
-    let tree = parser.parse(src, None).unwrap();
-
-    fn dump(node: tree_sitter::Node, src_bytes: &[u8], depth: usize) {
-        let text = if node.child_count() == 0 {
-            format!(" = {:?}", std::str::from_utf8(&src_bytes[node.byte_range()]).unwrap_or("?"))
-        } else {
-            String::new()
-        };
-        println!("{:indent$}[{}]{}", "", node.kind(), text, indent = depth * 2);
-        // For field definitions, check named fields
-        if node.kind() == "public_field_definition" {
-            println!("{:indent$}  -> value field: {:?}", "", node.child_by_field_name("value").map(|n| n.kind()), indent = depth * 2);
-            println!("{:indent$}  -> named children: {}", "", {
-                let mut cursor2 = node.walk();
-                node.named_children(&mut cursor2).map(|n| n.kind()).collect::<Vec<_>>().join(", ")
-            }, indent = depth * 2);
-        }
-        let mut cursor = node.walk();
-        for child in node.children(&mut cursor) {
-            dump(child, src_bytes, depth + 1);
-        }
-    }
-    println!("\n=== AST for field initializer ===");
-    dump(tree.root_node(), src.as_bytes(), 0);
-    // Also show what refs we extract:
-    let r = refs(src);
-    println!("Refs extracted: {r:?}");
-}
-
 #[test]
 fn toplevel_call_emits_calls_ref() {
     // `setupDatabase();` at module scope — no enclosing function.
@@ -490,6 +454,9 @@ fn handled_kinds() -> BTreeSet<String> {
         "import_statement",
         "for_in_statement",
         "catch_clause",
+        // Call/instantiation extraction at any level
+        "call_expression",
+        "new_expression",
         // New handlers (Step 2)
         "abstract_class_declaration",
         "abstract_method_signature",
