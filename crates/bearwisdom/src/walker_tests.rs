@@ -34,15 +34,16 @@ fn detect_compiled_languages() {
     assert_eq!(detect_language(Path::new("header.hpp")), Some("cpp"));
     assert_eq!(detect_language(Path::new("Main.kt")), Some("kotlin"));
     assert_eq!(detect_language(Path::new("App.swift")), Some("swift"));
-    // Languages not yet in bearwisdom-profile registry — return None via profile crate.
-    assert_eq!(detect_language(Path::new("Main.scala")), None);
-    assert_eq!(detect_language(Path::new("main.dart")), None);
-    assert_eq!(detect_language(Path::new("lib.ex")), None);
-    assert_eq!(detect_language(Path::new("script.exs")), None);
-    assert_eq!(detect_language(Path::new("init.lua")), None);
+    // Languages added to bearwisdom-profile registry.
+    assert_eq!(detect_language(Path::new("Main.scala")), Some("scala"));
+    assert_eq!(detect_language(Path::new("main.dart")), Some("dart"));
+    assert_eq!(detect_language(Path::new("lib.ex")), Some("elixir"));
+    assert_eq!(detect_language(Path::new("script.exs")), Some("elixir"));
+    assert_eq!(detect_language(Path::new("init.lua")), Some("lua"));
+    assert_eq!(detect_language(Path::new("Main.hs")), Some("haskell"));
+    // Languages not yet in bearwisdom-profile registry.
     assert_eq!(detect_language(Path::new("analysis.r")), None);
     assert_eq!(detect_language(Path::new("Analysis.R")), None);
-    assert_eq!(detect_language(Path::new("Main.hs")), None);
 }
 
 #[test]

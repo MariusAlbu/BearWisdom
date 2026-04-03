@@ -63,7 +63,7 @@ pub fn get_language(lang: &str) -> Option<Language> {
         "xml" => tree_sitter_xml::LANGUAGE_XML.into(),
 
         // ---- Shell / scripting -------------------------------------------------
-        "bash" => tree_sitter_bash::LANGUAGE.into(),
+        "shell" | "bash" => tree_sitter_bash::LANGUAGE.into(),
 
         // ---- SQL ---------------------------------------------------------------
         "sql" => tree_sitter_sequel::LANGUAGE.into(),
