@@ -29,6 +29,8 @@ pub fn extract(source: &str) -> ExtractionResult {
             return ExtractionResult {
                 symbols: vec![],
                 refs: vec![],
+                routes: vec![],
+                db_sets: vec![],
                 has_errors: true,
             }
         }
@@ -40,7 +42,7 @@ pub fn extract(source: &str) -> ExtractionResult {
     extract_from_node(tree.root_node(), source, &mut syms, &mut refs, None, "", false);
 
     let has_errors = tree.root_node().has_error();
-    ExtractionResult { symbols: syms, refs, has_errors }
+    ExtractionResult::new(syms, refs, has_errors)
 }
 
 // ---------------------------------------------------------------------------

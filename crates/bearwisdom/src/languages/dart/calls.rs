@@ -62,7 +62,7 @@ pub(super) fn extract_dart_calls(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| dart_callee_name(callee_node, src));
 
-                    super::crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &callee_node, refs);
+                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &callee_node, refs);
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index,

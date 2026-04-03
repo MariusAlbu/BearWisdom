@@ -1,5 +1,4 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::*;
     use crate::types::{EdgeKind, SymbolKind};
 
     #[test]
@@ -9,7 +8,7 @@ class Animal(val name: String) {
   def speak(): String = "..."
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let cls = r.symbols.iter().find(|s| s.name == "Animal").expect("Animal");
         assert_eq!(cls.kind, SymbolKind::Class);
 
@@ -28,7 +27,7 @@ object App {
   def main(args: Array[String]): Unit = {}
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let tr = r.symbols.iter().find(|s| s.name == "Drawable").expect("Drawable");
         assert_eq!(tr.kind, SymbolKind::Interface);
 
@@ -44,7 +43,7 @@ object Aliases {
   type Callback = Int => Unit
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.symbols.iter().any(|s| s.name == "StringMap" && s.kind == SymbolKind::TypeAlias),
             "StringMap TypeAlias not found; symbols: {:?}",
@@ -58,7 +57,7 @@ object Aliases {
         let src = r#"
 def process(a: Int, b: Int): Int = a + b
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.refs.iter().any(|rf| rf.target_name == "+" && rf.kind == EdgeKind::Calls),
             "Calls edge for '+' not found; refs: {:?}",
@@ -69,7 +68,7 @@ def process(a: Int, b: Int): Int = a + b
     #[test]
     fn import_produces_import_ref() {
         let src = "import scala.collection.mutable.ListBuffer\n";
-        let r = extract(src);
+        let r = extract::extract(src);
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         assert!(!imports.is_empty(), "expected import ref");
         let targets: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();

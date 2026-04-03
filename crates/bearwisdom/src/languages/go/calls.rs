@@ -496,7 +496,7 @@ fn extract_call_ref(
         });
     }
 
-    super::crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name,

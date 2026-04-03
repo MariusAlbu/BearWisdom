@@ -1,381 +1,597 @@
-use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
-use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
-use crate::types::*;
-use std::collections::HashMap;
+    use super::extract;
+    use crate::types::*;
+    use crate::types::{EdgeKind, SymbolKind, Visibility};
 
-fn make_symbol(
-    name: &str,
-    qname: &str,
-    kind: SymbolKind,
-    vis: Visibility,
-    scope: Option<&str>,
-) -> ExtractedSymbol {
-    ExtractedSymbol {
-        name: name.to_string(),
-        qualified_name: qname.to_string(),
-        kind,
-        visibility: Some(vis),
-        start_line: 1,
-        end_line: 10,
-        start_col: 0,
-        end_col: 0,
-        signature: None,
-        doc_comment: None,
-        scope_path: scope.map(|s| s.to_string()),
-        parent_index: None,
+    fn sym(source: &str) -> Vec<ExtractedSymbol> {
+        extract::extract(source).symbols
+    }
+    fn refs(source: &str) -> Vec<ExtractedRef> {
+        extract::extract(source).refs
+    }
+
+    // -----------------------------------------------------------------------
+    // 1. Class with methods and fields
+    // -----------------------------------------------------------------------
+    #[test]
+    fn class_with_methods_and_fields() {
+        let src = r#"
+package com.example;
+
+public class UserService {
+    private String name;
+
+    public String getName() { return name; }
+
+    protected void setName(String name) { this.name = name; }
+}
+"#;
+        let symbols = sym(src);
+
+        let cls = symbols.iter().find(|s| s.name == "UserService").unwrap();
+        assert_eq!(cls.kind, SymbolKind::Class);
+        assert_eq!(cls.visibility, Some(Visibility::Public));
+        assert_eq!(cls.qualified_name, "com.example.UserService");
+
+        let field = symbols.iter().find(|s| s.name == "name" && s.kind == SymbolKind::Field).unwrap();
+        assert_eq!(field.visibility, Some(Visibility::Private));
+        assert!(field.signature.as_ref().unwrap().contains("String"));
+
+        let get_name = symbols.iter().find(|s| s.name == "getName").unwrap();
+        assert_eq!(get_name.kind, SymbolKind::Method);
+        assert_eq!(get_name.visibility, Some(Visibility::Public));
+        assert_eq!(get_name.qualified_name, "com.example.UserService.getName");
+
+        let set_name = symbols.iter().find(|s| s.name == "setName").unwrap();
+        assert_eq!(set_name.visibility, Some(Visibility::Protected));
+    }
+
+    // -----------------------------------------------------------------------
+    // 2. Interface with default methods
+    // -----------------------------------------------------------------------
+    #[test]
+    fn interface_with_default_method() {
+        let src = r#"
+package com.example;
+
+public interface Repository<T> {
+    T findById(long id);
+
+    default void delete(long id) {}
+}
+"#;
+        let symbols = sym(src);
+        let iface = symbols.iter().find(|s| s.name == "Repository").unwrap();
+        assert_eq!(iface.kind, SymbolKind::Interface);
+        assert_eq!(iface.qualified_name, "com.example.Repository");
+
+        assert!(symbols.iter().any(|s| s.name == "findById" && s.kind == SymbolKind::Method));
+        assert!(symbols.iter().any(|s| s.name == "delete"    && s.kind == SymbolKind::Method));
+    }
+
+    // -----------------------------------------------------------------------
+    // 3. Enum with constants
+    // -----------------------------------------------------------------------
+    #[test]
+    fn enum_with_constants() {
+        let src = r#"
+package com.example;
+
+public enum Status {
+    PENDING,
+    ACTIVE,
+    DELETED;
+
+    public boolean isActive() { return this == ACTIVE; }
+}
+"#;
+        let symbols = sym(src);
+
+        let e = symbols.iter().find(|s| s.name == "Status" && s.kind == SymbolKind::Enum).unwrap();
+        assert_eq!(e.qualified_name, "com.example.Status");
+
+        let members: Vec<_> = symbols.iter().filter(|s| s.kind == SymbolKind::EnumMember).collect();
+        let names: Vec<&str> = members.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"PENDING"), "got: {names:?}");
+        assert!(names.contains(&"ACTIVE"),  "got: {names:?}");
+        assert!(names.contains(&"DELETED"), "got: {names:?}");
+
+        // Method inside enum body.
+        assert!(symbols.iter().any(|s| s.name == "isActive" && s.kind == SymbolKind::Method));
+    }
+
+    // -----------------------------------------------------------------------
+    // 4. Nested / inner classes get qualified names
+    // -----------------------------------------------------------------------
+    #[test]
+    fn nested_class_qualified_name() {
+        let src = r#"
+package com.example;
+
+public class Outer {
+    public static class Inner {
+        public void work() {}
     }
 }
+"#;
+        let symbols = sym(src);
 
-fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> ExtractedRef {
-    ExtractedRef {
-        source_symbol_index: source_idx,
-        target_name: target.to_string(),
-        kind,
-        line,
-        module: None,
-        chain: None,
+        let outer = symbols.iter().find(|s| s.name == "Outer").unwrap();
+        assert_eq!(outer.qualified_name, "com.example.Outer");
+
+        let inner = symbols.iter().find(|s| s.name == "Inner").unwrap();
+        // Inner should be qualified relative to Outer.
+        assert!(
+            inner.qualified_name.contains("Outer.Inner"),
+            "expected Outer.Inner in qualified_name, got: {}",
+            inner.qualified_name
+        );
+
+        let method = symbols.iter().find(|s| s.name == "work").unwrap();
+        assert!(
+            method.qualified_name.contains("Inner.work"),
+            "expected Inner.work in qualified_name, got: {}",
+            method.qualified_name
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 5. Imports extracted correctly
+    // -----------------------------------------------------------------------
+    #[test]
+    fn import_extracted() {
+        let src = r#"
+import java.util.List;
+import java.util.ArrayList;
+import static org.junit.Assert.*;
+"#;
+        let r = refs(src);
+        let imports: Vec<_> = r.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+
+        let list_import = imports.iter().find(|i| i.target_name == "List");
+        assert!(list_import.is_some(), "Missing List import; imports: {:?}",
+            imports.iter().map(|i| &i.target_name).collect::<Vec<_>>());
+        assert_eq!(list_import.unwrap().module.as_deref(), Some("java.util.List"));
+
+        assert!(imports.iter().any(|i| i.target_name == "ArrayList"));
+    }
+
+    // -----------------------------------------------------------------------
+    // 6. Method calls create Calls edges
+    // -----------------------------------------------------------------------
+    #[test]
+    fn method_calls_create_edges() {
+        let src = r#"
+class Service {
+    void run() {
+        foo();
+        bar.baz();
+        String s = helper.doSomething();
     }
 }
+"#;
+        let r = refs(src);
+        let calls: Vec<_> = r.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+        let names: Vec<&str> = calls.iter().map(|r| r.target_name.as_str()).collect();
 
-fn make_import_ref(source_idx: usize, name: &str, module: &str) -> ExtractedRef {
-    ExtractedRef {
-        source_symbol_index: source_idx,
-        target_name: name.to_string(),
-        kind: EdgeKind::Imports,
-        line: 1,
-        module: Some(module.to_string()),
-        chain: None,
+        assert!(names.contains(&"foo"),         "Missing foo; calls: {names:?}");
+        assert!(names.contains(&"baz"),         "Missing baz; calls: {names:?}");
+        assert!(names.contains(&"doSomething"), "Missing doSomething; calls: {names:?}");
+    }
+
+    // -----------------------------------------------------------------------
+    // 7. @Test annotation promotes method to SymbolKind::Test
+    // -----------------------------------------------------------------------
+    #[test]
+    fn test_annotation_detected() {
+        let src = r#"
+import org.junit.jupiter.api.Test;
+
+class CalculatorTest {
+    @Test
+    void addsTwoNumbers() {
+        assert 1 + 1 == 2;
+    }
+
+    @ParameterizedTest
+    void addsManyNumbers(int a, int b) {}
+
+    void helperMethod() {}
+}
+"#;
+        let symbols = sym(src);
+
+        let adds = symbols.iter().find(|s| s.name == "addsTwoNumbers").unwrap();
+        assert_eq!(adds.kind, SymbolKind::Test, "addsTwoNumbers should be Test");
+
+        let parameterized = symbols.iter().find(|s| s.name == "addsManyNumbers").unwrap();
+        assert_eq!(parameterized.kind, SymbolKind::Test, "addsManyNumbers should be Test");
+
+        let helper = symbols.iter().find(|s| s.name == "helperMethod").unwrap();
+        assert_eq!(helper.kind, SymbolKind::Method, "helperMethod should be Method");
+    }
+
+    // -----------------------------------------------------------------------
+    // 8. Inheritance and implementation create correct edge kinds
+    // -----------------------------------------------------------------------
+    #[test]
+    fn inheritance_edges() {
+        let src = r#"
+package com.example;
+
+public class UserService extends BaseService implements Serializable, Cloneable {}
+"#;
+        let r = refs(src);
+
+        assert!(
+            r.iter().any(|r| r.target_name == "BaseService" && r.kind == EdgeKind::Inherits),
+            "Expected Inherits edge to BaseService; refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "Serializable" && r.kind == EdgeKind::Implements),
+            "Expected Implements edge to Serializable"
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "Cloneable" && r.kind == EdgeKind::Implements),
+            "Expected Implements edge to Cloneable"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 9. Interface extends interface → Implements edges
+    // -----------------------------------------------------------------------
+    #[test]
+    fn interface_extends_interface() {
+        let src = r#"
+public interface ExtendedRepo extends Repository, ReadOnly {}
+"#;
+        let r = refs(src);
+
+        assert!(
+            r.iter().any(|r| r.target_name == "Repository" && r.kind == EdgeKind::Implements),
+            "Expected Implements for Repository"
+        );
+        assert!(
+            r.iter().any(|r| r.target_name == "ReadOnly" && r.kind == EdgeKind::Implements),
+            "Expected Implements for ReadOnly"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // 10. Visibility extraction
+    // -----------------------------------------------------------------------
+    #[test]
+    fn visibility_extraction() {
+        let src = r#"
+class Example {
+    public int pub;
+    private int priv;
+    protected int prot;
+    int packagePrivate;
+}
+"#;
+        let symbols = sym(src);
+
+        let pub_field = symbols.iter().find(|s| s.name == "pub").unwrap();
+        assert_eq!(pub_field.visibility, Some(Visibility::Public));
+
+        let priv_field = symbols.iter().find(|s| s.name == "priv").unwrap();
+        assert_eq!(priv_field.visibility, Some(Visibility::Private));
+
+        let prot_field = symbols.iter().find(|s| s.name == "prot").unwrap();
+        assert_eq!(prot_field.visibility, Some(Visibility::Protected));
+
+        let pkg_field = symbols.iter().find(|s| s.name == "packagePrivate").unwrap();
+        assert_eq!(pkg_field.visibility, None, "package-private should be None");
+    }
+
+    // -----------------------------------------------------------------------
+    // 11. object_creation_expression → Instantiates edge
+    // -----------------------------------------------------------------------
+    #[test]
+    fn instantiation_edges() {
+        let src = r#"
+class Factory {
+    void create() {
+        Foo f = new Foo();
+        List<Bar> bars = new ArrayList<>();
     }
 }
+"#;
+        let r = refs(src);
+        let instantiations: Vec<_> = r.iter().filter(|r| r.kind == EdgeKind::Instantiates).collect();
+        let names: Vec<&str> = instantiations.iter().map(|r| r.target_name.as_str()).collect();
 
-fn make_file(path: &str, lang: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
-    ParsedFile {
-        path: path.to_string(),
-        language: lang.to_string(),
-        content_hash: String::new(),
-        size: 0,
-        line_count: 0,
-        content: None,
-        has_errors: false,
-        symbols,
-        refs,
-        routes: vec![],
-        db_sets: vec![],
+        assert!(names.contains(&"Foo"),       "Missing Foo; got: {names:?}");
+        assert!(names.contains(&"ArrayList"), "Missing ArrayList; got: {names:?}");
     }
-}
 
-fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i64>) {
-    let mut id_map = HashMap::new();
-    let mut next_id = 1i64;
-    for pf in files {
-        for sym in &pf.symbols {
-            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
-            next_id += 1;
+    // -----------------------------------------------------------------------
+    // 12. Constructor extraction
+    // -----------------------------------------------------------------------
+    #[test]
+    fn constructor_extracted() {
+        let src = r#"
+class Svc {
+    public Svc(String name, int port) {}
+}
+"#;
+        let symbols = sym(src);
+        let ctor = symbols.iter().find(|s| s.kind == SymbolKind::Constructor).unwrap();
+        assert_eq!(ctor.name, "Svc");
+        assert_eq!(ctor.visibility, Some(Visibility::Public));
+        let sig = ctor.signature.as_ref().unwrap();
+        assert!(sig.contains("String"), "signature: {sig}");
+        assert!(sig.contains("int"),    "signature: {sig}");
+    }
+
+    // -----------------------------------------------------------------------
+    // 13. Does not panic on malformed source
+    // -----------------------------------------------------------------------
+    #[test]
+    fn does_not_panic_on_malformed_source() {
+        let src = "public class { broken !!! @@@ ###";
+        let _ = extract::extract(src); // must not panic
+    }
+
+    // -----------------------------------------------------------------------
+    // 14. Annotation type treated as interface
+    // -----------------------------------------------------------------------
+    #[test]
+    fn annotation_type_as_interface() {
+        let src = r#"
+package com.example;
+
+public @interface MyAnnotation {
+    String value() default "";
+}
+"#;
+        let symbols = sym(src);
+        let ann = symbols.iter().find(|s| s.name == "MyAnnotation").unwrap();
+        assert_eq!(ann.kind, SymbolKind::Interface);
+        assert_eq!(ann.qualified_name, "com.example.MyAnnotation");
+    }
+
+    // -----------------------------------------------------------------------
+    // instanceof narrowing
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn instanceof_emits_type_ref() {
+        let src = r#"
+package com.example;
+public class AuthService {
+    public void check(Object user) {
+        if (user instanceof Admin) {
+            System.out.println("admin");
         }
     }
-    let owned: Vec<ParsedFile> = files
-        .iter()
-        .map(|f| ParsedFile {
-            path: f.path.clone(),
-            language: f.language.clone(),
-            content_hash: String::new(),
-            size: 0,
-            line_count: 0,
-            content: None,
-            has_errors: false,
-            symbols: f.symbols.clone(),
-            refs: f.refs.clone(),
-            routes: vec![],
-            db_sets: vec![],
-        })
-        .collect();
-    let index = SymbolIndex::build(&owned, &id_map);
-    (index, id_map)
 }
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "refs: {r:?}"
+        );
+    }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_scope_chain_resolution() {
-    let file = make_file(
-        "src/OrderService.java",
-        "java",
-        vec![
-            make_symbol("com.example", "com.example", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("OrderService", "com.example.OrderService", SymbolKind::Class, Visibility::Public, Some("com.example")),
-            make_symbol("create", "com.example.OrderService.create", SymbolKind::Method, Visibility::Public, Some("com.example.OrderService")),
-            make_symbol("validate", "com.example.OrderService.validate", SymbolKind::Method, Visibility::Private, Some("com.example.OrderService")),
-        ],
-        vec![make_ref(2, "validate", EdgeKind::Calls, 10)],
-    );
-
-    let (index, id_map) = build_test_env(&[&file]);
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[2],
-        scope_chain: build_scope_chain(file.symbols[2].scope_path.as_deref()),
-    };
-
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve validate via scope chain");
-    let res = result.unwrap();
-    assert_eq!(res.strategy, "java_scope_chain");
-    assert_eq!(res.confidence, 1.0);
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("src/OrderService.java".to_string(), "com.example.OrderService.validate".to_string())).unwrap()
-    );
+    #[test]
+    fn instanceof_pattern_variable_emits_variable_and_type_ref() {
+        let src = r#"
+package com.example;
+public class AuthService {
+    public void check(Object user) {
+        if (user instanceof Admin admin) {
+            admin.doStuff();
+        }
+    }
 }
+"#;
+        let s = sym(src);
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to Admin, refs: {r:?}"
+        );
+        assert!(
+            s.iter().any(|s| s.name == "admin" && s.kind == SymbolKind::Variable),
+            "expected Variable symbol 'admin', symbols: {s:?}"
+        );
+    }
 
-#[test]
-fn test_same_package_resolution() {
-    let file1 = make_file(
-        "src/Order.java",
-        "java",
-        vec![
-            make_symbol("com.example", "com.example", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("Order", "com.example.Order", SymbolKind::Class, Visibility::Public, Some("com.example")),
-        ],
-        vec![],
-    );
+    // -----------------------------------------------------------------------
+    // Lambda extraction
+    // -----------------------------------------------------------------------
 
-    let file2 = make_file(
-        "src/OrderService.java",
-        "java",
-        vec![
-            make_symbol("com.example", "com.example", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("OrderService", "com.example.OrderService", SymbolKind::Class, Visibility::Public, Some("com.example")),
-        ],
-        // No import — same package visibility
-        vec![make_ref(1, "Order", EdgeKind::TypeRef, 5)],
-    );
-
-    let (index, id_map) = build_test_env(&[&file1, &file2]);
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[1],
-        scope_chain: build_scope_chain(file2.symbols[1].scope_path.as_deref()),
-    };
-
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve Order via same-package");
-    let res = result.unwrap();
-    assert!(
-        res.strategy == "java_scope_chain" || res.strategy == "java_same_package",
-        "Unexpected strategy: {}",
-        res.strategy
-    );
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("src/Order.java".to_string(), "com.example.Order".to_string())).unwrap()
-    );
+    #[test]
+    fn calls_inside_lambda_are_extracted() {
+        let src = r#"
+class Service {
+    void run() {
+        users.stream().map(u -> u.getName()).collect(Collectors.toList());
+    }
 }
+"#;
+        let r = refs(src);
+        let calls: Vec<&str> = r.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"getName"), "Missing 'getName' inside lambda: {calls:?}");
+        assert!(calls.contains(&"map"),     "Missing 'map': {calls:?}");
+    }
 
-#[test]
-fn test_exact_import_resolution() {
-    let file1 = make_file(
-        "src/Product.java",
-        "java",
-        vec![make_symbol("Product", "com.store.model.Product", SymbolKind::Class, Visibility::Public, Some("com.store.model"))],
-        vec![],
-    );
-
-    let file2 = make_file(
-        "src/ProductController.java",
-        "java",
-        vec![make_symbol("ProductController", "com.store.web.ProductController", SymbolKind::Class, Visibility::Public, Some("com.store.web"))],
-        vec![
-            make_ref(0, "Product", EdgeKind::TypeRef, 10),
-            make_import_ref(0, "Product", "com.store.model.Product"),
-        ],
-    );
-
-    let (index, id_map) = build_test_env(&[&file1, &file2]);
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[0],
-        scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
-    };
-
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve Product via import");
-    let res = result.unwrap();
-    assert_eq!(res.strategy, "java_import");
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("src/Product.java".to_string(), "com.store.model.Product".to_string())).unwrap()
-    );
+    #[test]
+    fn lambda_parameter_emitted_as_variable_symbol() {
+        let src = r#"
+class Service {
+    void run() {
+        users.stream().map(u -> u.getName()).collect(Collectors.toList());
+    }
 }
+"#;
+        let s = sym(src);
+        assert!(
+            s.iter().any(|s| s.name == "u" && s.kind == SymbolKind::Variable),
+            "expected Variable symbol 'u', symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
 
-#[test]
-fn test_wildcard_import_resolution() {
-    let file1 = make_file(
-        "src/User.java",
-        "java",
-        vec![make_symbol("User", "com.app.model.User", SymbolKind::Class, Visibility::Public, Some("com.app.model"))],
-        vec![],
-    );
+    // -----------------------------------------------------------------------
+    // record_declaration (Java 16+)
+    // -----------------------------------------------------------------------
 
-    let file2 = make_file(
-        "src/UserService.java",
-        "java",
-        vec![make_symbol("UserService", "com.app.service.UserService", SymbolKind::Class, Visibility::Public, Some("com.app.service"))],
-        vec![
-            make_ref(0, "User", EdgeKind::TypeRef, 5),
-            // Wildcard import: import com.app.model.*;
-            make_import_ref(0, "*", "com.app.model"),
-        ],
-    );
+    #[test]
+    fn record_declaration_extracted_as_class() {
+        let src = r#"
+package com.example;
 
-    let (index, id_map) = build_test_env(&[&file1, &file2]);
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
+public record Point(int x, int y) {}
+"#;
+        let s = sym(src);
+        let rec = s.iter().find(|s| s.name == "Point");
+        assert!(rec.is_some(), "expected Point record symbol");
+        assert_eq!(rec.unwrap().kind, SymbolKind::Class, "record should map to Class");
+        assert_eq!(rec.unwrap().qualified_name, "com.example.Point");
+    }
 
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[0],
-        scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
-    };
+    #[test]
+    fn record_with_implements_emits_implements_edge() {
+        let src = r#"
+package com.example;
 
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve User via wildcard import");
-    let res = result.unwrap();
-    assert_eq!(res.strategy, "java_wildcard_import");
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("src/User.java".to_string(), "com.app.model.User".to_string())).unwrap()
-    );
+public record Named(String name) implements Comparable<Named> {}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Comparable" && r.kind == EdgeKind::Implements),
+            "expected Implements edge for Comparable from record, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // catch_clause
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn catch_clause_emits_type_ref_and_variable() {
+        let src = r#"
+class Service {
+    void run() {
+        try {
+            riskyCall();
+        } catch (IOException e) {
+            e.getMessage();
+        }
+    }
 }
+"#;
+        let r = refs(src);
+        let s = sym(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "IOException" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to IOException from catch, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            s.iter().any(|s| s.name == "e" && s.kind == SymbolKind::Variable),
+            "expected Variable 'e' from catch clause"
+        );
+    }
 
-#[test]
-fn test_private_cross_file_not_resolved() {
-    let file1 = make_file(
-        "src/Internal.java",
-        "java",
-        vec![make_symbol("helper", "com.app.Internal.helper", SymbolKind::Method, Visibility::Private, Some("com.app.Internal"))],
-        vec![],
-    );
+    // -----------------------------------------------------------------------
+    // cast_expression
+    // -----------------------------------------------------------------------
 
-    let file2 = make_file(
-        "src/Client.java",
-        "java",
-        vec![make_symbol("Client", "com.app.Client", SymbolKind::Class, Visibility::Public, Some("com.app"))],
-        vec![
-            make_ref(0, "helper", EdgeKind::Calls, 5),
-            make_import_ref(0, "*", "com.app"),
-        ],
-    );
-
-    let (index, _) = build_test_env(&[&file1, &file2]);
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[0],
-        scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
-    };
-
-    // Private cross-file should not resolve.
-    assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
-        "Private cross-file should not resolve"
-    );
+    #[test]
+    fn cast_expression_emits_type_ref() {
+        let src = r#"
+class Service {
+    void run(Object obj) {
+        Admin admin = (Admin) obj;
+    }
 }
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to Admin from cast, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }
 
-#[test]
-fn test_falls_back_for_unknown() {
-    let file = make_file(
-        "src/Test.java",
-        "java",
-        vec![make_symbol("Test", "com.app.Test", SymbolKind::Class, Visibility::Public, Some("com.app"))],
-        vec![make_ref(0, "Nonexistent", EdgeKind::TypeRef, 5)],
-    );
+    // -----------------------------------------------------------------------
+    // method_reference
+    // -----------------------------------------------------------------------
 
-    let (index, _) = build_test_env(&[&file]);
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    };
-
-    assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
-        "Unknown symbol should fall back"
-    );
+    #[test]
+    fn method_reference_emits_calls_edge() {
+        let src = r#"
+class Service {
+    void run() {
+        users.stream().map(User::getName).collect(Collectors.toList());
+    }
 }
+"#;
+        let r = refs(src);
+        let calls: Vec<&str> = r.iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            calls.contains(&"getName"),
+            "expected Calls edge for getName from method_reference, got: {calls:?}"
+        );
+    }
 
-#[test]
-fn test_infer_stdlib_external() {
-    use crate::indexer::resolve::engine::RefContext;
+    // -----------------------------------------------------------------------
+    // enhanced_for_statement
+    // -----------------------------------------------------------------------
 
-    let file = make_file(
-        "src/Test.java",
-        "java",
-        vec![make_symbol("Test", "com.app.Test", SymbolKind::Class, Visibility::Public, Some("com.app"))],
-        vec![make_ref(0, "System", EdgeKind::TypeRef, 5)],
-    );
-
-    let resolver = JavaResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    };
-
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-    assert!(ns.is_some(), "System should be inferred as external");
-    assert_eq!(ns.unwrap(), "java.lang");
+    #[test]
+    fn enhanced_for_emits_variable_and_type_ref() {
+        let src = r#"
+class Service {
+    void run(List<User> users) {
+        for (User user : users) {
+            user.activate();
+        }
+    }
 }
+"#;
+        let r = refs(src);
+        let s = sym(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to User from enhanced-for, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+        assert!(
+            s.iter().any(|s| s.name == "user" && s.kind == SymbolKind::Variable),
+            "expected Variable 'user' from enhanced-for, symbols: {:?}",
+            s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
 
-#[test]
-fn test_build_file_context_extracts_package() {
-    let file = make_file(
-        "src/Foo.java",
-        "java",
-        vec![
-            make_symbol("com.example", "com.example", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("Foo", "com.example.Foo", SymbolKind::Class, Visibility::Public, Some("com.example")),
-        ],
-        vec![],
-    );
+    // -----------------------------------------------------------------------
+    // class_literal
+    // -----------------------------------------------------------------------
 
-    let resolver = JavaResolver;
-    let ctx = resolver.build_file_context(&file, None);
-    assert_eq!(ctx.file_namespace, Some("com.example".to_string()));
+    #[test]
+    fn class_literal_emits_type_ref() {
+        let src = r#"
+class Service {
+    void run() {
+        Class<?> cls = User.class;
+    }
 }
-
-#[test]
-fn test_build_file_context_wildcard_import() {
-    let file = make_file(
-        "src/Foo.java",
-        "java",
-        vec![make_symbol("Foo", "com.example.Foo", SymbolKind::Class, Visibility::Public, Some("com.example"))],
-        vec![make_import_ref(0, "*", "org.springframework.web.bind.annotation")],
-    );
-
-    let resolver = JavaResolver;
-    let ctx = resolver.build_file_context(&file, None);
-    assert_eq!(ctx.imports.len(), 1);
-    assert!(ctx.imports[0].is_wildcard);
-    assert_eq!(
-        ctx.imports[0].module_path.as_deref(),
-        Some("org.springframework.web.bind.annotation")
-    );
-}
+"#;
+        let r = refs(src);
+        assert!(
+            r.iter().any(|r| r.target_name == "User" && r.kind == EdgeKind::TypeRef),
+            "expected TypeRef to User from class literal, refs: {:?}",
+            r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+        );
+    }

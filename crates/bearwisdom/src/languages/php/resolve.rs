@@ -27,7 +27,7 @@
 
 
 // Re-export for test visibility (php_tests.rs uses `use super::*`).
-use builtins::normalize_php_ns;
+pub(crate) use super::builtins::normalize_php_ns;
 
 use super::{builtins, chain};
 use crate::indexer::resolve::engine::{

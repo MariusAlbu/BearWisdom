@@ -380,7 +380,7 @@ pub(super) fn extract_extension_conformances(
 
 #[cfg(test)]
 mod tests {
-    use super::super::extract;
+    use super::super::extract::extract;
     use crate::types::EdgeKind;
 
     fn type_refs(source: &str) -> Vec<String> {

@@ -1,5 +1,5 @@
-    use super::extract::extract;
-    use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use super::extract;
+use crate::types::{ExtractedRef, ExtractedSymbol, EdgeKind, SymbolKind, Visibility};
 
     #[test]
     fn extracts_posix_function() {
@@ -8,7 +8,7 @@ greet() {
     echo "hello"
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let sym = r.symbols.iter().find(|s| s.name == "greet").expect("greet");
         assert_eq!(sym.kind, SymbolKind::Function);
         assert_eq!(sym.visibility, Some(Visibility::Public));
@@ -25,7 +25,7 @@ function _internal_helper() {
     true
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let build = r.symbols.iter().find(|s| s.name == "build_release").expect("build_release");
         assert_eq!(build.kind, SymbolKind::Function);
         assert_eq!(build.visibility, Some(Visibility::Public));
@@ -37,7 +37,7 @@ function _internal_helper() {
     #[test]
     fn extracts_file_scope_variable() {
         let src = "APP_NAME=myapp\nVERSION=1.0\n";
-        let r = extract(src);
+        let r = extract::extract(src);
         let app = r.symbols.iter().find(|s| s.name == "APP_NAME").expect("APP_NAME");
         assert_eq!(app.kind, SymbolKind::Variable);
         let ver = r.symbols.iter().find(|s| s.name == "VERSION").expect("VERSION");
@@ -50,7 +50,7 @@ function _internal_helper() {
 source ./lib/utils.sh
 . ./config.sh
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         assert!(!imports.is_empty(), "expected import refs, got none");
         let targets: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();

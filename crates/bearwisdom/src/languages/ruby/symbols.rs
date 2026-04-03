@@ -89,7 +89,7 @@ pub(super) fn extract_class(
     }
 
     if let Some(body) = node.child_by_field_name("body") {
-        super::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, true);
+        super::extract::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, true);
     }
 }
 
@@ -131,7 +131,7 @@ pub(super) fn extract_module(
     });
 
     if let Some(body) = node.child_by_field_name("body") {
-        super::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, false);
+        super::extract::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, false);
     }
 }
 
@@ -258,7 +258,7 @@ pub(super) fn extract_singleton_class(
     qualified_prefix: &str,
 ) {
     if let Some(body) = node.child_by_field_name("body") {
-        super::extract_from_node(body, src, symbols, refs, parent_index, qualified_prefix, true);
+        super::extract::extract_from_node(body, src, symbols, refs, parent_index, qualified_prefix, true);
     }
 }
 

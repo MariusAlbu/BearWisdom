@@ -1,5 +1,4 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::*;
     use crate::types::{EdgeKind, SymbolKind};
 
     #[test]
@@ -17,7 +16,7 @@ class Animal {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let cls = r.symbols.iter().find(|s| s.name == "Animal").expect("Animal");
         assert_eq!(cls.kind, SymbolKind::Class);
 
@@ -44,7 +43,7 @@ enum Direction {
     case south
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let st = r.symbols.iter().find(|s| s.name == "Point").expect("Point");
         assert_eq!(st.kind, SymbolKind::Struct);
 
@@ -60,7 +59,7 @@ enum Direction {
 typealias StringMap = [String: Int]
 typealias Handler = (String) -> Void
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.symbols.iter().any(|s| s.name == "StringMap" && s.kind == SymbolKind::TypeAlias),
             "StringMap TypeAlias not found; symbols: {:?}",
@@ -79,7 +78,7 @@ func cast(x: Any) -> String {
     return x as! String
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
             "TypeRef for String not found; refs: {:?}",
@@ -96,7 +95,7 @@ struct Matrix {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.symbols.iter().any(|s| s.name == "subscript" && s.kind == SymbolKind::Method),
             "subscript Method not found; symbols: {:?}",
@@ -107,7 +106,7 @@ struct Matrix {
     #[test]
     fn import_produces_import_ref() {
         let src = "import Foundation\nimport UIKit\n";
-        let r = extract(src);
+        let r = extract::extract(src);
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         let targets: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
         assert!(targets.contains(&"Foundation"), "missing Foundation: {targets:?}");

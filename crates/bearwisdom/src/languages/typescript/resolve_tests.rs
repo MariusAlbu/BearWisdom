@@ -1,6 +1,7 @@
 use super::resolve::*;
+use crate::indexer::resolve::engine::{LanguageResolver, RefContext};
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::engine::{build_scope_chain, LanguageResolver, RefContext, SymbolIndex};
+use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
 use crate::types::*;
 use std::collections::HashMap;
 

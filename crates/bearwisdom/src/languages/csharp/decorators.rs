@@ -151,7 +151,7 @@ fn try_extract_string_from_node(node: &Node, src: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::extract;
+    use super::super::extract::extract;
     use crate::types::EdgeKind;
 
     fn decorator_refs(source: &str) -> Vec<(String, Option<String>)> {

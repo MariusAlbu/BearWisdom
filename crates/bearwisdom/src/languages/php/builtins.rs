@@ -26,7 +26,7 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 
 /// Normalize PHP namespace separator `\` to `.` for index consistency.
 /// "App\\Models\\User" → "App.Models.User"
-pub(super) fn normalize_php_ns(ns: &str) -> String {
+pub(crate) fn normalize_php_ns(ns: &str) -> String {
     // Trim leading backslash (global namespace qualifier: `\App\Models\User`).
     let trimmed = ns.trim_start_matches('\\');
     trimmed.replace('\\', ".")

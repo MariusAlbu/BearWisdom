@@ -1,5 +1,4 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::*;
     use crate::types::{EdgeKind, SymbolKind};
 
     #[test]
@@ -11,7 +10,7 @@ class Animal(val name: String) {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let cls = r.symbols.iter().find(|s| s.name == "Animal").expect("Animal");
         assert_eq!(cls.kind, SymbolKind::Class);
 
@@ -29,7 +28,7 @@ enum class Direction {
     WEST
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let en = r.symbols.iter().find(|s| s.name == "Direction").expect("Direction");
         assert_eq!(en.kind, SymbolKind::Enum);
         // Enum members depend on grammar version; at least the enum itself must be present.
@@ -46,7 +45,7 @@ class Config {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.symbols.iter().any(|s| s.name == "Companion" && s.kind == SymbolKind::Class),
             "Companion not found; symbols: {:?}",
@@ -63,7 +62,7 @@ fun cast(x: Any): String {
     return x as String
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
             "TypeRef for String not found; refs: {:?}",
@@ -76,7 +75,7 @@ fun cast(x: Any): String {
         let src = r#"
 class Point(val x: Double, val y: Double)
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         // val x and val y become Property symbols.
         assert!(
             r.symbols.iter().any(|s| s.name == "x" && s.kind == SymbolKind::Property),
@@ -103,7 +102,7 @@ class Circle : Drawable {
     override fun draw() {}
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         // Kotlin grammar may emit interface_declaration or class_declaration for interfaces
         assert!(
             r.symbols.iter().any(|s| s.name == "Drawable"),

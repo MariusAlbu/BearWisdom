@@ -1,391 +1,264 @@
-use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
-use crate::indexer::resolve::engine::{build_scope_chain, SymbolIndex};
-use crate::types::*;
-use std::collections::HashMap;
+    use super::*;
+    use crate::types::{EdgeKind, SymbolKind, Visibility};
 
-fn make_symbol(
-    name: &str,
-    qname: &str,
-    kind: SymbolKind,
-    vis: Visibility,
-    scope: Option<&str>,
-) -> ExtractedSymbol {
-    ExtractedSymbol {
-        name: name.to_string(),
-        qualified_name: qname.to_string(),
-        kind,
-        visibility: Some(vis),
-        start_line: 1,
-        end_line: 10,
-        start_col: 0,
-        end_col: 0,
-        signature: None,
-        doc_comment: None,
-        scope_path: scope.map(|s| s.to_string()),
-        parent_index: None,
+    #[test]
+    fn extracts_class_and_method() {
+        let source = r#"<?php
+class Animal {
+    public function __construct(string $name) {
+        $this->name = $name;
+    }
+
+    public function speak(): string {
+        return "...";
     }
 }
+"#;
+        let r = extract::extract(source);
+        assert!(!r.has_errors, "unexpected parse errors");
 
-fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
-    ExtractedRef {
-        source_symbol_index: source_idx,
-        target_name: target.to_string(),
-        kind,
-        line: 1,
-        module: None,
-        chain: None,
+        let cls = r.symbols.iter().find(|s| s.name == "Animal").expect("Animal");
+        assert_eq!(cls.kind, SymbolKind::Class);
+
+        let ctor = r.symbols.iter().find(|s| s.name == "__construct").expect("__construct");
+        assert_eq!(ctor.kind, SymbolKind::Constructor);
+
+        let speak = r.symbols.iter().find(|s| s.name == "speak").expect("speak");
+        assert_eq!(speak.kind, SymbolKind::Method);
+        assert_eq!(speak.qualified_name, "Animal.speak");
+    }
+
+    #[test]
+    fn extracts_interface() {
+        let source = "<?php\ninterface Drawable {\n    public function draw(): void;\n}\n";
+        let r = extract::extract(source);
+        let iface = r.symbols.iter().find(|s| s.name == "Drawable").expect("Drawable");
+        assert_eq!(iface.kind, SymbolKind::Interface);
+    }
+
+    #[test]
+    fn use_statement_produces_import_ref() {
+        let source = "<?php\nuse App\\Models\\User;\n";
+        let r = extract::extract(source);
+        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
+        assert_eq!(imp.target_name, "User");
+        assert_eq!(imp.module.as_deref(), Some("App\\Models"));
+    }
+
+    #[test]
+    fn extends_produces_inherits_edge() {
+        let source = "<?php\nclass Dog extends Animal {}\n";
+        let r = extract::extract(source);
+        let inh = r.refs.iter().find(|r| r.kind == EdgeKind::Inherits).expect("inherits edge");
+        assert_eq!(inh.target_name, "Animal");
+    }
+
+    #[test]
+    fn implements_produces_implements_edge() {
+        let source = "<?php\nclass Cat extends Animal implements Drawable, Serializable {}\n";
+        let r = extract::extract(source);
+        let impl_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Implements).collect();
+        let names: Vec<&str> = impl_refs.iter().map(|r| r.target_name.as_str()).collect();
+        assert!(names.contains(&"Drawable"), "missing Drawable: {names:?}");
+        assert!(names.contains(&"Serializable"), "missing Serializable: {names:?}");
+    }
+
+    #[test]
+    fn property_visibility_extracted() {
+        let source = r#"<?php
+class Foo {
+    public string $bar;
+    private int $baz;
+}
+"#;
+        let r = extract::extract(source);
+        let bar = r.symbols.iter().find(|s| s.name == "bar").expect("bar");
+        assert_eq!(bar.kind, SymbolKind::Property);
+        assert_eq!(bar.visibility, Some(Visibility::Public));
+
+        let baz = r.symbols.iter().find(|s| s.name == "baz").expect("baz");
+        assert_eq!(baz.visibility, Some(Visibility::Private));
+    }
+
+    #[test]
+    fn enum_and_cases_extracted() {
+        let source = r#"<?php
+enum Status {
+    case Active;
+    case Inactive;
+}
+"#;
+        let r = extract::extract(source);
+        let en = r.symbols.iter().find(|s| s.name == "Status").expect("Status");
+        assert_eq!(en.kind, SymbolKind::Enum);
+
+        let active = r.symbols.iter().find(|s| s.name == "Active").expect("Active");
+        assert_eq!(active.kind, SymbolKind::EnumMember);
+    }
+
+    #[test]
+    fn method_call_produces_calls_edge() {
+        let source = r#"<?php
+class Foo {
+    public function run(): void {
+        $this->helper();
+    }
+    private function helper(): void {}
+}
+"#;
+        let r = extract::extract(source);
+        let call = r.refs.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "helper");
+        assert!(call.is_some(), "Expected Calls edge to 'helper'");
+    }
+
+    #[test]
+    fn new_produces_instantiates_edge() {
+        let source = r#"<?php
+function build() {
+    return new Foo();
+}
+"#;
+        let r = extract::extract(source);
+        let inst = r.refs.iter().find(|r| r.kind == EdgeKind::Instantiates);
+        assert!(inst.is_some(), "Expected Instantiates edge");
+        assert_eq!(inst.unwrap().target_name, "Foo");
+    }
+
+    #[test]
+    fn handles_parse_errors_gracefully() {
+        let source = "<?php\nclass Broken {\n  function bad(\n}\n{{{";
+        let result = std::panic::catch_unwind(|| extract::extract(source));
+        assert!(result.is_ok(), "extractor panicked on malformed input");
+    }
+
+    // -----------------------------------------------------------------------
+    // Constructor promotion (PHP 8.0)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn constructor_promotion_emits_property_symbols() {
+        let source = r#"<?php
+class User {
+    public function __construct(
+        public readonly string $name,
+        private int $age,
+    ) {}
+}
+"#;
+        let r = extract::extract(source);
+        let props: Vec<&str> = r
+            .symbols
+            .iter()
+            .filter(|s| s.kind == SymbolKind::Property)
+            .map(|s| s.name.as_str())
+            .collect();
+        assert!(props.contains(&"name"), "expected 'name' Property from promotion: {props:?}");
+        assert!(props.contains(&"age"), "expected 'age' Property from promotion: {props:?}");
+    }
+
+    #[test]
+    fn constructor_promotion_emits_type_refs() {
+        let source = r#"<?php
+class Repo {
+    public function __construct(
+        public UserRepository $users,
+        public EventDispatcher $events,
+    ) {}
+}
+"#;
+        let r = extract::extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"UserRepository"),
+            "expected TypeRef to UserRepository: {type_refs:?}"
+        );
+        assert!(
+            type_refs.contains(&"EventDispatcher"),
+            "expected TypeRef to EventDispatcher: {type_refs:?}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Method parameter type refs
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn method_param_type_ref_emitted() {
+        let source = r#"<?php
+class Handler {
+    public function handle(Request $request, Response $response): void {
+        $request->validate();
     }
 }
-
-fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
-    ExtractedRef {
-        source_symbol_index: source_idx,
-        target_name: alias.to_string(),
-        kind: EdgeKind::Imports,
-        line: 1,
-        module: Some(fqn.to_string()),
-        chain: None,
+"#;
+        let r = extract::extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"Request"),
+            "expected TypeRef to Request: {type_refs:?}"
+        );
+        assert!(
+            type_refs.contains(&"Response"),
+            "expected TypeRef to Response: {type_refs:?}"
+        );
     }
-}
 
-fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
-    ParsedFile {
-        path: path.to_string(),
-        language: "php".to_string(),
-        content_hash: String::new(),
-        size: 0,
-        line_count: 0,
-        content: None,
-        has_errors: false,
-        symbols,
-        refs,
-        routes: vec![],
-        db_sets: vec![],
+    // -----------------------------------------------------------------------
+    // include / require — Imports edge
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn include_produces_imports_edge() {
+        let source = "<?php\ninclude 'helpers/utils.php';\n";
+        let r = extract::extract(source);
+        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports);
+        assert!(imp.is_some(), "expected Imports edge from include, refs: {:?}", r.refs);
+        let imp = imp.unwrap();
+        assert_eq!(imp.target_name, "utils", "expected target 'utils': {}", imp.target_name);
     }
-}
 
-fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String), i64>) {
-    let mut id_map = HashMap::new();
-    let mut next_id = 1i64;
-    for pf in files {
-        for sym in &pf.symbols {
-            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
-            next_id += 1;
-        }
+    #[test]
+    fn require_once_produces_imports_edge() {
+        let source = "<?php\nrequire_once 'config/database.php';\n";
+        let r = extract::extract(source);
+        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports);
+        assert!(
+            imp.is_some(),
+            "expected Imports edge from require_once, refs: {:?}",
+            r.refs
+        );
     }
-    let owned: Vec<ParsedFile> = files
-        .iter()
-        .map(|f| ParsedFile {
-            path: f.path.clone(),
-            language: f.language.clone(),
-            content_hash: String::new(),
-            size: 0,
-            line_count: 0,
-            content: None,
-            has_errors: false,
-            symbols: f.symbols.clone(),
-            refs: f.refs.clone(),
-            routes: vec![],
-            db_sets: vec![],
-        })
-        .collect();
-    let index = SymbolIndex::build(&owned, &id_map);
-    (index, id_map)
+
+    // -----------------------------------------------------------------------
+    // Disjunctive normal form type (PHP 8.2+)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dnf_type_emits_type_refs() {
+        let source = r#"<?php
+class Processor {
+    public function handle((Stringable&Countable)|Logger $input): void {}
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
-#[test]
-fn test_scope_chain_resolution() {
-    let file = make_file(
-        "app/Controllers/UserController.php",
-        vec![
-            make_symbol("App.Controllers", "App.Controllers", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("UserController", "App.Controllers.UserController", SymbolKind::Class, Visibility::Public, Some("App.Controllers")),
-            make_symbol("store", "App.Controllers.UserController.store", SymbolKind::Method, Visibility::Public, Some("App.Controllers.UserController")),
-            make_symbol("validate", "App.Controllers.UserController.validate", SymbolKind::Method, Visibility::Private, Some("App.Controllers.UserController")),
-        ],
-        vec![make_ref(2, "validate", EdgeKind::Calls)],
-    );
-
-    let (index, id_map) = build_test_env(&[&file]);
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[2],
-        scope_chain: build_scope_chain(file.symbols[2].scope_path.as_deref()),
-    };
-
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve validate via scope chain");
-    let res = result.unwrap();
-    assert_eq!(res.strategy, "php_scope_chain");
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("app/Controllers/UserController.php".to_string(), "App.Controllers.UserController.validate".to_string())).unwrap()
-    );
-}
-
-#[test]
-fn test_same_namespace_resolution() {
-    let file1 = make_file(
-        "app/Models/User.php",
-        vec![
-            make_symbol("App.Models", "App.Models", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("User", "App.Models.User", SymbolKind::Class, Visibility::Public, Some("App.Models")),
-        ],
-        vec![],
-    );
-
-    let file2 = make_file(
-        "app/Models/Post.php",
-        vec![
-            make_symbol("App.Models", "App.Models", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("Post", "App.Models.Post", SymbolKind::Class, Visibility::Public, Some("App.Models")),
-        ],
-        // No use statement — same namespace
-        vec![make_ref(1, "User", EdgeKind::TypeRef)],
-    );
-
-    let (index, id_map) = build_test_env(&[&file1, &file2]);
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[1],
-        scope_chain: build_scope_chain(file2.symbols[1].scope_path.as_deref()),
-    };
-
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve User via same namespace");
-    let res = result.unwrap();
-    assert!(
-        res.strategy == "php_scope_chain" || res.strategy == "php_same_namespace",
-        "Unexpected strategy: {}",
-        res.strategy
-    );
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("app/Models/User.php".to_string(), "App.Models.User".to_string())).unwrap()
-    );
-}
-
-#[test]
-fn test_use_statement_resolution() {
-    let file1 = make_file(
-        "app/Models/Product.php",
-        vec![make_symbol("Product", "App.Models.Product", SymbolKind::Class, Visibility::Public, Some("App.Models"))],
-        vec![],
-    );
-
-    let file2 = make_file(
-        "app/Http/Controllers/ProductController.php",
-        vec![make_symbol("ProductController", "App.Http.Controllers.ProductController", SymbolKind::Class, Visibility::Public, Some("App.Http.Controllers"))],
-        vec![
-            make_ref(0, "Product", EdgeKind::TypeRef),
-            // use App\Models\Product; — stored with backslash by extractor
-            make_use(0, "Product", "App\\Models\\Product"),
-        ],
-    );
-
-    let (index, id_map) = build_test_env(&[&file1, &file2]);
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[0],
-        scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
-    };
-
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve Product via use statement");
-    let res = result.unwrap();
-    assert_eq!(res.strategy, "php_use_statement");
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("app/Models/Product.php".to_string(), "App.Models.Product".to_string())).unwrap()
-    );
-}
-
-#[test]
-fn test_use_statement_alias() {
-    let file1 = make_file(
-        "app/Models/User.php",
-        vec![make_symbol("User", "App.Models.User", SymbolKind::Class, Visibility::Public, Some("App.Models"))],
-        vec![],
-    );
-
-    let file2 = make_file(
-        "app/Services/UserService.php",
-        vec![make_symbol("UserService", "App.Services.UserService", SymbolKind::Class, Visibility::Public, Some("App.Services"))],
-        vec![
-            make_ref(0, "UserModel", EdgeKind::TypeRef),
-            // use App\Models\User as UserModel;
-            make_use(0, "UserModel", "App\\Models\\User"),
-        ],
-    );
-
-    let (index, id_map) = build_test_env(&[&file1, &file2]);
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[0],
-        scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
-    };
-
-    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
-    assert!(result.is_some(), "Should resolve alias via use statement");
-    let res = result.unwrap();
-    assert_eq!(res.strategy, "php_use_statement");
-    assert_eq!(
-        res.target_symbol_id,
-        *id_map.get(&("app/Models/User.php".to_string(), "App.Models.User".to_string())).unwrap()
-    );
-}
-
-#[test]
-fn test_private_cross_file_not_resolved() {
-    let file1 = make_file(
-        "app/Models/Order.php",
-        vec![make_symbol("secret", "App.Models.Order.secret", SymbolKind::Method, Visibility::Private, Some("App.Models.Order"))],
-        vec![],
-    );
-
-    let file2 = make_file(
-        "app/Services/OrderService.php",
-        vec![make_symbol("OrderService", "App.Services.OrderService", SymbolKind::Class, Visibility::Public, Some("App.Services"))],
-        vec![
-            make_ref(0, "secret", EdgeKind::Calls),
-            make_use(0, "Order", "App\\Models\\Order"),
-        ],
-    );
-
-    let (index, _) = build_test_env(&[&file1, &file2]);
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file2, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file2.refs[0],
-        source_symbol: &file2.symbols[0],
-        scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
-    };
-
-    assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
-        "Private cross-file should not resolve"
-    );
-}
-
-#[test]
-fn test_falls_back_for_unknown() {
-    let file = make_file(
-        "app/Foo.php",
-        vec![make_symbol("Foo", "App.Foo", SymbolKind::Class, Visibility::Public, Some("App"))],
-        vec![make_ref(0, "NonExistent", EdgeKind::TypeRef)],
-    );
-
-    let (index, _) = build_test_env(&[&file]);
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    };
-
-    assert!(
-        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
-        "Unknown should fall back"
-    );
-}
-
-#[test]
-fn test_normalize_php_ns() {
-    assert_eq!(normalize_php_ns("App\\Models\\User"), "App.Models.User");
-    assert_eq!(normalize_php_ns("\\App\\Models\\User"), "App.Models.User");
-    assert_eq!(normalize_php_ns("App.Models.User"), "App.Models.User");
-    assert_eq!(normalize_php_ns("Foo"), "Foo");
-}
-
-#[test]
-fn test_infer_framework_external() {
-    let file = make_file(
-        "app/Controllers/Foo.php",
-        vec![make_symbol("Foo", "App.Foo", SymbolKind::Class, Visibility::Public, Some("App"))],
-        vec![make_use(0, "Controller", "Illuminate\\Routing\\Controller")],
-    );
-
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    };
-
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-    assert!(ns.is_some(), "Illuminate import should be inferred as external");
-}
-
-#[test]
-fn test_infer_builtin_external() {
-    let file = make_file(
-        "app/Foo.php",
-        vec![make_symbol("Foo", "App.Foo", SymbolKind::Class, Visibility::Public, Some("App"))],
-        vec![make_ref(0, "array_map", EdgeKind::Calls)],
-    );
-
-    let resolver = PhpResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    };
-
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-    assert_eq!(ns, Some("php_core".to_string()));
-}
-
-#[test]
-fn test_build_file_context_extracts_namespace() {
-    let file = make_file(
-        "app/Models/User.php",
-        vec![
-            make_symbol("App.Models", "App.Models", SymbolKind::Namespace, Visibility::Public, None),
-            make_symbol("User", "App.Models.User", SymbolKind::Class, Visibility::Public, Some("App.Models")),
-        ],
-        vec![],
-    );
-
-    let resolver = PhpResolver;
-    let ctx = resolver.build_file_context(&file, None);
-    assert_eq!(ctx.file_namespace, Some("App.Models".to_string()));
-}
-
-#[test]
-fn test_build_file_context_normalizes_backslash() {
-    let file = make_file(
-        "app/Controllers/Foo.php",
-        vec![make_symbol("Foo", "App.Foo", SymbolKind::Class, Visibility::Public, Some("App"))],
-        // use App\Models\User;
-        vec![make_use(0, "User", "App\\Models\\User")],
-    );
-
-    let resolver = PhpResolver;
-    let ctx = resolver.build_file_context(&file, None);
-    assert_eq!(ctx.imports.len(), 1);
-    // Module path should be normalized to dotted form.
-    assert_eq!(ctx.imports[0].module_path.as_deref(), Some("App.Models.User"));
-    assert_eq!(ctx.imports[0].imported_name, "User");
-}
+"#;
+        let r = extract::extract(source);
+        let type_refs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(
+            type_refs.contains(&"Stringable") || type_refs.contains(&"Logger"),
+            "expected TypeRef from DNF type: {type_refs:?}"
+        );
+    }

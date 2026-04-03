@@ -1,5 +1,4 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::*;
     use crate::types::{EdgeKind, SymbolKind};
 
     // =========================================================================
@@ -18,7 +17,7 @@ int add(int a, int b) {
     return a + b;
 }
 "#;
-        let r = extract(src, "c");
+        let r = extract::extract(src, "c");
         assert!(!r.symbols.is_empty());
 
         let st = r.symbols.iter().find(|s| s.name == "Point").expect("Point");
@@ -38,7 +37,7 @@ enum Direction {
     WEST
 };
 "#;
-        let r = extract(src, "c");
+        let r = extract::extract(src, "c");
         let en = r.symbols.iter().find(|s| s.name == "Direction").expect("Direction");
         assert_eq!(en.kind, SymbolKind::Enum);
         assert!(r.symbols.iter().any(|s| s.name == "NORTH" && s.kind == SymbolKind::EnumMember));
@@ -53,7 +52,7 @@ enum Direction {
 
 int main() { return 0; }
 "#;
-        let r = extract(src, "c");
+        let r = extract::extract(src, "c");
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         let targets: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
         assert!(targets.contains(&"stdio.h"), "missing stdio.h: {targets:?}");
@@ -69,7 +68,7 @@ public:
     void speak();
 };
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let cls = r.symbols.iter().find(|s| s.name == "Animal").expect("Animal");
         assert_eq!(cls.kind, SymbolKind::Class);
     }
@@ -87,7 +86,7 @@ class Stack {
     int size;
 };
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let sym = r.symbols.iter().find(|s| s.name == "Stack").expect("Stack");
         assert_eq!(sym.kind, SymbolKind::Class);
     }
@@ -100,7 +99,7 @@ T max_val(T a, T b) {
     return a > b ? a : b;
 }
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let sym = r.symbols.iter().find(|s| s.name == "max_val").expect("max_val");
         assert_eq!(sym.kind, SymbolKind::Function);
     }
@@ -113,7 +112,7 @@ class Container {
     T data;
 };
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         // Should have TypeRef to `MyAllocator` from the default type parameter.
         let has_ref = r.refs.iter().any(|rf| {
             rf.target_name == "MyAllocator" && rf.kind == EdgeKind::TypeRef
@@ -131,7 +130,7 @@ class Container {
 using MyVec = std::vector<int>;
 using Score = float;
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
 
         let my_vec = r.symbols.iter().find(|s| s.name == "MyVec").expect("MyVec");
         assert_eq!(my_vec.kind, SymbolKind::TypeAlias);
@@ -150,7 +149,7 @@ using Score = float;
 using std::vector;
 using std::string;
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let imports: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Imports).collect();
         let targets: Vec<&str> = imports.iter().map(|rf| rf.target_name.as_str()).collect();
         // qualified_identifier text for `std::vector`
@@ -174,7 +173,7 @@ using std::string;
 #define PI 3.14159
 #define MAX_SIZE 1024
 "#;
-        let r = extract(src, "c");
+        let r = extract::extract(src, "c");
         let pi = r.symbols.iter().find(|s| s.name == "PI").expect("PI");
         assert_eq!(pi.kind, SymbolKind::Variable);
         assert!(pi.signature.as_deref().unwrap_or("").contains("3.14159"));
@@ -189,7 +188,7 @@ using std::string;
 #define MAX(a, b) ((a) > (b) ? (a) : (b))
 #define SQ(x) ((x) * (x))
 "#;
-        let r = extract(src, "c");
+        let r = extract::extract(src, "c");
         let max = r.symbols.iter().find(|s| s.name == "MAX").expect("MAX");
         assert_eq!(max.kind, SymbolKind::Function);
         assert!(max.signature.as_deref().unwrap_or("").contains("(a, b)"));
@@ -210,7 +209,7 @@ void foo(double d) {
     MyType* p = (MyType*)malloc(sizeof(MyType));
 }
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let has_mytype = r.refs.iter().any(|rf| {
             rf.target_name == "MyType" && rf.kind == EdgeKind::TypeRef
         });
@@ -232,7 +231,7 @@ void foo() {
         // `sizeof(Node)` — tree-sitter parses this as sizeof + parenthesized_expression
         // containing an identifier (ambiguous with expression), so we emit TypeRef
         // for any bare identifier inside.
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let has_node = r.refs.iter().any(|rf| {
             rf.target_name == "Node" && rf.kind == EdgeKind::TypeRef
         });
@@ -251,7 +250,7 @@ void factory() {
     auto w = new Widget();
 }
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let has_instantiates = r.refs.iter().any(|rf| {
             rf.target_name == "Widget" && rf.kind == EdgeKind::Instantiates
         });
@@ -273,7 +272,7 @@ void foo() {
         // `new std::vector<int>()` — the type is a `template_type` or
         // `qualified_identifier`. Either way we should get an Instantiates
         // or TypeRef for `vector`.
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         // At minimum we should not crash. Check for any TypeRef or Instantiates.
         let _ = r; // smoke test
     }
@@ -292,7 +291,7 @@ void register_cb() {
     };
 }
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let has_cb = r.refs.iter().any(|rf| {
             rf.target_name == "Callback" && rf.kind == EdgeKind::TypeRef
         });
@@ -309,7 +308,7 @@ void setup() {
     };
 }
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let calls: Vec<&str> = r.refs.iter()
             .filter(|rf| rf.kind == EdgeKind::Calls)
             .map(|rf| rf.target_name.as_str())
@@ -333,7 +332,7 @@ void risky() {
     }
 }
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let has_runtime_error = r.refs.iter().any(|rf| {
             rf.target_name == "runtime_error" && rf.kind == EdgeKind::TypeRef
         });
@@ -355,7 +354,7 @@ void risky() {
     }
 }
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         let calls: Vec<&str> = r.refs.iter()
             .filter(|rf| rf.kind == EdgeKind::Calls)
             .map(|rf| rf.target_name.as_str())
@@ -377,7 +376,7 @@ class Repo {
     std::map<std::string, Order> index;
 };
 "#;
-        let r = extract(src, "cpp");
+        let r = extract::extract(src, "cpp");
         // `vector` and `map` are type_identifier nodes inside template_type.
         let refs_names: Vec<&str> = r.refs.iter()
             .filter(|rf| rf.kind == EdgeKind::TypeRef)

@@ -23,7 +23,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);
-                    super::crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
+                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: callee,
@@ -39,7 +39,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(name_node) = child.child_by_field_name("name") {
                     let callee = node_text(&name_node, src);
                     let chain = build_chain(&child, src);
-                    super::crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
+                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &name_node, refs);
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: callee,

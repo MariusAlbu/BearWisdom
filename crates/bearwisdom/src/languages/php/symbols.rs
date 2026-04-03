@@ -44,7 +44,7 @@ pub(super) fn extract_namespace(
     });
 
     if let Some(body) = node.child_by_field_name("body") {
-        super::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, &ns_prefix);
+        super::extract::extract_from_node(body, src, symbols, refs, Some(idx), &new_prefix, &ns_prefix);
     }
 }
 

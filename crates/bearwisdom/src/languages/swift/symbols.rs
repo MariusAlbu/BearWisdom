@@ -30,14 +30,14 @@ pub(super) fn recurse_into_body(
         .or_else(|| find_child_by_kind(type_node, "extension_body"))
         .or_else(|| find_child_by_kind(type_node, "{"));
     if let Some(b) = body {
-        super::extract_node(b, src, scope_tree, symbols, refs, parent_index);
+        super::extract::extract_node(b, src, scope_tree, symbols, refs, parent_index);
     } else {
         let mut cursor = type_node.walk();
         for child in type_node.children(&mut cursor) {
             match child.kind() {
                 "class_body" | "struct_body" | "protocol_body" | "extension_body"
                 | "enum_body" => {
-                    super::extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                    super::extract::extract_node(child, src, scope_tree, symbols, refs, parent_index);
                 }
                 _ => {}
             }
@@ -92,7 +92,7 @@ pub(super) fn recurse_enum_body(
                     }
                 }
                 _ => {
-                    super::extract_node(item, src, scope_tree, symbols, refs, parent_index);
+                    super::extract::extract_node(item, src, scope_tree, symbols, refs, parent_index);
                 }
             }
         }

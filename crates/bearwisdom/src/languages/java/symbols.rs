@@ -170,7 +170,7 @@ pub(super) fn extract_enum_body(
             }
             // Enum body can also contain class_body declarations.
             _ => {
-                super::extract_node(child, src, scope_tree, package, symbols, refs, enum_parent_index);
+                super::extract::extract_node(child, src, scope_tree, package, symbols, refs, enum_parent_index);
             }
         }
     }

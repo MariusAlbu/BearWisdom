@@ -1,5 +1,4 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::*;
     use crate::types::{EdgeKind, SymbolKind};
 
     #[test]
@@ -15,7 +14,7 @@ class Animal {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let cls = r.symbols.iter().find(|s| s.name == "Animal").expect("Animal");
         assert_eq!(cls.kind, SymbolKind::Class);
 
@@ -30,7 +29,7 @@ function greet(name) {
     return 'Hello, ' + name;
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let func = r.symbols.iter().find(|s| s.name == "greet").expect("greet");
         assert_eq!(func.kind, SymbolKind::Function);
     }
@@ -44,7 +43,7 @@ const getters = {
 }
 export default getters
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         let kinds: Vec<_> = r.symbols.iter().map(|s| (s.name.as_str(), s.kind)).collect();
@@ -63,7 +62,7 @@ const install = function(Vue) {
 }
 module.exports = install
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         assert!(
@@ -75,7 +74,7 @@ module.exports = install
     #[test]
     fn import_statement_produces_type_ref() {
         let src = "import { useState, useEffect } from 'react';\n";
-        let r = extract(src);
+        let r = extract::extract(src);
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
         let targets: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
         assert!(targets.contains(&"useState"), "missing useState: {targets:?}");
@@ -92,7 +91,7 @@ module.exports = install
 const express = require('express');
 const path = require('path');
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         let modules: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
         eprintln!("Imports refs: {modules:?}");
@@ -107,7 +106,7 @@ async function load() {
     const mod = await import('./utils');
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         let modules: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
         eprintln!("Dynamic import refs: {modules:?}");
@@ -120,7 +119,7 @@ async function load() {
 function myFn() {}
 module.exports = myFn;
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         let targets: Vec<&str> = refs.iter().map(|r| r.target_name.as_str()).collect();
         eprintln!("module.exports refs: {targets:?}");
@@ -136,7 +135,7 @@ module.exports = myFn;
 exports.Router = Router;
 exports.Model = Model;
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         let targets: Vec<&str> = refs.iter().map(|r| r.target_name.as_str()).collect();
         eprintln!("exports.X refs: {targets:?}");
@@ -152,7 +151,7 @@ const EventEmitter = class {
     emit(event) {}
 };
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         let sym = r
@@ -175,7 +174,7 @@ const add = function(a, b) {
     return a + b;
 };
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let sym = r
             .symbols
             .iter()
@@ -190,7 +189,7 @@ const add = function(a, b) {
 const double = (x) => x * 2;
 const identity = x => x;
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
 
@@ -209,7 +208,7 @@ function* counter() {
     while (true) yield i++;
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let sym = r
             .symbols
             .iter()
@@ -226,7 +225,7 @@ const gen = function* () {
     yield 2;
 };
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let sym = r.symbols.iter().find(|s| s.name == "gen").expect("gen");
         assert_eq!(sym.kind, SymbolKind::Function);
     }
@@ -238,7 +237,7 @@ function render() {
     return html`<div>${name}</div>`;
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
         let targets: Vec<&str> = calls.iter().map(|r| r.target_name.as_str()).collect();
         eprintln!("Calls: {targets:?}");
@@ -253,7 +252,7 @@ function build() {
     const db = new Database.Pool({ max: 10 });
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
         let targets: Vec<&str> = calls.iter().map(|r| r.target_name.as_str()).collect();
         eprintln!("Calls: {targets:?}");
@@ -265,7 +264,7 @@ function build() {
         let src = r#"
 const { a, b, ...rest } = options;
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         assert!(names.contains(&"a"), "missing a: {names:?}");
@@ -285,7 +284,7 @@ function safe() {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         assert!(
@@ -303,7 +302,7 @@ function process(items) {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         assert!(
@@ -321,7 +320,7 @@ function printKeys(obj) {
     }
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         assert!(
@@ -335,7 +334,7 @@ function printKeys(obj) {
         let src = r#"
 const [first, second, ...tail] = items;
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         assert!(names.contains(&"first"), "missing first: {names:?}");
@@ -351,7 +350,7 @@ export default class Router {
     post(path, handler) {}
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
         eprintln!("Symbols: {names:?}");
         assert!(
@@ -371,7 +370,7 @@ export function connect(url) {
     return new Connection(url);
 }
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let sym = r
             .symbols
             .iter()
@@ -392,7 +391,7 @@ const handler = async (req, res) => {
     res.json(data);
 };
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
         let targets: Vec<&str> = calls.iter().map(|r| r.target_name.as_str()).collect();
         eprintln!("Calls in arrow: {targets:?}");

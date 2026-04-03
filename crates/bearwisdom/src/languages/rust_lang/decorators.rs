@@ -142,7 +142,7 @@ fn extract_first_string_from_token_tree(tt: &Node, source: &str) -> Option<Strin
 
 #[cfg(test)]
 mod tests {
-    use super::super::extract;
+    use super::super::extract::extract;
     use crate::types::EdgeKind;
 
     fn decorator_refs(source: &str) -> Vec<(String, Option<String>)> {

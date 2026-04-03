@@ -1,5 +1,5 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::extract;
+    use crate::types::*;
 
     #[test]
     fn impl_method_qualified_name() {
@@ -8,7 +8,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
 impl Bar {
     pub fn foo(&self) {}
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let method = r.symbols.iter().find(|s| s.name == "foo");
         assert!(method.is_some(), "Expected method 'foo'");
         assert_eq!(method.unwrap().qualified_name, "Bar.foo");
@@ -18,7 +18,7 @@ impl Bar {
     #[test]
     fn use_declaration_produces_import_ref() {
         let source = "use crate::db::Database;";
-        let r = extract(source);
+        let r = extract::extract(source);
         let import_refs: Vec<_> = r
             .refs
             .iter()
@@ -47,7 +47,7 @@ impl Bar {
     A,
     B,
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let enum_sym = r.symbols.iter().find(|s| s.name == "Foo");
         assert!(enum_sym.is_some(), "Expected 'Foo' enum");
         assert_eq!(enum_sym.unwrap().kind, SymbolKind::Enum);
@@ -66,7 +66,7 @@ impl Bar {
     #[test]
     fn trait_maps_to_interface_kind() {
         let source = "pub trait MyTrait { fn do_it(&self); }";
-        let r = extract(source);
+        let r = extract::extract(source);
         let trait_sym = r.symbols.iter().find(|s| s.name == "MyTrait");
         assert!(trait_sym.is_some(), "Expected 'MyTrait'");
         assert_eq!(trait_sym.unwrap().kind, SymbolKind::Interface);
@@ -77,7 +77,7 @@ impl Bar {
         let source = r#"mod inner {
     pub fn foo() {}
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let mod_sym = r.symbols.iter().find(|s| s.name == "inner");
         assert!(mod_sym.is_some(), "Expected 'inner' mod");
         assert_eq!(mod_sym.unwrap().kind, SymbolKind::Namespace);
@@ -90,7 +90,7 @@ impl Bar {
         let source = r#"pub fn greet(name: &str) -> String {
     format!("Hello, {}!", name)
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         assert_eq!(r.symbols.len(), 1);
         assert_eq!(r.symbols[0].name, "greet");
         assert_eq!(r.symbols[0].kind, SymbolKind::Function);
@@ -100,7 +100,7 @@ impl Bar {
     #[test]
     fn extracts_use_group_imports() {
         let source = "use std::collections::{HashMap, HashSet};";
-        let r = extract(source);
+        let r = extract::extract(source);
         let names: Vec<&str> = r
             .refs
             .iter()
@@ -117,7 +117,7 @@ impl Bar {
 fn test_something() {
     assert_eq!(1, 1);
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let test_sym = r.symbols.iter().find(|s| s.name == "test_something");
         assert!(test_sym.is_some());
         assert_eq!(test_sym.unwrap().kind, SymbolKind::Test);
@@ -129,7 +129,7 @@ fn test_something() {
     foo();
     bar.baz();
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -144,7 +144,7 @@ fn test_something() {
     fn attaches_doc_comment() {
         let source = r#"/// Documentation for foo.
 pub fn foo() {}"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         assert_eq!(r.symbols.len(), 1);
         let doc = r.symbols[0].doc_comment.as_deref().unwrap_or("");
         assert!(doc.contains("Documentation for foo"), "Got: {doc:?}");
@@ -153,7 +153,7 @@ pub fn foo() {}"#;
     #[test]
     fn handles_parse_errors_gracefully() {
         let source = r#"fn broken( { let x = ;"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         // Must not panic; partial results are acceptable.
         let _ = r.symbols;
     }
@@ -163,7 +163,7 @@ pub fn foo() {}"#;
         let source = r#"fn run() {
     items.iter().map(|x| x.name.clone()).collect::<Vec<_>>();
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -179,7 +179,7 @@ pub fn foo() {}"#;
         let source = r#"fn run() {
     items.iter().map(|x| x.process()).collect::<Vec<_>>();
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -197,7 +197,7 @@ pub fn foo() {}"#;
         Message::Move { x, y } => move_to(x, y),
     }
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let typerefs: Vec<&str> = r
             .refs
             .iter()
@@ -218,7 +218,7 @@ pub fn foo() {}"#;
         None => {},
     }
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let typerefs: Vec<&str> = r
             .refs
             .iter()
@@ -243,7 +243,7 @@ pub fn foo() {}"#;
         user.process();
     }
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -261,7 +261,7 @@ where
 {
     String::new()
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let typerefs: Vec<&str> = r
             .refs
             .iter()
@@ -283,7 +283,7 @@ where
     println!("hello");
     vec![1, 2, 3];
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -306,7 +306,7 @@ where
     tracing::info!("starting");
     bail!("oh no");
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -329,7 +329,7 @@ where
         let source = r#"fn f(x: UserId) -> i64 {
     x as i64
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         // `i64` is a builtin — no TypeRef expected.  Verify no panic.
         let _ = r.refs;
     }
@@ -340,7 +340,7 @@ where
         let source = r#"fn f(x: usize) -> MyIndex {
     x as MyIndex
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let typerefs: Vec<&str> = r
             .refs
             .iter()
@@ -363,7 +363,7 @@ where
     let user = find_user();
     let (a, b) = split();
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let var_names: Vec<&str> = r
             .symbols
             .iter()
@@ -379,7 +379,7 @@ where
     let user = repo.find_one(1);
     let _ = user;
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -402,7 +402,7 @@ where
     fn malloc(size: usize) -> *mut u8;
     fn free(ptr: *mut u8);
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let fn_names: Vec<&str> = r
             .symbols
             .iter()
@@ -428,7 +428,7 @@ impl Iterator for MyIter {
         None
     }
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_aliases: Vec<&str> = r
             .symbols
             .iter()
@@ -450,7 +450,7 @@ impl Container for Wrapper {
 
     fn get(&self) -> Self::Output { unimplemented!() }
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let typerefs: Vec<&str> = r
             .refs
             .iter()
@@ -470,7 +470,7 @@ impl Container for Wrapper {
     #[test]
     fn extern_crate_emits_imports_edge() {
         let source = "extern crate serde;";
-        let r = extract(source);
+        let r = extract::extract(source);
         let imports: Vec<&str> = r
             .refs
             .iter()
@@ -493,7 +493,7 @@ impl Container for Wrapper {
     i: i32,
     f: f32,
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let sym = r.symbols.iter().find(|s| s.name == "MyUnion");
         assert!(sym.is_some(), "expected MyUnion symbol");
         assert_eq!(sym.unwrap().kind, SymbolKind::Struct);
@@ -508,7 +508,7 @@ impl Container for Wrapper {
         let source = r#"macro_rules! my_vec {
     ($($x:expr),*) => { vec![$($x),*] };
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let sym = r.symbols.iter().find(|s| s.name == "my_vec");
         assert!(sym.is_some(), "expected my_vec symbol from macro_rules!");
         assert_eq!(sym.unwrap().kind, SymbolKind::Function);
@@ -525,7 +525,7 @@ impl Container for Wrapper {
         let source = r#"fn build() -> Point {
     Point { x: 1, y: 2 }
 }"#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -560,7 +560,7 @@ impl Container for Wrapper {
 }"#;
         // This is a type cast to a primitive, no TypeRef for i32.
         // But the function itself has `dyn Error` in its signature — verify no panic.
-        let r = extract(source);
+        let r = extract::extract(source);
         let _ = r.refs;
     }
 

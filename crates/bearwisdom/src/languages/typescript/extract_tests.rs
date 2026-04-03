@@ -1,9 +1,9 @@
-use super::extract::extract;
+use super::extract;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use std::collections::BTreeSet;
 
-fn sym(source: &str) -> Vec<ExtractedSymbol> { extract(source, false).symbols }
-fn refs(source: &str) -> Vec<ExtractedRef>    { extract(source, false).refs }
+fn sym(source: &str) -> Vec<ExtractedSymbol> { extract::extract(source, false).symbols }
+fn refs(source: &str) -> Vec<ExtractedRef>    { extract::extract(source, false).refs }
 
 #[test]
 fn extracts_class() {
@@ -81,7 +81,7 @@ fn qualified_name_includes_class() {
 #[test]
 fn does_not_panic_on_malformed_source() {
     let src = "class { !!! broken @@@ }";
-    let _ = extract(src, false);
+    let _ = extract::extract(src, false);
 }
 
 // ---------------------------------------------------------------------------
@@ -485,7 +485,7 @@ fn print_node_tree(node: tree_sitter::Node, depth: usize) {
 #[test]
 fn dump_comprehensive_extraction() {
     let src = COMPREHENSIVE_SAMPLE;
-    let result = extract(src, false);
+    let result = extract::extract(src, false);
     let sym_names: Vec<_> = result.symbols.iter().map(|s| format!("{:?} {}", s.kind, s.name)).collect();
     let ref_targets: Vec<_> = result.refs.iter().map(|r| format!("{:?} {}", r.kind, r.target_name)).collect();
     println!("\nSymbols ({}):", sym_names.len());

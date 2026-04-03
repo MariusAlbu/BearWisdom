@@ -378,7 +378,7 @@ pub(super) fn extract_for_comprehension_calls(
 
 #[cfg(test)]
 mod tests {
-    use super::super::extract;
+    use super::super::extract::extract;
     use crate::types::{EdgeKind, SymbolKind};
 
     fn type_refs(source: &str) -> Vec<(String, Option<String>)> {

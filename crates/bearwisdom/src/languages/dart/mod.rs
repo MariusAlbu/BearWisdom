@@ -33,7 +33,7 @@ impl LanguagePlugin for DartPlugin {
         Some(tree_sitter_dart::LANGUAGE.into())
     }
 
-    fn scope_kinds(&self) -> &[ScopeKind] { extract::DART_SCOPE_KINDS }
+    fn scope_kinds(&self) -> &[ScopeKind] { &[] }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);

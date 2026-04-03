@@ -133,7 +133,7 @@ fn extract_first_string_arg(call_node: &Node, source: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::super::extract;
+    use super::super::extract::extract;
     use crate::types::EdgeKind;
 
     fn decorator_refs(source: &str) -> Vec<(String, Option<String>)> {

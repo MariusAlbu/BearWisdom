@@ -526,7 +526,7 @@ pub(super) fn extract_class_definition(
     }
 
     if let Some(body_node) = body {
-        super::extract_from_node(body_node, source, symbols, refs, Some(idx), &new_prefix, true);
+        super::extract::extract_from_node(body_node, source, symbols, refs, Some(idx), &new_prefix, true);
     }
 }
 

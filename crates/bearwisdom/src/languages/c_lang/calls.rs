@@ -27,7 +27,7 @@ pub(super) fn extract_calls_from_body(
                         .and_then(|c| c.segments.last())
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| call_target_name(&fn_node, src));
-                    super::crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &fn_node, refs);
+                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &fn_node, refs);
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index,

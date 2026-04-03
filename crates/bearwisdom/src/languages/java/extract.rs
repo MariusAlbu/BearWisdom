@@ -65,6 +65,8 @@ pub fn extract(source: &str) -> ExtractionResult {
             return ExtractionResult {
                 symbols: vec![],
                 refs: vec![],
+                routes: vec![],
+                db_sets: vec![],
                 has_errors: true,
             }
         }

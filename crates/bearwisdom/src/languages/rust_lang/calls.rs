@@ -308,7 +308,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     // For scoped/chained calls like Foo::bar() or obj.method(),
                     // emit a TypeRef for the type prefix so the struct/class
                     // appears as a dependency, not just the method.
-                    super::crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &func, refs);
+                    crate::parser::extractors::emit_chain_type_ref(&chain, source_symbol_index, &func, refs);
 
                     if !target_name.is_empty() {
                         refs.push(ExtractedRef {

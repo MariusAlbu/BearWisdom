@@ -314,7 +314,7 @@ pub(super) fn push_variable(
 
 #[cfg(test)]
 mod tests {
-    use super::super::extract;
+    use super::super::extract::extract;
     use crate::types::EdgeKind;
 
     fn type_refs(source: &str) -> Vec<(String, Option<String>)> {

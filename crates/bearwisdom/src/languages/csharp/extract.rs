@@ -35,7 +35,7 @@
 // =============================================================================
 
 
-use super::{calls, symbols, helpers, decorators};
+use super::{calls, symbols, helpers, decorators, types};
 use crate::parser::extractors::ExtractionResult;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::{

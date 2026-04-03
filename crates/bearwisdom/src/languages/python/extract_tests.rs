@@ -1,5 +1,4 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::*;
     use crate::types::{EdgeKind, SymbolKind, Visibility};
 
     #[test]
@@ -8,7 +7,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     def bar(self):
         pass
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let cls = r.symbols.iter().find(|s| s.name == "Foo");
         assert!(cls.is_some(), "Expected 'Foo' class");
         assert_eq!(cls.unwrap().kind, SymbolKind::Class);
@@ -22,7 +21,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     #[test]
     fn import_from_produces_ref_with_module() {
         let source = "from os.path import join\n";
-        let r = extract(source);
+        let r = extract::extract(source);
         let import_refs: Vec<_> = r
             .refs
             .iter()
@@ -46,7 +45,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     def __init__(self):
         pass
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let init = r
             .symbols
             .iter()
@@ -62,7 +61,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     def name(self):
         return self._name
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let prop = r.symbols.iter().find(|s| s.name == "name").expect("no name");
         assert_eq!(prop.kind, SymbolKind::Property);
     }
@@ -72,7 +71,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
         let source = r#"def test_something():
     assert True
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let sym = r.symbols.iter().find(|s| s.name == "test_something").unwrap();
         assert_eq!(sym.kind, SymbolKind::Test);
     }
@@ -80,7 +79,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     #[test]
     fn private_visibility_for_underscore_names() {
         let source = "def _helper():\n    pass\n";
-        let r = extract(source);
+        let r = extract::extract(source);
         let sym = r.symbols.iter().find(|s| s.name == "_helper").unwrap();
         assert_eq!(sym.visibility, Some(Visibility::Private));
     }
@@ -91,7 +90,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     """This is the docstring."""
     pass
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         assert_eq!(r.symbols.len(), 1);
         let doc = r.symbols[0].doc_comment.as_deref().unwrap_or("");
         assert!(doc.contains("docstring"), "doc_comment was: {doc:?}");
@@ -103,7 +102,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     foo()
     bar.baz()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -119,7 +118,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
         let source = r#"class Foo(Bar, Baz):
     pass
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<_> = r
             .refs
             .iter()
@@ -133,7 +132,7 @@ use crate::types::{ExtractedRef, ExtractedSymbol};
     #[test]
     fn handles_parse_errors_gracefully() {
         let source = "def broken(\nclass orphan\n    pass\n{{{";
-        let result = std::panic::catch_unwind(|| extract(source));
+        let result = std::panic::catch_unwind(|| extract::extract(source));
         assert!(result.is_ok(), "extractor panicked on malformed input");
     }
 
@@ -148,7 +147,7 @@ def check(user):
     if isinstance(user, Admin):
         user.admin_method()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
         assert!(
             type_refs.iter().any(|r| r.target_name == "Admin"),
@@ -163,7 +162,7 @@ def check(user):
     if isinstance(user, (Admin, Moderator)):
         user.privileged_method()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
         let names: Vec<&str> = type_refs.iter().map(|r| r.target_name.as_str()).collect();
         assert!(names.contains(&"Admin"), "expected TypeRef to Admin, got: {names:?}");
@@ -181,7 +180,7 @@ def read_file():
     with open('file.txt') as f:
         content = f.read()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let var = r.symbols.iter().find(|s| s.name == "f" && s.kind == SymbolKind::Variable);
         assert!(var.is_some(), "expected 'f' Variable from with alias, symbols: {:?}", r.symbols);
     }
@@ -193,7 +192,7 @@ def use_session(db):
     with db.session() as session:
         session.query(User)
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
         // Should have a chain TypeRef for db.session()
         assert!(
@@ -209,7 +208,7 @@ def read_file():
     with open('file.txt') as f:
         content = f.read()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -233,7 +232,7 @@ def transform(users):
     names = [u.name for u in users]
     return names
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let var = r.symbols.iter().find(|s| s.name == "u" && s.kind == SymbolKind::Variable);
         assert!(var.is_some(), "expected 'u' Variable from list comprehension, symbols: {:?}", r.symbols);
     }
@@ -245,7 +244,7 @@ def make_map(users):
     user_map = {u.id: u for u in users}
     return user_map
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let var = r.symbols.iter().find(|s| s.name == "u" && s.kind == SymbolKind::Variable);
         assert!(var.is_some(), "expected 'u' Variable from dict comprehension, symbols: {:?}", r.symbols);
     }
@@ -256,7 +255,7 @@ def make_map(users):
 def transform(users):
     return [u.get_name() for u in users]
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -280,7 +279,7 @@ def process(id):
     if (user := find_user(id)) is not None:
         user.process()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let var = r.symbols.iter().find(|s| s.name == "user" && s.kind == SymbolKind::Variable);
         assert!(var.is_some(), "expected 'user' Variable from walrus, symbols: {:?}", r.symbols);
     }
@@ -292,7 +291,7 @@ def process(repo, id):
     if (user := repo.find_one(id)) is not None:
         user.process()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
         assert!(
             type_refs.iter().any(|r| r.target_name == "find_one"),
@@ -314,7 +313,7 @@ def handle(command):
         case Admin():
             pass
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::TypeRef).collect();
         let names: Vec<&str> = type_refs.iter().map(|r| r.target_name.as_str()).collect();
         assert!(
@@ -331,7 +330,7 @@ def handle(command):
         case Admin() as admin:
             admin.escalate()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let var = r.symbols.iter().find(|s| s.name == "admin" && s.kind == SymbolKind::Variable);
         assert!(var.is_some(), "expected 'admin' Variable from as_pattern, symbols: {:?}", r.symbols);
     }
@@ -347,7 +346,7 @@ def make_handler():
     handler = lambda x, y: x + y
     return handler
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let var_names: Vec<&str> = r
             .symbols
             .iter()
@@ -367,7 +366,7 @@ def make_sorter():
     users_sorted = sorted(users, key=lambda u: u.get_name())
     return users_sorted
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -390,7 +389,7 @@ def make_sorter():
 def greet(user):
     return f"Hello {user.get_name()}"
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -410,7 +409,7 @@ def greet(user):
     #[test]
     fn type_alias_statement_emits_type_alias_symbol() {
         let source = "type Point = tuple[int, int]\n";
-        let r = extract(source);
+        let r = extract::extract(source);
         let sym = r.symbols.iter().find(|s| s.name == "Point");
         assert!(sym.is_some(), "expected TypeAlias symbol 'Point', got: {:?}", r.symbols);
         assert_eq!(sym.unwrap().kind, SymbolKind::TypeAlias);
@@ -419,7 +418,7 @@ def greet(user):
     #[test]
     fn type_alias_statement_emits_type_refs() {
         let source = "type UserOrAdmin = User | Admin\n";
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<&str> = r
             .refs
             .iter()
@@ -443,7 +442,7 @@ def validate(value):
     if value is None:
         raise ValueError("value must not be None")
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<&str> = r
             .refs
             .iter()
@@ -466,7 +465,7 @@ def validate(value):
 def increment(self):
     self.count += 1
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -490,7 +489,7 @@ def process(items):
     for item in items:
         item.save()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -507,7 +506,7 @@ def process(items):
     for item in items:
         item.save()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -524,7 +523,7 @@ async def process(stream):
     async for item in stream:
         await item.save()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -541,7 +540,7 @@ async def run(engine):
     async with engine.connect() as conn:
         conn.execute()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -561,7 +560,7 @@ async def run(engine):
 def pick(flag):
     return foo() if flag else bar()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -582,7 +581,7 @@ def pick(flag):
 def validate(obj):
     assert obj.is_valid(), "not valid"
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -602,7 +601,7 @@ def validate(obj):
 def gen():
     yield compute()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -622,7 +621,7 @@ def gen():
 def make_pair():
     return (foo(), bar())
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -639,7 +638,7 @@ def make_pair():
 def combine():
     return left() + right()
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -663,7 +662,7 @@ def run():
     except ValueError as e:
         handle(e)
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<&str> = r
             .refs
             .iter()
@@ -685,7 +684,7 @@ def run():
     except RuntimeError as err:
         log(err)
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -704,7 +703,7 @@ def run():
     except (TypeError, ValueError) as e:
         handle(e)
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let type_refs: Vec<&str> = r
             .refs
             .iter()
@@ -725,7 +724,7 @@ def run():
 def foo(x=5, y="hello"):
     pass
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -742,7 +741,7 @@ def foo(x=5, y="hello"):
 def log(*args, **kwargs):
     pass
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -765,7 +764,7 @@ def handle(items):
         case [first, *rest]:
             process(first, rest)
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()
@@ -786,7 +785,7 @@ def handle(event):
         case {"type": action, "data": payload}:
             process(action)
 "#;
-        let r = extract(source);
+        let r = extract::extract(source);
         let vars: Vec<&str> = r
             .symbols
             .iter()

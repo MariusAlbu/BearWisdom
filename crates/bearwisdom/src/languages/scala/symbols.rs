@@ -22,14 +22,14 @@ pub(super) fn recurse_body(
     parent_index: Option<usize>,
 ) {
     if let Some(body) = type_node.child_by_field_name("body") {
-        super::extract_node(body, src, scope_tree, symbols, refs, parent_index);
+        super::extract::extract_node(body, src, scope_tree, symbols, refs, parent_index);
     } else {
         // Scan for template_body or class_body children.
         let mut cursor = type_node.walk();
         for child in type_node.children(&mut cursor) {
             match child.kind() {
                 "template_body" | "class_body" => {
-                    super::extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                    super::extract::extract_node(child, src, scope_tree, symbols, refs, parent_index);
                 }
                 _ => {}
             }
@@ -93,7 +93,7 @@ pub(super) fn extract_enum_body(
                     }
                     // Other items in enum body (defs, vals, etc.).
                     _ => {
-                        super::extract_node(item, src, scope_tree, symbols, refs, parent_index);
+                        super::extract::extract_node(item, src, scope_tree, symbols, refs, parent_index);
                     }
                 }
             }

@@ -25,7 +25,7 @@ pub(super) fn extract_class_body(
     for child in class_node.children(&mut cursor) {
         match child.kind() {
             "class_body" => {
-                super::extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                super::extract::extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
             "enum_class_body" => {
                 extract_enum_class_body(&child, src, scope_tree, symbols, refs, parent_index);
@@ -76,7 +76,7 @@ pub(super) fn extract_enum_class_body(
                 }
             }
             _ => {
-                super::extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                super::extract::extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
         }
     }

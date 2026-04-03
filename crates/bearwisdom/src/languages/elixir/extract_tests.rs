@@ -1,5 +1,4 @@
-    use super::extract::extract;
-use crate::types::{ExtractedRef, ExtractedSymbol};
+    use super::*;
     use crate::types::{EdgeKind, SymbolKind, Visibility};
 
     #[test]
@@ -15,7 +14,7 @@ defmodule MyApp.Greeter do
   end
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let module = r.symbols.iter().find(|s| s.name == "MyApp.Greeter" || s.name == "Greeter").expect("module");
         assert_eq!(module.kind, SymbolKind::Class);
 
@@ -35,7 +34,7 @@ defmodule Foo do
   alias MyApp.Models.User
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
         let targets: Vec<&str> = imports.iter().map(|r| r.target_name.as_str()).collect();
         assert!(targets.contains(&"Repo"), "missing Repo: {targets:?}");
@@ -49,7 +48,7 @@ defmodule MyApp.User do
   defstruct [:name, :email]
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         assert!(
             r.symbols.iter().any(|s| s.kind == SymbolKind::Struct),
             "expected a Struct symbol from defstruct"
@@ -65,7 +64,7 @@ defmodule MyApp.Worker do
   def init(state), do: {:ok, state}
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let typerefs: Vec<&str> = r
             .refs
             .iter()
@@ -89,7 +88,7 @@ defmodule Transform do
   end
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let call_names: Vec<&str> = r
             .refs
             .iter()
@@ -117,7 +116,7 @@ defmodule MyApp.Repo do
   end
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let calls: Vec<&str> = r
             .refs
             .iter()
@@ -135,7 +134,7 @@ defprotocol Stringify do
   def to_string(value)
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let proto = r
             .symbols
             .iter()
@@ -157,7 +156,7 @@ defimpl Stringify, for: Integer do
   def to_string(value), do: Integer.to_string(value)
 end
 "#;
-        let r = extract(src);
+        let r = extract::extract(src);
         let impl_sym = r
             .symbols
             .iter()
