@@ -66,6 +66,20 @@ pub(super) fn extract_calls_from_body(
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }
+            // `new() { ... }` — target-typed new expression.
+            // The type is inferred from context, but we should still extract
+            // type refs from any type arguments or initializers.
+            "implicit_object_creation_expression" => {
+                // In target-typed new, the initializer may contain field/property assignments
+                // with types. Extract type refs from initializers.
+                let mut cursor2 = child.walk();
+                for c in child.children(&mut cursor2) {
+                    if matches!(c.kind(), "object_initializer" | "collection_initializer" | "array_initializer") {
+                        super::types::extract_type_refs_from_type_node(c, src, source_symbol_index, refs);
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
             // `generic_name` in expression position (e.g. method type arguments `Method<Foo>()`,
             // type constraint expressions, etc.) — emit TypeRef for both the name and its args.
             "generic_name" => {

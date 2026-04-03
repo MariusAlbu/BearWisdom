@@ -679,3 +679,83 @@ fn last_simple_identifier_in_user_type(node: &Node, src: &[u8]) -> Option<String
     }
     last
 }
+
+/// Extract a getter declaration as a Method symbol.
+/// In Kotlin, getters appear as children of property_declaration with kind "getter".
+/// Shape: getter → ("get" keyword) + optional modifiers + optional type + function_body
+pub(super) fn push_getter_decl(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    // Getter is a method-like accessor; name it after its enclosing property.
+    // Try to find the property name from parent scope or use "get" as fallback.
+    let name = parent_index
+        .and_then(|i| symbols.get(i))
+        .map(|s| format!("get_{}", s.name))
+        .unwrap_or_else(|| "get".to_string());
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some("get()".to_string()),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+}
+
+/// Extract a setter declaration as a Method symbol.
+/// In Kotlin, setters appear as children of property_declaration with kind "setter".
+/// Shape: setter → ("set" keyword) + optional modifiers + optional parameter + function_body
+pub(super) fn push_setter_decl(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    // Setter is a method-like accessor; name it after its enclosing property.
+    // Try to find the property name from parent scope or use "set" as fallback.
+    let name = parent_index
+        .and_then(|i| symbols.get(i))
+        .map(|s| format!("set_{}", s.name))
+        .unwrap_or_else(|| "set".to_string());
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    // Extract parameter name if present (typically "value").
+    let param_name = find_child_by_kind(node, "parameter")
+        .and_then(|p| p.child_by_field_name("name"))
+        .map(|n| node_text(n, src))
+        .unwrap_or_else(|| "value".to_string());
+
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("set({})", param_name)),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+}

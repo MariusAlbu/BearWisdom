@@ -159,8 +159,9 @@ fn visit(
                 // type_identifier is a leaf — no children to recurse into.
             }
 
-            // Ensure type_arguments nodes (generics like <User>) are recursed into.
-            "type_arguments" => {
+            // Type-bearing nodes that may contain nested type_identifiers.
+            // Always recurse to catch type_identifiers at any nesting level.
+            "type_arguments" | "type_bound" | "function_type" | "type_not_void" => {
                 visit(child, src, symbols, refs, parent_index, qualified_prefix);
             }
 

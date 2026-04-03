@@ -10,8 +10,8 @@ use super::helpers::{classify_class, find_child_by_kind, node_text};
 use super::symbols::{
     emit_import, extract_class_body, extract_delegation_specifiers, extract_imports,
     extract_primary_constructor_params, extract_type_parameter_bounds,
-    push_companion_object, push_function_decl, push_property_decl,
-    push_secondary_constructor, push_type_decl,
+    push_companion_object, push_function_decl, push_getter_decl, push_property_decl,
+    push_secondary_constructor, push_setter_decl, push_type_decl,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -161,6 +161,20 @@ pub(super) fn extract_node<'a>(
                 // the `user_type | nullable_type` arms in extract_calls_from_body
                 // pick up all type refs, including in the initializer expression.
                 calls::extract_calls_from_body(&child, src, sym_idx, refs);
+
+                // Extract getter and setter accessors as Method symbols.
+                let mut pc = child.walk();
+                for inner in child.children(&mut pc) {
+                    match inner.kind() {
+                        "getter" => {
+                            push_getter_decl(&inner, src, scope_tree, symbols, Some(sym_idx));
+                        }
+                        "setter" => {
+                            push_setter_decl(&inner, src, scope_tree, symbols, Some(sym_idx));
+                        }
+                        _ => {}
+                    }
+                }
             }
 
             // `typealias Foo = Bar` — field `type` holds the identifier name.
