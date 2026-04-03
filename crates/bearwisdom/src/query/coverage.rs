@@ -155,32 +155,43 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
             total_symbols += result.symbols.len() as u64;
             total_refs += result.refs.len() as u64;
 
-            // Correlate: for each extracted symbol, check if a symbol-producing
-            // node exists at the same line
-            let mut sym_lines_used: FxHashSet<(String, u32)> = FxHashSet::default();
+            // Correlate symbols: count how many nodes per (kind, line) exist,
+            // then match up to that many extracted symbols on the same line.
+            let mut sym_line_budget: FxHashMap<(String, u32), u64> = FxHashMap::default();
+            for (kind, lines) in &sym_nodes_by_line {
+                for &line in lines {
+                    *sym_line_budget.entry((kind.clone(), line)).or_insert(0) += 1;
+                }
+            }
             for sym in &result.symbols {
-                for (kind, lines) in &sym_nodes_by_line {
-                    if lines.contains(&sym.start_line)
-                        && !sym_lines_used.contains(&(kind.clone(), sym.start_line))
-                    {
-                        *sym_kind_matched.entry(kind.clone()).or_insert(0) += 1;
-                        sym_lines_used.insert((kind.clone(), sym.start_line));
-                        break;
+                for kind in plugin.symbol_node_kinds() {
+                    let key = (kind.to_string(), sym.start_line);
+                    if let Some(budget) = sym_line_budget.get_mut(&key) {
+                        if *budget > 0 {
+                            *budget -= 1;
+                            *sym_kind_matched.entry(kind.to_string()).or_insert(0) += 1;
+                            break;
+                        }
                     }
                 }
             }
 
-            // Correlate: for each extracted ref, check if a ref-producing
-            // node exists at the same line
-            let mut ref_lines_used: FxHashSet<(String, u32)> = FxHashSet::default();
+            // Correlate refs: same budget-based approach.
+            let mut ref_line_budget: FxHashMap<(String, u32), u64> = FxHashMap::default();
+            for (kind, lines) in &ref_nodes_by_line {
+                for &line in lines {
+                    *ref_line_budget.entry((kind.clone(), line)).or_insert(0) += 1;
+                }
+            }
             for eref in &result.refs {
-                for (kind, lines) in &ref_nodes_by_line {
-                    if lines.contains(&eref.line)
-                        && !ref_lines_used.contains(&(kind.clone(), eref.line))
-                    {
-                        *ref_kind_matched.entry(kind.clone()).or_insert(0) += 1;
-                        ref_lines_used.insert((kind.clone(), eref.line));
-                        break;
+                for kind in plugin.ref_node_kinds() {
+                    let key = (kind.to_string(), eref.line);
+                    if let Some(budget) = ref_line_budget.get_mut(&key) {
+                        if *budget > 0 {
+                            *budget -= 1;
+                            *ref_kind_matched.entry(kind.to_string()).or_insert(0) += 1;
+                            break;
+                        }
                     }
                 }
             }
