@@ -352,6 +352,19 @@ fn extract_nested_classes_from_body(
                             refs,
                             parent_index,
                         );
+                    } else {
+                        // Also scan constructor arguments — they may contain anonymous classes.
+                        // e.g. `new Outer(new Inner() { int x; })` — the argument list
+                        // contains another object_creation_expression with a class_body.
+                        extract_nested_classes_from_body(
+                            &oc_child,
+                            src,
+                            scope_tree,
+                            package,
+                            symbols,
+                            refs,
+                            parent_index,
+                        );
                     }
                 }
             }

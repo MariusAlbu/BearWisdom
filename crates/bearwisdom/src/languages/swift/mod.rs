@@ -78,6 +78,17 @@ impl LanguagePlugin for SwiftPlugin {
     }
 
     fn builtin_type_names(&self) -> &[&str] {
-        &["Int", "Double", "Float", "String", "Bool", "Void", "Any", "AnyObject", "Never", "Optional", "Array", "Dictionary", "Set", "Error", "some"]
+        &[
+            "Int", "Int8", "Int16", "Int32", "Int64",
+            "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
+            "Double", "Float", "Float80",
+            "String", "Substring", "Character",
+            "Bool", "Void", "Any", "AnyObject", "AnyClass", "Never",
+            "Optional", "Array", "ContiguousArray", "ArraySlice", "Dictionary", "Set", "Result",
+            "Error",
+            "CGFloat", "CGPoint", "CGSize", "CGRect",
+            "NSObject", "UIView", "UIViewController",
+            "some", "Self", "self",
+        ]
     }
 }

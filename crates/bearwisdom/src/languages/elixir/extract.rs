@@ -434,8 +434,8 @@ fn extract_directive(
                                 emitted = true;
                             }
                         }
-                        // `alias MyApp.{User, Post}` — list of aliases
-                        "list" => {
+                        // `alias MyApp.{User, Post}` — list or tuple of aliases after a dot
+                        "list" | "tuple" => {
                             let mut lc = arg.walk();
                             for item in arg.children(&mut lc) {
                                 if item.kind() == "alias" || item.kind() == "identifier" {
@@ -455,6 +455,12 @@ fn extract_directive(
                                     }
                                 }
                             }
+                        }
+                        // `alias MyApp.{User, Post}` — tree-sitter-elixir represents this as:
+                        //   arguments → dot { alias "MyApp" . tuple "{User, Post}" }
+                        // The `dot` node has the module prefix and the right-side tuple of names.
+                        "dot" => {
+                            emitted |= extract_qualified_multi_alias(&arg, src, current_symbol_count, refs);
                         }
                         _ => {}
                     }
@@ -481,6 +487,86 @@ fn extract_directive(
             chain: None,
         });
     }
+}
+
+/// Handle `alias MyApp.{User, Post}` — the `binary_operator` node for `.`
+/// whose right side is a `tuple` or `list` containing the module names.
+///
+/// Returns true if at least one ref was emitted.
+fn extract_qualified_multi_alias(
+    node: &Node,
+    src: &str,
+    current_symbol_count: usize,
+    refs: &mut Vec<ExtractedRef>,
+) -> bool {
+    // The binary_operator for `MyApp.{User, Post}` has children:
+    //   alias "MyApp"  .  tuple "{User, Post}"
+    let children: Vec<tree_sitter::Node> = {
+        let mut c = node.walk();
+        node.children(&mut c).collect()
+    };
+
+    // Find the `.` operator.
+    let dot_pos = children.iter().position(|c| node_text(*c, src) == ".");
+    if dot_pos.is_none() {
+        return false;
+    }
+
+    // The prefix is the left side (before `.`).
+    let prefix = if let Some(left) = children.first() {
+        node_text(*left, src)
+    } else {
+        return false;
+    };
+
+    // The right side (after `.`) should be a tuple or list: `{User, Post}`.
+    let right = if let Some(dot_idx) = dot_pos {
+        children.get(dot_idx + 1)
+    } else {
+        None
+    };
+
+    let right = match right {
+        Some(r) => r,
+        None => return false,
+    };
+
+    let mut emitted = false;
+    if right.kind() == "tuple" || right.kind() == "list" || right.kind() == "keywords" {
+        let mut rc = right.walk();
+        for item in right.children(&mut rc) {
+            if item.kind() == "alias" || item.kind() == "identifier" {
+                let simple_name = node_text(item, src);
+                if !simple_name.is_empty() {
+                    let full_module = format!("{prefix}.{simple_name}");
+                    refs.push(ExtractedRef {
+                        source_symbol_index: current_symbol_count,
+                        target_name: simple_name,
+                        kind: EdgeKind::Imports,
+                        line: item.start_position().row as u32,
+                        module: Some(full_module),
+                        chain: None,
+                    });
+                    emitted = true;
+                }
+            }
+        }
+    } else if right.kind() == "alias" || right.kind() == "identifier" {
+        // Fallback: `alias MyApp.User` as binary_operator form.
+        let name = format!("{prefix}.{}", node_text(*right, src));
+        let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+        refs.push(ExtractedRef {
+            source_symbol_index: current_symbol_count,
+            target_name: simple,
+            kind: EdgeKind::Imports,
+            line: right.start_position().row as u32,
+            module: Some(name),
+            chain: None,
+        });
+        emitted = true;
+    }
+
+    emitted
 }
 
 // ---------------------------------------------------------------------------
@@ -826,6 +912,35 @@ fn extract_pipe_callee_name(node: &Node, src: &str) -> Option<String> {
                 }
             }
             last_ident
+        }
+        // Another binary_operator on the right side of a pipe: chained pipe expressions
+        // that tree-sitter may represent as nested binary_operators.
+        // Extract from the right operand of the nested pipe.
+        "binary_operator" => {
+            // If this binary_operator is itself a `|>`, extract the rightmost callee.
+            let children: Vec<tree_sitter::Node> = {
+                let mut c = node.walk();
+                node.children(&mut c).collect()
+            };
+            if let Some(pipe_pos) = children.iter().position(|c| node_text(*c, src) == "|>") {
+                if let Some(right) = children.get(pipe_pos + 1) {
+                    return extract_pipe_callee_name(right, src);
+                }
+            }
+            None
+        }
+        // Parenthesized expression: `(Module.fun)` — unwrap and recurse.
+        "parenthesized_expression" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    let result = extract_pipe_callee_name(&child, src);
+                    if result.is_some() {
+                        return result;
+                    }
+                }
+            }
+            None
         }
         _ => None,
     }

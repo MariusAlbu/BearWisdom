@@ -41,9 +41,9 @@ fn detect_compiled_languages() {
     assert_eq!(detect_language(Path::new("script.exs")), Some("elixir"));
     assert_eq!(detect_language(Path::new("init.lua")), Some("lua"));
     assert_eq!(detect_language(Path::new("Main.hs")), Some("haskell"));
-    // Languages not yet in bearwisdom-profile registry.
-    assert_eq!(detect_language(Path::new("analysis.r")), None);
-    assert_eq!(detect_language(Path::new("Analysis.R")), None);
+    // R language — registered in bearwisdom-profile.
+    assert_eq!(detect_language(Path::new("analysis.r")), Some("r"));
+    assert_eq!(detect_language(Path::new("Analysis.R")), Some("r"));
 }
 
 #[test]

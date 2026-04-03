@@ -235,3 +235,19 @@ fn ref_pipe_with_bare_function() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn ref_alias_multi_module() {
+    // `alias MyApp.{User, Post}` — multi-alias should emit two Imports refs.
+    let r = extract("defmodule M do\n  alias MyApp.{User, Post}\nend");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "User" && rf.kind == EdgeKind::Imports),
+        "expected Imports 'User' from multi-alias; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Post" && rf.kind == EdgeKind::Imports),
+        "expected Imports 'Post' from multi-alias; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

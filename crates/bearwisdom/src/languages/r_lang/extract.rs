@@ -1,0 +1,419 @@
+// =============================================================================
+// languages/r_lang/extract.rs  —  R language extractor
+//
+// What we extract
+// ---------------
+// SYMBOLS:
+//   Function  — binary_operator where op is `<-`/`=` and RHS is function_definition
+//   Variable  — binary_operator where op is `<-`/`=` and RHS is not function/class
+//   Class     — call where function = "setClass" / "setRefClass" / "R6Class"
+//   Method    — call where function = "setMethod" / "setGeneric"
+//   Test      — call where function = "test_that" / "it" / "describe"
+//
+// REFERENCES:
+//   Imports   — call where function = "library" / "require" / "requireNamespace"
+//   Imports   — namespace_operator (pkg::fn) → package name
+//   Calls     — all other call nodes → function name
+// =============================================================================
+
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::ExtractionResult;
+use tree_sitter::{Node, Parser};
+
+// Class-defining function names
+const CLASS_FUNCS: &[&str] = &["setClass", "setRefClass", "R6Class"];
+// Method-defining function names
+const METHOD_FUNCS: &[&str] = &["setMethod", "setGeneric", "setValidity"];
+// Import function names
+const IMPORT_FUNCS: &[&str] = &["library", "require", "requireNamespace"];
+// Test function names
+const TEST_FUNCS: &[&str] = &["test_that", "it", "describe"];
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+pub fn extract(source: &str) -> ExtractionResult {
+    let lang: tree_sitter::Language = tree_sitter_r::LANGUAGE.into();
+
+    let mut parser = Parser::new();
+    parser.set_language(&lang).expect("Failed to load R grammar");
+
+    let tree = match parser.parse(source, None) {
+        Some(t) => t,
+        None => return ExtractionResult::new(vec![], vec![], true),
+    };
+
+    let root = tree.root_node();
+    let src = source.as_bytes();
+    let has_errors = root.has_error();
+
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut refs: Vec<ExtractedRef> = Vec::new();
+
+    visit(root, src, &mut symbols, &mut refs, None);
+
+    ExtractionResult::new(symbols, refs, has_errors)
+}
+
+// ---------------------------------------------------------------------------
+// Traversal
+// ---------------------------------------------------------------------------
+
+fn visit(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "binary_operator" => {
+                let idx = extract_binary_operator(&child, src, symbols, refs, parent_index);
+                visit(child, src, symbols, refs, idx.or(parent_index));
+            }
+            "call" => {
+                let idx = extract_call(&child, src, symbols, refs, parent_index);
+                visit(child, src, symbols, refs, idx.or(parent_index));
+            }
+            "namespace_operator" => {
+                extract_namespace_operator(&child, src, symbols, refs, parent_index);
+            }
+            _ => {
+                visit(child, src, symbols, refs, parent_index);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// binary_operator  →  Function, Variable, or import/class/test via RHS
+// ---------------------------------------------------------------------------
+
+fn extract_binary_operator(
+    node: &Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // We only care about assignment operators: `<-`, `=`, `<<-`, `->`, `->>`
+    let op = get_operator_text(node, src);
+    if !matches!(op.as_str(), "<-" | "=" | "<<-" | "->" | "->>") {
+        return None;
+    }
+
+    let (lhs, rhs) = get_lhs_rhs(node, src, &op)?;
+
+    let name = lhs;
+    if name.is_empty() {
+        return None;
+    }
+
+    match rhs.kind() {
+        "function_definition" => {
+            let params = extract_r_params(&rhs, src);
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: name.clone(),
+                kind: SymbolKind::Function,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: node.start_position().column as u32,
+                end_col: node.end_position().column as u32,
+                signature: Some(format!("{} <- function({})", name, params)),
+                doc_comment: None,
+                scope_path: None,
+                parent_index,
+            });
+            Some(idx)
+        }
+        "call" => {
+            // Check if the RHS call is a class constructor
+            let callee = get_call_function_name(&rhs, src);
+            if CLASS_FUNCS.contains(&callee.as_str()) {
+                let class_name = get_first_string_arg(&rhs, src).unwrap_or_else(|| name.clone());
+                let idx = symbols.len();
+                symbols.push(ExtractedSymbol {
+                    name: class_name.clone(),
+                    qualified_name: class_name,
+                    kind: SymbolKind::Class,
+                    visibility: Some(Visibility::Public),
+                    start_line: node.start_position().row as u32,
+                    end_line: node.end_position().row as u32,
+                    start_col: node.start_position().column as u32,
+                    end_col: node.end_position().column as u32,
+                    signature: Some(format!("{} <- {}(...)", name, callee)),
+                    doc_comment: None,
+                    scope_path: None,
+                    parent_index,
+                });
+                // Still emit the Call edge for the R6Class/setClass call itself
+                let source_idx = parent_index.unwrap_or(0);
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name: callee,
+                    kind: EdgeKind::Calls,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+                return Some(idx);
+            }
+            // Otherwise emit the call as a ref and fall through to Variable
+            extract_call(&rhs, src, symbols, refs, parent_index);
+            // Emit variable
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: name,
+                kind: SymbolKind::Variable,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: node.start_position().column as u32,
+                end_col: node.end_position().column as u32,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index,
+            });
+            Some(idx)
+        }
+        _ => {
+            // Simple variable assignment
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: name,
+                kind: SymbolKind::Variable,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: node.start_position().column as u32,
+                end_col: node.end_position().column as u32,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index,
+            });
+            Some(idx)
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// call  →  Method, Test, Imports, or Calls edge
+// ---------------------------------------------------------------------------
+
+fn extract_call(
+    node: &Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
+    let callee = get_call_function_name(node, src);
+    if callee.is_empty() {
+        return None;
+    }
+    let line = node.start_position().row as u32;
+
+    if IMPORT_FUNCS.contains(&callee.as_str()) {
+        if let Some(pkg) = get_first_string_arg(node, src) {
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: pkg.clone(),
+                kind: EdgeKind::Imports,
+                line,
+                module: Some(pkg),
+                chain: None,
+            });
+        }
+        return None;
+    }
+
+    if METHOD_FUNCS.contains(&callee.as_str()) {
+        let method_name = get_first_string_arg(node, src).unwrap_or_else(|| callee.clone());
+        let idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: method_name.clone(),
+            qualified_name: method_name,
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: node.end_position().column as u32,
+            signature: Some(format!("{}(...)", callee)),
+            doc_comment: None,
+            scope_path: None,
+            parent_index,
+        });
+        return Some(idx);
+    }
+
+    if TEST_FUNCS.contains(&callee.as_str()) {
+        let test_name = get_first_string_arg(node, src).unwrap_or_else(|| callee.clone());
+        let idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: test_name.clone(),
+            qualified_name: test_name,
+            kind: SymbolKind::Test,
+            visibility: Some(Visibility::Public),
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: node.end_position().column as u32,
+            signature: Some(format!("{}(...)", callee)),
+            doc_comment: None,
+            scope_path: None,
+            parent_index,
+        });
+        return Some(idx);
+    }
+
+    // Generic call → Calls edge
+    refs.push(ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name: callee,
+        kind: EdgeKind::Calls,
+        line,
+        module: None,
+        chain: None,
+    });
+    None
+}
+
+// ---------------------------------------------------------------------------
+// namespace_operator  →  Imports edge (pkg::fn)
+// ---------------------------------------------------------------------------
+
+fn extract_namespace_operator(
+    node: &Node,
+    src: &[u8],
+    symbols: &[ExtractedSymbol],
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
+    // lhs is package name, rhs is symbol name
+    let lhs = node.child_by_field_name("lhs")
+        .map(|n| node_text(n, src))
+        .unwrap_or_default();
+    if lhs.is_empty() {
+        return;
+    }
+    refs.push(ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name: lhs.clone(),
+        kind: EdgeKind::Imports,
+        line: node.start_position().row as u32,
+        module: Some(lhs),
+        chain: None,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn get_operator_text(node: &Node, src: &[u8]) -> String {
+    // The operator is a named child of kind "operator"
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if !child.is_named() {
+            let text = node_text(child, src);
+            if matches!(text.as_str(), "<-" | "=" | "<<-" | "->" | "->>" | "<") {
+                return text;
+            }
+        }
+    }
+    // Fallback: the operator field
+    node.child_by_field_name("operator")
+        .map(|n| node_text(n, src))
+        .unwrap_or_default()
+}
+
+fn get_lhs_rhs<'a>(node: &'a Node, src: &[u8], op: &str) -> Option<(String, Node<'a>)> {
+    match op {
+        "->" | "->>" => {
+            // right-assignment: value -> name
+            let rhs_name = node.child_by_field_name("rhs")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+            let lhs_node = node.child_by_field_name("lhs")?;
+            Some((rhs_name, lhs_node))
+        }
+        _ => {
+            let lhs_name = node.child_by_field_name("lhs")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+            // Clean up identifiers (may have backtick quoting)
+            let clean = lhs_name.trim_matches('`').to_string();
+            let rhs_node = node.child_by_field_name("rhs")?;
+            Some((clean, rhs_node))
+        }
+    }
+}
+
+fn get_call_function_name(node: &Node, src: &[u8]) -> String {
+    node.child_by_field_name("function")
+        .map(|n| node_text(n, src))
+        .unwrap_or_default()
+}
+
+fn get_first_string_arg(node: &Node, src: &[u8]) -> Option<String> {
+    let args = node.child_by_field_name("arguments")?;
+    let mut cursor = args.walk();
+    for arg in args.children(&mut cursor) {
+        // Look for string nodes directly or argument children containing strings
+        if arg.kind() == "string" {
+            let raw = node_text(arg, src);
+            let stripped = raw.trim_matches(|c| c == '"' || c == '\'');
+            if !stripped.is_empty() {
+                return Some(stripped.to_string());
+            }
+        }
+        // argument wrapper
+        if arg.kind() == "argument" {
+            let mut acursor = arg.walk();
+            for achild in arg.children(&mut acursor) {
+                if achild.kind() == "string" {
+                    let raw = node_text(achild, src);
+                    let stripped = raw.trim_matches(|c| c == '"' || c == '\'');
+                    if !stripped.is_empty() {
+                        return Some(stripped.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
+}
+
+fn extract_r_params(func_def: &Node, src: &[u8]) -> String {
+    // function_definition has `parameters` field
+    let params = match func_def.child_by_field_name("parameters") {
+        Some(p) => p,
+        None => return String::new(),
+    };
+    let mut cursor = params.walk();
+    let parts: Vec<String> = params
+        .children(&mut cursor)
+        .filter(|c| c.kind() == "identifier" || c.kind() == "default_parameter")
+        .map(|c| node_text(c, src))
+        .collect();
+    parts.join(", ")
+}
+
+fn node_text(node: Node, src: &[u8]) -> String {
+    std::str::from_utf8(&src[node.start_byte()..node.end_byte()])
+        .unwrap_or("")
+        .to_string()
+}

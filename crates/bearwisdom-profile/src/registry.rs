@@ -22,6 +22,7 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &ELIXIR,
     &LUA,
     &HASKELL,
+    &R,
     &HTML,
     &CSS,
     &SCSS,

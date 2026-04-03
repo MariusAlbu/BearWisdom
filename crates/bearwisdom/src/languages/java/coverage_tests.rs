@@ -404,3 +404,85 @@ class Outer {
         syms
     );
 }
+
+#[test]
+fn coverage_field_declaration_in_anon_class_inside_constructor_args() {
+    // An anonymous class passed as constructor argument must have its fields extracted.
+    // `extract_nested_classes_from_body` previously missed anonymous classes nested
+    // inside constructor arguments (non-class_body children of object_creation_expression).
+    let src = r#"
+class Outer {
+    void setup() {
+        Container c = new Container(new Listener() {
+            private int count = 0;
+            public void onEvent() {}
+        });
+    }
+}
+"#;
+    let r = super::extract::extract(src);
+    let syms: Vec<(&str, crate::types::SymbolKind)> = r
+        .symbols
+        .iter()
+        .map(|s| (s.name.as_str(), s.kind))
+        .collect();
+    assert!(
+        syms.iter().any(|(n, k)| *n == "count" && *k == crate::types::SymbolKind::Field),
+        "expected Field 'count' from anon class in constructor args; symbols: {:?}",
+        syms
+    );
+    assert!(
+        syms.iter().any(|(n, k)| *n == "onEvent" && *k == crate::types::SymbolKind::Method),
+        "expected Method 'onEvent' from anon class in constructor args; symbols: {:?}",
+        syms
+    );
+}
+
+#[test]
+fn coverage_method_invocation_in_lambda_body() {
+    // Method calls inside lambda bodies must emit Calls edges.
+    let src = r#"
+class C {
+    void m() {
+        list.stream()
+            .map(item -> item.process())
+            .filter(item -> item.isValid())
+            .forEach(item -> item.save());
+    }
+}
+"#;
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "process" && r.kind == EdgeKind::Calls),
+        "expected Calls 'process' from lambda body; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.iter().any(|r| r.target_name == "isValid" && r.kind == EdgeKind::Calls),
+        "expected Calls 'isValid' from lambda body; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_method_invocation_in_ternary() {
+    // Method calls in ternary branches must emit Calls edges.
+    let src = r#"
+class C {
+    String m(boolean flag) {
+        return flag ? service.getA() : service.getB();
+    }
+}
+"#;
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "getA" && r.kind == EdgeKind::Calls),
+        "expected Calls 'getA' from ternary true-branch; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.iter().any(|r| r.target_name == "getB" && r.kind == EdgeKind::Calls),
+        "expected Calls 'getB' from ternary false-branch; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
