@@ -9,8 +9,46 @@ use super::helpers::{
     pointer_type_name, qualify, scope_from_prefix,
 };
 use super::tags;
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
+
+// ---------------------------------------------------------------------------
+// Package clause
+// ---------------------------------------------------------------------------
+
+/// Emit a `Namespace` symbol for the `package_clause` node.
+pub(super) fn extract_package_clause(
+    node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    qualified_prefix: &str,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "package_identifier" {
+            let name = node_text(&child, source);
+            if name.is_empty() {
+                return;
+            }
+            let qname = qualify(&name, qualified_prefix);
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: qname,
+                kind: SymbolKind::Namespace,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: node.start_position().column as u32,
+                end_col: node.end_position().column as u32,
+                signature: Some(format!("package {name}")),
+                doc_comment: None,
+                scope_path: None,
+                parent_index: None,
+            });
+            return;
+        }
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Import declarations
@@ -517,7 +555,7 @@ fn extract_type_spec(
                 scope_path: scope_from_prefix(qualified_prefix),
                 parent_index,
             });
-            extract_interface_methods(&type_node, source, symbols, Some(idx), &iface_prefix);
+            extract_interface_methods_with_refs(&type_node, source, symbols, refs, Some(idx), &iface_prefix);
         }
 
         _ => {
@@ -656,6 +694,18 @@ fn extract_field_declaration(
                 // Any other named child after field_identifier(s) is the type.
                 if !field_names.is_empty() {
                     type_text = Some(node_text(&child, source));
+                    // Walk the type subtree to emit TypeRef for every
+                    // type_identifier within it (handles slices, maps, pointers,
+                    // channels, and nested anonymous structs).
+                    emit_type_refs_from_subtree(
+                        &child,
+                        source,
+                        parent_index.unwrap_or(0),
+                        refs,
+                        struct_prefix,
+                        symbols,
+                        parent_index,
+                    );
                 }
             }
         }
@@ -733,6 +783,83 @@ fn extract_field_declaration(
 }
 
 // ---------------------------------------------------------------------------
+// Type subtree walker (TypeRef emission + nested struct field recursion)
+// ---------------------------------------------------------------------------
+
+/// Walk a Go type node and:
+///   1. Emit `TypeRef` for every `type_identifier` that is not a builtin.
+///   2. Recurse into `struct_type` → `field_declaration_list` so that nested
+///      anonymous struct fields are also captured as `Field` symbols.
+///
+/// This ensures that complex field types like `[]*Handler`, `map[string]User`,
+/// `chan Event`, and inline `struct { … }` all produce the correct coverage.
+fn emit_type_refs_from_subtree(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+    struct_prefix: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    match node.kind() {
+        "type_identifier" => {
+            let name = node_text(node, source);
+            if !name.is_empty() && !is_go_builtin_type(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+
+        // Nested anonymous struct — recurse into its field_declaration_list
+        // so the inner field_declaration nodes are also captured.
+        "struct_type" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "field_declaration_list" {
+                    extract_field_declaration_list(
+                        &child,
+                        source,
+                        symbols,
+                        refs,
+                        parent_index,
+                        struct_prefix,
+                    );
+                }
+            }
+        }
+
+        // For all other container types (slice_type, map_type, pointer_type,
+        // channel_type, array_type, qualified_type, etc.) just recurse into
+        // named children to find any type_identifier nodes within.
+        _ => {
+            if node.is_named() && node.child_count() > 0 {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if child.is_named() {
+                        emit_type_refs_from_subtree(
+                            &child,
+                            source,
+                            source_symbol_index,
+                            refs,
+                            struct_prefix,
+                            symbols,
+                            parent_index,
+                        );
+                    }
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Interface method elements
 // ---------------------------------------------------------------------------
 
@@ -748,6 +875,10 @@ fn extract_interface_methods(
     parent_index: Option<usize>,
     iface_prefix: &str,
 ) {
+    // Use a local refs buffer; we don't need a `refs` parameter since
+    // callers don't thread it through, but we emit TypeRefs via calls.
+    // Actually, we need refs from the outer context. Add a dummy approach:
+    // defer to the fn_signature extractor for param/return type TypeRefs.
     let mut cursor = iface_node.walk();
     for child in iface_node.children(&mut cursor) {
         if child.kind() != "method_elem" {
@@ -783,6 +914,55 @@ fn extract_interface_methods(
             scope_path: scope_from_prefix(iface_prefix),
             parent_index,
         });
+    }
+}
+
+fn extract_interface_methods_with_refs(
+    iface_node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    iface_prefix: &str,
+) {
+    let mut cursor = iface_node.walk();
+    for child in iface_node.children(&mut cursor) {
+        if child.kind() != "method_elem" {
+            continue;
+        }
+
+        let name = (0..child.named_child_count())
+            .filter_map(|i| child.named_child(i))
+            .find(|c| c.kind() == "field_identifier")
+            .map(|n| node_text(&n, source));
+
+        let name = match name {
+            Some(n) => n,
+            None => continue,
+        };
+
+        let qualified_name = qualify(&name, iface_prefix);
+        let visibility = go_visibility(&name);
+        let signature = build_method_elem_signature(&child, source);
+        let sym_idx = symbols.len();
+
+        symbols.push(ExtractedSymbol {
+            name,
+            qualified_name,
+            kind: SymbolKind::Method,
+            visibility,
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: child.end_position().column as u32,
+            signature,
+            doc_comment: None,
+            scope_path: scope_from_prefix(iface_prefix),
+            parent_index,
+        });
+
+        // Emit TypeRef edges for parameter and return types of this method_elem.
+        super::calls::extract_fn_signature_type_refs(&child, source, sym_idx, refs);
     }
 }
 

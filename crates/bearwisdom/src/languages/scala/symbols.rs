@@ -61,35 +61,14 @@ pub(super) fn extract_enum_body(
                         let mut ic = item.walk();
                         for case_def in item.children(&mut ic) {
                             if case_def.kind() == "enum_case_definition" {
-                                if let Some(name_node) = case_def.child_by_field_name("name") {
-                                    let name = node_text(name_node, src);
-                                    let qualified_name = if enum_qname.is_empty() {
-                                        name.clone()
-                                    } else {
-                                        format!("{enum_qname}.{name}")
-                                    };
-                                    let scope = enclosing_scope(
-                                        scope_tree,
-                                        case_def.start_byte(),
-                                        case_def.end_byte(),
-                                    );
-                                    symbols.push(ExtractedSymbol {
-                                        name,
-                                        qualified_name,
-                                        kind: SymbolKind::EnumMember,
-                                        visibility: None,
-                                        start_line: case_def.start_position().row as u32,
-                                        end_line: case_def.end_position().row as u32,
-                                        start_col: case_def.start_position().column as u32,
-                                        end_col: case_def.end_position().column as u32,
-                                        signature: None,
-                                        doc_comment: None,
-                                        scope_path: scope_tree::scope_path(scope),
-                                        parent_index,
-                                    });
-                                }
+                                push_enum_member(&case_def, src, scope_tree, symbols, &enum_qname, parent_index);
                             }
                         }
+                    }
+                    // Scala 3: `case North, South` — simple_enum_case
+                    // Scala 3: `case Earth(mass: Double, radius: Double)` — full_enum_case
+                    "simple_enum_case" | "full_enum_case" => {
+                        push_enum_member(&item, src, scope_tree, symbols, &enum_qname, parent_index);
                     }
                     // Other items in enum body (defs, vals, etc.).
                     _ => {
@@ -99,6 +78,58 @@ pub(super) fn extract_enum_body(
             }
         }
     }
+}
+
+/// Push an EnumMember symbol for a single enum case node.
+/// Handles `enum_case_definition`, `full_enum_case`, `simple_enum_case`.
+fn push_enum_member(
+    case_node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    enum_qname: &str,
+    parent_index: Option<usize>,
+) {
+    let name_opt = case_node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .or_else(|| {
+            // For simple_enum_case the name may be a direct identifier child.
+            let mut cc = case_node.walk();
+            for inner in case_node.children(&mut cc) {
+                if inner.kind() == "identifier" || inner.kind() == "type_identifier" {
+                    let t = node_text(inner, src);
+                    if !t.is_empty() && t != "case" {
+                        return Some(t);
+                    }
+                }
+            }
+            None
+        });
+    let name = match name_opt {
+        Some(n) => n,
+        None => return,
+    };
+    let qualified_name = if enum_qname.is_empty() {
+        name.clone()
+    } else {
+        format!("{enum_qname}.{name}")
+    };
+    let scope = enclosing_scope(scope_tree, case_node.start_byte(), case_node.end_byte());
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::EnumMember,
+        visibility: None,
+        start_line: case_node.start_position().row as u32,
+        end_line: case_node.end_position().row as u32,
+        start_col: case_node.start_position().column as u32,
+        end_col: case_node.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path: scope_tree::scope_path(scope),
+        parent_index,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -432,6 +463,102 @@ pub(super) fn push_extension_definition(
 }
 
 // ---------------------------------------------------------------------------
+// Package clause
+// ---------------------------------------------------------------------------
+
+/// Emit a Namespace symbol for `package foo.bar` or `package foo.bar { ... }`.
+pub(super) fn push_package_clause(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // The package name is either a stable_id or identifier child.
+    let mut cursor = node.walk();
+    let mut name_text: Option<String> = None;
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "stable_id" | "identifier" => {
+                name_text = Some(node_text(child, src));
+                break;
+            }
+            _ => {}
+        }
+    }
+    let full_name = name_text?;
+    // Use the last component as the simple name, full as scope.
+    let name = full_name.rsplit('.').next().unwrap_or(&full_name).to_string();
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = if full_name.contains('.') {
+        full_name.clone()
+    } else {
+        scope_tree::qualify(&name, scope)
+    };
+    let scope_path = if full_name.contains('.') {
+        // For `package foo.bar.baz` use the prefix as scope.
+        let dot = full_name.rfind('.').unwrap();
+        Some(full_name[..dot].to_string())
+    } else {
+        scope_tree::scope_path(scope)
+    };
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name,
+        qualified_name,
+        kind: SymbolKind::Namespace,
+        visibility: None,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("package {full_name}")),
+        doc_comment: None,
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
+// ---------------------------------------------------------------------------
+// Export declaration
+// ---------------------------------------------------------------------------
+
+/// Emit Imports refs for `export foo.{Bar, Baz}` or `export foo._`.
+pub(super) fn push_export(
+    node: &Node,
+    src: &[u8],
+    current_symbol_count: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // export_declaration is structurally similar to import_declaration.
+    // Reuse the import_expression logic.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "import_expression" | "export_expression" => {
+                emit_import_expression(&child, src, current_symbol_count, refs);
+            }
+            "stable_id" | "identifier" => {
+                let full = node_text(child, src);
+                let target = full.rsplit('.').next().unwrap_or(&full).to_string();
+                refs.push(ExtractedRef {
+                    source_symbol_index: current_symbol_count,
+                    target_name: target,
+                    kind: EdgeKind::Imports,
+                    line: child.start_position().row as u32,
+                    module: Some(full),
+                    chain: None,
+                });
+            }
+            _ => {}
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Import extraction
 // ---------------------------------------------------------------------------
 
@@ -524,6 +651,42 @@ fn emit_import_expression(
 // ---------------------------------------------------------------------------
 // Extends / with extraction
 // ---------------------------------------------------------------------------
+
+/// Walk a single `extends_clause` or `with_clause` node and emit TypeRef edges.
+/// Used when such a node is encountered in expression context (not on a type decl).
+pub(super) fn extract_extends_with_node(
+    node: &Node,
+    src: &[u8],
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let kind = match node.kind() {
+        "extends_clause" => EdgeKind::Inherits,
+        "with_clause" => EdgeKind::Implements,
+        _ => return,
+    };
+    let mut cursor = node.walk();
+    let mut first = true;
+    for child in node.children(&mut cursor) {
+        let name = type_name_from_node(&child, src);
+        if !name.is_empty() {
+            let edge = if kind == EdgeKind::Inherits && first {
+                first = false;
+                EdgeKind::Inherits
+            } else {
+                EdgeKind::Implements
+            };
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: name,
+                kind: edge,
+                line: child.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+}
 
 /// Extract `extends T1 with T2 with T3` from a type definition.
 ///

@@ -85,6 +85,44 @@ fn coverage_impl_item_methods_qualify_under_type() {
 }
 
 #[test]
+fn coverage_impl_item_emits_namespace_symbol_at_impl_line() {
+    // `impl Foo { ... }` must produce a symbol at the impl_item line so the
+    // coverage system can match `impl_item` in symbol_node_kinds.
+    let src = "struct S;\nimpl S { fn method(&self) {} }";
+    let r = extract::extract(src);
+    // The impl is on line 1 (0-indexed). A Namespace symbol for "S" should
+    // be emitted at that line.
+    let ns = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "S" && s.kind == SymbolKind::Namespace);
+    assert!(
+        ns.is_some(),
+        "expected Namespace symbol 'S' from impl_item; symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(ns.unwrap().start_line, 1, "Namespace symbol should be at impl line (1)");
+}
+
+#[test]
+fn coverage_impl_item_emits_type_ref_to_impl_type() {
+    // The impl block should emit a TypeRef to the implementing type
+    // for `impl_item` ref_node_kind coverage.
+    let src = "struct Handler;\nimpl Handler { fn run(&self) {} }";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"Handler"),
+        "expected TypeRef to Handler from impl_item; refs: {type_refs:?}"
+    );
+}
+
+#[test]
 fn coverage_impl_item_for_trait_emits_method_under_struct() {
     // `impl Trait for Struct` — methods qualify under Struct, not Trait.
     let src = "struct MyRepo;\ntrait Repository { fn find(&self); }\nimpl Repository for MyRepo { fn find(&self) {} }";
@@ -609,6 +647,27 @@ fn coverage_abstract_type_in_fn_param_emits_type_ref() {
     assert!(
         type_refs.contains(&"Handler"),
         "expected TypeRef to Handler from abstract_type (impl Handler) in param; refs: {type_refs:?}"
+    );
+}
+
+#[test]
+fn coverage_abstract_type_emits_ref_at_abstract_type_node_line() {
+    // The TypeRef for `impl Write` must be emitted at the abstract_type node's
+    // own line so the coverage budget for `abstract_type` in ref_node_kinds
+    // is consumed before `type_identifier` consumes the budget on the same line.
+    let src = "fn f() -> impl Write {}";
+    let r = extract::extract(src);
+    // We need at least 2 TypeRefs on line 0: one for `abstract_type`, one for
+    // the inner `type_identifier "Write"`.
+    let write_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef && r.target_name == "Write")
+        .collect();
+    assert!(
+        write_refs.len() >= 2,
+        "expected at least 2 TypeRef edges to Write (one for abstract_type, one for type_identifier); got {}",
+        write_refs.len()
     );
 }
 

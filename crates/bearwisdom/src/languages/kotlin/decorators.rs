@@ -81,6 +81,16 @@ fn emit_annotation(
     }
 }
 
+/// Public variant for use from calls.rs (annotations inside function bodies).
+pub(super) fn emit_annotation_ref_pub(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    emit_annotation(node, src, source_symbol_index, refs);
+}
+
 /// Extract the annotation name.
 ///
 /// Kotlin annotation shape:

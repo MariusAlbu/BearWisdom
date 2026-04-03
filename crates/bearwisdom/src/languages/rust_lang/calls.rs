@@ -4,7 +4,7 @@
 
 use super::helpers::node_text;
 use super::patterns;
-use super::symbols::extract_method_from_fn;
+use super::symbols::{extract_method_from_fn, is_rust_primitive};
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind};
 use tree_sitter::Node;
 
@@ -12,12 +12,15 @@ use tree_sitter::Node;
 // impl block handling
 // ---------------------------------------------------------------------------
 
-/// Process an `impl_item` — not a symbol itself, but the container for methods.
+/// Process an `impl_item` — the container for methods.
 /// The implementing type name becomes the qualified prefix for its methods.
 ///
-/// When the form is `impl Trait for Type`, emit an `Implements` edge from the
-/// implementing type symbol back to the trait name, so the graph tracks which
-/// structs implement which traits.
+/// Emits:
+///   - A `Namespace`-kind symbol at the `impl_item` line (coverage signal for
+///     the symbol_node_kinds list; represents the impl block as a scope container).
+///   - An `Implements` edge when the form is `impl Trait for Type`.
+///   - A `TypeRef` to the implementing type (coverage signal for ref_node_kinds).
+///   - Attributes on the impl_item processed via `extract_decorators`.
 pub(super) fn extract_impl(
     node: &Node,
     source: &str,
@@ -31,17 +34,54 @@ pub(super) fn extract_impl(
     };
     let type_name = node_text(&type_node, source);
 
+    // Emit a Namespace symbol at the impl_item line.  This gives the coverage
+    // system something to match against for `impl_item` in symbol_node_kinds.
+    let impl_sym_idx = symbols.len();
+    {
+        use super::helpers::{qualify, scope_from_prefix};
+        let impl_name = if outer_prefix.is_empty() {
+            type_name.clone()
+        } else {
+            format!("{outer_prefix}.{type_name}")
+        };
+        symbols.push(ExtractedSymbol {
+            name: type_name.clone(),
+            qualified_name: impl_name,
+            kind: SymbolKind::Namespace,
+            visibility: super::helpers::detect_visibility(node),
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: node.end_position().column as u32,
+            signature: Some(format!("impl {type_name}")),
+            doc_comment: None,
+            scope_path: scope_from_prefix(outer_prefix),
+            parent_index: None,
+        });
+
+        // TypeRef to the implementing type — coverage signal for ref_node_kinds.
+        if !is_rust_primitive(&type_name) {
+            refs.push(ExtractedRef {
+                source_symbol_index: impl_sym_idx,
+                target_name: type_name.clone(),
+                kind: EdgeKind::TypeRef,
+                line: type_node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+    }
+
+    // Process attributes on the impl_item itself.
+    super::decorators::extract_decorators(node, source, impl_sym_idx, refs);
+
     // `impl Trait for Type` — emit an Implements edge from the implementing type
     // back to the trait.  The trait name lives in the `trait` field.
     if let Some(trait_node) = node.child_by_field_name("trait") {
         let trait_name = rust_type_node_name(&trait_node, source);
         if !trait_name.is_empty() {
-            // Use the current symbol count as a pseudo-source; the implementing
-            // type is not itself a new symbol here, but the edge still needs an
-            // origin.  We use the last emitted symbol index (or 0 if none yet).
-            let source_idx = symbols.len().saturating_sub(1);
             refs.push(ExtractedRef {
-                source_symbol_index: source_idx,
+                source_symbol_index: impl_sym_idx,
                 target_name: trait_name,
                 kind: EdgeKind::Implements,
                 line: trait_node.start_position().row as u32,
@@ -56,6 +96,23 @@ pub(super) fn extract_impl(
     } else {
         format!("{outer_prefix}.{type_name}")
     };
+
+    // Process type_parameters and where_clause on the impl_item itself.
+    // e.g. `impl<T: Clone> Foo<T>` or `impl<T> Bar where T: Send`.
+    {
+        let mut nc = node.walk();
+        for nc_child in node.children(&mut nc) {
+            match nc_child.kind() {
+                "type_parameters" => {
+                    patterns::extract_type_param_bounds(&nc_child, source, impl_sym_idx, refs);
+                }
+                "where_clause" => {
+                    patterns::extract_where_clause(&nc_child, source, impl_sym_idx, refs);
+                }
+                _ => {}
+            }
+        }
+    }
 
     let body = match node.child_by_field_name("body") {
         Some(b) => b,
@@ -796,17 +853,6 @@ fn build_module_path(prefix: &str, path: &str) -> String {
 // Type name extraction helper (for type_cast_expression targets)
 // ---------------------------------------------------------------------------
 
-/// Check if a name is a Rust primitive type keyword.
-fn is_rust_primitive(name: &str) -> bool {
-    matches!(
-        name,
-        "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
-            | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
-            | "f32" | "f64"
-            | "bool" | "char" | "str" | "never"
-            | "unit" | "Self"
-    )
-}
 
 /// Extract a simple type name from a Rust type node, unwrapping references and
 /// generic wrappers to their base name.

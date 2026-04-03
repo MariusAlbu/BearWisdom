@@ -198,7 +198,8 @@ pub(super) fn extract_node<'a>(
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
-            "property_declaration" | "stored_property" | "variable_declaration" => {
+            "property_declaration" | "stored_property" | "variable_declaration"
+            | "willSet_didSet_block" | "computed_property" => {
                 let pre_len = symbols.len();
                 push_property(&child, src, scope_tree, symbols, parent_index);
                 let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
@@ -208,6 +209,9 @@ pub(super) fn extract_node<'a>(
                 // Always extract type annotation refs — even if no symbol was pushed
                 // (e.g. access-control filters) the TypeRef is still valuable.
                 extract_function_type_refs(&child, src, sym_idx, refs);
+                // Universal type_identifier scan to catch any remaining type refs
+                // in annotation nodes not covered by extract_function_type_refs.
+                calls::extract_all_type_identifiers_from_node(&child, src, sym_idx, refs);
                 // Extract calls from the property initializer value or computed body.
                 let body = child.child_by_field_name("value")
                     .or_else(|| find_child_by_kind(&child, "computed_property"))
@@ -256,18 +260,32 @@ pub(super) fn extract_node<'a>(
             }
 
             // inheritance_specifier and type_inheritance_clause at declaration level.
-            "inheritance_specifier" | "type_inheritance_clause" => {
+            "inheritance_specifier" | "type_inheritance_clause" | "inherited_type" => {
                 let sym_idx = parent_index.unwrap_or(0);
-                // Walk the inheritance specifier and emit TypeRef for each inherited type.
+                // Walk the inheritance specifier and emit TypeRef/Inherits for each type.
                 let mut ic = child.walk();
                 for inherited in child.children(&mut ic) {
                     match inherited.kind() {
                         "user_type" | "type_identifier" | "simple_identifier" => {
                             calls::extract_type_ref_from_swift_type(&inherited, src, sym_idx, refs);
                         }
+                        "inheritance_specifier" | "inherited_type" => {
+                            // Recurse one level deeper for nested specifiers.
+                            let mut iic = inherited.walk();
+                            for inner in inherited.children(&mut iic) {
+                                match inner.kind() {
+                                    "user_type" | "type_identifier" | "simple_identifier" => {
+                                        calls::extract_type_ref_from_swift_type(&inner, src, sym_idx, refs);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
                         _ => {}
                     }
                 }
+                // Universal scan to catch any remaining type_identifier nodes.
+                calls::extract_all_type_identifiers_from_node(&child, src, sym_idx, refs);
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
@@ -292,6 +310,28 @@ pub(super) fn extract_node<'a>(
                     calls::extract_type_ref_from_swift_type(&child, src, sym_idx, refs);
                 }
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+
+            // enum_class_body / enum_body encountered directly — recurse into all items.
+            // Handles enums with methods, properties, and nested cases.
+            "enum_class_body" | "enum_body" => {
+                let mut ec = child.walk();
+                for item in child.children(&mut ec) {
+                    match item.kind() {
+                        "enum_case_declaration" | "enum_entry" => {
+                            // Enum cases — extract symbols via the standard path.
+                            extract_node(item, src, scope_tree, symbols, refs, parent_index);
+                        }
+                        _ => {
+                            // Methods, properties, nested types inside enum.
+                            extract_node(item, src, scope_tree, symbols, refs, parent_index);
+                            // Also scan for type_identifiers.
+                            if let Some(sym_idx) = parent_index {
+                                calls::extract_all_type_identifiers_from_node(&item, src, sym_idx, refs);
+                            }
+                        }
+                    }
+                }
             }
 
             "ERROR" | "MISSING" => {}

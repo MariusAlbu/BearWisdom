@@ -150,6 +150,25 @@ fn coverage_package_clause_qualifies_symbols() {
     assert_eq!(sym.qualified_name, "mypkg.Run");
 }
 
+#[test]
+fn coverage_package_clause_emits_namespace_symbol() {
+    // The `package_clause` node must produce a Namespace symbol so the
+    // coverage system can match it via line-number correlation.
+    let src = "package mypkg\nfunc Run() {}";
+    let r = extract::extract(src);
+    let ns = r
+        .symbols
+        .iter()
+        .find(|s| s.name == "mypkg" && s.kind == SymbolKind::Namespace);
+    assert!(
+        ns.is_some(),
+        "expected Namespace symbol 'mypkg' from package_clause; symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+    // Must be on the same line as the package_clause node (line 0).
+    assert_eq!(ns.unwrap().start_line, 0);
+}
+
 // ---------------------------------------------------------------------------
 // ref_node_kinds
 // ---------------------------------------------------------------------------
@@ -405,5 +424,42 @@ fn coverage_field_declaration_qualified_embedded_type_emits_field() {
         field.is_some(),
         "expected Field symbol 'Mutex' from qualified embedded type; symbols: {:?}",
         r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---- field_declaration: complex field types emit TypeRef for inner types ----
+
+#[test]
+fn coverage_field_declaration_slice_type_emits_type_ref() {
+    // `Items []*Handler` — the `type_identifier "Handler"` inside the slice+pointer
+    // type should produce a TypeRef.
+    let src = "package main\ntype Server struct { Items []*Handler }";
+    let r = extract::extract(src);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"Handler"),
+        "expected TypeRef to Handler from []*Handler field; refs: {type_refs:?}"
+    );
+}
+
+#[test]
+fn coverage_field_declaration_nested_struct_emits_inner_fields() {
+    // Anonymous inline struct fields must also emit Field symbols.
+    let src = "package main\ntype Outer struct { Inner struct { A int } }";
+    let r = extract::extract(src);
+    let fields: Vec<_> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Field)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        fields.contains(&"A"),
+        "expected Field symbol 'A' from nested struct; fields: {fields:?}"
     );
 }

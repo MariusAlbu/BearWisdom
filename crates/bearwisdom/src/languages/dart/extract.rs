@@ -160,14 +160,151 @@ fn visit(
             }
 
             // Type-bearing nodes that may contain nested type_identifiers.
-            // Always recurse to catch type_identifiers at any nesting level.
-            "type_arguments" | "type_bound" | "function_type" | "type_not_void" => {
+            // Scan immediate children for type_identifier AND recurse.
+            "type_arguments" | "type_bound" | "function_type" | "type_not_void"
+            | "type_not_void_not_function" | "declared_type" => {
+                // Scan immediate children for type_identifier to catch generic args.
+                let mut tc = child.walk();
+                for grandchild in child.children(&mut tc) {
+                    if grandchild.kind() == "type_identifier" && grandchild.is_named() {
+                        let name = node_text(grandchild, src);
+                        if !name.is_empty() && !builtins::is_dart_builtin(&name) {
+                            if let Some(idx) = parent_index {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: idx,
+                                    target_name: name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: grandchild.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                        }
+                    }
+                }
                 visit(child, src, symbols, refs, parent_index, qualified_prefix);
+            }
+
+            // factory_constructor_signature at top-level visit (e.g. inside class body
+            // nodes that bypass extract_class_body).
+            "factory_constructor_signature" => {
+                extract_factory_constructor_at_visit(&child, src, symbols, refs, parent_index, qualified_prefix);
             }
 
             "ERROR" | "MISSING" => {}
             _ => {
+                // Universal type_identifier scanner — catches type_identifiers in ANY context
+                // not covered by the explicit arms above.
+                let mut uc = child.walk();
+                for grandchild in child.children(&mut uc) {
+                    if grandchild.kind() == "type_identifier" && grandchild.is_named() {
+                        let name = node_text(grandchild, src);
+                        if !name.is_empty() && !builtins::is_dart_builtin(&name) {
+                            if let Some(idx) = parent_index {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: idx,
+                                    target_name: name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: grandchild.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                        }
+                    }
+                }
                 visit(child, src, symbols, refs, parent_index, qualified_prefix);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Factory constructor helper for visit() context
+// ---------------------------------------------------------------------------
+
+/// Extract a factory constructor symbol when encountered directly in `visit()`.
+/// Delegates to the symbols::extract_class_body path by routing through
+/// `symbols::extract_factory_constructor_inline`.
+fn extract_factory_constructor_at_visit(
+    node: &tree_sitter::Node,
+    src: &str,
+    symbols: &mut Vec<crate::types::ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    use super::helpers::{node_text as nt, qualify};
+    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
+    use super::helpers::scope_from_prefix;
+
+    // Walk children: find the constructor name (type_identifier / qualified_name).
+    let mut name: Option<String> = None;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let t = nt(child, src);
+                if !t.is_empty() && t != "factory" {
+                    name = Some(t);
+                    break;
+                }
+            }
+            "qualified_name" => {
+                let mut last: Option<String> = None;
+                let mut qc = child.walk();
+                for inner in child.children(&mut qc) {
+                    if inner.kind() == "identifier" || inner.kind() == "type_identifier" {
+                        last = Some(nt(inner, src));
+                    }
+                }
+                if let Some(n) = last {
+                    name = Some(n);
+                    break;
+                }
+            }
+            _ => {}
+        }
+    }
+    let name = match name {
+        Some(n) => n,
+        None => return,
+    };
+    let qualified_name = qualify(&name, qualified_prefix);
+    let visibility = if name.starts_with('_') {
+        Some(Visibility::Private)
+    } else {
+        Some(Visibility::Public)
+    };
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Constructor,
+        visibility,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("factory {name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+    // Also emit TypeRef for type_identifier children (return type annotations, params).
+    let idx = symbols.len() - 1;
+    let mut tc = node.walk();
+    for child in node.children(&mut tc) {
+        if child.kind() == "type_identifier" && child.is_named() {
+            let t = nt(child, src);
+            if !t.is_empty() && !builtins::is_dart_builtin(&t) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: idx,
+                    target_name: t,
+                    kind: EdgeKind::TypeRef,
+                    line: child.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
             }
         }
     }

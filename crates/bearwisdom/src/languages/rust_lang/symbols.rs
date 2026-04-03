@@ -142,12 +142,14 @@ pub(super) fn extract_enum(
 }
 
 /// Extract `enum_variant` children from an enum body into the symbol list.
+/// Also emits TypeRef edges for any named types in variant field declarations.
 pub(super) fn extract_enum_variants(
     body: &Node,
     source: &str,
     parent_index: Option<usize>,
     qualified_prefix: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
 ) {
     let mut cursor = body.walk();
     for child in body.children(&mut cursor) {
@@ -168,6 +170,7 @@ pub(super) fn extract_enum_variants(
             if let Some(name_node) = name_node {
                 let name = node_text(&name_node, source);
                 let qualified_name = qualify(&name, qualified_prefix);
+                let sym_idx = symbols.len();
                 symbols.push(ExtractedSymbol {
                     name,
                     qualified_name,
@@ -182,6 +185,38 @@ pub(super) fn extract_enum_variants(
                     scope_path: scope_from_prefix(qualified_prefix),
                     parent_index,
                 });
+
+                // Emit TypeRefs for any typed fields in the variant body.
+                // Covers tuple variants `Error(ErrorKind)` and struct variants
+                // `Point { x: f32, y: f32 }` whose field types are type_identifiers.
+                let mut vc = child.walk();
+                for variant_child in child.children(&mut vc) {
+                    match variant_child.kind() {
+                        // Tuple variant: `Error(ErrorKind, String)`
+                        "ordered_field_declaration_list" => {
+                            let mut fc = variant_child.walk();
+                            for field in variant_child.children(&mut fc) {
+                                if field.kind() == "type" || field.is_named() {
+                                    extract_type_refs_from_type_node(&field, source, sym_idx, refs);
+                                }
+                            }
+                        }
+                        // Struct variant: `Point { x: f32, y: f32 }`
+                        "field_declaration_list" => {
+                            let mut fc = variant_child.walk();
+                            for field in variant_child.children(&mut fc) {
+                                if field.kind() == "field_declaration" {
+                                    if let Some(type_node) = field.child_by_field_name("type") {
+                                        extract_type_refs_from_type_node(
+                                            &type_node, source, sym_idx, refs,
+                                        );
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
         }
     }
@@ -583,7 +618,14 @@ pub(super) fn extract_type_refs_from_type_node(
         }
 
         "abstract_type" => {
-            // `impl Trait` — emit TypeRef for the trait.
+            // `impl Trait` — emit a TypeRef at the abstract_type node's own line
+            // so the coverage budget for `abstract_type` in ref_node_kinds is
+            // consumed, THEN also emit TypeRefs for the inner trait name(s).
+            let trait_name = super::calls::rust_type_node_name(node, source);
+            if !trait_name.is_empty() && !is_rust_primitive(&trait_name) {
+                refs.push(make_type_ref(sym_index, trait_name, node.start_position().row as u32));
+            }
+            // Also recurse so that individual type_identifier nodes inside are covered.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 if child.is_named() {
@@ -644,7 +686,7 @@ fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
 /// emit TypeRef edges for.  We keep this narrow so that stdlib types such as
 /// `Vec`, `Arc`, `Box`, `Option`, etc. do produce TypeRef edges — they are
 /// legitimate cross-symbol references (generic containers, trait objects, etc.).
-fn is_rust_primitive(name: &str) -> bool {
+pub(super) fn is_rust_primitive(name: &str) -> bool {
     matches!(
         name,
         "bool" | "char" | "str" | "String"

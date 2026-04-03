@@ -63,6 +63,19 @@ pub(super) fn extract_base_types(
                             module: None,
                             chain: None,
                         });
+                        // Also extract TypeRefs from generic type arguments in base types.
+                        // e.g. `class Repo : BaseRepository<User>` → also emit TypeRef to User.
+                        if base.kind() == "generic_name" {
+                            let mut bc = base.walk();
+                            for b_child in base.children(&mut bc) {
+                                if b_child.kind() == "type_argument_list" {
+                                    let mut tc = b_child.walk();
+                                    for arg in b_child.children(&mut tc) {
+                                        extract_type_refs_from_type_node(arg, src, source_idx, refs);
+                                    }
+                                }
+                            }
+                        }
                     }
                     _ => {}
                 }

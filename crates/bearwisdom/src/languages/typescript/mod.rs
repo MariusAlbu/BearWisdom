@@ -81,7 +81,7 @@ impl LanguagePlugin for TypeScriptPlugin {
             "method_definition", "abstract_method_signature", "method_signature",
             "public_field_definition", "property_signature", "field_definition",
             "type_alias_declaration",
-            "enum_declaration", "enum_body",
+            "enum_declaration",
             "lexical_declaration", "variable_declaration",
             "internal_module",
             "construct_signature", "call_signature", "index_signature",
@@ -97,7 +97,6 @@ impl LanguagePlugin for TypeScriptPlugin {
             "extends_clause", "implements_clause",
             "type_annotation", "type_identifier",
             "as_expression", "satisfies_expression",
-            "binary_expression", // instanceof
             "tagged_template_expression",
         ]
     }

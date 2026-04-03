@@ -25,7 +25,6 @@
 // =============================================================================
 
 
-use super::{helpers};
 use super::helpers::{
     attribute_name, call_identifier, directive_target, find_do_block_index,
     function_name_arity, is_private_def, module_name_from_call, node_text, qualify,
@@ -401,32 +400,81 @@ fn extract_directive(
     refs: &mut Vec<ExtractedRef>,
     directive: &str,
 ) {
-    let target = directive_target(node, src).unwrap_or_default();
-    if target.is_empty() {
-        return;
+    let _ = directive;
+
+    // Walk arguments to collect ALL alias/identifier children — handles both
+    // single: `alias MyApp.User` and multi: `alias MyApp.{User, Post}`.
+    let mut emitted = false;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "arguments" => {
+                let mut ac = child.walk();
+                for arg in child.children(&mut ac) {
+                    match arg.kind() {
+                        "alias" | "identifier" => {
+                            let name = node_text(arg, src);
+                            if !name.is_empty() {
+                                let module = if name.contains('.') { Some(name.clone()) } else { None };
+                                let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: current_symbol_count,
+                                    target_name: simple,
+                                    kind: EdgeKind::Imports,
+                                    line: arg.start_position().row as u32,
+                                    module,
+                                    chain: None,
+                                });
+                                emitted = true;
+                            }
+                        }
+                        // `alias MyApp.{User, Post}` — list of aliases
+                        "list" => {
+                            let mut lc = arg.walk();
+                            for item in arg.children(&mut lc) {
+                                if item.kind() == "alias" || item.kind() == "identifier" {
+                                    let name = node_text(item, src);
+                                    if !name.is_empty() {
+                                        let module = if name.contains('.') { Some(name.clone()) } else { None };
+                                        let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                                        refs.push(ExtractedRef {
+                                            source_symbol_index: current_symbol_count,
+                                            target_name: simple,
+                                            kind: EdgeKind::Imports,
+                                            line: item.start_position().row as u32,
+                                            module,
+                                            chain: None,
+                                        });
+                                        emitted = true;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
     }
 
-    let module = if target.contains('.') {
-        Some(target.clone())
-    } else {
-        None
-    };
-
-    let simple = target
-        .rsplit('.')
-        .next()
-        .unwrap_or(&target)
-        .to_string();
-
-    let _ = directive;
-    refs.push(ExtractedRef {
-        source_symbol_index: current_symbol_count,
-        target_name: simple,
-        kind: EdgeKind::Imports,
-        line: node.start_position().row as u32,
-        module,
-        chain: None,
-    });
+    // Fallback to directive_target if arguments walk didn't find anything.
+    if !emitted {
+        let target = directive_target(node, src).unwrap_or_default();
+        if target.is_empty() {
+            return;
+        }
+        let module = if target.contains('.') { Some(target.clone()) } else { None };
+        let simple = target.rsplit('.').next().unwrap_or(&target).to_string();
+        refs.push(ExtractedRef {
+            source_symbol_index: current_symbol_count,
+            target_name: simple,
+            kind: EdgeKind::Imports,
+            line: node.start_position().row as u32,
+            module,
+            chain: None,
+        });
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -570,6 +618,13 @@ fn extract_calls_recursive(
                 }
             }
 
+            // Keyword lists, maps, tuples, lists can contain calls — recurse.
+            "keywords" | "keyword_list" | "map" | "tuple" | "list"
+            | "arguments" | "body" | "block" | "do_block"
+            | "access_call" | "unary_operator" => {
+                extract_calls_recursive(&child, src, source_symbol_index, refs);
+            }
+
             _ => {
                 extract_calls_recursive(&child, src, source_symbol_index, refs);
             }
@@ -624,30 +679,58 @@ fn extract_pipe_calls(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // Confirm this is a pipe operator by checking for `|>` among children
-    let is_pipe = {
+    // Collect all children to find the operator and operands.
+    let children: Vec<tree_sitter::Node> = {
         let mut cursor = node.walk();
-        let found = node.children(&mut cursor).any(|c| node_text(c, src) == "|>");
-        found
+        node.children(&mut cursor).collect()
     };
-    if !is_pipe {
-        return;
-    }
 
-    // The right operand is the function being piped into
-    if let Some(right) = node.child_by_field_name("right") {
-        let name = extract_pipe_callee_name(&right, src);
-        if let Some(n) = name {
-            if !n.is_empty() {
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: n,
-                    kind: EdgeKind::Calls,
-                    line: right.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
+    // Find the `|>` operator position.
+    let pipe_pos = match children.iter().position(|c| node_text(*c, src) == "|>") {
+        Some(p) => p,
+        None => return, // not a pipe expression
+    };
+
+    // The right operand is the child after `|>`.
+    let right = match children.get(pipe_pos + 1) {
+        Some(r) => r,
+        // Also try field name as a fallback.
+        None => match node.child_by_field_name("right") {
+            Some(r) => {
+                let name = extract_pipe_callee_name(&r, src);
+                if let Some(n) = name {
+                    if !n.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: n,
+                            kind: EdgeKind::Calls,
+                            line: r.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                        // Also emit TypeRef for module part of dot calls on the right side.
+                        extract_dot_call_module_ref(&r, src, source_symbol_index, refs);
+                    }
+                }
+                return;
             }
+            None => return,
+        },
+    };
+
+    let name = extract_pipe_callee_name(right, src);
+    if let Some(n) = name {
+        if !n.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: n,
+                kind: EdgeKind::Calls,
+                line: right.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+            // Also emit TypeRef for module part of dot calls (`Enum.map`, etc.).
+            extract_dot_call_module_ref(right, src, source_symbol_index, refs);
         }
     }
 }

@@ -117,6 +117,28 @@ fn extract_from_attribute_list(
                     chain: None,
                 });
             }
+            // Also extract TypeRefs from attribute arguments (typeof, generic_name, cast, etc.)
+            extract_attribute_arg_type_refs(&child, src, source_symbol_index, refs);
+        }
+    }
+}
+
+/// Walk attribute arguments and emit TypeRef edges for type expressions within them.
+///
+/// Handles:
+///   [SomeAttr(typeof(Foo))]          → TypeRef to Foo
+///   [SomeAttr(new Foo[])]            → TypeRef to Foo
+///   [SomeAttr(SomeEnum.Value)]       → TypeRef to SomeEnum (via generic_name or identifier)
+fn extract_attribute_arg_type_refs(
+    attr: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = attr.walk();
+    for child in attr.children(&mut cursor) {
+        if child.kind() == "attribute_argument_list" {
+            super::calls::extract_calls_from_body(&child, src, source_symbol_index, refs);
         }
     }
 }

@@ -8,9 +8,9 @@ use super::calls::extract_calls_from_body;
 use super::decorators::{extract_case_class_params, extract_decorators, extract_match_patterns};
 use super::helpers::{call_target_name, classify_class, node_text};
 use super::symbols::{
-    extract_enum_body, extract_extends_with, push_extension_definition, push_function_def,
-    push_given_definition, push_import, push_type_def, push_type_definition, push_val_var,
-    recurse_body,
+    extract_enum_body, extract_extends_with, push_export, push_extension_definition,
+    push_function_def, push_given_definition, push_import, push_package_clause, push_type_def,
+    push_type_definition, push_val_var, recurse_body,
 };
 
 use crate::parser::scope_tree::{self, ScopeKind};
@@ -184,12 +184,43 @@ pub(super) fn extract_node<'a>(
                 recurse_body(&child, src, scope_tree, symbols, refs, idx);
             }
 
-            // `package foo.bar { ... }` — recurse into the body.
+            // `package foo.bar { ... }` — emit a Namespace symbol and recurse.
+            // Also handles `package foo.bar` (no body) by emitting the symbol only.
             "package_clause" => {
+                let pkg_idx = push_package_clause(&child, src, scope_tree, symbols, parent_index);
+                let effective_parent = pkg_idx.or(parent_index);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, parent_index);
+                    extract_node(body, src, scope_tree, symbols, refs, effective_parent);
                 } else {
-                    extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                    // Scala `package foo.bar` at top-level with no braces — the rest
+                    // of the file is implicitly in scope; recurse treating siblings
+                    // as children (caller handles this via the main loop).
+                    let mut cc = child.walk();
+                    for inner in child.children(&mut cc) {
+                        match inner.kind() {
+                            "class_definition" | "object_definition" | "trait_definition"
+                            | "enum_definition" | "function_definition" | "function_declaration"
+                            | "val_definition" | "var_definition" | "import_declaration" => {
+                                extract_node(inner, src, scope_tree, symbols, refs, effective_parent);
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+
+            // `export foo._` / `export foo.{Bar, Baz}` — emit Imports refs.
+            "export_declaration" => {
+                push_export(&child, src, symbols.len(), refs);
+            }
+
+            // extends_clause and with_clause are handled by extract_extends_with
+            // when processing the parent class/trait/object/enum.  When they appear
+            // as children of any other node (e.g. in a nested class inside a function
+            // body), fall through to explicit type-ref walking so no edges are missed.
+            "extends_clause" | "with_clause" => {
+                if let Some(sym_idx) = parent_index {
+                    super::symbols::extract_extends_with_node(&child, src, sym_idx, refs);
                 }
             }
 
@@ -226,6 +257,31 @@ pub(super) fn extract_node<'a>(
             "instance_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 extract_calls_from_body(&child, src, sym_idx, refs);
+            }
+
+            // Generic type arguments appearing in expression context (e.g. method call
+            // type parameters, or a generic type used as a value).  Walk them for
+            // nested type_identifier nodes.
+            "type_arguments" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                extract_type_refs_from_type_node(&child, src, sym_idx, refs);
+            }
+
+            // A bare type_identifier in expression context (e.g. pattern matching,
+            // companion object reference, generic type position).
+            "type_identifier" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                let name = helpers::node_text(child, src);
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
             }
 
             "ERROR" | "MISSING" => {}

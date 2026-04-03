@@ -361,8 +361,92 @@ pub(super) fn extract_type_ref_from_annotation(
                 }
             }
         }
-        _ => {}
+        // Catch-all: walk all children recursively so any type node structure we
+        // don't explicitly handle (e.g. new type constructs, nested wrappers) still
+        // yields all type_identifier leaves.
+        _ => {
+            extract_type_refs_recursive(&type_node, src, source_symbol_index, refs);
+        }
     }
+}
+
+/// Walk any AST subtree and emit a TypeRef for every `type_identifier` leaf,
+/// skipping TypeScript primitives.
+///
+/// This is the escape hatch used by `extract_type_ref_from_annotation`'s catch-all
+/// arm and can be called directly for contexts where the exact type node structure
+/// is unknown (e.g. `as_expression` type arguments, `satisfies_expression` types).
+pub(super) fn extract_type_refs_recursive(
+    node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match node.kind() {
+        // Leaf: emit TypeRef if not a primitive.
+        "type_identifier" | "identifier" => {
+            let name = node_text(*node, src);
+            if !name.is_empty() && !is_ts_primitive(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        // Skip inert tokens and binding-only nodes.
+        "infer_type" | "this_type" | "literal_type" => {}
+        // Skip punctuation keywords that appear as unnamed children.
+        "extends" | "keyof" | "readonly" | "typeof" | "infer" | "is"
+        | "?" | ":" | "|" | "&" | "[" | "]" | "(" | ")" | "{" | "}" | "," | "=>" => {}
+        // For all structural type nodes, recurse into children.
+        // extract_type_ref_from_annotation handles specific nodes with named field
+        // lookups for precision; this helper is the deep-walk fallback that ensures
+        // nothing is silently skipped.
+        _ => {
+            for i in 0..node.child_count() {
+                if let Some(child) = node.child(i) {
+                    // Delegate back to the main handler for recognised type constructs
+                    // (union_type, intersection_type, generic_type, etc.) so that their
+                    // named-field extraction logic runs; fall through to recursive walk
+                    // for anything else.
+                    match child.kind() {
+                        "type_identifier" | "identifier" => {
+                            let name = node_text(child, src);
+                            if !name.is_empty() && !is_ts_primitive(&name) {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index,
+                                    target_name: name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: child.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                        }
+                        "infer_type" | "this_type" | "literal_type" => {}
+                        _ => {
+                            extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Return true if `name` is a TypeScript primitive type keyword that should not
+/// be emitted as a TypeRef edge.
+#[inline]
+fn is_ts_primitive(name: &str) -> bool {
+    matches!(
+        name,
+        "string" | "number" | "boolean" | "void" | "any" | "unknown" | "never"
+            | "undefined" | "null" | "object" | "symbol" | "bigint"
+    )
 }
 
 /// Extract TypeRef edges for function/method parameter types and return type.

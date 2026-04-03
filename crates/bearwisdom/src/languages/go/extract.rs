@@ -114,8 +114,11 @@ fn extract_from_node(
 
     for child in node.children(&mut cursor) {
         match child.kind() {
-            // Already handled in hoist pass.
-            "package_clause" => {}
+            // Emit a Namespace symbol for the package clause so the coverage
+            // system can match `package_clause` nodes to an extraction result.
+            "package_clause" => {
+                symbols::extract_package_clause(&child, source, symbols, qualified_prefix);
+            }
 
             "import_declaration" => {
                 symbols::extract_import_declaration(&child, source, refs, symbols.len());

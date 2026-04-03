@@ -1,6 +1,6 @@
 use super::calls::build_chain;
 use super::helpers::{detect_visibility, extract_jsdoc, node_text};
-use super::types::extract_type_ref_from_annotation;
+use super::types::{extract_type_ref_from_annotation, extract_type_refs_recursive};
 use crate::parser::scope_tree;
 use crate::types::{
     ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, SegmentKind, SymbolKind,
@@ -426,48 +426,10 @@ pub(super) fn extract_type_ref_from_as_expression(
         if !after_as {
             continue;
         }
-        // First node after `as` is the asserted type.
-        match child.kind() {
-            "type_identifier" | "identifier" => {
-                let type_name = node_text(child, src);
-                if !type_name.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index,
-                        target_name: type_name,
-                        kind: EdgeKind::TypeRef,
-                        line: child.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                    });
-                }
-                return;
-            }
-            "generic_type" => {
-                // `user as Repository<User>` → emit TypeRef to "Repository"
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let type_name = node_text(name_node, src);
-                    if !type_name.is_empty() {
-                        refs.push(ExtractedRef {
-                            source_symbol_index,
-                            target_name: type_name,
-                            kind: EdgeKind::TypeRef,
-                            line: child.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
-                    }
-                }
-                return;
-            }
-            "type_annotation" => {
-                // Delegate to the shared helper which already handles all type forms.
-                extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
-                return;
-            }
-            _ => {
-                return;
-            }
-        }
+        // First node after `as` is the asserted type — delegate to the full
+        // annotation handler so all complex type forms (union, generic, etc.) work.
+        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+        return;
     }
 }
 
@@ -497,41 +459,10 @@ pub(super) fn extract_type_ref_from_satisfies_expression(
             continue;
         }
         // First node after `satisfies` is the asserted type.
-        match child.kind() {
-            "type_identifier" | "identifier" => {
-                let type_name = node_text(child, src);
-                if !type_name.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index,
-                        target_name: type_name,
-                        kind: EdgeKind::TypeRef,
-                        line: child.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                    });
-                }
-                return;
-            }
-            "generic_type" => {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let type_name = node_text(name_node, src);
-                    if !type_name.is_empty() {
-                        refs.push(ExtractedRef {
-                            source_symbol_index,
-                            target_name: type_name,
-                            kind: EdgeKind::TypeRef,
-                            line: child.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
-                    }
-                }
-                return;
-            }
-            _ => {
-                return;
-            }
-        }
+        // Delegate to the full annotation handler so all complex type forms
+        // (union, generic, intersection, conditional, etc.) are covered.
+        extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
+        return;
     }
 }
 

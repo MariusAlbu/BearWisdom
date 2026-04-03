@@ -119,6 +119,35 @@ pub(super) fn extract_calls_from_body(
                     }
                 }
             }
+            // Annotations inside function bodies / property initializers.
+            // e.g. `@Suppress("UNCHECKED_CAST")` inside a function body.
+            "annotation" | "file_annotation" => {
+                super::decorators::emit_annotation_ref_pub(&child, src, source_symbol_index, refs);
+            }
+            // property_declaration appearing in function bodies (local properties).
+            // Extract the declared type as a TypeRef.
+            "property_declaration" => {
+                // Walk the property to find the type annotation (user_type, nullable_type, etc.)
+                let mut pc = child.walk();
+                for inner in child.children(&mut pc) {
+                    match inner.kind() {
+                        "variable_declaration" => {
+                            let mut vc = inner.walk();
+                            for type_child in inner.children(&mut vc) {
+                                match type_child.kind() {
+                                    "user_type" | "nullable_type" | "function_type"
+                                    | "non_nullable_type" | "parenthesized_type" | "type" => {
+                                        extract_type_ref_from_type_node(&type_child, src, source_symbol_index, refs);
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
             _ => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
             }

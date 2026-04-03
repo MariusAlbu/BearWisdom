@@ -142,7 +142,7 @@ fn extract_from_node(
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
-                        symbols::extract_enum_variants(&body, source, Some(idx), &new_prefix, symbols);
+                        symbols::extract_enum_variants(&body, source, Some(idx), &new_prefix, symbols, refs);
                     }
                 }
             }
@@ -174,6 +174,11 @@ fn extract_from_node(
                     let idx = symbols.len();
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
+                    // Emit TypeRef for the RHS type (covers `type_identifier` nodes in
+                    // the type alias body — e.g. `type Foo = SomeType<Bar>`).
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        symbols::extract_type_refs_from_type_node(&type_node, source, idx, refs);
+                    }
                 }
             }
 
@@ -184,6 +189,10 @@ fn extract_from_node(
                     let idx = symbols.len();
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
+                    // Emit TypeRef for the type annotation.
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        symbols::extract_type_refs_from_type_node(&type_node, source, idx, refs);
+                    }
                 }
             }
 
@@ -194,6 +203,10 @@ fn extract_from_node(
                     let idx = symbols.len();
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
+                    // Emit TypeRef for the type annotation.
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        symbols::extract_type_refs_from_type_node(&type_node, source, idx, refs);
+                    }
                 }
             }
 

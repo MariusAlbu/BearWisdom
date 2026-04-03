@@ -533,3 +533,84 @@ fn coverage_type_annotation_in_arrow_function_param() {
         r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+fn coverage_satisfies_expression_generic_type() {
+    // satisfies with a generic type should extract both the base type and type args.
+    let r = extract::extract(
+        "const m = new Map() satisfies Map<string, UserEntry>;",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "UserEntry"),
+        "satisfies_expression with generic type arg should produce TypeRef for type arg; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_satisfies_expression_union_type() {
+    // satisfies with a union type should extract all arms.
+    let r = extract::extract(
+        "const val = data satisfies AdminUser | GuestUser;",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "AdminUser"),
+        "satisfies_expression with union type should produce TypeRef for first arm; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "GuestUser"),
+        "satisfies_expression with union type should produce TypeRef for second arm; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_enum_body_removed_from_symbol_node_kinds() {
+    // enum_body is a container, not a symbol. Verify it is NOT in symbol_node_kinds.
+    use crate::languages::LanguagePlugin;
+    use super::TypeScriptPlugin;
+    let plugin = TypeScriptPlugin;
+    assert!(
+        !plugin.symbol_node_kinds().contains(&"enum_body"),
+        "enum_body should not be in symbol_node_kinds (it is a container, not a symbol)"
+    );
+}
+
+#[test]
+fn coverage_binary_expression_removed_from_ref_node_kinds() {
+    // binary_expression is too broad (mostly arithmetic). instanceof is handled inline.
+    // Verify binary_expression is NOT in ref_node_kinds.
+    use crate::languages::LanguagePlugin;
+    use super::TypeScriptPlugin;
+    let plugin = TypeScriptPlugin;
+    assert!(
+        !plugin.ref_node_kinds().contains(&"binary_expression"),
+        "binary_expression should not be in ref_node_kinds (too broad; instanceof handled inline)"
+    );
+}
+
+#[test]
+fn coverage_instanceof_still_works_after_binary_expression_removal() {
+    // Confirm instanceof still emits TypeRef even though binary_expression is no longer
+    // listed in ref_node_kinds — the extract_node arm handles it directly.
+    let r = extract::extract(
+        "function check(x: unknown) { if (x instanceof ServiceError) {} }",
+        false,
+    );
+    assert!(
+        r.refs
+            .iter()
+            .any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "ServiceError"),
+        "instanceof should still produce TypeRef via inline extract_node handling; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
