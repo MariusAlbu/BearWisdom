@@ -70,7 +70,6 @@ impl LanguagePlugin for DartPlugin {
             "library_import",
             "library_export",
             "type_arguments",
-            "type_cast_expression",
             "type_test_expression",
         ]
     }
@@ -83,7 +82,10 @@ impl LanguagePlugin for DartPlugin {
             "StackTrace", "StringBuffer", "StringSink", "Uri", "Zone",
             "Completer", "FutureOr", "Timer", "Isolate",
             "TypedData", "ByteBuffer", "ByteData",
-            "Uint8List", "Int32List", "Float64List",
+            "Uint8List", "Uint16List", "Uint32List", "Uint64List",
+            "Int8List", "Int16List", "Int32List", "Int64List",
+            "Float32List", "Float64List",
+            "Endian", "Uint8ClampedList",
         ]
     }
 }

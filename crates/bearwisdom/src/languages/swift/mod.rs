@@ -82,12 +82,21 @@ impl LanguagePlugin for SwiftPlugin {
             "Int", "Int8", "Int16", "Int32", "Int64",
             "UInt", "UInt8", "UInt16", "UInt32", "UInt64",
             "Double", "Float", "Float80",
-            "String", "Substring", "Character",
+            "String", "Substring", "Character", "StaticString",
             "Bool", "Void", "Any", "AnyObject", "AnyClass", "Never",
             "Optional", "Array", "ContiguousArray", "ArraySlice", "Dictionary", "Set", "Result",
+            "ClosedRange", "CountableRange",
+            "AnyHashable", "AnySequence", "AnyCollection",
+            "AnyBidirectionalCollection", "AnyRandomAccessCollection",
+            "KeyPath", "WritableKeyPath", "ReferenceWritableKeyPath",
             "Error",
             "CGFloat", "CGPoint", "CGSize", "CGRect",
             "NSObject", "UIView", "UIViewController",
+            // SwiftUI types
+            "View", "Text", "Image", "Button", "NavigationView", "NavigationStack",
+            "List", "VStack", "HStack", "ZStack", "Color", "Font",
+            "State", "Binding", "ObservedObject", "Published",
+            "EnvironmentObject", "StateObject", "Environment",
             "some", "Self", "self",
         ]
     }

@@ -51,7 +51,6 @@ impl LanguagePlugin for ElixirPlugin {
 
     fn ref_node_kinds(&self) -> &[&str] {
         &[
-            "call",
             "dot",
             "alias",
         ]
