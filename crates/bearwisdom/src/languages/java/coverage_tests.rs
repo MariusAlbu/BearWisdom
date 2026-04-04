@@ -486,3 +486,42 @@ class C {
         r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+#[ignore]
+fn debug_measure_coverage_java() {
+    let projects = [
+        "F:/Work/Projects/TestProjects/java-spring-petclinic",
+        "F:/Work/Projects/TestProjects/java-petclinic-rest",
+        "F:/Work/Projects/TestProjects/java-petclinic-reactjs",
+        "F:/Work/Projects/TestProjects/java-spring-boot-admin",
+        "F:/Work/Projects/TestProjects/java-recaf",
+    ];
+    let project_path = projects.iter().find(|p| std::path::Path::new(p).exists()).copied();
+    let project_path = match project_path {
+        Some(p) => p,
+        None => { eprintln!("No Java test project found"); return; }
+    };
+    eprintln!("Using project: {}", project_path);
+    let results = crate::query::coverage::analyze_coverage(std::path::Path::new(project_path));
+    for cov in &results {
+        if cov.language == "java" {
+            eprintln!("=== Java ===");
+            eprintln!("  files: {}", cov.file_count);
+            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
+            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!("  --- symbol kinds (worst first) ---");
+            let mut sym_kinds = cov.symbol_kinds.clone();
+            sym_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in sym_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+            eprintln!("  --- ref kinds (worst first) ---");
+            let mut ref_kinds = cov.ref_kinds.clone();
+            ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in ref_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+        }
+    }
+}

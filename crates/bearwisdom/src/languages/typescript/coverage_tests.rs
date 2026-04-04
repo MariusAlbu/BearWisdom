@@ -816,3 +816,503 @@ fn debug_inline_object_type_in_method_def() {
     let r = extract::extract("class Svc { handle(opts: { x: number }): void {} }", false);
     eprintln!("Symbols method def: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
 }
+
+// ---------------------------------------------------------------------------
+// Gap-closure tests — property_signature with nested object-type annotations
+// (Prisma-style interfaces / nested delegate patterns)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_method_signature_in_property_signature_object_type() {
+    // Prisma-style: interface property whose type is an object type containing
+    // method_signatures. Previously only the property was extracted; now the
+    // nested method signatures must also produce Method symbols.
+    let r = extract::extract(
+        r#"
+interface PrismaClient {
+    user: {
+        findUnique(args: FindUniqueArgs): Promise<User | null>;
+        findMany(args?: FindManyArgs): User[];
+        create(args: CreateArgs): User;
+    };
+}
+"#,
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "findUnique"),
+        "method_signature nested in property_signature object_type should produce Method symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "findMany"),
+        "second method_signature nested in property_signature object_type should produce Method symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_property_signature_in_class_field_object_type() {
+    // Class field whose type is an object type containing property signatures.
+    let r = extract::extract(
+        "class Svc { private ops: { findOne(): User; deleteById(id: number): void; }; }",
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "findOne"),
+        "method_signature nested in class field object_type should produce Method symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_property_signature_in_property_signature_object_type() {
+    // Nested property signatures: interface property whose type contains property signatures.
+    let r = extract::extract(
+        r#"
+interface Config {
+    server: {
+        host: string;
+        port: number;
+        ssl: boolean;
+    };
+}
+"#,
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "host"),
+        "property_signature nested in property_signature object_type should produce Property symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Property && s.name == "port"),
+        "second property_signature nested in property_signature object_type should produce Property symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_multiline_method_signature_in_interface() {
+    // Multiline method signature in interface — the symbol start_line must match
+    // the method_signature CST node's start line for correlation to work.
+    let r = extract::extract(
+        r#"export interface Calendar {
+  getCredentialId?(): number;
+  createEvent(
+    event: CalendarEvent,
+    credentialId: number
+  ): Promise<NewCalendarEventType>;
+  deleteEvent(uid: string): Promise<void>;
+}
+"#,
+        false,
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "createEvent"),
+        "multiline method_signature should produce Method symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "getCredentialId"),
+        "optional method_signature should produce Method symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+#[ignore]
+fn debug_crm_interface() {
+    let r = extract::extract(
+        r#"export interface SalesforceCRM extends CRM {
+  findUserEmailFromLookupField(
+    attendeeEmail: string,
+    fieldName: string,
+    salesforceObject: SalesforceRecordEnum
+  ): Promise<{ email: string; recordType: RoutingReasons } | undefined>;
+
+  incompleteBookingWriteToRecord(
+    email: string,
+    writeToRecordObject: SomeType
+  ): Promise<void>;
+
+  getAllPossibleAccountWebsiteFromEmailDomain(emailDomain: string): string;
+}
+"#,
+        false,
+    );
+    eprintln!("Symbols:");
+    for s in &r.symbols {
+        eprintln!("  {:?} {:?} line={}", s.kind, s.name, s.start_line);
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_real_file_method_sigs() {
+    // Read and parse the actual react-calcom Calendar.d.ts file
+    let path = "F:/Work/Projects/TestProjects/react-calcom/packages/types/Calendar.d.ts";
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("Cannot read file: {}", e);
+            return;
+        }
+    };
+    let r = extract::extract(&src, false);
+    
+    // Count method_signature CST nodes
+    let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&language).unwrap();
+    let tree = parser.parse(&src, None).unwrap();
+    
+    let mut method_sig_lines: Vec<u32> = Vec::new();
+    {
+        let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
+        while let Some(node) = stack.pop() {
+            if node.kind() == "method_signature" {
+                method_sig_lines.push(node.start_position().row as u32);
+            }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                stack.push(child);
+            }
+        }
+    }
+    
+    let method_sym_lines: Vec<u32> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Method)
+        .map(|s| s.start_line)
+        .collect();
+    
+    eprintln!("CST method_signature lines: {:?}", &method_sig_lines[..method_sig_lines.len().min(20)]);
+    eprintln!("Extracted Method sym lines: {:?}", &method_sym_lines[..method_sym_lines.len().min(20)]);
+    eprintln!("CST total: {}, Extracted: {}", method_sig_lines.len(), method_sym_lines.len());
+    
+    // Find missing lines
+    let extracted_set: std::collections::HashSet<u32> = method_sym_lines.iter().copied().collect();
+    let missing: Vec<u32> = method_sig_lines.iter().filter(|l| !extracted_set.contains(l)).copied().collect();
+    eprintln!("Missing method_signature lines: {:?}", &missing[..missing.len().min(20)]);
+    
+    // Show what's at those lines
+    let lines: Vec<&str> = src.lines().collect();
+    for &l in missing.iter().take(10) {
+        if (l as usize) < lines.len() {
+            eprintln!("  Line {}: {:?}", l, lines[l as usize].trim());
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_scan_project_method_sigs() {
+    use std::collections::HashSet;
+    
+    let project_root = "F:/Work/Projects/TestProjects/react-calcom";
+    let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    
+    let mut total_cst = 0u64;
+    let mut total_extracted = 0u64;
+    let mut missing_examples: Vec<(String, u32, String)> = Vec::new();
+
+    let walk_result = crate::walker::walk(std::path::Path::new(project_root));
+    let files: Vec<crate::walker::WalkedFile> = match walk_result {
+        Ok(f) => f,
+        Err(e) => { eprintln!("Walk error: {}", e); return; }
+    };
+
+    let ts_files: Vec<_> = files.iter().filter(|f| f.language == "typescript").collect();
+    eprintln!("TypeScript files: {}", ts_files.len());
+    
+    for walked in ts_files.iter().take(200) {
+        let src = match std::fs::read_to_string(&walked.absolute_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&language).is_err() { continue; }
+        let tree = match parser.parse(&src, None) {
+            Some(t) => t,
+            None => continue,
+        };
+        
+        let mut cst_lines: Vec<u32> = Vec::new();
+        // Stack-based traversal to count method_signature nodes.
+        let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
+        while let Some(node) = stack.pop() {
+            if node.kind() == "method_signature" {
+                cst_lines.push(node.start_position().row as u32);
+            }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                stack.push(child);
+            }
+        }
+        
+        if cst_lines.is_empty() { continue; }
+        
+        let r = super::extract::extract(&src, walked.relative_path.ends_with(".tsx"));
+        let extracted_set: HashSet<u32> = r.symbols.iter()
+            .filter(|s| s.kind == crate::types::SymbolKind::Method)
+            .map(|s| s.start_line)
+            .collect();
+        
+        total_cst += cst_lines.len() as u64;
+        
+        let file_lines: Vec<&str> = src.lines().collect();
+        for &l in &cst_lines {
+            if extracted_set.contains(&l) {
+                total_extracted += 1;
+            } else if missing_examples.len() < 10 {
+                let line_text = if (l as usize) < file_lines.len() {
+                    file_lines[l as usize].trim().to_string()
+                } else {
+                    "?".to_string()
+                };
+                missing_examples.push((walked.relative_path.clone(), l, line_text));
+            }
+        }
+    }
+    
+    eprintln!("Total CST method_signature: {}", total_cst);
+    eprintln!("Total extracted: {}", total_extracted);
+    eprintln!("Missing examples:");
+    for (path, line, text) in &missing_examples {
+        eprintln!("  {}:{}: {:?}", path, line, text);
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_tsx_method_sigs() {
+    let r = extract::extract(
+        r#"
+interface Handler {
+  handle(req: Request, res: Response): void;
+  validate(data: unknown): boolean;
+}
+type Props = {
+  onClick(): void;
+  onHover(e: MouseEvent): void;
+};
+"#,
+        true,  // TSX grammar
+    );
+    eprintln!("TSX symbols:");
+    for s in &r.symbols {
+        eprintln!("  {:?} {:?} line={}", s.kind, s.name, s.start_line);
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_find_files_with_missing_method_sigs() {
+    let project_root = "F:/Work/Projects/TestProjects/react-calcom";
+    let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    
+    let walk_result = crate::walker::walk(std::path::Path::new(project_root));
+    let files: Vec<crate::walker::WalkedFile> = match walk_result {
+        Ok(f) => f,
+        Err(e) => { eprintln!("Walk error: {}", e); return; }
+    };
+    let ts_files: Vec<_> = files.iter().filter(|f| f.language == "typescript").collect();
+    eprintln!("Total TS files: {}", ts_files.len());
+    
+    let mut problem_files: Vec<(String, usize, usize)> = Vec::new(); // (path, cst, extracted)
+    
+    for walked in &ts_files {
+        let src = match std::fs::read_to_string(&walked.absolute_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        
+        let mut parser = tree_sitter::Parser::new();
+        if parser.set_language(&language).is_err() { continue; }
+        let tree = match parser.parse(&src, None) {
+            Some(t) => t,
+            None => continue,
+        };
+        
+        // Count method_signature nodes using stack
+        let mut cst_lines: std::collections::BTreeSet<u32> = std::collections::BTreeSet::new();
+        let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
+        while let Some(node) = stack.pop() {
+            if node.kind() == "method_signature" {
+                cst_lines.insert(node.start_position().row as u32);
+            }
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                stack.push(child);
+            }
+        }
+        
+        if cst_lines.is_empty() { continue; }
+        
+        let is_tsx = walked.relative_path.ends_with(".tsx");
+        let r = super::extract::extract(&src, is_tsx);
+        let extracted_lines: std::collections::BTreeSet<u32> = r.symbols.iter()
+            .filter(|s| s.kind == crate::types::SymbolKind::Method)
+            .map(|s| s.start_line)
+            .collect();
+        
+        let missing_count = cst_lines.difference(&extracted_lines).count();
+        if missing_count > 0 {
+            problem_files.push((walked.relative_path.clone(), cst_lines.len(), missing_count));
+        }
+    }
+    
+    problem_files.sort_by_key(|f| std::cmp::Reverse(f.2));
+    eprintln!("Files with missing method_signatures (top 20):");
+    for (path, total, missing) in problem_files.iter().take(20) {
+        eprintln!("  {} total={}, missing={}", path, total, missing);
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_tsx_file_method_sigs() {
+    let path = "F:/Work/Projects/TestProjects/react-calcom/apps/web/modules/auth/login-view.tsx";
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Cannot read: {}", e); return; }
+    };
+    
+    let language: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TSX.into();
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&language).unwrap();
+    let tree = parser.parse(&src, None).unwrap();
+    
+    let lines: Vec<&str> = src.lines().collect();
+    let mut stack: Vec<tree_sitter::Node> = vec![tree.root_node()];
+    let mut method_sig_nodes: Vec<(u32, String)> = Vec::new();
+    while let Some(node) = stack.pop() {
+        if node.kind() == "method_signature" {
+            let line = node.start_position().row as u32;
+            let text = if (line as usize) < lines.len() {
+                lines[line as usize].trim().to_string()
+            } else {
+                "?".to_string()
+            };
+            method_sig_nodes.push((line, text));
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    
+    eprintln!("method_signature nodes in login-view.tsx:");
+    for (line, text) in &method_sig_nodes[..method_sig_nodes.len().min(20)] {
+        eprintln!("  line {}: {:?}", line, text);
+    }
+    
+    let r = super::extract::extract(&src, true); // TSX
+    let method_syms: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Method).collect();
+    eprintln!("Extracted Method symbols: {}", method_syms.len());
+    for s in &method_syms {
+        eprintln!("  {:?} line={}", s.name, s.start_line);
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_ts_grammar_on_tsx_file() {
+    // Check what LANGUAGE_TYPESCRIPT sees in a TSX file
+    let path = "F:/Work/Projects/TestProjects/react-calcom/apps/web/modules/auth/login-view.tsx";
+    let src = match std::fs::read_to_string(path) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("Cannot read: {}", e); return; }
+    };
+    
+    // Use TYPESCRIPT grammar (as coverage check does)
+    let language_ts: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into();
+    let mut parser_ts = tree_sitter::Parser::new();
+    parser_ts.set_language(&language_ts).unwrap();
+    let tree_ts = parser_ts.parse(&src, None).unwrap();
+    
+    let lines: Vec<&str> = src.lines().collect();
+    let mut ts_method_sigs: Vec<(u32, String)> = Vec::new();
+    let mut stack: Vec<tree_sitter::Node> = vec![tree_ts.root_node()];
+    while let Some(node) = stack.pop() {
+        if node.kind() == "method_signature" {
+            let line = node.start_position().row as u32;
+            let text = if (line as usize) < lines.len() {
+                lines[line as usize].trim().to_string()
+            } else {
+                "?".to_string()
+            };
+            ts_method_sigs.push((line, text));
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack.push(child);
+        }
+    }
+    
+    eprintln!("TYPESCRIPT grammar method_signature count: {}", ts_method_sigs.len());
+    for (line, text) in ts_method_sigs.iter().take(10) {
+        eprintln!("  line {}: {:?}", line, text);
+    }
+    
+    // Use TSX grammar (as extractor does for .tsx files)
+    let language_tsx: tree_sitter::Language = tree_sitter_typescript::LANGUAGE_TSX.into();
+    let mut parser_tsx = tree_sitter::Parser::new();
+    parser_tsx.set_language(&language_tsx).unwrap();
+    let tree_tsx = parser_tsx.parse(&src, None).unwrap();
+    
+    let mut tsx_method_sigs: Vec<(u32, String)> = Vec::new();
+    let mut stack2: Vec<tree_sitter::Node> = vec![tree_tsx.root_node()];
+    while let Some(node) = stack2.pop() {
+        if node.kind() == "method_signature" {
+            let line = node.start_position().row as u32;
+            let text = if (line as usize) < lines.len() {
+                lines[line as usize].trim().to_string()
+            } else {
+                "?".to_string()
+            };
+            tsx_method_sigs.push((line, text));
+        }
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            stack2.push(child);
+        }
+    }
+    
+    eprintln!("TSX grammar method_signature count: {}", tsx_method_sigs.len());
+    for (line, text) in tsx_method_sigs.iter().take(10) {
+        eprintln!("  line {}: {:?}", line, text);
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_measure_coverage_calcom() {
+    let path = std::path::Path::new("F:/Work/Projects/TestProjects/react-calcom");
+    if !path.exists() {
+        eprintln!("Project not found, skipping");
+        return;
+    }
+    let results = crate::query::coverage::analyze_coverage(path);
+    for cov in &results {
+        if cov.language == "typescript" {
+            eprintln!("=== TypeScript ===");
+            eprintln!("  files: {}", cov.file_count);
+            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
+            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!("  --- symbol kinds ---");
+            let mut sym_kinds = cov.symbol_kinds.clone();
+            sym_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in sym_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+            eprintln!("  --- ref kinds ---");
+            let mut ref_kinds = cov.ref_kinds.clone();
+            ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in ref_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+        }
+    }
+}

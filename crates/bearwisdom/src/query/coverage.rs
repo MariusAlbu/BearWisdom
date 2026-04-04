@@ -54,7 +54,7 @@ pub struct CoverageDetail {
     pub declared_kinds_total: usize,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 pub struct NodeKindCoverage {
     pub kind: String,
     /// Total occurrences of this node kind in the project.
@@ -127,8 +127,37 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
                 Err(_) => continue,
             };
 
+            // Use the per-file language ID to select the correct grammar variant.
+            // For example, TypeScript uses LANGUAGE_TYPESCRIPT for .ts files but
+            // LANGUAGE_TSX for .tsx files. Using the wrong grammar on JSX/TSX files
+            // causes the parser to misinterpret JSX elements as TypeScript constructs
+            // (e.g. `<Component>` parsed as a generic), producing spurious CST node
+            // kinds that inflate the coverage denominator.
+            //
+            // The `plugin.extract()` call below already uses the correct grammar (it
+            // checks the file extension), so we must match it here for accurate
+            // correlation.
+            let file_lang_id: &str = {
+                // Infer the file-specific language variant from path extension.
+                // This mirrors the logic in TypeScriptPlugin::extract().
+                let rp = &walked.relative_path;
+                if rp.ends_with(".tsx") || rp.ends_with(".jsx") {
+                    // Force the TSX variant for files that need JSX support.
+                    // If the plugin doesn't support "tsx", fall back to `lang`.
+                    if plugin.grammar("tsx").is_some() { "tsx" } else { lang.as_str() }
+                } else if rp.ends_with(".jsx") {
+                    if plugin.grammar("jsx").is_some() { "jsx" } else { lang.as_str() }
+                } else {
+                    lang.as_str()
+                }
+            };
+            let file_grammar = match plugin.grammar(file_lang_id) {
+                Some(g) => g,
+                None => grammar.clone(),
+            };
+
             let mut parser = Parser::new();
-            if parser.set_language(&grammar).is_err() {
+            if parser.set_language(&file_grammar).is_err() {
                 continue;
             }
             let tree = match parser.parse(&content, None) {
@@ -303,6 +332,29 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
     results
 }
 
+/// Return the "effective" line for a ref-producing CST node.
+///
+/// For most nodes this is `node.start_position().row`, but for nodes where
+/// the extractor consistently emits refs at a child's line (not the parent's),
+/// we return that child's line so coverage correlation stays accurate.
+///
+/// Specifically:
+/// - `method_invocation` → line of the `name` field (the method identifier),
+///   because fluent chains like `obj\n  .method()` have the node starting at
+///   the `obj` line while the ref is emitted at the `.method` identifier line.
+fn effective_ref_line(node: &tree_sitter::Node) -> u32 {
+    match node.kind() {
+        "method_invocation" => {
+            // The `name` field is the method identifier. Fall back to node start
+            // if the field is absent (shouldn't happen in a valid parse).
+            node.child_by_field_name("name")
+                .map(|n| n.start_position().row as u32)
+                .unwrap_or_else(|| node.start_position().row as u32)
+        }
+        _ => node.start_position().row as u32,
+    }
+}
+
 fn walk_and_classify(
     node: tree_sitter::Node,
     src: &[u8],
@@ -317,7 +369,11 @@ fn walk_and_classify(
 ) {
     if node.is_named() {
         let kind = node.kind();
-        let line = node.start_position().row as u32;
+        // For method_invocation and similar chained-call nodes, the extractor emits
+        // refs at the `name` child's line (the method name), not the node's start
+        // (which may be the receiver object on a previous line in a fluent chain).
+        // Use the name-child line when available so coverage correlation is accurate.
+        let line = effective_ref_line(&node);
 
         // Skip builtin type_identifiers from the count — extractors correctly
         // don't emit TypeRef for these, so including them inflates the denominator.
@@ -364,5 +420,72 @@ fn walk_and_classify(
             sym_by_line,
             ref_by_line,
         );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[ignore]
+    fn debug_measure_all_language_coverage() {
+        // (project_path, language_id)
+        let projects: &[(&str, &str)] = &[
+            ("F:/Work/Projects/TestProjects/java-spring-petclinic", "java"),
+            ("F:/Work/Projects/TestProjects/react-calcom", "typescript"),
+            ("F:/Work/Projects/TestProjects/ruby-discourse", "ruby"),
+            ("F:/Work/Projects/TestProjects/scala-lila", "scala"),
+            ("F:/Work/Projects/TestProjects/swift-icecubes", "swift"),
+            ("F:/Work/Projects/TestProjects/elixir-plausible", "elixir"),
+            ("F:/Work/Projects/TestProjects/dart-aidea", "dart"),
+            ("F:/Work/Projects/TestProjects/go-gitea", "go"),
+            ("F:/Work/Projects/TestProjects/php-monica", "php"),
+            ("F:/Work/Projects/TestProjects/kotlin-komga", "kotlin"),
+            ("F:/Work/Projects/TestProjects/rust-lemmy", "rust"),
+            ("F:/Work/Projects/TestProjects/eShop", "csharp"),
+        ];
+
+        for (project, lang_filter) in projects {
+            let path = Path::new(project);
+            if !path.exists() {
+                eprintln!("SKIP (not found): {} [{}]", project, lang_filter);
+                continue;
+            }
+            let results = analyze_coverage(path);
+            let cov = results.iter().find(|c| c.language == *lang_filter);
+            match cov {
+                None => eprintln!("NO DATA: {} [{}]", project, lang_filter),
+                Some(c) => {
+                    let sym_ok = c.symbol_coverage.percent < 0.0 || c.symbol_coverage.percent >= 95.0;
+                    let ref_ok = c.ref_coverage.percent < 0.0 || c.ref_coverage.percent >= 95.0;
+                    let sym_flag = if sym_ok { "✓" } else { "✗" };
+                    let ref_flag = if ref_ok { "✓" } else { "✗" };
+                    eprintln!(
+                        "{:<12} sym: {:>6.1}% {} | ref: {:>6.1}% {} | files: {}",
+                        lang_filter,
+                        c.symbol_coverage.percent.max(0.0),
+                        sym_flag,
+                        c.ref_coverage.percent.max(0.0),
+                        ref_flag,
+                        c.file_count
+                    );
+                    if !sym_ok {
+                        let mut sk = c.symbol_kinds.clone();
+                        sk.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+                        for k in sk.iter().take(3) {
+                            eprintln!("  SYM GAP  {}: {:.1}% miss={}", k.kind, k.percent, k.occurrences - k.matched);
+                        }
+                    }
+                    if !ref_ok {
+                        let mut rk = c.ref_kinds.clone();
+                        rk.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+                        for k in rk.iter().take(3) {
+                            eprintln!("  REF GAP  {}: {:.1}% miss={}", k.kind, k.percent, k.occurrences - k.matched);
+                        }
+                    }
+                }
+            }
+        }
     }
 }

@@ -736,3 +736,46 @@ fn inline_object_type_in_method_def_param() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+#[ignore]
+fn debug_prisma_method_signature() {
+    // Prisma-style interface with property_signature containing object_type with method_signatures
+    let src = r#"
+interface PrismaClient {
+    user: {
+        findUnique(args: { where: { id: number } }): Promise<User | null>;
+        findMany(args?: { where?: UserWhereInput }): Promise<User[]>;
+    };
+    booking: {
+        findUnique(args: { where: { id: number } }): Promise<Booking | null>;
+        create(args: { data: BookingCreateInput }): Promise<Booking>;
+    };
+}
+"#;
+    let r = extract::extract(src, false);
+    eprintln!("Symbols:");
+    for s in &r.symbols {
+        eprintln!("  {:?} {:?} line={}", s.kind, s.name, s.start_line);
+    }
+    let method_sigs: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Method).collect();
+    eprintln!("Method symbols: {}", method_sigs.len());
+}
+
+#[test]
+#[ignore]
+fn debug_type_alias_method_signature() {
+    // Type alias with method_signatures in object type
+    let src = r#"
+type UserDelegate = {
+    findUnique(args: FindUniqueArgs): User | null;
+    findMany(args?: FindManyArgs): User[];
+    create(args: CreateArgs): User;
+};
+"#;
+    let r = extract::extract(src, false);
+    eprintln!("Symbols:");
+    for s in &r.symbols {
+        eprintln!("  {:?} {:?} line={}", s.kind, s.name, s.start_line);
+    }
+}

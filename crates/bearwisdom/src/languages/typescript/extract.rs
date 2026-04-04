@@ -196,7 +196,31 @@ fn extract_node(
             }
 
             "public_field_definition" | "field_definition" => {
+                let field_idx = symbols.len();
                 symbols::push_ts_field(&child, src, scope_tree, symbols, refs, parent_index);
+                // If the field has an object-type annotation, recurse into it so that
+                // nested method_signature / property_signature nodes produce symbols.
+                // E.g.: `private ops: { findOne(): User; deleteById(id: number): void; }`.
+                if symbols.len() > field_idx {
+                    if let Some(type_ann) = child.child_by_field_name("type") {
+                        let type_value = {
+                            let mut found = None;
+                            let mut tc = type_ann.walk();
+                            for tc_child in type_ann.children(&mut tc) {
+                                if tc_child.kind() != ":" {
+                                    found = Some(tc_child);
+                                    break;
+                                }
+                            }
+                            found
+                        };
+                        if let Some(tv) = type_value {
+                            recurse_for_object_types(
+                                tv, src, scope_tree, symbols, refs, Some(field_idx),
+                            );
+                        }
+                    }
+                }
                 // Extract calls from the field initializer value, if present.
                 // e.g. `private logger = createLogger()` — call in field initializer.
                 //
@@ -227,9 +251,48 @@ fn extract_node(
                 }
             }
 
-            // Interface property signatures: `db: Database;`
+            // Interface / object-type property signatures: `db: Database;`
+            // Also handles complex types like `user: { findOne(): User; }` where
+            // the type annotation contains an object_type with method/property signatures.
             "property_signature" => {
+                let prop_idx = symbols.len();
                 symbols::push_ts_field(&child, src, scope_tree, symbols, refs, parent_index);
+                // If the property has an object-type annotation, recurse into it so that
+                // nested method_signature / property_signature / call_signature /
+                // index_signature nodes produce symbols.
+                //
+                // Example (Prisma-style):
+                //   interface PrismaClient {
+                //     user: {
+                //       findUnique(args: FindArgs): Promise<User | null>;
+                //       findMany(args?: FindManyArgs): User[];
+                //     };
+                //   }
+                //
+                // `user` is a property_signature whose type annotation is an object_type.
+                // Without this recursion, `findUnique` and `findMany` are never extracted.
+                if symbols.len() > prop_idx {
+                    if let Some(type_ann) = child.child_by_field_name("type") {
+                        // type_annotation ::= ":" type_node
+                        // Skip the ":" token to find the actual type node.
+                        let type_value = {
+                            let mut found = None;
+                            let mut tc = type_ann.walk();
+                            for tc_child in type_ann.children(&mut tc) {
+                                if tc_child.kind() != ":" {
+                                    found = Some(tc_child);
+                                    break;
+                                }
+                            }
+                            found
+                        };
+                        if let Some(tv) = type_value {
+                            recurse_for_object_types(
+                                tv, src, scope_tree, symbols, refs, Some(prop_idx),
+                            );
+                        }
+                    }
+                }
             }
 
             // Interface method signatures: `findOne(id: number): T;`

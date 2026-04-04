@@ -286,6 +286,12 @@ pub(super) fn push_field_decl(
     };
     let scope_path = scope_path_with_package(parent_scope, package);
 
+    // The field_declaration node start line — used for coverage correlation.
+    // Annotated fields like `@Column\nprivate String name;` have the annotation
+    // on a higher line than the variable_declarator. The coverage tool correlates
+    // by (field_declaration, field_decl_start_line), so we must emit at that line.
+    let field_decl_start_line = node.start_position().row as u32;
+
     // Iterate over the declarator children by kind (grammar: field="declarator").
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -298,9 +304,12 @@ pub(super) fn push_field_decl(
                     qualified_name,
                     kind: SymbolKind::Field,
                     visibility,
-                    start_line: child.start_position().row as u32,
+                    // Use the field_declaration start line (may include leading annotations)
+                    // rather than the variable_declarator line, so coverage correlation
+                    // matches correctly for annotated fields.
+                    start_line: field_decl_start_line,
                     end_line: child.end_position().row as u32,
-                    start_col: child.start_position().column as u32,
+                    start_col: node.start_position().column as u32,
                     end_col: child.end_position().column as u32,
                     signature: Some(format!("{type_str} {name}")),
                     doc_comment: doc_comment.clone(),

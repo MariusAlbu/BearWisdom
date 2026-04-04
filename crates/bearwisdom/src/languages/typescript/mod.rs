@@ -93,7 +93,9 @@ impl LanguagePlugin for TypeScriptPlugin {
             "call_expression",
             "new_expression",
             "import_statement",
-            "jsx_self_closing_element", "jsx_opening_element",
+            // jsx_self_closing_element and jsx_opening_element are intentionally excluded:
+            // we only emit refs for PascalCase component tags (~23% of occurrences),
+            // not HTML intrinsics (div, span, etc.), so the 1:1 node→ref assumption breaks.
             "extends_clause", "implements_clause",
             "type_annotation", "type_identifier",
             "as_expression", "satisfies_expression",

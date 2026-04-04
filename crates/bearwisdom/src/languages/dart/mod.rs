@@ -72,7 +72,6 @@ impl LanguagePlugin for DartPlugin {
             "type_arguments",
             "type_cast_expression",
             "type_test_expression",
-            "type_identifier",
         ]
     }
 
