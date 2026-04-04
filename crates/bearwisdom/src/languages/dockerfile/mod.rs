@@ -6,6 +6,10 @@ use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;
 
+#[cfg(test)]
+#[path = "coverage_tests.rs"]
+mod coverage_tests;
+
 pub struct DockerfilePlugin;
 
 impl LanguagePlugin for DockerfilePlugin {
