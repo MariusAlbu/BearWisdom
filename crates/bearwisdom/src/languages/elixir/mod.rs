@@ -54,7 +54,6 @@ impl LanguagePlugin for ElixirPlugin {
             "call",
             "dot",
             "alias",
-            "binary_operator",
         ]
     }
 

@@ -57,10 +57,15 @@ pub(super) fn extract_enum_body(
             for item in child.children(&mut cursor) {
                 match item.kind() {
                     "enum_case_definitions" => {
-                        // enum_case_definitions → enum_case_definition*
+                        // enum_case_definitions → full_enum_case* | simple_enum_case*
+                        // (tree-sitter-scala uses full_enum_case / simple_enum_case, not
+                        // enum_case_definition; keep the old name for resilience)
                         let mut ic = item.walk();
                         for case_def in item.children(&mut ic) {
-                            if case_def.kind() == "enum_case_definition" {
+                            if matches!(
+                                case_def.kind(),
+                                "full_enum_case" | "simple_enum_case" | "enum_case_definition"
+                            ) {
                                 push_enum_member(&case_def, src, scope_tree, symbols, &enum_qname, parent_index);
                             }
                         }
@@ -474,12 +479,13 @@ pub(super) fn push_package_clause(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) -> Option<usize> {
-    // The package name is either a stable_id or identifier child.
+    // The package name is either a stable_id, identifier, or package_identifier child.
+    // tree-sitter-scala uses `package_identifier` for dotted package names like `foo.bar.baz`.
     let mut cursor = node.walk();
     let mut name_text: Option<String> = None;
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "stable_id" | "identifier" => {
+            "stable_id" | "identifier" | "package_identifier" => {
                 name_text = Some(node_text(child, src));
                 break;
             }

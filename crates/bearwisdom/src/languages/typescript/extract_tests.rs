@@ -687,3 +687,52 @@ fn enumerate_unhandled_node_kinds() {
     }
     // This test is purely diagnostic — never fails.
 }
+
+#[test]
+fn inline_object_type_in_function_param() {
+    // property_signature inside an inline object type in a function parameter.
+    let r = extract::extract("function foo(opts: { x: number; y: string }) {}", false);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "x" && s.kind == SymbolKind::Property),
+        "expected Property 'x' from inline object type in function param; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "y" && s.kind == SymbolKind::Property),
+        "expected Property 'y' from inline object type in function param; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn inline_object_type_in_var_annotation() {
+    // property_signature inside an inline object type in a variable annotation.
+    let r = extract::extract("const config: { host: string; port: number } = {} as any;", false);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "host" && s.kind == SymbolKind::Property),
+        "expected Property 'host' from inline object type in var annotation; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn inline_object_type_in_method_param() {
+    // property_signature inside an inline object type in a method signature parameter.
+    let r = extract::extract("interface IRepo { find(opts: { id: number }): User; }", false);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "id" && s.kind == SymbolKind::Property),
+        "expected Property 'id' from inline object type in method_signature param; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn inline_object_type_in_method_def_param() {
+    // property_signature inside an inline object type in a method_definition parameter.
+    let r = extract::extract("class Svc { handle(opts: { x: number }): void {} }", false);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "x" && s.kind == SymbolKind::Property),
+        "expected Property 'x' from inline object type in method_definition param; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}

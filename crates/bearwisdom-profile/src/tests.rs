@@ -247,7 +247,7 @@ mod registry_tests {
 
     #[test]
     fn languages_count() {
-        assert_eq!(LANGUAGES.len(), 29, "expected 29 language descriptors");
+        assert_eq!(LANGUAGES.len(), 30, "expected 30 language descriptors");
     }
 
     #[test]

@@ -778,3 +778,41 @@ fn coverage_satisfies_expression_in_function_body() {
         r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+#[ignore]
+fn debug_inline_object_type_in_function_param() {
+    let r = extract::extract("function foo(opts: { x: number; y: string }) {}", false);
+    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    // Should have `x` and `y` as Property symbols
+    assert!(r.symbols.iter().any(|s| s.name == "x"), "expected x; got {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore]
+fn debug_inline_object_type_in_var_annotation() {
+    let r = extract::extract("const config: { host: string; port: number } = {} as any;", false);
+    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+    assert!(r.symbols.iter().any(|s| s.name == "host"), "expected host; got {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore]
+fn debug_inline_object_type_in_return_type() {
+    let r = extract::extract("function bar(): { id: number } { return { id: 1 }; }", false);
+    eprintln!("Symbols return type: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore]
+fn debug_inline_object_type_in_method_param() {
+    let r = extract::extract("interface IRepo { find(opts: { id: number }): User; }", false);
+    eprintln!("Symbols method sig: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore]
+fn debug_inline_object_type_in_method_def() {
+    let r = extract::extract("class Svc { handle(opts: { x: number }): void {} }", false);
+    eprintln!("Symbols method def: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}

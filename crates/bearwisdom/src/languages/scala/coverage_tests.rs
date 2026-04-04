@@ -422,3 +422,61 @@ fn ref_given_definition_type_ref() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+#[ignore]
+fn debug_package_clause() {
+    // Test what tree-sitter produces for common package patterns
+    use tree_sitter::Parser;
+    let mut parser = Parser::new();
+    let lang: tree_sitter::Language = tree_sitter_scala::LANGUAGE.into();
+    parser.set_language(&lang).unwrap();
+    
+    let src = "package foo.bar\n\nobject MyObj {}";
+    let tree = parser.parse(src, None).unwrap();
+    
+    fn dump(node: tree_sitter::Node, src: &[u8], depth: usize) {
+        let text = if node.child_count() == 0 {
+            format!(" = {:?}", std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?"))
+        } else { String::new() };
+        eprintln!("{}{} ({},{}){}", "  ".repeat(depth), node.kind(), node.start_position().row, node.start_position().column, text);
+        let mut c = node.walk();
+        for child in node.children(&mut c) { dump(child, src, depth + 1); }
+    }
+    dump(tree.root_node(), src.as_bytes(), 0);
+    
+    let r = extract(src);
+    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore]
+fn debug_enum_cases() {
+    use tree_sitter::Parser;
+    let mut parser = Parser::new();
+    let lang: tree_sitter::Language = tree_sitter_scala::LANGUAGE.into();
+    parser.set_language(&lang).unwrap();
+    
+    let src = "enum Planet:\n  case Earth(mass: Double, radius: Double)\n  case Mars(mass: Double, radius: Double)";
+    let tree = parser.parse(src, None).unwrap();
+    
+    fn dump(node: tree_sitter::Node, src: &[u8], depth: usize) {
+        let text = if node.child_count() == 0 {
+            format!(" = {:?}", std::str::from_utf8(&src[node.start_byte()..node.end_byte()]).unwrap_or("?"))
+        } else { String::new() };
+        eprintln!("{}{}{}", "  ".repeat(depth), node.kind(), text);
+        let mut c = node.walk();
+        for child in node.children(&mut c) { dump(child, src, depth + 1); }
+    }
+    dump(tree.root_node(), src.as_bytes(), 0);
+    
+    let r = extract(src);
+    eprintln!("Symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}
+
+#[test]
+#[ignore]
+fn debug_extends_generic() {
+    let r = extract("class Foo extends Bar[Int] with Baz");
+    eprintln!("Refs: {:?}", r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
+}

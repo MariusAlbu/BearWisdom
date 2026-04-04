@@ -2,6 +2,36 @@
     use crate::types::{EdgeKind, SymbolKind};
 
     #[test]
+    fn package_clause_emits_namespace() {
+        let r = extract::extract("package foo.bar");
+        assert!(
+            r.symbols.iter().any(|s| s.name == "bar" && s.kind == SymbolKind::Namespace),
+            "expected Namespace 'bar' from package_clause; got {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn full_enum_case_emits_enum_member() {
+        let r = extract::extract("enum Planet:\n  case Earth(mass: Double, radius: Double)");
+        assert!(
+            r.symbols.iter().any(|s| s.name == "Earth" && s.kind == SymbolKind::EnumMember),
+            "expected EnumMember 'Earth' from full_enum_case; got {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn simple_enum_case_emits_enum_member() {
+        let r = extract::extract("enum Color:\n  case Red, Green, Blue");
+        assert!(
+            r.symbols.iter().any(|s| s.name == "Red" && s.kind == SymbolKind::EnumMember),
+            "expected EnumMember 'Red' from simple_enum_case; got {:?}",
+            r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
     fn extracts_class_and_method() {
         let src = r#"
 class Animal(val name: String) {

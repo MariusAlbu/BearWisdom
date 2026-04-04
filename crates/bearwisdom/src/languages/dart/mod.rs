@@ -64,7 +64,6 @@ impl LanguagePlugin for DartPlugin {
 
     fn ref_node_kinds(&self) -> &[&str] {
         &[
-            "postfix_expression",
             "new_expression",
             "const_object_expression",
             "constructor_invocation",
@@ -78,6 +77,14 @@ impl LanguagePlugin for DartPlugin {
     }
 
     fn builtin_type_names(&self) -> &[&str] {
-        &["int", "double", "String", "bool", "void", "dynamic", "num", "Object", "Null", "Never", "Function", "Type"]
+        &[
+            "int", "double", "String", "bool", "void", "dynamic", "num",
+            "Object", "Null", "Never", "Function", "Type",
+            "Comparable", "Iterable", "Iterator", "MapEntry", "RegExp",
+            "StackTrace", "StringBuffer", "StringSink", "Uri", "Zone",
+            "Completer", "FutureOr", "Timer", "Isolate",
+            "TypedData", "ByteBuffer", "ByteData",
+            "Uint8List", "Int32List", "Float64List",
+        ]
     }
 }

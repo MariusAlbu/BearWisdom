@@ -125,6 +125,11 @@ fn extract_node(
                         refs,
                         Some(sym_idx),
                     );
+                    // Extract property_signature / method_signature symbols from inline
+                    // object types in parameter annotations and return type.
+                    extract_sig_object_type_members(
+                        child, src, scope_tree, symbols, refs, Some(sym_idx),
+                    );
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
@@ -173,6 +178,13 @@ fn extract_node(
                     }
                     // Decorators (@Get, @Post, @UseGuards, etc.).
                     decorators::extract_decorators(&child, src, sym_idx, refs);
+                    // Extract property_signature / method_signature symbols from inline
+                    // object types in parameter annotations and return type.
+                    if symbols[sym_idx].kind != SymbolKind::Constructor {
+                        extract_sig_object_type_members(
+                            child, src, scope_tree, symbols, refs, Some(sym_idx),
+                        );
+                    }
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
@@ -225,6 +237,9 @@ fn extract_node(
                 let idx = symbols::push_method(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                    extract_sig_object_type_members(
+                        child, src, scope_tree, symbols, refs, Some(sym_idx),
+                    );
                 }
             }
 
@@ -329,6 +344,9 @@ fn extract_node(
                         refs,
                         Some(sym_idx),
                     );
+                    extract_sig_object_type_members(
+                        child, src, scope_tree, symbols, refs, Some(sym_idx),
+                    );
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls(&body, src, sym_idx, refs);
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
@@ -346,6 +364,9 @@ fn extract_node(
                 );
                 if let Some(sym_idx) = idx {
                     types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                    extract_sig_object_type_members(
+                        child, src, scope_tree, symbols, refs, Some(sym_idx),
+                    );
                 }
             }
 
@@ -357,6 +378,9 @@ fn extract_node(
                 );
                 if let Some(sym_idx) = idx {
                     types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                    extract_sig_object_type_members(
+                        child, src, scope_tree, symbols, refs, Some(sym_idx),
+                    );
                 }
             }
 
@@ -365,6 +389,9 @@ fn extract_node(
                 let idx = symbols::push_method(&child, src, scope_tree, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                    extract_sig_object_type_members(
+                        child, src, scope_tree, symbols, refs, Some(sym_idx),
+                    );
                 }
             }
 
@@ -517,6 +544,32 @@ fn extract_node(
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
+
+/// Extract `object_type` members from inline object types inside function/method signatures.
+///
+/// Calls `extract_node` on the `parameters` and `return_type` nodes of a function/method
+/// so that `object_type` nodes inside type annotations are reached. This fires the
+/// `property_signature` and `method_signature` arms for inline object types, e.g.:
+///
+///   function foo(opts: { x: number; y: string }): { id: number } { ... }
+///
+/// Without this, such members are invisible because `extract_param_and_return_types` only
+/// emits TypeRef edges — it does not recurse into `extract_node` which produces symbols.
+fn extract_sig_object_type_members(
+    func_node: tree_sitter::Node,
+    src: &[u8],
+    scope_tree: &crate::parser::scope_tree::ScopeTree,
+    symbols: &mut Vec<crate::types::ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    if let Some(params) = func_node.child_by_field_name("parameters") {
+        extract_node(params, src, scope_tree, symbols, refs, parent_index);
+    }
+    if let Some(ret) = func_node.child_by_field_name("return_type") {
+        extract_node(ret, src, scope_tree, symbols, refs, parent_index);
+    }
+}
 
 /// Recursively walk a type-value node (the right-hand side of a `type_alias_declaration`)
 /// and call `extract_node` on every `object_type` found at any nesting depth.

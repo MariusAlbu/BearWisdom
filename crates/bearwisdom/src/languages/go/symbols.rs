@@ -1129,6 +1129,36 @@ pub(super) fn extract_const_var_decl(
     keyword: &str,
     spec_kind: &str,
 ) {
+    // Derive the list-wrapper kind: "var_spec" → "var_spec_list",
+    // "const_spec" → "const_spec_list".  Grouped declarations
+    // (`var ( ... )` / `const ( ... )`) use an intermediate list node.
+    let list_kind = match spec_kind {
+        "var_spec" => "var_spec_list",
+        "const_spec" => "const_spec_list",
+        other => {
+            // Fallback: append "_list" and hope for the best.
+            let fallback = format!("{other}_list");
+            return extract_const_var_decl_inner(
+                node, source, symbols, refs, parent_index, qualified_prefix, keyword, spec_kind, &fallback,
+            );
+        }
+    };
+    extract_const_var_decl_inner(
+        node, source, symbols, refs, parent_index, qualified_prefix, keyword, spec_kind, list_kind,
+    );
+}
+
+fn extract_const_var_decl_inner(
+    node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+    keyword: &str,
+    spec_kind: &str,
+    list_kind: &str,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == spec_kind {
@@ -1141,6 +1171,22 @@ pub(super) fn extract_const_var_decl(
                 qualified_prefix,
                 keyword,
             );
+        } else if child.kind() == list_kind {
+            // Grouped `var ( ... )` / `const ( ... )` wraps specs in a list node.
+            let mut lc = child.walk();
+            for spec in child.children(&mut lc) {
+                if spec.kind() == spec_kind {
+                    extract_const_var_spec(
+                        &spec,
+                        source,
+                        symbols,
+                        refs,
+                        parent_index,
+                        qualified_prefix,
+                        keyword,
+                    );
+                }
+            }
         }
     }
 }
