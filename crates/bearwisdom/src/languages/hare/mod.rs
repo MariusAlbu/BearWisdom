@@ -1,7 +1,8 @@
 //! Hare language plugin.
 //!
-//! Grammar status: tree-sitter-hare is not in Cargo.toml.
-//! `grammar()` returns `None`; extraction is performed by a line-oriented
+//! Grammar: tree-sitter-hare v0.20.7 requires tree-sitter 0.20.6 (old ABI —
+//! incompatible with tree-sitter 0.25). `grammar()` returns `None` until a
+//! compatible release is published. Extraction is performed by a line-oriented
 //! parser that recognises Hare's top-level declaration patterns.
 //!
 //! What we extract:
@@ -33,7 +34,8 @@ impl LanguagePlugin for HarePlugin {
         &[".ha"]
     }
 
-    /// Returns `None` until tree-sitter-hare is added to Cargo.toml.
+    /// TODO: wire in tree_sitter_hare::language() once the crate is updated to
+    /// tree-sitter 0.22+ (currently requires 0.20.6 — ABI-incompatible).
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         None
     }

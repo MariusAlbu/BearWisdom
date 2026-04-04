@@ -1,7 +1,6 @@
 //! Odin language plugin.
 //!
-//! Grammar status: tree-sitter-odin is not in Cargo.toml.
-//! `grammar()` returns `None`; extraction is performed by a line-oriented
+//! `grammar()` returns the tree-sitter-odin grammar; extraction is also performed by a line-oriented
 //! parser that recognises Odin's top-level declaration patterns.
 //!
 //! What we extract:
@@ -34,9 +33,8 @@ impl LanguagePlugin for OdinPlugin {
         &[".odin"]
     }
 
-    /// Returns `None` until tree-sitter-odin is added to Cargo.toml.
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
-        None
+        Some(tree_sitter_odin::LANGUAGE.into())
     }
 
     fn scope_kinds(&self) -> &[ScopeKind] {

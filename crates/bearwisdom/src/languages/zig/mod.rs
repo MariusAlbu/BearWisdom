@@ -1,7 +1,6 @@
 //! Zig language plugin.
 //!
-//! Grammar status: tree-sitter-zig is not in Cargo.toml.
-//! `grammar()` returns `None`; extraction is performed by a line-oriented
+//! `grammar()` returns the tree-sitter-zig grammar; extraction is also performed by a line-oriented
 //! parser that recognises Zig's top-level declaration patterns.
 //!
 //! What we extract:
@@ -36,9 +35,8 @@ impl LanguagePlugin for ZigPlugin {
         &[".zig"]
     }
 
-    /// Returns `None` until tree-sitter-zig is added to Cargo.toml.
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
-        None
+        Some(tree_sitter_zig::LANGUAGE.into())
     }
 
     fn scope_kinds(&self) -> &[ScopeKind] {

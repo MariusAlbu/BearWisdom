@@ -1,7 +1,6 @@
 //! Gleam language plugin.
 //!
-//! Grammar status: tree-sitter-gleam is not in Cargo.toml.
-//! `grammar()` returns `None`; extraction is performed by a line-oriented
+//! `grammar()` returns the tree-sitter-gleam grammar; extraction is also performed by a line-oriented
 //! parser that recognises Gleam's top-level declaration patterns.
 //!
 //! What we extract:
@@ -34,9 +33,8 @@ impl LanguagePlugin for GleamPlugin {
         &[".gleam"]
     }
 
-    /// Returns `None` until tree-sitter-gleam is added to Cargo.toml.
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
-        None
+        Some(tree_sitter_gleam::LANGUAGE.into())
     }
 
     fn scope_kinds(&self) -> &[ScopeKind] {

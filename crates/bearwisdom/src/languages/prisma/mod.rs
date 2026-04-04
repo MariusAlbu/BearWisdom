@@ -1,7 +1,8 @@
 //! Prisma schema language plugin.
 //!
-//! Grammar status: tree-sitter-prisma is not in Cargo.toml.
-//! `grammar()` returns `None`; extraction is performed by a line-oriented
+//! Grammar: tree-sitter-prisma v0.1.1 requires tree-sitter >= 0.19, < 0.21 (old ABI —
+//! incompatible with tree-sitter 0.25). `grammar()` returns `None` until a
+//! compatible release is published. Extraction is performed by a line-oriented
 //! regex-free parser that handles the Prisma PSL format directly.
 //!
 //! What we extract:
@@ -37,7 +38,8 @@ impl LanguagePlugin for PrismaPlugin {
         &[".prisma"]
     }
 
-    /// Returns `None` until tree-sitter-prisma is added to Cargo.toml.
+    /// TODO: wire in tree_sitter_prisma::language() once the crate is updated to
+    /// tree-sitter 0.22+ (currently requires >= 0.19, < 0.21 — ABI-incompatible).
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         None
     }

@@ -1,9 +1,4 @@
 //! Make / Makefile language plugin.
-//!
-//! Grammar status: tree-sitter-make is not in Cargo.toml yet.
-//! The `grammar()` method returns `None`, falling back to the generic extractor,
-//! until the crate is added. The extraction logic in `extract.rs` is ready for
-//! when the grammar is wired in.
 
 pub mod extract;
 
@@ -28,10 +23,8 @@ impl LanguagePlugin for MakePlugin {
         &["Makefile", ".mk"]
     }
 
-    /// Returns `None` until tree-sitter-make is added to Cargo.toml.
-    /// Falls back to the generic extractor in the meantime.
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
-        None
+        Some(tree_sitter_make::LANGUAGE.into())
     }
 
     fn scope_kinds(&self) -> &[ScopeKind] {
@@ -40,8 +33,6 @@ impl LanguagePlugin for MakePlugin {
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
-        // Grammar not available yet — return empty until grammar is wired in.
-        // extract::extract(source) is ready for when it is.
         let _ = source;
         ExtractionResult::empty()
     }

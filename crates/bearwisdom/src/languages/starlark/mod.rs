@@ -1,7 +1,6 @@
 //! Starlark / Bazel BUILD file language plugin.
 //!
-//! Grammar: no tree-sitter grammar in Cargo.toml.
-//! `grammar()` returns `None`; extraction uses a line-oriented parser that
+//! `grammar()` returns the tree-sitter-starlark grammar; extraction also uses a line-oriented parser that
 //! recognises Starlark's `def`, `load()`, rule assignments, and calls.
 
 pub mod extract;
@@ -20,7 +19,7 @@ impl LanguagePlugin for StarlarkPlugin {
     fn extensions(&self) -> &[&str] { &[".bzl", ".star"] }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
-        None
+        Some(tree_sitter_starlark::LANGUAGE.into())
     }
 
     fn scope_kinds(&self) -> &[ScopeKind] {

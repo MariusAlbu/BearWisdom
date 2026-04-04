@@ -16,6 +16,8 @@
 //     - tree-sitter-kotlin 0.3.5   (TODO: bump to a 0.23+ release when available)
 //     - tree-sitter-markdown 0.7.1 (TODO: bump to a 0.23+ release when available)
 //     - tree-sitter-dockerfile 0.2 (TODO: bump to a 0.23+ release when available)
+//     - tree-sitter-prisma 0.1.1   (TODO: requires >= 0.19, < 0.21 — bump when available)
+//     - tree-sitter-hare 0.20.7    (TODO: requires 0.20.6 — bump when available)
 //
 //   These crates are still listed in Cargo.toml so they can be compiled against;
 //   they are simply not wired into get_language() until a compatible version
@@ -76,6 +78,22 @@ pub fn get_language(lang: &str) -> Option<Language> {
 
         // ---- Dockerfile (via local wrapper crate) ---------------------------------
         "dockerfile" => tree_sitter_dockerfile_0_25::LANGUAGE.into(),
+
+        // ---- Newly wired grammars -----------------------------------------------
+        "graphql" => tree_sitter_graphql::LANGUAGE.into(),
+        "hcl" | "terraform" => tree_sitter_hcl::LANGUAGE.into(),
+        "proto" => tree_sitter_proto::LANGUAGE.into(),
+        "nix" => tree_sitter_nix::LANGUAGE.into(),
+        "zig" => tree_sitter_zig::LANGUAGE.into(),
+        "cmake" => tree_sitter_cmake::LANGUAGE.into(),
+        "make" => tree_sitter_make::LANGUAGE.into(),
+        "gleam" => tree_sitter_gleam::LANGUAGE.into(),
+        "bicep" => tree_sitter_bicep::LANGUAGE.into(),
+        "odin" => tree_sitter_odin::LANGUAGE.into(),
+        "starlark" => tree_sitter_starlark::LANGUAGE.into(),
+        // prisma (tree-sitter-prisma 0.1.1) and hare (tree-sitter-hare 0.20.7) are
+        // excluded: both require old tree-sitter ABI (< 0.21 / 0.20.6).
+        // TODO: wire in when updated crates are available on crates.io.
 
         _ => return None,
     };
