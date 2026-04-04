@@ -69,7 +69,6 @@ impl LanguagePlugin for DartPlugin {
             "constructor_invocation",
             "library_import",
             "library_export",
-            "type_arguments",
             "type_test_expression",
         ]
     }
