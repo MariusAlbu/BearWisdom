@@ -69,8 +69,9 @@ fn visit_document(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "type_definition" | "type_system_definition" => {
-                // Wrapper node — descend
+            // Wrapper nodes that the grammar inserts between source_file and the
+            // actual type definitions: document → definition → type_system_definition
+            "document" | "definition" | "type_definition" | "type_system_definition" => {
                 visit_document(child, src, symbols, refs);
             }
             "object_type_definition" => extract_object_type(&child, src, symbols, refs),

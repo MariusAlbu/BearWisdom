@@ -5,13 +5,10 @@
 // - A lone `let` inside a `module` parses as an ERROR node unless at least
 //   one other declaration follows it.
 // - Value bindings (`let x = 42`) produce `value_declaration_left` whose name
-//   is in a nested `identifier_pattern → long_identifier_or_op → identifier`
-//   chain. The extractor's `first_identifier_text` only looks for direct
-//   `identifier` children of `value_declaration_left`, so value bindings
-//   do not extract (only function bindings do).
+//   is in a nested `identifier_pattern → long_identifier_or_op` chain.
+//   The extractor walks this chain via `extract_value_decl_name`.
 // - `type_definition` children of `named_module` are not currently extracted
 //   due to a traversal gap in `extract_type_def` when called from `visit`.
-// Tests document what currently works and what does not.
 // =============================================================================
 
 use super::extract::extract;
@@ -35,14 +32,16 @@ fn symbol_function_or_value_defn_function() {
 }
 
 /// symbol_node_kind: `function_or_value_defn`  →  Variable (no parameters)
-/// NOTE: Value bindings (`let x = 42`) currently do not extract because
-/// `extract_let_name` cannot locate the name inside `value_declaration_left
-/// → identifier_pattern → long_identifier_or_op`. This is a known limitation.
+/// Value bindings (`let x = 42`) produce `value_declaration_left` with the name
+/// nested under `identifier_pattern → long_identifier_or_op`.
 #[test]
 fn symbol_function_or_value_defn_variable() {
     let r = extract("module MyModule\nlet answer = 42\nlet other = 0");
-    // Known limitation: value binding name not extracted; assert no panic.
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "answer" && s.kind == SymbolKind::Variable),
+        "expected Variable 'answer' from value binding; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `type_definition`  →  Struct (record type)

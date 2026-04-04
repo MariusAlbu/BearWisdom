@@ -229,13 +229,51 @@ fn extract_let_name(node: &Node, src: &str) -> String {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "function_declaration_left" | "value_declaration_left" => {
+            "function_declaration_left" => {
+                // Has a direct `identifier` child for the function name
                 return first_identifier_text(&child, src);
+            }
+            "value_declaration_left" => {
+                // value_declaration_left → identifier_pattern → long_identifier_or_op
+                // The `identifier_pattern` holds the binding name(s).
+                // We want the first long_identifier_or_op inside the first
+                // identifier_pattern — that is the binding name.
+                return extract_value_decl_name(&child, src);
             }
             _ => {}
         }
     }
     // Fallback: first identifier
+    first_identifier_text(node, src)
+}
+
+/// Extract the binding name from a `value_declaration_left` node.
+///
+/// The structure is:
+///   value_declaration_left
+///     identifier_pattern
+///       long_identifier_or_op   ← this is the name
+///       [identifier_pattern …]  ← these are parameters (ignored here)
+fn extract_value_decl_name(node: &Node, src: &str) -> String {
+    // First named child should be identifier_pattern
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "identifier_pattern" {
+            // First child of identifier_pattern is long_identifier_or_op
+            let mut ic = child.walk();
+            for ipc in child.children(&mut ic) {
+                if ipc.kind() == "long_identifier_or_op" {
+                    let t = node_text(&ipc, src).to_string();
+                    if !t.is_empty() {
+                        return t;
+                    }
+                }
+            }
+            // Fallback: direct identifier under identifier_pattern
+            return first_identifier_text(&child, src);
+        }
+    }
+    // Fallback: direct identifier under value_declaration_left
     first_identifier_text(node, src)
 }
 

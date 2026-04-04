@@ -40,20 +40,23 @@ impl LanguagePlugin for SqlPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
+        // Actual node kinds produced by tree-sitter-sequel 0.3.x
         &[
-            "create_table_stmt",
-            "create_view_stmt",
-            "create_trigger_stmt",
-            "column_def",
-            "common_table_expression",
+            "create_table",      // CREATE TABLE → SymbolKind::Struct
+            "create_view",       // CREATE VIEW  → SymbolKind::Class
+            "create_index",      // CREATE INDEX → SymbolKind::Variable
+            "create_function",   // CREATE FUNCTION → SymbolKind::Function
+            "column_definition", // column inside a table → SymbolKind::Field
+            "cte",               // WITH … AS (…) → SymbolKind::Variable (if desired)
         ]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
+        // tree-sitter-sequel uses object_reference for every name reference.
+        // FK inline REFERENCES lives as object_reference directly under column_definition.
+        // ALTER TABLE target is an object_reference under alter_table.
         &[
-            "table_or_subquery",
-            "foreign_key_clause",
-            "type_name",
+            "object_reference", // covers FK REFERENCES, ALTER TABLE target, view FROM targets
         ]
     }
 

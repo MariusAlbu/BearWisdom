@@ -1,22 +1,22 @@
 // =============================================================================
 // sql/coverage_tests.rs — Node-kind coverage tests for the SQL extractor
 //
-// symbol_node_kinds:
-//   create_table_stmt, create_view_stmt, create_trigger_stmt,
-//   column_def, common_table_expression
+// symbol_node_kinds (actual tree-sitter-sequel 0.3.x kinds):
+//   create_table, create_view, create_index, create_function, column_definition, cte
 //
 // ref_node_kinds:
-//   table_or_subquery, foreign_key_clause, type_name
+//   object_reference  (covers FK REFERENCES, ALTER TABLE target, view FROM targets)
 //
-// NOTE: The extractor uses tree-sitter-sequel which maps node kinds slightly
-// differently from the declared names. The extract.rs handles `create_table`,
-// `create_view`, `create_trigger`, and `column_definition` nodes internally.
-// The symbol_node_kinds() names are conceptual — the tests verify observable
-// extraction behaviour driven by those constructs.
+// tree-sitter-sequel notes:
+//   - CREATE TRIGGER produces an ERROR node; extractor should not crash.
+//   - FK inline REFERENCES: keyword_references + object_reference directly under
+//     column_definition (no constraint/foreign_key_reference wrapper).
+//   - CREATE INDEX name is a bare identifier, not object_reference.
 // =============================================================================
 
 use super::extract;
 use crate::types::{EdgeKind, SymbolKind};
+
 
 // ---------------------------------------------------------------------------
 // symbol_node_kinds
@@ -69,22 +69,34 @@ fn cov_common_table_expression_does_not_crash() {
     let _ = r;
 }
 
+/// create_index → SymbolKind::Variable + TypeRef to the indexed table
+#[test]
+fn cov_create_index_emits_variable_and_ref() {
+    let r = extract::extract("CREATE INDEX idx_name ON users (name);");
+    let sym = r.symbols.iter().find(|s| s.name == "idx_name");
+    assert!(sym.is_some(), "expected Variable 'idx_name' from CREATE INDEX; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, crate::types::SymbolKind::Variable);
+    let table_ref = r.refs.iter().find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "users");
+    assert!(table_ref.is_some(), "expected TypeRef to 'users' from CREATE INDEX; got: {:?}", r.refs);
+}
+
 // ---------------------------------------------------------------------------
 // ref_node_kinds
 // ---------------------------------------------------------------------------
 
-/// foreign_key_clause — inline REFERENCES in column_definition.
-/// tree-sitter-sequel parses inline `REFERENCES` as keyword children directly
-/// on the column_definition (not as a `constraint` / `foreign_key_reference` child),
-/// so the extractor's extract_fk_refs finds no FK constraint nodes. No TypeRef is
-/// emitted, but the source must not crash.
+/// object_reference — inline REFERENCES in column_definition emits a TypeRef.
+/// tree-sitter-sequel emits keyword_references + object_reference directly under
+/// column_definition; the extractor detects this and emits a TypeRef edge.
 #[test]
-fn cov_foreign_key_clause_does_not_crash() {
+fn cov_foreign_key_emits_type_ref() {
     let src = "CREATE TABLE orders (user_id INT REFERENCES users(id));";
     let r = extract::extract(src);
-    // Table and column symbols should still be extracted without crashing.
+    // Table symbol should be extracted.
     let has_table = r.symbols.iter().any(|s| s.name == "orders");
     assert!(has_table, "expected Struct 'orders'; got: {:?}", r.symbols);
+    // FK reference should produce a TypeRef to 'users'.
+    let fk_ref = r.refs.iter().find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "users");
+    assert!(fk_ref.is_some(), "expected TypeRef to 'users' from FK REFERENCES; got: {:?}", r.refs);
 }
 
 /// table_or_subquery — table reference in a query; extractor should handle

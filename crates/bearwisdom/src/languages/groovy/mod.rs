@@ -3,12 +3,12 @@
 //! Covers `.groovy` and `.gradle` files.
 //!
 //! What we extract:
-//! - `class_definition` → Class
-//! - `function_definition` → Function / Method
-//! - `groovy_package` → Namespace
-//! - `declaration` (module-level) → Variable
-//! - `groovy_import` → Imports
-//! - `function_call` / `juxt_function_call` → Calls
+//! - `class_declaration` → Class
+//! - `function_definition` → Function (top-level `def`)
+//! - `method_declaration` → Method (typed, inside class body)
+//! - `package_declaration` → Namespace
+//! - `import_declaration` → Imports
+//! - `method_invocation` → Calls
 
 pub mod extract;
 
@@ -41,18 +41,17 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
-            "class_definition",
+            "class_declaration",
             "function_definition",
-            "function_declaration",
-            "groovy_package",
+            "method_declaration",
+            "package_declaration",
         ]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
         &[
-            "function_call",
-            "juxt_function_call",
-            "groovy_import",
+            "method_invocation",
+            "import_declaration",
         ]
     }
 

@@ -55,19 +55,27 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
     let mut stage_counter: u32 = 0;
     // Track the current stage symbol index for associating ARG/ENV/CMD/ENTRYPOINT
     let mut current_stage_index: Option<usize> = None;
+    // Stage names indexed by their numeric position (0, 1, 2, ...) so that
+    // `COPY --from=0` can be resolved to the first stage's name.
+    let mut stage_names_by_index: Vec<String> = Vec::new();
 
     let root = tree.root_node();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         match child.kind() {
             "from_instruction" => {
-                current_stage_index = Some(extract_from(
+                let sym_idx = extract_from(
                     &child,
                     source,
                     &mut symbols,
                     &mut refs,
                     stage_counter,
-                ));
+                );
+                current_stage_index = Some(sym_idx);
+                // Record stage name for numeric --from=N resolution.
+                if let Some(sym) = symbols.get(sym_idx) {
+                    stage_names_by_index.push(sym.name.clone());
+                }
                 stage_counter += 1;
             }
             "arg_instruction" => {
@@ -77,7 +85,13 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                 extract_env(&child, source, &mut symbols, current_stage_index);
             }
             "copy_instruction" | "add_instruction" => {
-                extract_copy_cross_stage(&child, source, current_stage_index, &mut refs);
+                extract_copy_cross_stage(
+                    &child,
+                    source,
+                    current_stage_index,
+                    &stage_names_by_index,
+                    &mut refs,
+                );
             }
             "entrypoint_instruction" => {
                 extract_entry_function(&child, source, "ENTRYPOINT", &mut symbols, current_stage_index);
@@ -313,6 +327,7 @@ fn extract_copy_cross_stage(
     node: &Node,
     src: &str,
     source_stage_index: Option<usize>,
+    stage_names_by_index: &[String],
     refs: &mut Vec<ExtractedRef>,
 ) {
     let source_symbol_index = match source_stage_index {
@@ -325,10 +340,20 @@ fn extract_copy_cross_stage(
         if child.kind() == "param" {
             let text = node_text(child, src);
             // Param text looks like "--from=builder" or "--from=0"
-            if let Some(stage) = parse_from_param(&text) {
+            if let Some(raw_stage) = parse_from_param(&text) {
+                // If the value is a pure decimal integer, resolve it to the
+                // stage name recorded at that position (0-based index).
+                let target_name = if let Ok(n) = raw_stage.parse::<usize>() {
+                    stage_names_by_index
+                        .get(n)
+                        .cloned()
+                        .unwrap_or(raw_stage)
+                } else {
+                    raw_stage
+                };
                 refs.push(ExtractedRef {
                     source_symbol_index,
-                    target_name: stage,
+                    target_name,
                     kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
                     module: None,

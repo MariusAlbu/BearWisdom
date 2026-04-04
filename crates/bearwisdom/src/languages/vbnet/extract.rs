@@ -177,6 +177,24 @@ fn walk_node(
             }
             walk_children(node, src, symbols, refs, parent_idx);
         }
+        // The grammar parses `Inherits BaseClass` inside a class body as a
+        // field_declaration with declarator name "Inherits" and an ERROR node
+        // holding the actual base type. Detect this pattern here.
+        "field_declaration" => {
+            let sym_idx = parent_idx.unwrap_or(0);
+            if let Some(base) = inherits_base_from_field_decl(node, src) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: base,
+                    kind: EdgeKind::Inherits,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            } else {
+                walk_children(node, src, symbols, refs, parent_idx);
+            }
+        }
         _ => {
             walk_children(node, src, symbols, refs, parent_idx);
         }
@@ -261,4 +279,50 @@ fn leaf_name(node: Node, src: &[u8]) -> String {
         }
     }
     last
+}
+
+/// Detect the grammar's encoding of `Inherits BaseClass` / `Implements IFoo`.
+///
+/// The tree-sitter-vb-dotnet grammar parses `Inherits X` inside a class body as:
+///   field_declaration
+///     variable_declarator[name = "Inherits" | "Implements"]
+///     ERROR
+///       identifier = <base type name>
+///
+/// Returns the base type name when the pattern matches.
+fn inherits_base_from_field_decl(node: Node, src: &[u8]) -> Option<String> {
+    // First child should be a variable_declarator whose name field == "Inherits"/"Implements"
+    let mut cursor = node.walk();
+    let mut is_inherits_decl = false;
+    let mut error_ident: Option<String> = None;
+
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "variable_declarator" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    let name = text(name_node, src);
+                    if name == "Inherits" || name == "Implements" {
+                        is_inherits_decl = true;
+                    }
+                }
+            }
+            "ERROR" => {
+                // The base type identifier lives inside the ERROR node
+                let mut ec = child.walk();
+                for err_child in child.children(&mut ec) {
+                    if err_child.kind() == "identifier" {
+                        error_ident = Some(text(err_child, src));
+                        break;
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    if is_inherits_decl {
+        error_ident
+    } else {
+        None
+    }
 }

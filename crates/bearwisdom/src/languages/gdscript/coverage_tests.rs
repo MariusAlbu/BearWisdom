@@ -1,10 +1,9 @@
 // =============================================================================
 // gdscript/coverage_tests.rs  —  One test per declared symbol_node_kind and ref_node_kind
 //
-// NOTE: The tree-sitter-gdscript grammar parses `@export var …` as a
-// `variable_statement` with an `annotations` child, NOT as `export_variable_statement`.
-// The extractor's `export_variable_statement` handler is therefore unreachable with
-// the current grammar. The test for that node kind documents the current behaviour.
+// Grammar notes (tree-sitter-gdscript, confirmed by CST probe):
+//   `@export var x` → variable_statement with annotations child (not export_variable_statement)
+//   The extractor detects the @export annotation and emits SymbolKind::Property.
 // =============================================================================
 
 use super::extract::extract;
@@ -70,18 +69,15 @@ fn symbol_signal_statement() {
     );
 }
 
-/// symbol_node_kind: `export_variable_statement`  →  Property
-/// NOTE: The grammar parses `@export var …` as `variable_statement` with an annotation,
-/// NOT as `export_variable_statement`. The extractor's dedicated handler is unreachable;
-/// the `variable_statement` handler fires instead, producing Variable (not Property).
-/// This test documents the current behaviour — no panic, symbol extracted as Variable.
+/// symbol_node_kind: `variable_statement` with `@export` annotation  →  Property
+/// The grammar parses `@export var …` as `variable_statement` with an `annotations`
+/// child.  The extractor detects the @export annotation and emits Property.
 #[test]
 fn symbol_export_variable_statement() {
     let r = extract("@export var speed: float = 5.0");
-    // Grammar gives variable_statement → SymbolKind::Variable at top level.
     assert!(
-        r.symbols.iter().any(|s| s.name == "speed"),
-        "expected symbol speed (may be Variable due to grammar mismatch); got {:?}",
+        r.symbols.iter().any(|s| s.name == "speed" && s.kind == SymbolKind::Property),
+        "expected Property 'speed' from @export var; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

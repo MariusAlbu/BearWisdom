@@ -75,8 +75,12 @@ fn visit(
                 // Check if this is a source/dot command
                 if is_source_command(&child, src) {
                     extract_source_import(&child, src, symbols.len(), refs);
-                } else if let Some(pi) = parent_index {
-                    extract_command_call(&child, src, pi, refs);
+                } else {
+                    // Emit Calls refs regardless of scope depth.
+                    // At top-level (parent_index is None) we use symbols.len()
+                    // as the source index — same convention as source imports.
+                    let src_idx = parent_index.unwrap_or(symbols.len());
+                    extract_command_call(&child, src, src_idx, refs);
                 }
             }
 

@@ -374,7 +374,25 @@ fn extract_variable(
         None => return,
     };
 
-    let kind = if inside_class { SymbolKind::Field } else { SymbolKind::Variable };
+    // Check if this variable_statement has an `@export` annotation — if so,
+    // treat it as a Property (the grammar emits variable_statement with an
+    // `annotations` child rather than a separate export_variable_statement node).
+    let is_export = has_export_annotation(node, src);
+
+    let kind = if is_export {
+        SymbolKind::Property
+    } else if inside_class {
+        SymbolKind::Field
+    } else {
+        SymbolKind::Variable
+    };
+
+    let sig = if is_export {
+        format!("@export var {}", name)
+    } else {
+        format!("var {}", name)
+    };
+
     let line = node.start_position().row as u32;
 
     symbols.push(ExtractedSymbol {
@@ -386,11 +404,38 @@ fn extract_variable(
         end_line: line,
         start_col: node.start_position().column as u32,
         end_col: 0,
-        signature: Some(format!("var {}", name)),
+        signature: Some(sig),
         doc_comment: None,
         scope_path: None,
         parent_index,
     });
+}
+
+/// Return true if the variable_statement node has an `@export` annotation.
+/// The grammar wraps annotations in an `annotations` child containing one or
+/// more `annotation` nodes.  Each annotation starts with `@` followed by an
+/// `identifier` (e.g. "export").
+fn has_export_annotation(node: &Node, src: &str) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "annotations" {
+            let mut ac = child.walk();
+            for ann in child.children(&mut ac) {
+                if ann.kind() == "annotation" {
+                    // Look for an identifier child with text "export"
+                    let mut ic = ann.walk();
+                    for ann_child in ann.children(&mut ic) {
+                        if ann_child.kind() == "identifier"
+                            && node_text(&ann_child, src) == "export"
+                        {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------

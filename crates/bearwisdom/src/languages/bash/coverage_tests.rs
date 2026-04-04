@@ -70,6 +70,20 @@ fn cov_command_inside_function_emits_calls() {
     assert!(calls.contains(&"bar"), "expected Calls ref to 'bar'; got: {calls:?}");
 }
 
+/// command → EdgeKind::Calls  (non-builtin command at top-level / script scope)
+#[test]
+fn cov_command_at_top_level_emits_calls() {
+    let r = extract::extract("deploy_app\nnotify done\n");
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"deploy_app"), "expected Calls ref to 'deploy_app' at top level; got: {calls:?}");
+    assert!(calls.contains(&"notify"), "expected Calls ref to 'notify' at top level; got: {calls:?}");
+}
+
 /// command_substitution — the extractor should handle source files containing
 /// command substitutions without crashing. Commands inside `$(...)` are nested
 /// and may not be extracted as Calls edges by the current extractor, but the

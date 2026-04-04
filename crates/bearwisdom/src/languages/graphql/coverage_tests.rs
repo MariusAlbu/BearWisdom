@@ -2,15 +2,9 @@
 // graphql/coverage_tests.rs
 //
 // Node-kind coverage for GraphQlPlugin::symbol_node_kinds() and ref_node_kinds().
-// The plugin mod.rs returns ExtractionResult::empty() pending grammar-aware
-// wiring. These tests verify:
-//   1. The grammar parses GraphQL SDL without errors.
-//   2. The declared node kind lists are complete and correct.
-//
-// Note: The grammar tree root for tree-sitter-graphql is `source_file →
-// document → definition → type_system_definition → object_type_definition`,
-// so the full extractor pipeline (extract::extract) is ready for when the
-// grammar traversal is aligned with the actual root structure.
+// The grammar tree root for tree-sitter-graphql is:
+//   source_file → document → definition → type_system_definition → object_type_definition
+// The extractor descends through these wrapper nodes.
 // =============================================================================
 
 use crate::languages::LanguagePlugin;
@@ -47,9 +41,18 @@ fn cov_graphql_enum_parses_cleanly() {
 #[test]
 fn cov_symbol_node_kinds_declared() {
     let plugin = GraphQlPlugin;
-    // GraphQL plugin doesn't define symbol_node_kinds (returns empty — grammar
-    // not yet wired). Verify the contract from the mod.rs comment.
-    let _ = plugin.symbol_node_kinds(); // must not panic
+    assert!(
+        plugin.symbol_node_kinds().contains(&"object_type_definition"),
+        "object_type_definition in symbol_node_kinds"
+    );
+    assert!(
+        plugin.symbol_node_kinds().contains(&"enum_type_definition"),
+        "enum_type_definition in symbol_node_kinds"
+    );
+    assert!(
+        plugin.ref_node_kinds().contains(&"named_type"),
+        "named_type in ref_node_kinds"
+    );
 }
 
 #[test]

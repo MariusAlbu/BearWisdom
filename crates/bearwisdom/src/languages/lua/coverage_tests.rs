@@ -70,39 +70,50 @@ fn cov_field_in_table_emits_field_or_method() {
 // ref_node_kinds
 // ---------------------------------------------------------------------------
 
-/// function_call → EdgeKind::Imports  (via require)
-/// Note: tree-sitter-lua 0.5 uses the `name` field for the callee (not `prefix`).
-/// The extractor uses `child_by_field_name("prefix")` which returns None in this
-/// grammar version, so no Imports edge is emitted. The source is still parsed
-/// without a crash, and the variable declaration itself is handled.
+/// function_call with require → EdgeKind::Imports
+/// tree-sitter-lua 0.5 uses the `name` field for the callee of function_call.
 #[test]
-fn cov_function_call_require_does_not_crash() {
+fn cov_function_call_require_emits_import() {
     let r = extract::extract("local M = require(\"mod\")");
-    // No crash is the primary assertion. The variable declaration may emit a symbol.
-    let _ = r;
+    let imports: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        imports.contains(&"mod"),
+        "expected Imports ref to 'mod' from require(); got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// function_call → EdgeKind::Calls  (plain call)
-/// Same grammar field name mismatch as above — Calls edges are not emitted
-/// by the current extractor for function_call nodes in tree-sitter-lua 0.5.
-/// The source parses cleanly and function symbols are extracted correctly.
 #[test]
-fn cov_function_call_does_not_crash() {
+fn cov_function_call_emits_calls() {
     let src = "function foo() end\nfunction main() foo() end";
     let r = extract::extract(src);
-    // Function symbols should be extracted even if calls are not.
+    // Function symbols should be extracted
     let foo = r.symbols.iter().find(|s| s.name == "foo");
     assert!(foo.is_some(), "expected Function 'foo'; got: {:?}", r.symbols);
+    // Calls edge should be emitted for foo()
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "foo" && rf.kind == EdgeKind::Calls),
+        "expected Calls ref to 'foo'; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }
 
-/// method_index_expression (colon call `obj:update()`) — does not crash.
-/// The callee of a method call uses `name` field in tree-sitter-lua 0.5;
-/// the extractor's `prefix` field lookup returns None, so no Calls edge is emitted.
+/// method_index_expression (colon call `obj:update()`) → EdgeKind::Calls
 #[test]
-fn cov_method_index_expression_does_not_crash() {
+fn cov_method_index_expression_emits_calls() {
     let src = "function init() obj:update() end";
     let r = extract::extract(src);
-    // No crash; function symbol still extracted.
+    // function symbol still extracted
     let init = r.symbols.iter().find(|s| s.name == "init");
     assert!(init.is_some(), "expected Function 'init'; got: {:?}", r.symbols);
+    // Method call via colon syntax should produce Calls ref
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "update" && rf.kind == EdgeKind::Calls),
+        "expected Calls ref to 'update' from colon call; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }

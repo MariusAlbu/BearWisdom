@@ -227,20 +227,12 @@ fn extract_create_index(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // create_index: first object_reference is the index name; second is the table
-    let mut object_refs: Vec<String> = Vec::new();
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "object_reference" {
-            if let Some(name) = object_reference_name(&child, src) {
-                object_refs.push(name);
-            }
-        }
-    }
-
-    let name = match object_refs.first() {
-        Some(n) => n.clone(),
-        None => return,
+    // tree-sitter-sequel grammar for CREATE INDEX:
+    //   create_index → keyword_create keyword_index identifier ON object_reference index_fields
+    // The index name is a bare `identifier`; the table name is the `object_reference`.
+    let name = match first_child_of_kind(node, "identifier").map(|n| node_text(n, src)) {
+        Some(n) if !n.is_empty() => n,
+        _ => return,
     };
 
     let idx = symbols.len();
@@ -259,11 +251,11 @@ fn extract_create_index(
         parent_index: None,
     });
 
-    // TypeRef to the table the index is on (second object_reference)
-    if let Some(table_name) = object_refs.get(1) {
+    // TypeRef to the table the index is on (object_reference child)
+    if let Some(table_name) = first_object_reference_name(node, src) {
         refs.push(ExtractedRef {
             source_symbol_index: idx,
-            target_name: table_name.clone(),
+            target_name: table_name,
             kind: EdgeKind::TypeRef,
             line: node.start_position().row as u32,
             module: None,
@@ -391,32 +383,26 @@ fn extract_column(
     extract_fk_refs(node, src, col_idx, refs);
 }
 
-/// Scan a column_definition's constraint nodes for REFERENCES clauses.
+/// Scan a column_definition for an inline REFERENCES clause.
+///
+/// tree-sitter-sequel emits FK references as:
+///   column_definition → … keyword_references object_reference …
+/// There is no intermediate `constraint` or `foreign_key_reference` wrapper.
 fn extract_fk_refs(
     node: &Node,
     src: &str,
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Walk children looking for `keyword_references`; the immediately
+    // following `object_reference` sibling is the referenced table.
+    let mut saw_references = false;
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "constraint" {
-            extract_fk_from_constraint(&child, src, source_symbol_index, refs);
-        }
-    }
-}
-
-fn extract_fk_from_constraint(
-    node: &Node,
-    src: &str,
-    source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        // Look for foreign_key_reference or object_reference after REFERENCES keyword
-        if child.kind() == "foreign_key_reference" || child.kind() == "references_constraint" {
-            if let Some(name) = first_object_reference_name(&child, src) {
+        if child.kind() == "keyword_references" {
+            saw_references = true;
+        } else if saw_references && child.kind() == "object_reference" {
+            if let Some(name) = object_reference_name(&child, src) {
                 refs.push(ExtractedRef {
                     source_symbol_index,
                     target_name: name,
@@ -426,6 +412,7 @@ fn extract_fk_from_constraint(
                     chain: None,
                 });
             }
+            saw_references = false;
         }
     }
 }

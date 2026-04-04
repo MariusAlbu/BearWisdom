@@ -454,8 +454,8 @@ fn extract_function_call(
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
     let line = node.start_position().row as u32;
 
-    // The callee is the first named child (prefix in tree-sitter-lua)
-    let callee = match node.child_by_field_name("prefix") {
+    // tree-sitter-lua 0.5 uses the `name` field for the callee of function_call
+    let callee = match node.child_by_field_name("name") {
         Some(n) => n,
         None => return,
     };
@@ -600,8 +600,8 @@ fn get_method_table(node: &Node, src: &[u8]) -> String {
 }
 
 fn extract_require_arg(call_node: &Node, src: &[u8]) -> Option<String> {
-    // args are in `args` field: `(string)`
-    let args = call_node.child_by_field_name("args")?;
+    // tree-sitter-lua 0.5 uses the `arguments` field for function call args
+    let args = call_node.child_by_field_name("arguments")?;
     let mut cursor = args.walk();
     for child in args.children(&mut cursor) {
         if child.kind() == "string" {

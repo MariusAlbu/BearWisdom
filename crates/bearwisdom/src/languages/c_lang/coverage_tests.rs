@@ -73,16 +73,18 @@ fn cov_enumerator_emits_variable_symbols() {
     assert!(sym.is_some(), "expected enumerator 'PENDING'; got: {:?}", r.symbols);
 }
 
-/// field_declaration — the extractor processes field declarations inside struct bodies
-/// and emits the parent struct symbol. The individual `field_identifier` children are
-/// not currently extracted as separate symbols (push_declaration looks for `identifier`
-/// kind, but C grammar uses `field_identifier` for struct members). The struct itself
-/// is extracted correctly.
+/// field_declaration — the extractor processes field declarations inside struct bodies.
+/// The struct itself is extracted as Struct, and each member (using `field_identifier`
+/// in C grammar) is extracted as a Variable child symbol.
 #[test]
-fn cov_field_declaration_struct_extracted() {
+fn cov_field_declaration_struct_and_members_extracted() {
     let r = extract::extract("struct Point { int x; int y; };", "c");
     let has_struct = r.symbols.iter().any(|s| s.name == "Point");
     assert!(has_struct, "expected Struct 'Point' from struct_specifier; got: {:?}", r.symbols);
+    let has_x = r.symbols.iter().any(|s| s.name == "x");
+    assert!(has_x, "expected field member 'x' from field_identifier; got: {:?}", r.symbols);
+    let has_y = r.symbols.iter().any(|s| s.name == "y");
+    assert!(has_y, "expected field member 'y' from field_identifier; got: {:?}", r.symbols);
 }
 
 /// type_definition → SymbolKind::TypeAlias

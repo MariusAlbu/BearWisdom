@@ -105,3 +105,22 @@ fn cov_copy_instruction_regular_does_not_crash() {
     // Regular COPY without --from should produce no Calls refs but not crash.
     let _ = r;
 }
+
+/// COPY --from=<N> (numeric stage index) → Calls edge resolved to the stage name
+#[test]
+fn cov_copy_instruction_numeric_from_resolves_to_stage_name() {
+    // Stage 0 is "builder", stage 1 is "prod".
+    // COPY --from=0 should produce a Calls ref targeting "builder".
+    let src = "FROM node:18 AS builder\nRUN npm run build\nFROM nginx:alpine AS prod\nCOPY --from=0 /app/dist /usr/share/nginx/html\n";
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"builder"),
+        "expected Calls ref to 'builder' from COPY --from=0; got: {calls:?}"
+    );
+}

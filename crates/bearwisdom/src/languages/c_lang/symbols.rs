@@ -240,7 +240,9 @@ pub(super) fn push_declaration(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let name_opt = match child.kind() {
-            "identifier" => Some(node_text(child, src)),
+            // `identifier` — plain declarations and non-struct members
+            // `field_identifier` — struct/union member names in C grammar
+            "identifier" | "field_identifier" => Some(node_text(child, src)),
             "init_declarator" | "pointer_declarator" => first_type_identifier(&child, src),
             _ => None,
         };

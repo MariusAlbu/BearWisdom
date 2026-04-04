@@ -4,15 +4,23 @@
 // What we extract
 // ---------------
 // SYMBOLS:
-//   Namespace  — `groovy_package`
-//   Class      — `class_definition`
-//   Function   — `function_definition` (top-level)
-//   Method     — `function_definition` (inside class)
+//   Namespace  — `package_declaration`
+//   Class      — `class_declaration`
+//   Function   — `function_definition` (top-level `def`)
+//   Method     — `method_declaration` (inside class body)
 //   Variable   — `declaration` (module-level)
 //
 // REFERENCES:
-//   Imports    — `groovy_import`
-//   Calls      — `function_call`, `juxt_function_call`
+//   Imports    — `import_declaration`
+//   Calls      — `method_invocation`
+//
+// Grammar: tree-sitter-groovy.  Actual node kinds confirmed by CST probe:
+//   class_declaration  (fields: name, body)
+//   method_declaration (fields: type, name, parameters, body)
+//   function_definition (fields: name, parameters, body)   ← top-level `def fn`
+//   package_declaration
+//   import_declaration
+//   method_invocation  (fields: name, arguments)
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
@@ -53,19 +61,24 @@ fn visit(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "groovy_package" => {
+            "package_declaration" => {
                 extract_package(&child, src, symbols, parent_index);
             }
-            "class_definition" => {
+            "class_declaration" => {
                 extract_class(&child, src, symbols, refs, parent_index);
             }
-            "function_definition" | "function_declaration" => {
+            // Top-level `def fn(...)` — grammar emits function_definition
+            "function_definition" => {
                 extract_function(&child, src, symbols, refs, parent_index, inside_class);
             }
-            "groovy_import" => {
+            // Typed `ReturnType method(...)` inside a class — grammar emits method_declaration
+            "method_declaration" => {
+                extract_method_declaration(&child, src, symbols, refs, parent_index);
+            }
+            "import_declaration" => {
                 extract_import(&child, src, symbols.len().saturating_sub(1), refs);
             }
-            "function_call" | "juxt_function_call" => {
+            "method_invocation" => {
                 extract_call(&child, src, parent_index.unwrap_or(0), refs);
                 visit(child, src, symbols, refs, parent_index, inside_class);
             }
@@ -86,7 +99,6 @@ fn extract_package(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    // groovy_package contains a qualified_name
     let name = build_qualified_name(node, src);
     if name.is_empty() {
         return;
@@ -120,6 +132,7 @@ fn extract_class(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
+    // class_declaration has a `name` field (identifier)
     let name = match named_field_text(node, "name", src) {
         Some(n) => n,
         None => return,
@@ -144,25 +157,29 @@ fn extract_class(
     });
 
     // Walk class body for methods
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "function_definition" | "function_declaration" => {
-                extract_function(&child, src, symbols, refs, Some(class_idx), true);
-            }
-            "function_call" | "juxt_function_call" => {
-                extract_call(&child, src, class_idx, refs);
-            }
-            _ => {
-                // Recurse into other class body nodes for calls
-                visit_for_calls(&child, src, class_idx, refs);
+    if let Some(body) = node.child_by_field_name("body") {
+        let mut cursor = body.walk();
+        for child in body.children(&mut cursor) {
+            match child.kind() {
+                "method_declaration" => {
+                    extract_method_declaration(&child, src, symbols, refs, Some(class_idx));
+                }
+                "function_definition" => {
+                    extract_function(&child, src, symbols, refs, Some(class_idx), true);
+                }
+                "method_invocation" => {
+                    extract_call(&child, src, class_idx, refs);
+                }
+                _ => {
+                    visit_for_calls(&child, src, class_idx, refs);
+                }
             }
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// Function / Method extraction
+// Function (top-level `def fn(...)`)
 // ---------------------------------------------------------------------------
 
 fn extract_function(
@@ -173,9 +190,8 @@ fn extract_function(
     parent_index: Option<usize>,
     inside_class: bool,
 ) {
-    let name = match named_field_text(node, "function", src)
-        .or_else(|| named_field_text(node, "name", src))
-    {
+    // function_definition has a `name` field
+    let name = match named_field_text(node, "name", src) {
         Some(n) => n,
         None => return,
     };
@@ -193,13 +209,57 @@ fn extract_function(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: 0,
-        signature: Some(format!("{}", name)),
+        signature: Some(format!("def {}", name)),
         doc_comment: None,
         scope_path: None,
         parent_index,
     });
 
-    // Collect calls inside function body
+    visit_for_calls(node, src, idx, refs);
+}
+
+// ---------------------------------------------------------------------------
+// Method (typed form: `int add(int a, int b)`)
+// ---------------------------------------------------------------------------
+
+fn extract_method_declaration(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // method_declaration has fields: type, name, parameters, body
+    let name = match named_field_text(node, "name", src) {
+        Some(n) => n,
+        None => return,
+    };
+
+    let return_type = named_field_text(node, "type", src).unwrap_or_default();
+    let line = node.start_position().row as u32;
+    let idx = symbols.len();
+
+    let sig = if return_type.is_empty() {
+        name.clone()
+    } else {
+        format!("{} {}", return_type, name)
+    };
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name.clone(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: line,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: 0,
+        signature: Some(sig),
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
+    });
+
     visit_for_calls(node, src, idx, refs);
 }
 
@@ -240,7 +300,7 @@ fn extract_import(
 }
 
 // ---------------------------------------------------------------------------
-// Call extraction
+// Call extraction (method_invocation)
 // ---------------------------------------------------------------------------
 
 fn extract_call(
@@ -249,7 +309,8 @@ fn extract_call(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    let name = match named_field_text(node, "function", src) {
+    // method_invocation has field `name` (identifier)
+    let name = match named_field_text(node, "name", src) {
         Some(n) => n,
         None => return,
     };
@@ -265,14 +326,14 @@ fn extract_call(
 }
 
 // ---------------------------------------------------------------------------
-// Walk subtree collecting call nodes
+// Walk subtree collecting method_invocation nodes
 // ---------------------------------------------------------------------------
 
 fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
-            "function_call" | "juxt_function_call" => {
+            "method_invocation" => {
                 extract_call(&child, src, source_idx, refs);
                 visit_for_calls(&child, src, source_idx, refs);
             }
@@ -298,17 +359,17 @@ fn named_field_text(node: &Node, field: &str, src: &str) -> Option<String> {
         .filter(|s| !s.is_empty())
 }
 
-/// Build a dotted qualified name from identifier children
+/// Build a dotted qualified name from scoped_identifier / identifier children
 fn build_qualified_name(node: &Node, src: &str) -> String {
-    let mut parts = Vec::new();
+    // package_declaration contains a scoped_identifier or identifier
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "identifier" || child.kind() == "qualified_name" {
-            let text = node_text(&child, src);
-            if !text.is_empty() {
-                parts.push(text.to_string());
+        match child.kind() {
+            "scoped_identifier" | "identifier" => {
+                return node_text(&child, src).to_string();
             }
+            _ => {}
         }
     }
-    parts.join(".")
+    String::new()
 }

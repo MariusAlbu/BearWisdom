@@ -1,11 +1,5 @@
 // =============================================================================
 // matlab/coverage_tests.rs  —  One test per declared symbol_node_kind and ref_node_kind
-//
-// NOTE: The `assignment` extraction has a known bug: walk_node is called on
-// the root `source_file` node with top_level=true, but the default `_` arm calls
-// walk_children_with_level(..., false), so by the time assignment children of
-// source_file are visited top_level is already false. Top-level assignments are
-// therefore never captured. The test documents this behaviour.
 // =============================================================================
 
 use super::extract::extract;
@@ -40,15 +34,14 @@ fn symbol_class_definition() {
 }
 
 /// symbol_node_kind: `assignment`  →  Variable (top-level)
-/// NOTE: The extractor has a bug where the top_level flag is always false by
-/// the time assignment children of the root source_file are visited. Top-level
-/// assignments are therefore never captured. This test documents the current
-/// behaviour — no panic, empty symbols.
 #[test]
 fn symbol_assignment_top_level() {
     let r = extract("threshold = 42;");
-    // Known limitation: assignment not extracted due to top_level flag bug.
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "threshold" && s.kind == SymbolKind::Variable),
+        "expected Variable threshold from top-level assignment; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 // ---------------------------------------------------------------------------

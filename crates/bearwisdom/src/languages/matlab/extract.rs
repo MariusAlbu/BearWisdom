@@ -47,6 +47,10 @@ fn walk_node(
     top_level: bool,
 ) {
     match node.kind() {
+        "source_file" => {
+            // Propagate top_level=true to direct children of the root
+            walk_children_with_level(node, src, symbols, refs, parent_idx, true);
+        }
         "function_definition" => {
             let name = node
                 .child_by_field_name("name")
@@ -82,8 +86,9 @@ fn walk_node(
             walk_children_with_level(node, src, symbols, refs, Some(idx), false);
         }
         "assignment" if top_level => {
-            // Only capture simple `var = expr` at top level as Variable
-            if let Some(lhs) = node.child_by_field_name("variable") {
+            // Only capture simple `var = expr` at top level as Variable.
+            // The grammar uses field name "left" for the LHS, not "variable".
+            if let Some(lhs) = node.child_by_field_name("left") {
                 let name = text(lhs, src);
                 if !name.is_empty() && is_simple_ident(&name) {
                     symbols.push(make_sym(

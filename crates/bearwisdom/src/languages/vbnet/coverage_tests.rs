@@ -1,12 +1,12 @@
 // =============================================================================
 // vbnet/coverage_tests.rs  —  One test per declared symbol_node_kind and ref_node_kind
 //
-// NOTE: The tree-sitter-vb-dotnet grammar has known parse limitations:
-// - `Inherits BaseClass` inside a class body is parsed as field_declaration + ERROR
-//   rather than inherits_clause, so the extractor's inherits_clause handler yields nothing.
-// - `Dim x As New Type()` parses the `New` expression into an as_clause with ERROR,
-//   so new_expression yields nothing.
-// Tests for those node kinds document the current behaviour (no panic).
+// NOTE: The tree-sitter-vb-dotnet grammar encodes `Inherits BaseClass` inside a
+// class body as field_declaration + ERROR rather than inherits_clause. The
+// extractor handles this via the field_declaration arm.
+//
+// `Dim x As New Type()` parses the `New` expression into an as_clause with ERROR,
+// so new_expression is not emitted by the grammar. The test documents this.
 // =============================================================================
 
 use super::extract::extract;
@@ -150,12 +150,14 @@ fn ref_new_expression() {
 }
 
 /// ref_node_kind: `inherits_clause`  →  Inherits edge
-/// NOTE: `Inherits BaseClass` in a class body is parsed by the grammar as a
-/// field_declaration + ERROR rather than inherits_clause, so the extractor
-/// produces no Inherits edge. This test documents the current behaviour.
+/// The grammar encodes `Inherits Animal` as field_declaration + ERROR; the
+/// extractor detects this pattern via the field_declaration arm.
 #[test]
 fn ref_inherits_clause() {
-    let r = extract("Public Class Dog\n  Inherits Animal\nEnd Class");
-    // Grammar mismatch: inherits_clause not produced; assert no panic.
-    let _ = r;
+    let r = extract("Public Class Dog\n    Inherits Animal\nEnd Class");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
+        "expected Inherits Animal from Inherits clause; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }

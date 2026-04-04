@@ -57,3 +57,20 @@ source ./lib/utils.sh
         assert!(targets.contains(&"utils"), "expected 'utils': {targets:?}");
         assert!(targets.contains(&"config"), "expected 'config': {targets:?}");
     }
+
+    #[test]
+    fn top_level_command_call_produces_calls_ref() {
+        let src = r#"
+deploy_app
+notify_slack done
+"#;
+        let r = extract::extract(src);
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert!(calls.contains(&"deploy_app"), "expected Calls ref to 'deploy_app'; got: {calls:?}");
+        assert!(calls.contains(&"notify_slack"), "expected Calls ref to 'notify_slack'; got: {calls:?}");
+    }
