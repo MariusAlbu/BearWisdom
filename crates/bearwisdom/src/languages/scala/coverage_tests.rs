@@ -480,3 +480,94 @@ fn debug_extends_generic() {
     let r = extract("class Foo extends Bar[Int] with Baz");
     eprintln!("Refs: {:?}", r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
 }
+
+#[test]
+#[ignore]
+fn debug_val_definition_miss_patterns() {
+    // Read a few Scala files, parse them, and for each val_definition node
+    // that does NOT produce a symbol, print its text to understand the patterns.
+    let lang: tree_sitter::Language = tree_sitter_scala::LANGUAGE.into();
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&lang).unwrap();
+
+    let files = [
+        "F:/Work/Projects/TestProjects/scala-lila/app/controllers/Account.scala",
+        "F:/Work/Projects/TestProjects/scala-lila/app/models/GameFilter.scala",
+        "F:/Work/Projects/TestProjects/scala-lila/app/ui/base.scala",
+        "F:/Work/Projects/TestProjects/scala-lila/modules/common/src/main/Form.scala",
+    ];
+
+    for file_path in &files {
+        let src = match std::fs::read_to_string(file_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        let src_bytes = src.as_bytes();
+        let tree = match parser.parse(&src, None) {
+            Some(t) => t,
+            None => continue,
+        };
+        let result = super::extract::extract(&src);
+        let sym_lines: std::collections::HashSet<u32> = result.symbols.iter().map(|s| s.start_line).collect();
+
+        // Walk CST for val_definition nodes
+        let mut stack: Vec<(tree_sitter::Node, String)> = vec![(tree.root_node(), "root".to_string())];
+        let mut missing = Vec::new();
+        while let Some((node, parent_kind)) = stack.pop() {
+            if node.kind() == "val_definition" {
+                let line = node.start_position().row as u32;
+                if !sym_lines.contains(&line) {
+                    let text = node.utf8_text(src_bytes).unwrap_or("?");
+                    let snippet = text.chars().take(80).collect::<String>().replace('\n', " ");
+                    missing.push((line, snippet, parent_kind.clone()));
+                }
+            }
+            let node_kind = node.kind().to_string();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) { stack.push((child, node_kind.clone())); }
+        }
+
+        if !missing.is_empty() {
+            eprintln!("\n=== {} ===", file_path);
+            for (line, text, parent) in missing.iter().take(10) {
+                eprintln!("  line {} [parent={}]: {:?}", line, parent, text);
+            }
+        }
+    }
+}
+
+#[test]
+#[ignore]
+fn debug_measure_scala_coverage() {
+    let projects = [
+        "F:/Work/Projects/TestProjects/scala-lila",
+        "F:/Work/Projects/TestProjects/scala-trading",
+    ];
+    let project_path = projects.iter().find(|p| std::path::Path::new(p).exists()).copied();
+    let project_path = match project_path {
+        Some(p) => p,
+        None => { eprintln!("No Scala test project found"); return; }
+    };
+    eprintln!("Using project: {}", project_path);
+    let results = crate::query::coverage::analyze_coverage(std::path::Path::new(project_path));
+    for cov in &results {
+        if cov.language == "scala" {
+            eprintln!("=== Scala ===");
+            eprintln!("  files: {}", cov.file_count);
+            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
+            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!("  --- symbol kinds (worst first) ---");
+            let mut sym_kinds = cov.symbol_kinds.clone();
+            sym_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in sym_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+            eprintln!("  --- ref kinds (worst first) ---");
+            let mut ref_kinds = cov.ref_kinds.clone();
+            ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in ref_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+        }
+    }
+}

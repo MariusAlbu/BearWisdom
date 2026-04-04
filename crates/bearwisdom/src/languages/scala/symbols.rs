@@ -239,22 +239,51 @@ pub(super) fn push_val_var(
     parent_index: Option<usize>,
 ) {
     // val_definition: pattern field or first identifier child.
+    // Also handles pattern-based bindings: tuple_pattern, type_pattern, wildcard, etc.
     let name_opt = node
         .child_by_field_name("name")
         .map(|n| node_text(n, src))
         .or_else(|| {
-            // Pattern may be typed_pattern → identifier.
+            // Walk all named children for any pattern that contains an identifier.
+            // Handles: typed_pattern → identifier
+            //          tuple_pattern → identifier (first element)
+            //          extraction_pattern / stable_id → qualified name
+            //          wildcard_pattern → "_" (unnamed binding)
+            //          identifier directly
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 match child.kind() {
                     "identifier" => return Some(node_text(child, src)),
-                    "typed_pattern" => {
+                    "typed_pattern" | "type_pattern" => {
                         let mut pc = child.walk();
                         for inner in child.children(&mut pc) {
                             if inner.kind() == "identifier" {
                                 return Some(node_text(inner, src));
                             }
                         }
+                    }
+                    "tuple_pattern" => {
+                        // `val (a, b) = expr` — use first identifier as representative name.
+                        let mut tc = child.walk();
+                        for inner in child.children(&mut tc) {
+                            if inner.kind() == "identifier" {
+                                return Some(node_text(inner, src));
+                            }
+                        }
+                    }
+                    "case_class_pattern" | "extraction_pattern" => {
+                        // `val MyClass(x, y) = obj` — use the class name as representative.
+                        if let Some(fn_node) = child.child_by_field_name("type")
+                            .or_else(|| child.named_child(0)) {
+                            let n = node_text(fn_node, src);
+                            if !n.is_empty() {
+                                return Some(n);
+                            }
+                        }
+                    }
+                    "wildcard_pattern" => {
+                        // `val _ = expr` — unnamed binding, use "_"
+                        return Some("_".to_string());
                     }
                     _ => {}
                 }

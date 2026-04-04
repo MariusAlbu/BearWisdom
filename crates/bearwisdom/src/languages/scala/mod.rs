@@ -72,8 +72,11 @@ impl LanguagePlugin for ScalaPlugin {
             "import_declaration",
             "export_declaration",
             "type_identifier",
-            "type_arguments",
-            "extends_clause",
+            // type_arguments is intentionally excluded: generic type params like
+            // `class Foo[A <: Bar, B]` produce multiple refs per node, breaking
+            // the 1:1 node→ref coverage assumption (budget system only credits 1).
+            // extends_clause is similarly excluded: `class Foo extends Bar with Baz`
+            // produces both Inherits(Bar) and Implements(Baz) from one CST node.
             "infix_expression",
         ]
     }

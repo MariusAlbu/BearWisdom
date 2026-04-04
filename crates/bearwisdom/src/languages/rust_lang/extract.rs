@@ -74,6 +74,21 @@ pub fn extract(source: &str) -> ExtractionResult {
         scan_all_type_identifiers(root, source, 0, &mut refs);
     }
 
+    // Third pass: scan ALL attribute_item nodes and emit TypeRef for any that
+    // weren't already captured by extract_decorators (e.g., attributes on items
+    // inside function bodies, #[cfg]-gated items, or non-standard item kinds).
+    // Build an (line, name) dedup set from existing TypeRef refs to avoid doubles.
+    {
+        let existing: rustc_hash::FxHashSet<(u32, String)> = refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::TypeRef)
+            .map(|r| (r.line, r.target_name.clone()))
+            .collect();
+        let mut new_refs: Vec<ExtractedRef> = Vec::new();
+        scan_all_attribute_items(root, source, 0, &existing, &mut new_refs);
+        refs.extend(new_refs);
+    }
+
     let has_errors = tree.root_node().has_error();
     ExtractionResult::new(syms, refs, has_errors)
 }
@@ -342,6 +357,66 @@ fn scan_all_type_identifiers(
         }
         scan_all_type_identifiers(child, source, sym_idx, refs);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Full-tree attribute_item scan
+// ---------------------------------------------------------------------------
+
+/// Recursively scan ALL `attribute_item` nodes and emit TypeRef for any that
+/// weren't already emitted by the main pass (to avoid duplicates).
+///
+/// This catches attributes on items that `extract_from_node` falls through
+/// (e.g., items inside function bodies, non-standard item kinds, closure params).
+fn scan_all_attribute_items(
+    node: tree_sitter::Node,
+    source: &str,
+    sym_idx: usize,
+    existing: &rustc_hash::FxHashSet<(u32, String)>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "attribute_item" && child.is_named() {
+            let line = child.start_position().row as u32;
+            // Parse the attribute name from the attribute_item node.
+            // Shape: attribute_item → attribute → identifier | scoped_identifier
+            let name = parse_attr_name(&child, source);
+            if !name.is_empty() && !existing.contains(&(line, name.clone())) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line,
+                    module: None,
+                    chain: None,
+                });
+            }
+            // Don't recurse into attribute_item children.
+            continue;
+        }
+        scan_all_attribute_items(child, source, sym_idx, existing, refs);
+    }
+}
+
+fn parse_attr_name(attr_item: &tree_sitter::Node, source: &str) -> String {
+    let mut cursor = attr_item.walk();
+    for child in attr_item.children(&mut cursor) {
+        if child.kind() == "attribute" {
+            let mut ac = child.walk();
+            for attr_child in child.children(&mut ac) {
+                match attr_child.kind() {
+                    "identifier" => return helpers::node_text(&attr_child, source),
+                    "scoped_identifier" => {
+                        let full = helpers::node_text(&attr_child, source);
+                        return full.rsplit("::").next().unwrap_or(&full).to_string();
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 // ---------------------------------------------------------------------------

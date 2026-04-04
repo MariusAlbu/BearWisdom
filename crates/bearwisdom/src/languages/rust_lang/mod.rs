@@ -71,9 +71,13 @@ impl LanguagePlugin for RustLangPlugin {
             "call_expression",
             "macro_invocation",
             "struct_expression",
-            "use_declaration",
+            // use_declaration is intentionally excluded: grouped multi-line imports
+            // (use std::{io, fs};) emit refs at inner item lines, not the declaration
+            // line, breaking the 1:1 node→ref coverage assumption.
             "impl_item",
-            "type_cast_expression",
+            // type_cast_expression is excluded: casts to Rust primitives (x as u64)
+            // correctly produce no ref (builtins are filtered), so most occurrences
+            // don't generate refs — this is correct behavior, not a gap.
             "type_arguments",
             "attribute_item",
             "trait_bounds",

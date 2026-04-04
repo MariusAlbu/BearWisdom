@@ -367,6 +367,26 @@ fn walk_and_classify(
     sym_by_line: &mut FxHashMap<String, Vec<u32>>,
     ref_by_line: &mut FxHashMap<String, Vec<u32>>,
 ) {
+    walk_and_classify_inner(
+        node, src, sym_kinds, ref_kinds, builtins,
+        sym_counts, ref_counts, structural_counts, sym_by_line, ref_by_line,
+        None,
+    );
+}
+
+fn walk_and_classify_inner(
+    node: tree_sitter::Node,
+    src: &[u8],
+    sym_kinds: &FxHashSet<&str>,
+    ref_kinds: &FxHashSet<&str>,
+    builtins: &FxHashSet<&str>,
+    sym_counts: &mut FxHashMap<String, u64>,
+    ref_counts: &mut FxHashMap<String, u64>,
+    structural_counts: &mut FxHashMap<String, u64>,
+    sym_by_line: &mut FxHashMap<String, Vec<u32>>,
+    ref_by_line: &mut FxHashMap<String, Vec<u32>>,
+    parent_kind: Option<&str>,
+) {
     if node.is_named() {
         let kind = node.kind();
         // For method_invocation and similar chained-call nodes, the extractor emits
@@ -375,40 +395,57 @@ fn walk_and_classify(
         // Use the name-child line when available so coverage correlation is accurate.
         let line = effective_ref_line(&node);
 
-        // Skip builtin type_identifiers from the count — extractors correctly
-        // don't emit TypeRef for these, so including them inflates the denominator.
-        let is_type_id = kind == "type_identifier" || kind == "user_type"
-            || kind == "named_type" || kind == "constant";
-        if is_type_id && !builtins.is_empty() {
-            let text = node.utf8_text(src).unwrap_or("");
-            // For qualified types like "std.io.Result", check the last segment
-            let name = text.rsplit(&['.', ':', '\\'][..]).next().unwrap_or(text);
-            if builtins.contains(name) {
-                // Don't count this node — it's a builtin that extractors correctly skip
+        // Skip constant/scope_resolution nodes that are structural children of
+        // scope_resolution. E.g. in `Foo::Bar::Baz`, tree-sitter produces nested
+        // scope_resolution nodes. The extractor emits one ref for the outermost node;
+        // inner scope_resolution and constant children are structural parts of the
+        // syntax, not independent ref-producing sites.
+        let is_scope_child = parent_kind == Some("scope_resolution")
+            && (kind == "constant" || kind == "scope_resolution");
+
+        if is_scope_child {
+            // Don't count this node as a ref — it's structural part of a chain.
+            // Still count it as structural for info purposes.
+            if !sym_kinds.contains(kind) && !ref_kinds.contains(kind) {
+                *structural_counts.entry(kind.to_string()).or_insert(0) += 1;
+            }
+        } else {
+            // Skip builtin type_identifiers from the count — extractors correctly
+            // don't emit TypeRef for these, so including them inflates the denominator.
+            let is_type_id = kind == "type_identifier" || kind == "user_type"
+                || kind == "named_type" || kind == "constant";
+            if is_type_id && !builtins.is_empty() {
+                let text = node.utf8_text(src).unwrap_or("");
+                // For qualified types like "std.io.Result", check the last segment
+                let name = text.rsplit(&['.', ':', '\\'][..]).next().unwrap_or(text);
+                if builtins.contains(name) {
+                    // Don't count this node — it's a builtin that extractors correctly skip
+                } else if ref_kinds.contains(kind) {
+                    *ref_counts.entry(kind.to_string()).or_insert(0) += 1;
+                    ref_by_line.entry(kind.to_string()).or_default().push(line);
+                }
+            } else if sym_kinds.contains(kind) {
+                *sym_counts.entry(kind.to_string()).or_insert(0) += 1;
+                sym_by_line
+                    .entry(kind.to_string())
+                    .or_default()
+                    .push(line);
             } else if ref_kinds.contains(kind) {
                 *ref_counts.entry(kind.to_string()).or_insert(0) += 1;
-                ref_by_line.entry(kind.to_string()).or_default().push(line);
+                ref_by_line
+                    .entry(kind.to_string())
+                    .or_default()
+                    .push(line);
+            } else {
+                *structural_counts.entry(kind.to_string()).or_insert(0) += 1;
             }
-        } else if sym_kinds.contains(kind) {
-            *sym_counts.entry(kind.to_string()).or_insert(0) += 1;
-            sym_by_line
-                .entry(kind.to_string())
-                .or_default()
-                .push(line);
-        } else if ref_kinds.contains(kind) {
-            *ref_counts.entry(kind.to_string()).or_insert(0) += 1;
-            ref_by_line
-                .entry(kind.to_string())
-                .or_default()
-                .push(line);
-        } else {
-            *structural_counts.entry(kind.to_string()).or_insert(0) += 1;
         }
     }
 
+    let node_kind = if node.is_named() { Some(node.kind()) } else { None };
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        walk_and_classify(
+        walk_and_classify_inner(
             child,
             src,
             sym_kinds,
@@ -419,6 +456,7 @@ fn walk_and_classify(
             structural_counts,
             sym_by_line,
             ref_by_line,
+            node_kind,
         );
     }
 }

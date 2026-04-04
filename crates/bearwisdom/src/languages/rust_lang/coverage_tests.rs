@@ -781,3 +781,35 @@ fn coverage_attribute_item_on_enum_variant_emits_type_ref() {
         "expected TypeRef to 'default' from #[default] on enum variant; refs: {type_refs:?}"
     );
 }
+
+#[test]
+#[ignore]
+fn debug_measure_rust_coverage() {
+    let projects = [
+        "F:/Work/Projects/TestProjects/rust-lemmy",
+        "F:/Work/Projects/TestProjects/rust-loco",
+        "F:/Work/Projects/TestProjects/rust-ast-grep",
+        "F:/Work/Projects/TestProjects/rust-tantivy",
+    ];
+    let project_path = projects.iter().find(|p| std::path::Path::new(p).exists()).copied();
+    let project_path = match project_path {
+        Some(p) => p,
+        None => { eprintln!("No Rust test project found"); return; }
+    };
+    eprintln!("Using project: {}", project_path);
+    let results = crate::query::coverage::analyze_coverage(std::path::Path::new(project_path));
+    for cov in &results {
+        if cov.language == "rust" {
+            eprintln!("=== Rust ===");
+            eprintln!("  files: {}", cov.file_count);
+            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
+            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!("  --- ref kinds (worst first) ---");
+            let mut ref_kinds = cov.ref_kinds.clone();
+            ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in ref_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+        }
+    }
+}

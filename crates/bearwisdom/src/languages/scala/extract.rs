@@ -261,22 +261,31 @@ pub(super) fn extract_node<'a>(
 
             // Call expressions outside a function body (e.g. val/var initializers,
             // top-level statements, object body expressions).
+            // Also recurse with extract_node to capture val_definition / function_definition
+            // inside lambda bodies passed as arguments (especially Scala 3 indented blocks).
             "call_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 dispatch_body_node(child, src, sym_idx, refs);
                 extract_calls_from_body(&child, src, sym_idx, refs);
+                // Pick up nested symbols (val/def) inside lambda argument bodies.
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             "infix_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 dispatch_body_node(child, src, sym_idx, refs);
                 extract_calls_from_body(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
-            // `new Dog(args)` at expression level
+            // `new Dog(args)` or `new Trait { def method() = ... }` at expression level.
+            // Extract calls AND recurse into any anonymous class body for nested symbols.
             "instance_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 extract_calls_from_body(&child, src, sym_idx, refs);
+                // Recurse to extract nested function_definition / val_definition inside
+                // anonymous class bodies: `new Foo { def bar() = ... }`.
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
             // Generic type arguments appearing in expression context (e.g. method call

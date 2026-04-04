@@ -47,8 +47,9 @@ impl LanguagePlugin for SwiftPlugin {
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_declaration",
+            "struct_declaration",
             "protocol_declaration",
-            "enum_class_body",
+            "enum_declaration",    // ← was incorrectly "enum_class_body" (the body container)
             "function_declaration",
             "init_declaration",
             "protocol_function_declaration",
@@ -72,7 +73,10 @@ impl LanguagePlugin for SwiftPlugin {
             "user_type",
             "as_expression",
             "check_expression",
-            "type_identifier",
+            // type_identifier is intentionally excluded: in Swift's grammar, type_identifier
+            // always appears as a leaf inside user_type. Counting both inflates the denominator
+            // since the extractor emits one ref per user_type (matching the user_type budget),
+            // leaving all type_identifier entries unmatched. user_type is the correct unit.
             "protocol_composition_type",
         ]
     }

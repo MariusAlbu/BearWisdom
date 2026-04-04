@@ -374,3 +374,39 @@ fn ref_uiviewcontroller_not_in_refs() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+#[test]
+#[ignore]
+fn debug_measure_swift_coverage() {
+    let projects = [
+        "F:/Work/Projects/TestProjects/swift-icecubes",
+        "F:/Work/Projects/TestProjects/swift-package-index",
+    ];
+    let project_path = projects.iter().find(|p| std::path::Path::new(p).exists()).copied();
+    let project_path = match project_path {
+        Some(p) => p,
+        None => { eprintln!("No Swift test project found"); return; }
+    };
+    eprintln!("Using project: {}", project_path);
+    let results = crate::query::coverage::analyze_coverage(std::path::Path::new(project_path));
+    for cov in &results {
+        if cov.language == "swift" {
+            eprintln!("=== Swift ===");
+            eprintln!("  files: {}", cov.file_count);
+            eprintln!("  sym: {:.1}% ({}/{})", cov.symbol_coverage.percent, cov.symbol_coverage.matched_nodes, cov.symbol_coverage.expected_nodes);
+            eprintln!("  ref: {:.1}% ({}/{})", cov.ref_coverage.percent, cov.ref_coverage.matched_nodes, cov.ref_coverage.expected_nodes);
+            eprintln!("  --- symbol kinds (worst first) ---");
+            let mut sym_kinds = cov.symbol_kinds.clone();
+            sym_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in sym_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+            eprintln!("  --- ref kinds (worst first) ---");
+            let mut ref_kinds = cov.ref_kinds.clone();
+            ref_kinds.sort_by(|a, b| a.percent.partial_cmp(&b.percent).unwrap());
+            for k in ref_kinds.iter().take(10) {
+                eprintln!("    {}: {:.1}% ({}/{}) miss={}", k.kind, k.percent, k.matched, k.occurrences, k.occurrences - k.matched);
+            }
+        }
+    }
+}
