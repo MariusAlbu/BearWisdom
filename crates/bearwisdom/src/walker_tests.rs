@@ -75,9 +75,85 @@ fn detect_dockerfile() {
 }
 
 #[test]
+fn detect_new_languages() {
+    // PowerShell
+    assert_eq!(detect_language(Path::new("script.ps1")), Some("powershell"));
+    assert_eq!(detect_language(Path::new("module.psm1")), Some("powershell"));
+    assert_eq!(detect_language(Path::new("manifest.psd1")), Some("powershell"));
+    // Groovy
+    assert_eq!(detect_language(Path::new("build.gradle")), Some("groovy"));
+    assert_eq!(detect_language(Path::new("Foo.groovy")), Some("groovy"));
+    // Erlang
+    assert_eq!(detect_language(Path::new("server.erl")), Some("erlang"));
+    assert_eq!(detect_language(Path::new("header.hrl")), Some("erlang"));
+    // F#
+    assert_eq!(detect_language(Path::new("Main.fs")), Some("fsharp"));
+    assert_eq!(detect_language(Path::new("Sig.fsi")), Some("fsharp"));
+    assert_eq!(detect_language(Path::new("script.fsx")), Some("fsharp"));
+    // GDScript
+    assert_eq!(detect_language(Path::new("player.gd")), Some("gdscript"));
+    // VB.NET
+    assert_eq!(detect_language(Path::new("Module.vb")), Some("vbnet"));
+    // Nim
+    assert_eq!(detect_language(Path::new("app.nim")), Some("nim"));
+    assert_eq!(detect_language(Path::new("config.nims")), Some("nim"));
+    // Gleam
+    assert_eq!(detect_language(Path::new("main.gleam")), Some("gleam"));
+    // Nix
+    assert_eq!(detect_language(Path::new("default.nix")), Some("nix"));
+    // HCL / Terraform
+    assert_eq!(detect_language(Path::new("main.tf")), Some("hcl"));
+    assert_eq!(detect_language(Path::new("vars.tfvars")), Some("hcl"));
+    assert_eq!(detect_language(Path::new("config.hcl")), Some("hcl"));
+    // Puppet
+    assert_eq!(detect_language(Path::new("nginx.pp")), Some("puppet"));
+    // Starlark / Bazel
+    assert_eq!(detect_language(Path::new("rules.bzl")), Some("starlark"));
+    assert_eq!(detect_language(Path::new("defs.star")), Some("starlark"));
+    // Protocol Buffers
+    assert_eq!(detect_language(Path::new("service.proto")), Some("proto"));
+    // GraphQL
+    assert_eq!(detect_language(Path::new("schema.graphql")), Some("graphql"));
+    assert_eq!(detect_language(Path::new("query.gql")), Some("graphql"));
+    // Prisma
+    assert_eq!(detect_language(Path::new("schema.prisma")), Some("prisma"));
+    // Bicep
+    assert_eq!(detect_language(Path::new("main.bicep")), Some("bicep"));
+    // CMake
+    assert_eq!(detect_language(Path::new("module.cmake")), Some("cmake"));
+    // Ada
+    assert_eq!(detect_language(Path::new("main.adb")), Some("ada"));
+    assert_eq!(detect_language(Path::new("spec.ads")), Some("ada"));
+    // Fortran
+    assert_eq!(detect_language(Path::new("solver.f90")), Some("fortran"));
+    assert_eq!(detect_language(Path::new("math.f95")), Some("fortran"));
+    // Pascal (.pp goes to puppet; .pas and .dpr are unambiguous)
+    assert_eq!(detect_language(Path::new("program.pas")), Some("pascal"));
+    assert_eq!(detect_language(Path::new("project.dpr")), Some("pascal"));
+    // COBOL
+    assert_eq!(detect_language(Path::new("payroll.cob")), Some("cobol"));
+    assert_eq!(detect_language(Path::new("report.cbl")), Some("cobol"));
+    // Clojure
+    assert_eq!(detect_language(Path::new("core.clj")), Some("clojure"));
+    assert_eq!(detect_language(Path::new("app.cljs")), Some("clojure"));
+    assert_eq!(detect_language(Path::new("shared.cljc")), Some("clojure"));
+    // OCaml
+    assert_eq!(detect_language(Path::new("main.ml")), Some("ocaml"));
+    assert_eq!(detect_language(Path::new("sig.mli")), Some("ocaml"));
+    // Svelte
+    assert_eq!(detect_language(Path::new("App.svelte")), Some("svelte"));
+    // Astro
+    assert_eq!(detect_language(Path::new("index.astro")), Some("astro"));
+    // Perl (.pm only; .pl omitted due to Prolog conflict)
+    assert_eq!(detect_language(Path::new("lib.pm")), Some("perl"));
+    // Ambiguous / skipped extensions — must remain None.
+    assert_eq!(detect_language(Path::new("script.pl")), None); // .pl too ambiguous
+    assert_eq!(detect_language(Path::new("main.m")), None);    // .m stays with ObjC / undetected
+}
+
+#[test]
 fn detect_unsupported() {
     assert_eq!(detect_language(Path::new("image.png")), None);
-    assert_eq!(detect_language(Path::new("build.gradle")), None);
     assert_eq!(detect_language(Path::new("file.lock")), None);
     assert_eq!(detect_language(Path::new("binary.exe")), None);
 }
