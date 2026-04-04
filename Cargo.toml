@@ -73,6 +73,23 @@ tree-sitter-bicep     = "1.1"
 tree-sitter-odin      = "1.3"
 tree-sitter-hare      = "0.20"
 tree-sitter-starlark  = "1.3"
+# --- Wave 7 grammars (SO 2025 top languages) ---
+tree-sitter-powershell = "0.26"
+tree-sitter-groovy     = "0.1"
+# tree-sitter-perl     = "1.1"   # TODO: hard-dep on tree-sitter 0.26 — incompatible with 0.25
+tree-sitter-erlang     = "0.15"
+tree-sitter-fsharp     = "0.2"
+tree-sitter-gdscript   = "6.1"
+# --- Wave 2 grammars (SO 2025 survey) ---
+tree-sitter-vb-dotnet = "0.1"
+tree-sitter-matlab    = "1.3"
+tree-sitter-clojure   = "0.1"
+tree-sitter-ocaml     = "0.24"
+tree-sitter-ada       = "0.1"
+tree-sitter-fortran   = "0.5"
+# --- Wave 3 grammars (SO 2025 lower-priority) ---
+tree-sitter-pascal    = "0.10"   # Pascal/Delphi — real grammar, LANGUAGE constant available
+tree-sitter-cobol     = "0.1"    # COBOL — stub crate (0.1.0), no grammar yet; plugin uses line scanner
 bearwisdom-profile    = { path = "crates/bearwisdom-profile" }
 rusqlite              = { version = "0.33", features = ["bundled-full"] }
 sqlite-vec            = "0.1.7"

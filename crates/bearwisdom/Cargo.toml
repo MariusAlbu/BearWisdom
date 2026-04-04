@@ -58,6 +58,23 @@ tree-sitter-bicep      = { workspace = true }
 tree-sitter-odin       = { workspace = true }
 tree-sitter-hare       = { workspace = true }
 tree-sitter-starlark   = { workspace = true }
+# Wave 7 grammars (SO 2025 top languages)
+tree-sitter-powershell = { workspace = true }
+tree-sitter-groovy     = { workspace = true }
+# tree-sitter-perl     — excluded: hard-dep on tree-sitter 0.26 (ABI conflict with 0.25)
+tree-sitter-erlang     = { workspace = true }
+tree-sitter-fsharp     = { workspace = true }
+tree-sitter-gdscript   = { workspace = true }
+# Wave 2 grammars
+tree-sitter-vb-dotnet = { workspace = true }
+tree-sitter-matlab    = { workspace = true }
+tree-sitter-clojure   = { workspace = true }
+tree-sitter-ocaml     = { workspace = true }
+tree-sitter-ada       = { workspace = true }
+tree-sitter-fortran   = { workspace = true }
+# Wave 3 grammars
+tree-sitter-pascal    = { workspace = true }
+tree-sitter-cobol     = { workspace = true }
 bearwisdom-profile     = { workspace = true }
 rusqlite               = { workspace = true }
 sqlite-vec             = { workspace = true }

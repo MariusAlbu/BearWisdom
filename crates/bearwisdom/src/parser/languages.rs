@@ -91,9 +91,29 @@ pub fn get_language(lang: &str) -> Option<Language> {
         "bicep" => tree_sitter_bicep::LANGUAGE.into(),
         "odin" => tree_sitter_odin::LANGUAGE.into(),
         "starlark" => tree_sitter_starlark::LANGUAGE.into(),
+        // ---- Wave 7: SO 2025 top languages ------------------------------------
+        "powershell" => tree_sitter_powershell::LANGUAGE.into(),
+        "groovy" => tree_sitter_groovy::LANGUAGE.into(),
+        // "perl" — excluded: tree-sitter-perl 1.1 has hard-dep on tree-sitter 0.26
+        "erlang" => tree_sitter_erlang::LANGUAGE.into(),
+        "fsharp" => tree_sitter_fsharp::LANGUAGE_FSHARP.into(),
+        "gdscript" => tree_sitter_gdscript::LANGUAGE.into(),
         // prisma (tree-sitter-prisma 0.1.1) and hare (tree-sitter-hare 0.20.7) are
         // excluded: both require old tree-sitter ABI (< 0.21 / 0.20.6).
         // TODO: wire in when updated crates are available on crates.io.
+
+        // ---- Wave 3: Pascal/Delphi -----------------------------------------------
+        "pascal" | "delphi" => tree_sitter_pascal::LANGUAGE.into(),
+        // cobol (tree-sitter-cobol 0.1.0) is a stub binary crate — no LANGUAGE export.
+        // vba and prolog: no tree-sitter grammar crates available; both use line scanners.
+
+        // ---- Wave 2: SO 2025 survey languages -----------------------------------
+        "vbnet" => tree_sitter_vb_dotnet::LANGUAGE.into(),
+        "matlab" => tree_sitter_matlab::LANGUAGE.into(),
+        "clojure" => tree_sitter_clojure::LANGUAGE.into(),
+        "ocaml" => tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+        "ada" => tree_sitter_ada::LANGUAGE.into(),
+        "fortran" => tree_sitter_fortran::LANGUAGE.into(),
 
         _ => return None,
     };

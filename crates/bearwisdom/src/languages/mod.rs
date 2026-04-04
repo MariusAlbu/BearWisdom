@@ -115,6 +115,25 @@ pub mod swift;
 pub mod typescript;
 pub mod vue;
 pub mod zig;
+// --- Wave 3 plugins (SO 2025 lower-priority) ---
+pub mod cobol;
+pub mod pascal;
+pub mod prolog;
+pub mod vba;
+// --- Wave 2 plugins (SO 2025 survey) ---
+pub mod ada;
+pub mod clojure;
+pub mod fortran;
+pub mod matlab;
+pub mod ocaml;
+pub mod vbnet;
+// --- Wave 7 plugins (SO 2025 top languages) ---
+pub mod powershell;
+pub mod groovy;
+pub mod perl;
+pub mod erlang;
+pub mod fsharp;
+pub mod gdscript;
 
 /// Build the default language registry with all built-in plugins.
 ///
@@ -169,6 +188,25 @@ pub fn default_registry() -> LanguageRegistry {
     reg.register(Arc::new(typescript::TypeScriptPlugin));
     reg.register(Arc::new(vue::VuePlugin));
     reg.register(Arc::new(zig::ZigPlugin));
+    // Wave 3
+    reg.register(Arc::new(cobol::CobolPlugin));
+    reg.register(Arc::new(pascal::PascalPlugin));
+    reg.register(Arc::new(prolog::PrologPlugin));
+    reg.register(Arc::new(vba::VbaPlugin));
+    // Wave 2
+    reg.register(Arc::new(ada::AdaPlugin));
+    reg.register(Arc::new(clojure::ClojurePlugin));
+    reg.register(Arc::new(fortran::FortranPlugin));
+    reg.register(Arc::new(matlab::MatlabPlugin));
+    reg.register(Arc::new(ocaml::OcamlPlugin));
+    reg.register(Arc::new(vbnet::VbNetPlugin));
+    // Wave 7
+    reg.register(Arc::new(powershell::PowerShellPlugin));
+    reg.register(Arc::new(groovy::GroovyPlugin));
+    reg.register(Arc::new(perl::PerlPlugin));
+    reg.register(Arc::new(erlang::ErlangPlugin));
+    reg.register(Arc::new(fsharp::FSharpPlugin));
+    reg.register(Arc::new(gdscript::GDScriptPlugin));
 
     reg
 }
