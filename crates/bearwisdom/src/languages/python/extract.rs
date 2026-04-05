@@ -7,6 +7,7 @@ use super::{calls, helpers, symbols};
 use crate::types::{EdgeKind, ExtractionResult};
 use crate::types::{ExtractedRef, ExtractedSymbol};
 use super::helpers::node_text;
+use std::collections::HashMap;
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -42,7 +43,11 @@ pub fn extract(source: &str) -> ExtractionResult {
 
     let root = tree.root_node();
 
-    extract_from_node(root, source, &mut syms, &mut refs, None, "", false);
+    // Build the import map once from the top-level CST so every call site can
+    // annotate qualified call refs with their source module.
+    let import_map = calls::build_import_map(root, source);
+
+    extract_from_node(root, source, &mut syms, &mut refs, None, "", false, &import_map);
 
     // Second pass: scan the full CST for `type` nodes and emit TypeRef for
     // each non-builtin identifier found inside a type annotation context.
@@ -66,6 +71,7 @@ pub(super) fn extract_from_node(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     inside_class: bool,
+    import_map: &HashMap<String, String>,
 ) {
     let mut cursor = node.walk();
 
@@ -81,6 +87,7 @@ pub(super) fn extract_from_node(
                     qualified_prefix,
                     inside_class,
                     &[],
+                    import_map,
                 );
             }
 
@@ -92,6 +99,7 @@ pub(super) fn extract_from_node(
                     refs,
                     parent_index,
                     qualified_prefix,
+                    import_map,
                 );
             }
 
@@ -104,6 +112,7 @@ pub(super) fn extract_from_node(
                     parent_index,
                     qualified_prefix,
                     inside_class,
+                    import_map,
                 );
             }
 
@@ -172,6 +181,7 @@ pub(super) fn extract_from_node(
                     source,
                     parent_index.unwrap_or(0),
                     refs,
+                    import_map,
                 );
                 // Extract TypeRef from variable type annotations:
                 // `items: List[str] = []` — the `assignment.type` field.
@@ -192,6 +202,7 @@ pub(super) fn extract_from_node(
                     source,
                     parent_index.unwrap_or(0),
                     refs,
+                    import_map,
                 );
             }
 
@@ -206,6 +217,7 @@ pub(super) fn extract_from_node(
                     parent_index,
                     qualified_prefix,
                     enclosing,
+                    import_map,
                 );
             }
 
@@ -220,6 +232,7 @@ pub(super) fn extract_from_node(
                     parent_index,
                     qualified_prefix,
                     enclosing,
+                    import_map,
                 );
             }
 
@@ -234,6 +247,7 @@ pub(super) fn extract_from_node(
                     parent_index,
                     qualified_prefix,
                     inside_class,
+                    import_map,
                 );
             }
         }

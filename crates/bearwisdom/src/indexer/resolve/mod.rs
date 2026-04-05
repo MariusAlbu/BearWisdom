@@ -177,6 +177,7 @@ pub fn resolve_and_write(
             }
 
             // Tier 2: Heuristic fallback.
+            let ref_module = r.module.as_deref();
             let chain_prefix = r.chain.as_ref().and_then(|c| {
                 if c.segments.len() >= 2 {
                     Some(c.segments[c.segments.len() - 2].name.as_str())
@@ -191,6 +192,7 @@ pub fn resolve_and_write(
                 file_imports,
                 source_namespace,
                 chain_prefix,
+                ref_module,
                 &name_to_ids,
                 &qname_to_id,
                 symbol_id_map,

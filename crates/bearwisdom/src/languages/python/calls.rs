@@ -4,7 +4,97 @@
 
 use super::helpers::node_text;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
+use std::collections::HashMap;
 use tree_sitter::Node;
+
+// ---------------------------------------------------------------------------
+// Import map builder
+// ---------------------------------------------------------------------------
+
+/// Build a map from local name → fully-qualified module path by scanning the
+/// immediate children of `root` for `import_statement` and
+/// `import_from_statement` nodes.
+///
+/// Mapping rules:
+/// - `import json`           → `"json"  → "json"`
+/// - `import foo.bar`        → `"foo"   → "foo.bar"` (first segment is local)
+/// - `import foo.bar as fb`  → `"fb"    → "foo.bar"`
+/// - `from foo.bar import Baz`     → `"Baz" → "foo.bar"`
+/// - `from foo import bar as b`    → `"b"   → "foo"`
+///
+/// Only the top-level module scope is scanned (not function bodies), which is
+/// where almost all Python imports live.
+pub(super) fn build_import_map(root: tree_sitter::Node, source: &str) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        match child.kind() {
+            "import_statement" => {
+                let mut ic = child.walk();
+                for item in child.children(&mut ic) {
+                    match item.kind() {
+                        "dotted_name" => {
+                            let full = node_text(&item, source);
+                            // `import foo.bar` — local name is the first segment
+                            let local = full.split('.').next().unwrap_or(&full).to_string();
+                            map.insert(local, full);
+                        }
+                        "aliased_import" => {
+                            // `import foo.bar as fb`
+                            if let (Some(name_node), Some(alias_node)) = (
+                                item.child_by_field_name("name"),
+                                item.child_by_field_name("alias"),
+                            ) {
+                                let full = node_text(&name_node, source);
+                                let alias = node_text(&alias_node, source);
+                                if !alias.is_empty() {
+                                    map.insert(alias, full);
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            "import_from_statement" => {
+                let module = match child.child_by_field_name("module_name") {
+                    Some(m) => node_text(&m, source).trim_start_matches('.').to_string(),
+                    None => continue,
+                };
+                let module_id = child
+                    .child_by_field_name("module_name")
+                    .map(|n| n.id());
+
+                let mut ic = child.walk();
+                for item in child.children(&mut ic) {
+                    if module_id.map_or(false, |id| item.id() == id) {
+                        continue;
+                    }
+                    match item.kind() {
+                        "dotted_name" | "identifier" => {
+                            let name = node_text(&item, source);
+                            if !name.is_empty() {
+                                map.insert(name, module.clone());
+                            }
+                        }
+                        "aliased_import" => {
+                            // `from foo import bar as b`
+                            if let Some(alias_node) = item.child_by_field_name("alias") {
+                                let alias = node_text(&alias_node, source);
+                                if !alias.is_empty() {
+                                    map.insert(alias, module.clone());
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    map
+}
 
 // ---------------------------------------------------------------------------
 // Call extraction
@@ -15,6 +105,7 @@ pub(super) fn extract_calls_from_body(
     source: &str,
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
+    import_map: &HashMap<String, String>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -35,11 +126,25 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain: None,
                     });
-                    extract_calls_from_body(&child, source, source_symbol_index, refs);
+                    extract_calls_from_body(&child, source, source_symbol_index, refs, import_map);
                     continue;
                 }
 
                 let chain = build_chain(&func_node, source);
+
+                // Resolve module for qualified calls: if the chain root matches an
+                // imported name, annotate the ref with its source module so the
+                // resolver can trace `Person.objects.filter()` back to
+                // `posthog.models` (where `Person` was imported from).
+                let resolved_module = chain.as_ref().and_then(|c| {
+                    if c.segments.len() >= 2 {
+                        let root_name = &c.segments[0].name;
+                        import_map.get(root_name).cloned()
+                    } else {
+                        None
+                    }
+                });
+
                 let target_name = chain
                     .as_ref()
                     .and_then(|c| c.segments.last())
@@ -56,13 +161,13 @@ pub(super) fn extract_calls_from_body(
                         target_name,
                         kind: EdgeKind::Calls,
                         line: func_node.start_position().row as u32,
-                        module: None,
+                        module: resolved_module,
                         chain,
                     });
                 }
             }
         }
-        extract_calls_from_body(&child, source, source_symbol_index, refs);
+        extract_calls_from_body(&child, source, source_symbol_index, refs, import_map);
     }
 }
 

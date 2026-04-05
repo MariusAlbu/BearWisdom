@@ -71,6 +71,78 @@ fn extracts_call() {
 }
 
 #[test]
+fn qualified_call_ref_gets_module_from_import() {
+    // `UserService.findOne(id)` — the call ref should have module="./user.service"
+    // because `UserService` is imported from that module.
+    let src = r#"
+import { UserService } from './user.service';
+class Controller {
+    async get(id: string) {
+        return UserService.findOne(id);
+    }
+}
+"#;
+    let r = refs(src);
+    let call = r.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "findOne");
+    assert!(call.is_some(), "no Calls ref for findOne; refs: {r:?}");
+    assert_eq!(
+        call.unwrap().module,
+        Some("./user.service".to_string()),
+        "module should be set from import; refs: {r:?}"
+    );
+}
+
+#[test]
+fn bare_call_does_not_get_spurious_module() {
+    // `fetchData()` is a bare call with no object prefix — module must stay None.
+    let src = r#"
+import { UserService } from './user.service';
+function run() { fetchData(); }
+"#;
+    let r = refs(src);
+    let call = r.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "fetchData");
+    assert!(call.is_some(), "no Calls ref for fetchData; refs: {r:?}");
+    assert_eq!(call.unwrap().module, None, "bare call should not get a module");
+}
+
+#[test]
+fn aliased_import_call_ref_gets_module() {
+    // `import { UserService as US } from './user.service'` — alias `US` is used
+    // in the chain, so the module should resolve via the alias.
+    let src = r#"
+import { UserService as US } from './user.service';
+class Controller {
+    get(id: string) { return US.findOne(id); }
+}
+"#;
+    let r = refs(src);
+    let call = r.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "findOne");
+    assert!(call.is_some(), "no Calls ref for findOne; refs: {r:?}");
+    assert_eq!(
+        call.unwrap().module,
+        Some("./user.service".to_string()),
+        "aliased import should resolve correctly; refs: {r:?}"
+    );
+}
+
+#[test]
+fn namespace_import_call_ref_gets_module() {
+    // `import * as svc from './service'` — `svc.doWork()` should get module="./service".
+    let src = r#"
+import * as svc from './service';
+function run() { svc.doWork(); }
+"#;
+    let r = refs(src);
+    let call = r.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "doWork");
+    assert!(call.is_some(), "no Calls ref for doWork; refs: {r:?}");
+    assert_eq!(
+        call.unwrap().module,
+        Some("./service".to_string()),
+        "namespace import should resolve correctly; refs: {r:?}"
+    );
+}
+
+#[test]
 fn qualified_name_includes_class() {
     let src = "class Catalog { list(): void {} }";
     let symbols = sym(src);

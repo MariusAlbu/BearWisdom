@@ -13,6 +13,7 @@ use super::{calls, decorators, helpers, imports, narrowing, params, symbols, typ
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
+use std::collections::HashMap;
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -65,6 +66,10 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
+    // Pre-pass: build a local-alias → module-path map from all import statements.
+    // This is used below to annotate call refs with their source module.
+    let import_map = build_import_map(root, src_bytes);
+
     extract_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None);
 
     // Post-traversal full-tree scan: catch every type_identifier and generic_type
@@ -72,6 +77,12 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
     // arguments, conditional types, mapped types, etc.).
     if !symbols.is_empty() {
         scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
+    }
+
+    // Annotate call refs: if a Calls ref has a chain whose first segment is a
+    // known import alias, set module so the resolver can trace it back.
+    if !import_map.is_empty() {
+        annotate_call_modules(&mut refs, &import_map);
     }
 
     ExtractionResult::new(symbols, refs, has_errors)
@@ -677,6 +688,114 @@ fn recurse_for_object_types(
         // All other type nodes (type_identifier, primitive_type, function_type, etc.)
         // cannot contain object_type members — stop recursion here.
         _ => {}
+    }
+}
+
+/// Build a map of `local_alias → module_path` from all top-level import statements.
+///
+/// Handles all three import forms:
+/// - `import Foo from './bar'`            → `"Foo" → "./bar"`
+/// - `import { Foo, Bar as B } from ...`  → `"Foo" → ..., "B" → ...`
+/// - `import * as ns from './bar'`        → `"ns" → "./bar"`
+///
+/// Used by `annotate_call_modules` to set `module` on call refs that start
+/// with a known import alias (e.g. `UserService.findOne(id)` → module set to
+/// the module that exports `UserService`).
+fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        // Import statements may be wrapped in export_statement in some grammars,
+        // but for top-level imports we only need direct import_statement children.
+        if child.kind() != "import_statement" {
+            continue;
+        }
+        let Some(module_node) = child.child_by_field_name("source") else {
+            continue;
+        };
+        let module_path = helpers::node_text(module_node, src)
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
+        if module_path.is_empty() {
+            continue;
+        }
+
+        let mut ic = child.walk();
+        for clause in child.children(&mut ic) {
+            if clause.kind() != "import_clause" {
+                continue;
+            }
+            let mut cc = clause.walk();
+            for item in clause.children(&mut cc) {
+                match item.kind() {
+                    // `import Foo from './bar'` — default import; local name = Foo
+                    "identifier" => {
+                        let local = helpers::node_text(item, src);
+                        if !local.is_empty() {
+                            map.insert(local, module_path.clone());
+                        }
+                    }
+                    // `import { Foo, Bar as B } from './bar'`
+                    "named_imports" => {
+                        let mut ni = item.walk();
+                        for spec in item.children(&mut ni) {
+                            if spec.kind() != "import_specifier" {
+                                continue;
+                            }
+                            // `alias` field is the local name when `as` is used.
+                            // If no alias, `name` is both the exported and local name.
+                            let local = spec
+                                .child_by_field_name("alias")
+                                .or_else(|| spec.child_by_field_name("name"))
+                                .map(|n| helpers::node_text(n, src))
+                                .unwrap_or_default();
+                            if !local.is_empty() {
+                                map.insert(local, module_path.clone());
+                            }
+                        }
+                    }
+                    // `import * as ns from './bar'`
+                    "namespace_import" => {
+                        let mut nc = item.walk();
+                        for ns_child in item.children(&mut nc) {
+                            if ns_child.kind() == "identifier" {
+                                let local = helpers::node_text(ns_child, src);
+                                if !local.is_empty() {
+                                    map.insert(local, module_path.clone());
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    map
+}
+
+/// For each `Calls` ref that has a chain with ≥2 segments, check whether the
+/// first chain segment matches a known import alias. If so, set `module` to the
+/// corresponding module path so the resolver can trace the call back to its
+/// import source.
+///
+/// Only sets `module` when it is currently `None` — does not overwrite an
+/// already-resolved module.
+fn annotate_call_modules(refs: &mut Vec<ExtractedRef>, import_map: &HashMap<String, String>) {
+    for r in refs.iter_mut() {
+        if r.kind != EdgeKind::Calls || r.module.is_some() {
+            continue;
+        }
+        let Some(chain) = &r.chain else { continue };
+        if chain.segments.len() < 2 {
+            continue;
+        }
+        let first = &chain.segments[0].name;
+        if let Some(module_path) = import_map.get(first) {
+            r.module = Some(module_path.clone());
+        }
     }
 }
 

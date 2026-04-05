@@ -89,6 +89,35 @@ pub fn extract(source: &str) -> ExtractionResult {
         refs.extend(new_refs);
     }
 
+    // Fourth pass: enrich Calls refs that have a qualified chain (≥2 segments)
+    // but no module set.  Build an import map from the Imports refs already
+    // emitted — `target_name → module` — then for each qualifying Calls ref
+    // whose first chain segment matches an imported name, copy that module onto
+    // the ref.  This lets the resolver trace `DbPool::new()` back to
+    // `crate::db` because `DbPool` was imported via `use crate::db::DbPool`.
+    {
+        let import_map: rustc_hash::FxHashMap<String, String> = refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Imports)
+            .filter_map(|r| {
+                r.module.as_ref().map(|m| (r.target_name.clone(), m.clone()))
+            })
+            .collect();
+
+        for r in refs.iter_mut() {
+            if r.kind == EdgeKind::Calls && r.module.is_none() {
+                if let Some(chain) = &r.chain {
+                    if chain.segments.len() >= 2 {
+                        let first = &chain.segments[0].name;
+                        if let Some(module) = import_map.get(first) {
+                            r.module = Some(module.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     let has_errors = tree.root_node().has_error();
     ExtractionResult::new(syms, refs, has_errors)
 }

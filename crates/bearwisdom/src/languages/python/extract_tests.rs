@@ -853,3 +853,115 @@ def handle(event):
             "expected TypeRef from module-level annotation, got: {type_refs:?}"
         );
     }
+
+    // -------------------------------------------------------------------------
+    // Import-map module resolution on qualified call refs
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn from_import_call_sets_module_on_qualified_ref() {
+        // `Person.objects.filter(team=team)` — chain root `Person` was imported
+        // from `posthog.models`, so the Calls ref should carry that module.
+        let source = r#"
+from posthog.models import Person
+
+def get_persons(team):
+    return Person.objects.filter(team=team)
+"#;
+        let r = extract::extract(source);
+        let call_ref = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "filter")
+            .expect("Expected Calls ref for 'filter'");
+        assert_eq!(
+            call_ref.module.as_deref(),
+            Some("posthog.models"),
+            "Expected module 'posthog.models' on filter call, chain root is 'Person'"
+        );
+    }
+
+    #[test]
+    fn plain_import_call_sets_module_on_qualified_ref() {
+        // `json.dumps(data)` — chain root `json` imported via `import json`.
+        let source = r#"
+import json
+
+def serialise(data):
+    return json.dumps(data)
+"#;
+        let r = extract::extract(source);
+        let call_ref = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "dumps")
+            .expect("Expected Calls ref for 'dumps'");
+        assert_eq!(
+            call_ref.module.as_deref(),
+            Some("json"),
+            "Expected module 'json' on dumps call"
+        );
+    }
+
+    #[test]
+    fn import_dotted_module_call_sets_module_on_qualified_ref() {
+        // `import os.path` then `os.path.join(...)` — chain root `os` maps to `os.path`.
+        let source = r#"
+import os.path
+
+def build_path(a, b):
+    return os.path.join(a, b)
+"#;
+        let r = extract::extract(source);
+        let call_ref = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "join")
+            .expect("Expected Calls ref for 'join'");
+        assert_eq!(
+            call_ref.module.as_deref(),
+            Some("os.path"),
+            "Expected module 'os.path' on join call"
+        );
+    }
+
+    #[test]
+    fn import_alias_call_sets_module_on_qualified_ref() {
+        // `import numpy as np` then `np.array(...)` — alias `np` maps to `numpy`.
+        let source = r#"
+import numpy as np
+
+def make_array(data):
+    return np.array(data)
+"#;
+        let r = extract::extract(source);
+        let call_ref = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "array")
+            .expect("Expected Calls ref for 'array'");
+        assert_eq!(
+            call_ref.module.as_deref(),
+            Some("numpy"),
+            "Expected module 'numpy' on array call"
+        );
+    }
+
+    #[test]
+    fn unimported_call_has_no_module() {
+        // A call where the chain root is not in any import should have module=None.
+        let source = r#"
+def foo():
+    local_obj.bar()
+"#;
+        let r = extract::extract(source);
+        let call_ref = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "bar")
+            .expect("Expected Calls ref for 'bar'");
+        assert_eq!(
+            call_ref.module, None,
+            "Expected no module on call where root is not imported"
+        );
+    }

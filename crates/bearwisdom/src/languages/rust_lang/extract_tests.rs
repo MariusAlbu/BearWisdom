@@ -610,3 +610,85 @@ fn process() {
         assert!(!type_refs.is_empty(), "Should extract scoped type identifiers");
     }
 
+    // -----------------------------------------------------------------------
+    // Import-map module enrichment on Calls refs (fourth pass)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn qualified_call_gets_module_from_use_import() {
+        // `use crate::db::DbPool;` followed by `DbPool::new(config)` —
+        // the Calls ref for `new` should have module="crate::db".
+        let src = r#"
+use crate::db::DbPool;
+
+fn start() {
+    let pool = DbPool::new(config);
+}
+"#;
+        let r = extract::extract(src);
+        let call = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "new");
+        assert!(call.is_some(), "Expected Calls ref for 'new'");
+        let call = call.unwrap();
+        assert_eq!(
+            call.module.as_deref(),
+            Some("crate::db"),
+            "Calls ref for 'new' should carry module='crate::db' from the use import; got {:?}",
+            call.module
+        );
+    }
+
+    #[test]
+    fn qualified_call_group_import_gets_module() {
+        // `use lemmy_db_schema::source::person::{Person, Community};` —
+        // `Person::read()` should get module="lemmy_db_schema::source::person".
+        let src = r#"
+use lemmy_db_schema::source::person::{Person, Community};
+
+async fn get_person(pool: &DbPool, id: i32) -> Option<Person> {
+    Person::read(pool, id).await
+}
+"#;
+        let r = extract::extract(src);
+        let call = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "read");
+        assert!(call.is_some(), "Expected Calls ref for 'read'");
+        let call = call.unwrap();
+        assert_eq!(
+            call.module.as_deref(),
+            Some("lemmy_db_schema::source::person"),
+            "Calls ref for 'read' should carry module from group import; got {:?}",
+            call.module
+        );
+    }
+
+    #[test]
+    fn use_as_alias_call_gets_module() {
+        // `use foo::bar::Baz as B;` followed by `B::create()` —
+        // the Calls ref for `create` should have module="foo::bar".
+        let src = r#"
+use foo::bar::Baz as B;
+
+fn run() {
+    B::create();
+}
+"#;
+        let r = extract::extract(src);
+        let call = r
+            .refs
+            .iter()
+            .find(|r| r.kind == EdgeKind::Calls && r.target_name == "create");
+        assert!(call.is_some(), "Expected Calls ref for 'create'");
+        let call = call.unwrap();
+        assert_eq!(
+            call.module.as_deref(),
+            Some("foo::bar"),
+            "Aliased import call should carry parent module; got {:?}",
+            call.module
+        );
+    }
+

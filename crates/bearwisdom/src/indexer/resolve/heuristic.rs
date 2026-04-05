@@ -110,6 +110,7 @@ pub fn resolve_and_write(
                     None
                 }
             });
+            let ref_module = r.module.as_deref();
             let resolution = resolve_ref(
                 r.target_name.as_str(),
                 r.kind,
@@ -117,6 +118,7 @@ pub fn resolve_and_write(
                 file_imports,
                 source_namespace,
                 chain_prefix,
+                ref_module,
                 &name_to_ids,
                 &qname_to_id,
                 symbol_id_map,
@@ -181,11 +183,22 @@ pub(super) fn resolve_ref(
     file_imports: &[(String, Option<String>)],
     source_namespace: Option<&str>,
     chain_prefix: Option<&str>,
+    ref_module: Option<&str>,
     name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>, // name → [(file, qname, kind, id)]
     qname_to_id: &FxHashMap<String, i64>,
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
 ) -> Option<(i64, f64)> {
+    // --- Priority 0: Direct module match (0.95) ---
+    // The extractor set `module` on this ref (e.g., `Person.read()` with
+    // module="posthog.models" from `from posthog.models import Person`).
+    // Find the target symbol in files that match the module path.
+    if let Some(module) = ref_module {
+        if let Some(id) = resolve_via_ref_module(target_name, module, name_to_ids, parsed) {
+            return Some((id, 0.95));
+        }
+    }
+
     // --- Priority 0.5: Chain-prefix import match (0.95) ---
     // When the ref has a chain like `Foo::bar()` or `resolve::resolve_and_write()`,
     // the chain prefix ("Foo" or "resolve") may match an import.  Use the import's
@@ -278,6 +291,74 @@ pub(super) fn resolve_ref(
     }
 
     None
+}
+
+/// Priority 0: Direct module match.
+///
+/// The extractor set `module` on this call ref (e.g., `Person.read()` where
+/// `from posthog.models import Person` gives module="posthog.models").
+/// Find candidates named `target_name` in files whose path contains the module.
+fn resolve_via_ref_module(
+    target_name: &str,
+    module: &str,
+    name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>,
+    parsed: &[ParsedFile],
+) -> Option<i64> {
+    let candidates = name_to_ids.get(target_name)?;
+
+    // Normalize the module path for file matching: "posthog.models" → "posthog/models",
+    // "crate::db" → "db", "./user.service" → "user.service"
+    let normalized = module
+        .replace("::", "/")
+        .replace('.', "/")
+        .trim_start_matches("crate/")
+        .trim_start_matches("./")
+        .trim_start_matches("../")
+        .to_string();
+
+    // Try qualified name match first: "{module}.{target}" or "{last_segment}.{target}"
+    // This handles patterns like Rust's "db::DbPool" or Python's "models.Person"
+    let last_segment = normalized.rsplit('/').next().unwrap_or(&normalized);
+
+    // Score candidates: prefer those in files whose path matches the module
+    let mut best: Option<(i64, bool)> = None; // (id, is_file_match)
+    for (file, qname, _kind, id) in candidates {
+        // Check if the qualified name matches "{module_segment}.{target}"
+        let qname_match = qname.ends_with(&format!("{last_segment}.{target_name}"))
+            || qname.ends_with(&format!("{}.{}", normalized.replace('/', "."), target_name));
+
+        // Check if the file path contains the module path segments
+        let norm_file = file.replace('\\', "/");
+        let file_match = norm_file.contains(&normalized)
+            || norm_file.contains(last_segment);
+
+        if qname_match {
+            return Some(*id); // Exact qualified name match — best possible
+        }
+        if file_match && best.map_or(true, |(_, was_file)| !was_file) {
+            best = Some((*id, true));
+        }
+    }
+
+    // Also check parsed files for symbols in the matching module
+    if best.is_none() {
+        for pf in parsed {
+            let norm_path = pf.path.replace('\\', "/");
+            if !norm_path.contains(&normalized) && !norm_path.contains(last_segment) {
+                continue;
+            }
+            for sym in &pf.symbols {
+                if sym.name == target_name {
+                    // Find this symbol's ID in the index
+                    for (_, _, _, id) in candidates {
+                        return Some(*id);
+                    }
+                }
+            }
+        }
+    }
+
+    best.map(|(id, _)| id)
 }
 
 /// Priority 0.5: chain-prefix import match.

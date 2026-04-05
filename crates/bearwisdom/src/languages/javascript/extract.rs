@@ -19,6 +19,7 @@ use super::helpers::{detect_visibility, extract_jsdoc, node_text};
 use crate::parser::scope_tree::ScopeTree;
 use crate::types::{EdgeKind, ExtractedRef as Ref, ExtractedSymbol as Sym, SymbolKind};
 use crate::types::{ExtractedRef, ExtractedSymbol};
+use std::collections::HashMap;
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -53,6 +54,9 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     let root = tree.root_node();
     let scope_tree = scope_tree::build(root, src_bytes, JS_SCOPE_KINDS);
 
+    // Pre-pass: build a local-alias → module-path map from all import statements.
+    let import_map = build_import_map(root, src_bytes);
+
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
@@ -64,6 +68,12 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // the scan is cheap and ensures coverage is symmetric with TypeScript.
     if !symbols.is_empty() {
         scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
+    }
+
+    // Annotate call refs: if a Calls ref's target_name starts with a known
+    // import alias (e.g. "UserService.findOne"), set module to the import source.
+    if !import_map.is_empty() {
+        annotate_call_modules_js(&mut refs, &import_map);
     }
 
     super::ExtractionResult::new(symbols, refs, has_errors)
@@ -1536,6 +1546,122 @@ fn extract_catch_variable(
         scope_path,
         parent_index,
     });
+}
+
+// ---------------------------------------------------------------------------
+// Import map + call module annotation
+// ---------------------------------------------------------------------------
+
+/// Build a map of `local_alias → module_path` from all top-level import
+/// statements in the JavaScript file.
+///
+/// Handles all three import forms:
+/// - `import Foo from './bar'`            → `"Foo" → "./bar"`
+/// - `import { Foo, Bar as B } from ...`  → `"Foo" → ..., "B" → ...`
+/// - `import * as ns from './bar'`        → `"ns" → "./bar"`
+fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
+    let mut map = HashMap::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() != "import_statement" {
+            continue;
+        }
+        let Some(module_node) = child.child_by_field_name("source") else {
+            continue;
+        };
+        let module_path = node_text(module_node, src)
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
+        if module_path.is_empty() {
+            continue;
+        }
+
+        let mut ic = child.walk();
+        for clause in child.children(&mut ic) {
+            if clause.kind() != "import_clause" {
+                continue;
+            }
+            let mut cc = clause.walk();
+            for item in clause.children(&mut cc) {
+                match item.kind() {
+                    // `import Foo from './bar'` — default import
+                    "identifier" => {
+                        let local = node_text(item, src);
+                        if !local.is_empty() {
+                            map.insert(local, module_path.clone());
+                        }
+                    }
+                    // `import { Foo, Bar as B } from './bar'`
+                    "named_imports" => {
+                        let mut ni = item.walk();
+                        for spec in item.children(&mut ni) {
+                            if spec.kind() != "import_specifier" {
+                                continue;
+                            }
+                            // `alias` is the local name when `as` is used; otherwise
+                            // `name` is both the exported and local name.
+                            let local = spec
+                                .child_by_field_name("alias")
+                                .or_else(|| spec.child_by_field_name("name"))
+                                .map(|n| node_text(n, src))
+                                .unwrap_or_default();
+                            if !local.is_empty() {
+                                map.insert(local, module_path.clone());
+                            }
+                        }
+                    }
+                    // `import * as ns from './bar'`
+                    "namespace_import" => {
+                        let mut nc = item.walk();
+                        for ns_child in item.children(&mut nc) {
+                            if ns_child.kind() == "identifier" {
+                                let local = node_text(ns_child, src);
+                                if !local.is_empty() {
+                                    map.insert(local, module_path.clone());
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Annotate `Calls` refs whose `target_name` is a qualified member access
+/// (e.g. `"UserService.findOne"`) with the module of the first segment when
+/// that segment is a known import alias.
+///
+/// The JS extractor encodes member calls as `"obj.method"` in `target_name`
+/// with `chain: None`. We split on the first `.` to extract the object name.
+fn annotate_call_modules_js(refs: &mut Vec<ExtractedRef>, import_map: &HashMap<String, String>) {
+    for r in refs.iter_mut() {
+        if r.kind != EdgeKind::Calls || r.module.is_some() {
+            continue;
+        }
+        // Try the chain-based path first (in case chain is ever populated).
+        if let Some(chain) = &r.chain {
+            if chain.segments.len() >= 2 {
+                let first = &chain.segments[0].name;
+                if let Some(module_path) = import_map.get(first) {
+                    r.module = Some(module_path.clone());
+                    continue;
+                }
+            }
+        }
+        // Fall back to splitting the dotted target_name.
+        if r.target_name.contains('.') {
+            if let Some(prefix) = r.target_name.splitn(2, '.').next() {
+                if let Some(module_path) = import_map.get(prefix) {
+                    r.module = Some(module_path.clone());
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

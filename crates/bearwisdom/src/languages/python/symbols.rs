@@ -8,6 +8,7 @@ use super::helpers::{
     extract_python_type_name, is_test_function, node_text, qualify, scope_from_prefix,
 };
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
+use std::collections::HashMap;
 use tree_sitter::Node;
 
 pub(super) fn extract_function_definition(
@@ -19,6 +20,7 @@ pub(super) fn extract_function_definition(
     qualified_prefix: &str,
     inside_class: bool,
     decorators: &[String],
+    import_map: &HashMap<String, String>,
 ) {
     let name_node = match node.child_by_field_name("name") {
         Some(n) => n,
@@ -77,11 +79,11 @@ pub(super) fn extract_function_definition(
         );
         // Also extract call refs from default argument expressions in the parameter
         // list (e.g. `def foo(x=bar(), y=list())`) so those call nodes are covered.
-        extract_calls_from_body(&params, source, idx, refs);
+        extract_calls_from_body(&params, source, idx, refs, import_map);
     }
 
     if let Some(body_node) = body {
-        extract_calls_from_body(&body_node, source, idx, refs);
+        extract_calls_from_body(&body_node, source, idx, refs, import_map);
         // Walk body for constructs that emit Variable symbols in addition to calls.
         extract_body_symbols(
             &body_node,
@@ -91,6 +93,7 @@ pub(super) fn extract_function_definition(
             Some(idx),
             &qualified_name_str,
             idx,
+            import_map,
         );
     }
 }
@@ -115,6 +118,7 @@ fn extract_body_symbols(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_idx: usize,
+    import_map: &HashMap<String, String>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -138,6 +142,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
             "with_statement" => {
@@ -149,6 +154,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
             "match_statement" => {
@@ -160,6 +166,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
             "named_expression" => {
@@ -171,6 +178,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
             "list_comprehension"
@@ -185,6 +193,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
             "lambda" => {
@@ -196,10 +205,11 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
             "f_string" | "fstring" => {
-                extract_fstring_calls(&child, source, enclosing_idx, refs);
+                extract_fstring_calls(&child, source, enclosing_idx, refs, import_map);
             }
 
             // `async for item in stream:` — same shape as for_statement; recurse body.
@@ -212,6 +222,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
 
@@ -225,6 +236,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
 
@@ -234,22 +246,22 @@ fn extract_body_symbols(
 
             // `raise ValueError("msg")` — extract calls within + TypeRef for exception.
             "raise_statement" => {
-                extract_raise_statement(&child, source, enclosing_idx, refs);
+                extract_raise_statement(&child, source, enclosing_idx, refs, import_map);
             }
 
             // `assert isinstance(x, Foo)` — extract calls within the test expression.
             "assert_statement" => {
-                extract_calls_from_body(&child, source, enclosing_idx, refs);
+                extract_calls_from_body(&child, source, enclosing_idx, refs, import_map);
             }
 
             // `del obj.field` — extract member access.
             "delete_statement" => {
-                extract_calls_from_body(&child, source, enclosing_idx, refs);
+                extract_calls_from_body(&child, source, enclosing_idx, refs, import_map);
             }
 
             // `x += 1` / `self.count += 1` — extract member access on left side.
             "augmented_assignment" => {
-                extract_augmented_assignment(&child, source, enclosing_idx, refs);
+                extract_augmented_assignment(&child, source, enclosing_idx, refs, import_map);
             }
 
             // `type Point = tuple[int, int]` (Python 3.12+)
@@ -275,6 +287,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
 
@@ -288,6 +301,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
 
@@ -302,6 +316,7 @@ fn extract_body_symbols(
                     qualified_prefix,
                     false, // nested def inside a function body is not a class method
                     &[],
+                    import_map,
                 );
             }
 
@@ -314,6 +329,7 @@ fn extract_body_symbols(
                     refs,
                     parent_index,
                     qualified_prefix,
+                    import_map,
                 );
             }
 
@@ -327,6 +343,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     false,
+                    import_map,
                 );
             }
 
@@ -340,17 +357,18 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
 
             // `yield value` / `yield from iter` — recurse for calls.
             "yield" | "yield_statement" | "yield_expression" => {
-                extract_calls_from_body(&child, source, enclosing_idx, refs);
+                extract_calls_from_body(&child, source, enclosing_idx, refs, import_map);
             }
 
             // Conditional expression: `a if cond else b` — recurse both branches.
             "conditional_expression" => {
-                extract_calls_from_body(&child, source, enclosing_idx, refs);
+                extract_calls_from_body(&child, source, enclosing_idx, refs, import_map);
             }
 
             // Structural/container expressions — recurse for calls.
@@ -359,7 +377,7 @@ fn extract_body_symbols(
             | "binary_operator" | "boolean_operator"
             | "comparison_operator" | "unary_operator"
             | "not_operator" | "await" => {
-                extract_calls_from_body(&child, source, enclosing_idx, refs);
+                extract_calls_from_body(&child, source, enclosing_idx, refs, import_map);
                 // Also recurse for nested body-symbols (e.g. comprehensions inside tuples).
                 extract_body_symbols(
                     &child,
@@ -369,6 +387,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
 
@@ -381,6 +400,7 @@ fn extract_body_symbols(
                     parent_index,
                     qualified_prefix,
                     enclosing_idx,
+                    import_map,
                 );
             }
         }
@@ -555,6 +575,7 @@ pub(super) fn extract_class_definition(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
+    import_map: &HashMap<String, String>,
 ) {
     let name_node = match node.child_by_field_name("name") {
         Some(n) => n,
@@ -602,7 +623,7 @@ pub(super) fn extract_class_definition(
     }
 
     if let Some(body_node) = body {
-        super::extract::extract_from_node(body_node, source, symbols, refs, Some(idx), &new_prefix, true);
+        super::extract::extract_from_node(body_node, source, symbols, refs, Some(idx), &new_prefix, true, import_map);
     }
 }
 
@@ -655,6 +676,7 @@ pub(super) fn extract_decorated_definition(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     inside_class: bool,
+    import_map: &HashMap<String, String>,
 ) {
     let decorators = extract_decorator_names(node, source);
     let symbol_index = symbols.len();
@@ -672,6 +694,7 @@ pub(super) fn extract_decorated_definition(
                     qualified_prefix,
                     inside_class,
                     &decorators,
+                    import_map,
                 );
                 super::decorators::extract_decorators(node, source, symbol_index, refs);
             }
@@ -683,6 +706,7 @@ pub(super) fn extract_decorated_definition(
                     refs,
                     parent_index,
                     qualified_prefix,
+                    import_map,
                 );
                 super::decorators::extract_decorators(node, source, symbol_index, refs);
             }
@@ -874,6 +898,7 @@ pub(super) fn extract_with_statement(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -890,6 +915,7 @@ pub(super) fn extract_with_statement(
                             parent_index,
                             qualified_prefix,
                             enclosing_symbol_index,
+                            import_map,
                         );
                     }
                 }
@@ -904,6 +930,7 @@ pub(super) fn extract_with_statement(
                     parent_index,
                     qualified_prefix,
                     enclosing_symbol_index,
+                    import_map,
                 );
             }
             "block" => {
@@ -915,6 +942,7 @@ pub(super) fn extract_with_statement(
                     parent_index,
                     qualified_prefix,
                     enclosing_symbol_index,
+                    import_map,
                 );
             }
             _ => {}
@@ -930,6 +958,7 @@ fn extract_with_item(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     // In tree-sitter-python 0.25, `with open('f') as f:` is represented as:
     //
@@ -964,7 +993,7 @@ fn extract_with_item(
 
     // Emit calls from the context manager expression.
     if let Some(ref expr) = cm_expr {
-        extract_calls_from_body(expr, source, enclosing_symbol_index, refs);
+        extract_calls_from_body(expr, source, enclosing_symbol_index, refs, import_map);
     }
 
     // Emit alias Variable and chain TypeRef when the cm expression is a call.
@@ -1028,6 +1057,7 @@ pub(super) fn extract_comprehension(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -1044,11 +1074,11 @@ pub(super) fn extract_comprehension(
                     );
                 }
                 if let Some(right) = child.child_by_field_name("right") {
-                    extract_calls_from_body(&right, source, enclosing_symbol_index, refs);
+                    extract_calls_from_body(&right, source, enclosing_symbol_index, refs, import_map);
                 }
             }
             _ => {
-                extract_calls_from_body(&child, source, enclosing_symbol_index, refs);
+                extract_calls_from_body(&child, source, enclosing_symbol_index, refs, import_map);
             }
         }
     }
@@ -1123,6 +1153,7 @@ pub(super) fn extract_named_expression(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     let name_node = match node.child_by_field_name("name") {
         Some(n) => n,
@@ -1151,7 +1182,7 @@ pub(super) fn extract_named_expression(
         parent_index,
     });
 
-    extract_calls_from_body(&value_node, source, enclosing_symbol_index, refs);
+    extract_calls_from_body(&value_node, source, enclosing_symbol_index, refs, import_map);
 
     if value_node.kind() == "call" {
         if let Some(func) = value_node.child_by_field_name("function") {
@@ -1200,6 +1231,7 @@ pub(super) fn extract_match_statement(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -1217,6 +1249,7 @@ pub(super) fn extract_match_statement(
                             parent_index,
                             qualified_prefix,
                             enclosing_symbol_index,
+                            import_map,
                         );
                     }
                 }
@@ -1231,6 +1264,7 @@ pub(super) fn extract_match_statement(
                     parent_index,
                     qualified_prefix,
                     enclosing_symbol_index,
+                    import_map,
                 );
             }
             _ => {}
@@ -1246,6 +1280,7 @@ fn extract_case_clause(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     // In tree-sitter-python 0.25, case_clause structure:
     //
@@ -1267,6 +1302,7 @@ fn extract_case_clause(
                     parent_index,
                     qualified_prefix,
                     enclosing_symbol_index,
+                    import_map,
                 );
             }
             "case_pattern" => {
@@ -1578,6 +1614,7 @@ pub(super) fn extract_lambda(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     if let Some(params) = node.child_by_field_name("parameters") {
         let mut cursor = params.walk();
@@ -1611,7 +1648,7 @@ pub(super) fn extract_lambda(
     }
 
     if let Some(body) = node.child_by_field_name("body") {
-        extract_calls_from_body(&body, source, enclosing_symbol_index, refs);
+        extract_calls_from_body(&body, source, enclosing_symbol_index, refs, import_map);
     }
 }
 
@@ -1637,6 +1674,7 @@ fn extract_for_statement(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     // Extract loop variable(s).
     if let Some(left) = node.child_by_field_name("left") {
@@ -1644,7 +1682,7 @@ fn extract_for_statement(
     }
     // Extract calls from the iterable expression.
     if let Some(right) = node.child_by_field_name("right") {
-        extract_calls_from_body(&right, source, enclosing_symbol_index, refs);
+        extract_calls_from_body(&right, source, enclosing_symbol_index, refs, import_map);
     }
     // Recurse into the body block.
     if let Some(body) = node.child_by_field_name("body") {
@@ -1656,6 +1694,7 @@ fn extract_for_statement(
             parent_index,
             qualified_prefix,
             enclosing_symbol_index,
+            import_map,
         );
     }
 }
@@ -1676,6 +1715,7 @@ fn extract_except_clause(
     parent_index: Option<usize>,
     qualified_prefix: &str,
     enclosing_symbol_index: usize,
+    import_map: &HashMap<String, String>,
 ) {
     // tree-sitter-python 0.25 actual shape:
     //
@@ -1751,6 +1791,7 @@ fn extract_except_clause(
                     parent_index,
                     qualified_prefix,
                     enclosing_symbol_index,
+                    import_map,
                 );
             }
             _ => {}
@@ -1818,9 +1859,10 @@ fn extract_raise_statement(
     source: &str,
     enclosing_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
+    import_map: &HashMap<String, String>,
 ) {
     // Generic call extraction covers `raise Foo(...)` → Calls edge.
-    extract_calls_from_body(node, source, enclosing_symbol_index, refs);
+    extract_calls_from_body(node, source, enclosing_symbol_index, refs, import_map);
 
     // Additionally emit a TypeRef for the exception class.
     let mut cursor = node.walk();
@@ -1890,9 +1932,10 @@ fn extract_augmented_assignment(
     source: &str,
     enclosing_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
+    import_map: &HashMap<String, String>,
 ) {
     // Recurse for any calls in the right-hand side.
-    extract_calls_from_body(node, source, enclosing_symbol_index, refs);
+    extract_calls_from_body(node, source, enclosing_symbol_index, refs, import_map);
 
     // Emit a Calls edge if the left side is an attribute access (member access).
     if let Some(left) = node.child_by_field_name("left") {
@@ -2025,6 +2068,7 @@ pub(super) fn extract_fstring_calls(
     source: &str,
     enclosing_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
+    import_map: &HashMap<String, String>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -2032,7 +2076,7 @@ pub(super) fn extract_fstring_calls(
             let mut ic = child.walk();
             for expr in child.children(&mut ic) {
                 if expr.is_named() {
-                    extract_calls_from_body(&expr, source, enclosing_symbol_index, refs);
+                    extract_calls_from_body(&expr, source, enclosing_symbol_index, refs, import_map);
                 }
             }
         }

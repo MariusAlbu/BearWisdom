@@ -777,12 +777,26 @@ fn walk_use_tree(
                 .child_by_field_name("path")
                 .map(|n| node_text(&n, source));
 
-            let target = alias.or(original).unwrap_or_default();
+            // `target_name` is the alias when present, otherwise the original name.
+            let target = alias
+                .clone()
+                .or_else(|| original.clone())
+                .unwrap_or_default();
             if target.is_empty() {
                 return;
             }
 
-            let module = if prefix.is_empty() {
+            // For `use foo::bar as fb` at the top level (prefix=""), derive the
+            // module from the original path: "foo::bar" → module="foo", name="bar".
+            // When the alias IS the original (no `as` clause reached this arm), fall
+            // back to prefix as before.
+            let module = if alias.is_some() {
+                // Aliased import: module = parent of the original full path.
+                let orig = original.as_deref().unwrap_or("");
+                let full = build_module_path(prefix, orig);
+                let parent = full.rsplit_once("::").map(|(p, _)| p.to_string());
+                parent
+            } else if prefix.is_empty() {
                 None
             } else {
                 Some(prefix.to_string())
