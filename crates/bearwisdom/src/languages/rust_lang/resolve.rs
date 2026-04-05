@@ -179,6 +179,42 @@ impl LanguageResolver for RustResolver {
             }
         }
 
+        // Module-field resolution for qualified call refs (e.g. `DbPool::new()`
+        // where the extractor post-pass set module="crate::db").
+        // Only fires for Calls and TypeRef — not Imports (handled separately above).
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef) {
+            if let Some(module) = &ref_ctx.extracted_ref.module {
+                if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
+                    if chain_val.segments.len() >= 2 {
+                        let type_name = &chain_val.segments[0].name;
+                        // "{type_name}.{target}" — standard Rust method storage form.
+                        let candidate = format!("{type_name}.{target}");
+                        if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                                return Some(Resolution {
+                                    target_symbol_id: sym.id,
+                                    confidence: 1.0,
+                                    strategy: "rust_ref_module",
+                                });
+                            }
+                        }
+                        // "{last_module_segment}.{type_name}.{target}" — module-qualified form.
+                        let last_seg = module.rsplit("::").next().unwrap_or(module.as_str());
+                        let candidate2 = format!("{last_seg}.{type_name}.{target}");
+                        if let Some(sym) = lookup.by_qualified_name(&candidate2) {
+                            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                                return Some(Resolution {
+                                    target_symbol_id: sym.id,
+                                    confidence: 1.0,
+                                    strategy: "rust_ref_module",
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Normalize `::` separators to `.` for index lookup.
         let normalized = builtins::normalize_path(target);
         let effective_target = &normalized;

@@ -114,7 +114,14 @@ impl LanguageResolver for PythonResolver {
             }
         }
 
-        // If the ref carries a module path, it came from an import statement.
+        // If the ref carries a module path, two distinct cases apply:
+        //
+        // (A) Import-statement refs (no chain): the module is the import source.
+        //     If we can't resolve them here, there's nothing more to try — return None.
+        //
+        // (B) Call refs with a module set by the extractor post-pass (e.g.
+        //     `Person.objects.filter()` → module="posthog.models"): use the module
+        //     to locate the target before falling through to scope chain walk.
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if builtins::is_relative_import(module) {
                 // Relative import — try to resolve in the target file.
@@ -144,9 +151,55 @@ impl LanguageResolver for PythonResolver {
                         });
                     }
                 }
+            } else if ref_ctx.extracted_ref.chain.is_some() {
+                // Case (B): call ref with extractor-set module (absolute module path).
+                // Try "{module}.{target}" as a qualified name.
+                let candidate = format!("{module}.{target}");
+                if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        debug!(
+                            strategy = "python_ref_module",
+                            candidate = %candidate,
+                            "resolved"
+                        );
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "python_ref_module",
+                        });
+                    }
+                }
+                // Try: look up target by name in files matching the module path.
+                let module_as_path = module.replace('.', "/");
+                for sym in lookup.by_name(target) {
+                    if sym.file_path.contains(&module_as_path)
+                        && builtins::kind_compatible(edge_kind, &sym.kind)
+                    {
+                        debug!(
+                            strategy = "python_ref_module_path",
+                            module_path = %module_as_path,
+                            target = %target,
+                            "resolved"
+                        );
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "python_ref_module_path",
+                        });
+                    }
+                }
+                // Case (B) miss — fall through to scope chain walk.
+            } else {
+                // Case (A): import-statement ref, no chain — external or unresolvable.
+                return None;
             }
-            // External package or unresolvable — skip.
-            return None;
+
+            // Case (A) relative import that failed, or case (B) that fell through.
+            // For case (A) relative failures we also stop here (no scope walk would help).
+            if ref_ctx.extracted_ref.chain.is_none() {
+                return None;
+            }
+            // Case (B) falls through to scope chain walk below.
         }
 
         // Strip `self.` prefix — `self.method` → `method`, scope_chain handles it.

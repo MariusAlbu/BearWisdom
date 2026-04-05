@@ -112,8 +112,15 @@ impl LanguageResolver for TypeScriptResolver {
             }
         }
 
-        // If the ref itself carries a module path, it came from an import statement.
-        // Attempt to resolve the symbol in the source module.
+        // If the ref carries a module path, two distinct cases apply:
+        //
+        // (A) Import-statement refs (no chain): the module is the import source.
+        //     If we can't resolve them here, there's nothing more to try — return None.
+        //
+        // (B) Call refs with a module set by the extractor post-pass (e.g.
+        //     `UserService.findOne()` → module="./user.service"): the chain walk
+        //     may have failed, but we can still look up the target directly in
+        //     the source module before falling through to the scope chain walk.
         if let Some(module) = &ref_ctx.extracted_ref.module {
             // External packages are not in our index — skip.
             if builtins::is_bare_specifier(module) {
@@ -154,11 +161,17 @@ impl LanguageResolver for TypeScriptResolver {
                 }
             }
 
-            // Import ref but couldn't resolve — fall back to heuristic.
-            return None;
+            // Case (A): import-statement ref (no chain) — couldn't resolve, stop here.
+            // Case (B): call ref with extractor-set module — fall through to scope walk.
+            if ref_ctx.extracted_ref.chain.is_none() {
+                return None;
+            }
+            // Fall through — scope chain walk below may still resolve it.
         }
 
-        // No module on the ref — this is a non-import reference.
+        // Non-import resolution path. Covers:
+        //   - Refs with no module field at all.
+        //   - Case (B) call refs whose module-based lookup above didn't resolve.
 
         // Short-circuit: if the target was imported from an external package
         // (determined via the file's import list), it won't be in our project index.
