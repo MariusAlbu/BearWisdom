@@ -74,22 +74,7 @@ pub fn extract(source: &str) -> ExtractionResult {
         scan_all_type_identifiers(root, source, 0, &mut refs);
     }
 
-    // Third pass: scan ALL attribute_item nodes and emit TypeRef for any that
-    // weren't already captured by extract_decorators (e.g., attributes on items
-    // inside function bodies, #[cfg]-gated items, or non-standard item kinds).
-    // Build an (line, name) dedup set from existing TypeRef refs to avoid doubles.
-    {
-        let existing: rustc_hash::FxHashSet<(u32, String)> = refs
-            .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| (r.line, r.target_name.clone()))
-            .collect();
-        let mut new_refs: Vec<ExtractedRef> = Vec::new();
-        scan_all_attribute_items(root, source, 0, &existing, &mut new_refs);
-        refs.extend(new_refs);
-    }
-
-    // Fourth pass: enrich Calls refs that have a qualified chain (≥2 segments)
+    // Third pass: enrich Calls refs that have a qualified chain (≥2 segments)
     // but no module set.  Build an import map from the Imports refs already
     // emitted — `target_name → module` — then for each qualifying Calls ref
     // whose first chain segment matches an imported name, copy that module onto
@@ -337,7 +322,14 @@ fn extract_from_node(
 // ---------------------------------------------------------------------------
 
 /// Recursively scan the entire CST and emit a TypeRef for every `type_identifier`
-/// or `scoped_type_identifier` node that is not a Rust primitive.
+/// or `scoped_type_identifier` node that is in a type-annotation position.
+///
+/// Nodes are skipped when they appear inside:
+///   - The `value` field of a `let_declaration` — the RHS of a let binding is
+///     an expression, not a type annotation.  `let x = Foo::new()` should not
+///     emit TypeRef for `Foo` from this pass (calls.rs handles that separately).
+///   - `attribute_item` subtrees — attributes are macro invocations whose names
+///     and arguments are not symbol references (`#[derive(Debug)]`, `#[serde(...)]`).
 fn scan_all_type_identifiers(
     node: tree_sitter::Node,
     source: &str,
@@ -346,6 +338,40 @@ fn scan_all_type_identifiers(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
+        // Skip the value (RHS) of let declarations — type_identifier nodes there
+        // are constructor/function names in expressions, not type annotations.
+        if child.kind() == "let_declaration" {
+            if let Some(value_node) = child.child_by_field_name("value") {
+                // Only scan the type annotation subtree, not the value subtree.
+                // The `type` field holds the explicit `: T` annotation.
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    scan_all_type_identifiers(type_node, source, sym_idx, refs);
+                }
+                // Recurse into everything that is NOT the value subtree.
+                let value_id = value_node.id();
+                let mut lc = child.walk();
+                for lc_child in child.children(&mut lc) {
+                    if lc_child.id() == value_id {
+                        continue;
+                    }
+                    // Also skip the type node — already handled above.
+                    if child.child_by_field_name("type").map(|n| n.id()) == Some(lc_child.id()) {
+                        continue;
+                    }
+                    scan_all_type_identifiers(lc_child, source, sym_idx, refs);
+                }
+                continue;
+            }
+            // No value field — scan all children normally.
+        }
+
+        // Skip attribute_item nodes entirely — their contents are macro invocations,
+        // not type references.  `extract_decorators` handles them in the main pass
+        // for structured attributes on top-level items.
+        if child.kind() == "attribute_item" {
+            continue;
+        }
+
         match child.kind() {
             "type_identifier" if child.is_named() => {
                 let name = helpers::node_text(&child, source);
@@ -386,66 +412,6 @@ fn scan_all_type_identifiers(
         }
         scan_all_type_identifiers(child, source, sym_idx, refs);
     }
-}
-
-// ---------------------------------------------------------------------------
-// Full-tree attribute_item scan
-// ---------------------------------------------------------------------------
-
-/// Recursively scan ALL `attribute_item` nodes and emit TypeRef for any that
-/// weren't already emitted by the main pass (to avoid duplicates).
-///
-/// This catches attributes on items that `extract_from_node` falls through
-/// (e.g., items inside function bodies, non-standard item kinds, closure params).
-fn scan_all_attribute_items(
-    node: tree_sitter::Node,
-    source: &str,
-    sym_idx: usize,
-    existing: &rustc_hash::FxHashSet<(u32, String)>,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "attribute_item" && child.is_named() {
-            let line = child.start_position().row as u32;
-            // Parse the attribute name from the attribute_item node.
-            // Shape: attribute_item → attribute → identifier | scoped_identifier
-            let name = parse_attr_name(&child, source);
-            if !name.is_empty() && !existing.contains(&(line, name.clone())) {
-                refs.push(ExtractedRef {
-                    source_symbol_index: sym_idx,
-                    target_name: name,
-                    kind: EdgeKind::TypeRef,
-                    line,
-                    module: None,
-                    chain: None,
-                });
-            }
-            // Don't recurse into attribute_item children.
-            continue;
-        }
-        scan_all_attribute_items(child, source, sym_idx, existing, refs);
-    }
-}
-
-fn parse_attr_name(attr_item: &tree_sitter::Node, source: &str) -> String {
-    let mut cursor = attr_item.walk();
-    for child in attr_item.children(&mut cursor) {
-        if child.kind() == "attribute" {
-            let mut ac = child.walk();
-            for attr_child in child.children(&mut ac) {
-                match attr_child.kind() {
-                    "identifier" => return helpers::node_text(&attr_child, source),
-                    "scoped_identifier" => {
-                        let full = helpers::node_text(&attr_child, source);
-                        return full.rsplit("::").next().unwrap_or(&full).to_string();
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    String::new()
 }
 
 // ---------------------------------------------------------------------------

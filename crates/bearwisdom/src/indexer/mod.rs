@@ -3,6 +3,8 @@ pub mod incremental;
 pub mod manifest;
 pub mod module_resolution;
 pub mod post_index;
+pub mod primitives;
 pub mod project_context;
 pub mod ref_cache;
 pub mod resolve;
+pub mod test_frameworks;

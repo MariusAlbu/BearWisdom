@@ -14,6 +14,8 @@ mod heuristic;
 pub mod rules;
 pub mod type_env;
 
+use engine::SymbolLookup;
+
 use crate::db::Database;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -153,6 +155,20 @@ pub fn resolve_and_write(
                 r.chain.as_ref().and_then(|chain| {
                     engine::infer_external_from_chain(chain, &scope_chain, &index)
                 })
+            });
+
+            // Bare-name external check: test globals (expect, describe, it) and
+            // language primitives (string, int, bool) without any chain or module.
+            let inferred_ns = inferred_ns.or_else(|| {
+                if index.is_external_name(&r.target_name, &pf.language) {
+                    Some(if crate::indexer::test_frameworks::is_test_file(&pf.path) {
+                        "test_framework".to_string()
+                    } else {
+                        "primitive".to_string()
+                    })
+                } else {
+                    None
+                }
             });
 
             if let Some(ns) = &inferred_ns {

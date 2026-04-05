@@ -511,6 +511,33 @@ impl LanguageResolver for RustResolver {
             }
         }
 
+        // Builder chain propagation: if the ref has a chain and the root segment
+        // was imported from an external crate, classify the whole chain external.
+        if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
+            if chain_ref.segments.len() >= 2 {
+                let root = &chain_ref.segments[0].name;
+                for import in &file_ctx.imports {
+                    if import.imported_name != root.as_str() {
+                        continue;
+                    }
+                    if let Some(ref mod_path) = import.module_path {
+                        let first = mod_path.split("::").next().unwrap_or(mod_path);
+                        let is_ext = match first {
+                            "crate" | "self" | "super" => false,
+                            "std" | "core" | "alloc" => true,
+                            name => match project_ctx {
+                                Some(ctx) => ctx.is_external_rust_crate(name),
+                                None => true,
+                            },
+                        };
+                        if is_ext {
+                            return Some(format!("{}.*", first));
+                        }
+                    }
+                }
+            }
+        }
+
         None
     }
 

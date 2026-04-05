@@ -10,7 +10,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use rustc_hash::FxHashMap;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -118,6 +118,14 @@ pub trait SymbolLookup {
     ///
     /// A `original_name` of `"*"` represents an `export * from './y'` wildcard.
     fn reexports_from(&self, file_path: &str) -> &[(String, String)];
+
+    /// Check whether a name is known to be external — either a language primitive,
+    /// a test-framework global, or a name from a manifest-declared dependency.
+    ///
+    /// Used by language resolvers to short-circuit chain classification: if the
+    /// root segment of a member chain is externally known, the whole chain is
+    /// external and need not be resolved against the project index.
+    fn is_external_name(&self, name: &str, language: &str) -> bool;
 }
 
 // ---------------------------------------------------------------------------
@@ -156,6 +164,14 @@ pub struct SymbolIndex {
     /// Module specifier resolution: maps specifiers to actual file paths.
     /// Populated by ecosystem-specific ModuleResolvers during index construction.
     module_to_file: FxHashMap<String, String>,
+    /// Test-framework globals (e.g., `expect`, `describe`, `it`) computed from
+    /// manifest dependencies. Keyed by language-independent name since most test
+    /// globals are language-specific sets unioned at build time.
+    test_globals: HashSet<String>,
+    /// Primitive type names keyed by language id → set of primitive names.
+    /// Built once from `primitives::primitives_for_language` for all languages
+    /// present in the parsed files.
+    primitives_by_language: FxHashMap<String, HashSet<String>>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -426,6 +442,34 @@ impl SymbolIndex {
             }
         }
 
+        // Build test-framework globals from manifest dependencies.
+        let test_globals: HashSet<String> = if let Some(ctx) = project_ctx {
+            // Collect all known dependency names across ecosystems.
+            let mut all_deps: HashSet<String> = HashSet::new();
+            all_deps.extend(ctx.ts_packages.iter().cloned());
+            all_deps.extend(ctx.rust_crates.iter().cloned());
+            all_deps.extend(ctx.python_packages.iter().cloned());
+            all_deps.extend(ctx.ruby_gems.iter().cloned());
+            all_deps.extend(ctx.php_packages.iter().cloned());
+            // Also include the NuGet / Maven package names stored in external_prefixes.
+            all_deps.extend(ctx.external_prefixes.iter().cloned());
+            crate::indexer::test_frameworks::test_framework_globals(&all_deps)
+        } else {
+            HashSet::new()
+        };
+
+        // Build per-language primitive sets for all languages present in parsed files.
+        let mut primitives_by_language: FxHashMap<String, HashSet<String>> =
+            FxHashMap::default();
+        for pf in parsed {
+            if !primitives_by_language.contains_key(&pf.language) {
+                let set = crate::indexer::primitives::primitives_set_for_language(&pf.language);
+                if !set.is_empty() {
+                    primitives_by_language.insert(pf.language.clone(), set);
+                }
+            }
+        }
+
         Self {
             by_name,
             by_qname,
@@ -434,6 +478,8 @@ impl SymbolIndex {
             type_info,
             reexport_map,
             module_to_file,
+            test_globals,
+            primitives_by_language,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -658,6 +704,25 @@ impl SymbolLookup for SymbolIndex {
         }
         &self.empty_reexports
     }
+
+    fn is_external_name(&self, name: &str, language: &str) -> bool {
+        // 1. Language primitive check.
+        if let Some(primitives) = self.primitives_by_language.get(language) {
+            if primitives.contains(name) {
+                return true;
+            }
+        }
+
+        // 2. Test-framework global check (language-independent).
+        if self.test_globals.contains(name) {
+            return true;
+        }
+
+        // 3. Name is not in the project index at all and is not a known local name.
+        // We intentionally do NOT call by_name here — that is used by the resolution
+        // path. This method only covers the three positive-match cases above.
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -774,6 +839,21 @@ pub fn infer_external_from_chain(
     let segments = &chain.segments;
     if segments.len() < 2 {
         return None;
+    }
+
+    // Fast path: if the root segment is a known external name (primitive, test
+    // framework global), classify the whole chain as external immediately.
+    // We use an empty string as the language hint here since `infer_external_from_chain`
+    // is language-agnostic; the language-specific primitives are checked inside
+    // `is_external_name` only when the language is known.  The test-global check
+    // is language-independent, so it still fires correctly.
+    if segments[0].kind == SegmentKind::Identifier {
+        let root = &segments[0].name;
+        // Use an empty language string — this still catches test globals.
+        // Primitive checks per language happen in the language-specific resolvers.
+        if lookup.is_external_name(root, "") {
+            return Some(format!("{}.*", root));
+        }
     }
 
     // Phase 1: Determine root type.

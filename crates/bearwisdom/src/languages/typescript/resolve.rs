@@ -374,6 +374,31 @@ impl LanguageResolver for TypeScriptResolver {
             }
         }
 
+        // Builder chain propagation: if the ref has a chain and the root segment
+        // was imported from an external package, classify the whole chain external.
+        if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
+            if chain_ref.segments.len() >= 2 {
+                let root = &chain_ref.segments[0].name;
+                // Check if root was imported from a bare (external) specifier.
+                for import in &file_ctx.imports {
+                    if import.imported_name != *root {
+                        continue;
+                    }
+                    if let Some(module_path) = &import.module_path {
+                        if builtins::is_bare_specifier(module_path) {
+                            let is_external = match project_ctx {
+                                Some(ctx) => ctx.is_external_ts_package(module_path),
+                                None => true,
+                            };
+                            if is_external {
+                                return Some(format!("{}.*", module_path));
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Last resort: common built-in method names that appear on Array, String,
         // Promise, and Object instances. Only classify when we have no other
         // information — all import-based checks have already failed above.
