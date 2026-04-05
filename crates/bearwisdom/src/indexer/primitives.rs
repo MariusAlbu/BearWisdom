@@ -14,11 +14,14 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
             "string", "number", "boolean", "void", "null", "undefined", "any", "never",
             "object", "symbol", "bigint", "unknown", "String", "Number", "Boolean", "Object",
             "Array", "Function", "Symbol", "RegExp", "Date", "Error", "Promise", "Map", "Set",
+            // Generic type parameters
+            "T", "U", "K", "V", "P", "R", "S", "E",
         ],
         "java" | "kotlin" | "scala" | "groovy" => &[
             "int", "long", "float", "double", "boolean", "char", "byte", "short", "void",
             "Integer", "Long", "Float", "Double", "Boolean", "Character", "Byte", "Short",
             "String", "Object", "Void",
+            "T", "U", "K", "V", "E", "R", "S",
         ],
         "csharp" | "fsharp" | "vbnet" => &[
             "int", "long", "float", "double", "bool", "char", "byte", "string", "object",
@@ -29,6 +32,9 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
             "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
             "f32", "f64", "bool", "char", "str", "usize", "isize", "String", "Vec",
             "Option", "Result", "Box", "Rc", "Arc", "Self",
+            // Generic type parameters — can never resolve to a concrete symbol
+            "T", "U", "K", "V", "E", "R", "S", "P", "A", "B", "C", "D", "N", "M",
+            "Fn", "FnMut", "FnOnce",
         ],
         "python" => &[
             "int", "float", "str", "bool", "None", "bytes", "list", "dict", "tuple",
@@ -39,6 +45,7 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
             "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32",
             "uint64", "float32", "float64", "bool", "string", "byte", "rune", "error", "any",
             "complex64", "complex128", "uintptr",
+            "T", "K", "V", "E",
         ],
         "swift" => &[
             "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32",
@@ -61,6 +68,24 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
         "elixir" => &[
             "integer", "float", "atom", "string", "boolean", "list", "tuple", "map",
             "nil", "pid", "reference", "binary", "function", "port",
+        ],
+        "sql" => &[
+            // SQL keywords and functions that appear as type_ref noise
+            "NEW", "OLD", "NULL", "TRUE", "FALSE", "DEFAULT",
+            "INTEGER", "TEXT", "REAL", "BLOB", "BOOLEAN", "TIMESTAMP",
+            "VARCHAR", "CHAR", "BIGINT", "SMALLINT", "DECIMAL", "NUMERIC",
+            "SERIAL", "UUID", "JSONB", "JSON",
+            // SQL built-in functions
+            "count", "sum", "avg", "min", "max", "coalesce", "nullif",
+            "now", "current_timestamp", "nextval", "currval",
+            "lower", "upper", "trim", "length", "substring",
+            "EXTRACT", "CAST", "CASE", "WHEN", "THEN", "ELSE", "END",
+            "ALTER", "DROP", "CREATE", "INSERT", "UPDATE", "DELETE", "SELECT",
+            "LEFT", "RIGHT", "INNER", "OUTER", "JOIN", "ON", "WHERE", "FROM",
+            "GROUP", "ORDER", "BY", "HAVING", "LIMIT", "OFFSET",
+            "IF", "EXISTS", "NOT", "AND", "OR", "IN", "LIKE", "BETWEEN",
+            "SET", "VALUES", "INTO", "TABLE", "INDEX", "VIEW", "TRIGGER",
+            "FUNCTION", "PROCEDURE", "RETURN", "RETURNS", "BEGIN", "DECLARE",
         ],
         _ => &[],
     }
