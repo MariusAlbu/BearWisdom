@@ -29,6 +29,7 @@
 
 use super::{builtins, chain};
 
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -159,6 +160,25 @@ impl LanguageResolver for TypeScriptResolver {
 
         // No module on the ref — this is a non-import reference.
 
+        // Short-circuit: if the target was imported from an external package
+        // (determined via the file's import list), it won't be in our project index.
+        // Returning None here prevents the heuristic from producing spurious matches.
+        //
+        // Note: we don't have project_ctx here (resolve() doesn't receive it), so
+        // we check using is_bare_specifier. Manifest-aware external classification
+        // happens in infer_external_namespace, which runs after resolve() returns None.
+        for import in &file_ctx.imports {
+            if import.imported_name != *target {
+                continue;
+            }
+            if let Some(module_path) = &import.module_path {
+                if builtins::is_bare_specifier(module_path) {
+                    // Target was imported from a bare specifier — it's external.
+                    return None;
+                }
+            }
+        }
+
         // Normalize: strip `this.` prefix for member access on the current class.
         // `this.buildUserRO` → `buildUserRO`, then scope chain resolves it.
         // `this.db.selectFrom` → `db.selectFrom` (still a chain, handled later).
@@ -284,6 +304,14 @@ impl LanguageResolver for TypeScriptResolver {
         // If the ref itself carries a module path, check it directly.
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if builtins::is_bare_specifier(module) {
+                // Manifest-driven: check package.json dependencies first.
+                if let Some(ctx) = project_ctx {
+                    if let Some(manifest) = ctx.manifests.get(&ManifestKind::Npm) {
+                        if is_npm_package_match(module, &manifest.dependencies) {
+                            return Some(module.clone());
+                        }
+                    }
+                }
                 let is_external = match project_ctx {
                     Some(ctx) => ctx.is_external_ts_package(module),
                     // Without ProjectContext, treat all bare specifiers as external.
@@ -309,6 +337,14 @@ impl LanguageResolver for TypeScriptResolver {
             if !builtins::is_bare_specifier(module_path) {
                 continue;
             }
+            // Manifest-driven: check package.json dependencies first.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Npm) {
+                    if is_npm_package_match(module_path, &manifest.dependencies) {
+                        return Some(module_path.clone());
+                    }
+                }
+            }
             let is_external = match project_ctx {
                 Some(ctx) => ctx.is_external_ts_package(module_path),
                 None => true,
@@ -331,6 +367,34 @@ impl LanguageResolver for TypeScriptResolver {
     // is_visible: default implementation (always true) is correct for TS.
     // TypeScript's `export` keyword controls visibility, but for resolution
     // purposes we treat all indexed symbols as accessible.
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a bare module specifier matches any npm package in the manifest.
+///
+/// Handles exact matches and deep import paths:
+///   `"react"` → matches `"react"` in dependencies.
+///   `"@tanstack/react-query"` → matches `"@tanstack/react-query"`.
+///   `"react-dom/client"` → matches `"react-dom"` after stripping the subpath.
+fn is_npm_package_match(
+    specifier: &str,
+    deps: &std::collections::HashSet<String>,
+) -> bool {
+    if deps.contains(specifier) {
+        return true;
+    }
+    // Deep import path: strip trailing subpath segments until a match is found.
+    let mut path = specifier;
+    while let Some(slash) = path.rfind('/') {
+        path = &path[..slash];
+        if deps.contains(path) {
+            return true;
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------

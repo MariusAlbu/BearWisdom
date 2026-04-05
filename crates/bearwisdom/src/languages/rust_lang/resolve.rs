@@ -36,6 +36,7 @@
 
 
 use super::{builtins, chain};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -344,6 +345,17 @@ impl LanguageResolver for RustResolver {
                 "crate" | "self" | "super" => return None, // internal
                 "std" | "core" | "alloc" => return Some("std".to_string()),
                 name => {
+                    // Manifest-driven: check Cargo.toml dependencies first.
+                    // Crate names may use hyphens in Cargo.toml but underscores in source.
+                    if let Some(ctx) = project_ctx {
+                        if let Some(manifest) = ctx.manifests.get(&ManifestKind::Cargo) {
+                            if manifest.dependencies.contains(name)
+                                || manifest.dependencies.contains(&name.replace('_', "-"))
+                            {
+                                return Some(first.to_string());
+                            }
+                        }
+                    }
                     let is_ext = match project_ctx {
                         Some(ctx) => ctx.is_external_rust_crate(name),
                         None => true, // conservative: treat as external
@@ -378,6 +390,16 @@ impl LanguageResolver for RustResolver {
                 "crate" | "self" | "super" => continue,
                 "std" | "core" | "alloc" => return Some("std".to_string()),
                 name => {
+                    // Manifest-driven check.
+                    if let Some(ctx) = project_ctx {
+                        if let Some(manifest) = ctx.manifests.get(&ManifestKind::Cargo) {
+                            if manifest.dependencies.contains(name)
+                                || manifest.dependencies.contains(&name.replace('_', "-"))
+                            {
+                                return Some(first.to_string());
+                            }
+                        }
+                    }
                     let is_ext = match project_ctx {
                         Some(ctx) => ctx.is_external_rust_crate(name),
                         None => true,

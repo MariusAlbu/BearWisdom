@@ -35,6 +35,7 @@
 
 
 use super::{builtins, chain};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -324,9 +325,28 @@ impl LanguageResolver for GoResolver {
                 continue;
             };
 
-            let external = match project_ctx {
-                Some(ctx) => ctx.is_external_go_import(full_path),
-                None => builtins::is_external_go_import_fallback(full_path),
+            // Manifest-driven: check go.mod external dependencies first.
+            // go.mod external deps are full module paths (e.g., "github.com/gin-gonic/gin").
+            // is_external_go_import already uses go_module_path from the manifest,
+            // so this explicit check adds direct manifest validation as the first pass.
+            let external = if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::GoMod) {
+                    // Check if import_path starts with any known external module path.
+                    let is_known_ext = manifest.dependencies.iter().any(|dep| {
+                        full_path == dep
+                            || full_path.starts_with(dep.as_str())
+                                && full_path.as_bytes().get(dep.len()) == Some(&b'/')
+                    });
+                    if is_known_ext {
+                        true
+                    } else {
+                        ctx.is_external_go_import(full_path)
+                    }
+                } else {
+                    ctx.is_external_go_import(full_path)
+                }
+            } else {
+                builtins::is_external_go_import_fallback(full_path)
             };
 
             if external {

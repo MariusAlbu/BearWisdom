@@ -18,6 +18,7 @@
 
 
 use super::builtins;
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -202,6 +203,23 @@ impl LanguageResolver for KotlinResolver {
         // Import refs — classify the import path itself.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+
+            // Manifest-driven: check Maven and Gradle group IDs first.
+            if let Some(ctx) = project_ctx {
+                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                    if let Some(manifest) = ctx.manifests.get(&kind) {
+                        if manifest.dependencies.iter().any(|group_id| {
+                            import_path == group_id
+                                || import_path.starts_with(group_id.as_str())
+                                    && import_path.as_bytes().get(group_id.len())
+                                        == Some(&b'.')
+                        }) {
+                            return Some(import_path.to_string());
+                        }
+                    }
+                }
+            }
+
             if builtins::is_external_kotlin_namespace(import_path, project_ctx) {
                 return Some(import_path.to_string());
             }
@@ -224,6 +242,22 @@ impl LanguageResolver for KotlinResolver {
             {
                 continue;
             }
+
+            // Manifest-driven check on import namespace.
+            if let Some(ctx) = project_ctx {
+                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                    if let Some(manifest) = ctx.manifests.get(&kind) {
+                        if manifest.dependencies.iter().any(|group_id| {
+                            ns == group_id
+                                || ns.starts_with(group_id.as_str())
+                                    && ns.as_bytes().get(group_id.len()) == Some(&b'.')
+                        }) {
+                            return Some(ns.to_string());
+                        }
+                    }
+                }
+            }
+
             if builtins::is_external_kotlin_namespace(ns, project_ctx) {
                 return Some(ns.to_string());
             }

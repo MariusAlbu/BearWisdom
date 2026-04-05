@@ -23,6 +23,7 @@
 
 
 use super::builtins;
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -194,15 +195,27 @@ impl LanguageResolver for ElixirResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
         // Import / alias / use / require directives.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+            let root = module.split('.').next().unwrap_or(module);
+
+            // Manifest-driven: check mix.exs dependencies first.
+            // Mix dep atoms are snake_case (e.g., "phoenix", "ecto_sql").
+            // Elixir module roots are CamelCase (e.g., "Phoenix", "Ecto").
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                    if is_mix_dep_match(root, &manifest.dependencies) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+
             if builtins::is_external_elixir_module(module) {
-                let root = module.split('.').next().unwrap_or(module);
                 return Some(root.to_string());
             }
             return None;
@@ -219,8 +232,18 @@ impl LanguageResolver for ElixirResolver {
                 continue;
             }
             let module = import.module_path.as_deref().unwrap_or("");
+            let root = module.split('.').next().unwrap_or(module);
+
+            // Manifest-driven check for alias targets.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                    if is_mix_dep_match(root, &manifest.dependencies) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+
             if builtins::is_external_elixir_module(module) {
-                let root = module.split('.').next().unwrap_or(module);
                 return Some(root.to_string());
             }
         }
@@ -228,11 +251,28 @@ impl LanguageResolver for ElixirResolver {
         // Fully-qualified external module reference.
         if target.contains('.') {
             let root = target.split('.').next().unwrap_or(target);
+
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                    if is_mix_dep_match(root, &manifest.dependencies) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+
             if builtins::is_external_elixir_module(root) {
                 return Some(root.to_string());
             }
         } else {
             // Plain module name (single segment, uppercase = Elixir module).
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                    if is_mix_dep_match(target, &manifest.dependencies) {
+                        return Some(target.clone());
+                    }
+                }
+            }
+
             if builtins::is_external_elixir_module(target) {
                 return Some(target.clone());
             }
@@ -240,4 +280,37 @@ impl LanguageResolver for ElixirResolver {
 
         None
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a CamelCase Elixir module root matches any mix.exs dependency atom.
+///
+/// Mix dep atoms are snake_case (e.g., `"phoenix"`, `"ecto_sql"`).
+/// Elixir module roots are CamelCase (e.g., `"Phoenix"`, `"Ecto"`).
+///
+/// Matching strategy:
+/// 1. Lowercase the module root and compare directly (`"Phoenix"` → `"phoenix"`).
+/// 2. Take the first underscore-separated segment of the dep atom and compare
+///    (`"ecto_sql"` → `"ecto"`, which matches `"Ecto"`).
+fn is_mix_dep_match(
+    module_root: &str,
+    deps: &std::collections::HashSet<String>,
+) -> bool {
+    let root_lower = module_root.to_lowercase();
+    for dep in deps {
+        // Direct lowercase match: "Phoenix" → "phoenix".
+        if dep == &root_lower {
+            return true;
+        }
+        // Prefix match: "ecto_sql" has root "ecto" which matches "Ecto".
+        if let Some(prefix) = dep.split('_').next() {
+            if prefix == root_lower {
+                return true;
+            }
+        }
+    }
+    false
 }

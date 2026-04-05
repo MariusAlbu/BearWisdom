@@ -62,15 +62,10 @@ pub(super) fn is_external_ruby_require(
     if RUBY_STDLIB.contains(&require_path) {
         return true;
     }
-    // Strip ruby_gems stored in project_ctx.
-    // Since ProjectContext uses external_prefixes for .NET/Java namespaces,
-    // Ruby gem names are stored in ruby_gems on the context.
-    // Use the generic external_prefixes check if gems were stored there.
+    // Check gem names from ruby_gems (back-filled from Gemfile in build_project_context).
     if let Some(ctx) = project_ctx {
-        // The Ruby resolver stores gem names as external_prefixes entries
-        // (root name, e.g., "rails", "devise").
         let gem_root = require_path.split('/').next().unwrap_or(require_path);
-        if ctx.external_prefixes.contains(gem_root) {
+        if ctx.ruby_gems.contains(gem_root) || ctx.ruby_gems.contains(require_path) {
             return true;
         }
     }

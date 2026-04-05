@@ -26,6 +26,7 @@
 
 
 use super::{builtins, chain};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -228,6 +229,24 @@ impl LanguageResolver for JavaResolver {
         // classify the import itself as external if its namespace is known-external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+
+            // Manifest-driven: check Maven and Gradle group IDs first.
+            // Maven/Gradle group IDs (e.g., "org.springframework") are stored in dependencies.
+            if let Some(ctx) = project_ctx {
+                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                    if let Some(manifest) = ctx.manifests.get(&kind) {
+                        if manifest.dependencies.iter().any(|group_id| {
+                            import_path == group_id
+                                || import_path.starts_with(group_id.as_str())
+                                    && import_path.as_bytes().get(group_id.len())
+                                        == Some(&b'.')
+                        }) {
+                            return Some(import_path.to_string());
+                        }
+                    }
+                }
+            }
+
             if builtins::is_external_java_namespace(import_path, project_ctx) {
                 return Some(import_path.to_string());
             }
@@ -249,6 +268,21 @@ impl LanguageResolver for JavaResolver {
             // For exact imports: the target name must match.
             if !import.is_wildcard && import.imported_name != *target {
                 continue;
+            }
+
+            // Manifest-driven check on import namespace.
+            if let Some(ctx) = project_ctx {
+                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                    if let Some(manifest) = ctx.manifests.get(&kind) {
+                        if manifest.dependencies.iter().any(|group_id| {
+                            ns == group_id
+                                || ns.starts_with(group_id.as_str())
+                                    && ns.as_bytes().get(group_id.len()) == Some(&b'.')
+                        }) {
+                            return Some(ns.to_string());
+                        }
+                    }
+                }
             }
 
             // For wildcard imports: the candidate would be `ns.target`.

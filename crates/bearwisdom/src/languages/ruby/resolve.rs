@@ -27,6 +27,7 @@
 
 
 use super::{builtins, chain};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -192,6 +193,19 @@ impl LanguageResolver for RubyResolver {
         // Import refs (require statements) — classify the require itself if external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let require_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+
+            // Manifest-driven: check Gemfile dependencies first.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Gemfile) {
+                    let gem_root = require_path.split('/').next().unwrap_or(require_path);
+                    if manifest.dependencies.contains(gem_root)
+                        || manifest.dependencies.contains(require_path)
+                    {
+                        return Some(require_path.to_string());
+                    }
+                }
+            }
+
             if builtins::is_external_ruby_require(require_path, project_ctx) {
                 return Some(require_path.to_string());
             }
@@ -213,6 +227,18 @@ impl LanguageResolver for RubyResolver {
             // Only bare (non-relative) requires can be gems.
             if module_path.starts_with('.') {
                 continue;
+            }
+
+            // Manifest-driven check.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Gemfile) {
+                    let gem_root = module_path.split('/').next().unwrap_or(module_path);
+                    if manifest.dependencies.contains(gem_root)
+                        || manifest.dependencies.contains(module_path.as_str())
+                    {
+                        return Some(module_path.clone());
+                    }
+                }
             }
 
             if builtins::is_external_ruby_require(module_path, project_ctx) {

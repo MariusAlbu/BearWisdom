@@ -21,6 +21,7 @@
 
 
 use super::builtins;
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -142,7 +143,7 @@ impl LanguageResolver for SwiftResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -150,6 +151,24 @@ impl LanguageResolver for SwiftResolver {
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
             let root = module.split('.').next().unwrap_or(module);
+
+            // Manifest-driven: check Package.swift dependencies first.
+            // Package names in Package.swift are lowercase (e.g., "vapor", "swift-argument-parser").
+            // Module import names are typically CamelCase (e.g., "Vapor", "ArgumentParser").
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::SwiftPM) {
+                    let root_lower = root.to_lowercase();
+                    if manifest.dependencies.iter().any(|d| {
+                        // Match by lowercased name or by stripping common "swift-" prefix patterns.
+                        let d_lower = d.to_lowercase();
+                        d_lower == root_lower
+                            || d_lower.trim_start_matches("swift-") == root_lower.as_str()
+                    }) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+
             if builtins::is_external_swift_module(root) {
                 return Some(root.to_string());
             }
@@ -161,15 +180,30 @@ impl LanguageResolver for SwiftResolver {
             return Some("Swift".to_string());
         }
 
-        // Walk imports: if the target was imported from a known-external module.
+        // Walk imports: if the target was imported from a known-external module,
+        // check manifests first, then fall back to hardcoded list.
         for import in &file_ctx.imports {
             let module = import.module_path.as_deref().unwrap_or("");
             if module.is_empty() {
                 continue;
             }
             let root = module.split('.').next().unwrap_or(module);
+
+            // Manifest-driven check.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::SwiftPM) {
+                    let root_lower = root.to_lowercase();
+                    if manifest.dependencies.iter().any(|d| {
+                        let d_lower = d.to_lowercase();
+                        d_lower == root_lower
+                            || d_lower.trim_start_matches("swift-") == root_lower.as_str()
+                    }) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+
             if builtins::is_external_swift_module(root) {
-                // The unresolved name could come from this imported module.
                 return Some(root.to_string());
             }
         }
@@ -177,6 +211,21 @@ impl LanguageResolver for SwiftResolver {
         // Module-qualified target: `UIKit.UIView` → root is UIKit.
         if target.contains('.') {
             let root = target.split('.').next().unwrap_or(target);
+
+            // Manifest-driven check.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::SwiftPM) {
+                    let root_lower = root.to_lowercase();
+                    if manifest.dependencies.iter().any(|d| {
+                        let d_lower = d.to_lowercase();
+                        d_lower == root_lower
+                            || d_lower.trim_start_matches("swift-") == root_lower.as_str()
+                    }) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+
             if builtins::is_external_swift_module(root) {
                 return Some(root.to_string());
             }

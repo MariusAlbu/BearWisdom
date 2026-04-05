@@ -22,6 +22,7 @@
 
 
 use super::builtins;
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -135,7 +136,7 @@ impl LanguageResolver for DartResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -146,13 +147,29 @@ impl LanguageResolver for DartResolver {
                 // Return just the package/library root.
                 let ns = if uri.starts_with("dart:") {
                     "dart.stdlib"
-                } else if let Some(pkg) = uri.strip_prefix("package:") {
+                } else if let Some(pkg_path) = uri.strip_prefix("package:") {
                     // `package:flutter/material.dart` → "flutter"
-                    pkg.split('/').next().unwrap_or(pkg)
+                    pkg_path.split('/').next().unwrap_or(pkg_path)
                 } else {
                     uri
                 };
                 return Some(ns.to_string());
+            }
+            // For `package:` URIs not in the hardcoded list, check pubspec.yaml.
+            if uri.starts_with("package:") {
+                if let Some(ctx) = project_ctx {
+                    if let Some(manifest) = ctx.manifests.get(&ManifestKind::Pubspec) {
+                        let pkg_name = uri
+                            .strip_prefix("package:")
+                            .unwrap_or(uri)
+                            .split('/')
+                            .next()
+                            .unwrap_or(uri);
+                        if manifest.dependencies.contains(pkg_name) {
+                            return Some(pkg_name.to_string());
+                        }
+                    }
+                }
             }
             return None;
         }
@@ -169,36 +186,45 @@ impl LanguageResolver for DartResolver {
             if uri.is_empty() {
                 continue;
             }
+
+            // For package: URIs, check manifests first before the hardcoded list.
+            let pkg_name_from_uri = if uri.starts_with("package:") {
+                uri.strip_prefix("package:")
+                    .unwrap_or(uri)
+                    .split('/')
+                    .next()
+                    .unwrap_or(uri)
+            } else {
+                ""
+            };
+
+            let is_manifest_external = !pkg_name_from_uri.is_empty()
+                && project_ctx
+                    .and_then(|ctx| ctx.manifests.get(&ManifestKind::Pubspec))
+                    .is_some_and(|m| m.dependencies.contains(pkg_name_from_uri));
+
             // Alias-qualified: `u.Foo` where `import '...' as u`
             if let Some(alias) = &import.alias {
                 if alias == simple {
-                    if builtins::is_external_dart_import(uri) {
+                    if is_manifest_external || builtins::is_external_dart_import(uri) {
                         if uri.starts_with("package:") {
-                            let pkg = uri
-                                .strip_prefix("package:")
-                                .unwrap_or(uri)
-                                .split('/')
-                                .next()
-                                .unwrap_or(uri);
-                            return Some(pkg.to_string());
+                            return Some(pkg_name_from_uri.to_string());
                         }
                         return Some(uri.to_string());
                     }
                 }
             }
             // Wildcard: any name could come from any non-aliased external import.
-            if import.alias.is_none() && builtins::is_external_dart_import(uri) {
-                if uri.starts_with("package:") {
-                    // Return the package root as potential namespace.
-                    let pkg = uri
-                        .strip_prefix("package:")
-                        .unwrap_or(uri)
-                        .split('/')
-                        .next()
-                        .unwrap_or(uri);
-                    return Some(pkg.to_string());
+            if import.alias.is_none() {
+                if is_manifest_external {
+                    return Some(pkg_name_from_uri.to_string());
                 }
-                return Some("dart.stdlib".to_string());
+                if builtins::is_external_dart_import(uri) {
+                    if uri.starts_with("package:") {
+                        return Some(pkg_name_from_uri.to_string());
+                    }
+                    return Some("dart.stdlib".to_string());
+                }
             }
         }
 

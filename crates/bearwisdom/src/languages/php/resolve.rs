@@ -30,6 +30,7 @@
 pub(crate) use super::builtins::normalize_php_ns;
 
 use super::{builtins, chain};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -211,6 +212,19 @@ impl LanguageResolver for PhpResolver {
                 .as_deref()
                 .unwrap_or(target);
             let normalized = builtins::normalize_php_ns(import_path);
+
+            // Manifest-driven: check composer.json dependencies first.
+            // Composer packages use `"vendor/package"` format (e.g., `"intervention/image"`).
+            // PHP namespace roots are CamelCase (e.g., `"Intervention"`).
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Composer) {
+                    let ns_root = normalized.split('.').next().unwrap_or(&normalized);
+                    if is_composer_package_match(ns_root, &manifest.dependencies) {
+                        return Some(normalized);
+                    }
+                }
+            }
+
             if builtins::is_external_php_namespace(&normalized, project_ctx) {
                 return Some(normalized);
             }
@@ -223,7 +237,7 @@ impl LanguageResolver for PhpResolver {
         }
 
         // Check use statement list for external namespaces.
-        let mut best: Option<&str> = None;
+        let mut best: Option<String> = None;
 
         for import in &file_ctx.imports {
             let ns = import.module_path.as_deref().unwrap_or("");
@@ -231,14 +245,30 @@ impl LanguageResolver for PhpResolver {
                 continue;
             }
 
-            if builtins::is_external_php_namespace(ns, project_ctx) {
-                if best.is_none() || ns.len() > best.unwrap().len() {
-                    best = Some(ns);
+            // Manifest-driven check.
+            let is_ext = if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Composer) {
+                    let ns_root = ns.split('.').next().unwrap_or(ns);
+                    if is_composer_package_match(ns_root, &manifest.dependencies) {
+                        true
+                    } else {
+                        builtins::is_external_php_namespace(ns, project_ctx)
+                    }
+                } else {
+                    builtins::is_external_php_namespace(ns, project_ctx)
+                }
+            } else {
+                builtins::is_external_php_namespace(ns, project_ctx)
+            };
+
+            if is_ext {
+                if best.as_deref().is_none() || ns.len() > best.as_deref().unwrap().len() {
+                    best = Some(ns.to_string());
                 }
             }
         }
 
-        best.map(|s| s.to_string())
+        best
     }
 
     fn is_visible(
@@ -261,6 +291,47 @@ impl LanguageResolver for PhpResolver {
             _ => true,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a PHP namespace root matches any composer.json package dependency.
+///
+/// Composer packages use `"vendor/package"` format (e.g., `"intervention/image"`).
+/// PHP namespace roots are CamelCase (e.g., `"Intervention"`).
+///
+/// Matching strategy:
+/// 1. Exact case-insensitive match of the namespace root against the package part
+///    (after the `/`): `"Intervention"` matches `"intervention/image"` package part `"image"` — no.
+///    Actually match against the last segment after `/`: vendor/package → package.
+/// 2. Also try matching against the vendor segment before `/`.
+///
+/// For well-known mappings like `laravel/framework` → `Illuminate`, the
+/// ALWAYS_EXTERNAL list in builtins handles them. This function catches packages
+/// not in that list where the namespace root matches the composer package name.
+fn is_composer_package_match(
+    ns_root: &str,
+    deps: &std::collections::HashSet<String>,
+) -> bool {
+    let ns_lower = ns_root.to_lowercase();
+    for dep in deps {
+        // `"vendor/package"` — check both vendor and package segments.
+        let (vendor, package) = if let Some(slash) = dep.find('/') {
+            (&dep[..slash], &dep[slash + 1..])
+        } else {
+            (dep.as_str(), dep.as_str())
+        };
+        // Normalize: replace hyphens with nothing for comparison (e.g., "my-package" → "mypackage").
+        let vendor_lower = vendor.to_lowercase().replace('-', "");
+        let package_lower = package.to_lowercase().replace('-', "");
+        let ns_lower_nohyphen = ns_lower.replace('-', "");
+        if vendor_lower == ns_lower_nohyphen || package_lower == ns_lower_nohyphen {
+            return true;
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------

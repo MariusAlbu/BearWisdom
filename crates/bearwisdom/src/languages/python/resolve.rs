@@ -28,6 +28,7 @@
 
 
 use super::{builtins, chain};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -322,6 +323,17 @@ impl LanguageResolver for PythonResolver {
             if builtins::is_python_stdlib(root) {
                 return Some("stdlib".to_string());
             }
+            // Manifest-driven: check pyproject.toml / requirements.txt dependencies first.
+            // pip package names may use hyphens; Python imports use underscores.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::PyProject) {
+                    if manifest.dependencies.contains(root)
+                        || manifest.dependencies.contains(&root.replace('_', "-"))
+                    {
+                        return Some(module.to_string());
+                    }
+                }
+            }
             let is_ext = match project_ctx {
                 Some(ctx) => ctx.is_external_python_package(root),
                 None => true,
@@ -352,6 +364,16 @@ impl LanguageResolver for PythonResolver {
             let root = mod_path.split('.').next().unwrap_or(mod_path);
             if builtins::is_python_stdlib(root) {
                 return Some("stdlib".to_string());
+            }
+            // Manifest-driven check.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::PyProject) {
+                    if manifest.dependencies.contains(root)
+                        || manifest.dependencies.contains(&root.replace('_', "-"))
+                    {
+                        return Some(mod_path.clone());
+                    }
+                }
             }
             let is_ext = match project_ctx {
                 Some(ctx) => ctx.is_external_python_package(root),
