@@ -317,8 +317,19 @@ impl LanguageResolver for RustResolver {
             }
 
             // Also try: just the name, scoped to the module prefix.
+            // Two variants: with and without leading "crate." since the symbol
+            // index never includes the "crate." prefix in qualified names.
+            // Require a trailing "." so "models" doesn't match "modelsfoo.User".
+            let dot_mod_stripped = dot_mod
+                .strip_prefix("crate.")
+                .unwrap_or(dot_mod.as_str());
+            let dot_mod_prefix = format!("{}.", dot_mod);
+            let dot_mod_stripped_prefix = format!("{}.", dot_mod_stripped);
             for sym in lookup.by_name(effective_target) {
-                if sym.qualified_name.starts_with(dot_mod.as_str())
+                let qn = sym.qualified_name.as_str();
+                let prefix_match = qn.starts_with(dot_mod_prefix.as_str())
+                    || qn.starts_with(dot_mod_stripped_prefix.as_str());
+                if prefix_match
                     && self.is_visible(file_ctx, ref_ctx, sym)
                     && builtins::kind_compatible(edge_kind, &sym.kind)
                 {
@@ -326,6 +337,59 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
                         strategy: "rust_import_prefix",
+                    });
+                }
+            }
+
+            // Re-export fallback: `pub use submod::Type` means the symbol lives
+            // in a submodule of the imported module. Map the module path to a
+            // directory segment and find candidates whose file path sits under
+            // that directory subtree.
+            //
+            // "crate::models" → "models/" (forward-slash, any position in path)
+            // "crate::api::handlers" → "api/handlers/"
+            let dir_suffix: String = {
+                let segs: Vec<&str> = dot_mod_stripped
+                    .split('.')
+                    .filter(|s| !s.is_empty())
+                    .collect();
+                if segs.is_empty() {
+                    String::new()
+                } else {
+                    format!("{}/", segs.join("/"))
+                }
+            };
+            if !dir_suffix.is_empty() {
+                let candidates: Vec<&crate::indexer::resolve::engine::SymbolInfo> =
+                    lookup.by_name(effective_target)
+                        .iter()
+                        .filter(|sym| {
+                            // file_path contains the module's directory anywhere in the path,
+                            // using forward slashes (the index normalizes to `/`).
+                            let fp = sym.file_path.replace('\\', "/");
+                            fp.contains(dir_suffix.as_str())
+                                && self.is_visible(file_ctx, ref_ctx, sym)
+                                && builtins::kind_compatible(edge_kind, &sym.kind)
+                        })
+                        .collect();
+                if candidates.len() == 1 {
+                    return Some(Resolution {
+                        target_symbol_id: candidates[0].id,
+                        confidence: 0.90,
+                        strategy: "rust_reexport_dir",
+                    });
+                }
+                // Multiple candidates: prefer the one whose qualified_name is shortest
+                // (closest to the module root — less nesting = less ambiguity).
+                if !candidates.is_empty() {
+                    let best = candidates
+                        .iter()
+                        .min_by_key(|s| s.qualified_name.len())
+                        .unwrap();
+                    return Some(Resolution {
+                        target_symbol_id: best.id,
+                        confidence: 0.85,
+                        strategy: "rust_reexport_dir_ambiguous",
                     });
                 }
             }

@@ -152,12 +152,10 @@ pub struct SymbolIndex {
     /// Unified per-symbol type metadata (replaces 4 separate maps).
     type_info: FxHashMap<String, TypeInfo>,
     /// Re-export map: file_path → Vec<(original_name, source_module)>.
-    ///
-    /// Built from `EdgeKind::Imports` refs that have a `module` set.
-    /// These are emitted by the TS/JS extractors for re-export forms:
-    ///   `export { X } from './y'`  → ("X", "./y")
-    ///   `export * from './y'`      → ("*", "./y")
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
+    /// Module specifier resolution: maps specifiers to actual file paths.
+    /// Populated by ecosystem-specific ModuleResolvers during index construction.
+    module_to_file: FxHashMap<String, String>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -386,6 +384,28 @@ impl SymbolIndex {
             }
         }
 
+        // Build module-to-file mapping for path-based import resolution.
+        // For each file path like "src/services/index.ts", generate the module
+        // specifiers that could reference it: "services/index", "services", etc.
+        let mut module_to_file: FxHashMap<String, String> = FxHashMap::default();
+        for pf in parsed {
+            let norm = pf.path.replace('\\', "/");
+            // Strip common extensions
+            for ext in &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".mts", ".d.ts"] {
+                if let Some(stripped) = norm.strip_suffix(ext) {
+                    // Map the stripped path as a module specifier
+                    module_to_file.entry(stripped.to_string()).or_insert_with(|| pf.path.clone());
+                    // If it ends with /index, also map the directory
+                    if let Some(dir) = stripped.strip_suffix("/index") {
+                        module_to_file.entry(dir.to_string()).or_insert_with(|| pf.path.clone());
+                    }
+                    break;
+                }
+            }
+            // Also map the full path without extension changes
+            module_to_file.entry(norm.clone()).or_insert_with(|| pf.path.clone());
+        }
+
         Self {
             by_name,
             by_qname,
@@ -393,6 +413,7 @@ impl SymbolIndex {
             sorted_qnames,
             type_info,
             reexport_map,
+            module_to_file,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -559,10 +580,25 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn in_file(&self, file_path: &str) -> &[SymbolInfo] {
-        self.by_file
-            .get(file_path)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty)
+        // Exact match first
+        if let Some(syms) = self.by_file.get(file_path) {
+            return syms.as_slice();
+        }
+        // Module specifier resolution: "./services" → actual file path
+        let norm = file_path.replace('\\', "/");
+        // Strip leading "./" or "../" for lookup
+        let stripped = norm
+            .trim_start_matches("./")
+            .trim_start_matches("../");
+        // Try suffix match against the module_to_file index
+        for (mod_spec, actual_path) in &self.module_to_file {
+            if mod_spec.ends_with(stripped) || stripped.ends_with(mod_spec.as_str()) {
+                if let Some(syms) = self.by_file.get(actual_path) {
+                    return syms.as_slice();
+                }
+            }
+        }
+        &self.empty
     }
 
     fn field_type_name(&self, property_qname: &str) -> Option<&str> {
@@ -598,10 +634,20 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
-        self.reexport_map
-            .get(file_path)
-            .map(|v| v.as_slice())
-            .unwrap_or(&self.empty_reexports)
+        if let Some(v) = self.reexport_map.get(file_path) {
+            return v.as_slice();
+        }
+        // Module specifier fallback
+        let norm = file_path.replace('\\', "/");
+        let stripped = norm.trim_start_matches("./").trim_start_matches("../");
+        for (mod_spec, actual_path) in &self.module_to_file {
+            if mod_spec.ends_with(stripped) || stripped.ends_with(mod_spec.as_str()) {
+                if let Some(v) = self.reexport_map.get(actual_path) {
+                    return v.as_slice();
+                }
+            }
+        }
+        &self.empty_reexports
     }
 }
 
