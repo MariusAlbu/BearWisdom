@@ -129,6 +129,7 @@ fn extract_body_symbols(
                     &child,
                     source,
                     symbols,
+                    refs,
                     parent_index,
                     qualified_prefix,
                     false,
@@ -748,6 +749,7 @@ pub(super) fn extract_assignment_if_any(
     expr_stmt: &Node,
     source: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
     inside_class: bool,
@@ -755,17 +757,11 @@ pub(super) fn extract_assignment_if_any(
     let mut cursor = expr_stmt.walk();
     for child in expr_stmt.children(&mut cursor) {
         if child.kind() == "assignment" {
-            // Emit type refs from annotations; use the next symbol index as
-            // the source (the Variable we're about to push).
-            let source_idx = symbols.len();
-            // We have no refs here — the caller (extract_from_node) handles
-            // calls separately.  Type-annotation refs are extracted in the
-            // dedicated extract_assignment_node call below.
-            let _ = (source_idx, inside_class);
             extract_assignment_node(
                 &child,
                 source,
                 symbols,
+                refs,
                 parent_index,
                 qualified_prefix,
                 inside_class,
@@ -778,6 +774,7 @@ fn extract_assignment_node(
     node: &Node,
     source: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     qualified_prefix: &str,
     inside_class: bool,
@@ -791,6 +788,7 @@ fn extract_assignment_node(
         "identifier" => {
             let name = node_text(&left, source);
             let kind = classify_assignment_name(&name, inside_class);
+            let sym_idx = symbols.len();
             push_variable_symbol(
                 node,
                 &left,
@@ -800,6 +798,11 @@ fn extract_assignment_node(
                 parent_index,
                 qualified_prefix,
             );
+            // Infer the variable type from the RHS when no explicit annotation.
+            // `repo = UserRepository(db)` — first positional RHS is the `right` field.
+            if let Some(rhs) = node.child_by_field_name("right") {
+                infer_python_variable_type(&rhs, source, sym_idx, refs);
+            }
         }
         // `self.x = value` — attribute assignment defining an instance field.
         // Extract the attribute name (last component after '.').
@@ -807,6 +810,7 @@ fn extract_assignment_node(
             if let Some(attr_node) = left.child_by_field_name("attribute") {
                 let name = node_text(&attr_node, source);
                 if !name.is_empty() {
+                    let sym_idx = symbols.len();
                     push_variable_symbol(
                         node,
                         &attr_node,
@@ -816,10 +820,14 @@ fn extract_assignment_node(
                         parent_index,
                         qualified_prefix,
                     );
+                    if let Some(rhs) = node.child_by_field_name("right") {
+                        infer_python_variable_type(&rhs, source, sym_idx, refs);
+                    }
                 }
             }
         }
         "pattern_list" | "tuple_pattern" => {
+            // For tuple unpacking we don't attempt RHS inference (ambiguous mapping).
             let mut cursor = left.walk();
             for elem in left.children(&mut cursor) {
                 if elem.kind() == "identifier" {
@@ -839,6 +847,64 @@ fn extract_assignment_node(
         }
         _ => {}
     }
+}
+
+/// Inspect the Python RHS expression and emit a TypeRef when the type can be
+/// determined heuristically:
+///
+/// - `Foo(args)` — `call` whose function is an uppercase identifier → TypeRef "Foo"
+/// - `Foo.create(args)` — `call` whose function is `attribute` with uppercase object
+///   → TypeRef "Foo"
+///
+/// Explicitly annotated variables (`x: Foo = ...`) are handled elsewhere via the
+/// type-annotation extractor.
+fn infer_python_variable_type(
+    rhs: &tree_sitter::Node,
+    source: &str,
+    var_sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if rhs.kind() != "call" {
+        return;
+    }
+    let func_node = match rhs.child_by_field_name("function") {
+        Some(n) => n,
+        None => return,
+    };
+    let type_name = match func_node.kind() {
+        // `Foo(args)` — direct constructor call
+        "identifier" => {
+            let name = node_text(&func_node, source);
+            if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                name
+            } else {
+                return;
+            }
+        }
+        // `Foo.create(args)` or `module.Foo(args)` — attribute call
+        "attribute" => {
+            let obj = func_node
+                .child_by_field_name("object")
+                .map(|n| node_text(&n, source))
+                .unwrap_or_default();
+            // Only emit if the object name starts uppercase (class factory pattern).
+            if obj.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                obj
+            } else {
+                return;
+            }
+        }
+        _ => return,
+    };
+
+    refs.push(ExtractedRef {
+        source_symbol_index: var_sym_idx,
+        target_name: type_name,
+        kind: EdgeKind::TypeRef,
+        line: rhs.start_position().row as u32,
+        module: None,
+        chain: None,
+    });
 }
 
 fn classify_assignment_name(name: &str, _inside_class: bool) -> SymbolKind {

@@ -934,3 +934,55 @@ fn reexport_multiple_named_emits_one_ref_per_export() {
     assert!(names.contains(&"C"), "C should be in import refs");
     assert_eq!(import_refs.len(), 3, "should emit one Imports ref per export specifier");
 }
+
+// ---------------------------------------------------------------------------
+// Local variable type inference from new_expression
+// ---------------------------------------------------------------------------
+
+#[test]
+fn new_expression_emits_typeref_for_variable() {
+    // `const service = new UserService()` should emit TypeRef "UserService"
+    // attached to the `service` Variable symbol (chain: None).
+    let src = "const service = new UserService();";
+    let r = extract::extract(src, false);
+
+    let svc_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "service");
+    assert!(svc_sym.is_some(), "Expected Variable symbol 'service'");
+    let (svc_idx, _) = svc_sym.unwrap();
+
+    let typeref = r.refs.iter().find(|rf| {
+        rf.source_symbol_index == svc_idx
+            && rf.kind == EdgeKind::TypeRef
+            && rf.target_name == "UserService"
+            && rf.chain.is_none()
+            && rf.module.is_none()
+    });
+    assert!(
+        typeref.is_some(),
+        "Expected TypeRef 'UserService' from 'service'; refs = {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.source_symbol_index == svc_idx)
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn explicit_type_annotation_takes_priority_over_new_expression() {
+    // `const service: UserService = new UserService()` — explicit annotation
+    // should also produce a TypeRef.
+    let src = "const service: UserService = new UserService();";
+    let r = extract::extract(src, false);
+
+    let svc_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "service");
+    assert!(svc_sym.is_some(), "Expected Variable symbol 'service'");
+    let (svc_idx, _) = svc_sym.unwrap();
+
+    // At least one TypeRef pointing at UserService from the variable.
+    let has_typeref = r.refs.iter().any(|rf| {
+        rf.source_symbol_index == svc_idx
+            && rf.kind == EdgeKind::TypeRef
+            && rf.target_name == "UserService"
+    });
+    assert!(has_typeref, "Expected at least one TypeRef 'UserService' from 'service'");
+}

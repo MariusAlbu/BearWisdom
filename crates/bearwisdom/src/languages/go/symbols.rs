@@ -1070,40 +1070,75 @@ pub(super) fn extract_short_var_decl(
 
         // If the corresponding RHS value is a call_expression, emit a
         // chain-bearing TypeRef so the resolution engine can follow the chain.
+        // If it is a composite_literal (e.g. `x := Foo{}`), emit a plain
+        // TypeRef for the struct type so the chain resolver can follow it.
         if let Some(rhs_node) = rhs_values.get(i) {
-            if rhs_node.kind() == "call_expression" {
-                if let Some(func) = rhs_node.named_child(0) {
-                    if let Some(chain) = build_chain(func, source) {
-                        let target = chain
-                            .segments
-                            .last()
-                            .map(|s| s.name.clone())
-                            .unwrap_or_default();
-                        if !target.is_empty() {
-                            refs.push(ExtractedRef {
-                                source_symbol_index: sym_idx,
-                                target_name: target,
-                                kind: EdgeKind::TypeRef,
-                                line: rhs_node.start_position().row as u32,
-                                module: None,
-                                chain: Some(chain),
-                            });
-                        }
-                    } else {
-                        // Bare function call (single identifier) — still emit TypeRef.
-                        let target = node_text(&func, source);
-                        if !target.is_empty() && target != "_" {
-                            refs.push(ExtractedRef {
-                                source_symbol_index: sym_idx,
-                                target_name: target,
-                                kind: EdgeKind::TypeRef,
-                                line: rhs_node.start_position().row as u32,
-                                module: None,
-                                chain: None,
-                            });
+            match rhs_node.kind() {
+                "call_expression" => {
+                    if let Some(func) = rhs_node.named_child(0) {
+                        if let Some(chain) = build_chain(func, source) {
+                            let target = chain
+                                .segments
+                                .last()
+                                .map(|s| s.name.clone())
+                                .unwrap_or_default();
+                            if !target.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: sym_idx,
+                                    target_name: target,
+                                    kind: EdgeKind::TypeRef,
+                                    line: rhs_node.start_position().row as u32,
+                                    module: None,
+                                    chain: Some(chain),
+                                });
+                            }
+                        } else {
+                            // Bare function call (single identifier) — still emit TypeRef.
+                            let target = node_text(&func, source);
+                            if !target.is_empty() && target != "_" {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: sym_idx,
+                                    target_name: target,
+                                    kind: EdgeKind::TypeRef,
+                                    line: rhs_node.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
                         }
                     }
                 }
+                // `x := Foo{}` or `x := pkg.Foo{}` — composite struct literal
+                "composite_literal" => {
+                    if let Some(type_node) = rhs_node.named_child(0) {
+                        if type_node.kind() != "literal_value" {
+                            let type_name = match type_node.kind() {
+                                "type_identifier" => node_text(&type_node, source),
+                                "qualified_type" => {
+                                    // `pkg.Foo` — take the last type_identifier
+                                    (0..type_node.named_child_count())
+                                        .filter_map(|j| type_node.named_child(j))
+                                        .filter(|c| c.kind() == "type_identifier")
+                                        .last()
+                                        .map(|c| node_text(&c, source))
+                                        .unwrap_or_default()
+                                }
+                                _ => node_text(&type_node, source),
+                            };
+                            if !type_name.is_empty() && !is_go_builtin_type(&type_name) {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: sym_idx,
+                                    target_name: type_name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: rhs_node.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                        }
+                    }
+                }
+                _ => {}
             }
         }
 

@@ -692,3 +692,138 @@ fn run() {
         );
     }
 
+    // -----------------------------------------------------------------------
+    // Local variable type inference from RHS constructors
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn let_scoped_constructor_emits_typeref_for_variable() {
+        // `let pool = DbPool::new(config)` should emit a TypeRef "DbPool"
+        // attached to the `pool` Variable symbol.
+        let src = r#"
+fn setup(config: Config) {
+    let pool = DbPool::new(config);
+    pool.get_connection();
+}
+"#;
+        let r = extract::extract(src);
+
+        // Find the `pool` Variable symbol.
+        let pool_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "pool");
+        assert!(pool_sym.is_some(), "Expected Variable symbol 'pool'");
+        let (pool_idx, _) = pool_sym.unwrap();
+
+        // Find a TypeRef from that symbol with target "DbPool" and no chain.
+        let typeref = r.refs.iter().find(|rf| {
+            rf.source_symbol_index == pool_idx
+                && rf.kind == EdgeKind::TypeRef
+                && rf.target_name == "DbPool"
+                && rf.chain.is_none()
+                && rf.module.is_none()
+        });
+        assert!(
+            typeref.is_some(),
+            "Expected TypeRef 'DbPool' from 'pool' variable; refs = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == pool_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn let_struct_literal_emits_typeref_for_variable() {
+        // `let s = Foo { x: 1 }` should emit TypeRef "Foo" for the variable.
+        let src = r#"
+fn build() {
+    let s = Foo { x: 1 };
+    s.method();
+}
+"#;
+        let r = extract::extract(src);
+
+        let s_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "s");
+        assert!(s_sym.is_some(), "Expected Variable symbol 's'");
+        let (s_idx, _) = s_sym.unwrap();
+
+        let typeref = r.refs.iter().find(|rf| {
+            rf.source_symbol_index == s_idx
+                && rf.kind == EdgeKind::TypeRef
+                && rf.target_name == "Foo"
+                && rf.chain.is_none()
+        });
+        assert!(
+            typeref.is_some(),
+            "Expected TypeRef 'Foo' from 's' variable; refs = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == s_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn let_tuple_struct_constructor_emits_typeref() {
+        // `let e = MyError("msg")` — uppercase bare identifier as callee.
+        let src = r#"
+fn handle() {
+    let e = MyError("msg");
+    e.kind();
+}
+"#;
+        let r = extract::extract(src);
+
+        let e_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "e");
+        assert!(e_sym.is_some(), "Expected Variable symbol 'e'");
+        let (e_idx, _) = e_sym.unwrap();
+
+        let typeref = r.refs.iter().find(|rf| {
+            rf.source_symbol_index == e_idx
+                && rf.kind == EdgeKind::TypeRef
+                && rf.target_name == "MyError"
+                && rf.chain.is_none()
+        });
+        assert!(
+            typeref.is_some(),
+            "Expected TypeRef 'MyError' from 'e' variable; refs = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == e_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn let_lowercase_call_does_not_emit_typeref() {
+        // `let x = foo()` — lowercase function, no type inference.
+        let src = r#"
+fn process() {
+    let x = foo();
+    x.something();
+}
+"#;
+        let r = extract::extract(src);
+
+        let x_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "x");
+        assert!(x_sym.is_some(), "Expected Variable symbol 'x'");
+        let (x_idx, _) = x_sym.unwrap();
+
+        // No TypeRef with chain: None from this variable (chain-bearing TypeRefs
+        // from method calls are fine; we just don't want a bare constructor TypeRef).
+        let bare_typeref = r.refs.iter().any(|rf| {
+            rf.source_symbol_index == x_idx
+                && rf.kind == EdgeKind::TypeRef
+                && rf.chain.is_none()
+                && rf.module.is_none()
+                && rf.target_name == "foo"
+        });
+        assert!(
+            !bare_typeref,
+            "Should not emit TypeRef for lowercase call 'foo'; refs = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == x_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+

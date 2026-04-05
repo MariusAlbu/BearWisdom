@@ -323,16 +323,21 @@ pub(super) fn extract_calls_from_body_with_symbols(
             // a TypeRef for the explicit type annotation (if any), and recurse
             // into the value expression for nested calls.
             "let_declaration" => {
-                // Emit TypeRef for the declared type: `let x: MyType = ...`
-                if let Some(type_node) = child.child_by_field_name("type") {
-                    super::symbols::extract_type_refs_from_type_node(
-                        &type_node,
-                        source,
-                        source_symbol_index,
-                        refs,
-                    );
-                }
                 if let Some(syms) = symbols.as_deref_mut() {
+                    let syms_before = syms.len();
+
+                    // Emit TypeRef for the declared type: `let x: MyType = ...`
+                    // Attach to the enclosing function (source_symbol_index) since
+                    // the Variable symbols haven't been pushed yet.
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        super::symbols::extract_type_refs_from_type_node(
+                            &type_node,
+                            source,
+                            source_symbol_index,
+                            refs,
+                        );
+                    }
+
                     // Reuse the pattern extractor — handles identifiers, tuple patterns, etc.
                     // `let_declaration` and `let_condition` share the same `pattern` field.
                     super::patterns::extract_let_condition_pattern(
@@ -342,8 +347,29 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         syms,
                         refs,
                     );
+
+                    // For single-binding `let x = <rhs>` without an explicit type
+                    // annotation, infer the variable's type from the RHS expression.
+                    // Only handles the simple case (one new Variable symbol pushed).
+                    let has_explicit_type = child.child_by_field_name("type").is_some();
+                    if !has_explicit_type && syms.len() == syms_before + 1 {
+                        let var_sym_idx = syms_before;
+                        if let Some(value_node) = child.child_by_field_name("value") {
+                            infer_rust_variable_type(value_node, source, var_sym_idx, refs);
+                        }
+                    }
+
                     extract_calls_from_body_with_symbols(&child, source, source_symbol_index, refs, Some(syms));
                 } else {
+                    // No symbol tracking — just handle explicit type refs and recurse.
+                    if let Some(type_node) = child.child_by_field_name("type") {
+                        super::symbols::extract_type_refs_from_type_node(
+                            &type_node,
+                            source,
+                            source_symbol_index,
+                            refs,
+                        );
+                    }
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                 }
             }
@@ -964,3 +990,98 @@ pub(super) fn rust_type_node_name(node: &Node, source: &str) -> String {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Local variable type inference from RHS
+// ---------------------------------------------------------------------------
+
+/// Inspect the RHS expression of a `let` binding and emit a TypeRef for the
+/// Variable symbol at `var_sym_idx` when the type can be determined:
+///
+/// - `let pool = DbPool::new(config)` → `call_expression` whose callee is a
+///   `scoped_identifier` with uppercase prefix → TypeRef "DbPool"
+/// - `let pool = DbPool::default()` → same pattern
+/// - `let s = Foo { field: val }` → `struct_expression` → TypeRef "Foo"
+/// - `let s = Foo(a, b)` → `call_expression` with uppercase `identifier` callee
+///   → TypeRef "Foo" (tuple struct constructor)
+///
+/// Plain method calls (`let x = foo.bar()`) are already handled by the
+/// chain-bearing TypeRef path in the engine's variable-inference pass and
+/// do not need to be duplicated here.
+fn infer_rust_variable_type(
+    value_node: tree_sitter::Node,
+    source: &str,
+    var_sym_idx: usize,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+) {
+    match value_node.kind() {
+        // `Foo { field: val }` — struct literal
+        "struct_expression" => {
+            if let Some(name_node) = value_node.child_by_field_name("name") {
+                let type_name = rust_type_node_name(&name_node, source);
+                if !type_name.is_empty() && !is_rust_primitive(&type_name) {
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: var_sym_idx,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: name_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+
+        // `Foo::new(...)`, `Foo::default()`, `Foo(a, b)` — call expression
+        "call_expression" => {
+            if let Some(func) = value_node.child_by_field_name("function") {
+                let type_name = match func.kind() {
+                    // `Foo::new(...)` — scoped_identifier whose path is an uppercase name
+                    "scoped_identifier" => {
+                        let path = func
+                            .child_by_field_name("path")
+                            .map(|n| node_text(&n, source))
+                            .unwrap_or_default();
+                        // Only treat as constructor if the path segment starts uppercase.
+                        if path.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                            // Take just the type name (first segment before `::`)
+                            path.split("::").next().unwrap_or(&path).to_string()
+                        } else {
+                            String::new()
+                        }
+                    }
+                    // `Foo(a, b)` — bare uppercase identifier (tuple struct constructor)
+                    "identifier" => {
+                        let name = node_text(&func, source);
+                        if name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+                            name
+                        } else {
+                            String::new()
+                        }
+                    }
+                    _ => String::new(),
+                };
+                if !type_name.is_empty() && !is_rust_primitive(&type_name) {
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: var_sym_idx,
+                        target_name: type_name,
+                        kind: EdgeKind::TypeRef,
+                        line: func.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+
+        // `await expr` — unwrap and recurse once
+        "await_expression" => {
+            if let Some(inner) = value_node.child_by_field_name("value")
+                .or_else(|| value_node.named_child(0))
+            {
+                infer_rust_variable_type(inner, source, var_sym_idx, refs);
+            }
+        }
+
+        _ => {}
+    }
+}

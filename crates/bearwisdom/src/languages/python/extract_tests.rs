@@ -965,3 +965,83 @@ def foo():
             "Expected no module on call where root is not imported"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Local variable type inference from RHS constructors
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn assignment_uppercase_call_emits_typeref_for_variable() {
+        // `repo = UserRepository(db)` — uppercase call → TypeRef "UserRepository"
+        let src = "def handle(db):\n    repo = UserRepository(db)\n    repo.find_by_id(1)\n";
+        let r = extract::extract(src);
+
+        let repo_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "repo");
+        assert!(repo_sym.is_some(), "Expected Variable symbol 'repo'");
+        let (repo_idx, _) = repo_sym.unwrap();
+
+        let typeref = r.refs.iter().find(|rf| {
+            rf.source_symbol_index == repo_idx
+                && rf.kind == crate::types::EdgeKind::TypeRef
+                && rf.target_name == "UserRepository"
+                && rf.chain.is_none()
+                && rf.module.is_none()
+        });
+        assert!(
+            typeref.is_some(),
+            "Expected TypeRef 'UserRepository' from 'repo'; refs from repo_idx = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == repo_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn assignment_lowercase_call_does_not_emit_typeref() {
+        // `x = get_value()` — lowercase call → no constructor TypeRef.
+        let src = "def process():\n    x = get_value()\n    x.use_it()\n";
+        let r = extract::extract(src);
+
+        let x_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "x");
+        assert!(x_sym.is_some(), "Expected Variable symbol 'x'");
+        let (x_idx, _) = x_sym.unwrap();
+
+        let bare_typeref = r.refs.iter().any(|rf| {
+            rf.source_symbol_index == x_idx
+                && rf.kind == crate::types::EdgeKind::TypeRef
+                && rf.chain.is_none()
+                && rf.module.is_none()
+                && rf.target_name == "get_value"
+        });
+        assert!(
+            !bare_typeref,
+            "Should not emit TypeRef for lowercase call 'get_value'"
+        );
+    }
+
+    #[test]
+    fn assignment_factory_method_uppercase_emits_typeref() {
+        // `service = UserService.create(db)` — uppercase object → TypeRef "UserService"
+        let src = "def setup(db):\n    service = UserService.create(db)\n    service.run()\n";
+        let r = extract::extract(src);
+
+        let svc_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "service");
+        assert!(svc_sym.is_some(), "Expected Variable symbol 'service'");
+        let (svc_idx, _) = svc_sym.unwrap();
+
+        let typeref = r.refs.iter().find(|rf| {
+            rf.source_symbol_index == svc_idx
+                && rf.kind == crate::types::EdgeKind::TypeRef
+                && rf.target_name == "UserService"
+                && rf.chain.is_none()
+        });
+        assert!(
+            typeref.is_some(),
+            "Expected TypeRef 'UserService' from 'service'; refs = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == svc_idx)
+                .collect::<Vec<_>>()
+        );
+    }

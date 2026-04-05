@@ -1051,3 +1051,60 @@ func (repo *Repository) FindById(ctx Context, id string) (*Record, error) {
         assert!(type_refs.contains(&"Record"), "Should extract return type");
     }
 
+    // -----------------------------------------------------------------------
+    // Local variable type inference: composite_literal
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn short_var_decl_composite_literal_emits_typeref_for_variable() {
+        // `u := User{}` → TypeRef "User" attached to the Variable symbol `u`.
+        let src = "package main\nfunc f() { u := User{Name: \"x\"}\n_ = u }";
+        let r = extract::extract(src);
+
+        let u_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "u");
+        assert!(u_sym.is_some(), "Expected Variable symbol 'u'");
+        let (u_idx, _) = u_sym.unwrap();
+
+        let typeref = r.refs.iter().find(|rf| {
+            rf.source_symbol_index == u_idx
+                && rf.kind == EdgeKind::TypeRef
+                && rf.target_name == "User"
+                && rf.chain.is_none()
+                && rf.module.is_none()
+        });
+        assert!(
+            typeref.is_some(),
+            "Expected TypeRef 'User' from 'u'; refs from u_idx = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == u_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn short_var_decl_qualified_composite_literal_emits_typeref() {
+        // `req := http.Request{Method: "GET"}` → TypeRef "Request" from variable.
+        let src = "package main\nfunc f() { req := http.Request{Method: \"GET\"}\n_ = req }";
+        let r = extract::extract(src);
+
+        let req_sym = r.symbols.iter().enumerate().find(|(_, s)| s.name == "req");
+        assert!(req_sym.is_some(), "Expected Variable symbol 'req'");
+        let (req_idx, _) = req_sym.unwrap();
+
+        let typeref = r.refs.iter().find(|rf| {
+            rf.source_symbol_index == req_idx
+                && rf.kind == EdgeKind::TypeRef
+                && rf.target_name == "Request"
+                && rf.chain.is_none()
+        });
+        assert!(
+            typeref.is_some(),
+            "Expected TypeRef 'Request' from 'req'; refs from req_idx = {:?}",
+            r.refs
+                .iter()
+                .filter(|rf| rf.source_symbol_index == req_idx)
+                .collect::<Vec<_>>()
+        );
+    }
+

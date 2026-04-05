@@ -269,6 +269,22 @@ impl SymbolIndex {
                             );
                         }
                     }
+                    // Local variables: first TypeRef is the inferred/annotated type.
+                    // Emitted by extractors when the RHS is a constructor, struct
+                    // literal, or factory call (e.g. `let pool = DbPool::new(config)`,
+                    // `const svc = new UserService()`, `repo = UserRepository(db)`).
+                    // Only non-chain TypeRefs land here; chain-bearing ones are handled
+                    // by the chain-inference pass below.
+                    SymbolKind::Variable => {
+                        field_type
+                            .insert(sym.qualified_name.clone(), type_refs[0].to_string());
+                        if type_refs.len() > 1 {
+                            field_type_args.insert(
+                                sym.qualified_name.clone(),
+                                type_refs[1..].iter().map(|s| s.to_string()).collect(),
+                            );
+                        }
+                    }
                     // Methods/functions: last TypeRef is likely the return type.
                     SymbolKind::Method
                     | SymbolKind::Function

@@ -170,6 +170,7 @@ pub(super) fn extract_from_node(
                     &child,
                     source,
                     symbols,
+                    refs,
                     parent_index,
                     qualified_prefix,
                     inside_class,
