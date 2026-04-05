@@ -851,3 +851,86 @@ type UserDelegate = {
         eprintln!("  {:?} {:?} line={}", s.kind, s.name, s.start_line);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Re-export extraction tests
+// ---------------------------------------------------------------------------
+
+#[test]
+fn reexport_named_emits_imports_ref() {
+    // export { UserService } from './user.service'
+    let result = extract::extract("export { UserService } from './user.service';", false);
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports
+            && r.target_name == "UserService"
+            && r.module.as_deref() == Some("./user.service")
+    });
+    assert!(r.is_some(), "named re-export should emit Imports ref with module set");
+}
+
+#[test]
+fn reexport_named_alias_emits_original_name() {
+    // export { Foo as Bar } from './foo'
+    // Extractor should emit the *original* name ("Foo"), not the alias.
+    let result = extract::extract("export { Foo as Bar } from './foo';", false);
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports
+            && r.target_name == "Foo"
+            && r.module.as_deref() == Some("./foo")
+    });
+    assert!(r.is_some(), "aliased re-export should emit Imports ref with original name");
+    // Alias ("Bar") should NOT appear as a target_name with module set.
+    let alias_ref = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports && r.target_name == "Bar"
+    });
+    assert!(alias_ref.is_none(), "alias name should not appear as Imports ref target");
+}
+
+#[test]
+fn reexport_star_emits_wildcard_ref() {
+    // export * from './utils'
+    let result = extract::extract("export * from './utils';", false);
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports
+            && r.target_name == "*"
+            && r.module.as_deref() == Some("./utils")
+    });
+    assert!(r.is_some(), "export * should emit Imports ref with target_name='*'");
+}
+
+#[test]
+fn reexport_star_as_emits_wildcard_ref() {
+    // export * as ns from './utils'
+    let result = extract::extract("export * as ns from './utils';", false);
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports
+            && r.target_name == "*"
+            && r.module.as_deref() == Some("./utils")
+    });
+    assert!(r.is_some(), "export * as ns should emit Imports ref with target_name='*'");
+}
+
+#[test]
+fn reexport_without_from_emits_no_imports_ref() {
+    // export { Foo } — no `from`, so this is a re-export of a local symbol.
+    // Should NOT emit an Imports ref (no module to follow).
+    let result = extract::extract("const Foo = 1; export { Foo };", false);
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports && r.target_name == "Foo"
+    });
+    assert!(r.is_none(), "export without from should not emit Imports ref");
+}
+
+#[test]
+fn reexport_multiple_named_emits_one_ref_per_export() {
+    // export { A, B, C } from './mod'
+    let result = extract::extract("export { A, B, C } from './mod';", false);
+    let import_refs: Vec<_> = result.refs.iter()
+        .filter(|r| r.kind == EdgeKind::Imports && r.module.as_deref() == Some("./mod"))
+        .collect();
+    let names: Vec<&str> = import_refs.iter().map(|r| r.target_name.as_str()).collect();
+    assert!(names.contains(&"A"), "A should be in import refs");
+    assert!(names.contains(&"B"), "B should be in import refs");
+    assert!(names.contains(&"C"), "C should be in import refs");
+    assert_eq!(import_refs.len(), 3, "should emit one Imports ref per export specifier");
+}

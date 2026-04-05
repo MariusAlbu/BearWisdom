@@ -161,6 +161,13 @@ impl LanguageResolver for TypeScriptResolver {
                 }
             }
 
+            // Neither direct lookup found anything — the module may be a barrel
+            // file that re-exports the symbol from a deeper module.  Follow the
+            // re-export chain up to 5 hops.
+            if let Some(res) = follow_reexports(module, target, edge_kind, lookup, 0) {
+                return Some(res);
+            }
+
             // Case (A): import-statement ref (no chain) — couldn't resolve, stop here.
             // Case (B): call ref with extractor-set module — fall through to scope walk.
             if ref_ctx.extracted_ref.chain.is_none() {
@@ -385,6 +392,109 @@ impl LanguageResolver for TypeScriptResolver {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Follow re-export chains through barrel files.
+///
+/// When `in_file(module_path)` returns no match for `target_name`, this
+/// function checks whether `module_path` is a barrel file that re-exports
+/// the symbol from another module — and recurses until the definition is
+/// found or the depth limit is reached.
+///
+/// Handles:
+///   `export { X } from './y'`   — named re-export; follow to `./y`
+///   `export { X as Z } from './y'` — aliased; the stored `target_name` is the
+///                                    *original* name (before `as`), matching
+///                                    what we're looking for in the source file
+///   `export * from './y'`       — wildcard; try `target_name` in every
+///                                 wildcard source module
+fn follow_reexports(
+    module_path: &str,
+    target_name: &str,
+    edge_kind: crate::types::EdgeKind,
+    lookup: &dyn SymbolLookup,
+    depth: u32,
+) -> Option<Resolution> {
+    const MAX_DEPTH: u32 = 5;
+    if depth >= MAX_DEPTH {
+        return None;
+    }
+
+    let reexports = lookup.reexports_from(module_path);
+    if reexports.is_empty() {
+        return None;
+    }
+
+    // Collect wildcard sources separately — they are tried only when no named
+    // re-export matched, to avoid false positives from `export * from`.
+    let mut wildcard_sources: Vec<&str> = Vec::new();
+
+    for (exported_name, source_module) in reexports {
+        if builtins::is_bare_specifier(source_module) {
+            continue;
+        }
+
+        if exported_name == "*" {
+            wildcard_sources.push(source_module.as_str());
+            continue;
+        }
+
+        if exported_name != target_name {
+            continue;
+        }
+
+        // Named match: look up `target_name` directly in `source_module`.
+        for sym in lookup.in_file(source_module) {
+            if sym.name == target_name && builtins::kind_compatible(edge_kind, &sym.kind) {
+                debug!(
+                    strategy = "ts_reexport_chain",
+                    via = %module_path,
+                    source = %source_module,
+                    target = %target_name,
+                    depth = depth,
+                    "resolved via re-export"
+                );
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "ts_reexport_chain",
+                });
+            }
+        }
+
+        // Not directly in `source_module` — recurse (it may itself be a barrel).
+        if let Some(res) = follow_reexports(source_module, target_name, edge_kind, lookup, depth + 1) {
+            return Some(res);
+        }
+    }
+
+    // No named match. Try wildcard sources in order.
+    for source_module in wildcard_sources {
+        for sym in lookup.in_file(source_module) {
+            if sym.name == target_name && builtins::kind_compatible(edge_kind, &sym.kind) {
+                debug!(
+                    strategy = "ts_reexport_star",
+                    via = %module_path,
+                    source = %source_module,
+                    target = %target_name,
+                    depth = depth,
+                    "resolved via export-star"
+                );
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "ts_reexport_star",
+                });
+            }
+        }
+
+        // Recurse into wildcard sources too.
+        if let Some(res) = follow_reexports(source_module, target_name, edge_kind, lookup, depth + 1) {
+            return Some(res);
+        }
+    }
+
+    None
+}
 
 /// Check whether a bare module specifier matches any npm package in the manifest.
 ///

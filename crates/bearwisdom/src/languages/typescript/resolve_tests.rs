@@ -791,3 +791,326 @@ fn test_namespace_import_binding_not_external() {
 fn index_empty() -> SymbolIndex {
     SymbolIndex::build(&[], &HashMap::new())
 }
+
+// ---------------------------------------------------------------------------
+// Re-export chain following tests
+// ---------------------------------------------------------------------------
+
+/// Build a re-export ref: `export { name } from 'module'`
+/// These are emitted by the TS extractor as EdgeKind::Imports with module set.
+fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, line: u32) -> ExtractedRef {
+    ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name: exported_name.to_string(),
+        kind: EdgeKind::Imports,
+        line,
+        module: Some(from_module.to_string()),
+        chain: None,
+    }
+}
+
+#[test]
+fn test_barrel_named_reexport() {
+    // consumer.ts imports UserService from './services' (the barrel).
+    // The barrel re-exports UserService from './user.service'.
+    // UserService is defined in the source file.
+    //
+    // NOTE: file paths are set equal to the module specifier strings used in
+    // import/re-export refs.  This mirrors the convention in the existing
+    // `test_import_resolution_relative_by_in_file_lookup` test — the engine
+    // tier does exact-string in_file() lookups, so paths must match specifiers.
+
+    // Definition file: path matches the module string the barrel re-exports from.
+    let user_service_file = make_ts_file(
+        "./user.service",
+        vec![make_symbol(
+            "UserService",
+            "UserService",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+
+    // Barrel file: path matches the module string in the consumer's import.
+    // Its re-export ref points to "./user.service" (the definition file path).
+    let barrel_file = make_ts_file(
+        "./services",
+        vec![],
+        vec![make_reexport_ref(0, "UserService", "./user.service", 1)],
+    );
+
+    // Consumer: imports UserService from the barrel module path.
+    let consumer_file = make_ts_file(
+        "src/consumer.ts",
+        vec![make_symbol(
+            "Consumer",
+            "Consumer",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "UserService", "./services", 2)],
+    );
+
+    let (index, id_map) = build_test_env(&[&user_service_file, &barrel_file, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[0],
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "UserService should resolve through barrel file");
+    let res = result.unwrap();
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(res.strategy, "ts_reexport_chain");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("./user.service".to_string(), "UserService".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_barrel_aliased_reexport() {
+    // export { AuthService as Auth } from './auth.service'
+    // The consumer imports as `AuthService` (original name), but the barrel uses alias `Auth`.
+    // The extractor stores the original name (`AuthService`) — so it still resolves.
+
+    let auth_file = make_ts_file(
+        "./auth.service",
+        vec![make_symbol(
+            "AuthService",
+            "AuthService",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+
+    // Barrel: export { AuthService as Auth } from './auth.service'
+    // Extractor emits target_name = "AuthService" (the original, pre-alias name).
+    let barrel_file = make_ts_file(
+        "./services",
+        vec![],
+        vec![make_reexport_ref(0, "AuthService", "./auth.service", 1)],
+    );
+
+    let consumer_file = make_ts_file(
+        "src/consumer.ts",
+        vec![make_symbol(
+            "Consumer",
+            "Consumer",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "AuthService", "./services", 2)],
+    );
+
+    let (index, id_map) = build_test_env(&[&auth_file, &barrel_file, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[0],
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "AuthService should resolve through aliased barrel re-export");
+    let res = result.unwrap();
+    assert_eq!(res.strategy, "ts_reexport_chain");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("./auth.service".to_string(), "AuthService".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_barrel_wildcard_reexport() {
+    // export * from './utils'
+    // Consumer imports `formatDate` from the barrel.
+
+    let utils_file = make_ts_file(
+        "./utils",
+        vec![make_symbol(
+            "formatDate",
+            "formatDate",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+
+    // Barrel: export * from './utils'
+    let barrel_file = make_ts_file(
+        "./index",
+        vec![],
+        vec![make_reexport_ref(0, "*", "./utils", 1)],
+    );
+
+    let consumer_file = make_ts_file(
+        "src/consumer.ts",
+        vec![make_symbol(
+            "Consumer",
+            "Consumer",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "formatDate", "./index", 2)],
+    );
+
+    let (index, id_map) = build_test_env(&[&utils_file, &barrel_file, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[0],
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "formatDate should resolve through export-star barrel");
+    let res = result.unwrap();
+    // Wildcard resolution uses 0.95 confidence.
+    assert_eq!(res.confidence, 0.95);
+    assert_eq!(res.strategy, "ts_reexport_star");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&("./utils".to_string(), "formatDate".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_barrel_deep_chain() {
+    // Two-hop chain:
+    //   consumer → barrel/index.ts → services/index.ts → user.service.ts
+
+    // All file paths match the corresponding module specifier strings.
+    let definition_file = make_ts_file(
+        "./user.service",
+        vec![make_symbol(
+            "UserService",
+            "UserService",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+
+    // First barrel: re-exports from "./user.service"
+    let services_barrel = make_ts_file(
+        "./services",
+        vec![],
+        vec![make_reexport_ref(0, "UserService", "./user.service", 1)],
+    );
+
+    // Second barrel: re-exports from "./services"
+    let root_barrel = make_ts_file(
+        "./barrel",
+        vec![],
+        vec![make_reexport_ref(0, "UserService", "./services", 1)],
+    );
+
+    let consumer_file = make_ts_file(
+        "src/consumer.ts",
+        vec![make_symbol(
+            "Consumer",
+            "Consumer",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "UserService", "./barrel", 2)],
+    );
+
+    let (index, id_map) = build_test_env(&[
+        &definition_file,
+        &services_barrel,
+        &root_barrel,
+        &consumer_file,
+    ]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[0],
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "UserService should resolve through 2-hop barrel chain");
+    assert_eq!(
+        result.unwrap().target_symbol_id,
+        *id_map
+            .get(&("./user.service".to_string(), "UserService".to_string()))
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_barrel_depth_limit() {
+    // Circular re-export chain: a → b → c → a
+    // Should return None without panicking.
+
+    // Circular barrel files — paths match the module specifier strings.
+    let barrel_a = make_ts_file(
+        "./a",
+        vec![],
+        vec![make_reexport_ref(0, "Foo", "./b", 1)],
+    );
+    let barrel_b = make_ts_file(
+        "./b",
+        vec![],
+        vec![make_reexport_ref(0, "Foo", "./c", 1)],
+    );
+    let barrel_c = make_ts_file(
+        "./c",
+        vec![],
+        vec![make_reexport_ref(0, "Foo", "./a", 1)],
+    );
+
+    let consumer_file = make_ts_file(
+        "src/consumer.ts",
+        vec![make_symbol(
+            "Consumer",
+            "Consumer",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "Foo", "./a", 2)],
+    );
+
+    let (index, _) = build_test_env(&[&barrel_a, &barrel_b, &barrel_c, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[0],
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    };
+
+    // Should not panic and should return None (Foo never defined).
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_none(), "Circular barrel chain should return None, not panic");
+}

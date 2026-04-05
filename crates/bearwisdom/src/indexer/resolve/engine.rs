@@ -110,6 +110,14 @@ pub trait SymbolLookup {
     /// Get the generic type parameter names for a type declaration.
     /// e.g., "Repository" → Some(["T"]) for `interface Repository<T>`
     fn generic_params(&self, type_name: &str) -> Option<&[String]>;
+
+    /// Look up re-export chain entries for a barrel file.
+    ///
+    /// Returns all `(original_name, source_module)` pairs that are re-exported
+    /// from `file_path`.  Use this to follow `export { X } from './y'` chains.
+    ///
+    /// A `original_name` of `"*"` represents an `export * from './y'` wildcard.
+    fn reexports_from(&self, file_path: &str) -> &[(String, String)];
 }
 
 // ---------------------------------------------------------------------------
@@ -143,7 +151,15 @@ pub struct SymbolIndex {
     sorted_qnames: Vec<(String, SymbolInfo)>,
     /// Unified per-symbol type metadata (replaces 4 separate maps).
     type_info: FxHashMap<String, TypeInfo>,
+    /// Re-export map: file_path → Vec<(original_name, source_module)>.
+    ///
+    /// Built from `EdgeKind::Imports` refs that have a `module` set.
+    /// These are emitted by the TS/JS extractors for re-export forms:
+    ///   `export { X } from './y'`  → ("X", "./y")
+    ///   `export * from './y'`      → ("*", "./y")
+    reexport_map: FxHashMap<String, Vec<(String, String)>>,
     empty: Vec<SymbolInfo>,
+    empty_reexports: Vec<(String, String)>,
 }
 
 impl SymbolIndex {
@@ -347,13 +363,38 @@ impl SymbolIndex {
             .collect();
         sorted_qnames.sort_by(|a, b| a.0.cmp(&b.0));
 
+        // Build re-export map from Imports refs that have a module set.
+        // These are emitted by the TS/JS extractor for:
+        //   export { X } from './y'   → Imports ref, target_name="X", module="./y"
+        //   export * from './y'       → Imports ref, target_name="*", module="./y"
+        let mut reexport_map: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
+        for pf in parsed {
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Imports {
+                    continue;
+                }
+                let Some(ref mod_path) = r.module else {
+                    continue;
+                };
+                if mod_path.is_empty() {
+                    continue;
+                }
+                reexport_map
+                    .entry(pf.path.clone())
+                    .or_default()
+                    .push((r.target_name.clone(), mod_path.clone()));
+            }
+        }
+
         Self {
             by_name,
             by_qname,
             by_file,
             sorted_qnames,
             type_info,
+            reexport_map,
             empty: Vec::new(),
+            empty_reexports: Vec::new(),
         }
     }
 }
@@ -554,6 +595,13 @@ impl SymbolLookup for SymbolIndex {
                 Some(ti.generic_params.as_slice())
             }
         })
+    }
+
+    fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
+        self.reexport_map
+            .get(file_path)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty_reexports)
     }
 }
 

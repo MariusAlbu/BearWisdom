@@ -154,8 +154,14 @@ fn extract_node(
 
             "export_statement" => {
                 // `export class Foo {}` / `export function bar() {}`
-                // Recurse — the declaration itself is a child node.
+                // Recurse so that declarations inside are extracted.
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                // Also extract re-export forms:
+                //   `export { X } from './y'`
+                //   `export { X as Z } from './y'`
+                //   `export * from './y'`
+                //   `export * as ns from './y'`
+                extract_reexports(&child, src, symbols.len(), refs);
             }
 
             "method_definition" => {
@@ -796,6 +802,101 @@ fn annotate_call_modules(refs: &mut Vec<ExtractedRef>, import_map: &HashMap<Stri
         if let Some(module_path) = import_map.get(first) {
             r.module = Some(module_path.clone());
         }
+    }
+}
+
+/// Extract re-export refs from an `export_statement` node.
+///
+/// Handles:
+///   `export { X } from './y'`              → Imports ref, target_name="X", module="./y"
+///   `export { X as Z } from './y'`         → Imports ref, target_name="X", module="./y"
+///   `export * from './y'`                  → Imports ref, target_name="*", module="./y"
+///   `export * as ns from './y'`            → Imports ref, target_name="*", module="./y"
+///
+/// Re-exports are attributed to a file-level "sentinel" symbol at index
+/// `file_symbol_count` — the index one past the last real symbol, which is
+/// how the JS extractor handles them.  If the file has no symbols yet,
+/// index 0 is fine because the resolution engine only uses the module field.
+fn extract_reexports(
+    node: &tree_sitter::Node,
+    src: &[u8],
+    file_symbol_count: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // The source module is the `source` field of the export_statement.
+    let module_path = node.child_by_field_name("source").map(|s| {
+        helpers::node_text(s, src)
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string()
+    });
+
+    // Only re-export forms have a `source` field.
+    let Some(ref mod_path) = module_path else {
+        return;
+    };
+    if mod_path.is_empty() {
+        return;
+    }
+
+    // Use sentinel index: one past the last symbol (or 0 if no symbols yet).
+    // The resolver only needs `target_name` and `module`; the source index is
+    // irrelevant for re-export chain following.
+    let source_idx = file_symbol_count.saturating_sub(1);
+
+    let line = node.start_position().row as u32;
+    let mut has_wildcard = false;
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            // `export { X }` or `export { X as Z }` from './y'
+            "export_clause" => {
+                let mut ec = child.walk();
+                for spec in child.children(&mut ec) {
+                    if spec.kind() == "export_specifier" {
+                        // `name` field = the original exported name (before `as`).
+                        // `alias` field = the local rename (after `as`), unused here.
+                        // We store the original so the resolver can find it in the source.
+                        let original_name = spec
+                            .child_by_field_name("name")
+                            .map(|n| helpers::node_text(n, src))
+                            .unwrap_or_default();
+                        if !original_name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: source_idx,
+                                target_name: original_name,
+                                kind: EdgeKind::Imports,
+                                line: spec.start_position().row as u32,
+                                module: module_path.clone(),
+                                chain: None,
+                            });
+                        }
+                    }
+                }
+            }
+            // `export * as ns from './y'` — the TS grammar wraps this in namespace_export.
+            "namespace_export" => {
+                has_wildcard = true;
+            }
+            // `export * from './y'` — in the TS grammar the `*` is a direct child of
+            // export_statement (no namespace_export wrapper), unlike the JS grammar.
+            "*" => {
+                has_wildcard = true;
+            }
+            _ => {}
+        }
+    }
+
+    if has_wildcard {
+        refs.push(ExtractedRef {
+            source_symbol_index: source_idx,
+            target_name: "*".to_string(),
+            kind: EdgeKind::Imports,
+            line,
+            module: module_path.clone(),
+            chain: None,
+        });
     }
 }
 
