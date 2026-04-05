@@ -64,6 +64,18 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Used by `bw coverage` to exclude builtin type_identifiers from the
     /// denominator — they're correctly skipped by extractors.
     fn builtin_type_names(&self) -> &[&str] { &[] }
+
+    /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
+    /// be counted in the coverage denominator when it appears as a direct child of
+    /// the given parent kind.
+    ///
+    /// Used for languages with structural nesting where a single semantic ref site
+    /// produces multiple CST nodes of the same kind. For example, Nix curried
+    /// application (`f a b` → two nested `apply_expression` nodes) should only
+    /// count the outermost call. Declaring `("apply_expression", "apply_expression")`
+    /// here tells the coverage walker to skip inner apply nodes whose parent is also
+    /// an apply.
+    fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] { &[] }
 }
 
 // ---------------------------------------------------------------------------

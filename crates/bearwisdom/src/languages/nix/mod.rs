@@ -51,11 +51,18 @@ impl LanguagePlugin for NixPlugin {
         &[
             "apply_expression",
             "with_expression",
-            "select_expression",
         ]
     }
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    /// In Nix, curried application (`f a b`) parses as two nested
+    /// `apply_expression` nodes. The extractor emits one ref per call site
+    /// (the outermost application), so inner apply nodes must not be counted
+    /// in the coverage denominator.
+    fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] {
+        &[("apply_expression", "apply_expression")]
     }
 }

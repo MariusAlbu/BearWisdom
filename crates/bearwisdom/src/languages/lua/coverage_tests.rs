@@ -2,11 +2,10 @@
 // lua/coverage_tests.rs — Node-kind coverage tests for the Lua extractor
 //
 // symbol_node_kinds:
-//   function_declaration, function_definition, variable_declaration,
-//   assignment_statement, field
+//   function_declaration, variable_declaration, assignment_statement, field
 //
 // ref_node_kinds:
-//   function_call, method_index_expression
+//   function_call
 // =============================================================================
 
 use super::extract;
@@ -41,6 +40,15 @@ fn cov_variable_declaration_table_emits_class() {
     let sym = r.symbols.iter().find(|s| s.name == "MyModule");
     assert!(sym.is_some(), "expected Class 'MyModule' from table variable_declaration; got: {:?}", r.symbols);
     assert_eq!(sym.unwrap().kind, SymbolKind::Class);
+}
+
+/// variable_declaration without initializer (`local x`) → emits Variable symbol
+#[test]
+fn cov_variable_declaration_no_init_emits_variable() {
+    let r = extract::extract("local x");
+    let sym = r.symbols.iter().find(|s| s.name == "x");
+    assert!(sym.is_some(), "expected Variable 'x' from uninit variable_declaration; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
 /// assignment_statement with function_definition RHS → SymbolKind::Function

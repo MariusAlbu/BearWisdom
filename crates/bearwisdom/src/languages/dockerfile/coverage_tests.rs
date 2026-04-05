@@ -68,12 +68,40 @@ fn cov_env_instruction_emits_variable() {
     assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
-/// label_instruction — LABEL directive; extractor should not crash
+/// label_instruction with key=value syntax → SymbolKind::Variable per label_pair
 #[test]
-fn cov_label_instruction_does_not_crash() {
+fn cov_label_instruction_emits_variable() {
     let src = "FROM node:18 AS base\nLABEL maintainer=\"dev@example.com\"\n";
     let r = extract::extract(src);
-    let _ = r;
+    let sym = r.symbols.iter().find(|s| s.name == "maintainer");
+    assert!(sym.is_some(), "expected Variable 'maintainer' from LABEL; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
+}
+
+/// label_instruction with multiple pairs → one Variable per pair
+#[test]
+fn cov_label_instruction_multiple_pairs() {
+    let src = "FROM node:18 AS base\nLABEL version=\"1.0\" description=\"My app\"\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "version"),
+        "expected 'version' label; got: {:?}", r.symbols
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "description"),
+        "expected 'description' label; got: {:?}", r.symbols
+    );
+}
+
+/// label_instruction with double-quoted key → SymbolKind::Variable
+#[test]
+fn cov_label_instruction_quoted_key() {
+    // `LABEL "docker_run_flags"="-d ..."` — key is a double_quoted_string
+    let src = "FROM alpine:latest\nLABEL \"registry_image\"=\"r.j3ss.co/couchpotato\"\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "registry_image");
+    assert!(sym.is_some(), "expected Variable 'registry_image' from quoted-key LABEL; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
 }
 
 // ---------------------------------------------------------------------------

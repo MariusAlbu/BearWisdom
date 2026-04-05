@@ -12,8 +12,6 @@ use crate::types::{EdgeKind, SymbolKind};
 /// symbol_node_kind: `function_statement`
 #[test]
 fn symbol_function_statement() {
-    // Avoid `param(...)` block — that triggers a grammar ERROR node which
-    // swallows the inner commands. Plain body parses cleanly.
     let r = extract("function Run { Write-Host 'hello' }");
     assert!(
         r.symbols.iter().any(|s| s.name == "Run" && s.kind == SymbolKind::Function),
@@ -71,8 +69,6 @@ fn symbol_class_property_definition() {
 // ---------------------------------------------------------------------------
 
 /// ref_node_kind: `command`  —  cmdlet invocation emits a Calls edge.
-/// Note: param(...) block causes a grammar ERROR node that swallows inner commands.
-/// Use a plain function body without param() to get clean `command` nodes.
 #[test]
 fn ref_command() {
     let r = extract("function Run { Write-Host 'hello' }");
@@ -83,17 +79,45 @@ fn ref_command() {
     );
 }
 
-/// ref_node_kind: `invokation_expression`  —  method call on an object.
-/// The extractor has a handler for this but the grammar rarely produces a bare
-/// invokation_expression at a testable depth. Verify no panic and class symbols exist.
+/// ref_node_kind: `command` inside script-block argument  —  commands passed as
+/// script-block args to pipeline cmdlets (ForEach-Object, Where-Object, etc.) must
+/// also be extracted. Previously the extractor stopped after extracting the outer
+/// command and never recurse into its children.
 #[test]
-fn ref_invokation_expression() {
-    let r = extract(
-        "class Foo {\n    Run() {\n        $this.Helper()\n    }\n    Helper() {}\n}",
+fn ref_command_inside_scriptblock_arg() {
+    let r = extract("$list | ForEach-Object { Get-Item $_ }");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "ForEach-Object"),
+        "expected Calls ForEach-Object; got {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
     );
     assert!(
-        !r.symbols.is_empty(),
-        "expected symbols from class with method call; got none"
+        r.refs.iter().any(|rf| rf.target_name == "Get-Item"),
+        "expected Calls Get-Item inside script block; got {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+/// ref_node_kind: `invokation_expression`  —  method call on an object emits a Calls edge.
+#[test]
+fn ref_invokation_expression() {
+    let r = extract("$obj.Method()");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Method" && rf.kind == EdgeKind::Calls),
+        "expected Calls Method; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// ref_node_kind: `invokation_expression` inside script-block arg  —  method calls
+/// inside script blocks passed to cmdlets must be extracted.
+#[test]
+fn ref_invokation_inside_scriptblock_arg() {
+    let r = extract("$list | ForEach-Object { $_.Compute() }");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Compute" && rf.kind == EdgeKind::Calls),
+        "expected Calls Compute inside ForEach-Object script block; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
 

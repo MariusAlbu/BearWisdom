@@ -70,6 +70,9 @@ fn visit(
             }
             "command" => {
                 extract_command(&child, src, parent_index.unwrap_or(0), refs);
+                // Recurse into command children so that script-block arguments
+                // (e.g. `ForEach-Object { $_.Method() }`) are also visited.
+                visit(child, src, symbols, refs, parent_index, class_prefix);
             }
             "invokation_expression" => {
                 let source_idx = parent_index.unwrap_or(0);
@@ -436,6 +439,8 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
     for child in node.children(&mut cursor) {
         if child.kind() == "command" {
             extract_command(&child, src, source_idx, refs);
+            // Recurse so script-block args (ForEach-Object { ... }) are visited.
+            visit_for_calls(&child, src, source_idx, refs);
         } else if child.kind() == "invokation_expression" {
             // Method call: extract method name with fallbacks
             let name = find_child_text(&child, "member_name", src)

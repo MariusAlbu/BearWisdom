@@ -42,7 +42,10 @@ impl LanguagePlugin for JavascriptPlugin {
             "class",
             "function_declaration",
             "generator_function_declaration",
-            "function_expression",
+            // `function_expression` is intentionally omitted: standalone function
+            // expressions (as callbacks, IIFEs, object property values) have no
+            // extractable name. Named cases like `const f = function() {}` are
+            // already captured under the parent `lexical_declaration` node.
             "method_definition",
             "variable_declaration",
             "lexical_declaration",

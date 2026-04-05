@@ -38,15 +38,21 @@ impl LanguagePlugin for BashPlugin {
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "function_definition",
-            "variable_assignment",
+            // declaration_command listed before variable_assignment so the
+            // coverage correlator matches declaration lines to declaration_command
+            // first (the child variable_assignment shares the same line).
             "declaration_command",
+            "variable_assignment",
         ]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
         &[
-            "command",
+            // command_substitution listed before command so the coverage
+            // correlator claims the substitution node when both a command and
+            // its enclosing substitution share the same line.
             "command_substitution",
+            "command",
         ]
     }
 

@@ -84,7 +84,8 @@ fn visit_node(
             handle_declaration(node, src, symbols, refs, parent_idx);
         }
         "call_expression" => {
-            handle_call_expr(node, src, refs, symbols.len());
+            let sym_idx = symbols.len();
+            handle_call_expr(node, src, refs, symbols, sym_idx);
         }
         _ => {
             // Recurse into all other nodes (stylesheet, block, media_statement, etc.)
@@ -401,6 +402,7 @@ fn handle_call_expr(
     node: &Node,
     src: &str,
     refs: &mut Vec<ExtractedRef>,
+    symbols: &mut Vec<ExtractedSymbol>,
     source_symbol_index: usize,
 ) {
     // Extract the function name from the call_expression node.
@@ -439,6 +441,9 @@ fn handle_call_expr(
         module: None,
         chain: None,
     });
+
+    // Recurse into children (arguments may contain nested call_expressions).
+    visit_children(node, src, symbols, refs, Some(source_symbol_index));
 }
 
 // ---------------------------------------------------------------------------

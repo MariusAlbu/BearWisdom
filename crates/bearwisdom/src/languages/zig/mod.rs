@@ -1,10 +1,12 @@
 //! Zig language plugin.
 //!
-//! `grammar()` returns the tree-sitter-zig grammar; extraction is also performed by a line-oriented
-//! parser that recognises Zig's top-level declaration patterns.
+//! Uses a line-oriented parser (no grammar dependency at extraction time) that
+//! recognises Zig's declaration patterns.
 //!
 //! What we extract:
-//! - `fn name(...)` → Function (with pub/export visibility)
+//! - `fn name(...)` → Function (top-level, with pub/export visibility)
+//! - Methods inside `const Name = struct/union/enum { ... }` → Method
+//! - Methods inside `return struct { ... }` (comptime generic types) → Method
 //! - `const Name = struct { ... }` → Struct
 //! - `const Name = enum { ... }` → Enum
 //! - `const Name = union { ... }` → Struct (tagged union)
@@ -12,7 +14,8 @@
 //! - `const/var name` (plain) → Variable
 //! - `test "name" { ... }` → Test
 //! - `@import("path")` assignments → Imports edges
-//! - function calls in the body → Calls edges (best-effort identifier scan)
+//! - `identifier(` patterns in bodies → Calls edges
+//! - `@builtin(` patterns (everywhere) → Calls edges
 
 pub mod extract;
 
@@ -53,9 +56,13 @@ impl LanguagePlugin for ZigPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
+        // variable_declaration in tree-sitter-zig applies to both top-level and
+        // local declarations — including every `const`/`var` inside function bodies.
+        // The extractor intentionally skips local variables (they are noise), so
+        // including variable_declaration in coverage rules would inflate the
+        // denominator with thousands of local variables that are never extracted.
         &[
             "function_declaration",
-            "variable_declaration",
             "test_declaration",
         ]
     }

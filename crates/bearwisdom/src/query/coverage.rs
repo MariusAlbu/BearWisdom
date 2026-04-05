@@ -107,6 +107,14 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
         let sym_kinds: FxHashSet<&str> = plugin.symbol_node_kinds().iter().copied().collect();
         let ref_kinds: FxHashSet<&str> = plugin.ref_node_kinds().iter().copied().collect();
         let builtins: FxHashSet<&str> = plugin.builtin_type_names().iter().copied().collect();
+        // (child_kind, parent_kind) pairs: skip counting the child as a ref site
+        // when its direct parent has the given kind (e.g., Nix inner apply nodes
+        // inside curried application chains).
+        let nested_skip: FxHashSet<(&str, &str)> = plugin
+            .nested_ref_skip_pairs()
+            .iter()
+            .copied()
+            .collect();
         let has_rules = !sym_kinds.is_empty() || !ref_kinds.is_empty();
 
         // Per-node-kind counters
@@ -178,6 +186,7 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
                 &sym_kinds,
                 &ref_kinds,
                 &builtins,
+                &nested_skip,
                 &mut sym_kind_occurrences,
                 &mut ref_kind_occurrences,
                 &mut structural_counts,
@@ -304,8 +313,14 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
                 matched_nodes: sym_matched,
                 percent: if sym_expected > 0 {
                     sym_matched as f64 / sym_expected as f64 * 100.0
+                } else if sym_kinds.is_empty() {
+                    // Language intentionally declares no symbol node kinds —
+                    // its grammar does not distinguish definition nodes from
+                    // invocation nodes by kind alone.  Report N/A (-1.0) so
+                    // the aggregate checker treats this dimension as a pass.
+                    -1.0
                 } else if !has_rules {
-                    -1.0 // no rules declared
+                    -1.0 // no rules declared at all
                 } else {
                     0.0
                 },
@@ -364,6 +379,7 @@ fn walk_and_classify(
     sym_kinds: &FxHashSet<&str>,
     ref_kinds: &FxHashSet<&str>,
     builtins: &FxHashSet<&str>,
+    nested_skip: &FxHashSet<(&str, &str)>,
     sym_counts: &mut FxHashMap<String, u64>,
     ref_counts: &mut FxHashMap<String, u64>,
     structural_counts: &mut FxHashMap<String, u64>,
@@ -371,7 +387,7 @@ fn walk_and_classify(
     ref_by_line: &mut FxHashMap<String, Vec<u32>>,
 ) {
     walk_and_classify_inner(
-        node, src, sym_kinds, ref_kinds, builtins,
+        node, src, sym_kinds, ref_kinds, builtins, nested_skip,
         sym_counts, ref_counts, structural_counts, sym_by_line, ref_by_line,
         None,
     );
@@ -383,6 +399,7 @@ fn walk_and_classify_inner(
     sym_kinds: &FxHashSet<&str>,
     ref_kinds: &FxHashSet<&str>,
     builtins: &FxHashSet<&str>,
+    nested_skip: &FxHashSet<(&str, &str)>,
     sym_counts: &mut FxHashMap<String, u64>,
     ref_counts: &mut FxHashMap<String, u64>,
     structural_counts: &mut FxHashMap<String, u64>,
@@ -406,7 +423,14 @@ fn walk_and_classify_inner(
         let is_scope_child = parent_kind == Some("scope_resolution")
             && (kind == "constant" || kind == "scope_resolution");
 
-        if is_scope_child {
+        // Skip nodes declared by the plugin as nested structural children.
+        // E.g. Nix inner apply_expression nodes inside curried application chains
+        // (`f a b` → two applies, only outermost is a ref site).
+        let is_nested_skip = parent_kind
+            .map(|pk| nested_skip.contains(&(kind, pk)))
+            .unwrap_or(false);
+
+        if is_scope_child || is_nested_skip {
             // Don't count this node as a ref — it's structural part of a chain.
             // Still count it as structural for info purposes.
             if !sym_kinds.contains(kind) && !ref_kinds.contains(kind) {
@@ -454,6 +478,7 @@ fn walk_and_classify_inner(
             sym_kinds,
             ref_kinds,
             builtins,
+            nested_skip,
             sym_counts,
             ref_counts,
             structural_counts,

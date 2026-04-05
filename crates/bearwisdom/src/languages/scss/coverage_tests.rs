@@ -179,6 +179,27 @@ fn cov_call_expression_in_value() {
     assert!(call.is_some(), "expected Calls ref to 'darken' from call_expression; got: {:?}", r.refs);
 }
 
+#[test]
+fn cov_call_expression_nested_in_arguments() {
+    // mix() is nested inside darken() arguments — both must be extracted
+    let r = extract::extract(".btn { color: darken(mix($a, $b, 50%), 10%); }", "");
+    let darken = r.refs.iter().find(|e| e.kind == EdgeKind::Calls && e.target_name == "darken");
+    let mix = r.refs.iter().find(|e| e.kind == EdgeKind::Calls && e.target_name == "mix");
+    assert!(darken.is_some(), "expected Calls ref to outer 'darken'; got: {:?}", r.refs);
+    assert!(mix.is_some(), "expected Calls ref to nested 'mix'; got: {:?}", r.refs);
+}
+
+#[test]
+fn cov_call_expression_nested_multiple() {
+    // nth() calls nested inside @include arguments must be extracted
+    let r = extract::extract(
+        "@each $type in $types { @include badge-style(nth($type, 2), nth($type, 3)); }",
+        "",
+    );
+    let nth_calls: Vec<_> = r.refs.iter().filter(|e| e.kind == EdgeKind::Calls && e.target_name == "nth").collect();
+    assert_eq!(nth_calls.len(), 2, "expected 2 Calls refs to 'nth'; got: {:?}", r.refs);
+}
+
 // ---------------------------------------------------------------------------
 // Bonus: $variable declaration
 // ---------------------------------------------------------------------------

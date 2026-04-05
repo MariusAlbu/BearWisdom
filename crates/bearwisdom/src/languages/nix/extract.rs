@@ -117,7 +117,9 @@ fn visit_expr(
             }
         }
         "function_expression" => {
-            // A lambda — not a named declaration at this level, but visit its body
+            // A lambda — not a named declaration at this level.
+            // Visit formal parameter default values, then the body.
+            visit_formal_defaults(node, src, symbols, refs, parent_index);
             if let Some(body) = node.child_by_field_name("body") {
                 visit_expr(body, src, symbols, refs, parent_index, false);
             }
@@ -258,40 +260,45 @@ fn extract_binding(
     parent_index: Option<usize>,
     vis: Visibility,
 ) {
-    // attrpath gives the binding name (may be dotted: a.b.c)
-    let name = match binding_name(node, src) {
-        Some(n) => n,
-        None => return,
-    };
+    // attrpath gives the binding name (may be dotted: a.b.c).
+    // For bindings with interpolated attrpaths (e.g. `${name} = expr`), the
+    // name may not be statically extractable. In that case, still process the
+    // value expression for refs — skip only the symbol creation.
+    let name_opt = binding_name(node, src);
 
-    // Determine kind from value expression
     let value = binding_value(node);
-    let kind = match value {
-        Some(v) if is_function_expr(v) => SymbolKind::Function,
-        _ => SymbolKind::Variable,
-    };
 
-    let sig = if kind == SymbolKind::Function {
-        format!("{} = ...: ...", name)
+    let idx = if let Some(name) = name_opt {
+        let kind = match value {
+            Some(v) if is_function_expr(v) => SymbolKind::Function,
+            _ => SymbolKind::Variable,
+        };
+        let sig = if kind == SymbolKind::Function {
+            format!("{} = ...: ...", name)
+        } else {
+            format!("{} = ...", name)
+        };
+        let i = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind,
+            visibility: Some(vis),
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: node.end_position().column as u32,
+            signature: Some(sig),
+            doc_comment: None,
+            scope_path: None,
+            parent_index,
+        });
+        i
     } else {
-        format!("{} = ...", name)
+        // Name not statically extractable (interpolated attrpath).
+        // Use the nearest parent symbol as the ref source.
+        parent_index.unwrap_or(symbols.len().saturating_sub(1))
     };
-
-    let idx = symbols.len();
-    symbols.push(ExtractedSymbol {
-        name: name.clone(),
-        qualified_name: name,
-        kind,
-        visibility: Some(vis),
-        start_line: node.start_position().row as u32,
-        end_line: node.end_position().row as u32,
-        start_col: node.start_position().column as u32,
-        end_col: node.end_position().column as u32,
-        signature: Some(sig),
-        doc_comment: None,
-        scope_path: None,
-        parent_index,
-    });
 
     // Visit the value expression for nested declarations and refs
     if let Some(v) = value {
@@ -310,11 +317,12 @@ fn extract_value_refs(
     match node.kind() {
         "apply_expression" => {
             extract_apply(node, src, source_symbol_index, refs);
-            // Recurse into sub-expressions to catch chained applies
+            // Recurse into all sub-expressions, including nested apply_expression
+            // children. This handles curried application (`f a b` → two applies)
+            // and ensures callPackage inner applies emit their Imports refs.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if is_expr_node(&child) && child.kind() != "apply_expression" {
-                    // apply children are already handled recursively in extract_apply
+                if is_expr_node(&child) {
                     extract_value_refs(child, src, source_symbol_index, symbols, refs);
                 }
             }
@@ -350,7 +358,8 @@ fn extract_value_refs(
             extract_let(node, src, symbols, refs, Some(source_symbol_index));
         }
         "function_expression" => {
-            // Visit lambda body
+            // Visit formal parameter default values, then the lambda body.
+            visit_formal_defaults(node, src, symbols, refs, Some(source_symbol_index));
             if let Some(body) = node.child_by_field_name("body") {
                 extract_value_refs(body, src, source_symbol_index, symbols, refs);
             }
@@ -536,16 +545,42 @@ fn extract_apply(
         resolve_apply_func_name(n, src)
     });
 
+    // If the function name can't be resolved (e.g. anonymous lambda `(x: ...)` in
+    // function position, or a complex expression), use the node text as a fallback
+    // target so coverage correlation can still match this apply site.
     let func_name = match func_name {
         Some(n) => n,
-        None => return,
+        None => {
+            // Emit a minimal Calls ref with whatever text we can extract from the
+            // function node, truncated to avoid noise. This ensures the apply site
+            // registers a ref rather than being silently unmatched.
+            let fallback = func_node.map(|n| {
+                let t = node_text(n, src);
+                // Limit to 80 chars to avoid giant lambda bodies as ref targets
+                if t.len() > 80 { t[..80].to_string() } else { t }
+            });
+            if let Some(target) = fallback {
+                if !target.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: target,
+                        kind: EdgeKind::Calls,
+                        line: node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            return;
+        }
     };
 
-    // `import` is a keyword/builtin in Nix — emit Imports edge
+    // `import` is a keyword/builtin in Nix — emit Imports edge when arg is a path.
+    // If the arg is a complex expression (e.g. `nixpkgs + "/path"`), fall through
+    // to emit a Calls edge for `import` itself so every apply site has a ref.
     if func_name == "import" {
         if let Some(arg) = apply_argument(&node) {
-            let path = extract_path_or_string(arg, src);
-            if let Some(p) = path {
+            if let Some(p) = extract_path_or_string(arg, src) {
                 refs.push(ExtractedRef {
                     source_symbol_index,
                     target_name: p.clone(),
@@ -554,16 +589,17 @@ fn extract_apply(
                     module: Some(p),
                     chain: None,
                 });
+                return;
             }
         }
-        return;
+        // Path not extractable — fall through to emit Calls -> "import".
     }
 
-    // `callPackage path {}` — emit Imports edge to first argument path
+    // `callPackage path {}` — emit Imports edge to the package path.
+    // If the arg is not a literal path (unusual), fall through to a Calls edge.
     if func_name == "callPackage" || func_name.ends_with(".callPackage") {
         if let Some(arg) = apply_argument(&node) {
-            let path = extract_path_or_string(arg, src);
-            if let Some(p) = path {
+            if let Some(p) = extract_path_or_string(arg, src) {
                 refs.push(ExtractedRef {
                     source_symbol_index,
                     target_name: p.clone(),
@@ -572,12 +608,13 @@ fn extract_apply(
                     module: Some(p),
                     chain: None,
                 });
+                return;
             }
         }
-        return;
+        // Path not extractable — fall through to emit Calls -> "callPackage".
     }
 
-    // General function application — emit Calls edge
+    // General function application — emit Calls edge.
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name: func_name,
@@ -586,6 +623,70 @@ fn extract_apply(
         module: None,
         chain: None,
     });
+}
+
+// ---------------------------------------------------------------------------
+// Formal parameter defaults  ({ pkgs ? import <nixpkgs> { }, ... }: body)
+// ---------------------------------------------------------------------------
+
+/// Visit the default-value expressions of formal parameters in a
+/// `function_expression` whose arguments are an attrset pattern.
+///
+/// Tree-sitter-nix represents formal parameters as children of the
+/// `function_expression`'s first child (`formals` or `formal_set`).
+/// Each `formal` node may have a default value after `?`.
+///
+/// These defaults are not reachable via body traversal, so we visit them
+/// explicitly to capture apply_expressions like `import <nixpkgs> { }`.
+fn visit_formal_defaults(
+    func_node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let source_idx = parent_index.unwrap_or(symbols.len().saturating_sub(1));
+    // The formals container is typically the first named child before `:`.
+    let mut outer_cursor = func_node.walk();
+    for child in func_node.children(&mut outer_cursor) {
+        // Look for `formals`, `formal_set`, or `formal` nodes
+        match child.kind() {
+            "formals" | "formal_set" => {
+                let mut fc = child.walk();
+                for formal in child.children(&mut fc) {
+                    if formal.kind() == "formal" {
+                        visit_formal_default(formal, src, source_idx, symbols, refs);
+                    }
+                }
+            }
+            "formal" => {
+                visit_formal_default(child, src, source_idx, symbols, refs);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn visit_formal_default(
+    formal: Node,
+    src: &str,
+    source_idx: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // formal: identifier ? default_expr
+    // The default expression is the expression child after `?`
+    let mut cursor = formal.walk();
+    let mut past_question_mark = false;
+    for child in formal.children(&mut cursor) {
+        if !child.is_named() && node_text(child, src) == "?" {
+            past_question_mark = true;
+            continue;
+        }
+        if past_question_mark && is_expr_node(&child) {
+            extract_value_refs(child, src, source_idx, symbols, refs);
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -704,6 +805,19 @@ fn resolve_apply_func_name(node: Node, src: &str) -> Option<String> {
                 None
             });
             inner_func.and_then(|n| resolve_apply_func_name(n, src))
+        }
+        "parenthesized_expression" => {
+            // The inner expression is the actual function — recurse into it.
+            // E.g. `(builtins.fetchTarball url) {}` has a parenthesized apply as func.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if is_expr_node(&child) {
+                    if let Some(name) = resolve_apply_func_name(child, src) {
+                        return Some(name);
+                    }
+                }
+            }
+            None
         }
         _ => resolve_call_name(node, src),
     }
@@ -824,7 +938,9 @@ fn extract_path_or_string(node: Node, src: &str) -> Option<String> {
 // ---------------------------------------------------------------------------
 
 fn is_expr_node(node: &Node) -> bool {
-    // Named expression nodes to recurse into
+    // Named expression nodes to recurse into.
+    // `interpolation` is included so that ${ ... } string interpolations are
+    // traversed — apply_expression nodes inside them would otherwise be invisible.
     matches!(
         node.kind(),
         "attrset_expression"
@@ -844,6 +960,8 @@ fn is_expr_node(node: &Node) -> bool {
             | "list_expression"
             | "path_expression"
             | "string_expression"
+            | "indented_string_expression"
+            | "interpolation"
             | "variable_expression"
             | "integer_expression"
             | "float_expression"

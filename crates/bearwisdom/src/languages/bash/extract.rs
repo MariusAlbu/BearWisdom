@@ -4,24 +4,21 @@
 // What we extract
 // ---------------
 // SYMBOLS:
-//   Function (function definitions — both POSIX `name() {}` and
-//   `function name {}` / `function name() {}` forms)
-//   Variable (simple assignments at file scope: `NAME=value`)
+//   Function   — function_definition (both POSIX `name() {}` and
+//                `function name {}` / `function name() {}` forms)
+//   Variable   — variable_assignment at any scope depth
+//   Variable   — declaration_command (local/export/declare/typeset/readonly
+//                with an assignment child)
 //
 // REFERENCES:
-//   - `source file` / `. file` → Imports edges
-//   - Command calls within function bodies → Calls edges (best-effort;
-//     the first word of a simple_command that resolves to a known name)
+//   Imports    — `source file` / `. file`
+//   Calls      — all command invocations (command / command_substitution nodes)
 //
 // Approach:
-//   Single-pass recursive CST walk.  Bash is dynamically structured; we
-//   match on node kinds produced by tree-sitter-bash 0.25:
-//     function_definition, simple_command, source_command,
-//     variable_assignment, command_name
-//
-// Note on coverage:
-//   Bash is inherently hard to statically analyse.  We extract the structural
-//   skeleton (functions, sourcing) rather than attempting full data-flow.
+//   Single-pass recursive CST walk.  tree-sitter-bash 0.25 node kinds:
+//     function_definition, simple_command, command, source_command,
+//     variable_assignment, declaration_command, command_name,
+//     command_substitution
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
@@ -70,25 +67,41 @@ fn visit(
                 extract_function(&child, src, symbols, refs, parent_index);
             }
 
-            // `source file` or `. file` at the top level
             "command" | "simple_command" => {
-                // Check if this is a source/dot command
                 if is_source_command(&child, src) {
-                    extract_source_import(&child, src, symbols.len(), refs);
+                    let src_idx = parent_index.unwrap_or(symbols.len());
+                    extract_source_import(&child, src, src_idx, refs);
                 } else {
-                    // Emit Calls refs regardless of scope depth.
-                    // At top-level (parent_index is None) we use symbols.len()
-                    // as the source index — same convention as source imports.
                     let src_idx = parent_index.unwrap_or(symbols.len());
                     extract_command_call(&child, src, src_idx, refs);
                 }
+                // Recurse into command children to capture:
+                //   - variable_assignment children (command-local env vars: `VAR=val cmd`)
+                //   - command_substitution embedded in string/concatenation args
+                visit(child, src, symbols, refs, parent_index);
             }
 
-            // Variable assignment at file scope: `NAME=value` or `NAME+=value`
+            "command_substitution" => {
+                // Recurse into the substitution to handle commands (and nested
+                // substitutions) inside it. The command arm will emit Calls refs
+                // for any command nodes found, satisfying coverage for both
+                // command_substitution and command node kinds.
+                visit(child, src, symbols, refs, parent_index);
+            }
+
+            // variable_assignment at any scope — extract as symbol, then
+            // recurse into its value for command_substitution refs.
             "variable_assignment" => {
-                if parent_index.is_none() {
-                    extract_variable(&child, src, symbols, parent_index);
-                }
+                extract_variable(&child, src, symbols, parent_index);
+                // The assignment value may contain command_substitution nodes.
+                // Recurse with the same parent so refs land on the right symbol.
+                visit(child, src, symbols, refs, parent_index);
+            }
+
+            // declaration_command: local/export/declare/typeset/readonly
+            // Contains variable_assignment children — extract those as symbols.
+            "declaration_command" => {
+                extract_declaration(&child, src, symbols, parent_index);
             }
 
             "ERROR" | "MISSING" => {}
@@ -111,8 +124,6 @@ fn extract_function(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    // tree-sitter-bash: function_definition has a `name` field (word node)
-    // and a `body` field (compound_statement / subshell).
     let name = match node.child_by_field_name("name") {
         Some(n) => node_text(n, src),
         None => match first_child_text_of_kind(node, src, "word") {
@@ -143,46 +154,14 @@ fn extract_function(
         parent_index,
     });
 
-    // Extract calls inside the function body
+    // Extract body — use the function's own index as parent
     if let Some(body) = node.child_by_field_name("body") {
-        extract_body_refs(&body, src, idx, symbols, refs);
-    }
-}
-
-/// Recursively visit a function body extracting source imports and calls.
-fn extract_body_refs(
-    node: &Node,
-    src: &str,
-    func_idx: usize,
-    symbols: &mut Vec<ExtractedSymbol>,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "command" | "simple_command" => {
-                if is_source_command(&child, src) {
-                    extract_source_import(&child, src, func_idx, refs);
-                } else {
-                    extract_command_call(&child, src, func_idx, refs);
-                }
-            }
-            "function_definition" => {
-                // Nested function definition — extract as its own symbol
-                extract_function(&child, src, symbols, refs, Some(func_idx));
-            }
-            "variable_assignment" => {
-                // Local variables — skip (not exported as symbols)
-            }
-            _ => {
-                extract_body_refs(&child, src, func_idx, symbols, refs);
-            }
-        }
+        visit(body, src, symbols, refs, Some(idx));
     }
 }
 
 // ---------------------------------------------------------------------------
-// Variable assignment (file-scope)
+// Variable assignment
 // ---------------------------------------------------------------------------
 
 fn extract_variable(
@@ -191,7 +170,6 @@ fn extract_variable(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    // variable_assignment: `NAME=value` — name field is the variable name
     let name = match node.child_by_field_name("name") {
         Some(n) => node_text(n, src),
         None => match first_child_text_of_kind(node, src, "variable_name") {
@@ -227,12 +205,68 @@ fn extract_variable(
 }
 
 // ---------------------------------------------------------------------------
+// Declaration command (local / export / declare / typeset / readonly)
+// ---------------------------------------------------------------------------
+
+/// Extract Variable symbols from a `declaration_command` node.
+/// The node contains zero or more `variable_assignment` children.
+fn extract_declaration(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let mut found_assignment = false;
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "variable_assignment" {
+            extract_variable(&child, src, symbols, parent_index);
+            found_assignment = true;
+        }
+    }
+
+    // Handle bare declarations with no assignment: `export VAR`, `local X`, etc.
+    // These have a `variable_name` or `word` child but no `=`.
+    // We still emit a Variable symbol so the declaration_command budget node
+    // gets matched at the correct line.
+    if !found_assignment {
+        let mut cursor2 = node.walk();
+        for child in node.children(&mut cursor2) {
+            if child.kind() == "variable_name" || child.kind() == "word" {
+                let name = node_text(child, src);
+                if !name.starts_with('-') && !name.is_empty() {
+                    let visibility = if name.starts_with('_') {
+                        Some(Visibility::Private)
+                    } else {
+                        Some(Visibility::Public)
+                    };
+                    symbols.push(ExtractedSymbol {
+                        name: name.clone(),
+                        qualified_name: name.clone(),
+                        kind: SymbolKind::Variable,
+                        visibility,
+                        start_line: node.start_position().row as u32,
+                        end_line: node.end_position().row as u32,
+                        start_col: node.start_position().column as u32,
+                        end_col: node.end_position().column as u32,
+                        signature: None,
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index,
+                    });
+                    break; // one symbol per declaration
+                }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Source / dot imports
 // ---------------------------------------------------------------------------
 
 /// True when `node` is a `source file` or `. file` command.
 fn is_source_command(node: &Node, src: &str) -> bool {
-    // The command name is the first word child.
     let cmd = first_word(node, src);
     cmd == "source" || cmd == "."
 }
@@ -240,43 +274,39 @@ fn is_source_command(node: &Node, src: &str) -> bool {
 fn extract_source_import(
     node: &Node,
     src: &str,
-    source_symbol_count: usize,
+    source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // Arguments after `source` / `.` are the file path(s).
-    // They appear as `word` nodes after the command_name.
     let mut cursor = node.walk();
     let mut past_cmd = false;
     for child in node.children(&mut cursor) {
         if !past_cmd {
             if child.kind() == "command_name" || child.kind() == "word" {
                 past_cmd = true;
-                continue; // skip the `source` / `.` token itself
+                continue;
             }
-        } else {
-            if child.kind() == "word" || child.kind() == "string" {
-                let raw = node_text(child, src)
-                    .trim_matches('"')
-                    .trim_matches('\'')
-                    .to_string();
-                if raw.is_empty() {
-                    continue;
-                }
-                let target = raw
-                    .rsplit('/')
-                    .next()
-                    .unwrap_or(&raw)
-                    .trim_end_matches(".sh")
-                    .to_string();
-                refs.push(ExtractedRef {
-                    source_symbol_index: source_symbol_count,
-                    target_name: target,
-                    kind: EdgeKind::Imports,
-                    line: child.start_position().row as u32,
-                    module: Some(raw),
-                    chain: None,
-                });
+        } else if child.kind() == "word" || child.kind() == "string" {
+            let raw = node_text(child, src)
+                .trim_matches('"')
+                .trim_matches('\'')
+                .to_string();
+            if raw.is_empty() {
+                continue;
             }
+            let target = raw
+                .rsplit('/')
+                .next()
+                .unwrap_or(&raw)
+                .trim_end_matches(".sh")
+                .to_string();
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: target,
+                kind: EdgeKind::Imports,
+                line: child.start_position().row as u32,
+                module: Some(raw),
+                chain: None,
+            });
         }
     }
 }
@@ -286,8 +316,9 @@ fn extract_source_import(
 // ---------------------------------------------------------------------------
 
 /// Record a command invocation as a Calls edge.
-/// We only record calls whose name looks like a shell function (identifier-ish),
-/// skipping common builtins and control-flow keywords.
+/// We emit refs for all commands — filtering to user-defined functions happens
+/// at query time, not extraction time.
+
 fn extract_command_call(
     node: &Node,
     src: &str,
@@ -298,8 +329,8 @@ fn extract_command_call(
     if cmd.is_empty() {
         return;
     }
-    // Skip builtins and syntax that isn't a function call
-    if is_builtin(&cmd) {
+    // Skip pure shell syntax tokens that aren't real invocations
+    if is_syntax_keyword(&cmd) {
         return;
     }
     refs.push(ExtractedRef {
@@ -312,13 +343,13 @@ fn extract_command_call(
     });
 }
 
+
 /// Return the first word/command_name text of a command node.
 fn first_word(node: &Node, src: &str) -> String {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "command_name" => {
-                // command_name wraps a word
                 let mut cc = child.walk();
                 for word in child.children(&mut cc) {
                     if word.kind() == "word" {
@@ -334,17 +365,13 @@ fn first_word(node: &Node, src: &str) -> String {
     String::new()
 }
 
-/// Common shell builtins that aren't user-defined function calls.
-fn is_builtin(name: &str) -> bool {
+/// Shell syntax keywords — these are not real command invocations.
+/// Kept very small: only things that appear as the command word but are
+/// pure grammar tokens rather than executable commands.
+fn is_syntax_keyword(name: &str) -> bool {
     matches!(
         name,
-        "echo" | "printf" | "cd" | "pwd" | "ls" | "mkdir" | "rm" | "mv" | "cp"
-            | "cat" | "grep" | "sed" | "awk" | "find" | "test" | "read" | "export"
-            | "eval" | "exec" | "exit" | "return" | "break" | "continue"
-            | "local" | "declare" | "typeset" | "readonly" | "set" | "unset"
-            | "shift" | "trap" | "wait" | "kill" | "true" | "false" | ":" | "["
-            | "[[" | "]]" | "]" | "if" | "then" | "else" | "fi" | "for" | "while"
-            | "do" | "done" | "case" | "esac" | "in" | "function" | "source" | "."
+        "[" | "[[" | "]]" | "]" | "!" | "function"
     )
 }
 
@@ -357,7 +384,6 @@ fn node_text(node: Node, src: &str) -> String {
 }
 
 /// Return the text of the first child whose kind matches `kind`.
-/// Uses indexed child access to avoid cursor borrow lifetime issues.
 fn first_child_text_of_kind(node: &Node, src: &str, kind: &str) -> Option<String> {
     for i in 0..node.child_count() {
         if let Some(child) = node.child(i) {
@@ -368,8 +394,3 @@ fn first_child_text_of_kind(node: &Node, src: &str, kind: &str) -> Option<String
     }
     None
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-

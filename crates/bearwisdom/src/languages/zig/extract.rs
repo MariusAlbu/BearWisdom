@@ -126,6 +126,9 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
             });
             // Scan body lines for call expressions
             extract_calls_from_body(&body_lines, fn_idx, start_line + 1, &mut refs);
+            // Deep-scan the body for anonymous struct blocks (e.g. `return struct { ... }`,
+            // `=> struct { ... }`) that contain nested fn/method declarations.
+            extract_anon_struct_fns(&body_lines, fn_idx, &mut symbols, &mut refs);
             i = end_line as usize + 1;
             continue;
         }
@@ -210,12 +213,13 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                     });
-                    extract_enum_body(&body_lines, start_line, parent_idx, &mut symbols);
+                    extract_enum_body(&body_lines, start_line, parent_idx, &mut symbols, &mut refs);
                     i = end_line as usize + 1;
                     continue;
                 }
                 ContainerKind::None => {
                     // Plain variable/constant
+                    let decl_idx = symbols.len();
                     symbols.push(ExtractedSymbol {
                         name: decl_name.clone(),
                         qualified_name: decl_name.clone(),
@@ -230,6 +234,10 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                         scope_path: None,
                         parent_index: None,
                     });
+                    // Scan the declaration line for @builtin( calls
+                    // (e.g. `const X = @This()`, `const X = @cImport({...})`,
+                    //        `const X = @Vector(2, f32)`)
+                    extract_builtin_calls_from_line(trimmed, decl_idx, start_line, &mut refs);
                 }
             }
         }
@@ -352,12 +360,60 @@ fn extract_enum_body(
     _base_line: u32,
     parent_idx: usize,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
 ) {
-    for (line_num, raw) in body_lines {
+    let mut j = 0;
+    while j < body_lines.len() {
+        let (line_num, raw) = body_lines[j];
         let trimmed = raw.trim();
         if trimmed.is_empty() || trimmed.starts_with("//") {
+            j += 1;
             continue;
         }
+
+        // fn declarations inside enum bodies (Zig allows methods on enums)
+        if let Some((fn_name, is_pub, signature)) = parse_fn_declaration(trimmed) {
+            let mut depth = 0i32;
+            let mut end_j = j;
+            for (k, (_, bl)) in body_lines[j..].iter().enumerate() {
+                for ch in bl.chars() {
+                    if ch == '{' { depth += 1; }
+                    else if ch == '}' {
+                        depth -= 1;
+                        if depth <= 0 {
+                            end_j = j + k;
+                            break;
+                        }
+                    }
+                }
+                if depth <= 0 { break; }
+            }
+
+            let fn_idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: fn_name.clone(),
+                qualified_name: fn_name.clone(),
+                kind: SymbolKind::Method,
+                visibility: Some(if is_pub { Visibility::Public } else { Visibility::Private }),
+                start_line: line_num,
+                end_line: body_lines.get(end_j).map(|(l, _)| *l).unwrap_or(line_num),
+                start_col: 0,
+                end_col: 0,
+                signature: Some(signature),
+                doc_comment: None,
+                scope_path: None,
+                parent_index: Some(parent_idx),
+            });
+
+            if end_j > j {
+                let fn_body = &body_lines[j + 1..end_j];
+                extract_calls_from_body_slice(fn_body, fn_idx, refs);
+            }
+
+            j = end_j + 1;
+            continue;
+        }
+
         // Enum member: identifier possibly followed by `= value,` or `,`
         let member = trimmed
             .split(|c: char| !c.is_alphanumeric() && c != '_')
@@ -365,6 +421,7 @@ fn extract_enum_body(
             .unwrap_or("")
             .trim();
         if member.is_empty() || ZIG_KEYWORDS.contains(&member) {
+            j += 1;
             continue;
         }
         symbols.push(ExtractedSymbol {
@@ -372,8 +429,8 @@ fn extract_enum_body(
             qualified_name: member.to_string(),
             kind: SymbolKind::EnumMember,
             visibility: Some(Visibility::Public),
-            start_line: *line_num,
-            end_line: *line_num,
+            start_line: line_num,
+            end_line: line_num,
             start_col: 0,
             end_col: 0,
             signature: Some(member.to_string()),
@@ -381,8 +438,137 @@ fn extract_enum_body(
             scope_path: None,
             parent_index: Some(parent_idx),
         });
+        j += 1;
     }
 }
+
+/// Scan a single source line for `@builtin(` patterns and emit Calls refs.
+/// Used for top-level declaration lines where the RHS contains builtin calls
+/// (e.g. `const X = @This()`, `const X = @cImport({...})`).
+/// Skips `@import` which is already handled as an Imports ref.
+fn extract_builtin_calls_from_line(
+    line: &str,
+    source_symbol_index: usize,
+    line_num: u32,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let bytes = line.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'@' && i + 1 < bytes.len() && is_ident_start(bytes[i + 1]) {
+            let start = i + 1;
+            i = start;
+            while i < bytes.len() && is_ident_char(bytes[i]) {
+                i += 1;
+            }
+            let ident = &line[start..i];
+            // Skip @import (already handled) and emit refs for all other builtins
+            if i < bytes.len() && bytes[i] == b'(' && ident != "import" {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: format!("@{ident}"),
+                    kind: EdgeKind::Calls,
+                    line: line_num,
+                    module: None,
+                    chain: None,
+                });
+            }
+        } else {
+            i += 1;
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Anonymous struct extraction from function bodies
+// ---------------------------------------------------------------------------
+
+/// Scan a function body for struct blocks that contain fn/method declarations.
+/// This handles three Zig patterns:
+///   1. `return struct { ... }` — comptime generic type factory
+///   2. `=> struct { ... }` — switch arm returning a struct type
+///   3. `const Name = struct { ... }` — local named struct (vtable impl, etc.)
+fn extract_anon_struct_fns(
+    body_lines: &[(u32, &str)],
+    parent_fn_idx: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut j = 0;
+    while j < body_lines.len() {
+        let (line_num, raw) = body_lines[j];
+        let trimmed = raw.trim();
+
+        if trimmed.is_empty() || trimmed.starts_with("//") {
+            j += 1;
+            continue;
+        }
+
+        // Check for any pattern that opens a struct block in this line.
+        // We look for `struct {` appearing anywhere in the line.
+        if trimmed.contains("struct {") || trimmed.contains("struct{") {
+            // Find the opening `{` that starts the struct body.
+            // We need to locate the struct's own `{` — scan for `struct {`
+            // and track depth from that point.
+            if let Some(struct_brace_pos) = find_struct_open_brace(trimmed) {
+                let _ = struct_brace_pos; // we just need to know one exists
+
+                // Collect the body of this struct block from body_lines[j..].
+                let mut depth = 0i32;
+                let mut end_j = j;
+                let mut struct_body: Vec<(u32, &str)> = Vec::new();
+                let mut in_struct = false;
+
+                for (k, (ln, bl)) in body_lines[j..].iter().enumerate() {
+                    for ch in bl.chars() {
+                        if ch == '{' {
+                            depth += 1;
+                            if depth == 1 {
+                                in_struct = true;
+                            }
+                        } else if ch == '}' {
+                            depth -= 1;
+                            if depth <= 0 {
+                                end_j = j + k;
+                                break;
+                            }
+                        }
+                    }
+                    if in_struct && k > 0 && depth > 0 {
+                        struct_body.push((*ln, bl));
+                    }
+                    if depth <= 0 && in_struct { break; }
+                }
+
+                if !struct_body.is_empty() {
+                    // Extract fn declarations from the struct body
+                    extract_struct_body(&struct_body, line_num, parent_fn_idx, symbols, refs);
+                    // Recurse for deeper nesting
+                    extract_anon_struct_fns(&struct_body, parent_fn_idx, symbols, refs);
+                }
+
+                j = end_j + 1;
+                continue;
+            }
+        }
+
+        j += 1;
+    }
+}
+
+/// Returns true if `trimmed` contains `struct {` as the opening of a struct
+/// block (not inside a string or comment).
+fn find_struct_open_brace(trimmed: &str) -> Option<usize> {
+    // Simple heuristic: look for "struct {" or "struct{" preceded by space/=> or start
+    if let Some(pos) = trimmed.find("struct {") {
+        return Some(pos);
+    }
+    if let Some(pos) = trimmed.find("struct{") {
+        return Some(pos);
+    }
+    None
+}
+
 
 // ---------------------------------------------------------------------------
 // Call extraction from body lines
@@ -412,7 +598,12 @@ fn extract_calls_from_body_slice(
     }
 }
 
-/// Scan a line for `identifier(` call patterns.
+/// Scan a line for `identifier(` and `@builtin(` call patterns.
+///
+/// Emits:
+/// - `EdgeKind::Calls` for regular function calls (`ident(`)
+/// - `EdgeKind::Calls` for Zig builtin function calls (`@ident(`) except
+///   `@import` which is handled separately as `EdgeKind::Imports`.
 fn extract_call_identifiers(
     line: &str,
     source_symbol_index: usize,
@@ -422,22 +613,43 @@ fn extract_call_identifiers(
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        // Skip whitespace and non-ident chars
+        // Builtin function call: `@identifier(`
+        if bytes[i] == b'@' && i + 1 < bytes.len() && is_ident_start(bytes[i + 1]) {
+            let start = i + 1; // skip the `@`
+            i = start;
+            while i < bytes.len() && is_ident_char(bytes[i]) {
+                i += 1;
+            }
+            let ident = &line[start..i];
+            // Skip @import — already emitted as Imports ref in parse_var_declaration
+            if i < bytes.len() && bytes[i] == b'(' && ident != "import" {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: format!("@{ident}"),
+                    kind: EdgeKind::Calls,
+                    line: line_num,
+                    module: None,
+                    chain: None,
+                });
+            }
+            continue;
+        }
+
+        // Regular identifier call: `identifier(`
         if !is_ident_start(bytes[i]) {
             i += 1;
             continue;
         }
         // Collect the identifier
         let start = i;
-        while i < bytes.len() && (is_ident_char(bytes[i])) {
+        while i < bytes.len() && is_ident_char(bytes[i]) {
             i += 1;
         }
         let ident = &line[start..i];
 
         // Check if followed immediately by `(`
         if i < bytes.len() && bytes[i] == b'(' {
-            // Skip built-ins (@import etc.), keywords, and primitives
-            if !ident.starts_with('@') && !ZIG_KEYWORDS.contains(&ident) && !is_primitive(ident) {
+            if !ZIG_KEYWORDS.contains(&ident) && !is_primitive(ident) {
                 refs.push(ExtractedRef {
                     source_symbol_index,
                     target_name: ident.to_string(),

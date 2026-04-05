@@ -93,6 +93,9 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     &mut refs,
                 );
             }
+            "label_instruction" => {
+                extract_label(&child, source, &mut symbols, current_stage_index);
+            }
             "entrypoint_instruction" => {
                 extract_entry_function(&child, source, "ENTRYPOINT", &mut symbols, current_stage_index);
             }
@@ -317,6 +320,94 @@ fn extract_env_pair(
         scope_path: None,
         parent_index,
     });
+}
+
+// ---------------------------------------------------------------------------
+// LABEL instruction
+// ---------------------------------------------------------------------------
+
+/// Extract LABEL instructions as Variable symbols (one per label_pair).
+///
+/// Grammar: `label_instruction` → `label_pair { key, value }`.
+/// The `key` field is an `unquoted_string` or `double_quoted_string` node.
+///
+/// Legacy Docker syntax (`LABEL key "value"` without `=`) may produce ERROR
+/// nodes in the parse tree. In that case we fall back to scanning all named
+/// children of the `label_instruction` for any unquoted_string / double_quoted_string
+/// before the first ERROR, treating the first token after LABEL as the key.
+fn extract_label(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let mut emitted = false;
+
+    // Primary path: well-formed `label_pair { key, value }` nodes.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "label_pair" {
+            if let Some(key_node) = child.child_by_field_name("key") {
+                let key = clean_string(node_text(key_node, src));
+                if key.is_empty() {
+                    continue;
+                }
+                let value = child
+                    .child_by_field_name("value")
+                    .map(|v| clean_string(node_text(v, src)));
+                let sig = match &value {
+                    Some(v) => format!("LABEL {key}={v}"),
+                    None => format!("LABEL {key}"),
+                };
+                symbols.push(ExtractedSymbol {
+                    name: key.clone(),
+                    qualified_name: key.clone(),
+                    kind: SymbolKind::Variable,
+                    visibility: Some(Visibility::Public),
+                    start_line: node.start_position().row as u32,
+                    end_line: node.end_position().row as u32,
+                    start_col: node.start_position().column as u32,
+                    end_col: node.end_position().column as u32,
+                    signature: Some(sig),
+                    doc_comment: None,
+                    scope_path: None,
+                    parent_index,
+                });
+                emitted = true;
+            }
+        }
+    }
+
+    // Fallback: legacy `LABEL key "value"` syntax produces ERROR nodes.
+    // Scan named children directly for the first string-like token.
+    if !emitted {
+        let mut cursor2 = node.walk();
+        for child in node.named_children(&mut cursor2) {
+            let kind = child.kind();
+            if kind == "unquoted_string" || kind == "double_quoted_string" {
+                let key = clean_string(node_text(child, src));
+                if key.is_empty() {
+                    continue;
+                }
+                let sig = format!("LABEL {key}");
+                symbols.push(ExtractedSymbol {
+                    name: key.clone(),
+                    qualified_name: key.clone(),
+                    kind: SymbolKind::Variable,
+                    visibility: Some(Visibility::Public),
+                    start_line: node.start_position().row as u32,
+                    end_line: node.end_position().row as u32,
+                    start_col: node.start_position().column as u32,
+                    end_col: node.end_position().column as u32,
+                    signature: Some(sig),
+                    doc_comment: None,
+                    scope_path: None,
+                    parent_index,
+                });
+                break; // one symbol per label_instruction in fallback mode
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

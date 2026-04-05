@@ -205,16 +205,43 @@ fn extract_variable_declaration(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) -> Option<usize> {
-    // `local name = <rhs>` or `local name = function(...) ... end`
-    let name_list = node.child_by_field_name("namelist")?;
+    // tree-sitter-lua has two forms for variable_declaration:
+    //
+    // 1. `local name = <rhs>` — inner assignment_statement child:
+    //      variable_declaration
+    //        (local keyword)
+    //        assignment_statement
+    //          variable_list → name list
+    //          expression_list → value list
+    //
+    // 2. `local name` (no initializer) — variable_list is a direct child:
+    //      variable_declaration
+    //        (local keyword)
+    //        variable_list
+    //          identifier
+    //
+    // The outer variable_declaration has no named fields; we look at children directly.
+    // Keep `inner_opt` alive for the full function scope to satisfy the borrow checker.
+    let inner_opt = find_first_named_child_of_kind(node, "assignment_statement");
+    let (name_list, rhs) = if let Some(ref inner) = inner_opt {
+        // Form 1: `local name = <rhs>` — inner assignment_statement wraps the data
+        let nl = find_first_named_child_of_kind(inner, "variable_list")?;
+        let value_list = find_first_named_child_of_kind(inner, "expression_list");
+        let rhs_node = value_list.and_then(|vl| vl.named_child(0));
+        (nl, rhs_node)
+    } else if let Some(nl) = find_first_named_child_of_kind(node, "variable_list") {
+        // Form 2: `local name` — no initializer; variable_list is a direct child
+        (nl, None)
+    } else {
+        return None;
+    };
+
     let first_name_node = name_list.named_child(0)?;
     let name = node_text(first_name_node, src);
     if name.is_empty() {
         return None;
     }
 
-    let value_list = node.child_by_field_name("valuelist");
-    let rhs = value_list.and_then(|vl| vl.named_child(0));
     let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
 
     let (kind, sig) = if let Some(rhs_node) = rhs {
