@@ -71,6 +71,8 @@ pub fn blast_radius(
 
     // --- Resolve the symbol to an id + summary ---
     // Try exact qualified name first, then simple name fallback.
+    // For ambiguous names, prefer the symbol with the most incoming edges —
+    // that's the most "depended-on" symbol and the most useful blast-radius center.
     let lookup_sql = if symbol_name.contains('.') {
         "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
          FROM symbols s JOIN files f ON f.id = s.file_id
@@ -78,9 +80,12 @@ pub fn blast_radius(
          LIMIT 1"
     } else {
         "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line
-         FROM symbols s JOIN files f ON f.id = s.file_id
+         FROM symbols s
+         JOIN files f ON f.id = s.file_id
+         LEFT JOIN edges e ON e.target_id = s.id
          WHERE s.name = ?1
-         ORDER BY s.qualified_name
+         GROUP BY s.id
+         ORDER BY COUNT(e.target_id) DESC
          LIMIT 1"
     };
 

@@ -55,6 +55,19 @@ pub struct SymbolSummary {
     pub line: u32,
 }
 
+/// A detected HTTP route endpoint.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RouteInfo {
+    pub http_method: String,
+    pub route_template: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub resolved_route: Option<String>,
+    pub file_path: String,
+    pub line: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub handler: Option<String>,
+}
+
 /// The full architecture overview returned by [`get_overview`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchitectureOverview {
@@ -66,6 +79,8 @@ pub struct ArchitectureOverview {
     pub total_edges: u32,
     /// Per-language breakdown, sorted by file count descending.
     pub languages: Vec<LanguageStats>,
+    /// Detected HTTP route endpoints.
+    pub routes: Vec<RouteInfo>,
     /// Top 20 symbols by incoming reference count.
     pub hotspots: Vec<HotspotSymbol>,
     /// Public classes and top-level functions (the API surface).
@@ -130,7 +145,37 @@ pub fn get_overview_with_limits(
             .context("Failed to collect language stats")?
     };
 
-    // --- 3. Hotspots (symbols with most incoming edges) ---
+    // --- 3. Routes ---
+    let routes = {
+        let mut stmt = conn.prepare(
+            "SELECT r.http_method,
+                    r.route_template,
+                    r.resolved_route,
+                    f.path,
+                    r.line,
+                    s.qualified_name
+             FROM routes r
+             JOIN files f ON f.id = r.file_id
+             LEFT JOIN symbols s ON s.id = r.symbol_id
+             ORDER BY r.http_method, r.route_template",
+        ).context("Failed to prepare routes query")?;
+
+        let rows = stmt.query_map([], |row| {
+            Ok(RouteInfo {
+                http_method:    row.get(0)?,
+                route_template: row.get(1)?,
+                resolved_route: row.get(2)?,
+                file_path:      row.get(3)?,
+                line:           row.get(4)?,
+                handler:        row.get(5)?,
+            })
+        }).context("Failed to execute routes query")?;
+
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect routes")?
+    };
+
+    // --- 4. Hotspots (symbols with most incoming edges) ---
     let hotspots = {
         let mut stmt = conn.prepare(
             "SELECT s.name,
@@ -160,7 +205,7 @@ pub fn get_overview_with_limits(
             .context("Failed to collect hotspots")?
     };
 
-    // --- 4. Entry points (public classes + functions, limited to 50) ---
+    // --- 5. Entry points (public classes + functions, limited to 50) ---
     // We define "entry point" as a public symbol whose kind is class or function,
     // making them the likely API surface.
     let entry_points = {
@@ -193,6 +238,7 @@ pub fn get_overview_with_limits(
         total_symbols,
         total_edges,
         languages,
+        routes,
         hotspots,
         entry_points,
     })

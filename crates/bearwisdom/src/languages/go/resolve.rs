@@ -131,6 +131,18 @@ impl LanguageResolver for GoResolver {
             if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, ref_ctx, lookup) {
                 return Some(res);
             }
+
+            // Package-qualified call: chain = ["pkg", "Func"].
+            // Use the first segment to find the matching import, then resolve
+            // the target as `{package_name}.{target}` with high confidence.
+            if chain_ref.segments.len() >= 2 {
+                let alias = &chain_ref.segments[0].name;
+                if let Some(res) = self.resolve_via_import_alias(
+                    file_ctx, alias, target, edge_kind, lookup,
+                ) {
+                    return Some(res);
+                }
+            }
         }
 
         // Step 1: Scope chain walk (innermost → outermost).
@@ -352,6 +364,69 @@ impl LanguageResolver for GoResolver {
 
         // Public (exported) symbols are always visible from anywhere.
         true
+    }
+}
+
+impl GoResolver {
+    /// Resolve a package-qualified call using the chain's first segment as the
+    /// import alias. For `gin.Default()` with chain `["gin", "Default"]`, find
+    /// the import whose alias is "gin", derive the package name from its path,
+    /// and look up `{package_name}.{target}`.
+    fn resolve_via_import_alias(
+        &self,
+        file_ctx: &FileContext,
+        alias: &str,
+        target: &str,
+        edge_kind: EdgeKind,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        for import in &file_ctx.imports {
+            let Some(full_path) = &import.module_path else {
+                continue;
+            };
+
+            // Match the alias: explicit alias if set, otherwise last path segment.
+            let import_alias = import
+                .alias
+                .as_deref()
+                .unwrap_or_else(|| full_path.rsplit('/').next().unwrap_or(full_path.as_str()));
+
+            if import_alias != alias {
+                continue;
+            }
+
+            // Found the matching import. The Go package name is conventionally
+            // the last segment of the import path.
+            let pkg_name = full_path.rsplit('/').next().unwrap_or(full_path.as_str());
+            let candidate = format!("{pkg_name}.{target}");
+            if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "go_chain_import",
+                    });
+                }
+            }
+
+            // Also try alias-based QN if alias differs from pkg_name.
+            if alias != pkg_name {
+                let candidate = format!("{alias}.{target}");
+                if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "go_chain_import",
+                        });
+                    }
+                }
+            }
+
+            // Matched the import but couldn't find the symbol — don't try other imports.
+            break;
+        }
+        None
     }
 }
 
