@@ -112,8 +112,50 @@ pub(super) fn extract_declarator_name(node: &Node, src: &[u8]) -> (Option<String
             (None, false)
         }
         "pointer_declarator" | "reference_declarator" => {
+            // Try named `declarator` field first; fall back to first named child.
             if let Some(d) = node.child_by_field_name("declarator") {
                 return extract_declarator_name(&d, src);
+            }
+            // Some ref-qualified member functions have the declarator as a
+            // positional child without the `declarator` field label.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "function_declarator" | "identifier" | "field_identifier"
+                    | "type_identifier" | "qualified_identifier" | "destructor_name"
+                    | "operator_name" | "operator_cast" => {
+                        let (name, is_dtor) = extract_declarator_name(&child, src);
+                        if name.is_some() {
+                            return (name, is_dtor);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            (None, false)
+        }
+        // C++ operator overloads: `operator==`, `operator+`, etc.
+        "operator_name" => {
+            let text = node_text(*node, src);
+            if !text.is_empty() {
+                (Some(text), false)
+            } else {
+                (None, false)
+            }
+        }
+        // Conversion operators: `operator int`, `operator std::string`, etc.
+        "operator_cast" => {
+            let text = node_text(*node, src);
+            if !text.is_empty() {
+                (Some(text), false)
+            } else {
+                (None, false)
+            }
+        }
+        // Template functions with explicit specialization: `foo<int>`
+        "template_function" => {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                return extract_declarator_name(&name_node, src);
             }
             (None, false)
         }

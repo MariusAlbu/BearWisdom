@@ -35,8 +35,8 @@ impl LanguagePlugin for NixPlugin {
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
-        let _ = source;
-        ExtractionResult::empty()
+        let language: tree_sitter::Language = tree_sitter_nix::LANGUAGE.into();
+        extract::extract(source, language)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

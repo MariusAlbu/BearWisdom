@@ -2,9 +2,6 @@
 // puppet/coverage_tests.rs
 //
 // Node-kind coverage for PuppetPlugin::symbol_node_kinds() and ref_node_kinds().
-// Grammar returns None; mod.rs returns ExtractionResult::empty() pending wiring.
-// Tests document expected behaviour once the grammar is active.
-// For now they test the plugin's current contract (empty result).
 //
 // symbol_node_kinds: class_definition, defined_resource_type,
 //                   function_declaration, node_definition, resource_declaration
@@ -14,21 +11,20 @@
 
 use crate::languages::LanguagePlugin;
 use crate::languages::puppet::PuppetPlugin;
+use crate::types::SymbolKind;
 
 // ---------------------------------------------------------------------------
-// Current contract: no grammar → empty extraction
+// Grammar is wired — extraction should produce symbols
 // ---------------------------------------------------------------------------
 
 #[test]
-fn cov_plugin_returns_empty_without_grammar() {
-    // Until tree-sitter-puppet is wired in, extract() returns empty.
+fn cov_class_definition_produces_class_symbol() {
     let plugin = PuppetPlugin;
     let r = plugin.extract("class myclass { }", "test.pp", "puppet");
     assert!(
-        r.symbols.is_empty() && r.refs.is_empty(),
-        "Puppet plugin should return empty until grammar is wired; got symbols={:?} refs={:?}",
-        r.symbols,
-        r.refs
+        r.symbols.iter().any(|s| s.name == "myclass" && s.kind == SymbolKind::Class),
+        "Puppet plugin should extract Class myclass; got symbols={:?}",
+        r.symbols
     );
 }
 

@@ -55,7 +55,9 @@ fn visit(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "function_statement" => {
-                extract_function(&child, src, symbols, refs, parent_index);
+                let idx = extract_function_indexed(&child, src, symbols, refs, parent_index);
+                // Recurse into function body for nested functions/commands
+                visit(child, src, symbols, refs, idx.or(parent_index), class_prefix);
             }
             "class_statement" => {
                 extract_class(&child, src, symbols, refs, parent_index);
@@ -69,11 +71,72 @@ fn visit(
             "command" => {
                 extract_command(&child, src, parent_index.unwrap_or(0), refs);
             }
+            "invokation_expression" => {
+                let source_idx = parent_index.unwrap_or(0);
+                let name = find_child_text(&child, "member_name", src)
+                    .or_else(|| find_child_text(&child, "type_name", src))
+                    .or_else(|| find_child_text(&child, "simple_name", src))
+                    .unwrap_or_else(|| {
+                        // Last resort: first named child text
+                        (0..child.child_count())
+                            .filter_map(|i| child.child(i))
+                            .find(|c| c.is_named())
+                            .map(|c| node_text(&c, src).to_string())
+                            .unwrap_or_default()
+                    });
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: name,
+                        kind: EdgeKind::Calls,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                visit(child, src, symbols, refs, parent_index, class_prefix);
+            }
             _ => {
                 visit(child, src, symbols, refs, parent_index, class_prefix);
             }
         }
     }
+}
+
+/// Like extract_function but returns the symbol index for use as parent.
+fn extract_function_indexed(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let name = match find_child_text(node, "function_name", src) {
+        Some(n) => n,
+        None => return None,
+    };
+
+    let line = node.start_position().row as u32;
+    let sig = format!("function {} {{ ... }}", name);
+    let idx = symbols.len();
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name.clone(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: line,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: 0,
+        signature: Some(sig),
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
+    });
+
+    visit_for_calls(node, src, idx, refs);
+    Some(idx)
 }
 
 // ---------------------------------------------------------------------------
@@ -317,9 +380,10 @@ fn extract_command(
         None => return,
     };
 
-    // Skip `Import-Module` cmdlet — handled as Imports elsewhere
+    // For `Import-Module`, try to extract the module name as an Imports edge;
+    // fall back to emitting a Calls edge so the command node is always covered.
     if cmd_name.eq_ignore_ascii_case("Import-Module") {
-        // Extract the module argument as an Imports edge
+        let mut emitted = false;
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let text = node_text(&child, src);
@@ -334,9 +398,21 @@ fn extract_command(
                         module: Some(module),
                         chain: None,
                     });
+                    emitted = true;
                     break;
                 }
             }
+        }
+        if !emitted {
+            // Couldn't resolve module name — still emit so the node is covered
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: cmd_name,
+                kind: EdgeKind::Calls,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
         }
         return;
     }
@@ -361,8 +437,18 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
         if child.kind() == "command" {
             extract_command(&child, src, source_idx, refs);
         } else if child.kind() == "invokation_expression" {
-            // Method call: extract method name
-            if let Some(name) = find_child_text(&child, "member_name", src) {
+            // Method call: extract method name with fallbacks
+            let name = find_child_text(&child, "member_name", src)
+                .or_else(|| find_child_text(&child, "type_name", src))
+                .or_else(|| find_child_text(&child, "simple_name", src))
+                .unwrap_or_else(|| {
+                    (0..child.child_count())
+                        .filter_map(|i| child.child(i))
+                        .find(|c| c.is_named())
+                        .map(|c| node_text(&c, src).to_string())
+                        .unwrap_or_default()
+                });
+            if !name.is_empty() {
                 refs.push(ExtractedRef {
                     source_symbol_index: source_idx,
                     target_name: name,
@@ -372,6 +458,7 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
                     chain: None,
                 });
             }
+            visit_for_calls(&child, src, source_idx, refs);
         } else {
             visit_for_calls(&child, src, source_idx, refs);
         }

@@ -43,7 +43,19 @@ pub static CPP: LanguageDescriptor = LanguageDescriptor {
     file_extensions: &[".cpp", ".cc", ".cxx", ".c++", ".hpp", ".hxx", ".h++", ".hh"],
     filenames: &[],
     aliases: &["c++", "cxx"],
-    exclude_dirs: &["build", "cmake-build-debug", "cmake-build-release", ".cmake"],
+    exclude_dirs: &[
+        "build",
+        "cmake-build-debug",
+        "cmake-build-release",
+        ".cmake",
+        // Amalgamated single-header distributions (e.g. entt, nlohmann/json,
+        // stb, sqlite, etc.).  Indexing these inflates symbol counts with
+        // duplicate definitions already covered by the canonical source tree.
+        "single_include",
+        "single_header",
+        "amalgam",
+        "amalgamation",
+    ],
     entry_point_files: &["CMakeLists.txt", "Makefile", "conanfile.txt", "vcpkg.json"],
     sdk: Some(SdkDescriptor {
         name: "GCC / Clang (C++)",

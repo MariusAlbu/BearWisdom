@@ -75,6 +75,9 @@ pub(super) fn extract_function_definition(
             Some(idx),
             &qualified_name_str,
         );
+        // Also extract call refs from default argument expressions in the parameter
+        // list (e.g. `def foo(x=bar(), y=list())`) so those call nodes are covered.
+        extract_calls_from_body(&params, source, idx, refs);
     }
 
     if let Some(body_node) = body {
@@ -116,6 +119,27 @@ fn extract_body_symbols(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
+            // `x = 1` / `x: int = 1` inside a function or class body.
+            "expression_statement" => {
+                extract_assignment_if_any(
+                    &child,
+                    source,
+                    symbols,
+                    parent_index,
+                    qualified_prefix,
+                    false,
+                );
+                // Also recurse in case there are nested structures.
+                extract_body_symbols(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    enclosing_idx,
+                );
+            }
             "with_statement" => {
                 extract_with_statement(
                     &child,
@@ -256,6 +280,58 @@ fn extract_body_symbols(
 
             // `try: ... finally: ...` — recurse body.
             "try_statement" => {
+                extract_body_symbols(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    enclosing_idx,
+                );
+            }
+
+            // Nested `def` — extract as a symbol with the enclosing function as parent.
+            "function_definition" => {
+                extract_function_definition(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    false, // nested def inside a function body is not a class method
+                    &[],
+                );
+            }
+
+            // Nested `class` inside a function body.
+            "class_definition" => {
+                extract_class_definition(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                );
+            }
+
+            // Nested decorated `def` or `class`.
+            "decorated_definition" => {
+                extract_decorated_definition(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    parent_index,
+                    qualified_prefix,
+                    false,
+                );
+            }
+
+            // `if __name__ == '__main__':` — recurse body to find any defs inside.
+            "if_statement" => {
                 extract_body_symbols(
                     &child,
                     source,
@@ -581,8 +657,6 @@ pub(super) fn extract_decorated_definition(
     inside_class: bool,
 ) {
     let decorators = extract_decorator_names(node, source);
-
-    // The symbol pushed by the inner call will land at this index.
     let symbol_index = symbols.len();
 
     let mut cursor = node.walk();
@@ -702,6 +776,24 @@ fn extract_assignment_node(
                 parent_index,
                 qualified_prefix,
             );
+        }
+        // `self.x = value` — attribute assignment defining an instance field.
+        // Extract the attribute name (last component after '.').
+        "attribute" => {
+            if let Some(attr_node) = left.child_by_field_name("attribute") {
+                let name = node_text(&attr_node, source);
+                if !name.is_empty() {
+                    push_variable_symbol(
+                        node,
+                        &attr_node,
+                        &name,
+                        SymbolKind::Variable,
+                        symbols,
+                        parent_index,
+                        qualified_prefix,
+                    );
+                }
+            }
         }
         "pattern_list" | "tuple_pattern" => {
             let mut cursor = left.walk();

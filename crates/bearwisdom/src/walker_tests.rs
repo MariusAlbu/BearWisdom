@@ -144,11 +144,12 @@ fn detect_new_languages() {
     assert_eq!(detect_language(Path::new("App.svelte")), Some("svelte"));
     // Astro
     assert_eq!(detect_language(Path::new("index.astro")), Some("astro"));
-    // Perl (.pm only; .pl omitted due to Prolog conflict)
+    // Perl — both .pl and .pm are detected. Perl appears before Prolog in the
+    // registry so .pl is claimed by Perl; Prolog uses .pro / .P instead.
     assert_eq!(detect_language(Path::new("lib.pm")), Some("perl"));
-    // Ambiguous / skipped extensions — must remain None.
-    assert_eq!(detect_language(Path::new("script.pl")), None); // .pl too ambiguous
-    assert_eq!(detect_language(Path::new("main.m")), None);    // .m stays with ObjC / undetected
+    assert_eq!(detect_language(Path::new("script.pl")), Some("perl"));
+    // MATLAB profile now claims .m; this is an intentional trade-off over ObjC ambiguity
+    assert_eq!(detect_language(Path::new("main.m")), Some("matlab"));
 }
 
 #[test]

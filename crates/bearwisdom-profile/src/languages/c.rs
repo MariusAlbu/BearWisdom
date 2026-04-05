@@ -40,7 +40,16 @@ pub static C: LanguageDescriptor = LanguageDescriptor {
     file_extensions: &[".c", ".h"],
     filenames: &["Makefile"],
     aliases: &[],
-    exclude_dirs: &["build", "cmake-build-debug", "cmake-build-release", ".cmake"],
+    exclude_dirs: &[
+        "build",
+        "cmake-build-debug",
+        "cmake-build-release",
+        ".cmake",
+        "single_include",
+        "single_header",
+        "amalgam",
+        "amalgamation",
+    ],
     entry_point_files: &["CMakeLists.txt", "Makefile", "configure.ac", "meson.build"],
     sdk: Some(SdkDescriptor {
         name: "GCC / Clang",

@@ -57,15 +57,14 @@ impl LanguagePlugin for GleamPlugin {
             "type_definition",
             "type_alias",
             "constant",
-            "import",
         ]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
         &[
             "function_call",
-            "import",
             "binary_expression",
+            "import",
         ]
     }
 

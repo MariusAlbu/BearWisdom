@@ -42,11 +42,11 @@ impl LanguagePlugin for ElixirPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        // Elixir's grammar is minimal — all constructs are `call` nodes.
-        // BUT: symbol_node_kinds should only list constructs that create symbols (def/defp/defmodule/etc).
-        // Symbol extraction matches on call.target identifier text inside the extract function.
-        // Do NOT list "call" here to avoid misleading coverage metrics that count all function calls.
-        &[]
+        // Elixir's grammar represents all constructs as `call` nodes.
+        // The extractor dispatches on the callee name (defmodule, def, defp, etc.).
+        // Coverage correlates by line — listing "call" lets the metric count the
+        // fraction of call nodes that produce a symbol extraction.
+        &["call"]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {

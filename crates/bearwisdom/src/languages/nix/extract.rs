@@ -83,7 +83,38 @@ fn visit_expr(
             }
         }
         "apply_expression" => {
-            extract_apply(node, src, symbols.len(), refs);
+            let source_idx = symbols.len().saturating_sub(1);
+            extract_apply(node, src, source_idx, refs);
+            // Recurse into sub-expressions (chained applies, argument expressions)
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if is_expr_node(&child) {
+                    visit_expr(child, src, symbols, refs, parent_index, false);
+                }
+            }
+        }
+        "select_expression" => {
+            // Emit a Calls ref for every select_expression
+            let source_idx = symbols.len().saturating_sub(1);
+            let name = resolve_call_name(node, src)
+                .unwrap_or_else(|| node_text(node, src));
+            if !name.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name: name,
+                    kind: EdgeKind::Calls,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+            // Recurse into sub-expressions
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if is_expr_node(&child) {
+                    visit_expr(child, src, symbols, refs, parent_index, false);
+                }
+            }
         }
         "function_expression" => {
             // A lambda — not a named declaration at this level, but visit its body
@@ -121,6 +152,36 @@ fn extract_attrset(
         Visibility::Private
     };
 
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "binding_set" => {
+                // tree-sitter-nix 0.3: bindings are wrapped in binding_set
+                extract_binding_set(child, src, symbols, refs, parent_index, vis);
+            }
+            "binding" => {
+                extract_binding(&child, src, symbols, refs, parent_index, vis);
+            }
+            "inherit" => {
+                extract_inherit(&child, src, symbols, parent_index, vis);
+            }
+            "inherit_from" => {
+                extract_inherit_from(&child, src, symbols, refs, parent_index, vis);
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Extract bindings from a `binding_set` node.
+fn extract_binding_set(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    vis: Visibility,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -249,12 +310,43 @@ fn extract_value_refs(
     match node.kind() {
         "apply_expression" => {
             extract_apply(node, src, source_symbol_index, refs);
+            // Recurse into sub-expressions to catch chained applies
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if is_expr_node(&child) && child.kind() != "apply_expression" {
+                    // apply children are already handled recursively in extract_apply
+                    extract_value_refs(child, src, source_symbol_index, symbols, refs);
+                }
+            }
+        }
+        "select_expression" => {
+            // Emit a Calls ref for every select_expression (attribute access).
+            // This covers both `pkgs.hello` as a value AND as a function in an apply.
+            let name = resolve_call_name(node, src)
+                .unwrap_or_else(|| node_text(node, src));
+            if !name.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::Calls,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+            // Recurse into sub-expressions (but not the attrpath — avoid double-emit)
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if is_expr_node(&child) {
+                    extract_value_refs(child, src, source_symbol_index, symbols, refs);
+                }
+            }
         }
         "attrset_expression" | "rec_attrset_expression" => {
             // Nested attrset — extract its bindings as children
             extract_attrset(node, src, symbols, refs, Some(source_symbol_index), false);
         }
-        "let_expression" => {
+        "let_expression" | "let_attrset_expression" => {
             extract_let(node, src, symbols, refs, Some(source_symbol_index));
         }
         "function_expression" => {
@@ -270,7 +362,7 @@ fn extract_value_refs(
             }
         }
         _ => {
-            // Recurse looking for apply_expression and with_expression
+            // Recurse looking for apply_expression, select_expression, and with_expression
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 if is_expr_node(&child) {
@@ -428,16 +520,21 @@ fn extract_apply(
         .or_else(|| first_child_of_kind(&node, "variable_expression"))
         .or_else(|| {
             // First child that is an expression
-            let mut cursor = node.walk();
-            let found: Option<Node> = {
-                let mut iter = node.children(&mut cursor);
-                iter.find(|c| is_expr_node(c))
-            };
-            found
+            for i in 0..node.child_count() {
+                if let Some(child) = node.child(i) {
+                    if is_expr_node(&child) {
+                        return Some(child);
+                    }
+                }
+            }
+            None
         });
 
-    let func_name = func_node
-        .and_then(|n| resolve_call_name(n, src));
+    let func_name = func_node.and_then(|n| {
+        // For curried applies like `(f a) b`, the outer apply's function is another apply.
+        // Recursively resolve to find the original function name.
+        resolve_apply_func_name(n, src)
+    });
 
     let func_name = match func_name {
         Some(n) => n,
@@ -588,6 +685,29 @@ fn is_function_expr(node: Node) -> bool {
 // ---------------------------------------------------------------------------
 // Call name resolution
 // ---------------------------------------------------------------------------
+
+/// Resolve the ultimate function name from the function position of an apply_expression.
+/// Handles curried applies: `(f a) b` → `f a` is another apply → resolve recursively.
+fn resolve_apply_func_name(node: Node, src: &str) -> Option<String> {
+    match node.kind() {
+        "variable_expression" | "identifier" | "select_expression" => resolve_call_name(node, src),
+        "apply_expression" => {
+            // Curried call: resolve the inner function
+            let inner_func = node.child_by_field_name("function").or_else(|| {
+                for i in 0..node.child_count() {
+                    if let Some(child) = node.child(i) {
+                        if is_expr_node(&child) {
+                            return Some(child);
+                        }
+                    }
+                }
+                None
+            });
+            inner_func.and_then(|n| resolve_apply_func_name(n, src))
+        }
+        _ => resolve_call_name(node, src),
+    }
+}
 
 fn resolve_call_name(node: Node, src: &str) -> Option<String> {
     match node.kind() {

@@ -62,6 +62,13 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &ASTRO,
     &MATLAB,
     &PERL,
+    &ODIN,
+    &ZIG,
+    &PROLOG,
+    &VBA,
+    &ROBOT,
+    &MAKE,
+    &HARE,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").

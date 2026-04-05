@@ -160,6 +160,9 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
             if parser.set_language(&file_grammar).is_err() {
                 continue;
             }
+            // 5-second timeout guards against grammars that loop on real-world code
+            // (e.g. tree-sitter-zig on deeply nested constructs).
+            parser.set_timeout_micros(5_000_000);
             let tree = match parser.parse(&content, None) {
                 Some(t) => t,
                 None => continue,

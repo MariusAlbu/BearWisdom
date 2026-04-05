@@ -3,9 +3,9 @@ use crate::types::*;
 pub static MATLAB: LanguageDescriptor = LanguageDescriptor {
     id: "matlab",
     display_name: "MATLAB",
-    // .m omitted — conflicts with Objective-C (ObjC is more common in existing C extractor).
-    // .mat is a binary format, not source. Detection relies on filenames heuristic only.
-    file_extensions: &[".mat"],
+    // .m added — BearWisdom has no Objective-C extractor, so no conflict.
+    // .mat is a binary format but kept for completeness.
+    file_extensions: &[".m", ".mat"],
     filenames: &[],
     aliases: &[],
     exclude_dirs: &[],

@@ -35,8 +35,7 @@ impl LanguagePlugin for BicepPlugin {
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
-        let _ = source;
-        ExtractionResult::empty()
+        extract::extract(source, tree_sitter_bicep::LANGUAGE.into())
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

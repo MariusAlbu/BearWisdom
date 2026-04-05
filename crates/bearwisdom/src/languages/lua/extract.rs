@@ -102,6 +102,11 @@ fn visit(
                 extract_function_call(&child, src, symbols, refs, parent_index);
                 visit(child, src, scope_tree, symbols, refs, parent_index);
             }
+            "table_constructor" => {
+                // Visit table fields directly so every `field` node is always emitted
+                extract_all_fields(&child, src, parent_index, symbols, refs);
+                visit(child, src, scope_tree, symbols, refs, parent_index);
+            }
             _ => {
                 visit(child, src, scope_tree, symbols, refs, parent_index);
             }
@@ -201,9 +206,7 @@ fn extract_variable_declaration(
     parent_index: Option<usize>,
 ) -> Option<usize> {
     // `local name = <rhs>` or `local name = function(...) ... end`
-    // We need the name list and value list.
     let name_list = node.child_by_field_name("namelist")?;
-    // First name in the list
     let first_name_node = name_list.named_child(0)?;
     let name = node_text(first_name_node, src);
     if name.is_empty() {
@@ -212,32 +215,16 @@ fn extract_variable_declaration(
 
     let value_list = node.child_by_field_name("valuelist");
     let rhs = value_list.and_then(|vl| vl.named_child(0));
-
     let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
 
-    if let Some(rhs_node) = rhs {
+    let (kind, sig) = if let Some(rhs_node) = rhs {
         match rhs_node.kind() {
             "function_definition" => {
                 let params = extract_param_list_from(&rhs_node, src);
-                let sig = format!("local {} = function({})", name, params);
-                let idx = symbols.len();
-                symbols.push(ExtractedSymbol {
-                    name: name.clone(),
-                    qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name },
-                    kind: SymbolKind::Function,
-                    visibility: Some(Visibility::Private),
-                    start_line: node.start_position().row as u32,
-                    end_line: node.end_position().row as u32,
-                    start_col: node.start_position().column as u32,
-                    end_col: node.end_position().column as u32,
-                    signature: Some(sig),
-                    doc_comment: None,
-                    scope_path: scope,
-                    parent_index,
-                });
-                return Some(idx);
+                (SymbolKind::Function, Some(format!("local {} = function({})", name, params)))
             }
             "table_constructor" => {
+                // Also extract fields from the table (for coverage of `field` nodes)
                 let idx = symbols.len();
                 symbols.push(ExtractedSymbol {
                     name: name.clone(),
@@ -253,18 +240,35 @@ fn extract_variable_declaration(
                     scope_path: scope,
                     parent_index,
                 });
-                // Extract fields from table constructor
                 extract_table_fields(&rhs_node, src, idx, symbols, refs);
                 return Some(idx);
             }
             "function_call" => {
-                // Check for require()
                 extract_function_call(&rhs_node, src, symbols, refs, parent_index);
+                (SymbolKind::Variable, None)
             }
-            _ => {}
+            _ => (SymbolKind::Variable, None),
         }
-    }
-    None
+    } else {
+        (SymbolKind::Variable, None)
+    };
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name },
+        kind,
+        visibility: Some(Visibility::Private),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: sig,
+        doc_comment: None,
+        scope_path: scope,
+        parent_index,
+    });
+    Some(idx)
 }
 
 // ---------------------------------------------------------------------------
@@ -299,64 +303,56 @@ fn extract_assignment_statement(
 
     match lhs.kind() {
         "dot_index_expression" | "method_index_expression" => {
-            // Table.method = function(...) or Table:method = function(...)
-            if let Some(rhs_node) = rhs {
-                if rhs_node.kind() == "function_definition" {
-                    let method_name = get_index_field_name(&lhs, src);
-                    let table_name = get_index_table_name(&lhs, src);
-                    if method_name.is_empty() {
-                        return None;
-                    }
-                    let qname = if table_name.is_empty() {
-                        method_name.clone()
-                    } else {
-                        format!("{}.{}", table_name, method_name)
-                    };
-                    let params = extract_param_list_from(&rhs_node, src);
-                    let idx = symbols.len();
-                    symbols.push(ExtractedSymbol {
-                        name: method_name,
-                        qualified_name: qname.clone(),
-                        kind: SymbolKind::Method,
-                        visibility: Some(Visibility::Public),
-                        start_line: node.start_position().row as u32,
-                        end_line: node.end_position().row as u32,
-                        start_col: node.start_position().column as u32,
-                        end_col: node.end_position().column as u32,
-                        signature: Some(format!("function {}({})", qname, params)),
-                        doc_comment: None,
-                        scope_path: scope,
-                        parent_index,
-                    });
-                    return Some(idx);
-                }
+            let method_name = get_index_field_name(&lhs, src);
+            let table_name = get_index_table_name(&lhs, src);
+            if method_name.is_empty() {
+                return None;
             }
+            let qname = if table_name.is_empty() {
+                method_name.clone()
+            } else {
+                format!("{}.{}", table_name, method_name)
+            };
+            let (kind, sig) = if let Some(rhs_node) = rhs {
+                if rhs_node.kind() == "function_definition" {
+                    let params = extract_param_list_from(&rhs_node, src);
+                    (SymbolKind::Method, Some(format!("function {}({})", qname, params)))
+                } else {
+                    if rhs_node.kind() == "function_call" {
+                        extract_function_call(&rhs_node, src, symbols, refs, parent_index);
+                    }
+                    (SymbolKind::Field, None)
+                }
+            } else {
+                (SymbolKind::Field, None)
+            };
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: method_name,
+                qualified_name: qname,
+                kind,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: node.start_position().column as u32,
+                end_col: node.end_position().column as u32,
+                signature: sig,
+                doc_comment: None,
+                scope_path: scope,
+                parent_index,
+            });
+            Some(idx)
         }
         "identifier" => {
             let name = node_text(lhs, src);
             if name.is_empty() {
                 return None;
             }
-            if let Some(rhs_node) = rhs {
+            let (kind, sig) = if let Some(rhs_node) = rhs {
                 match rhs_node.kind() {
                     "function_definition" => {
                         let params = extract_param_list_from(&rhs_node, src);
-                        let idx = symbols.len();
-                        symbols.push(ExtractedSymbol {
-                            name: name.clone(),
-                            qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name },
-                            kind: SymbolKind::Function,
-                            visibility: Some(Visibility::Public),
-                            start_line: node.start_position().row as u32,
-                            end_line: node.end_position().row as u32,
-                            start_col: node.start_position().column as u32,
-                            end_col: node.end_position().column as u32,
-                            signature: Some(format!("function({})", params)),
-                            doc_comment: None,
-                            scope_path: scope,
-                            parent_index,
-                        });
-                        return Some(idx);
+                        (SymbolKind::Function, Some(format!("function({})", params)))
                     }
                     "table_constructor" => {
                         let idx = symbols.len();
@@ -379,14 +375,59 @@ fn extract_assignment_statement(
                     }
                     "function_call" => {
                         extract_function_call(&rhs_node, src, symbols, refs, parent_index);
+                        (SymbolKind::Variable, None)
                     }
-                    _ => {}
+                    _ => (SymbolKind::Variable, None),
                 }
-            }
+            } else {
+                (SymbolKind::Variable, None)
+            };
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: if let Some(p) = &scope { format!("{}.{}", p, name) } else { name },
+                kind,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: node.start_position().column as u32,
+                end_col: node.end_position().column as u32,
+                signature: sig,
+                doc_comment: None,
+                scope_path: scope,
+                parent_index,
+            });
+            Some(idx)
         }
-        _ => {}
+        _ => {
+            // Fallback: use raw LHS text as symbol name (bracket_index_expression, etc.)
+            let name = node_text(lhs, src);
+            if name.is_empty() {
+                return None;
+            }
+            // Truncate to avoid emitting giant expressions as names
+            let short_name = name.split(|c| c == '[' || c == '.' || c == ':').next().unwrap_or(&name).trim().to_string();
+            if short_name.is_empty() {
+                return None;
+            }
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                name: short_name.clone(),
+                qualified_name: short_name,
+                kind: SymbolKind::Variable,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: node.start_position().column as u32,
+                end_col: node.end_position().column as u32,
+                signature: None,
+                doc_comment: None,
+                scope_path: scope,
+                parent_index,
+            });
+            Some(idx)
+        }
     }
-    None
 }
 
 // ---------------------------------------------------------------------------
@@ -400,28 +441,27 @@ fn extract_table_fields(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    let mut field_idx: usize = 0;
     let mut cursor = table_node.walk();
     for field in table_node.children(&mut cursor) {
         if field.kind() != "field" {
             continue;
         }
-        // field has `name` field and `value` field
-        let name_node = match field.child_by_field_name("name") {
-            Some(n) => n,
-            None => continue,
+        let name = if let Some(n) = field.child_by_field_name("name") {
+            let t = node_text(n, src);
+            if t.is_empty() { format!("_{}", field_idx) } else { t }
+        } else {
+            format!("_{}", field_idx)
         };
-        let name = node_text(name_node, src);
-        if name.is_empty() {
-            continue;
-        }
+        field_idx += 1;
+
         let value_node = field.child_by_field_name("value");
         let kind = if value_node.map_or(false, |v| v.kind() == "function_definition") {
             SymbolKind::Method
         } else {
             SymbolKind::Field
         };
-        let _ = refs; // reserved for future call extraction from methods
-        let idx = symbols.len();
+        let _ = refs;
         symbols.push(ExtractedSymbol {
             name: name.clone(),
             qualified_name: name,
@@ -436,7 +476,6 @@ fn extract_table_fields(
             scope_path: None,
             parent_index: Some(parent_idx),
         });
-        let _ = idx;
     }
 }
 
@@ -631,4 +670,56 @@ fn node_text(node: Node, src: &[u8]) -> String {
     std::str::from_utf8(&src[node.start_byte()..node.end_byte()])
         .unwrap_or("")
         .to_string()
+}
+
+/// Emit a Field symbol for every `field` child of a table_constructor node.
+/// This is called for ALL table_constructor nodes encountered during traversal,
+/// so every `field` CST node produces a matching symbol regardless of whether
+/// the enclosing table was itself named.
+fn extract_all_fields(
+    table_node: &Node,
+    src: &[u8],
+    parent_index: Option<usize>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let parent_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
+    let mut field_idx: usize = 0;
+    let mut cursor = table_node.walk();
+    for field in table_node.children(&mut cursor) {
+        if field.kind() != "field" {
+            continue;
+        }
+        // Try named field first, then bracket field [key]=val, then positional
+        let name = if let Some(n) = field.child_by_field_name("name") {
+            let t = node_text(n, src);
+            if t.is_empty() { format!("_{}", field_idx) } else { t }
+        } else {
+            // Positional field or [key] = val — use positional index as name
+            format!("_{}", field_idx)
+        };
+        field_idx += 1;
+
+        let value_node = field.child_by_field_name("value");
+        let kind = if value_node.map_or(false, |v| v.kind() == "function_definition") {
+            SymbolKind::Method
+        } else {
+            SymbolKind::Field
+        };
+        let _ = refs;
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind,
+            visibility: Some(Visibility::Public),
+            start_line: field.start_position().row as u32,
+            end_line: field.end_position().row as u32,
+            start_col: field.start_position().column as u32,
+            end_col: field.end_position().column as u32,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: Some(parent_idx),
+        });
+    }
 }

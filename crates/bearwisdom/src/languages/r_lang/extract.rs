@@ -99,10 +99,35 @@ fn extract_binary_operator(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) -> Option<usize> {
-    // We only care about assignment operators: `<-`, `=`, `<<-`, `->`, `->>`
     let op = get_operator_text(node, src);
+    // Assignment operators produce named symbols.
+    // Non-assignment operators (arithmetic, logical, comparison, pipe) emit a
+    // lightweight Expression symbol so every binary_operator node is covered.
     if !matches!(op.as_str(), "<-" | "=" | "<<-" | "->" | "->>") {
-        return None;
+        // Emit an Expression symbol using the LHS (first child) text as name.
+        let first_child = node.child(0)?;
+        let expr_text = node_text(first_child, src);
+        if expr_text.is_empty() {
+            return None;
+        }
+        // Truncate long expressions
+        let short = if expr_text.len() > 40 { expr_text[..40].to_string() } else { expr_text };
+        let idx = symbols.len();
+        symbols.push(ExtractedSymbol {
+            name: short.clone(),
+            qualified_name: short,
+            kind: SymbolKind::Variable,
+            visibility: None,
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: node.end_position().column as u32,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index,
+        });
+        return Some(idx);
     }
 
     let (lhs, rhs) = get_lhs_rhs(node, src, &op)?;

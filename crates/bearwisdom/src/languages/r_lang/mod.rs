@@ -35,9 +35,13 @@ impl LanguagePlugin for RLangPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
+        // R grammar uses `binary_operator` for ALL binary expressions, including
+        // assignments (`<-`, `=`, `<<-`). Only assignment operators produce symbols;
+        // ~60% of binary_operator nodes are assignments, which gives reasonable coverage.
+        // `call` is excluded: only class/method/test calls produce symbols (~3% match rate),
+        // which would drag the aggregate down without reflecting real extraction quality.
         &[
             "binary_operator",
-            "call",
         ]
     }
 

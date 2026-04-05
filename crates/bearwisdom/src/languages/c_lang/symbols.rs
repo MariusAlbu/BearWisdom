@@ -119,8 +119,19 @@ pub(super) fn push_specifier(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) -> Option<usize> {
-    let name_node = node.child_by_field_name("name")?;
-    let name = node_text(name_node, src);
+    let name = if let Some(name_node) = node.child_by_field_name("name") {
+        node_text(name_node, src)
+    } else {
+        // Anonymous struct/union/enum — emit with a synthetic name so the
+        // coverage engine can match this node.
+        let kw = match kind {
+            SymbolKind::Class  => "class",
+            SymbolKind::Struct => "struct",
+            SymbolKind::Enum   => "enum",
+            _                  => "struct",
+        };
+        format!("__anon_{kw}_{}", node.start_position().row)
+    };
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
     let qualified_name = scope_tree::qualify(&name, scope);
@@ -243,7 +254,14 @@ pub(super) fn push_declaration(
             // `identifier` — plain declarations and non-struct members
             // `field_identifier` — struct/union member names in C grammar
             "identifier" | "field_identifier" => Some(node_text(child, src)),
-            "init_declarator" | "pointer_declarator" => first_type_identifier(&child, src),
+            // Declarator variants that wrap an identifier
+            "init_declarator" | "pointer_declarator" | "reference_declarator"
+            | "array_declarator" | "parenthesized_declarator"
+            | "function_declarator" | "abstract_function_declarator" => {
+                first_type_identifier(&child, src)
+            }
+            // C++17 structured bindings: `auto [a, b] = expr;`
+            "structured_binding_declarator" => first_type_identifier(&child, src),
             _ => None,
         };
         if let Some(name) = name_opt {
@@ -366,7 +384,8 @@ pub(super) fn push_template_decl<'a>(
                 emit_template_param_typerefs(&child, src, symbols.len(), refs);
             }
             "class_specifier" | "struct_specifier" | "union_specifier"
-            | "function_definition" | "alias_declaration" | "declaration" => {
+            | "function_definition" | "alias_declaration" | "declaration"
+            | "concept_definition" => {
                 inner = Some(child);
             }
             _ => {}
@@ -392,10 +411,61 @@ pub(super) fn push_template_decl<'a>(
         "function_definition" => {
             push_function_def(&inner_node, src, scope_tree, language, symbols, parent_index)
         }
+        "concept_definition" => {
+            push_concept_def(&inner_node, src, scope_tree, symbols, parent_index)
+        }
         _ => None,
     };
 
     (idx, Some(inner_node))
+}
+
+// ---------------------------------------------------------------------------
+// concept_definition — C++20 `template<typename T> concept Foo = expr;`
+// ---------------------------------------------------------------------------
+
+pub(super) fn push_concept_def(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    // concept_definition: `concept` `identifier` `=` expression
+    let name_node = if let Some(n) = node.child_by_field_name("name") {
+        n
+    } else {
+        let mut cursor = node.walk();
+        let found = node.children(&mut cursor).find(|c| c.kind() == "identifier");
+        found?
+    };
+
+    let name = node_text(name_node, src);
+    if name.is_empty() {
+        return None;
+    }
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias, // concepts are type-constraint aliases
+        visibility: None,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("concept {name}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+
+    Some(idx)
 }
 
 fn emit_template_param_typerefs(
@@ -437,9 +507,14 @@ pub(super) fn push_alias_decl(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    // Structure: `using` `type_identifier` `=` `type_descriptor` `;`
+    // Structure: `using` <name> `=` `type_descriptor` `;`
+    // The name can be: type_identifier, template_type (e.g. `using Foo<T> = Bar`)
+    // or qualified_identifier. Skip non-identifier second children.
     let name_node = match node.child(1) {
-        Some(n) if n.kind() == "type_identifier" => n,
+        Some(n) if matches!(
+            n.kind(),
+            "type_identifier" | "identifier" | "template_type" | "qualified_identifier"
+        ) => n,
         _ => return,
     };
     let name = node_text(name_node, src);

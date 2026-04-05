@@ -1,8 +1,7 @@
 //! SCSS language plugin.
 //!
-//! Uses the CSS tree-sitter grammar, which parses the SCSS superset well enough
-//! for structural extraction. Dedicated SCSS grammar (tree-sitter-scss) is not
-//! in the workspace; the CSS grammar handles the core constructs.
+//! Uses the dedicated SCSS tree-sitter grammar (tree-sitter-scss-local),
+//! compiled from MSVC-compatible pre-expanded C source.
 
 pub mod extract;
 
@@ -30,8 +29,7 @@ impl LanguagePlugin for ScssPlugin {
     }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
-        // CSS grammar parses SCSS syntax for the constructs we care about.
-        Some(tree_sitter_css::LANGUAGE.into())
+        Some(tree_sitter_scss_local::LANGUAGE.into())
     }
 
     fn scope_kinds(&self) -> &[ScopeKind] {
@@ -46,9 +44,8 @@ impl LanguagePlugin for ScssPlugin {
         &[
             "mixin_statement",
             "function_statement",
-            "rule_set",
             "keyframes_statement",
-            "placeholder",
+            "rule_set",
         ]
     }
 
@@ -56,9 +53,8 @@ impl LanguagePlugin for ScssPlugin {
         &[
             "include_statement",
             "extend_statement",
-            "use_statement",
-            "forward_statement",
             "import_statement",
+            "forward_statement",
             "call_expression",
         ]
     }

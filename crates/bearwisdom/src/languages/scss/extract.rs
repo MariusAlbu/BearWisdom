@@ -1,35 +1,30 @@
 // =============================================================================
 // languages/scss/extract.rs  —  SCSS / Sass extractor
 //
-// What we extract
-// ---------------
+// Grammar: tree-sitter-scss-local (dedicated SCSS grammar, MSVC-compatible
+//   via pre-expanded parser_expanded.c). The SCSS grammar has proper nodes
+//   for every SCSS construct; no CSS grammar fallback needed.
+//
 // SYMBOLS:
-//   Function  — @mixin definitions, @function definitions, @keyframes
-//   Variable  — $variable declarations at stylesheet scope
-//   Class     — .class selectors in rule_set, %placeholder selectors
+//   Function  — mixin_statement, function_statement, keyframes_statement
+//   Class     — rule_set (selectors)
+//   Variable  — declaration with $variable LHS
 //
 // REFERENCES:
-//   Calls     — @include mixin-name, SCSS function call_expression
-//   Inherits  — @extend .selector / @extend %placeholder
-//   Imports   — @import, @use, @forward
-//
-// Grammar: tree-sitter-css 0.25 (handles SCSS subset).
-// Node kinds used: stylesheet, rule_set, mixin_statement, function_statement,
-//   keyframes_statement, include_statement, extend_statement,
-//   import_statement, use_statement, forward_statement,
-//   class_selector, id_selector, placeholder, declaration, variable_name,
-//   call_expression, identifier, keyframes_name.
+//   Calls     — include_statement, call_expression
+//   Inherits  — extend_statement
+//   Imports   — import_statement, forward_statement
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str, _file_path: &str) -> super::ExtractionResult {
-    let language: tree_sitter::Language = tree_sitter_css::LANGUAGE.into();
+    let language: tree_sitter::Language = tree_sitter_scss_local::LANGUAGE.into();
     let mut parser = Parser::new();
     parser
         .set_language(&language)
-        .expect("Failed to load CSS/SCSS grammar");
+        .expect("Failed to load SCSS grammar");
 
     let tree = match parser.parse(source, None) {
         Some(t) => t,
@@ -40,344 +35,184 @@ pub fn extract(source: &str, _file_path: &str) -> super::ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    // Walk top-level stylesheet children.
     let root = tree.root_node();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        visit_top_level(&child, source, &mut symbols, &mut refs);
-    }
+    visit_node(&root, source, &mut symbols, &mut refs, None);
 
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
 
 // ---------------------------------------------------------------------------
-// Top-level traversal
+// Tree walker — dispatches on SCSS grammar node kinds
 // ---------------------------------------------------------------------------
 
-fn visit_top_level(
+fn visit_node(
     node: &Node,
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
+    parent_idx: Option<usize>,
 ) {
     match node.kind() {
-        "mixin_statement" => extract_mixin(node, src, symbols, refs),
-        "function_statement" => extract_function_def(node, src, symbols, refs),
-        "keyframes_statement" => extract_keyframes(node, src, symbols),
-        "rule_set" => extract_rule_set(node, src, symbols, refs),
+        "mixin_statement" => {
+            handle_mixin(node, src, symbols, refs);
+        }
+        "function_statement" => {
+            handle_function(node, src, symbols, refs);
+        }
         "include_statement" => {
-            // Top-level @include — attach to a sentinel index 0 (file scope)
-            extract_include(node, src, 0, refs);
+            let sym_idx = symbols.len();
+            handle_include(node, src, refs, symbols, sym_idx);
         }
         "extend_statement" => {
-            extract_extend(node, src, 0, refs);
+            handle_extend(node, src, refs, symbols.len());
         }
-        "import_statement" | "use_statement" | "forward_statement" => {
-            extract_import(node, src, 0, refs);
+        "import_statement" => {
+            let sym_idx = symbols.len();
+            handle_import(node, src, refs, symbols, sym_idx);
+        }
+        "forward_statement" => {
+            let sym_idx = symbols.len();
+            handle_forward(node, src, refs, symbols, sym_idx);
+        }
+        "keyframes_statement" => {
+            handle_keyframes(node, src, symbols, refs);
+        }
+        "rule_set" => {
+            handle_rule_set(node, src, symbols, refs, parent_idx);
         }
         "declaration" => {
-            // Could be a top-level $variable declaration
-            extract_variable_decl(node, src, symbols, None);
+            handle_declaration(node, src, symbols, refs, parent_idx);
+        }
+        "call_expression" => {
+            handle_call_expr(node, src, refs, symbols.len());
         }
         _ => {
-            // Recurse into unknown wrappers (e.g. at_rule, media, supports)
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
-                visit_top_level(&child, src, symbols, refs);
-            }
+            // Recurse into all other nodes (stylesheet, block, media_statement, etc.)
+            visit_children(node, src, symbols, refs, parent_idx);
+        }
+    }
+}
+
+fn visit_children(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_idx: Option<usize>,
+) {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            visit_node(&child, src, symbols, refs, parent_idx);
         }
     }
 }
 
 // ---------------------------------------------------------------------------
-// @mixin
+// @mixin name { ... }  =>  Function symbol + recurse body
 // ---------------------------------------------------------------------------
 
-fn extract_mixin(
+fn handle_mixin(
     node: &Node,
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    let name = match node.child_by_field_name("name") {
-        Some(n) => node_text(n, src),
-        None => return,
-    };
-
-    let params = build_params_signature(node, src);
-    let signature = format!("@mixin {name}{params}");
-
-    let idx = symbols.len();
-    symbols.push(ExtractedSymbol {
-        name: name.clone(),
-        qualified_name: name,
-        kind: SymbolKind::Function,
-        visibility: Some(Visibility::Public),
-        start_line: node.start_position().row as u32,
-        end_line: node.end_position().row as u32,
-        start_col: node.start_position().column as u32,
-        end_col: node.end_position().column as u32,
-        signature: Some(signature),
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-    });
-
-    // Extract refs inside mixin body
-    extract_body_refs(node, src, idx, refs);
-}
-
-// ---------------------------------------------------------------------------
-// @function
-// ---------------------------------------------------------------------------
-
-fn extract_function_def(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    let name = match node.child_by_field_name("name") {
-        Some(n) => node_text(n, src),
-        None => return,
-    };
-
-    let params = build_params_signature(node, src);
-    let signature = format!("@function {name}{params}");
-
-    let idx = symbols.len();
-    symbols.push(ExtractedSymbol {
-        name: name.clone(),
-        qualified_name: name,
-        kind: SymbolKind::Function,
-        visibility: Some(Visibility::Public),
-        start_line: node.start_position().row as u32,
-        end_line: node.end_position().row as u32,
-        start_col: node.start_position().column as u32,
-        end_col: node.end_position().column as u32,
-        signature: Some(signature),
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-    });
-
-    extract_body_refs(node, src, idx, refs);
-}
-
-// ---------------------------------------------------------------------------
-// @keyframes
-// ---------------------------------------------------------------------------
-
-fn extract_keyframes(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
-    // keyframes_statement has a keyframes_name field or identifier child
     let name = node
-        .child_by_field_name("keyframes_name")
+        .child_by_field_name("name")
         .map(|n| node_text(n, src))
-        .or_else(|| find_child_text_of_kinds(node, src, &["identifier", "value"]))
         .unwrap_or_default();
-
     if name.is_empty() {
         return;
     }
 
-    symbols.push(ExtractedSymbol {
-        name: name.clone(),
-        qualified_name: name.clone(),
-        kind: SymbolKind::Function,
-        visibility: Some(Visibility::Public),
-        start_line: node.start_position().row as u32,
-        end_line: node.end_position().row as u32,
-        start_col: node.start_position().column as u32,
-        end_col: node.end_position().column as u32,
-        signature: Some(format!("@keyframes {name}")),
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-    });
+    let idx = symbols.len();
+    symbols.push(make_sym(
+        name.clone(),
+        SymbolKind::Function,
+        node,
+        None,
+        Some(format!("@mixin {name}")),
+    ));
+
+    // Recurse into all children (parameters with defaults, block body)
+    visit_children(node, src, symbols, refs, Some(idx));
 }
 
 // ---------------------------------------------------------------------------
-// rule_set (class selectors, id selectors, placeholder selectors)
+// @function name($args) { ... }  =>  Function symbol + recurse body
 // ---------------------------------------------------------------------------
 
-fn extract_rule_set(
+fn handle_function(
     node: &Node,
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // Walk the selectors block to find class_selector, id_selector, placeholder
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "selectors" | "selector_list" => {
-                extract_selectors(&child, src, symbols);
-            }
-            "class_selector" => {
-                push_selector_symbol(&child, src, symbols, SymbolKind::Class, ".");
-            }
-            "id_selector" => {
-                push_selector_symbol(&child, src, symbols, SymbolKind::Variable, "#");
-            }
-            "placeholder" => {
-                push_selector_symbol(&child, src, symbols, SymbolKind::Class, "%");
-            }
-            "block" => {
-                // Extract includes/extends inside the rule block
-                let block_idx = symbols.len().saturating_sub(1);
-                extract_body_refs(&child, src, block_idx, refs);
-            }
-            _ => {}
-        }
-    }
-}
-
-fn extract_selectors(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "class_selector" => push_selector_symbol(&child, src, symbols, SymbolKind::Class, "."),
-            "id_selector" => push_selector_symbol(&child, src, symbols, SymbolKind::Variable, "#"),
-            "placeholder" => push_selector_symbol(&child, src, symbols, SymbolKind::Class, "%"),
-            _ => {}
-        }
-    }
-}
-
-fn push_selector_symbol(
-    node: &Node,
-    src: &str,
-    symbols: &mut Vec<ExtractedSymbol>,
-    kind: SymbolKind,
-    prefix: &str,
-) {
-    // class_selector has a class_name field; id_selector has id_name; placeholder has name
     let name = node
         .child_by_field_name("name")
-        .or_else(|| node.child_by_field_name("class_name"))
-        .or_else(|| node.child_by_field_name("id_name"))
         .map(|n| node_text(n, src))
-        .or_else(|| {
-            // Fallback: second child (after `.` or `#`) is the name token
-            node.child(1).map(|n| node_text(n, src))
-        })
         .unwrap_or_default();
-
-    if name.is_empty() || name == prefix {
+    if name.is_empty() {
         return;
     }
 
-    let display_name = format!("{prefix}{name}");
-    symbols.push(ExtractedSymbol {
-        name: name.clone(),
-        qualified_name: name,
-        kind,
-        visibility: Some(Visibility::Public),
-        start_line: node.start_position().row as u32,
-        end_line: node.end_position().row as u32,
-        start_col: node.start_position().column as u32,
-        end_col: node.end_position().column as u32,
-        signature: Some(display_name),
-        doc_comment: None,
-        scope_path: None,
-        parent_index: None,
-    });
+    let idx = symbols.len();
+    symbols.push(make_sym(
+        name.clone(),
+        SymbolKind::Function,
+        node,
+        None,
+        Some(format!("@function {name}")),
+    ));
+
+    // Recurse into all children (parameters with defaults, block body)
+    visit_children(node, src, symbols, refs, Some(idx));
 }
 
 // ---------------------------------------------------------------------------
-// $variable declaration (top-level)
+// @include mixin-name(args)  =>  Calls ref
 // ---------------------------------------------------------------------------
 
-fn extract_variable_decl(
+fn handle_include(
     node: &Node,
     src: &str,
+    refs: &mut Vec<ExtractedRef>,
     symbols: &mut Vec<ExtractedSymbol>,
-    parent_index: Option<usize>,
+    source_symbol_index: usize,
 ) {
-    // In the CSS grammar a top-level SCSS variable looks like:
-    //   declaration → variable_name: <value>
-    // variable_name child starts with `$`
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "variable_name" {
-            let raw = node_text(child, src);
-            let name = raw.trim_start_matches('$').to_string();
-            if name.is_empty() {
-                continue;
-            }
-            let first_line = node_text(*node, src)
-                .lines()
-                .next()
-                .unwrap_or("")
-                .trim()
-                .to_string();
-            symbols.push(ExtractedSymbol {
-                name: name.clone(),
-                qualified_name: name,
-                kind: SymbolKind::Variable,
-                visibility: Some(Visibility::Public),
-                start_line: node.start_position().row as u32,
-                end_line: node.end_position().row as u32,
-                start_col: node.start_position().column as u32,
-                end_col: node.end_position().column as u32,
-                signature: Some(first_line),
-                doc_comment: None,
-                scope_path: None,
-                parent_index,
-            });
-        }
+    let target = find_first_identifier(node, src);
+    if !target.is_empty() {
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target,
+            kind: EdgeKind::Calls,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
     }
+    // Recurse into arguments to find nested call_expressions
+    visit_children(node, src, symbols, refs, Some(source_symbol_index));
 }
 
 // ---------------------------------------------------------------------------
-// Body reference extraction (@include, @extend, imports, function calls)
+// @extend .selector / %placeholder  =>  Inherits ref
 // ---------------------------------------------------------------------------
 
-fn extract_body_refs(
+fn handle_extend(
     node: &Node,
     src: &str,
-    source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
-) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "include_statement" => extract_include(&child, src, source_symbol_index, refs),
-            "extend_statement" => extract_extend(&child, src, source_symbol_index, refs),
-            "import_statement" | "use_statement" | "forward_statement" => {
-                extract_import(&child, src, source_symbol_index, refs);
-            }
-            "call_expression" => extract_call_expr(&child, src, source_symbol_index, refs),
-            _ => extract_body_refs(&child, src, source_symbol_index, refs),
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
-// @include
-// ---------------------------------------------------------------------------
-
-fn extract_include(
-    node: &Node,
-    src: &str,
     source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
 ) {
-    // include_statement: @include <identifier> [(<args>)]
-    let target = node
-        .child_by_field_name("name")
-        .map(|n| node_text(n, src))
-        .or_else(|| find_child_text_of_kinds(node, src, &["identifier", "function_name"]))
-        .unwrap_or_default();
-
+    let target = find_selector_target(node, src);
     if target.is_empty() {
         return;
     }
-
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name: target,
-        kind: EdgeKind::Calls,
+        kind: EdgeKind::Inherits,
         line: node.start_position().row as u32,
         module: None,
         chain: None,
@@ -385,117 +220,217 @@ fn extract_include(
 }
 
 // ---------------------------------------------------------------------------
-// @extend
+// @import 'path'  =>  Imports ref
 // ---------------------------------------------------------------------------
 
-fn extract_extend(
+fn handle_import(
     node: &Node,
     src: &str,
+    refs: &mut Vec<ExtractedRef>,
+    symbols: &mut Vec<ExtractedSymbol>,
     source_symbol_index: usize,
+) {
+    let module = find_string_value(node, src);
+    if !module.is_empty() {
+        let target = path_to_target(&module);
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target,
+            kind: EdgeKind::Imports,
+            line: node.start_position().row as u32,
+            module: Some(module),
+            chain: None,
+        });
+    }
+    visit_children(node, src, symbols, refs, Some(source_symbol_index));
+}
+
+// ---------------------------------------------------------------------------
+// @forward 'path'  =>  Imports ref
+// ---------------------------------------------------------------------------
+
+fn handle_forward(
+    node: &Node,
+    src: &str,
+    refs: &mut Vec<ExtractedRef>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    source_symbol_index: usize,
+) {
+    let module = find_string_value(node, src);
+    if !module.is_empty() {
+        let target = path_to_target(&module);
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target,
+            kind: EdgeKind::Imports,
+            line: node.start_position().row as u32,
+            module: Some(module),
+            chain: None,
+        });
+    }
+    visit_children(node, src, symbols, refs, Some(source_symbol_index));
+}
+
+// ---------------------------------------------------------------------------
+// @keyframes name { ... }  =>  Function symbol
+// ---------------------------------------------------------------------------
+
+fn handle_keyframes(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // extend_statement: @extend .class / @extend %placeholder
-    // The target class/placeholder is a child node
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "class_selector" | "placeholder" => {
-                let target = child
-                    .child_by_field_name("name")
-                    .or_else(|| child.child_by_field_name("class_name"))
-                    .map(|n| node_text(n, src))
-                    .or_else(|| child.child(1).map(|n| node_text(n, src)))
-                    .unwrap_or_default();
+    let name = find_child_of_kind(node, "keyframes_name")
+        .map(|n| node_text(n, src))
+        .or_else(|| find_child_of_kind(node, "identifier").map(|n| node_text(n, src)))
+        .unwrap_or_default();
 
-                if !target.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index,
-                        target_name: target,
-                        kind: EdgeKind::Inherits,
-                        line: node.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                    });
+    let idx = symbols.len();
+    if !name.is_empty() {
+        symbols.push(make_sym(
+            name.clone(),
+            SymbolKind::Function,
+            node,
+            None,
+            Some(format!("@keyframes {name}")),
+        ));
+    }
+
+    // Recurse into keyframe_block_list for any nested call_expressions
+    visit_children(node, src, symbols, refs, Some(idx));
+}
+
+// ---------------------------------------------------------------------------
+// rule_set { selectors { block } }  =>  Class symbol per rule set
+// ---------------------------------------------------------------------------
+
+fn handle_rule_set(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_idx: Option<usize>,
+) {
+    let name = find_child_of_kind(node, "selectors")
+        .and_then(|sel| extract_first_selector_name(&sel, src))
+        .or_else(|| {
+            let row = node.start_position().row;
+            src.lines().nth(row).and_then(|line| {
+                let trimmed = line.trim();
+                let name = trimmed
+                    .split(|c: char| c == '{' || c == ',' || c == ' ')
+                    .next()
+                    .unwrap_or("")
+                    .trim_start_matches('.')
+                    .trim_start_matches('#')
+                    .trim_start_matches('%')
+                    .trim_start_matches('&');
+                if name.is_empty() {
+                    None
+                } else {
+                    Some(name.to_string())
                 }
+            })
+        });
+
+    let idx = symbols.len();
+    if let Some(name) = name {
+        let clean = name
+            .trim_start_matches('.')
+            .trim_start_matches('#')
+            .trim_start_matches('%')
+            .trim_start_matches('&')
+            .to_string();
+        let display = if clean.is_empty() { name } else { clean };
+        symbols.push(make_sym(display, SymbolKind::Class, node, parent_idx, None));
+    } else {
+        visit_children(node, src, symbols, refs, parent_idx);
+        return;
+    }
+
+    // Recurse into all children (selectors may contain pseudo-class call_expressions,
+    // block contains nested rules and declarations)
+    visit_children(node, src, symbols, refs, Some(idx));
+}
+
+// ---------------------------------------------------------------------------
+// declaration: $variable: value  =>  Variable symbol
+// ---------------------------------------------------------------------------
+
+fn handle_declaration(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_idx: Option<usize>,
+) {
+    // First child of declaration is the property_name (or variable).
+    // If it starts with $ it's an SCSS variable declaration.
+    if let Some(prop) = node.child(0) {
+        let raw = node_text(prop, src);
+        if raw.starts_with('$') {
+            let name = raw.trim_start_matches('$').to_string();
+            if !name.is_empty() {
+                let first_line = src
+                    .lines()
+                    .nth(node.start_position().row)
+                    .unwrap_or("")
+                    .trim()
+                    .to_string();
+                symbols.push(make_sym(
+                    name,
+                    SymbolKind::Variable,
+                    node,
+                    parent_idx,
+                    Some(first_line),
+                ));
             }
-            _ => {}
+            // Still recurse to find call_expressions in the value
         }
     }
+    // Recurse into all children to find nested call_expressions and refs
+    visit_children(node, src, symbols, refs, parent_idx);
 }
 
 // ---------------------------------------------------------------------------
-// @import / @use / @forward
+// call_expression  =>  Calls ref
 // ---------------------------------------------------------------------------
 
-fn extract_import(
+fn handle_call_expr(
     node: &Node,
     src: &str,
-    source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
-) {
-    // All three forms have a string_value child with the module path.
-    let module = find_child_text_of_kinds(node, src, &["string_value", "string"])
-        .map(|s| s.trim_matches('"').trim_matches('\'').to_string())
-        .unwrap_or_default();
-
-    if module.is_empty() {
-        return;
-    }
-
-    // Derive a short target name (last path segment, no extension)
-    let target = module
-        .rsplit('/')
-        .next()
-        .unwrap_or(&module)
-        .trim_start_matches('_')
-        .trim_end_matches(".scss")
-        .trim_end_matches(".sass")
-        .trim_end_matches(".css")
-        .to_string();
-
-    refs.push(ExtractedRef {
-        source_symbol_index,
-        target_name: target,
-        kind: EdgeKind::Imports,
-        line: node.start_position().row as u32,
-        module: Some(module),
-        chain: None,
-    });
-}
-
-// ---------------------------------------------------------------------------
-// SCSS function call_expression
-// ---------------------------------------------------------------------------
-
-fn extract_call_expr(
-    node: &Node,
-    src: &str,
     source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
 ) {
-    let func_name = node
-        .child_by_field_name("function_name")
-        .or_else(|| node.child_by_field_name("name"))
-        .or_else(|| node.child(0))
+    // Extract the function name from the call_expression node.
+    // The function_name child is a leaf with the function identifier text.
+    let func_name = find_child_of_kind(node, "function_name")
         .map(|n| node_text(n, src))
-        .unwrap_or_default();
+        .or_else(|| node.child(0).map(|n| {
+            let t = node_text(n, src);
+            // Extract identifier from interpolation or other non-leaf
+            t.trim_matches('#').trim_matches('{').trim_matches('}').to_string()
+        }))
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "<call>".to_string());
 
-    if func_name.is_empty() {
-        return;
-    }
-
-    // Strip namespace prefix (e.g. "math.ceil" → "ceil")
     let target = func_name
         .rsplit('.')
         .next()
         .unwrap_or(&func_name)
+        .trim()
         .to_string();
 
-    // Skip CSS built-ins that aren't user-defined SCSS functions
-    if is_css_builtin(&target) {
-        return;
-    }
+    let target = if target.is_empty() {
+        "<call>".to_string()
+    } else {
+        target
+    };
 
+    // Emit Calls refs for all call expressions including CSS builtins.
+    // The graph engine resolves which targets are user-defined; builtins
+    // will simply have no matching symbol and be treated as external calls.
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name: target,
@@ -510,43 +445,150 @@ fn extract_call_expr(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn build_params_signature(node: &Node, src: &str) -> String {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "parameters" {
-            return format!("({})", node_text(child, src).trim_matches(|c| c == '(' || c == ')'));
-        }
+fn make_sym(
+    name: String,
+    kind: SymbolKind,
+    node: &Node,
+    parent_index: Option<usize>,
+    signature: Option<String>,
+) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name,
+        kind,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature,
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
     }
-    String::from("()")
-}
-
-fn find_child_text_of_kinds(node: &Node, src: &str, kinds: &[&str]) -> Option<String> {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if kinds.contains(&child.kind()) {
-            return Some(node_text(child, src));
-        }
-    }
-    None
 }
 
 fn node_text(node: Node, src: &str) -> String {
     src[node.start_byte()..node.end_byte()].to_string()
 }
 
-/// CSS/SCSS built-in functions — skip as calls targets (not user-defined).
-fn is_css_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "rgb" | "rgba" | "hsl" | "hsla" | "linear-gradient" | "radial-gradient"
-            | "url" | "var" | "calc" | "env" | "min" | "max" | "clamp"
-            | "translate" | "translateX" | "translateY" | "translateZ"
-            | "scale" | "scaleX" | "scaleY" | "rotate" | "skew"
-            | "blur" | "brightness" | "contrast" | "drop-shadow"
-            | "grayscale" | "hue-rotate" | "invert" | "opacity" | "saturate"
-            | "sepia" | "perspective" | "matrix" | "matrix3d"
-            | "format" | "local" | "attr" | "counter" | "counters"
-            | "cubic-bezier" | "steps" | "rect" | "polygon"
-            | "circle" | "ellipse" | "inset" | "path"
-    )
+fn find_child_of_kind<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            if child.kind() == kind {
+                return Some(child);
+            }
+        }
+    }
+    None
 }
+
+fn find_first_identifier(node: &Node, src: &str) -> String {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            if child.kind() == "identifier" {
+                return node_text(child, src);
+            }
+        }
+    }
+    String::new()
+}
+
+fn find_selector_target(node: &Node, src: &str) -> String {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            match child.kind() {
+                "class_selector" => {
+                    if let Some(cn) = child
+                        .child_by_field_name("class_name")
+                        .or_else(|| child.child(1))
+                    {
+                        return node_text(cn, src);
+                    }
+                }
+                "placeholder" => {
+                    if let Some(cn) = child.child(1) {
+                        return node_text(cn, src);
+                    }
+                }
+                "identifier" => {
+                    return node_text(child, src);
+                }
+                _ => {}
+            }
+        }
+    }
+    String::new()
+}
+
+fn find_string_value(node: &Node, src: &str) -> String {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            if child.kind() == "string_value" {
+                let raw = node_text(child, src);
+                return raw.trim_matches('"').trim_matches('\'').to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+fn path_to_target(module: &str) -> String {
+    module
+        .rsplit('/')
+        .next()
+        .unwrap_or(module)
+        .trim_start_matches('_')
+        .trim_end_matches(".scss")
+        .trim_end_matches(".sass")
+        .trim_end_matches(".css")
+        .to_string()
+}
+
+fn extract_first_selector_name(node: &Node, src: &str) -> Option<String> {
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            match child.kind() {
+                "class_selector" => {
+                    let name = child
+                        .child_by_field_name("class_name")
+                        .or_else(|| child.child(1))
+                        .map(|n| node_text(n, src))?;
+                    if !name.is_empty() {
+                        return Some(format!(".{name}"));
+                    }
+                }
+                "id_selector" => {
+                    let name = child
+                        .child_by_field_name("id_name")
+                        .or_else(|| child.child(1))
+                        .map(|n| node_text(n, src))?;
+                    if !name.is_empty() {
+                        return Some(format!("#{name}"));
+                    }
+                }
+                "placeholder" => {
+                    let name = child.child(1).map(|n| node_text(n, src))?;
+                    if !name.is_empty() {
+                        return Some(format!("%{name}"));
+                    }
+                }
+                "tag_name" | "nesting_selector" | "universal_selector" => {
+                    let t = node_text(child, src);
+                    if !t.is_empty() {
+                        return Some(t);
+                    }
+                }
+                "pseudo_class_selector" | "pseudo_element_selector" => {
+                    let t = node_text(child, src);
+                    if !t.is_empty() && !t.contains('{') {
+                        return Some(t);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
+}
+

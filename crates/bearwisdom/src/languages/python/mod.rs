@@ -49,7 +49,9 @@ impl LanguagePlugin for PythonPlugin {
         &[
             "class_definition",
             "function_definition",
-            "decorated_definition",
+            // `decorated_definition` wraps class_definition/function_definition;
+            // those inner node kinds already cover decorated defs when the
+            // start_line is not patched to the decorator line.
             "assignment",
             "type_alias_statement",
         ]

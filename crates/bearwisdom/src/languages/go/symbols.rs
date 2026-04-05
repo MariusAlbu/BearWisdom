@@ -1388,3 +1388,47 @@ pub(super) fn extract_go_typed_params_as_symbols(
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Inline struct field extraction
+// ---------------------------------------------------------------------------
+
+/// Walk an arbitrary expression subtree looking for anonymous `struct_type`
+/// nodes and extract their fields.  This covers patterns like:
+///
+///   `data := struct{ Name string }{...}`
+///   `rows := []struct{ URL string; Status int }{{...}, {...}}`
+///
+/// We stop descending into `function_literal` / `func_literal` nodes so we
+/// don't accidentally steal fields from closures declared inside the RHS.
+pub(super) fn extract_inline_struct_fields(
+    node: &Node,
+    source: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    match node.kind() {
+        "struct_type" => {
+            extract_struct_fields(node, source, symbols, refs, parent_index, qualified_prefix);
+        }
+        // Don't descend into closures — they are separate symbols.
+        "function_literal" | "func_literal" => {}
+        _ => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.is_named() {
+                    extract_inline_struct_fields(
+                        &child,
+                        source,
+                        symbols,
+                        refs,
+                        parent_index,
+                        qualified_prefix,
+                    );
+                }
+            }
+        }
+    }
+}

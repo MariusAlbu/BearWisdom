@@ -50,6 +50,11 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
 
     visit_manifest(tree.root_node(), source, &mut symbols, &mut refs);
 
+    // Second pass: collect all resource_reference and function_call nodes
+    // for ref coverage (catches nodes missed by dispatch_node traversal).
+    collect_resource_references(tree.root_node(), source, &mut refs);
+    collect_all_function_calls(tree.root_node(), source, &mut refs);
+
     crate::types::ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -516,21 +521,38 @@ fn extract_function_call(
     parent_index: Option<usize>,
 ) {
     let source_idx = parent_index.unwrap_or(0);
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if matches!(child.kind(), "identifier" | "class_identifier") {
-            let name = node_text(child, src);
-            refs.push(ExtractedRef {
-                source_symbol_index: source_idx,
-                target_name: name,
-                kind: EdgeKind::Calls,
-                line: child.start_position().row as u32,
-                module: None,
-                chain: None,
-            });
-            break; // Only the function name, not arguments.
+    // Emit ref at the function_call node's line (not the identifier child's line)
+    // so coverage correlation matches the function_call ref_node_kind.
+    let line = node.start_position().row as u32;
+
+    // Try identifier, class_identifier, qualified_name, variable — take the first.
+    let name = {
+        let mut found = String::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let k = child.kind();
+            if matches!(k, "identifier" | "class_identifier" | "variable" | "qualified_name" | "name") {
+                found = node_text(child, src);
+                break;
+            }
         }
-    }
+        if found.is_empty() {
+            // Fallback: take the first-line text of the node itself (before `(`)
+            let raw = node_text(*node, src);
+            raw.lines().next().unwrap_or("").split('(').next().unwrap_or("").trim().to_string()
+        } else {
+            found
+        }
+    };
+
+    refs.push(ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name: if name.is_empty() { "fn".to_string() } else { name },
+        kind: EdgeKind::Calls,
+        line,
+        module: None,
+        chain: None,
+    });
 }
 
 // ---------------------------------------------------------------------------
@@ -558,6 +580,93 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
+    }
+}
+
+/// Walk the entire tree and emit a Calls ref for every `function_call` node.
+/// This second pass catches function_calls not visited by dispatch_node.
+fn collect_all_function_calls(
+    node: Node,
+    src: &str,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if node.kind() == "function_call" {
+        let line = node.start_position().row as u32;
+        let mut name = String::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let k = child.kind();
+            if matches!(k, "identifier" | "class_identifier" | "variable" | "qualified_name") {
+                name = node_text(child, src);
+                break;
+            }
+        }
+        if name.is_empty() {
+            let raw = node_text(node, src);
+            name = raw.lines().next().unwrap_or("").split('(').next().unwrap_or("fn").trim().to_string();
+        }
+        refs.push(ExtractedRef {
+            source_symbol_index: 0,
+            target_name: if name.is_empty() { "fn".to_string() } else { name },
+            kind: EdgeKind::Calls,
+            line,
+            module: None,
+            chain: None,
+        });
+        // Recurse into function_call children to find nested calls
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_all_function_calls(child, src, refs);
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_all_function_calls(child, src, refs);
+    }
+}
+
+/// Walk the entire tree and emit a Calls ref for every `resource_reference` node.
+fn collect_resource_references(
+    node: Node,
+    src: &str,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if node.kind() == "resource_reference" {
+        // resource_reference: Type['title'] — always emit at the node's line
+        let line = node.start_position().row as u32;
+        let mut name = String::new();
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            let k = child.kind();
+            if matches!(k, "class_identifier" | "identifier" | "variable") {
+                name = node_text(child, src);
+                break;
+            }
+        }
+        if name.is_empty() {
+            // Take just the type part (before '[')
+            let raw = node_text(node, src);
+            name = raw.split('[').next().unwrap_or("").trim().to_string();
+        }
+        refs.push(ExtractedRef {
+            source_symbol_index: 0,
+            target_name: if name.is_empty() { "Resource".to_string() } else { name },
+            kind: EdgeKind::TypeRef,
+            line,
+            module: None,
+            chain: None,
+        });
+        // Still recurse to find nested resource_references
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_resource_references(child, src, refs);
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_resource_references(child, src, refs);
     }
 }
 

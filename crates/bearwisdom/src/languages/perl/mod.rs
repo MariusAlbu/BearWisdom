@@ -41,11 +41,15 @@ impl LanguagePlugin for PerlPlugin {
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
-        // Line-based scanner — no tree-sitter node kinds
-        &[]
+        // Line-based scanner (no tree-sitter grammar).
+        // These are logical kinds used for display; CST correlation is not possible.
+        &["subroutine_declaration", "package_statement"]
     }
 
-    fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn ref_node_kinds(&self) -> &[&str] {
+        // use Module::Name → Imports; function calls → Calls
+        &["use_statement", "function_call"]
+    }
 
     fn builtin_type_names(&self) -> &[&str] { &[] }
 }

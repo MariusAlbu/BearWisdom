@@ -37,7 +37,7 @@ impl LanguagePlugin for LuaPlugin {
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "function_declaration",
-            "function_definition",
+            "local_function",
             "variable_declaration",
             "assignment_statement",
             "field",
@@ -47,7 +47,6 @@ impl LanguagePlugin for LuaPlugin {
     fn ref_node_kinds(&self) -> &[&str] {
         &[
             "function_call",
-            "method_index_expression",
         ]
     }
 

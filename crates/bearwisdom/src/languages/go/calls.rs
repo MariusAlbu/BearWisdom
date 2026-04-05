@@ -50,7 +50,15 @@ fn extract_body_with_symbols_inner(
                     qualified_prefix,
                     enclosing_idx,
                 );
-                // Don't recurse further — extract_short_var_decl handles its RHS.
+                // Extract fields from any anonymous struct types on the RHS.
+                extract_inline_struct_fields_from_rhs(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    Some(enclosing_idx),
+                    qualified_prefix,
+                );
             }
 
             // `var x Type = val` — explicit var declaration inside a function body.
@@ -64,6 +72,15 @@ fn extract_body_with_symbols_inner(
                     qualified_prefix,
                     "var",
                     "var_spec",
+                );
+                // Extract fields from any anonymous struct types on the RHS.
+                extract_inline_struct_fields_from_rhs(
+                    &child,
+                    source,
+                    symbols,
+                    refs,
+                    Some(enclosing_idx),
+                    qualified_prefix,
                 );
                 extract_refs_from_body(&child, source, enclosing_idx, refs);
             }
@@ -1089,5 +1106,39 @@ fn emit_type_refs_from_type_node(
                 }
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Inline struct field extraction from declaration RHS
+// ---------------------------------------------------------------------------
+
+/// Walk the RHS children of a `short_var_declaration` or `var_declaration` and
+/// extract field symbols from any anonymous `struct_type` nodes found there.
+/// Skips plain `identifier` children (the LHS names).
+fn extract_inline_struct_fields_from_rhs(
+    node: &Node,
+    source: &str,
+    symbols: &mut Vec<crate::types::ExtractedSymbol>,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if !child.is_named() {
+            continue;
+        }
+        if child.kind() == "identifier" {
+            continue;
+        }
+        super::symbols::extract_inline_struct_fields(
+            &child,
+            source,
+            symbols,
+            refs,
+            parent_index,
+            qualified_prefix,
+        );
     }
 }

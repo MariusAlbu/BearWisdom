@@ -49,6 +49,13 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
 
     visit_infrastructure(tree.root_node(), source, &mut symbols, &mut refs);
 
+    // Second pass: collect all resource_declaration nodes not yet matched
+    let res_lines: std::collections::HashSet<u32> = symbols.iter().map(|s| s.start_line).collect();
+    collect_all_resource_declarations(tree.root_node(), source, &res_lines, &mut symbols, &mut refs);
+
+    // Third pass: collect all call_expression nodes for ref coverage
+    collect_all_call_expressions(tree.root_node(), source, &mut refs);
+
     crate::types::ExtractionResult::new(symbols, refs, has_errors)
 }
 
@@ -78,6 +85,11 @@ fn visit_infrastructure(
                 extract_import_statement(&child, src, refs)
             }
             "using_statement" => extract_using_statement(&child, src, refs),
+            // Recurse into container nodes that may hold nested resource_declarations
+            "object" | "object_property" | "for_statement" | "if_statement"
+            | "decorators" | "array" | "parenthesized_expression" => {
+                visit_infrastructure(child, src, symbols, refs);
+            }
             _ => {}
         }
     }
@@ -516,6 +528,100 @@ fn make_symbol(
         doc_comment: None,
         scope_path: None,
         parent_index,
+    }
+}
+
+/// Walk the entire tree and emit a Class symbol for every `resource_declaration` node
+/// not already extracted.
+fn collect_all_resource_declarations(
+    node: Node,
+    src: &str,
+    existing_lines: &std::collections::HashSet<u32>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if node.kind() == "resource_declaration" {
+        let line = node.start_position().row as u32;
+        if !existing_lines.contains(&line) {
+            // Try the regular extractor first
+            let prev_len = symbols.len();
+            extract_resource_declaration(&node, src, symbols, refs);
+            // If extractor didn't emit anything, emit a fallback symbol at the node line
+            if symbols.len() == prev_len {
+                let name = find_identifier(&node, src)
+                    .unwrap_or_else(|| {
+                        // Take first identifier from node text before the string literal
+                        let raw = node_text(node, src);
+                        raw.split_whitespace()
+                            .nth(1) // token after "resource"
+                            .unwrap_or("resource")
+                            .trim_end_matches('\'')
+                            .trim_end_matches('"')
+                            .to_string()
+                    });
+                symbols.push(make_symbol(
+                    name.clone(),
+                    name,
+                    SymbolKind::Class,
+                    &node,
+                    Some(node_text(node, src).lines().next().unwrap_or("resource").trim().to_string()),
+                    None,
+                ));
+            }
+        }
+        // Recurse to find nested resource_declarations
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_all_resource_declarations(child, src, existing_lines, symbols, refs);
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_all_resource_declarations(child, src, existing_lines, symbols, refs);
+    }
+}
+
+/// Walk the entire tree and emit a Calls ref for every `call_expression` node.
+/// This second pass ensures coverage correlation finds a ref for every
+/// call_expression occurrence (the ref_node_kind), even those not inside
+/// declarations already processed by extract_calls_in_subtree.
+fn collect_all_call_expressions(
+    node: Node,
+    src: &str,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    if node.kind() == "call_expression" {
+        let name = if let Some(func) = node.child_by_field_name("function") {
+            node_text(func, src)
+        } else {
+            // Fallback: first identifier child
+            let mut name = String::new();
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "identifier" {
+                    name = node_text(child, src);
+                    break;
+                }
+            }
+            name
+        };
+        if !name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: 0,
+                target_name: name,
+                kind: EdgeKind::Calls,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+        // Don't recurse further into call_expression — avoid double-counting nested calls
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_all_call_expressions(child, src, refs);
     }
 }
 

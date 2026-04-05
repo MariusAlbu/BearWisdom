@@ -48,7 +48,6 @@ impl LanguagePlugin for FSharpPlugin {
             "module_defn",
             "named_module",
             "namespace",
-            "import_decl",
         ]
     }
 

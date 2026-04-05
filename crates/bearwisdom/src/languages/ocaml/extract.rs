@@ -69,10 +69,25 @@ fn walk_node(
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }
         "open_module" => {
-            let sym_idx = parent_idx.unwrap_or(0);
             if let Some(mod_node) = node.child_by_field_name("module") {
                 let name = text(mod_node, src);
                 if !name.is_empty() {
+                    // Emit a symbol so coverage can match the open_module node kind.
+                    let sym_idx = symbols.len();
+                    symbols.push(ExtractedSymbol {
+                        qualified_name: name.clone(),
+                        name: name.clone(),
+                        kind: SymbolKind::Variable,
+                        visibility: Some(Visibility::Public),
+                        start_line: node.start_position().row as u32,
+                        end_line: node.end_position().row as u32,
+                        start_col: 0,
+                        end_col: 0,
+                        signature: Some(format!("open {name}")),
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index: parent_idx,
+                    });
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
                         target_name: name,

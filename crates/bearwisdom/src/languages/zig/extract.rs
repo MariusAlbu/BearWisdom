@@ -452,7 +452,7 @@ fn extract_call_identifiers(
 }
 
 fn is_ident_start(b: u8) -> bool {
-    b.is_ascii_alphabetic() || b == b'_' || b == b'@'
+    b.is_ascii_alphabetic() || b == b'_'
 }
 
 fn is_ident_char(b: u8) -> bool {

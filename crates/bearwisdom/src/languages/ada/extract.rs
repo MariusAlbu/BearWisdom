@@ -83,21 +83,39 @@ fn walk_node(
         }
         "with_clause" => {
             let sym_idx = parent_idx.unwrap_or(0);
-            // Children include `identifier` nodes for the package names
+            // Children include `identifier` (simple) and `selected_component`
+            // (dotted: Ada.Text_IO) nodes for each package name.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                if child.kind() == "identifier" {
-                    let name = text(child, src);
-                    if !name.is_empty() {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: sym_idx,
-                            target_name: name,
-                            kind: EdgeKind::Imports,
-                            line: node.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
+                match child.kind() {
+                    "identifier" => {
+                        let name = text(child, src);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: name,
+                                kind: EdgeKind::Imports,
+                                line: node.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
                     }
+                    "selected_component" => {
+                        // Use the full text (e.g. "Ada.Text_IO") as module name
+                        let name = text(child, src);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: name,
+                                kind: EdgeKind::Imports,
+                                line: node.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                        }
+                    }
+                    _ => {}
                 }
             }
         }

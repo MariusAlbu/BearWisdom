@@ -1,200 +1,457 @@
 // =============================================================================
-// languages/odin/extract.rs  —  Odin extractor (no tree-sitter grammar)
+// languages/odin/extract.rs  —  Odin extractor (tree-sitter-based)
 //
 // What we extract
 // ---------------
 // SYMBOLS:
-//   Function  — `name :: proc(...)`
-//   Struct    — `name :: struct { ... }`
-//   Enum      — `name :: enum { ... }`
-//   Struct    — `name :: union { ... }` (tagged union)
-//   Variable  — `name :: value` / `name : Type = value` (plain constants)
+//   Function   — procedure_declaration / procedure_literal
+//   Struct     — struct_declaration / union_declaration
+//   Enum       — enum_declaration
+//   Variable   — const_declaration / variable_declaration
+//   Namespace  — import_declaration (also emits Imports ref)
 //
 // REFERENCES:
-//   Imports   — `import "path"` / `import name "path"`
-//   TypeRef   — `using expr` → the type name being composed
-//
-// Odin uses `::` for constant declarations and `:=` / `: Type =` for vars.
-// All top-level declarations begin at column 0 (no indentation requirement,
-// but that's the overwhelmingly common style in Odin packages).
+//   Imports    — import_declaration
+//   Calls      — call_expression inside procedure bodies
+//   TypeRef    — using_statement
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
+    let mut parser = Parser::new();
+    if parser.set_language(&tree_sitter_odin::LANGUAGE.into()).is_err() {
+        return ExtractionResult::empty();
+    }
+
+    let tree = match parser.parse(source, None) {
+        Some(t) => t,
+        None => return ExtractionResult::empty(),
+    };
+
+    let src = source.as_bytes();
+    let has_errors = tree.root_node().has_error();
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    let lines: Vec<&str> = source.lines().collect();
-    let mut i = 0;
+    walk_top_level(tree.root_node(), src, &mut symbols, &mut refs);
 
-    while i < lines.len() {
-        let raw = lines[i];
-        let trimmed = raw.trim();
+    ExtractionResult::new(symbols, refs, has_errors)
+}
 
-        if trimmed.is_empty() || trimmed.starts_with("//") {
-            i += 1;
-            continue;
-        }
+// ---------------------------------------------------------------------------
+// Top-level walker
+// ---------------------------------------------------------------------------
 
-        // import declaration
-        if trimmed.starts_with("import ") {
-            if let Some(target) = parse_import(trimmed) {
-                refs.push(ExtractedRef {
-                    source_symbol_index: 0,
-                    target_name: target,
-                    kind: EdgeKind::Imports,
-                    line: i as u32,
-                    module: None,
-                    chain: None,
-                });
+fn walk_top_level(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "source_file" => {
+                walk_top_level(child, src, symbols, refs);
             }
-            i += 1;
-            continue;
+            "import_declaration" => {
+                extract_import(child, src, symbols, refs);
+            }
+            "procedure_declaration" => {
+                extract_procedure(child, src, symbols, refs, None);
+            }
+            "struct_declaration" => {
+                extract_typed_decl(child, src, symbols, SymbolKind::Struct);
+            }
+            "enum_declaration" => {
+                extract_typed_decl(child, src, symbols, SymbolKind::Enum);
+            }
+            "union_declaration" => {
+                extract_typed_decl(child, src, symbols, SymbolKind::Struct);
+            }
+            "const_declaration" | "variable_declaration" | "var_declaration" => {
+                extract_var_decl(child, src, symbols);
+            }
+            "const_type_declaration" => {
+                // `Name :: Type` — extract all identifiers in the name list
+                extract_const_type_decl(child, src, symbols);
+            }
+            "overloaded_procedure_declaration" => {
+                // `Name :: proc { ... }` overload group
+                extract_typed_decl(child, src, symbols, SymbolKind::Function);
+            }
+            "using_statement" => {
+                extract_using(child, src, symbols.len(), refs);
+            }
+            _ => {
+                // Recurse in case declarations are wrapped (e.g. foreign blocks)
+                walk_top_level(child, src, symbols, refs);
+            }
         }
+    }
+}
 
-        // using statement → TypeRef
-        if trimmed.starts_with("using ") {
-            let name_part = trimmed["using ".len()..].trim();
-            // e.g. `using BaseStruct` or `using pkg.Type`
-            let type_name: String = name_part
-                .split(|c: char| c == ';' || c == '\n' || c == ' ')
+// ---------------------------------------------------------------------------
+// Import declaration
+// ---------------------------------------------------------------------------
+
+fn extract_import(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Grammar: import_declaration → (alias identifier?) (path string_literal)
+    // The path string contains quotes we strip.
+    let alias = node
+        .child_by_field_name("alias")
+        .map(|n| node_text(n, src))
+        .or_else(|| find_first_identifier(node, src));
+
+    let path = node
+        .child_by_field_name("path")
+        .map(|n| node_text(n, src))
+        .or_else(|| find_string_content(node, src));
+
+    // Derive a short name from path if no alias
+    let name = alias.clone().or_else(|| {
+        path.as_ref().map(|p| {
+            p.trim_matches('"')
+                .rsplit('/')
                 .next()
-                .unwrap_or("")
-                .to_string();
-            if !type_name.is_empty() {
-                refs.push(ExtractedRef {
-                    source_symbol_index: 0,
-                    target_name: type_name,
-                    kind: EdgeKind::TypeRef,
-                    line: i as u32,
-                    module: None,
-                    chain: None,
-                });
-            }
-            i += 1;
-            continue;
-        }
+                .unwrap_or(p.trim_matches('"'))
+                .to_string()
+        })
+    });
 
-        // Constant / type declarations: `Name :: proc/struct/enum/union/...`
-        if let Some((name, kind, vis)) = parse_decl(trimmed) {
-            let start = i as u32;
-            // For block types, scan for the closing brace.
-            let end = if kind != SymbolKind::Variable {
-                find_brace_end(&lines, i)
-            } else {
-                start
-            };
-            symbols.push(make_sym(name, kind, vis, start, end));
-            i = end as usize + 1;
-            continue;
-        }
-
-        i += 1;
-    }
-
-    ExtractionResult::new(symbols, refs, false)
-}
-
-// ---------------------------------------------------------------------------
-// Line parsers
-// ---------------------------------------------------------------------------
-
-/// Parse `import "path"` or `import alias "path"`.
-fn parse_import(line: &str) -> Option<String> {
-    let rest = line.strip_prefix("import ")?.trim_start();
-    // Check if next token is an alias identifier (no quotes)
-    if rest.starts_with('"') {
-        let inner = rest.strip_prefix('"')?;
-        let end = inner.find('"').unwrap_or(inner.len());
-        return Some(inner[..end].to_string());
-    }
-    // `import alias "path"` — skip alias, grab path
-    let after_alias = rest.find('"')?;
-    let path_start = &rest[after_alias + 1..];
-    let path_end = path_start.find('"').unwrap_or(path_start.len());
-    Some(path_start[..path_end].to_string())
-}
-
-/// Try to parse `Name :: rhs` or `Name : Type : rhs`.
-fn parse_decl(line: &str) -> Option<(String, SymbolKind, Visibility)> {
-    // Find `::` separator
-    let cc_pos = line.find("::")?;
-    let name_part = line[..cc_pos].trim();
-
-    // Name must be a plain identifier (no spaces, no type annotations yet).
-    // Odin allows `name: type :` but we handle simple `name ::` here.
-    let name: String = name_part
-        .chars()
-        .take_while(|c| c.is_alphanumeric() || *c == '_')
-        .collect();
-    if name.is_empty() || name != name_part {
-        return None;
-    }
-
-    let rhs = line[cc_pos + 2..].trim();
-
-    // Determine what's being declared.
-    let kind = if rhs.starts_with("proc") {
-        SymbolKind::Function
-    } else if rhs.starts_with("struct") {
-        SymbolKind::Struct
-    } else if rhs.starts_with("enum") {
-        SymbolKind::Enum
-    } else if rhs.starts_with("union") {
-        SymbolKind::Struct // tagged union → Struct
-    } else if rhs.starts_with("bit_set") {
-        SymbolKind::Enum
-    } else {
-        // Plain constant or type alias
-        SymbolKind::Variable
+    let name = match name {
+        Some(n) if !n.is_empty() => n,
+        _ => return,
     };
 
-    // Odin has no access modifiers at the language level (everything in a
-    // package is accessible); we mark exported-by-convention as Public.
-    let vis = if name.starts_with('_') { Visibility::Private } else { Visibility::Public };
+    let sym_idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name.clone(),
+        kind: SymbolKind::Namespace,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: 0,
+        end_col: 0,
+        signature: Some(format!("import \"{name}\"")),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    });
 
-    Some((name, kind, vis))
+    let target = path
+        .as_ref()
+        .map(|p| p.trim_matches('"').to_string())
+        .unwrap_or_else(|| name.clone());
+
+    refs.push(ExtractedRef {
+        source_symbol_index: sym_idx,
+        target_name: target,
+        kind: EdgeKind::Imports,
+        line: node.start_position().row as u32,
+        module: None,
+        chain: None,
+    });
 }
 
 // ---------------------------------------------------------------------------
-// Helpers
+// Procedure declaration
 // ---------------------------------------------------------------------------
 
-fn make_sym(name: String, kind: SymbolKind, vis: Visibility, start: u32, end: u32) -> ExtractedSymbol {
-    ExtractedSymbol {
-        qualified_name: name.clone(),
-        name,
+fn extract_procedure(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .or_else(|| find_first_identifier(node, src))
+        .unwrap_or_else(|| format!("<anon_proc_{}>", node.start_position().row + 1));
+
+    if name.is_empty() {
+        return;
+    }
+
+    let vis = if name.starts_with('_') {
+        Visibility::Private
+    } else {
+        Visibility::Public
+    };
+
+    let sig = build_proc_signature(node, src, &name);
+    let idx = symbols.len();
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name,
+        kind: SymbolKind::Function,
+        visibility: Some(vis),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: 0,
+        end_col: 0,
+        signature: Some(sig),
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
+    });
+
+    // Extract calls from the procedure body
+    extract_calls_in_subtree(node, src, idx, refs);
+}
+
+// ---------------------------------------------------------------------------
+// Struct / Enum / Union declarations
+// ---------------------------------------------------------------------------
+
+fn extract_typed_decl(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    kind: SymbolKind,
+) {
+    let name = node
+        .child_by_field_name("name")
+        .map(|n| node_text(n, src))
+        .or_else(|| find_first_identifier(node, src))
+        .unwrap_or_default();
+
+    if name.is_empty() {
+        return;
+    }
+
+    let vis = if name.starts_with('_') {
+        Visibility::Private
+    } else {
+        Visibility::Public
+    };
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name,
         kind,
         visibility: Some(vis),
-        start_line: start,
-        end_line: end,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
         start_col: 0,
         end_col: 0,
         signature: None,
         doc_comment: None,
         scope_path: None,
         parent_index: None,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Variable / constant declarations
+// ---------------------------------------------------------------------------
+
+fn extract_var_decl(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    // Collect all identifier children (for grouped: `a, b :: value`)
+    let names = collect_identifiers(node, src);
+    if names.is_empty() {
+        return;
+    }
+
+    for name in names {
+        let vis = if name.starts_with('_') {
+            Visibility::Private
+        } else {
+            Visibility::Public
+        };
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind: SymbolKind::Variable,
+            visibility: Some(vis),
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
     }
 }
 
-/// Scan forward to find the matching `}` for the opening `{` on or after `start`.
-fn find_brace_end(lines: &[&str], start: usize) -> u32 {
-    let mut depth = 0i32;
-    let mut end = start as u32;
-    for (k, &line) in lines[start..].iter().enumerate() {
-        for ch in line.chars() {
-            if ch == '{' { depth += 1; }
-            else if ch == '}' {
-                depth -= 1;
-                if depth <= 0 {
-                    return (start + k) as u32;
+/// `Name :: Type` — for type alias / struct / enum / union used as constant type decl
+fn extract_const_type_decl(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let names = collect_identifiers(node, src);
+    for name in names {
+        let vis = if name.starts_with('_') {
+            Visibility::Private
+        } else {
+            Visibility::Public
+        };
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind: SymbolKind::TypeAlias,
+            visibility: Some(vis),
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
+/// Collect all top-level identifier children from a node.
+/// Stops at `::`, `:=`, or `=` to avoid capturing RHS identifiers.
+fn collect_identifiers(node: Node, src: &[u8]) -> Vec<String> {
+    let mut names = Vec::new();
+    for i in 0..node.child_count() {
+        if let Some(child) = node.child(i) {
+            match child.kind() {
+                "::" | ":=" | "=" => break,
+                "identifier" => {
+                    let t = node_text(child, src);
+                    if !t.is_empty() {
+                        names.push(t);
+                    }
                 }
+                _ => {}
             }
         }
-        if depth > 0 {
-            end = (start + k) as u32;
+    }
+    names
+}
+
+// ---------------------------------------------------------------------------
+// using_statement → TypeRef
+// ---------------------------------------------------------------------------
+
+fn extract_using(
+    node: Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // `using pkg` or `using pkg.Type` — grab the identifier after "using"
+    if let Some(id) = find_first_identifier(node, src) {
+        if !id.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index,
+                target_name: id,
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
         }
     }
-    end
+}
+
+// ---------------------------------------------------------------------------
+// Call extraction in procedure bodies
+// ---------------------------------------------------------------------------
+
+fn extract_calls_in_subtree(
+    node: Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "call_expression" {
+            // The called expression is usually the first child
+            let target = child
+                .child_by_field_name("function")
+                .or_else(|| child.child(0))
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+
+            // Strip member access: `pkg.Proc` → `Proc`
+            let target = target.rsplit('.').next().unwrap_or(&target).to_string();
+
+            if !target.is_empty() && target != "(" {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: target,
+                    kind: EdgeKind::Calls,
+                    line: child.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+            // Recurse into arguments
+            extract_calls_in_subtree(child, src, source_symbol_index, refs);
+        } else {
+            extract_calls_in_subtree(child, src, source_symbol_index, refs);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+fn node_text(node: Node, src: &[u8]) -> String {
+    node.utf8_text(src).unwrap_or("").to_string()
+}
+
+fn find_first_identifier(node: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            let t = node_text(child, src);
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+    }
+    None
+}
+
+fn find_string_content(node: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "interpreted_string_literal"
+            || child.kind() == "string_literal"
+            || child.kind() == "string"
+        {
+            return Some(node_text(child, src));
+        }
+    }
+    None
+}
+
+fn build_proc_signature(node: Node, src: &[u8], name: &str) -> String {
+    // Look for a procedure type or parameters child
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "procedure_type" | "parameters" => {
+                return format!("{name}{}", node_text(child, src));
+            }
+            _ => {}
+        }
+    }
+    format!("{name}()")
 }

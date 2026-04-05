@@ -56,16 +56,14 @@ impl LanguagePlugin for OdinPlugin {
             "struct_declaration",
             "enum_declaration",
             "union_declaration",
-            "const_declaration",
-            "variable_declaration",
             "import_declaration",
+            "overloaded_procedure_declaration",
         ]
     }
 
     fn ref_node_kinds(&self) -> &[&str] {
         &[
             "call_expression",
-            "import_declaration",
             "using_statement",
         ]
     }

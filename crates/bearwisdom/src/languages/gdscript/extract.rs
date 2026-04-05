@@ -262,6 +262,8 @@ fn extract_function(
     });
 
     collect_calls(node, src, idx, refs);
+    // Walk function body for nested variable declarations, const, and enum nodes.
+    visit(*node, src, symbols, refs, Some(idx), true);
 }
 
 fn extract_constructor(
@@ -290,6 +292,8 @@ fn extract_constructor(
     });
 
     collect_calls(node, src, idx, refs);
+    // Walk constructor body for nested variable declarations.
+    visit(*node, src, symbols, refs, Some(idx), true);
 }
 
 // ---------------------------------------------------------------------------
@@ -481,14 +485,11 @@ fn extract_enum(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
-    let name = match node.child_by_field_name("name") {
-        Some(n) => node_text(&n, src).to_string(),
-        None => return,
-    };
-
-    if name.is_empty() {
-        return; // Anonymous enum
-    }
+    // Anonymous enums (`enum { A, B }`) have no name field — use a placeholder.
+    let name = node.child_by_field_name("name")
+        .map(|n| node_text(&n, src).to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "<anonymous_enum>".to_string());
 
     let line = node.start_position().row as u32;
 

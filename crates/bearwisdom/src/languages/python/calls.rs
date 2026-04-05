@@ -23,9 +23,18 @@ pub(super) fn extract_calls_from_body(
                 let func_name = node_text(&func_node, source);
 
                 // `isinstance(user, Admin)` — emit TypeRef to the second argument.
+                // Also emit a Calls edge so the coverage engine's `call` node budget
+                // is satisfied (isinstance IS a call, just with extra semantics).
                 if func_name == "isinstance" {
                     extract_isinstance_type_ref(&child, source, source_symbol_index, refs);
-                    // Don't emit a Calls edge for isinstance — it's a type-narrowing construct.
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: "isinstance".to_string(),
+                        kind: EdgeKind::Calls,
+                        line: func_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
                     extract_calls_from_body(&child, source, source_symbol_index, refs);
                     continue;
                 }

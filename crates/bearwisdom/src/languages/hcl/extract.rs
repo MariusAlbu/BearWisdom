@@ -64,25 +64,48 @@ fn visit_body(
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
-    locals_parent: Option<usize>,
+    parent_idx: Option<usize>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "config_file" | "body" => {
-                visit_body(child, src, symbols, refs, locals_parent);
+                visit_body(child, src, symbols, refs, parent_idx);
             }
             "block" => {
                 extract_block(&child, src, symbols, refs);
             }
             "attribute" => {
-                if let Some(parent_idx) = locals_parent {
-                    extract_locals_attribute(&child, src, parent_idx, symbols, refs);
-                }
+                // Extract ALL attributes as symbols (not just locals).
+                extract_attribute(&child, src, parent_idx, symbols, refs);
             }
             _ => {}
         }
     }
+}
+
+/// Extract any attribute as a Variable symbol + refs from its value.
+fn extract_attribute(
+    node: &Node,
+    src: &str,
+    parent_idx: Option<usize>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let name = match first_identifier_text(node, src) {
+        Some(n) => n,
+        None => return,
+    };
+    let idx = symbols.len();
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Variable,
+        node,
+        None,
+        parent_idx,
+    ));
+    extract_refs_in_subtree(node, src, idx, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -107,11 +130,11 @@ fn extract_block(
     match block_type.as_str() {
         "resource" => extract_resource_block(node, src, &labels, symbols, refs),
         "data" => extract_data_block(node, src, &labels, symbols, refs),
-        "variable" => extract_variable_block(node, src, &labels, symbols),
-        "output" => extract_output_block(node, src, &labels, symbols),
+        "variable" => extract_variable_block(node, src, &labels, symbols, refs),
+        "output" => extract_output_block(node, src, &labels, symbols, refs),
         "module" => extract_module_block(node, src, &labels, symbols, refs),
-        "provider" => extract_provider_block(node, src, &labels, symbols),
-        "terraform" => extract_terraform_block(node, src, symbols),
+        "provider" => extract_provider_block(node, src, &labels, symbols, refs),
+        "terraform" => extract_terraform_block(node, src, symbols, refs),
         "locals" => extract_locals_block(node, src, symbols, refs),
         _ => {
             // Generic block — emit as Variable with block_type as name prefix
@@ -130,7 +153,7 @@ fn extract_block(
                 None,
             ));
             // Extract refs within the block body
-            extract_block_refs(node, src, idx, refs);
+            extract_block_refs(node, src, idx, symbols, refs);
         }
     }
 }
@@ -161,7 +184,7 @@ fn extract_resource_block(
 
     let idx = symbols.len();
     symbols.push(make_symbol(name.clone(), name, SymbolKind::Class, node, Some(sig), None));
-    extract_block_refs(node, src, idx, refs);
+    extract_block_refs(node, src, idx, symbols, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -190,7 +213,7 @@ fn extract_data_block(
 
     let idx = symbols.len();
     symbols.push(make_symbol(name.clone(), name, SymbolKind::Class, node, Some(sig), None));
-    extract_block_refs(node, src, idx, refs);
+    extract_block_refs(node, src, idx, symbols, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -202,13 +225,16 @@ fn extract_variable_block(
     src: &str,
     labels: &[String],
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
 ) {
     let name = match labels.first() {
         Some(n) => n.clone(),
         None => return,
     };
     let sig = format!("variable \"{}\"", name);
+    let idx = symbols.len();
     symbols.push(make_symbol(name.clone(), name, SymbolKind::Variable, node, Some(sig), None));
+    extract_block_refs(node, src, idx, symbols, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -220,13 +246,16 @@ fn extract_output_block(
     src: &str,
     labels: &[String],
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
 ) {
     let name = match labels.first() {
         Some(n) => n.clone(),
         None => return,
     };
     let sig = format!("output \"{}\"", name);
+    let idx = symbols.len();
     symbols.push(make_symbol(name.clone(), name, SymbolKind::Variable, node, Some(sig), None));
+    extract_block_refs(node, src, idx, symbols, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -262,7 +291,7 @@ fn extract_module_block(
         });
     }
 
-    extract_block_refs(node, src, idx, refs);
+    extract_block_refs(node, src, idx, symbols, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -274,13 +303,16 @@ fn extract_provider_block(
     src: &str,
     labels: &[String],
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
 ) {
     let name = match labels.first() {
         Some(n) => n.clone(),
         None => return,
     };
     let sig = format!("provider \"{}\"", name);
+    let idx = symbols.len();
     symbols.push(make_symbol(name.clone(), name, SymbolKind::Class, node, Some(sig), None));
+    extract_block_refs(node, src, idx, symbols, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -291,8 +323,10 @@ fn extract_terraform_block(
     node: &Node,
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
 ) {
     let _ = src;
+    let idx = symbols.len();
     symbols.push(make_symbol(
         "terraform".to_string(),
         "terraform".to_string(),
@@ -301,6 +335,7 @@ fn extract_terraform_block(
         Some("terraform { ... }".to_string()),
         None,
     ));
+    extract_block_refs(node, src, idx, symbols, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -329,54 +364,29 @@ fn extract_locals_block(
     visit_body(*node, src, symbols, refs, Some(parent_idx));
 }
 
-/// Extract a single attribute inside a `locals { }` block.
-fn extract_locals_attribute(
-    node: &Node,
-    src: &str,
-    parent_idx: usize,
-    symbols: &mut Vec<ExtractedSymbol>,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    // attribute: first identifier child is the key
-    let name = match first_identifier_text(node, src) {
-        Some(n) => n,
-        None => return,
-    };
-    let sig = format!("{} = ...", name);
-    let idx = symbols.len();
-    symbols.push(make_symbol(
-        name.clone(),
-        name,
-        SymbolKind::Variable,
-        node,
-        Some(sig),
-        Some(parent_idx),
-    ));
-    // Emit TypeRefs for any references in the attribute value
-    extract_refs_in_subtree(node, src, idx, refs);
-}
-
 // ---------------------------------------------------------------------------
 // Reference extraction within block bodies
 // ---------------------------------------------------------------------------
 
-/// Scan a block node's body for variable_expr / get_attr chains and function_calls.
+/// Scan a block node's body for nested blocks, attributes, and refs.
 fn extract_block_refs(
     node: &Node,
     src: &str,
     source_symbol_index: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // Find the body child and recurse into it
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "body" {
-            extract_refs_in_subtree(&child, src, source_symbol_index, refs);
+            // Recurse into body — handles nested blocks and attributes
+            visit_body(child, src, symbols, refs, Some(source_symbol_index));
         }
     }
 }
 
 /// Recursively scan a subtree for reference-producing nodes.
+/// Emits refs for every variable_expr, get_attr, and function_call encountered.
 fn extract_refs_in_subtree(
     node: &Node,
     src: &str,
@@ -385,33 +395,39 @@ fn extract_refs_in_subtree(
 ) {
     match node.kind() {
         "variable_expr" => {
-            // Root of a reference chain: `var`, `local`, `module`, resource_type, etc.
-            // Collect get_attr chain that follows — we need to look at the parent
-            // context, so handle this at the parent traversal level via
-            // `extract_reference_chain`.
+            let name = node_text(*node, src);
+            if !matches!(name.as_str(), "path" | "terraform" | "self" | "each" | "count") {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
         }
-        "expression" => {
-            extract_reference_chain(node, src, source_symbol_index, refs);
+        "get_attr" => {
+            if let Some(ident) = first_identifier_text(node, src) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: ident,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        "function_call" => {
+            extract_function_call_ref(node, src, source_symbol_index, refs);
         }
         _ => {}
     }
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        match child.kind() {
-            "variable_expr" | "get_attr" => {
-                // Handled by chain extraction at expression level
-            }
-            "function_call" => {
-                extract_function_call_ref(&child, src, source_symbol_index, refs);
-            }
-            "expression" => {
-                extract_reference_chain(&child, src, source_symbol_index, refs);
-            }
-            _ => {
-                extract_refs_in_subtree(&child, src, source_symbol_index, refs);
-            }
-        }
+        extract_refs_in_subtree(&child, src, source_symbol_index, refs);
     }
 }
 

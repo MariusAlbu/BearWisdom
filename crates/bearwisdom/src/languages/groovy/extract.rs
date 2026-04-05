@@ -156,7 +156,7 @@ fn extract_class(
         parent_index,
     });
 
-    // Walk class body for methods
+    // Walk class body for methods and nested classes.
     if let Some(body) = node.child_by_field_name("body") {
         let mut cursor = body.walk();
         for child in body.children(&mut cursor) {
@@ -166,6 +166,10 @@ fn extract_class(
                 }
                 "function_definition" => {
                     extract_function(&child, src, symbols, refs, Some(class_idx), true);
+                }
+                "class_declaration" => {
+                    // Inner / nested class — recurse so its methods are found.
+                    extract_class(&child, src, symbols, refs, Some(class_idx));
                 }
                 "method_invocation" => {
                     extract_call(&child, src, class_idx, refs);

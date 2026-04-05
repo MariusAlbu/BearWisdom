@@ -129,8 +129,25 @@ fn walk_node(
         }
         "call_expression" => {
             let sym_idx = parent_idx.unwrap_or(0);
-            if let Some(fn_node) = node.child_by_field_name("function") {
-                let name = text(fn_node, src);
+            // call_expression = _expression REPEAT1(argument_list)
+            // The grammar has no named field; the callee is the first child.
+            if let Some(callee) = node.child(0) {
+                let name = match callee.kind() {
+                    "identifier" => text(callee, src),
+                    // derived_type_member_expression: obj%method — take the last segment
+                    "derived_type_member_expression" => {
+                        // last named child is the method name
+                        let count = callee.named_child_count();
+                        if count > 0 {
+                            callee.named_child(count - 1)
+                                .map(|n| text(n, src))
+                                .unwrap_or_default()
+                        } else {
+                            text(callee, src)
+                        }
+                    }
+                    _ => String::new(),
+                };
                 if !name.is_empty() {
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,

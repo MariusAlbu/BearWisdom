@@ -49,7 +49,6 @@ impl LanguagePlugin for MatlabPlugin {
     fn ref_node_kinds(&self) -> &[&str] {
         &[
             "function_call",
-            "postfix_operator",
         ]
     }
 

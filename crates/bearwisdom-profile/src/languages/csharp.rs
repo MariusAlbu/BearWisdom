@@ -51,7 +51,10 @@ pub static CSHARP: LanguageDescriptor = LanguageDescriptor {
     file_extensions: &[".cs", ".csx"],
     filenames: &[],
     aliases: &["cs", "c#"],
-    exclude_dirs: &["bin", "obj", "publish", "artifacts", "packages", ".vs", "TestResults"],
+    // "packages" intentionally omitted — it would shadow monorepo `packages/` dirs
+    // in non-.NET projects (e.g., Svelte, Astro). Modern .NET uses ~/.nuget/packages
+    // (global cache) rather than a project-local packages/ folder.
+    exclude_dirs: &["bin", "obj", "publish", "artifacts", ".vs", "TestResults"],
     entry_point_files: &["*.sln", "*.csproj", "global.json", "NuGet.Config", "Directory.Build.props"],
     sdk: Some(SdkDescriptor {
         name: ".NET SDK",

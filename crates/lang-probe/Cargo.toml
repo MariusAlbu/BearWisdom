@@ -1,0 +1,27 @@
+[package]
+name = "lang-probe"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "probe_haskell"
+path = "src/bin/probe_haskell.rs"
+
+[[bin]]
+name = "probe_gleam"
+path = "src/bin/probe_gleam.rs"
+
+[[bin]]
+name = "probe_powershell"
+path = "src/bin/probe_powershell.rs"
+
+[[bin]]
+name = "probe_groovy"
+path = "src/bin/probe_groovy.rs"
+
+[dependencies]
+tree-sitter            = { workspace = true }
+tree-sitter-haskell    = { workspace = true }
+tree-sitter-gleam      = { workspace = true }
+tree-sitter-powershell = { workspace = true }
+tree-sitter-groovy     = { workspace = true }

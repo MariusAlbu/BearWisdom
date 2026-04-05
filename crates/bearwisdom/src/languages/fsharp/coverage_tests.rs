@@ -45,22 +45,25 @@ fn symbol_function_or_value_defn_variable() {
 }
 
 /// symbol_node_kind: `type_definition`  →  Struct (record type)
-/// NOTE: `type_definition` nodes inside `named_module` are not currently
-/// extracted by the traversal. This test documents the current behaviour.
 #[test]
 fn symbol_type_definition_record() {
     let r = extract("module MyModule\nlet foo x = x + 1\ntype Person = { Name: string }");
-    // Known limitation: type_definition not extracted from named_module scope.
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Person" && s.kind == SymbolKind::Struct),
+        "expected Struct Person from record_type_defn; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `type_definition`  →  Enum (discriminated union)
-/// Same limitation as record — not extracted from named_module.
 #[test]
 fn symbol_type_definition_union() {
     let r = extract("module MyModule\nlet foo x = x\ntype Shape =\n    | Circle of float\n    | Square of float");
-    // Known limitation: type_definition not extracted from named_module scope.
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Shape" && s.kind == SymbolKind::Enum),
+        "expected Enum Shape from union_type_defn; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `module_defn`  →  Namespace

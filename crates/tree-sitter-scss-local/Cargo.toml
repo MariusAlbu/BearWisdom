@@ -1,0 +1,18 @@
+[package]
+name = "tree-sitter-scss-local"
+version = "1.0.0"
+edition = "2021"
+description = "SCSS grammar for tree-sitter (local wrapper with MSVC-compatible build)"
+publish = false
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+tree-sitter-language = "0.1"
+
+[dev-dependencies]
+tree-sitter = { workspace = true }
+
+[build-dependencies]
+cc = "1"

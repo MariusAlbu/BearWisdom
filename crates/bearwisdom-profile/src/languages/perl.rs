@@ -3,8 +3,10 @@ use crate::types::*;
 pub static PERL: LanguageDescriptor = LanguageDescriptor {
     id: "perl",
     display_name: "Perl",
-    // .pl omitted — conflicts with Prolog. .pm is unambiguous.
-    file_extensions: &[".pm"],
+    // .pl is listed first so the walker finds it before Prolog's .pro/.P extensions.
+    // The registry iterates LANGUAGES in order; Perl appears before Prolog, so .pl
+    // is claimed by Perl. The Prolog descriptor intentionally omits .pl.
+    file_extensions: &[".pl", ".pm"],
     filenames: &["cpanfile"],
     aliases: &[],
     exclude_dirs: &[],

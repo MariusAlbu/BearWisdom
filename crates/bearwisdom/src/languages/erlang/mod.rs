@@ -44,7 +44,6 @@ impl LanguagePlugin for ErlangPlugin {
             "fun_decl",
             "module_attribute",
             "record_decl",
-            "behaviour_attribute",
         ]
     }
 

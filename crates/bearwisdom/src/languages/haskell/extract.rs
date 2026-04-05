@@ -174,6 +174,10 @@ fn visit(
                 extract_apply(&child, src, symbols, refs, parent_index);
                 visit(child, src, scope_tree, symbols, refs, parent_index, inside_class_or_instance);
             }
+            "infix" => {
+                extract_infix(&child, src, symbols, refs, parent_index);
+                visit(child, src, scope_tree, symbols, refs, parent_index, inside_class_or_instance);
+            }
             "foreign_import" | "foreign_export" => {
                 extract_foreign(&child, src, scope_tree, symbols, parent_index);
             }
@@ -196,11 +200,60 @@ fn extract_function(
     kind: SymbolKind,
     parent_index: Option<usize>,
 ) -> Option<usize> {
-    let name_node = node.child_by_field_name("name")?;
-    let name = node_text(name_node, src);
-    if name.is_empty() {
-        return None;
-    }
+    // `name` field is optional in tree-sitter-haskell.
+    // Try: name field → first variable/prefix_id child → first match child's name.
+    let name = if let Some(n) = node.child_by_field_name("name") {
+        let t = node_text(n, src);
+        t.trim_matches(|c: char| c == '(' || c == ')').to_string()
+    } else {
+        // Try direct variable or prefix_id child
+        let mut cursor = node.walk();
+        let mut found = String::new();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "variable" | "prefix_id" => {
+                    found = node_text(child, src)
+                        .trim_matches(|c: char| c == '(' || c == ')')
+                        .to_string();
+                    break;
+                }
+                "match" => {
+                    // match node contains the function name as first child
+                    let mut mc = child.walk();
+                    for mc_child in child.children(&mut mc) {
+                        if mc_child.kind() == "variable" || mc_child.kind() == "prefix_id" {
+                            found = node_text(mc_child, src)
+                                .trim_matches(|c: char| c == '(' || c == ')')
+                                .to_string();
+                            break;
+                        }
+                    }
+                    if !found.is_empty() {
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        found
+    };
+    let name = if !name.is_empty() {
+        name
+    } else {
+        // Final fallback: use raw text of the first named child (truncated).
+        // This handles pattern-only bindings like `(x, y) = ...` or `_ = ...`.
+        let fallback = node.named_child(0)
+            .map(|c| {
+                let t = node_text(c, src);
+                // Truncate to 40 chars to avoid huge names
+                if t.len() > 40 { t[..40].to_string() } else { t }
+            })
+            .unwrap_or_default();
+        if fallback.is_empty() {
+            return None;
+        }
+        fallback
+    };
 
     let scope = scope_tree::find_enclosing_scope(scope_tree, node.start_byte(), node.end_byte()).map(|s| s.qualified_name.clone());
     let qname = if let Some(p) = &scope { format!("{}.{}", p, name) } else { name.clone() };
@@ -415,12 +468,48 @@ fn extract_apply(
     parent_index: Option<usize>,
 ) {
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
-    // apply has `function` field
-    let func_node = match node.child_by_field_name("function") {
-        Some(n) => n,
-        None => return,
+    // `function` field is optional in tree-sitter-haskell; fall back to first named child.
+    let fname = if let Some(func_node) = node.child_by_field_name("function") {
+        extract_apply_target(func_node, src)
+    } else {
+        // Walk children to find the function expression
+        let mut result = String::new();
+        for i in 0..node.child_count() {
+            if let Some(child) = node.child(i) {
+                if !child.is_named() {
+                    continue;
+                }
+                match child.kind() {
+                    "variable" | "name" | "constructor" | "qualified" | "prefix_id"
+                    | "operator" | "operator_name" | "apply" | "parenthesized_expression" => {
+                        result = extract_apply_target(child, src);
+                        if !result.is_empty() {
+                            break;
+                        }
+                    }
+                    "expression" => {
+                        // Unwrap expression wrapper
+                        for j in 0..child.child_count() {
+                            if let Some(gc) = child.child(j) {
+                                if gc.is_named() {
+                                    let t = extract_apply_target(gc, src);
+                                    if !t.is_empty() {
+                                        result = t;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if !result.is_empty() {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        result
     };
-    let fname = extract_apply_target(func_node, src);
     if fname.is_empty() {
         return;
     }
@@ -436,15 +525,91 @@ fn extract_apply(
 
 fn extract_apply_target(node: Node, src: &[u8]) -> String {
     match node.kind() {
-        "variable" | "name" | "constructor" => node_text(node, src),
+        "variable" | "name" | "constructor" | "operator" | "operator_name" | "prefix_id" => {
+            node_text(node, src).trim_matches(|c: char| c == '(' || c == ')' || c == '`').to_string()
+        }
         "qualified" => {
             // module.id — use the final identifier
             node.child_by_field_name("id")
                 .map(|n| node_text(n, src))
+                .unwrap_or_else(|| {
+                    // Fallback: last named child
+                    let count = node.named_child_count();
+                    if count > 0 {
+                        node.named_child(count - 1)
+                            .map(|n| node_text(n, src))
+                            .unwrap_or_default()
+                    } else {
+                        String::new()
+                    }
+                })
+        }
+        "apply" => {
+            // Nested apply (curried) — recurse to find the base function
+            node.child_by_field_name("function")
+                .map(|n| extract_apply_target(n, src))
+                .unwrap_or_default()
+        }
+        "parenthesized_expression" => {
+            // Could be a section like `(+3)` or `(f)` — try first named child
+            node.named_child(0)
+                .map(|n| extract_apply_target(n, src))
                 .unwrap_or_default()
         }
         _ => String::new(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// infix  →  Calls edge
+// ---------------------------------------------------------------------------
+
+fn extract_infix(
+    node: &Node,
+    src: &[u8],
+    symbols: &[ExtractedSymbol],
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
+    // infix: left operator right
+    // The operator field holds the infix function name (backtick or operator)
+    let op_node = node.child_by_field_name("operator")
+        .or_else(|| {
+            // Fallback: find the operator child — check all children (named or anonymous)
+            let count = node.child_count();
+            if count >= 3 {
+                // Middle child (index 1 in 3-child infix: left op right)
+                node.child(1)
+            } else {
+                // Second named child fallback
+                let mut cursor = node.walk();
+                let children: Vec<Node> = node.children(&mut cursor).collect();
+                let named: Vec<Node> = children.into_iter().filter(|c| c.is_named()).collect();
+                if named.len() >= 2 { Some(named[1]) } else { None }
+            }
+        });
+
+    let op_text = op_node
+        .map(|n| {
+            let t = node_text(n, src);
+            // Strip backtick quoting from infix functions like `elem`
+            t.trim_matches('`').to_string()
+        })
+        .unwrap_or_default();
+
+    if op_text.is_empty() {
+        return;
+    }
+
+    refs.push(ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name: op_text,
+        kind: EdgeKind::Calls,
+        line: node.start_position().row as u32,
+        module: None,
+        chain: None,
+    });
 }
 
 // ---------------------------------------------------------------------------

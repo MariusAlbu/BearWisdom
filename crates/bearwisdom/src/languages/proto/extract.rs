@@ -79,7 +79,7 @@ fn visit_file(
                 visit_file(child, src, symbols, refs);
             }
             "package" => extract_package(&child, src, symbols),
-            "import" => extract_import(&child, src, symbols.len(), refs),
+            "import" => extract_import(&child, src, symbols, refs),
             "message" => extract_message(&child, src, symbols, refs, None),
             "service" => extract_service(&child, src, symbols, refs),
             "enum" => extract_enum(&child, src, symbols, refs, None),
@@ -117,10 +117,9 @@ fn extract_package(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
 fn extract_import(
     node: &Node,
     src: &str,
-    source_symbol_index: usize,
+    symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // import has a `path` field or a string_literal child
     let path = node
         .child_by_field_name("path")
         .map(|n| node_text(n, src))
@@ -128,16 +127,26 @@ fn extract_import(
 
     if let Some(raw) = path {
         let stripped = raw.trim_matches('"').trim_matches('\'').to_string();
-        if !stripped.is_empty() {
-            refs.push(ExtractedRef {
-                source_symbol_index,
-                target_name: stripped.clone(),
-                kind: EdgeKind::Imports,
-                line: node.start_position().row as u32,
-                module: Some(stripped),
-                chain: None,
-            });
+        if stripped.is_empty() {
+            return;
         }
+        let idx = symbols.len();
+        symbols.push(make_symbol(
+            stripped.clone(),
+            stripped.clone(),
+            SymbolKind::Namespace,
+            node,
+            Some(format!("import \"{}\"", stripped)),
+            None,
+        ));
+        refs.push(ExtractedRef {
+            source_symbol_index: idx,
+            target_name: stripped.clone(),
+            kind: EdgeKind::Imports,
+            line: node.start_position().row as u32,
+            module: Some(stripped),
+            chain: None,
+        });
     }
 }
 
@@ -242,9 +251,8 @@ fn extract_rpc(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // rpc_name field or first identifier child
-    let name = node
-        .child_by_field_name("rpc_name")
+    // rpc_name is a child node type (not a named field); get its identifier
+    let name = find_child_of_kind(node, "rpc_name")
         .and_then(|n| first_identifier_text(&n, src))
         .or_else(|| first_identifier_text(node, src));
 
@@ -533,21 +541,18 @@ fn extract_extend(
 // ---------------------------------------------------------------------------
 
 fn message_name(node: &Node, src: &str) -> Option<String> {
-    node.child_by_field_name("message_name")
+    find_child_of_kind(node, "message_name")
         .and_then(|n| first_identifier_text(&n, src))
-        .or_else(|| first_identifier_text(node, src))
 }
 
 fn service_name(node: &Node, src: &str) -> Option<String> {
-    node.child_by_field_name("service_name")
+    find_child_of_kind(node, "service_name")
         .and_then(|n| first_identifier_text(&n, src))
-        .or_else(|| first_identifier_text(node, src))
 }
 
 fn enum_name(node: &Node, src: &str) -> Option<String> {
-    node.child_by_field_name("enum_name")
+    find_child_of_kind(node, "enum_name")
         .and_then(|n| first_identifier_text(&n, src))
-        .or_else(|| first_identifier_text(node, src))
 }
 
 /// Get field name: the identifier that appears just before `= <number>`.
@@ -590,8 +595,7 @@ fn field_type_name(node: &Node, src: &str) -> Option<String> {
     None
 }
 
-/// Collect all `message_or_enum_type` texts from immediate children.
-/// Returns dotted names (e.g., "google.protobuf.Timestamp").
+/// Collect all `message_or_enum_type` texts from immediate children or inside `type` wrappers.
 fn collect_message_or_enum_types(node: &Node, src: &str) -> Vec<String> {
     let mut types = Vec::new();
     let mut cursor = node.walk();
@@ -600,6 +604,17 @@ fn collect_message_or_enum_types(node: &Node, src: &str) -> Vec<String> {
             let name = collect_dotted_identifiers(&child, src);
             if !name.is_empty() {
                 types.push(name);
+            }
+        } else if child.kind() == "type" {
+            // type node wraps message_or_enum_type for complex types
+            let mut tc = child.walk();
+            for tc_child in child.children(&mut tc) {
+                if tc_child.kind() == "message_or_enum_type" {
+                    let name = collect_dotted_identifiers(&tc_child, src);
+                    if !name.is_empty() {
+                        types.push(name);
+                    }
+                }
             }
         }
     }
@@ -631,6 +646,16 @@ fn collect_full_ident(node: &Node, src: &str) -> String {
     }
     // Fallback: join all identifier children
     collect_dotted_identifiers(node, src)
+}
+
+fn find_child_of_kind<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == kind {
+            return Some(child);
+        }
+    }
+    None
 }
 
 fn first_identifier_text(node: &Node, src: &str) -> Option<String> {

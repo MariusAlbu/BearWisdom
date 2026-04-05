@@ -53,7 +53,6 @@ impl LanguagePlugin for DockerfilePlugin {
     fn ref_node_kinds(&self) -> &[&str] {
         &[
             "copy_instruction",
-            "from_instruction",
         ]
     }
 

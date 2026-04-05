@@ -4,10 +4,10 @@
 // SYMBOLS:
 //   Function  — `function_definition` (name field)
 //   Class     — `class_definition` (name field)
-//   Variable  — top-level `assignment` (simple identifier on left)
+//   Variable  — `assignment` at any scope (simple identifier on left)
 //
 // REFERENCES:
-//   Calls     — `function_call` / identifier-like calls
+//   Calls     — `function_call` nodes (name or field_expression)
 // =============================================================================
 
 use crate::types::{
@@ -33,7 +33,7 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None, true);
+    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None);
 
     ExtractionResult::new(symbols, refs, tree.root_node().has_error())
 }
@@ -44,13 +44,8 @@ fn walk_node(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
-    top_level: bool,
 ) {
     match node.kind() {
-        "source_file" => {
-            // Propagate top_level=true to direct children of the root
-            walk_children_with_level(node, src, symbols, refs, parent_idx, true);
-        }
         "function_definition" => {
             let name = node
                 .child_by_field_name("name")
@@ -62,11 +57,8 @@ fn walk_node(
                 name
             };
             let idx = symbols.len();
-            symbols.push(make_sym(
-                name, SymbolKind::Function, Visibility::Public,
-                node, parent_idx,
-            ));
-            walk_children_with_level(node, src, symbols, refs, Some(idx), false);
+            symbols.push(make_sym(name, SymbolKind::Function, Visibility::Public, node, parent_idx));
+            walk_children(node, src, symbols, refs, Some(idx));
         }
         "class_definition" => {
             let name = node
@@ -79,59 +71,107 @@ fn walk_node(
                 name
             };
             let idx = symbols.len();
-            symbols.push(make_sym(
-                name, SymbolKind::Class, Visibility::Public,
-                node, parent_idx,
-            ));
-            walk_children_with_level(node, src, symbols, refs, Some(idx), false);
+            symbols.push(make_sym(name, SymbolKind::Class, Visibility::Public, node, parent_idx));
+            walk_children(node, src, symbols, refs, Some(idx));
         }
-        "assignment" if top_level => {
-            // Only capture simple `var = expr` at top level as Variable.
-            // The grammar uses field name "left" for the LHS, not "variable".
+        "assignment" => {
+            // Capture assignments at any scope as Variable symbols.
+            // field "left" holds the LHS.
             if let Some(lhs) = node.child_by_field_name("left") {
-                let name = text(lhs, src);
-                if !name.is_empty() && is_simple_ident(&name) {
-                    symbols.push(make_sym(
-                        name, SymbolKind::Variable, Visibility::Public,
-                        node, parent_idx,
-                    ));
+                match lhs.kind() {
+                    "identifier" => {
+                        let name = text(lhs, src);
+                        if !name.is_empty() && is_simple_ident(&name) {
+                            symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                        }
+                    }
+                    "function_call" => {
+                        // Indexed assignment: `arr(i) = val` — use the function name as symbol
+                        if let Some(name_node) = lhs.child_by_field_name("name") {
+                            let name = text(name_node, src);
+                            if !name.is_empty() && is_simple_ident(&name) {
+                                symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                            }
+                        }
+                    }
+                    "field_expression" => {
+                        // Field assignment: `obj.field = val` — use the field name
+                        if let Some(field_node) = lhs.child_by_field_name("field") {
+                            let name = text(field_node, src);
+                            if !name.is_empty() {
+                                symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                            }
+                        }
+                    }
+                    "multioutput_variable" => {
+                        // Destructuring: `[a, b] = func()` — emit each variable
+                        let mut mc = lhs.walk();
+                        for child in lhs.children(&mut mc) {
+                            if child.kind() == "identifier" {
+                                let name = text(child, src);
+                                if !name.is_empty() && is_simple_ident(&name) {
+                                    symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                                }
+                            }
+                        }
+                    }
+                    _ => {
+                        // Fallback: emit a symbol using the whole LHS text if it looks like an ident
+                        let name = text(lhs, src);
+                        if !name.is_empty() && is_simple_ident(&name) {
+                            symbols.push(make_sym(name, SymbolKind::Variable, Visibility::Public, node, parent_idx));
+                        }
+                    }
                 }
             }
+            // Always recurse into children so function_call nodes on the RHS are visited.
+            walk_children(node, src, symbols, refs, parent_idx);
         }
         "function_call" => {
             let sym_idx = parent_idx.unwrap_or(0);
-            if let Some(name_node) = node.child_by_field_name("name") {
-                let name = text(name_node, src);
-                if !name.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index: sym_idx,
-                        target_name: name,
-                        kind: EdgeKind::Calls,
-                        line: node.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                    });
-                }
+            // The called function may be a simple identifier or a field expression (obj.method)
+            let target = node
+                .child_by_field_name("name")
+                .map(|n| {
+                    // field_expression: pick the last segment
+                    if n.kind() == "field_expression" {
+                        n.child_by_field_name("field")
+                            .map(|f| text(f, src))
+                            .unwrap_or_else(|| text(n, src))
+                    } else {
+                        text(n, src)
+                    }
+                })
+                .unwrap_or_default();
+
+            if !target.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: target,
+                    kind: EdgeKind::Calls,
+                    line: node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
             }
-            walk_children_with_level(node, src, symbols, refs, parent_idx, false);
+            walk_children(node, src, symbols, refs, parent_idx);
         }
         _ => {
-            walk_children_with_level(node, src, symbols, refs, parent_idx, false);
+            walk_children(node, src, symbols, refs, parent_idx);
         }
     }
 }
 
-fn walk_children_with_level(
+fn walk_children(
     node: Node,
     src: &[u8],
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
-    top_level: bool,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        walk_node(child, src, symbols, refs, parent_idx, top_level);
+        walk_node(child, src, symbols, refs, parent_idx);
     }
 }
 
