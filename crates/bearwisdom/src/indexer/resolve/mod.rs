@@ -45,7 +45,7 @@ pub fn resolve_and_write(
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
     let engine = ResolutionEngine::new();
-    let index = SymbolIndex::build(parsed, symbol_id_map);
+    let index = SymbolIndex::build_with_context(parsed, symbol_id_map, project_ctx);
 
     let conn = &db.conn;
     let tx = conn

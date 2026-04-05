@@ -166,6 +166,16 @@ impl SymbolIndex {
         parsed: &[ParsedFile],
         symbol_id_map: &HashMap<(String, String), i64>,
     ) -> Self {
+        Self::build_with_context(parsed, symbol_id_map, None)
+    }
+
+    /// Build the index, optionally with project context for ecosystem-aware
+    /// module resolution (e.g. the Go module path from go.mod).
+    pub fn build_with_context(
+        parsed: &[ParsedFile],
+        symbol_id_map: &HashMap<(String, String), i64>,
+        project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+    ) -> Self {
         let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_qname: FxHashMap<String, SymbolInfo> = FxHashMap::default();
         let mut by_file: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
@@ -384,26 +394,36 @@ impl SymbolIndex {
             }
         }
 
-        // Build module-to-file mapping for path-based import resolution.
-        // For each file path like "src/services/index.ts", generate the module
-        // specifiers that could reference it: "services/index", "services", etc.
+        // Build module-to-file mapping using ecosystem-specific ModuleResolvers.
+        // For each import ref that carries a module specifier, resolve it to an
+        // actual indexed file path and cache the result.
+        let go_module_path = project_ctx.and_then(|ctx| ctx.go_module_path.as_deref());
+        let resolvers =
+            crate::indexer::module_resolution::all_resolvers_with_go_module(go_module_path);
+        let file_paths: Vec<&str> = parsed.iter().map(|pf| pf.path.as_str()).collect();
         let mut module_to_file: FxHashMap<String, String> = FxHashMap::default();
+
         for pf in parsed {
-            let norm = pf.path.replace('\\', "/");
-            // Strip common extensions
-            for ext in &[".ts", ".tsx", ".js", ".jsx", ".mjs", ".mts", ".d.ts"] {
-                if let Some(stripped) = norm.strip_suffix(ext) {
-                    // Map the stripped path as a module specifier
-                    module_to_file.entry(stripped.to_string()).or_insert_with(|| pf.path.clone());
-                    // If it ends with /index, also map the directory
-                    if let Some(dir) = stripped.strip_suffix("/index") {
-                        module_to_file.entry(dir.to_string()).or_insert_with(|| pf.path.clone());
-                    }
-                    break;
+            let resolver = resolvers
+                .iter()
+                .find(|r| r.language_ids().contains(&pf.language.as_str()));
+            let Some(resolver) = resolver else {
+                continue;
+            };
+
+            for r in &pf.refs {
+                let Some(module) = &r.module else {
+                    continue;
+                };
+                if module.is_empty() || module_to_file.contains_key(module.as_str()) {
+                    continue;
+                }
+                if let Some(resolved) =
+                    resolver.resolve_to_file(module, &pf.path, &file_paths)
+                {
+                    module_to_file.insert(module.clone(), resolved);
                 }
             }
-            // Also map the full path without extension changes
-            module_to_file.entry(norm.clone()).or_insert_with(|| pf.path.clone());
         }
 
         Self {
@@ -580,22 +600,14 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn in_file(&self, file_path: &str) -> &[SymbolInfo] {
-        // Exact match first
+        // Exact match
         if let Some(syms) = self.by_file.get(file_path) {
             return syms.as_slice();
         }
-        // Module specifier resolution: "./services" → actual file path
-        let norm = file_path.replace('\\', "/");
-        // Strip leading "./" or "../" for lookup
-        let stripped = norm
-            .trim_start_matches("./")
-            .trim_start_matches("../");
-        // Try suffix match against the module_to_file index
-        for (mod_spec, actual_path) in &self.module_to_file {
-            if mod_spec.ends_with(stripped) || stripped.ends_with(mod_spec.as_str()) {
-                if let Some(syms) = self.by_file.get(actual_path) {
-                    return syms.as_slice();
-                }
+        // Module specifier → resolved file path
+        if let Some(resolved) = self.module_to_file.get(file_path) {
+            if let Some(syms) = self.by_file.get(resolved) {
+                return syms.as_slice();
             }
         }
         &self.empty
@@ -634,17 +646,14 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
+        // Exact match
         if let Some(v) = self.reexport_map.get(file_path) {
             return v.as_slice();
         }
-        // Module specifier fallback
-        let norm = file_path.replace('\\', "/");
-        let stripped = norm.trim_start_matches("./").trim_start_matches("../");
-        for (mod_spec, actual_path) in &self.module_to_file {
-            if mod_spec.ends_with(stripped) || stripped.ends_with(mod_spec.as_str()) {
-                if let Some(v) = self.reexport_map.get(actual_path) {
-                    return v.as_slice();
-                }
+        // Module specifier → resolved file path
+        if let Some(resolved) = self.module_to_file.get(file_path) {
+            if let Some(v) = self.reexport_map.get(resolved) {
+                return v.as_slice();
             }
         }
         &self.empty_reexports
