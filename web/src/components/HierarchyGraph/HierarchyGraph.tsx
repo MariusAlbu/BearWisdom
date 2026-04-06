@@ -1,6 +1,7 @@
 import * as d3 from 'd3'
 import { useEffect, useRef, useCallback } from 'react'
 import { useHierarchyData } from '../../hooks/useHierarchyData'
+import { useHierarchyStore } from '../../stores/hierarchy.store'
 import { ZoomControls } from '../ZoomControls'
 import type { HierarchyNode } from '../../types/api.types'
 import styles from './HierarchyGraph.module.css'
@@ -94,19 +95,19 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
   const genRef = useRef(0)
 
-  const {
-    nodes,
-    edges,
-    level,
-    breadcrumbs,
-    loadState,
-    errorMessage,
-    selectedNodeId,
-    loadLevel,
-    drillDown,
-    navigateTo,
-    selectNode,
-  } = useHierarchyData(workspacePath)
+  const { loadLevel } = useHierarchyData(workspacePath)
+
+  // Select state individually to avoid identity changes on every store update.
+  const nodes = useHierarchyStore((s) => s.nodes)
+  const edges = useHierarchyStore((s) => s.edges)
+  const level = useHierarchyStore((s) => s.level)
+  const breadcrumbs = useHierarchyStore((s) => s.breadcrumbs)
+  const loadState = useHierarchyStore((s) => s.loadState)
+  const errorMessage = useHierarchyStore((s) => s.errorMessage)
+  const selectedNodeId = useHierarchyStore((s) => s.selectedNodeId)
+  const drillDown = useHierarchyStore((s) => s.drillDown)
+  const navigateTo = useHierarchyStore((s) => s.navigateTo)
+  const selectNode = useHierarchyStore((s) => s.selectNode)
 
   // -------------------------------------------------------------------------
   // D3 render
@@ -531,7 +532,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
         .attr('dur', '1.5s')
         .attr('repeatCount', 'indefinite')
     })
-  })
+  }, [selectedNodeId])
 
   // ---- ResizeObserver ----
   useEffect(() => {
