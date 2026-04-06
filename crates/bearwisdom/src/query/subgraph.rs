@@ -82,7 +82,7 @@ pub fn export_graph(
     max_nodes: usize,
 ) -> QueryResult<SubgraphResult> {
     let _timer = db.timer("export_graph");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Effective cap: never export more than 10 000 nodes unconditionally.
     let cap = if max_nodes == 0 { 10_000 } else { max_nodes.min(10_000) };

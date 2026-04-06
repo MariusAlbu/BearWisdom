@@ -65,7 +65,7 @@ pub fn resolve_and_write(
     // Build a per-file namespace map for same-namespace resolution.
     let file_namespace_map = build_file_namespace_map(parsed);
 
-    let conn = &db.conn;
+    let conn = db.conn();
     let tx = conn.unchecked_transaction().context("Failed to begin resolution transaction")?;
 
     let mut resolved = 0u64;

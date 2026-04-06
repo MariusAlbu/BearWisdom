@@ -81,19 +81,19 @@ pub fn full_index(
     // Virtual tables (symbols_fts, fts_content, vec_chunks) are handled
     // separately to avoid leaving their internal state pointing at stale rowids.
     {
-        let count: i64 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap_or(0);
+        let count: i64 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap_or(0);
         if count > 0 {
             info!("Dropping and recreating index tables for full rebuild ({} existing files)", count);
 
             // Drop vec_chunks first (virtual table — not CASCADE-covered).
-            if crate::search::vector_store::vec_table_exists(&db.conn) {
-                let _ = db.conn.execute_batch("DELETE FROM vec_chunks");
+            if crate::search::vector_store::vec_table_exists(db.conn()) {
+                let _ = db.conn().execute_batch("DELETE FROM vec_chunks");
             }
 
             // Drop the FTS trigger + virtual table so their internal rowid state
             // doesn't point at stale symbols after we drop and recreate symbols.
             // The triggers and table will be recreated by create_schema below.
-            let _ = db.conn.execute_batch(
+            let _ = db.conn().execute_batch(
                 "DROP TRIGGER IF EXISTS symbols_ai;
                  DROP TRIGGER IF EXISTS symbols_ad;
                  DROP TRIGGER IF EXISTS symbols_au;
@@ -105,7 +105,7 @@ pub fn full_index(
             // Derived tables (routes, flow_edges, connection_points, db_mappings,
             // code_chunks, lsp_edge_meta) must also be cleared — they reference
             // file/symbol IDs that become stale after DROP TABLE files/symbols.
-            let _ = db.conn.execute_batch(
+            let _ = db.conn().execute_batch(
                 "PRAGMA foreign_keys = OFF;
                  DROP TABLE IF EXISTS lsp_edge_meta;
                  DROP TABLE IF EXISTS flow_edges;
@@ -124,7 +124,7 @@ pub fn full_index(
 
             // Recreate all tables, indexes, triggers, and virtual tables
             // using the canonical schema.
-            crate::db::schema::create_schema(&db.conn)
+            crate::db::schema::create_schema(db.conn())
                 .context("Failed to recreate schema after drop")?;
 
             info!("Index tables recreated");
@@ -200,7 +200,7 @@ pub fn full_index(
     let connector_start = Instant::now();
 
     // Enrich routes written by tree-sitter extractors (set resolved_route where NULL).
-    if let Err(e) = db.conn.execute(
+    if let Err(e) = db.conn().execute(
         "UPDATE routes SET resolved_route = route_template WHERE resolved_route IS NULL",
         [],
     ) {
@@ -208,7 +208,7 @@ pub fn full_index(
     }
 
     let connector_registry = crate::connectors::registry::build_default_registry();
-    match connector_registry.run(&db.conn, project_root, &project_ctx) {
+    match connector_registry.run(db.conn(), project_root, &project_ctx) {
         Ok(flow_count) => info!(
             "Connectors: {flow_count} flow edges in {:.2}s",
             connector_start.elapsed().as_secs_f64()
@@ -228,12 +228,12 @@ pub fn full_index(
             warn!("Django connector: {e}");
         }
     }
-    run_react_patterns(&db.conn, project_root);
+    run_react_patterns(db.conn(), project_root);
 
     emit("connectors", 1.0, None);
 
     // ANALYZE for query planner accuracy.
-    if let Err(e) = db.conn.execute("ANALYZE", []) {
+    if let Err(e) = db.conn().execute("ANALYZE", []) {
         warn!("ANALYZE failed (non-fatal): {e}");
     }
 
@@ -246,7 +246,7 @@ pub fn full_index(
 
     let duration = start.elapsed();
 
-    let stats = read_stats(&db.conn, files_with_errors, duration.as_millis() as u64)?;
+    let stats = read_stats(db.conn(), files_with_errors, duration.as_millis() as u64)?;
     info!(
         "Full index complete in {:.2}s: {} files, {} symbols, {} edges, {} routes, {} db_mappings",
         duration.as_secs_f64(),

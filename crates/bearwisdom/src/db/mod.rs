@@ -39,6 +39,9 @@ fn init_vec_on_connection(conn: &Connection) {
 
         let rc = init_fn(conn.handle(), std::ptr::null_mut(), std::ptr::null());
         tracing::info!("sqlite3_vec_init returned rc={rc}");
+        if rc != 0 {
+            tracing::warn!("sqlite3_vec_init returned non-zero rc={rc}");
+        }
     }
 
     // Verify the module is actually registered.
@@ -69,7 +72,7 @@ pub fn db_exists(project_root: &Path) -> bool {
 /// that route through optional metrics collection.  Query-layer code should
 /// use these methods instead of accessing `conn` directly.
 pub struct Database {
-    pub(crate) conn: Connection,
+    conn: Connection,
     /// Path to the database file, or `None` for in-memory databases.
     pub path: Option<PathBuf>,
     /// Optional query-result cache (LRU per kind).  Shared across pool
@@ -80,7 +83,7 @@ pub struct Database {
     pub metrics: Option<Arc<metrics::QueryMetrics>>,
     /// Cached result of the sqlite-vec probe.  Populated on first call to
     /// `has_vec_extension()` and reused for all subsequent calls.
-    has_vec: std::cell::OnceCell<bool>,
+    has_vec: std::sync::OnceLock<bool>,
 }
 
 impl Database {
@@ -112,16 +115,8 @@ impl Database {
             path: Some(path.to_path_buf()),
             query_cache: Some(Arc::new(QueryCache::new(256))),
             metrics: Some(Arc::new(metrics::QueryMetrics::new())),
-            has_vec: std::cell::OnceCell::new(),
+            has_vec: std::sync::OnceLock::new(),
         })
-    }
-
-    /// Open a database with vector search support.
-    ///
-    /// This is now identical to `open()` since sqlite-vec is statically
-    /// linked.  Kept for API compatibility — callers don't need to change.
-    pub fn open_with_vec(path: &Path) -> Result<Self> {
-        Self::open(path)
     }
 
     /// Returns true if the sqlite-vec extension is loaded and operational.
@@ -130,27 +125,32 @@ impl Database {
     /// most once per `Database` instance.
     pub fn has_vec_extension(&self) -> bool {
         *self.has_vec.get_or_init(|| {
-            self.conn
-                .execute_batch(
-                    "CREATE VIRTUAL TABLE IF NOT EXISTS _vec_probe USING vec0(x float[1]);
-                     DROP TABLE IF EXISTS _vec_probe;",
-                )
-                .is_ok()
+            self.execute_batch(
+                "CREATE VIRTUAL TABLE IF NOT EXISTS _vec_probe USING vec0(x float[1]);
+                 DROP TABLE IF EXISTS _vec_probe;",
+            )
+            .is_ok()
         })
     }
 
     /// Borrow the underlying SQLite connection.
     ///
-    /// Prefer using query functions from `bearwisdom::query::*` when available.
-    /// This accessor exists as a migration bridge while raw SQL is being
-    /// replaced with proper query abstractions.
-    pub fn conn(&self) -> &Connection {
+    /// Prefer delegation methods on `Database` when available.  This accessor
+    /// exists as a migration bridge for code that calls functions accepting
+    /// `&Connection` directly (connectors, vector store, etc.).  Once all call
+    /// sites are migrated to `&Database` this will be removed.
+    pub(crate) fn conn(&self) -> &Connection {
         &self.conn
     }
 
     // -----------------------------------------------------------------
     // Delegation methods (metrics-aware)
     // -----------------------------------------------------------------
+
+    /// Prepare a statement (non-cached).
+    pub fn prepare(&self, sql: &str) -> rusqlite::Result<rusqlite::Statement<'_>> {
+        self.conn.prepare(sql)
+    }
 
     /// Prepare a cached statement.  Prefer this over `conn().prepare_cached()`
     /// for query-layer code — it enables future metrics/interception.
@@ -163,6 +163,11 @@ impl Database {
         self.conn.execute(sql, params)
     }
 
+    /// Execute a batch of SQL statements separated by semicolons.
+    pub fn execute_batch(&self, sql: &str) -> rusqlite::Result<()> {
+        self.conn.execute_batch(sql)
+    }
+
     /// Execute a query that returns exactly one row.
     pub fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
     where
@@ -170,6 +175,25 @@ impl Database {
         F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
     {
         self.conn.query_row(sql, params, f)
+    }
+
+    /// Return the rowid of the most recent successful INSERT.
+    pub fn last_insert_rowid(&self) -> i64 {
+        self.conn.last_insert_rowid()
+    }
+
+    /// Return the number of rows changed by the most recent DML statement.
+    pub fn changes(&self) -> u64 {
+        self.conn.changes()
+    }
+
+    /// Return the raw sqlite3 handle — needed for sqlite-vec initialisation.
+    ///
+    /// # Safety
+    /// The pointer is valid for the lifetime of `self`.  Do not close or
+    /// otherwise invalidate the connection through this handle.
+    pub unsafe fn handle(&self) -> *mut rusqlite::ffi::sqlite3 {
+        self.conn.handle()
     }
 
     /// Begin a transaction (unchecked — does not enforce nesting rules).
@@ -181,13 +205,6 @@ impl Database {
     /// when dropped.  No-op if metrics are disabled.
     pub fn timer(&self, label: &'static str) -> metrics::QueryTimer {
         metrics::QueryTimer::new(label, self.metrics.clone())
-    }
-
-    /// Enable metrics collection on this database.
-    pub fn enable_metrics(&mut self) -> Arc<metrics::QueryMetrics> {
-        let m = Arc::new(metrics::QueryMetrics::new());
-        self.metrics = Some(m.clone());
-        m
     }
 
     /// Set the query cache (usually propagated from DbPool).
@@ -210,7 +227,7 @@ impl Database {
             path: None,
             query_cache: Some(Arc::new(QueryCache::new(256))),
             metrics: Some(Arc::new(metrics::QueryMetrics::new())),
-            has_vec: std::cell::OnceCell::new(),
+            has_vec: std::sync::OnceLock::new(),
         })
     }
 }
@@ -429,7 +446,6 @@ mod pool_tests {
         let db = pool.get().unwrap();
         // Verify it works.
         let count: i64 = db
-            .conn
             .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 0);
@@ -439,7 +455,6 @@ mod pool_tests {
         // Check out again — should reuse.
         let db2 = pool.get().unwrap();
         let count2: i64 = db2
-            .conn
             .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count2, 0);
@@ -453,13 +468,12 @@ mod pool_tests {
         // Seed data.
         {
             let db = pool.get().unwrap();
-            db.conn
-                .execute(
-                    "INSERT INTO files (path, hash, language, last_indexed) \
-                     VALUES ('a.rs', 'h', 'rust', 0)",
-                    [],
-                )
-                .unwrap();
+            db.execute(
+                "INSERT INTO files (path, hash, language, last_indexed) \
+                 VALUES ('a.rs', 'h', 'rust', 0)",
+                [],
+            )
+            .unwrap();
         }
 
         // Spawn multiple threads that all read concurrently.
@@ -470,7 +484,6 @@ mod pool_tests {
                     for _ in 0..5 {
                         let db = pool.get().unwrap();
                         let count: i64 = db
-                            .conn
                             .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
                             .unwrap();
                         assert_eq!(count, 1);
@@ -498,7 +511,6 @@ mod pool_tests {
         // All four should work.
         for db in [&db1, &db2, &db3, &db4] {
             let _: i64 = db
-                .conn
                 .query_row("SELECT 1", [], |r| r.get(0))
                 .unwrap();
         }
@@ -512,7 +524,6 @@ mod pool_tests {
         // Verify pool still works after returns.
         let db = pool.get().unwrap();
         let _: i64 = db
-            .conn
             .query_row("SELECT 1", [], |r| r.get(0))
             .unwrap();
     }
@@ -526,19 +537,17 @@ mod pool_tests {
         // Write via pool1.
         {
             let db = pool1.get().unwrap();
-            db.conn
-                .execute(
-                    "INSERT INTO files (path, hash, language, last_indexed) \
-                     VALUES ('x.rs', 'h', 'rust', 0)",
-                    [],
-                )
-                .unwrap();
+            db.execute(
+                "INSERT INTO files (path, hash, language, last_indexed) \
+                 VALUES ('x.rs', 'h', 'rust', 0)",
+                [],
+            )
+            .unwrap();
         }
 
         // Read via pool2 — should see the write (same database file).
         let db = pool2.get().unwrap();
         let count: i64 = db
-            .conn
             .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);

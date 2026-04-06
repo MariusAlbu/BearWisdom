@@ -68,7 +68,7 @@ fn fbv_regex_matches_function_view() {
 #[test]
 fn detect_models_inserts_flow_edges() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let py_file = make_py_file("class Product(models.Model):\n    name = models.CharField()\n");
     let root = py_file.path().parent().unwrap();
@@ -92,7 +92,7 @@ fn detect_models_inserts_flow_edges() {
 #[test]
 fn detect_urls_inserts_route() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let py_file = tempfile::Builder::new()
         .prefix("urls")
@@ -136,7 +136,7 @@ fn detect_urls_inserts_route() {
 #[test]
 fn detect_views_inserts_cbv_and_fbv_edges() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = "class ProductListView(ListView):\n    pass\n\ndef order_detail(request, pk):\n    pass\n";
     let py_file = make_py_file(source);

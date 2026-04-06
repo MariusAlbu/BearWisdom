@@ -342,7 +342,7 @@ pub fn link_producers_to_consumers(
 
 /// Run all message queue detection passes and write results to the database.
 pub fn connect(db: &Database, project_root: &Path) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let endpoints = detect_queue_endpoints(conn, project_root)
         .context("Message queue endpoint detection failed")?;

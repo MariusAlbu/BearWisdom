@@ -94,7 +94,7 @@ type Mutation {
     #[test]
     fn detect_operations_from_graphql_file() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         let gql_file = make_graphql_file(
             "type Query {\n  getProduct(id: ID!): Product\n  listProducts: [Product!]!\n}\n",
@@ -113,7 +113,7 @@ type Mutation {
     #[test]
     fn match_operations_creates_resolver_edge() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         // Schema file.
         insert_file(conn, "schema.graphql", "graphql");
@@ -151,14 +151,14 @@ type Mutation {
     #[test]
     fn no_operations_skips_resolver_matching() {
         let db = Database::open_in_memory().unwrap();
-        let created = match_operations_to_resolvers(&db.conn, &[]).unwrap();
+        let created = match_operations_to_resolvers(db.conn(), &[]).unwrap();
         assert_eq!(created, 0);
     }
 
     #[test]
     fn sdl_in_typescript_file_detected() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         let mut f = tempfile::Builder::new()
             .suffix(".ts")

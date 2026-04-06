@@ -107,7 +107,7 @@ fn empty_source_produces_no_registrations() {
 // -----------------------------------------------------------------------
 
 fn seed_symbols(db: &Database) -> (i64, i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -143,7 +143,7 @@ fn link_creates_implements_edge() {
 
     // Get the file_id from the impl symbol.
     let file_id: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT file_id FROM symbols WHERE id = ?1",
             [impl_id],
@@ -159,11 +159,11 @@ fn link_creates_implements_edge() {
         implementation_type: "CatalogService".to_string(),
     }];
 
-    let created = link_di_registrations(&db.conn, &registrations).unwrap();
+    let created = link_di_registrations(db.conn(), &registrations).unwrap();
     assert_eq!(created, 1, "Expected one implements edge");
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM edges WHERE kind = 'implements'",
             [],
@@ -186,7 +186,7 @@ fn self_registration_creates_no_edge() {
         implementation_type: "CatalogService".to_string(),
     }];
 
-    let created = link_di_registrations(&db.conn, &registrations).unwrap();
+    let created = link_di_registrations(db.conn(), &registrations).unwrap();
     assert_eq!(created, 0, "Self-registration should produce no edge");
 }
 
@@ -203,7 +203,7 @@ fn missing_symbols_skipped_without_error() {
     }];
 
     // Should not panic or return Err.
-    let created = link_di_registrations(&db.conn, &registrations).unwrap();
+    let created = link_di_registrations(db.conn(), &registrations).unwrap();
     assert_eq!(created, 0);
 }
 
@@ -213,7 +213,7 @@ fn duplicate_registration_not_double_counted() {
     let (_, impl_id) = seed_symbols(&db);
 
     let file_id: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT file_id FROM symbols WHERE id = ?1",
             [impl_id],
@@ -229,7 +229,7 @@ fn duplicate_registration_not_double_counted() {
         implementation_type: "CatalogService".to_string(),
     };
 
-    link_di_registrations(&db.conn, &[reg.clone()]).unwrap();
-    let created = link_di_registrations(&db.conn, &[reg]).unwrap();
+    link_di_registrations(db.conn(), &[reg.clone()]).unwrap();
+    let created = link_di_registrations(db.conn(), &[reg]).unwrap();
     assert_eq!(created, 0, "OR IGNORE should prevent duplicate edge");
 }

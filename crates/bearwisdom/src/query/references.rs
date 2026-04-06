@@ -32,7 +32,7 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
         }
     }
 
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Resolve the target name to one or more symbol IDs.
     let target_ids: Vec<i64> = {

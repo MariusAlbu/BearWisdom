@@ -2,7 +2,7 @@ use super::*;
 use crate::db::Database;
 
 fn insert_symbol(db: &Database, path: &str, name: &str, qname: &str) -> i64 {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'csharp', 0)
          ON CONFLICT(path) DO NOTHING",
@@ -17,7 +17,7 @@ fn insert_symbol(db: &Database, path: &str, name: &str, qname: &str) -> i64 {
 }
 
 fn insert_edge(db: &Database, src: i64, tgt: i64) {
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, 'calls', 1.0)",
         rusqlite::params![src, tgt],
     ).unwrap();
@@ -56,12 +56,12 @@ fn export_with_concept_filter() {
     let _s2 = insert_symbol(&db, "b.cs", "Other",       "App.Other.Other");
 
     // Create concept and assign s1 to it.
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO concepts (name, auto_pattern, created_at) VALUES ('auth', 'App.Auth.*', 0)",
         [],
     ).unwrap();
-    let cid: i64 = db.conn.last_insert_rowid();
-    db.conn.execute(
+    let cid: i64 = db.conn().last_insert_rowid();
+    db.conn().execute(
         "INSERT INTO concept_members (concept_id, symbol_id, auto_assigned) VALUES (?1, ?2, 1)",
         rusqlite::params![cid, s1],
     ).unwrap();

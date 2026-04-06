@@ -2,7 +2,7 @@ use super::*;
 use crate::db::Database;
 
 fn insert_symbol(db: &Database, path: &str, name: &str, qname: &str) -> i64 {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'csharp', 0)
          ON CONFLICT(path) DO NOTHING",
@@ -17,11 +17,11 @@ fn insert_symbol(db: &Database, path: &str, name: &str, qname: &str) -> i64 {
 }
 
 fn insert_concept(db: &Database, name: &str, pattern: Option<&str>) -> i64 {
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO concepts (name, auto_pattern, created_at) VALUES (?1, ?2, 0)",
         rusqlite::params![name, pattern],
     ).unwrap();
-    db.conn.last_insert_rowid()
+    db.conn().last_insert_rowid()
 }
 
 #[test]
@@ -37,7 +37,7 @@ fn list_concepts_with_counts() {
     let cid = insert_concept(&db, "catalog", Some("App.Catalog.*"));
     let sid = insert_symbol(&db, "a.cs", "CatalogService", "App.Catalog.CatalogService");
 
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO concept_members (concept_id, symbol_id, auto_assigned) VALUES (?1, ?2, 1)",
         rusqlite::params![cid, sid],
     ).unwrap();

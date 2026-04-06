@@ -323,7 +323,7 @@ impl LanguageResolver for JavaResolver {
             }
             "private" => {
                 // Only visible within the same file (same class declaration).
-                target.file_path == file_ctx.file_path
+                &*target.file_path == file_ctx.file_path
             }
             _ => true,
         }

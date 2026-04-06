@@ -52,7 +52,7 @@ pub struct ProtoRpc {
 ///      matches the service name directly).
 ///   4. For each RPC, find a matching C# method and insert a flow_edge.
 pub fn connect(db: &Database) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // 1. Load proto files.
     let proto_files = load_proto_files(conn)?;

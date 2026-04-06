@@ -109,7 +109,7 @@
     #[test]
     fn extracts_basic_controller_and_get_method() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -143,7 +143,7 @@ export class UsersController {
     #[test]
     fn extracts_parameterised_route() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -203,7 +203,7 @@ export class ArticlesController {
     #[test]
     fn extracts_controller_with_no_prefix() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -244,7 +244,7 @@ export class HealthController {
     #[test]
     fn extracts_all_http_verbs() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -292,7 +292,7 @@ export class ItemsController {
     #[test]
     fn write_routes_inserts_to_routes_table() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -333,7 +333,7 @@ export class ItemsController {
     #[test]
     fn symbol_id_is_resolved_when_indexed() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)

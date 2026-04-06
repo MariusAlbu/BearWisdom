@@ -125,7 +125,7 @@ pub fn get_overview_with_limits(
     entry_point_limit: usize,
 ) -> QueryResult<ArchitectureOverview> {
     let _timer = db.timer("architecture_overview");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // --- 1. Totals ---
     let total_files: u32 =

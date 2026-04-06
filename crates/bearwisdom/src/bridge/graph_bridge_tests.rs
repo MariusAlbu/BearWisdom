@@ -20,34 +20,34 @@ fn seed_symbols(bridge: &GraphBridge) -> (i64, i64, i64) {
     let db = bridge.pool().get().unwrap();
 
     db
-        .conn
+        .conn()
         .execute(
             "INSERT INTO files (path, hash, language, last_indexed)
              VALUES ('src/foo.rs', 'abc', 'rust', 0)",
             [],
         )
         .unwrap();
-    let file_id = db.conn.last_insert_rowid();
+    let file_id = db.conn().last_insert_rowid();
 
     db
-        .conn
+        .conn()
         .execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
              VALUES (?1, 'foo', 'mod::foo', 'function', 1, 0, 10)",
             [file_id],
         )
         .unwrap();
-    let src_id = db.conn.last_insert_rowid();
+    let src_id = db.conn().last_insert_rowid();
 
     db
-        .conn
+        .conn()
         .execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
              VALUES (?1, 'bar', 'mod::bar', 'function', 20, 0, 30)",
             [file_id],
         )
         .unwrap();
-    let tgt_id = db.conn.last_insert_rowid();
+    let tgt_id = db.conn().last_insert_rowid();
 
     (file_id, src_id, tgt_id)
 }
@@ -66,7 +66,7 @@ fn test_persist_lsp_edge_inserts() {
     // Verify the edge exists with confidence 1.0.
     let db = bridge.pool().get().unwrap();
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
             [src_id, tgt_id],
@@ -77,7 +77,7 @@ fn test_persist_lsp_edge_inserts() {
 
     // Verify lsp_edge_meta was written.
     let meta_count: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r| r.get(0))
         .unwrap();
     assert_eq!(meta_count, 1);
@@ -92,7 +92,7 @@ fn test_persist_lsp_edge_upgrades() {
     {
         let db = bridge.pool().get().unwrap();
         db
-            .conn
+            .conn()
             .execute(
                 "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
                  VALUES (?1, ?2, 'calls', 5, 0.5)",
@@ -107,7 +107,7 @@ fn test_persist_lsp_edge_upgrades() {
 
     let db = bridge.pool().get().unwrap();
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
             [src_id, tgt_id],
@@ -126,7 +126,7 @@ fn test_upgrade_confidence() {
     {
         let db = bridge.pool().get().unwrap();
         db
-            .conn
+            .conn()
             .execute(
                 "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
                  VALUES (?1, ?2, 'calls', NULL, 0.5)",
@@ -142,7 +142,7 @@ fn test_upgrade_confidence() {
 
     let db = bridge.pool().get().unwrap();
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
             [src_id, tgt_id],
@@ -179,7 +179,7 @@ fn test_invalidate_file_edges() {
     // Confidence should be reset to 0.50.
     let db = bridge.pool().get().unwrap();
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges WHERE source_id = ?1 AND target_id = ?2",
             [src_id, tgt_id],

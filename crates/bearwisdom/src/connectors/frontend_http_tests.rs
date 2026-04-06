@@ -42,7 +42,7 @@ fn extract_fetch_method_finds_post() {
 
 fn make_db_with_route(method: &str, template: &str) -> Database {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -79,7 +79,7 @@ fn write_ts_file(content: &str) -> NamedTempFile {
 #[test]
 fn detect_fetch_get_call() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let ts_file = write_ts_file(r#"const data = await fetch("/api/catalog/items");"#);
     let root = ts_file.path().parent().unwrap();
@@ -100,7 +100,7 @@ fn detect_fetch_get_call() {
 #[test]
 fn detect_axios_post_call() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let ts_file =
         write_ts_file(r#"await axios.post("/api/orders", { body });"#);
@@ -122,7 +122,7 @@ fn detect_axios_post_call() {
 #[test]
 fn detect_template_literal_url() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let ts_file = write_ts_file(
         "const r = await fetch(`/api/items/${id}`);\n",
@@ -144,7 +144,7 @@ fn detect_template_literal_url() {
 #[test]
 fn match_calls_to_routes_inserts_flow_edge() {
     let db = make_db_with_route("GET", "/api/catalog/items");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Insert a TS file.
     conn.execute(
@@ -180,7 +180,7 @@ fn match_calls_to_routes_inserts_flow_edge() {
 #[test]
 fn match_calls_method_mismatch_creates_no_edge() {
     let db = make_db_with_route("POST", "/api/catalog/items");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -206,7 +206,7 @@ fn match_calls_method_mismatch_creates_no_edge() {
 #[test]
 fn match_calls_to_routes_with_path_param() {
     let db = make_db_with_route("GET", "/api/catalog/items/{id}");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -233,7 +233,7 @@ fn match_calls_to_routes_with_path_param() {
 #[test]
 fn no_routes_in_db_returns_zero() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -263,7 +263,7 @@ fn no_routes_in_db_returns_zero() {
 #[test]
 fn detect_python_requests_get() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let mut f = tempfile::Builder::new().suffix(".py").tempfile().unwrap();
     write!(f, r#"response = requests.get("https://api.example.com/items")"#).unwrap();
@@ -289,7 +289,7 @@ fn detect_python_requests_get() {
 #[test]
 fn detect_go_http_post() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let mut f = tempfile::Builder::new().suffix(".go").tempfile().unwrap();
     write!(f, r#"resp, err := http.Post("https://api.example.com/orders", "application/json", body)"#).unwrap();
@@ -315,7 +315,7 @@ fn detect_go_http_post() {
 #[test]
 fn detect_csharp_httpclient_get_async() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let mut f = tempfile::Builder::new().suffix(".cs").tempfile().unwrap();
     write!(
@@ -352,7 +352,7 @@ fn normalise_method_maps_java_convenience_methods() {
 #[test]
 fn detect_ruby_httparty_post() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let mut f = tempfile::Builder::new().suffix(".rb").tempfile().unwrap();
     write!(f, r#"response = HTTParty.post("https://api.example.com/submit", body: data)"#)

@@ -97,7 +97,7 @@ struct FlowJumpMap {
 impl FlowJumpMap {
     fn load(db: &Database) -> QueryResult<Self> {
         let _timer = db.timer("flow_jump_map_load");
-        let conn = &db.conn;
+        let conn = db.conn();
         let mut by_source: HashMap<String, Vec<(String, String)>> = HashMap::new();
         let mut by_target: HashMap<String, Vec<(String, String)>> = HashMap::new();
 
@@ -152,7 +152,7 @@ pub fn trace_from_symbol(
     max_depth: u32,
 ) -> QueryResult<FullTraceResult> {
     let _timer = db.timer("trace_from_symbol");
-    let conn = &db.conn;
+    let conn = db.conn();
     let jumps = FlowJumpMap::load(db)?;
     let mut visited_global = HashSet::new();
     let mut flow_jump_count = 0u32;
@@ -211,7 +211,7 @@ pub fn trace_from_entry_points(
     max_traces: usize,
 ) -> QueryResult<FullTraceResult> {
     let _timer = db.timer("trace_from_entry_points");
-    let conn = &db.conn;
+    let conn = db.conn();
     let jumps = FlowJumpMap::load(db)?;
 
     // Find structural roots: symbols that have outgoing calls/type_ref/instantiates
@@ -525,7 +525,7 @@ mod tests {
     #[test]
     fn test_trace_basic() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         // Create file.
         conn.execute(
@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn test_trace_with_flow_jump() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/app.rs', 'h', 'rust', 0)",

@@ -2,7 +2,7 @@ use super::*;
 use crate::db::Database;
 
 fn insert_symbol(db: &Database, path: &str, name: &str, qname: &str, kind: &str, line: u32) -> i64 {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'csharp', 0)
          ON CONFLICT(path) DO NOTHING",

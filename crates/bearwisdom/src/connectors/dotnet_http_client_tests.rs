@@ -48,6 +48,6 @@ fn infer_method_defaults_to_get() {
 #[test]
 fn connect_runs_without_error_on_empty_db() {
     let db = crate::db::Database::open_in_memory().unwrap();
-    let result = connect(&db.conn, std::path::Path::new("."));
+    let result = connect(db.conn(), std::path::Path::new("."));
     assert!(result.is_ok());
 }

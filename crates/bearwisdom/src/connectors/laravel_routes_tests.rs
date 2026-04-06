@@ -136,7 +136,7 @@ fn join_prefix_stack_nested() {
 #[test]
 fn explicit_routes_inserted_correctly() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"<?php
 
@@ -176,7 +176,7 @@ Route::delete('/users/{id}', [UserController::class, 'destroy']);
 #[test]
 fn resource_and_api_resource_expansion() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"<?php
 
@@ -236,7 +236,7 @@ Route::apiResource('comments', CommentController::class);
 #[test]
 fn prefixed_group_routes_resolve_correctly() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Outer prefix 'api', inner prefix 'v1'.
     let source = r#"<?php
@@ -296,7 +296,7 @@ Route::get('/health', [HealthController::class, 'check']);
 #[test]
 fn group_array_prefix_syntax() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"<?php
 
@@ -341,7 +341,7 @@ Route::group(['prefix' => 'admin'], function () {
 fn connect_empty_project_returns_zero() {
     let db = Database::open_in_memory().unwrap();
     let dir = tempfile::TempDir::new().unwrap();
-    let count = connect(&db.conn, dir.path()).unwrap();
+    let count = connect(db.conn(), dir.path()).unwrap();
     assert_eq!(count, 0);
 }
 
@@ -352,7 +352,7 @@ fn connect_empty_project_returns_zero() {
 #[test]
 fn match_route_inserts_per_method() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"<?php
 

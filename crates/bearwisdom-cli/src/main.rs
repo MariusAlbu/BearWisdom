@@ -547,7 +547,7 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
 
     eprintln!("Opening database at {}", db_path.display());
 
-    let mut db = Database::open_with_vec(&db_path)
+    let mut db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     eprintln!("Running full index for {} ...", root.display());
@@ -601,7 +601,7 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
 fn cmd_embed(project_path: &str, batch_size: usize) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
-    let db = Database::open_with_vec(&db_path)
+    let db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let model_dir = resolve_model_dir(&root)
@@ -664,7 +664,7 @@ fn cmd_enrich(project_path: &str, batch_size: usize, threshold: f64) -> Result<S
 fn cmd_import_scip(project_path: &str, scip_path: &str) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
-    let db = Database::open_with_vec(&db_path)
+    let db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let scip = PathBuf::from(scip_path);
@@ -709,7 +709,7 @@ fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
 
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
-    let mut db = Database::open_with_vec(&db_path)
+    let mut db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let debounce = Duration::from_millis(debounce_ms);
@@ -896,7 +896,7 @@ fn cmd_grep(
 
 fn cmd_hybrid(project_path: &str, query: &str, limit: usize) -> Result<String> {
     let db_path = resolve_db_path(&PathBuf::from(project_path))?;
-    let db = Database::open_with_vec(&db_path)
+    let db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let root = PathBuf::from(project_path);
@@ -1009,7 +1009,7 @@ fn cmd_investigate(
 ) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
-    let db = Database::open_with_vec(&db_path)
+    let db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let opts = bearwisdom::query::investigate::InvestigateOptions {
@@ -1119,7 +1119,7 @@ fn open_existing_db(project_path: &str) -> Result<Database> {
         );
     }
 
-    Database::open_with_vec(&db_path)
+    Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))
 }
 
@@ -1149,7 +1149,7 @@ fn cmd_reindex(project_path: &str) -> Result<String> {
 
     eprintln!("Reindexing {} ...", root.display());
 
-    let mut db = Database::open_with_vec(&db_path)
+    let mut db = Database::open(&db_path)
         .with_context(|| format!("Failed to open DB at {}", db_path.display()))?;
 
     bearwisdom::full_index(&mut db, &root, None, None, None)
@@ -1217,13 +1217,13 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         // Optionally re-index.
         if reindex || !db_path.exists() {
             eprintln!("Indexing...");
-            let mut db = Database::open_with_vec(&db_path)
+            let mut db = Database::open(&db_path)
                 .with_context(|| format!("Failed to open DB for {name}"))?;
             bearwisdom::full_index(&mut db, &root, None, None, None)
                 .with_context(|| format!("Index failed for {name}"))?;
         }
 
-        let db = Database::open_with_vec(&db_path)
+        let db = Database::open(&db_path)
             .with_context(|| format!("Failed to open DB for {name}"))?;
 
         // Read current counts via core library.

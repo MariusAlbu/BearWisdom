@@ -53,20 +53,18 @@ fn metadata_for(project_root: &std::path::Path) -> Metadata {
 
 /// Count all edges in the database.
 fn edge_count(db: &bearwisdom::Database) -> i64 {
-    db.conn()
-        .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
+    db.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap()
 }
 
 /// Count edges of a specific `kind`.
 fn edge_count_by_kind(db: &bearwisdom::Database, kind: &str) -> i64 {
-    db.conn()
-        .query_row(
-            "SELECT COUNT(*) FROM edges WHERE kind = ?1",
-            rusqlite::params![kind],
-            |r| r.get(0),
-        )
-        .unwrap()
+    db.query_row(
+        "SELECT COUNT(*) FROM edges WHERE kind = ?1",
+        rusqlite::params![kind],
+        |r| r.get(0),
+    )
+    .unwrap()
 }
 
 /// Return all (source_line, confidence) pairs for scip_ref edges between
@@ -77,7 +75,6 @@ fn scip_ref_edges(
     target_name: &str,
 ) -> Vec<(Option<i32>, f64)> {
     let mut stmt = db
-        .conn()
         .prepare(
             "SELECT e.source_line, e.confidence
              FROM edges e
@@ -107,7 +104,7 @@ fn db_file_path(db: &bearwisdom::Database, suffix: &str) -> String {
     // Allow both / and \ variants; return whichever exists in the DB.
     for sep in ["/", "\\"] {
         let pattern = format!("%{}{}", sep, suffix.replace('/', sep));
-        if let Ok(p) = db.conn().query_row(
+        if let Ok(p) = db.query_row(
             "SELECT path FROM files WHERE path LIKE ?1 LIMIT 1",
             rusqlite::params![pattern],
             |r| r.get::<_, String>(0),
@@ -121,24 +118,22 @@ fn db_file_path(db: &bearwisdom::Database, suffix: &str) -> String {
 
 /// Return the 0-based start line for a symbol with the given `name`.
 fn symbol_line(db: &bearwisdom::Database, name: &str) -> i32 {
-    db.conn()
-        .query_row(
-            "SELECT line FROM symbols WHERE name = ?1 LIMIT 1",
-            rusqlite::params![name],
-            |r| r.get(0),
-        )
-        .unwrap_or(0)
+    db.query_row(
+        "SELECT line FROM symbols WHERE name = ?1 LIMIT 1",
+        rusqlite::params![name],
+        |r| r.get(0),
+    )
+    .unwrap_or(0)
 }
 
 /// Return the 0-based end line for a symbol (falls back to start line if NULL).
 fn symbol_end_line(db: &bearwisdom::Database, name: &str) -> i32 {
-    db.conn()
-        .query_row(
-            "SELECT COALESCE(end_line, line) FROM symbols WHERE name = ?1 LIMIT 1",
-            rusqlite::params![name],
-            |r| r.get(0),
-        )
-        .unwrap_or(0)
+    db.query_row(
+        "SELECT COALESCE(end_line, line) FROM symbols WHERE name = ?1 LIMIT 1",
+        rusqlite::params![name],
+        |r| r.get(0),
+    )
+    .unwrap_or(0)
 }
 
 // ---------------------------------------------------------------------------
@@ -260,7 +255,6 @@ fn test_scip_import_creates_edges() {
 
     // Every scip_ref edge in the DB must also have confidence = 1.0.
     let any_low: i64 = db
-        .conn()
         .query_row(
             "SELECT COUNT(*) FROM edges WHERE kind='scip_ref' AND confidence < 1.0",
             [],
@@ -303,7 +297,6 @@ fn test_scip_import_upgrades_confidence() {
 
     // Fetch IDs for the two symbols so we can pre-insert the edge.
     let svc_id: i64 = db
-        .conn()
         .query_row(
             "SELECT id FROM symbols WHERE name = 'ProductService' LIMIT 1",
             [],
@@ -311,7 +304,6 @@ fn test_scip_import_upgrades_confidence() {
         )
         .unwrap();
     let repo_id: i64 = db
-        .conn()
         .query_row(
             "SELECT id FROM symbols WHERE name = 'IProductRepository' LIMIT 1",
             [],
@@ -320,17 +312,15 @@ fn test_scip_import_upgrades_confidence() {
         .unwrap();
 
     // Pre-insert a low-confidence edge (0.3).
-    db.conn()
-        .execute(
-            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
-             VALUES (?1, ?2, 'scip_ref', ?3, 0.3)",
-            rusqlite::params![svc_id, repo_id, ref_line],
-        )
-        .unwrap();
+    db.execute(
+        "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
+         VALUES (?1, ?2, 'scip_ref', ?3, 0.3)",
+        rusqlite::params![svc_id, repo_id, ref_line],
+    )
+    .unwrap();
 
     // Confirm edge is at 0.3 before import.
     let pre_conf: f64 = db
-        .conn()
         .query_row(
             "SELECT confidence FROM edges WHERE source_id=?1 AND target_id=?2",
             rusqlite::params![svc_id, repo_id],
@@ -398,7 +388,6 @@ fn test_scip_import_upgrades_confidence() {
 
     // Confirm edge is now at 1.0.
     let post_conf: f64 = db
-        .conn()
         .query_row(
             "SELECT confidence FROM edges WHERE source_id=?1 AND target_id=?2",
             rusqlite::params![svc_id, repo_id],

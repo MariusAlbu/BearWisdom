@@ -3,7 +3,7 @@ use crate::db::Database;
 
 fn make_db_with_data() -> Database {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Insert three files.
     for (path, lang) in [

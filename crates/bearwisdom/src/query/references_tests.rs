@@ -2,7 +2,7 @@ use super::*;
 use crate::db::Database;
 
 fn setup(db: &Database) -> (i64, i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h1', 'csharp', 0)",
         [],
@@ -63,7 +63,7 @@ fn find_references_returns_empty_for_unknown() {
 #[test]
 fn find_references_respects_limit() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('b.cs', 'h', 'csharp', 0)",
@@ -106,7 +106,7 @@ fn find_references_respects_limit() {
 #[test]
 fn qualified_name_lookup_isolates_specific_handle_method() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('handlers.cs', 'h', 'csharp', 0)",

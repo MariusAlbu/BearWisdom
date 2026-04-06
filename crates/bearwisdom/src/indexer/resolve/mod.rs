@@ -73,10 +73,10 @@ fn resolve_and_write_inner(
     // For incremental: load symbols from unchanged files so the engine
     // resolver can find cross-file targets (CR #9).
     if augment_from_db {
-        index.augment_from_db(&db.conn);
+        index.augment_from_db(db.conn());
     }
 
-    let conn = &db.conn;
+    let conn = db.conn();
     let tx = conn
         .unchecked_transaction()
         .context("Failed to begin resolution transaction")?;
@@ -293,14 +293,22 @@ fn resolve_and_write_inner(
         .context("Failed to commit resolution transaction")?;
 
     // Materialize incoming_edge_count on symbols for fast centrality lookups.
-    // Single UPDATE uses the existing idx_edges_target index.
+    // Scan edges once into a temp table (O(E)), then join-update symbols (O(S * log E_distinct)).
+    // This avoids the correlated-subquery path that issues one COUNT per symbol row.
+    conn.execute_batch(
+        "CREATE TEMP TABLE IF NOT EXISTS _edge_counts (id INTEGER PRIMARY KEY, cnt INTEGER);
+         DELETE FROM _edge_counts;
+         INSERT INTO _edge_counts SELECT target_id, COUNT(*) FROM edges GROUP BY target_id;",
+    )
+    .context("Failed to build edge count temp table")?;
     conn.execute(
-        "UPDATE symbols SET incoming_edge_count = (
-            SELECT COUNT(*) FROM edges WHERE target_id = symbols.id
-        )",
+        "UPDATE symbols SET incoming_edge_count = COALESCE(
+            (SELECT cnt FROM _edge_counts WHERE _edge_counts.id = symbols.id), 0)",
         [],
     )
     .context("Failed to materialize incoming_edge_count")?;
+    conn.execute("DELETE FROM _edge_counts", [])
+        .context("Failed to clean up edge count temp table")?;
 
     if stats.engine_resolved > 0 || stats.external > 0 {
         info!(

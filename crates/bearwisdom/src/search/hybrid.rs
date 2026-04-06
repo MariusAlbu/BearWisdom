@@ -103,7 +103,7 @@ pub fn hybrid_search(
 
     if db.has_vec_extension() {
         match embedder.embed_query(query) {
-            Ok(query_vec) => match knn_search(&db.conn, &query_vec, fetch_n) {
+            Ok(query_vec) => match knn_search(db.conn(), &query_vec, fetch_n) {
                 Ok(knn_results) => {
                     trace!(vec_count = knn_results.len(), "KNN vector pass");
                     for (rank_0, (chunk_id, _dist)) in knn_results.iter().enumerate() {
@@ -122,7 +122,7 @@ pub fn hybrid_search(
     // than one query per file path.
     let fts_paths: Vec<&str> = text_file_rank.keys().map(|s| s.as_str()).collect();
     let mut candidate_chunk_ids: HashSet<i64> =
-        batch_chunk_ids_for_files(&db.conn, &fts_paths)?;
+        batch_chunk_ids_for_files(db.conn(), &fts_paths)?;
 
     for &chunk_id in vec_chunk_rank.keys() {
         candidate_chunk_ids.insert(chunk_id);
@@ -135,7 +135,7 @@ pub fn hybrid_search(
     // file_path is available in the metadata, so we do not need a separate
     // chunk→file_path pass; this single batch covers both the RRF scoring step
     // and the final result-building step.
-    let meta_map = batch_fetch_chunk_meta(&db.conn, &candidate_chunk_ids)?;
+    let meta_map = batch_fetch_chunk_meta(db.conn(), &candidate_chunk_ids)?;
 
     // --- RRF merge at chunk level ---
     let mut scored: Vec<(i64, f64, Option<u32>, Option<u32>)> = candidate_chunk_ids
@@ -217,10 +217,10 @@ pub fn semantic_search(
         }
     };
 
-    let knn = knn_search(&db.conn, &query_vec, limit)?;
+    let knn = knn_search(db.conn(), &query_vec, limit)?;
 
     let knn_ids: Vec<i64> = knn.iter().map(|(id, _)| *id).collect();
-    let meta_map = batch_fetch_chunk_meta(&db.conn, &knn_ids)?;
+    let meta_map = batch_fetch_chunk_meta(db.conn(), &knn_ids)?;
 
     let mut results: Vec<HybridSearchResult> = Vec::new();
 
@@ -295,7 +295,7 @@ pub fn rerank_references(
     let ref_texts: Vec<String> = reference_results
         .iter()
         .map(|r| {
-            chunk_snippet_for_line(&db.conn, &r.file_path, r.line)
+            chunk_snippet_for_line(db.conn(), &r.file_path, r.line)
                 .unwrap_or_else(|| r.referencing_symbol.clone())
         })
         .collect();

@@ -14,32 +14,32 @@ use prost::Message;
 fn seed_db() -> (Database, i64, i64, i64) {
     let db = Database::open_in_memory().unwrap();
 
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO files (path, hash, language, last_indexed)
              VALUES ('src/app.ts', 'abc', 'typescript', 0)",
             [],
         )
         .unwrap();
-    let file_id = db.conn.last_insert_rowid();
+    let file_id = db.conn().last_insert_rowid();
 
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
              VALUES (?1, 'caller', 'app.caller', 'function', 0, 0, 9)",
             rusqlite::params![file_id],
         )
         .unwrap();
-    let caller_id = db.conn.last_insert_rowid();
+    let caller_id = db.conn().last_insert_rowid();
 
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
              VALUES (?1, 'callee', 'app.callee', 'function', 20, 0, 29)",
             rusqlite::params![file_id],
         )
         .unwrap();
-    let callee_id = db.conn.last_insert_rowid();
+    let callee_id = db.conn().last_insert_rowid();
 
     (db, file_id, caller_id, callee_id)
 }
@@ -192,10 +192,10 @@ fn normalise_doc_path_strips_leading_dot_slash() {
 #[test]
 fn lookup_file_id_found_and_not_found() {
     let (db, file_id, _, _) = seed_db();
-    let found = lookup_file_id(&db.conn, "src/app.ts").unwrap();
+    let found = lookup_file_id(db.conn(), "src/app.ts").unwrap();
     assert_eq!(found, Some(file_id));
 
-    let missing = lookup_file_id(&db.conn, "nonexistent.ts").unwrap();
+    let missing = lookup_file_id(db.conn(), "nonexistent.ts").unwrap();
     assert!(missing.is_none());
 }
 
@@ -203,10 +203,10 @@ fn lookup_file_id_found_and_not_found() {
 fn lookup_symbol_by_file_and_line_exact() {
     let (db, file_id, caller_id, callee_id) = seed_db();
 
-    let found = lookup_symbol_by_file_and_line(&db.conn, file_id, 0).unwrap();
+    let found = lookup_symbol_by_file_and_line(db.conn(), file_id, 0).unwrap();
     assert_eq!(found, Some(caller_id));
 
-    let found2 = lookup_symbol_by_file_and_line(&db.conn, file_id, 20).unwrap();
+    let found2 = lookup_symbol_by_file_and_line(db.conn(), file_id, 20).unwrap();
     assert_eq!(found2, Some(callee_id));
 }
 
@@ -215,15 +215,15 @@ fn lookup_narrowest_symbol_at_line_inside_span() {
     let (db, file_id, caller_id, callee_id) = seed_db();
 
     // Line 5 is inside caller (0–9).
-    let found = lookup_narrowest_symbol_at_line(&db.conn, file_id, 5).unwrap();
+    let found = lookup_narrowest_symbol_at_line(db.conn(), file_id, 5).unwrap();
     assert_eq!(found, Some(caller_id));
 
     // Line 25 is inside callee (20–29).
-    let found2 = lookup_narrowest_symbol_at_line(&db.conn, file_id, 25).unwrap();
+    let found2 = lookup_narrowest_symbol_at_line(db.conn(), file_id, 25).unwrap();
     assert_eq!(found2, Some(callee_id));
 
     // Line 50 is outside both.
-    let outside = lookup_narrowest_symbol_at_line(&db.conn, file_id, 50).unwrap();
+    let outside = lookup_narrowest_symbol_at_line(db.conn(), file_id, 50).unwrap();
     assert!(outside.is_none());
 }
 
@@ -232,15 +232,15 @@ fn lookup_symbol_by_qualified_name_exact_and_suffix() {
     let (db, _, caller_id, _) = seed_db();
 
     // Exact match.
-    let found = lookup_symbol_by_qualified_name(&db.conn, "app.caller").unwrap();
+    let found = lookup_symbol_by_qualified_name(db.conn(), "app.caller").unwrap();
     assert_eq!(found, Some(caller_id));
 
     // Suffix match — SCIP descriptor may have package prefix not in DB.
-    let found2 = lookup_symbol_by_qualified_name(&db.conn, "caller").unwrap();
+    let found2 = lookup_symbol_by_qualified_name(db.conn(), "caller").unwrap();
     assert_eq!(found2, Some(caller_id));
 
     // Not found.
-    let missing = lookup_symbol_by_qualified_name(&db.conn, "totally.unknown").unwrap();
+    let missing = lookup_symbol_by_qualified_name(db.conn(), "totally.unknown").unwrap();
     assert!(missing.is_none());
 }
 
@@ -252,11 +252,11 @@ fn lookup_symbol_by_qualified_name_exact_and_suffix() {
 fn upsert_scip_edge_creates_new_edge() {
     let (db, _, caller_id, callee_id) = seed_db();
 
-    let change = upsert_scip_edge(&db.conn, caller_id, callee_id, 5).unwrap();
+    let change = upsert_scip_edge(db.conn(), caller_id, callee_id, 5).unwrap();
     assert_eq!(change, EdgeChange::Created);
 
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges
              WHERE source_id = ?1 AND target_id = ?2",
@@ -271,13 +271,13 @@ fn upsert_scip_edge_creates_new_edge() {
 fn upsert_scip_edge_idempotent() {
     let (db, _, caller_id, callee_id) = seed_db();
 
-    upsert_scip_edge(&db.conn, caller_id, callee_id, 5).unwrap();
+    upsert_scip_edge(db.conn(), caller_id, callee_id, 5).unwrap();
     // Second call should be a no-op.
-    let change = upsert_scip_edge(&db.conn, caller_id, callee_id, 5).unwrap();
+    let change = upsert_scip_edge(db.conn(), caller_id, callee_id, 5).unwrap();
     assert_eq!(change, EdgeChange::Unchanged);
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 1, "idempotent: still only one edge");
@@ -288,7 +288,7 @@ fn upsert_scip_edge_upgrades_low_confidence() {
     let (db, _, caller_id, callee_id) = seed_db();
 
     // Pre-insert a tree-sitter edge at 0.6.
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
              VALUES (?1, ?2, 'scip_ref', 5, 0.6)",
@@ -296,11 +296,11 @@ fn upsert_scip_edge_upgrades_low_confidence() {
         )
         .unwrap();
 
-    let change = upsert_scip_edge(&db.conn, caller_id, callee_id, 5).unwrap();
+    let change = upsert_scip_edge(db.conn(), caller_id, callee_id, 5).unwrap();
     assert_eq!(change, EdgeChange::Upgraded);
 
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges
              WHERE source_id = ?1 AND target_id = ?2",
@@ -338,7 +338,7 @@ fn import_scip_creates_edge_from_reference_occurrence() {
 
     // Verify the actual edge exists with confidence 1.0.
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges
              WHERE source_id = ?1 AND target_id = ?2 AND kind = 'scip_ref'",
@@ -367,7 +367,7 @@ fn import_scip_is_idempotent() {
 
     // Edge count in DB should be the same after both runs.
     let count: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 1, "idempotent: still one edge after two imports");
@@ -397,7 +397,7 @@ fn import_scip_skips_unknown_file() {
     assert_eq!(stats.edges_created, 0);
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 0);
@@ -413,7 +413,7 @@ fn import_scip_upgrades_preexisting_low_confidence_edge() {
     let (db, _, caller_id, callee_id) = seed_db();
 
     // Pre-seed a tree-sitter edge at 0.7 confidence.
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
              VALUES (?1, ?2, 'scip_ref', 5, 0.7)",
@@ -428,7 +428,7 @@ fn import_scip_upgrades_preexisting_low_confidence_edge() {
     assert_eq!(stats.edges_created, 0);
 
     let conf: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM edges
              WHERE source_id = ?1 AND target_id = ?2",
@@ -504,7 +504,7 @@ fn import_scip_handles_relationship_edges() {
     assert_eq!(stats.edges_created, 1, "relationship edge should be created");
 
     let kind: String = db
-        .conn
+        .conn()
         .query_row(
             "SELECT kind FROM edges WHERE source_id = ?1 AND target_id = ?2",
             rusqlite::params![caller_id, callee_id],
@@ -561,7 +561,7 @@ fn import_scip_no_self_edges() {
 
     assert_eq!(stats.edges_created, 0, "self-edge must be suppressed");
     let count: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 0);

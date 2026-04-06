@@ -58,7 +58,7 @@ pub fn complete_at(
     include_signature: bool,
 ) -> QueryResult<Vec<CompletionItem>> {
     let _timer = db.timer("complete_at");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // --- Step 1: Resolve file_id and containing scope ---
     let file_id: Option<i64> = conn
@@ -245,31 +245,31 @@ mod tests {
     #[test]
     fn test_complete_at_same_scope() {
         let db = Database::open_in_memory().unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/svc.rs', 'h', 'rust', 0)",
             [],
         ).unwrap();
-        let file_id = db.conn.last_insert_rowid();
+        let file_id = db.conn().last_insert_rowid();
 
         // Parent class
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line, scope_path)
              VALUES (?1, 'MyService', 'app.MyService', 'class', 1, 0, 50, 'app')",
             [file_id],
         ).unwrap();
 
         // Methods (scope_path = qualified_name of parent)
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'get_item', 'app.MyService.get_item', 'method', 5, 0, 'app.MyService')",
             [file_id],
         ).unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'get_all', 'app.MyService.get_all', 'method', 15, 0, 'app.MyService')",
             [file_id],
         ).unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'delete', 'app.MyService.delete', 'method', 25, 0, 'app.MyService')",
             [file_id],
@@ -285,23 +285,23 @@ mod tests {
     #[test]
     fn test_complete_at_no_prefix_returns_all() {
         let db = Database::open_in_memory().unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/a.rs', 'h', 'rust', 0)",
             [],
         ).unwrap();
-        let fid = db.conn.last_insert_rowid();
+        let fid = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line, scope_path)
              VALUES (?1, 'Outer', 'mod.Outer', 'class', 1, 0, 30, 'mod')",
             [fid],
         ).unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'alpha', 'mod.Outer.alpha', 'method', 3, 0, 'mod.Outer')",
             [fid],
         ).unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'beta', 'mod.Outer.beta', 'method', 10, 0, 'mod.Outer')",
             [fid],

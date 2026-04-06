@@ -327,7 +327,7 @@ fn detect_django_views(conn: &Connection, project_root: &Path) -> Result<u32> {
 /// Non-fatal: individual detection failures are logged as warnings and the
 /// connector proceeds.
 pub fn connect(db: &Database, project_root: &Path) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let model_count = detect_django_models(conn, project_root)
         .context("Django model detection failed")?;

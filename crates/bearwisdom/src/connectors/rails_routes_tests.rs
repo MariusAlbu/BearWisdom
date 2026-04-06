@@ -237,7 +237,7 @@ end
 #[test]
 fn connect_inserts_explicit_routes_into_db() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let dir = tempfile::TempDir::new().unwrap();
     let routes_dir = dir.path().join("config");
@@ -261,7 +261,7 @@ fn connect_inserts_explicit_routes_into_db() {
 #[test]
 fn connect_expands_resources_in_db() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let dir = tempfile::TempDir::new().unwrap();
     let routes_dir = dir.path().join("config");
@@ -281,7 +281,7 @@ fn connect_expands_resources_in_db() {
 #[test]
 fn connect_inserts_namespaced_routes_in_db() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let dir = tempfile::TempDir::new().unwrap();
     let routes_dir = dir.path().join("config");
@@ -305,6 +305,6 @@ fn connect_inserts_namespaced_routes_in_db() {
 fn connect_with_empty_project_returns_zero() {
     let db = Database::open_in_memory().unwrap();
     let dir = tempfile::TempDir::new().unwrap();
-    let count = connect(&db.conn, dir.path()).unwrap();
+    let count = connect(db.conn(), dir.path()).unwrap();
     assert_eq!(count, 0);
 }

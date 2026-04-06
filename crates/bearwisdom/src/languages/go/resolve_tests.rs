@@ -3,6 +3,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{build_scope_chain, FileContext, LanguageResolver, RefContext, SymbolIndex, SymbolInfo};
 use crate::types::*;
 use std::collections::HashMap;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Test helpers
@@ -940,7 +941,7 @@ fn test_is_visible_public_always() {
         qualified_name: "other.Exported".to_string(),
         kind: "function".to_string(),
         visibility: Some("public".to_string()),
-        file_path: "other/b.go".to_string(),
+        file_path: Arc::from("other/b.go"),
         scope_path: Some("other".to_string()),
     };
 
@@ -979,7 +980,7 @@ fn test_is_visible_private_same_dir() {
         qualified_name: "pkg.unexported".to_string(),
         kind: "function".to_string(),
         visibility: Some("private".to_string()),
-        file_path: "pkg/b.go".to_string(), // same directory
+        file_path: Arc::from("pkg/b.go"), // same directory
         scope_path: Some("pkg".to_string()),
     };
 
@@ -1017,7 +1018,7 @@ fn test_is_visible_private_different_dir() {
         qualified_name: "pkg.unexported".to_string(),
         kind: "function".to_string(),
         visibility: Some("private".to_string()),
-        file_path: "pkg/b.go".to_string(), // different directory
+        file_path: Arc::from("pkg/b.go"), // different directory
         scope_path: Some("pkg".to_string()),
     };
 

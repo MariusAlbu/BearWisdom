@@ -11,30 +11,30 @@ fn insert_file_with_chunk(
     language: &str,
     content: &str,
 ) -> (i64, i64) {
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', ?2, 0)",
             params![path, language],
         )
         .unwrap();
-    let file_id = db.conn.last_insert_rowid();
+    let file_id = db.conn().last_insert_rowid();
 
     // FTS5 content table row.
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO fts_content(rowid, path, content) VALUES (?1, ?2, ?3)",
             params![file_id, path, content],
         )
         .unwrap();
 
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO code_chunks (file_id, content_hash, content, start_line, end_line)
              VALUES (?1, 'h', ?2, 0, 5)",
             params![file_id, content],
         )
         .unwrap();
-    let chunk_id = db.conn.last_insert_rowid();
+    let chunk_id = db.conn().last_insert_rowid();
 
     (file_id, chunk_id)
 }
@@ -250,7 +250,7 @@ fn hybrid_search_with_full_stack() {
     let db_path = std::env::var("ALPHAT_TEST_DB")
         .expect("Set ALPHAT_TEST_DB to an indexed project DB");
 
-    let db = Database::open_with_vec(std::path::Path::new(&db_path)).unwrap();
+    let db = Database::open(std::path::Path::new(&db_path)).unwrap();
     let mut embedder = Embedder::new(std::path::PathBuf::from(model_dir));
 
     let results = hybrid_search(

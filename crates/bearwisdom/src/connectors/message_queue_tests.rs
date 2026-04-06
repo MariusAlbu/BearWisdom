@@ -71,7 +71,7 @@ fn rabbit_routing_key_matches() {
 #[test]
 fn detect_kafka_producer_and_consumer() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let producer = make_file(
         r#"producer.send("my-topic", event);"#,
@@ -101,7 +101,7 @@ fn detect_kafka_producer_and_consumer() {
 #[test]
 fn link_producers_creates_flow_edge() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let producer_file_id = insert_file(conn, "producer.py", "python");
     let consumer_file_id = insert_file(conn, "consumer.py", "python");
@@ -139,7 +139,7 @@ fn link_producers_creates_flow_edge() {
 #[test]
 fn no_match_different_topics_creates_no_edge() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let prod_id = insert_file(conn, "prod.java", "java");
     let cons_id = insert_file(conn, "cons.java", "java");

@@ -39,24 +39,23 @@ struct ProjectStats {
 
 /// Read the same counters that `cmd_quality_check` reads.
 fn read_project_stats(db: &Database) -> ProjectStats {
-    let conn = db.conn();
     ProjectStats {
-        files: conn
+        files: db
             .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
             .unwrap(),
-        symbols: conn
+        symbols: db
             .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
             .unwrap(),
-        edges: conn
+        edges: db
             .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
             .unwrap(),
-        routes: conn
+        routes: db
             .query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))
             .unwrap(),
-        flow_edges: conn
+        flow_edges: db
             .query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))
             .unwrap(),
-        unresolved_refs: conn
+        unresolved_refs: db
             .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
             .unwrap(),
     }
@@ -123,7 +122,7 @@ fn compare_against_baseline(
 /// the CLI uses (`<root>/.bearwisdom/index.db`).  Returns an open `Database`.
 fn index_on_disk(project: &TestProject) -> Database {
     let db_path = resolve_db_path(project.path()).unwrap();
-    let mut db = Database::open_with_vec(&db_path).unwrap();
+    let mut db = Database::open(&db_path).unwrap();
     full_index(&mut db, project.path(), None, None, None).unwrap();
     // Re-open read-only style (connection already has the data).
     db

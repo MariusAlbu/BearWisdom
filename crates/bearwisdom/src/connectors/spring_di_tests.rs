@@ -9,7 +9,7 @@ use crate::db::Database;
 ///
 /// Returns (iface_symbol_id, impl_symbol_id).
 fn seed_service_implements_interface(db: &Database) -> (i64, i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Two files — one for the interface, one for the implementation.
     conn.execute(
@@ -59,7 +59,7 @@ fn seed_service_implements_interface(db: &Database) -> (i64, i64) {
 
 /// Register `impl_symbol_id` as a member of the "spring-services" concept.
 fn register_spring_service_concept(db: &Database, impl_symbol_id: i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT OR IGNORE INTO concepts (name, description)
@@ -95,11 +95,11 @@ fn service_with_implements_edge_creates_di_binding() {
     let (_iface_id, impl_id) = seed_service_implements_interface(&db);
     register_spring_service_concept(&db, impl_id);
 
-    let created = connect(&db.conn, std::path::Path::new(".")).unwrap();
+    let created = connect(db.conn(), std::path::Path::new(".")).unwrap();
     assert_eq!(created, 1, "Expected one di_binding flow_edge");
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM flow_edges WHERE edge_type = 'di_binding'",
             [],
@@ -116,7 +116,7 @@ fn di_binding_flow_edge_fields_are_correct() {
     let (_iface_id, impl_id) = seed_service_implements_interface(&db);
     register_spring_service_concept(&db, impl_id);
 
-    connect(&db.conn, std::path::Path::new(".")).unwrap();
+    connect(db.conn(), std::path::Path::new(".")).unwrap();
 
     let (source_symbol, target_symbol, edge_type, source_language, target_language): (
         String,
@@ -125,7 +125,7 @@ fn di_binding_flow_edge_fields_are_correct() {
         String,
         String,
     ) = db
-        .conn
+        .conn()
         .query_row(
             "SELECT source_symbol, target_symbol, edge_type, source_language, target_language
              FROM flow_edges WHERE edge_type = 'di_binding' LIMIT 1",
@@ -154,11 +154,11 @@ fn di_binding_flow_edge_fields_are_correct() {
 fn no_services_produces_zero_edges() {
     let db = Database::open_in_memory().unwrap();
 
-    let created = connect(&db.conn, std::path::Path::new(".")).unwrap();
+    let created = connect(db.conn(), std::path::Path::new(".")).unwrap();
     assert_eq!(created, 0, "Expected zero flow_edges when no services exist");
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM flow_edges",
             [],
@@ -175,27 +175,27 @@ fn service_without_implements_edge_produces_no_binding() {
     let db = Database::open_in_memory().unwrap();
 
     // Insert a file and a class symbol without any implements edge.
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO files (path, hash, language, last_indexed)
              VALUES ('src/StandaloneService.java', 'h1', 'java', 0)",
             [],
         )
         .unwrap();
-    let file_id: i64 = db.conn.last_insert_rowid();
+    let file_id: i64 = db.conn().last_insert_rowid();
 
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'StandaloneService', 'com.example.StandaloneService', 'class', 3, 0)",
             [file_id],
         )
         .unwrap();
-    let impl_id: i64 = db.conn.last_insert_rowid();
+    let impl_id: i64 = db.conn().last_insert_rowid();
 
     register_spring_service_concept(&db, impl_id);
 
-    let created = connect(&db.conn, std::path::Path::new(".")).unwrap();
+    let created = connect(db.conn(), std::path::Path::new(".")).unwrap();
     assert_eq!(created, 0, "No interface binding without implements edge");
 }
 
@@ -206,12 +206,12 @@ fn idempotent_on_repeated_run() {
     let (_iface_id, impl_id) = seed_service_implements_interface(&db);
     register_spring_service_concept(&db, impl_id);
 
-    connect(&db.conn, std::path::Path::new(".")).unwrap();
-    let second_run = connect(&db.conn, std::path::Path::new(".")).unwrap();
+    connect(db.conn(), std::path::Path::new(".")).unwrap();
+    let second_run = connect(db.conn(), std::path::Path::new(".")).unwrap();
     assert_eq!(second_run, 0, "Second run must not insert duplicates");
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM flow_edges WHERE edge_type = 'di_binding'",
             [],

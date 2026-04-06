@@ -174,7 +174,7 @@ fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::S
                        FROM symbols s JOIN files f ON f.id = s.file_id
                        WHERE lower(s.name) LIKE ?1
                        LIMIT 20";
-            if let Ok(rows) = db.conn.prepare(sql).and_then(|mut stmt| {
+            if let Ok(rows) = db.conn().prepare(sql).and_then(|mut stmt| {
                 stmt.query_map([&pattern], |r| {
                     Ok((
                         r.get::<_, String>(0)?,
@@ -223,7 +223,7 @@ pub fn smart_context(
     depth: u32,
 ) -> QueryResult<SmartContextResult> {
     let _timer = db.timer("smart_context");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     if task.trim().is_empty() {
         return Ok(SmartContextResult {
@@ -563,28 +563,28 @@ mod tests {
     fn test_basic_context() {
         let db = Database::open_in_memory().unwrap();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/svc.rs', 'h', 'rust', 0)",
             [],
         ).unwrap();
-        let fid = db.conn.last_insert_rowid();
+        let fid = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, signature)
              VALUES (?1, 'CatalogService', 'app.CatalogService', 'class', 1, 0, 'class CatalogService')",
             [fid],
         ).unwrap();
-        let sid = db.conn.last_insert_rowid();
+        let sid = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, scope_path)
              VALUES (?1, 'get_item', 'app.CatalogService.get_item', 'method', 5, 0, 'app.CatalogService')",
             [fid],
         ).unwrap();
-        let mid = db.conn.last_insert_rowid();
+        let mid = db.conn().last_insert_rowid();
 
         // Edge: get_item calls CatalogService (so CatalogService has incoming)
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, 'calls', 0.9)",
             rusqlite::params![mid, sid],
         ).unwrap();

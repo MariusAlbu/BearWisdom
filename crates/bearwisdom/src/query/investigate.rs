@@ -87,7 +87,7 @@ pub fn investigate(
     opts: &InvestigateOptions,
 ) -> QueryResult<Option<InvestigateResult>> {
     let _timer = db.timer("investigate");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // --- Resolve the symbol ---
     let lookup_sql = if symbol_name.contains('.') {
@@ -174,13 +174,13 @@ mod tests {
     fn test_investigate_found() {
         let db = Database::open_in_memory().unwrap();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/a.rs', 'h', 'rust', 0)",
             [],
         ).unwrap();
-        let file_id = db.conn.last_insert_rowid();
+        let file_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, signature)
              VALUES (?1, 'do_work', 'mod::do_work', 'function', 10, 0, 'fn do_work()')",
             [file_id],

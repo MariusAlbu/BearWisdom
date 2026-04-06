@@ -89,7 +89,6 @@ pub fn search_content(
     ";
 
     let mut stmt = db
-        .conn
         .prepare(sql)
         .context("Failed to prepare content search query")?;
 

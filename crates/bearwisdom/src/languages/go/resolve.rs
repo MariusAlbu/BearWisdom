@@ -373,7 +373,7 @@ impl LanguageResolver for GoResolver {
         // We approximate with same file_path prefix (same directory).
         if vis == "private" {
             // Same file is always fine.
-            if target.file_path == file_ctx.file_path {
+            if &*target.file_path == file_ctx.file_path {
                 return true;
             }
             // Same package: compare directories.

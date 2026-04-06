@@ -69,7 +69,7 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
         }
     }
 
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // --- Step 1: Resolve to symbol rows ---
     // We resolve a list of IDs, then fetch full detail for each.
@@ -254,7 +254,7 @@ pub fn file_symbols(
     mode: FileSymbolsMode,
 ) -> QueryResult<Vec<FileSymbol>> {
     let _timer = db.timer("file_symbols");
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut stmt = conn.prepare(
         "SELECT s.name, s.kind, s.line, s.col, s.end_line,
                 s.signature, s.qualified_name, s.visibility, s.scope_path

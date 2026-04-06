@@ -18,7 +18,7 @@ use serde::{Deserialize, Serialize};
 /// raw COUNT(*) queries against the tables.
 pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
     let _timer = db.timer("index_stats");
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_count: u32 =
         conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
     let symbol_count: u32 =
@@ -60,7 +60,7 @@ pub struct FlowEdgeBreakdown {
 /// Count connection_points with direction='start' that have no matching flow_edge.
 pub fn unresolved_flow_count(db: &Database) -> QueryResult<u32> {
     let _timer = db.timer("unresolved_flow_count");
-    let count: u32 = db.conn.query_row(
+    let count: u32 = db.conn().query_row(
         "SELECT COUNT(*) FROM connection_points cp
          WHERE cp.direction = 'start'
            AND NOT EXISTS (
@@ -78,7 +78,6 @@ pub fn unresolved_flow_count(db: &Database) -> QueryResult<u32> {
 pub fn flow_edge_count_by_type(db: &Database, edge_type: &str) -> QueryResult<u32> {
     let _timer = db.timer("flow_edge_count_by_type");
     let count: u32 = db
-        .conn
         .query_row(
             "SELECT COUNT(*) FROM flow_edges WHERE edge_type = ?1",
             [edge_type],
@@ -91,7 +90,7 @@ pub fn flow_edge_count_by_type(db: &Database, edge_type: &str) -> QueryResult<u3
 /// Get flow edge counts grouped by edge_type.
 pub fn flow_edge_breakdown(db: &Database) -> QueryResult<Vec<FlowEdgeBreakdown>> {
     let _timer = db.timer("flow_edge_breakdown");
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut stmt = conn.prepare(
         "SELECT edge_type, COUNT(*) FROM flow_edges GROUP BY edge_type ORDER BY COUNT(*) DESC",
     )?;
@@ -108,7 +107,6 @@ pub fn flow_edge_breakdown(db: &Database) -> QueryResult<Vec<FlowEdgeBreakdown>>
 pub fn concept_count(db: &Database) -> QueryResult<u32> {
     let _timer = db.timer("concept_count");
     let count: u32 = db
-        .conn
         .query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0))
         .unwrap_or(0);
     Ok(count)
@@ -147,7 +145,7 @@ pub struct FlowEdgesData {
 /// interleaved sample.
 pub fn flow_edges_data(db: &Database, limit: usize) -> QueryResult<FlowEdgesData> {
     let _timer = db.timer("flow_edges_data");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Summary counts from the full dataset (before limit).
     let mut by_edge_type: HashMap<String, u32> = HashMap::new();

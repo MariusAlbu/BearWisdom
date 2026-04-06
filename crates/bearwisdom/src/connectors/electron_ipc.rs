@@ -268,7 +268,7 @@ fn link_channels(
 
 /// Run all Electron IPC detection passes and write results to the database.
 pub fn connect(db: &Database, project_root: &Path) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let handlers = find_ipc_handlers(conn, project_root)
         .context("Electron IPC handler detection failed")?;

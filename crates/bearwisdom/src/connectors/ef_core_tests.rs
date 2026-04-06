@@ -33,7 +33,7 @@ fn connect_runs_on_empty_db() {
 #[test]
 fn write_and_list_db_mapping() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Set up a minimal file + symbol.
     conn.execute(

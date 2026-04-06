@@ -184,7 +184,7 @@ export class PlainClass {
 // ---------------------------------------------------------------------------
 
 fn seed_db(db: &Database) -> (i64, i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -229,11 +229,11 @@ fn injectable_to_constructor_creates_flow_edge() {
         consumer_class: "DashboardComponent".to_string(),
     }];
 
-    let created = insert_flow_edges(&db.conn, &sites, &injectables).unwrap();
+    let created = insert_flow_edges(db.conn(), &sites, &injectables).unwrap();
     assert_eq!(created, 1);
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM flow_edges WHERE edge_type = 'di_binding'",
             [],
@@ -244,7 +244,7 @@ fn injectable_to_constructor_creates_flow_edge() {
 
     // Verify edge direction: source = component, target = service.
     let (src_file, tgt_file): (i64, i64) = db
-        .conn
+        .conn()
         .query_row(
             "SELECT source_file_id, target_file_id FROM flow_edges WHERE edge_type = 'di_binding'",
             [],
@@ -263,11 +263,11 @@ fn no_injectables_produces_zero_edges() {
     let injectables: HashMap<String, InjectableService> = HashMap::new();
     let sites: Vec<InjectionSite> = Vec::new();
 
-    let created = insert_flow_edges(&db.conn, &sites, &injectables).unwrap();
+    let created = insert_flow_edges(db.conn(), &sites, &injectables).unwrap();
     assert_eq!(created, 0);
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM flow_edges WHERE edge_type = 'di_binding'",
             [],
@@ -300,8 +300,8 @@ fn duplicate_injection_site_not_double_counted() {
         consumer_class: "DashboardComponent".to_string(),
     };
 
-    insert_flow_edges(&db.conn, &[site.clone()], &injectables).unwrap();
-    let created = insert_flow_edges(&db.conn, &[site], &injectables).unwrap();
+    insert_flow_edges(db.conn(), &[site.clone()], &injectables).unwrap();
+    let created = insert_flow_edges(db.conn(), &[site], &injectables).unwrap();
 
     // OR IGNORE should suppress the second insert.
     assert_eq!(created, 0, "Duplicate edge should be ignored");
@@ -330,10 +330,10 @@ fn confidence_is_0_85() {
         consumer_class: "DashboardComponent".to_string(),
     }];
 
-    insert_flow_edges(&db.conn, &sites, &injectables).unwrap();
+    insert_flow_edges(db.conn(), &sites, &injectables).unwrap();
 
     let confidence: f64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT confidence FROM flow_edges WHERE edge_type = 'di_binding'",
             [],

@@ -167,6 +167,20 @@ fn query_entries<P: rusqlite::Params>(
         .context("Failed to collect history results")
 }
 
+/// `Database`-accepting wrapper for [`recent_searches`].
+pub fn recent_searches_db(
+    db: &crate::db::Database,
+    query_type: Option<&str>,
+    limit: usize,
+) -> Result<Vec<SearchHistoryEntry>> {
+    recent_searches(db.conn(), query_type, limit)
+}
+
+/// `Database`-accepting wrapper for [`saved_searches`].
+pub fn saved_searches_db(db: &crate::db::Database) -> Result<Vec<SearchHistoryEntry>> {
+    saved_searches(db.conn())
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

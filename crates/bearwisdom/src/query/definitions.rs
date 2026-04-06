@@ -23,7 +23,7 @@ use anyhow::Context;
 /// Returns results ordered by confidence descending.
 pub fn goto_definition(db: &Database, query: &str) -> QueryResult<Vec<DefinitionResult>> {
     let _timer = db.timer("find_definitions");
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut results: Vec<DefinitionResult> = Vec::new();
 
     // --- Strategy 1: exact qualified name ---

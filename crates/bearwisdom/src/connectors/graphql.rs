@@ -275,7 +275,7 @@ pub fn match_operations_to_resolvers(
 
 /// Run all GraphQL detection passes and write results to the database.
 pub fn connect(db: &Database, project_root: &Path) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let operations = detect_graphql_operations(conn, project_root)
         .context("GraphQL operation detection failed")?;

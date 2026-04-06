@@ -282,7 +282,7 @@ impl LanguageResolver for ScalaResolver {
         match vis {
             "public" => true,
             "protected" => true,
-            "private" => target.file_path == file_ctx.file_path,
+            "private" => &*target.file_path == file_ctx.file_path,
             // `private[pkg]` / `protected[pkg]` — allow (full check needs package graph).
             _ => true,
         }

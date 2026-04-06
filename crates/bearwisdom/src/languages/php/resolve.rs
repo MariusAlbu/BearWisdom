@@ -286,7 +286,7 @@ impl LanguageResolver for PhpResolver {
             }
             "private" => {
                 // Only visible within the same file (same class).
-                target.file_path == file_ctx.file_path
+                &*target.file_path == file_ctx.file_path
             }
             _ => true,
         }

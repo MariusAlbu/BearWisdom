@@ -22,8 +22,8 @@ fn insert_file_and_content(conn: &Connection, path: &str, language: &str, conten
 #[test]
 fn search_finds_matching_file() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(&db.conn, "src/service.rs", "rust", "fn authenticate_user() {}");
-    insert_file_and_content(&db.conn, "src/other.rs", "rust", "fn unrelated() {}");
+    insert_file_and_content(db.conn(), "src/service.rs", "rust", "fn authenticate_user() {}");
+    insert_file_and_content(db.conn(), "src/other.rs", "rust", "fn unrelated() {}");
 
     let results =
         search_content(&db, "authenticate", &SearchScope::default(), 10).unwrap();
@@ -35,7 +35,7 @@ fn search_finds_matching_file() {
 #[test]
 fn query_shorter_than_three_chars_returns_empty() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(&db.conn, "a.rs", "rust", "ab content");
+    insert_file_and_content(db.conn(), "a.rs", "rust", "ab content");
 
     let results = search_content(&db, "ab", &SearchScope::default(), 10).unwrap();
     assert!(results.is_empty(), "< 3 chars should return empty");
@@ -44,7 +44,7 @@ fn query_shorter_than_three_chars_returns_empty() {
 #[test]
 fn search_returns_empty_when_no_match() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(&db.conn, "x.rs", "rust", "fn hello() {}");
+    insert_file_and_content(db.conn(), "x.rs", "rust", "fn hello() {}");
 
     let results = search_content(&db, "zzznomatch", &SearchScope::default(), 10).unwrap();
     assert!(results.is_empty());
@@ -53,9 +53,9 @@ fn search_returns_empty_when_no_match() {
 #[test]
 fn scope_language_filter_applied_after_fts() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(&db.conn, "logic.rs", "rust", "fn process_order() {}");
+    insert_file_and_content(db.conn(), "logic.rs", "rust", "fn process_order() {}");
     insert_file_and_content(
-        &db.conn,
+        db.conn(),
         "logic.ts",
         "typescript",
         "function processOrder() {}",
@@ -71,7 +71,7 @@ fn scope_language_filter_applied_after_fts() {
 #[test]
 fn score_is_positive() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(&db.conn, "score.rs", "rust", "fn important_function() {}");
+    insert_file_and_content(db.conn(), "score.rs", "rust", "fn important_function() {}");
 
     let results =
         search_content(&db, "important", &SearchScope::default(), 10).unwrap();
@@ -89,7 +89,7 @@ fn limit_respected() {
     let db = Database::open_in_memory().unwrap();
     for i in 0..10 {
         insert_file_and_content(
-            &db.conn,
+            db.conn(),
             &format!("file{i}.rs"),
             "rust",
             "fn needle() {}",
@@ -103,9 +103,9 @@ fn limit_respected() {
 #[test]
 fn multiple_files_all_returned() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(&db.conn, "a.rs", "rust", "fn shared_name() {}");
-    insert_file_and_content(&db.conn, "b.rs", "rust", "fn shared_name_too() {}");
-    insert_file_and_content(&db.conn, "c.rs", "rust", "nothing here");
+    insert_file_and_content(db.conn(), "a.rs", "rust", "fn shared_name() {}");
+    insert_file_and_content(db.conn(), "b.rs", "rust", "fn shared_name_too() {}");
+    insert_file_and_content(db.conn(), "c.rs", "rust", "nothing here");
 
     let results =
         search_content(&db, "shared_name", &SearchScope::default(), 10).unwrap();
@@ -115,8 +115,8 @@ fn multiple_files_all_returned() {
 #[test]
 fn scope_directory_filter_applied() {
     let db = Database::open_in_memory().unwrap();
-    insert_file_and_content(&db.conn, "src/foo.rs", "rust", "fn needle() {}");
-    insert_file_and_content(&db.conn, "tests/bar.rs", "rust", "fn needle() {}");
+    insert_file_and_content(db.conn(), "src/foo.rs", "rust", "fn needle() {}");
+    insert_file_and_content(db.conn(), "tests/bar.rs", "rust", "fn needle() {}");
 
     let scope = SearchScope::default().with_directory("src");
     let results = search_content(&db, "needle", &scope, 10).unwrap();
@@ -166,7 +166,7 @@ fn hybrid_search_multi_word_query_returns_results() {
     // either "budget" or "service" individually (OR semantics).
     let db = Database::open_in_memory().unwrap();
     insert_file_and_content(
-        &db.conn,
+        db.conn(),
         "src/budget_service.rs",
         "rust",
         "pub struct BudgetService { balance: f64 }",
@@ -196,7 +196,7 @@ fn search_content_with_lines_returns_grep_matches() {
         .unwrap();
 
     insert_file_and_content(
-        &db.conn,
+        db.conn(),
         rel,
         "rust",
         "fn get_catalog_item() -> CatalogItem {\n    todo!()\n}\n",

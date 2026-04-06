@@ -3,7 +3,7 @@ use crate::db::Database;
 
 /// Build a small graph: Caller → Service, Service → Db.
 fn setup(db: &Database) -> (i64, i64, i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h', 'csharp', 0)",
         [],
@@ -72,7 +72,7 @@ fn outgoing_calls_returns_empty_for_leaf() {
 #[test]
 fn call_hierarchy_respects_limit() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('b.cs', 'h', 'csharp', 0)",
         [],
@@ -106,7 +106,7 @@ fn call_hierarchy_respects_limit() {
 #[test]
 fn type_ref_edges_appear_in_call_hierarchy() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('c.cs', 'h', 'csharp', 0)",
         [],
@@ -137,7 +137,7 @@ fn structural_edges_excluded_from_call_hierarchy() {
     // 'inherits' and 'implements' are structural — they should NOT appear
     // in the call hierarchy (they are not usage edges).
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('d.cs', 'h', 'csharp', 0)",
         [],

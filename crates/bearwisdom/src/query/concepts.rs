@@ -61,7 +61,7 @@ pub struct ConceptSummary {
 /// silently skipped).
 pub fn auto_assign_concepts(db: &Database) -> QueryResult<u32> {
     let _timer = db.timer("auto_assign_concepts");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Fetch all concepts that have an auto_pattern.
     let patterns: Vec<(i64, String)> = {
@@ -108,7 +108,7 @@ pub fn auto_assign_concepts(db: &Database) -> QueryResult<u32> {
 /// Return a summary of every concept in the index, ordered by name.
 pub fn list_concepts(db: &Database) -> QueryResult<Vec<ConceptSummary>> {
     let _timer = db.timer("list_concepts");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let mut stmt = conn.prepare(
         "SELECT c.id,
@@ -145,7 +145,7 @@ pub fn concept_members(
     limit: usize,
 ) -> QueryResult<Vec<SymbolSummary>> {
     let _timer = db.timer("concept_members");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let limit_clause = if limit > 0 { format!("LIMIT {limit}") } else { String::new() };
 
@@ -190,7 +190,7 @@ pub fn concept_subgraph(
     let _timer = db.timer("concept_subgraph");
     // Quick check: does the concept have any members?
     // We use this to avoid running the heavier export_graph when there is nothing to return.
-    let conn = &db.conn;
+    let conn = db.conn();
     let member_count: u32 = conn.query_row(
         "SELECT COUNT(*) FROM concept_members cm
          JOIN concepts c ON c.id = cm.concept_id
@@ -224,7 +224,7 @@ pub fn concept_subgraph(
 /// E.g. `crates/bearwisdom/src/query/blast_radius.rs` → concept `"crates/bearwisdom"`.
 pub fn discover_directory_concepts(db: &Database) -> QueryResult<()> {
     let _timer = db.timer("discover_directory_concepts");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Find distinct directory prefixes (first 2 segments).
     let prefixes: Vec<String> = {
@@ -296,7 +296,7 @@ pub fn discover_directory_concepts(db: &Database) -> QueryResult<()> {
 /// Returns the names of all concepts created (not including pre-existing ones).
 pub fn discover_concepts(db: &Database) -> QueryResult<Vec<String>> {
     let _timer = db.timer("discover_concepts");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Extract the first-two-segment prefix from every qualified_name that
     // has at least 3 dot-separated components.

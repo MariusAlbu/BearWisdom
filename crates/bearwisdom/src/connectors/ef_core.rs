@@ -56,7 +56,7 @@ pub fn write_db_mapping(
 
 /// Load all db_mapping records with their entity class file locations.
 pub fn list_mappings(db: &Database) -> Result<Vec<DbMapping>> {
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut stmt = conn.prepare(
         "SELECT dm.id, dm.entity_type, dm.table_name, dm.source, f.path
          FROM db_mappings dm
@@ -86,7 +86,7 @@ pub fn list_mappings(db: &Database) -> Result<Vec<DbMapping>> {
 /// Apply convention-based pluralisation to db_mapping rows that have
 /// `source = 'convention'` and whose table_name is still the entity class name.
 fn apply_table_name_conventions(db: &Database) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Fetch all convention-sourced mappings.
     // Note: stmt must be dropped before the Vec is used, so we collect eagerly
@@ -115,7 +115,7 @@ fn apply_table_name_conventions(db: &Database) -> Result<()> {
 /// Create `db_entity` edges from each DbSet property symbol to the
 /// corresponding entity class symbol (if it exists in the index).
 fn create_db_entity_edges(db: &Database) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // For each db_mapping, try to find the entity class symbol and create an edge.
     let mappings: Vec<(i64, String)> = {

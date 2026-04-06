@@ -70,7 +70,7 @@ fn context_bridge_regex_extracts_api_name() {
 #[test]
 fn find_handlers_detects_ipc_main() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let main_file = make_ts_file(
         "ipcMain.handle(\"read-file\", async (event, path) => readFileSync(path));\n",
@@ -88,7 +88,7 @@ fn find_handlers_detects_ipc_main() {
 #[test]
 fn link_channels_creates_flow_edge() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let main_file_id = {
         conn.execute(
@@ -138,7 +138,7 @@ fn link_channels_creates_flow_edge() {
 #[test]
 fn mismatched_channels_creates_no_edge() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)

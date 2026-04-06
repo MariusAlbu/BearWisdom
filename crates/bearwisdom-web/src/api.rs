@@ -138,7 +138,7 @@ fn index_project(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Resu
     let db_path = resolve_db_path(root)?;
     let already_existed = db_exists(root);
 
-    let mut db = bearwisdom::Database::open_with_vec(&db_path)?;
+    let mut db = bearwisdom::Database::open(&db_path)?;
 
     if already_existed {
         // DB exists — read stats without re-indexing, then register pool.
@@ -680,7 +680,7 @@ pub async fn post_embed(
     tokio::task::spawn_blocking(move || {
         let result = (|| -> anyhow::Result<u32> {
             let db_path = resolve_db_path(&root)?;
-            let db = bearwisdom::Database::open_with_vec(&db_path)?;
+            let db = bearwisdom::Database::open(&db_path)?;
             let model_dir = bearwisdom::search::embedder::Embedder::resolve_model_dir(&root)
                 .ok_or_else(|| anyhow::anyhow!("No CodeRankEmbed model found"))?;
             let mut embedder = bearwisdom::search::embedder::Embedder::new(model_dir);

@@ -113,7 +113,7 @@ fn join_prefix_produces_correct_paths() {
 #[test]
 fn app_get_route_is_inserted() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"
 from fastapi import FastAPI
@@ -153,7 +153,7 @@ async def list_users():
 #[test]
 fn router_get_with_prefix_resolves_combined_route() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"
 from fastapi import APIRouter
@@ -193,7 +193,7 @@ async def get_user(user_id: int):
 #[test]
 fn parameterized_route_is_stored_correctly() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"
 from fastapi import FastAPI
@@ -231,7 +231,7 @@ async def delete_item(item_id: int):
 #[test]
 fn include_router_prefix_combined_with_apirouter_prefix() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // In a single file: declare APIRouter with prefix, then mount with additional prefix
     let source = r#"
@@ -272,7 +272,7 @@ async def list_users():
 #[test]
 fn multiple_routes_in_same_file_are_all_inserted() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let source = r#"
 from fastapi import FastAPI
@@ -308,6 +308,6 @@ async def get_item(item_id: int):
 fn connect_on_empty_project_returns_zero() {
     let db = Database::open_in_memory().unwrap();
     let dir = tempfile::TempDir::new().unwrap();
-    let count = connect(&db.conn, dir.path()).unwrap();
+    let count = connect(db.conn(), dir.path()).unwrap();
     assert_eq!(count, 0);
 }

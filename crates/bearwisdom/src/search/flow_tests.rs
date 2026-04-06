@@ -3,7 +3,7 @@ use crate::db::Database;
 
 /// Insert the minimal rows needed for flow tests.
 fn seed_flow(db: &Database) {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Two files: a TypeScript frontend and a C# backend.
     conn.execute(

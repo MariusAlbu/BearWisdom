@@ -297,7 +297,7 @@ impl LanguageResolver for CSharpResolver {
             }
             "private" => {
                 // Private: only visible within the same file.
-                target.file_path == file_ctx.file_path
+                &*target.file_path == file_ctx.file_path
             }
             _ => true,
         }

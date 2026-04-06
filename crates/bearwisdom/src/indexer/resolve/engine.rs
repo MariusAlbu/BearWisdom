@@ -10,7 +10,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use rustc_hash::FxHashMap;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
@@ -73,7 +73,7 @@ pub struct SymbolInfo {
     pub qualified_name: String,
     pub kind: String,
     pub visibility: Option<String>,
-    pub file_path: String,
+    pub file_path: Arc<str>,
     pub scope_path: Option<String>,
 }
 
@@ -153,10 +153,9 @@ pub struct TypeInfo {
 /// In-memory index of all symbols, built once from parsed data.
 pub struct SymbolIndex {
     by_name: FxHashMap<String, Vec<SymbolInfo>>,
-    by_qname: FxHashMap<String, SymbolInfo>,
+    /// BTreeMap gives sorted iteration for free — used by `in_namespace` via `.range()`.
+    by_qname: BTreeMap<String, SymbolInfo>,
     by_file: FxHashMap<String, Vec<SymbolInfo>>,
-    /// Sorted by qualified_name for O(log N) prefix (in_namespace) queries.
-    sorted_qnames: Vec<(String, SymbolInfo)>,
     /// Unified per-symbol type metadata (replaces 4 separate maps).
     type_info: FxHashMap<String, TypeInfo>,
     /// Re-export map: file_path → Vec<(original_name, source_module)>.
@@ -193,10 +192,14 @@ impl SymbolIndex {
         project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
     ) -> Self {
         let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
-        let mut by_qname: FxHashMap<String, SymbolInfo> = FxHashMap::default();
+        let mut by_qname: BTreeMap<String, SymbolInfo> = BTreeMap::new();
         let mut by_file: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
 
         for pf in parsed {
+            // One Arc<str> per file — all symbols in this file share the same
+            // allocation instead of cloning an independent String per symbol.
+            let file_path: Arc<str> = Arc::from(pf.path.as_str());
+
             for sym in &pf.symbols {
                 let Some(&id) = symbol_id_map.get(&(pf.path.clone(), sym.qualified_name.clone()))
                 else {
@@ -209,7 +212,7 @@ impl SymbolIndex {
                     qualified_name: sym.qualified_name.clone(),
                     kind: sym.kind.as_str().to_string(),
                     visibility: sym.visibility.as_ref().map(|v| format!("{v:?}").to_lowercase()),
-                    file_path: pf.path.clone(),
+                    file_path: Arc::clone(&file_path),
                     scope_path: sym.scope_path.clone(),
                 };
 
@@ -222,7 +225,7 @@ impl SymbolIndex {
                     .entry(sym.qualified_name.clone())
                     .or_insert_with(|| info.clone());
 
-                // File index
+                // File index — key stays String (one allocation per file, not per symbol)
                 by_file
                     .entry(pf.path.clone())
                     .or_default()
@@ -396,13 +399,6 @@ impl SymbolIndex {
             }
         }
 
-        // Build sorted_qnames for O(log N) prefix (in_namespace) queries.
-        let mut sorted_qnames: Vec<(String, SymbolInfo)> = by_qname
-            .iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect();
-        sorted_qnames.sort_by(|a, b| a.0.cmp(&b.0));
-
         // Build re-export map from Imports refs that have a module set.
         // These are emitted by the TS/JS extractor for:
         //   export { X } from './y'   → Imports ref, target_name="X", module="./y"
@@ -490,7 +486,6 @@ impl SymbolIndex {
             by_name,
             by_qname,
             by_file,
-            sorted_qnames,
             type_info,
             reexport_map,
             module_to_file,
@@ -536,8 +531,6 @@ impl SymbolIndex {
             Err(_) => return,
         };
 
-        let mut new_sorted = Vec::new();
-
         for row in rows {
             let Ok((id, name, qname, kind, file_path, scope_path, visibility)) = row else {
                 continue;
@@ -548,26 +541,24 @@ impl SymbolIndex {
                 continue;
             }
 
+            // Arc<str> for file_path: shared across all symbols in the same file
+            // within this batch; BTreeMap insert gets one clone, by_file gets another.
+            let file_arc: Arc<str> = Arc::from(file_path.as_str());
+
             let info = SymbolInfo {
                 id,
                 name: name.clone(),
                 qualified_name: qname.clone(),
                 kind,
                 visibility,
-                file_path: file_path.clone(),
+                file_path: Arc::clone(&file_arc),
                 scope_path,
             };
 
             self.by_name.entry(name).or_default().push(info.clone());
-            self.by_qname.insert(qname.clone(), info.clone());
-            self.by_file.entry(file_path).or_default().push(info.clone());
-            new_sorted.push((qname, info));
-        }
-
-        // Merge into sorted_qnames and re-sort.
-        if !new_sorted.is_empty() {
-            self.sorted_qnames.extend(new_sorted);
-            self.sorted_qnames.sort_by(|a, b| a.0.cmp(&b.0));
+            self.by_qname.insert(qname, info.clone());
+            // by_file key stays String (one allocation per file, not per symbol)
+            self.by_file.entry(file_path).or_default().push(info);
         }
     }
 }
@@ -579,7 +570,7 @@ fn infer_type_from_chain(
     scope_path: &Option<String>,
     type_info: &FxHashMap<String, TypeInfo>,
     by_name: &FxHashMap<String, Vec<SymbolInfo>>,
-    by_qname: &FxHashMap<String, SymbolInfo>,
+    by_qname: &BTreeMap<String, SymbolInfo>,
 ) -> Option<String> {
     use crate::types::SegmentKind;
 
@@ -717,17 +708,15 @@ impl SymbolLookup for SymbolIndex {
         self.by_qname.get(qname)
     }
 
-    /// O(log N) prefix search using the sorted Vec.
+    /// O(log N) prefix search via BTreeMap::range — no extra Vec needed.
     fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo> {
         let prefix = format!("{namespace}.");
-        let start = self
-            .sorted_qnames
-            .partition_point(|(k, _)| k.as_str() < prefix.as_str());
-        let end = self.sorted_qnames[start..]
-            .partition_point(|(k, _)| k.starts_with(&prefix));
-        self.sorted_qnames[start..start + end]
-            .iter()
-            .map(|(_, info)| info)
+        // Range lower bound is the owned prefix String so K: Borrow<K> = String: Borrow<String>
+        // is satisfied; take_while stops as soon as keys no longer share the prefix.
+        self.by_qname
+            .range(prefix.clone()..)
+            .take_while(|(k, _)| k.starts_with(&prefix))
+            .map(|(_, v)| v)
             .collect()
     }
 

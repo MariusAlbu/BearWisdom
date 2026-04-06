@@ -37,7 +37,7 @@ pub fn connect(db: &Database) -> Result<()> {
 
 /// Load all route records from the DB as `RouteInfo` structs.
 pub fn list_routes(db: &Database) -> Result<Vec<RouteInfo>> {
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut stmt = conn.prepare(
         "SELECT r.id, f.path, r.http_method, r.route_template, r.resolved_route,
                 r.line, s.name
@@ -74,7 +74,7 @@ pub fn list_routes(db: &Database) -> Result<Vec<RouteInfo>> {
 /// prefix with the method attribute — simplified here to just copy the
 /// template as-is.
 fn enrich_routes(db: &Database) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "UPDATE routes SET resolved_route = route_template WHERE resolved_route IS NULL",
         [],
@@ -87,7 +87,7 @@ fn enrich_routes(db: &Database) -> Result<()> {
 /// For each matched pair we insert a cross-language `http_call` edge from the
 /// TypeScript symbol to the C# route handler symbol.
 fn match_ts_http_calls(db: &Database) -> Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Find TS symbols that call "fetch" or "axios.*".
     let ts_calls: Vec<(i64, String)> = {

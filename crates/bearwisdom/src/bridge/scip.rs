@@ -420,7 +420,7 @@ pub fn import_scip(
     for doc in &index.documents {
         let norm_path = normalise_doc_path(&doc.relative_path, project_root, scip_root);
 
-        let file_id = match lookup_file_id(&db.conn, &norm_path)? {
+        let file_id = match lookup_file_id(db.conn(), &norm_path)? {
             Some(id) => id,
             None => {
                 debug!(path = %norm_path, "SCIP document has no matching DB file — skipping");
@@ -434,7 +434,7 @@ pub fn import_scip(
             }
             if occ.symbol_roles & SYMBOL_ROLE_DEFINITION != 0 {
                 let line = scip_range_start_line(&occ.range);
-                if let Some(sym_id) = lookup_symbol_by_file_and_line(&db.conn, file_id, line)? {
+                if let Some(sym_id) = lookup_symbol_by_file_and_line(db.conn(), file_id, line)? {
                     scip_symbol_to_db_id.insert(occ.symbol.clone(), sym_id);
                     stats.symbols_matched += 1;
                 } else {
@@ -458,7 +458,7 @@ pub fn import_scip(
     for doc in &index.documents {
         let norm_path = normalise_doc_path(&doc.relative_path, project_root, scip_root);
 
-        let file_id = match lookup_file_id(&db.conn, &norm_path)? {
+        let file_id = match lookup_file_id(db.conn(), &norm_path)? {
             Some(id) => id,
             None => continue,
         };
@@ -479,7 +479,7 @@ pub fn import_scip(
 
             // Resolve the source symbol — narrowest DB symbol enclosing this line.
             let source_id =
-                match lookup_narrowest_symbol_at_line(&db.conn, file_id, ref_line)? {
+                match lookup_narrowest_symbol_at_line(db.conn(), file_id, ref_line)? {
                     Some(id) => id,
                     None => {
                         stats.symbols_unmatched += 1;
@@ -494,7 +494,7 @@ pub fn import_scip(
                 None => {
                     // Fall back: parse the SCIP symbol and look up by qualified name.
                     let qname = scip_symbol_to_qualified_name(&occ.symbol);
-                    match lookup_symbol_by_qualified_name(&db.conn, &qname)? {
+                    match lookup_symbol_by_qualified_name(db.conn(), &qname)? {
                         Some(id) => {
                             // Cache for future lookups within this import run.
                             scip_symbol_to_db_id.insert(occ.symbol.clone(), id);
@@ -519,7 +519,7 @@ pub fn import_scip(
             }
 
             let changed = upsert_scip_edge(
-                &db.conn,
+                db.conn(),
                 source_id,
                 target_id,
                 ref_line,
@@ -551,7 +551,7 @@ pub fn import_scip(
                     Some(&id) => id,
                     None => {
                         let qname = scip_symbol_to_qualified_name(&rel.symbol);
-                        match lookup_symbol_by_qualified_name(&db.conn, &qname)? {
+                        match lookup_symbol_by_qualified_name(db.conn(), &qname)? {
                             Some(id) => id,
                             None => continue,
                         }
@@ -565,7 +565,7 @@ pub fn import_scip(
                 // Relationships don't carry a source line.
                 let edge_kind = scip_relationship_kind(rel);
                 let changed = upsert_edge_by_kind(
-                    &db.conn,
+                    db.conn(),
                     source_id,
                     target_id,
                     edge_kind,
@@ -585,7 +585,7 @@ pub fn import_scip(
     // The upsert logic handles this per-edge; this bulk pass catches any
     // that slipped through (e.g. edges inserted by tree-sitter after a
     // prior partial SCIP import).
-    let upgraded_bulk = bulk_upgrade_confirmed_edges(&db.conn)?;
+    let upgraded_bulk = bulk_upgrade_confirmed_edges(db.conn())?;
     stats.edges_upgraded += upgraded_bulk;
 
     warn!(

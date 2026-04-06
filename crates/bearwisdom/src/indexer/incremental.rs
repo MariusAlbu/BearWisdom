@@ -273,24 +273,40 @@ fn run_incremental_pipeline(
             }
         }
 
-        // Clean stale unresolved/external refs for affected files.
-        for pf in &affected_parsed {
-            if let Ok(file_id) = db.conn.query_row(
-                "SELECT id FROM files WHERE path = ?1",
-                [&pf.path],
-                |r| r.get::<_, i64>(0),
-            ) {
-                let _ = db.conn.execute(
-                    "DELETE FROM unresolved_refs WHERE source_id IN \
-                     (SELECT id FROM symbols WHERE file_id = ?1)",
-                    [file_id],
-                );
-                let _ = db.conn.execute(
-                    "DELETE FROM external_refs WHERE source_id IN \
-                     (SELECT id FROM symbols WHERE file_id = ?1)",
-                    [file_id],
-                );
+        // Clean stale unresolved/external refs for affected files — batched via temp table.
+        if !affected_parsed.is_empty() {
+            db.conn().execute(
+                "CREATE TEMP TABLE IF NOT EXISTS _affected_paths (path TEXT PRIMARY KEY)",
+                [],
+            )?;
+            db.conn().execute("DELETE FROM _affected_paths", [])?;
+
+            let mut ins = db
+                .prepare("INSERT OR IGNORE INTO _affected_paths (path) VALUES (?1)")?;
+            for pf in &affected_parsed {
+                ins.execute([&pf.path])?;
             }
+            drop(ins);
+
+            db.conn().execute(
+                "DELETE FROM unresolved_refs WHERE source_id IN (
+                    SELECT s.id FROM symbols s
+                    JOIN files f ON s.file_id = f.id
+                    JOIN _affected_paths ap ON ap.path = f.path
+                )",
+                [],
+            )?;
+
+            db.conn().execute(
+                "DELETE FROM external_refs WHERE source_id IN (
+                    SELECT s.id FROM symbols s
+                    JOIN files f ON s.file_id = f.id
+                    JOIN _affected_paths ap ON ap.path = f.path
+                )",
+                [],
+            )?;
+
+            db.conn().execute("DELETE FROM _affected_paths", [])?;
         }
 
         // Extend parsed with affected files for combined resolution.
@@ -347,22 +363,21 @@ fn find_dependent_files(
         return Ok(HashSet::new());
     }
 
-    db.conn.execute(
+    db.conn().execute(
         "CREATE TEMP TABLE IF NOT EXISTS _changed_paths (path TEXT PRIMARY KEY)",
         [],
     )?;
-    db.conn.execute("DELETE FROM _changed_paths", [])?;
+    db.conn().execute("DELETE FROM _changed_paths", [])?;
 
     {
         let mut ins = db
-            .conn
             .prepare("INSERT OR IGNORE INTO _changed_paths (path) VALUES (?1)")?;
         for path in source_paths {
             ins.execute([path.as_str()])?;
         }
     }
 
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn().prepare(
         "SELECT DISTINCT f_dep.path
          FROM edges e
          JOIN symbols s_target ON e.target_id = s_target.id
@@ -379,7 +394,7 @@ fn find_dependent_files(
         dependents.insert(row?);
     }
 
-    db.conn.execute("DELETE FROM _changed_paths", [])?;
+    db.conn().execute("DELETE FROM _changed_paths", [])?;
     Ok(dependents)
 }
 
@@ -398,15 +413,14 @@ fn find_newly_resolvable_files(
         return Ok(HashSet::new());
     }
 
-    db.conn.execute(
+    db.conn().execute(
         "CREATE TEMP TABLE IF NOT EXISTS _changed_names (name TEXT PRIMARY KEY)",
         [],
     )?;
-    db.conn.execute("DELETE FROM _changed_names", [])?;
+    db.conn().execute("DELETE FROM _changed_names", [])?;
 
     {
         let mut ins = db
-            .conn
             .prepare("INSERT OR IGNORE INTO _changed_names (name) VALUES (?1)")?;
         for name in symbol_names {
             ins.execute([name.as_str()])?;
@@ -414,22 +428,21 @@ fn find_newly_resolvable_files(
     }
 
     // Exclude paths that were themselves changed — they are re-parsed directly.
-    db.conn.execute(
+    db.conn().execute(
         "CREATE TEMP TABLE IF NOT EXISTS _exclude_paths (path TEXT PRIMARY KEY)",
         [],
     )?;
-    db.conn.execute("DELETE FROM _exclude_paths", [])?;
+    db.conn().execute("DELETE FROM _exclude_paths", [])?;
 
     {
         let mut ins = db
-            .conn
             .prepare("INSERT OR IGNORE INTO _exclude_paths (path) VALUES (?1)")?;
         for path in exclude_paths {
             ins.execute([path.as_str()])?;
         }
     }
 
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn().prepare(
         "SELECT DISTINCT f.path
          FROM unresolved_refs ur
          JOIN symbols s ON ur.source_id = s.id
@@ -444,8 +457,8 @@ fn find_newly_resolvable_files(
         resolvable.insert(row?);
     }
 
-    db.conn.execute("DELETE FROM _changed_names", [])?;
-    db.conn.execute("DELETE FROM _exclude_paths", [])?;
+    db.conn().execute("DELETE FROM _changed_names", [])?;
+    db.conn().execute("DELETE FROM _exclude_paths", [])?;
     Ok(resolvable)
 }
 

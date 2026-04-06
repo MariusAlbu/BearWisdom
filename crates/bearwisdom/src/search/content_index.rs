@@ -160,6 +160,14 @@ pub fn rebuild_content_index(conn: &Connection, project_root: &Path) -> Result<u
     Ok(count)
 }
 
+/// `Database`-accepting wrapper for [`rebuild_content_index`].
+///
+/// Convenience entry point for callers that hold a `&Database` rather than
+/// a `&Connection`.  Delegates to the free function via the `conn()` accessor.
+pub fn rebuild_content_index_db(db: &crate::db::Database, project_root: &Path) -> Result<u32> {
+    rebuild_content_index(db.conn(), project_root)
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

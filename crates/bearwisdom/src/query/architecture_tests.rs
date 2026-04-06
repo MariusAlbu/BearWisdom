@@ -3,26 +3,26 @@ use crate::db::Database;
 
 /// Insert a file row and return its id.
 fn insert_file(db: &Database, path: &str, lang: &str) -> i64 {
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', ?2, 0)",
         rusqlite::params![path, lang],
     ).unwrap();
-    db.conn.last_insert_rowid()
+    db.conn().last_insert_rowid()
 }
 
 /// Insert a symbol row and return its id.
 fn insert_symbol(db: &Database, file_id: i64, name: &str, qname: &str, kind: &str, vis: Option<&str>) -> i64 {
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, visibility)
          VALUES (?1, ?2, ?3, ?4, 1, 0, ?5)",
         rusqlite::params![file_id, name, qname, kind, vis],
     ).unwrap();
-    db.conn.last_insert_rowid()
+    db.conn().last_insert_rowid()
 }
 
 /// Insert a directed edge.
 fn insert_edge(db: &Database, src: i64, tgt: i64, kind: &str) {
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, ?3, 1.0)",
         rusqlite::params![src, tgt, kind],
     ).unwrap();

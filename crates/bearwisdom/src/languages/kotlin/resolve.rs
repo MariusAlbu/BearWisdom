@@ -281,7 +281,7 @@ impl LanguageResolver for KotlinResolver {
         match vis {
             "public" | "internal" => true,
             "protected" => true, // allow — full check needs inheritance info
-            "private" => target.file_path == file_ctx.file_path,
+            "private" => &*target.file_path == file_ctx.file_path,
             _ => true,
         }
     }

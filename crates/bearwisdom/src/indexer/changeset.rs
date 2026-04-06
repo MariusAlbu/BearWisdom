@@ -109,7 +109,6 @@ pub fn hash_diff(db: &Database, project_root: &Path) -> Result<ChangeSet> {
     let mut existing: HashMap<String, (i64, String, Option<i64>, Option<i64>)> = HashMap::new();
     {
         let mut stmt = db
-            .conn
             .prepare("SELECT id, path, hash, mtime, size FROM files")
             .context("Failed to query files")?;
         let rows = stmt
@@ -453,7 +452,7 @@ pub enum ChangeKind {
 
 /// Read a value from `_bearwisdom_meta`.
 pub fn get_meta(db: &Database, key: &str) -> Option<String> {
-    db.conn
+    db.conn()
         .query_row(
             "SELECT value FROM _bearwisdom_meta WHERE key = ?1",
             [key],
@@ -464,7 +463,7 @@ pub fn get_meta(db: &Database, key: &str) -> Option<String> {
 
 /// Write a value to `_bearwisdom_meta` (upsert).
 pub fn set_meta(db: &Database, key: &str, value: &str) -> Result<()> {
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO _bearwisdom_meta (key, value)
          VALUES (?1, ?2)
          ON CONFLICT(key) DO UPDATE SET value = excluded.value",

@@ -58,20 +58,20 @@ async fn test_enrich_unresolved_reads_target_name() {
     // Seed the minimum schema rows needed.
     {
         let db = pool.get().unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/a.ts', 'h', 'typescript', 0)",
             [],
         ).unwrap();
-        let file_id = db.conn.last_insert_rowid();
+        let file_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col, end_line)
              VALUES (?1, 'myFunc', 'mod::myFunc', 'function', 3, 0, 10)",
             [file_id],
         ).unwrap();
-        let sym_id = db.conn.last_insert_rowid();
+        let sym_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line)
              VALUES (?1, 'otherFunc', 'calls', 5)",
             [sym_id],

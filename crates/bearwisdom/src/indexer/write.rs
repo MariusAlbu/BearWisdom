@@ -33,7 +33,7 @@ pub fn write_parsed_files(
     db: &Database,
     parsed: &[ParsedFile],
 ) -> Result<(FileIdMap, SymbolIdMap)> {
-    let conn = &db.conn;
+    let conn = db.conn();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .unwrap_or_default()
@@ -185,7 +185,7 @@ pub fn update_fts_content(
     parsed: &[ParsedFile],
     file_id_map: &FileIdMap,
 ) -> Result<u32> {
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut count = 0u32;
 
     // For incremental updates, clean up old FTS entries first.
@@ -232,7 +232,7 @@ pub fn update_chunks(
     file_id_map: &FileIdMap,
     is_full: bool,
 ) -> Result<u32> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     if is_full {
         // Bulk path: no dedup, no cleanup, one transaction.
@@ -282,7 +282,7 @@ pub fn update_chunks(
 /// constraint, plus virtual tables (vec_chunks, fts_content, flow_edges)
 /// that require manual cleanup.
 pub fn delete_files(db: &Database, paths: &[String]) -> Result<Vec<(i64, String)>> {
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut deleted = Vec::new();
 
     for rel_path in paths {
@@ -327,7 +327,7 @@ pub fn delete_files(db: &Database, paths: &[String]) -> Result<Vec<(i64, String)
 /// unchanged files (not just the ones in the current parse batch).
 pub fn load_symbol_id_map(db: &Database) -> Result<SymbolIdMap> {
     let mut map = SymbolIdMap::new();
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn().prepare(
         "SELECT f.path, s.qualified_name, s.id
          FROM symbols s
          JOIN files f ON f.id = s.file_id",

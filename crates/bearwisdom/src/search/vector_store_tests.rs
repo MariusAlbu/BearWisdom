@@ -43,28 +43,28 @@ fn vec_to_blob_one_float_correct_bytes() {
 #[test]
 fn vec_table_not_present_without_extension() {
     let db = make_db();
-    assert!(!vec_table_exists(&db.conn));
+    assert!(!vec_table_exists(db.conn()));
 }
 
 #[test]
 fn knn_returns_empty_without_extension() {
     let db = make_db();
     let query = vec![0.0f32; 768];
-    let results = knn_search(&db.conn, &query, 10).unwrap();
+    let results = knn_search(db.conn(), &query, 10).unwrap();
     assert!(results.is_empty());
 }
 
 #[test]
 fn delete_file_vectors_noop_without_extension() {
     let db = make_db();
-    let deleted = delete_file_vectors(&db.conn, 99).unwrap();
+    let deleted = delete_file_vectors(db.conn(), 99).unwrap();
     assert_eq!(deleted, 0);
 }
 
 #[test]
 fn vector_count_zero_without_extension() {
     let db = make_db();
-    let count = vector_count(&db.conn).unwrap();
+    let count = vector_count(db.conn()).unwrap();
     assert_eq!(count, 0);
 }
 
@@ -72,7 +72,7 @@ fn vector_count_zero_without_extension() {
 fn upsert_errors_without_extension() {
     let db = make_db();
     let v = vec![0.0f32; 768];
-    let result = upsert_vectors(&db.conn, &[(1, v.as_slice())]);
+    let result = upsert_vectors(db.conn(), &[(1, v.as_slice())]);
     assert!(result.is_err(), "upsert should fail without sqlite-vec");
 }
 
@@ -97,37 +97,37 @@ fn try_load_vec(conn: &Connection) -> bool {
 #[ignore]
 fn init_vec_table_creates_table() {
     let db = make_db();
-    if !try_load_vec(&db.conn) {
+    if !try_load_vec(db.conn()) {
         eprintln!("Skipping: SQLITE_VEC_PATH not set");
         return;
     }
 
-    let created = init_vec_table(&db.conn).unwrap();
+    let created = init_vec_table(db.conn()).unwrap();
     assert!(created, "Should have created the table");
-    assert!(vec_table_exists(&db.conn));
+    assert!(vec_table_exists(db.conn()));
 
     // Idempotent second call.
-    assert!(!init_vec_table(&db.conn).unwrap());
+    assert!(!init_vec_table(db.conn()).unwrap());
 }
 
 #[test]
 #[ignore]
 fn upsert_and_knn_search_roundtrip() {
     let db = make_db();
-    if !try_load_vec(&db.conn) {
+    if !try_load_vec(db.conn()) {
         return;
     }
-    init_vec_table(&db.conn).unwrap();
+    init_vec_table(db.conn()).unwrap();
 
     let mut v1 = vec![0.0f32; 768];
     v1[0] = 1.0;
     let mut v2 = vec![0.0f32; 768];
     v2[1] = 1.0;
 
-    upsert_vectors(&db.conn, &[(1, &v1), (2, &v2)]).unwrap();
-    assert_eq!(vector_count(&db.conn).unwrap(), 2);
+    upsert_vectors(db.conn(), &[(1, &v1), (2, &v2)]).unwrap();
+    assert_eq!(vector_count(db.conn()).unwrap(), 2);
 
-    let results = knn_search(&db.conn, &v1, 2).unwrap();
+    let results = knn_search(db.conn(), &v1, 2).unwrap();
     assert_eq!(results.len(), 2);
     assert_eq!(results[0].0, 1, "Nearest chunk should be chunk_id 1");
 }
@@ -136,33 +136,33 @@ fn upsert_and_knn_search_roundtrip() {
 #[ignore]
 fn delete_file_vectors_removes_rows_via_code_chunks() {
     let db = make_db();
-    if !try_load_vec(&db.conn) {
+    if !try_load_vec(db.conn()) {
         return;
     }
-    init_vec_table(&db.conn).unwrap();
+    init_vec_table(db.conn()).unwrap();
 
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('f.rs', 'h', 'rust', 0)",
             [],
         )
         .unwrap();
-    let file_id: i64 = db.conn.last_insert_rowid();
+    let file_id: i64 = db.conn().last_insert_rowid();
 
-    db.conn
+    db.conn()
         .execute(
             "INSERT INTO code_chunks (file_id, content_hash, content, start_line, end_line)
              VALUES (?1, 'x', 'fn f(){}', 0, 0)",
             rusqlite::params![file_id],
         )
         .unwrap();
-    let chunk_id: i64 = db.conn.last_insert_rowid();
+    let chunk_id: i64 = db.conn().last_insert_rowid();
 
     let v = vec![0.0f32; 768];
-    upsert_vectors(&db.conn, &[(chunk_id, &v)]).unwrap();
-    assert_eq!(vector_count(&db.conn).unwrap(), 1);
+    upsert_vectors(db.conn(), &[(chunk_id, &v)]).unwrap();
+    assert_eq!(vector_count(db.conn()).unwrap(), 1);
 
-    let deleted = delete_file_vectors(&db.conn, file_id).unwrap();
+    let deleted = delete_file_vectors(db.conn(), file_id).unwrap();
     assert_eq!(deleted, 1);
-    assert_eq!(vector_count(&db.conn).unwrap(), 0);
+    assert_eq!(vector_count(db.conn()).unwrap(), 0);
 }

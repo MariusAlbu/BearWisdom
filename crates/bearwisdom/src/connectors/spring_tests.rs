@@ -101,7 +101,7 @@
     #[test]
     fn extracts_get_mapping_route() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -147,7 +147,7 @@ public class CatalogController {
     #[test]
     fn extracts_post_mapping_no_class_prefix() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -193,7 +193,7 @@ public class OrderController {
     // -----------------------------------------------------------------------
 
     fn seed_spring_db(db: &Database) -> (i64, i64) {
-        let conn = &db.conn;
+        let conn = db.conn();
 
         conn.execute(
             "INSERT INTO files (path, hash, language, last_indexed)
@@ -228,16 +228,16 @@ public class OrderController {
             line: 10,
         }];
 
-        write_routes(&db.conn, &routes).unwrap();
+        write_routes(db.conn(), &routes).unwrap();
 
         let count: i64 = db
-            .conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 1);
 
         let (method, template): (String, String) = db
-            .conn
+            .conn()
             .query_row(
                 "SELECT http_method, route_template FROM routes",
                 [],
@@ -259,10 +259,10 @@ public class OrderController {
             stereotype: "controller".to_string(),
         }];
 
-        create_stereotype_concepts(&db.conn, &services).unwrap();
+        create_stereotype_concepts(db.conn(), &services).unwrap();
 
         let concept_count: i64 = db
-            .conn
+            .conn()
             .query_row(
                 "SELECT COUNT(*) FROM concepts WHERE name = 'spring-controllers'",
                 [],
@@ -272,7 +272,7 @@ public class OrderController {
         assert_eq!(concept_count, 1);
 
         let member_count: i64 = db
-            .conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM concept_members", [], |r| r.get(0))
             .unwrap();
         assert_eq!(member_count, 1);
@@ -281,7 +281,7 @@ public class OrderController {
     #[test]
     fn create_stereotype_concepts_groups_by_type() {
         let db = Database::open_in_memory().unwrap();
-        let conn = &db.conn;
+        let conn = db.conn();
 
         // Two files, one controller + one service.
         conn.execute(
@@ -333,5 +333,5 @@ public class OrderController {
     fn register_spring_patterns_on_empty_inputs_is_noop() {
         let db = Database::open_in_memory().unwrap();
         // Should not panic or error.
-        register_spring_patterns(&db.conn, &[], &[]).unwrap();
+        register_spring_patterns(db.conn(), &[], &[]).unwrap();
     }

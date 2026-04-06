@@ -70,7 +70,7 @@ fn extract_component_name_returns_none_when_no_match() {
 // -----------------------------------------------------------------------
 
 fn seed_store_symbol(db: &Database) -> i64 {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -100,7 +100,7 @@ fn create_react_concepts_adds_zustand_concept() {
 
     // Get file_id from the symbol.
     let file_id: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT file_id FROM symbols WHERE id = ?1", [sym_id], |r| r.get(0))
         .unwrap();
 
@@ -110,10 +110,10 @@ fn create_react_concepts_adds_zustand_concept() {
         line: 3,
     }];
 
-    create_react_concepts(&db.conn, &stores, &[]).unwrap();
+    create_react_concepts(db.conn(), &stores, &[]).unwrap();
 
     let concept_count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM concepts WHERE name = 'zustand-stores'",
             [],
@@ -123,7 +123,7 @@ fn create_react_concepts_adds_zustand_concept() {
     assert_eq!(concept_count, 1, "zustand-stores concept should be created");
 
     let member_count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM concept_members WHERE auto_assigned = 1",
             [],
@@ -139,7 +139,7 @@ fn create_react_concepts_idempotent() {
     let sym_id = seed_store_symbol(&db);
 
     let file_id: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT file_id FROM symbols WHERE id = ?1", [sym_id], |r| r.get(0))
         .unwrap();
 
@@ -150,11 +150,11 @@ fn create_react_concepts_idempotent() {
     }];
 
     // Run twice — should not error or create duplicate members.
-    create_react_concepts(&db.conn, &stores, &[]).unwrap();
-    create_react_concepts(&db.conn, &stores, &[]).unwrap();
+    create_react_concepts(db.conn(), &stores, &[]).unwrap();
+    create_react_concepts(db.conn(), &stores, &[]).unwrap();
 
     let member_count: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM concept_members", [], |r| r.get(0))
         .unwrap();
     assert_eq!(member_count, 1, "OR IGNORE should prevent duplicate member");
@@ -163,7 +163,7 @@ fn create_react_concepts_idempotent() {
 #[test]
 fn create_react_concepts_adds_storybook_concept() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -202,10 +202,10 @@ fn create_react_concepts_adds_storybook_concept() {
 #[test]
 fn empty_inputs_produce_no_concepts() {
     let db = Database::open_in_memory().unwrap();
-    create_react_concepts(&db.conn, &[], &[]).unwrap();
+    create_react_concepts(db.conn(), &[], &[]).unwrap();
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM concepts", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 0, "No concepts should be created from empty inputs");

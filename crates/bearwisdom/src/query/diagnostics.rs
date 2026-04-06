@@ -72,7 +72,7 @@ pub fn get_diagnostics(
     confidence_threshold: f64,
 ) -> QueryResult<FileDiagnostics> {
     let _timer = db.timer("diagnostics");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let mut diagnostics: Vec<Diagnostic> = Vec::new();
 
@@ -187,20 +187,20 @@ mod tests {
     #[test]
     fn test_unresolved_refs_surfaced() {
         let db = Database::open_in_memory().unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/a.rs', 'h', 'rust', 0)",
             [],
         ).unwrap();
-        let file_id = db.conn.last_insert_rowid();
+        let file_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'foo', 'mod::foo', 'function', 5, 0)",
             [file_id],
         ).unwrap();
-        let sym_id = db.conn.last_insert_rowid();
+        let sym_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO unresolved_refs (source_id, target_name, kind, source_line)
              VALUES (?1, 'Bar', 'type_ref', 8)",
             [sym_id],
@@ -216,27 +216,27 @@ mod tests {
     #[test]
     fn test_low_confidence_edges_surfaced() {
         let db = Database::open_in_memory().unwrap();
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO files (path, hash, language, last_indexed) VALUES ('src/a.rs', 'h', 'rust', 0)",
             [],
         ).unwrap();
-        let file_id = db.conn.last_insert_rowid();
+        let file_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'caller', 'mod::caller', 'function', 1, 0)",
             [file_id],
         ).unwrap();
-        let src_id = db.conn.last_insert_rowid();
+        let src_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
              VALUES (?1, 'callee', 'mod::callee', 'function', 20, 0)",
             [file_id],
         ).unwrap();
-        let tgt_id = db.conn.last_insert_rowid();
+        let tgt_id = db.conn().last_insert_rowid();
 
-        db.conn.execute(
+        db.conn().execute(
             "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
              VALUES (?1, ?2, 'calls', 5, 0.50)",
             rusqlite::params![src_id, tgt_id],

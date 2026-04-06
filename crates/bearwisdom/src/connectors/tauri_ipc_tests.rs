@@ -100,7 +100,7 @@ fn make_ts_file(content: &str) -> NamedTempFile {
 #[test]
 fn find_commands_detects_attribute() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let rs_file = make_rs_file(
         "#[tauri::command]\npub async fn greet(name: String) -> String {\n    format!(\"Hello {}!\", name)\n}\n",
@@ -123,7 +123,7 @@ fn find_commands_detects_attribute() {
 #[test]
 fn find_invoke_calls_detects_call() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let ts_file = make_ts_file(r#"const result = await invoke("greet", { name: "World" });"#);
     let root = ts_file.path().parent().unwrap();
@@ -143,7 +143,7 @@ fn find_invoke_calls_detects_call() {
 #[test]
 fn link_commands_to_invocations_creates_flow_edge() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
@@ -201,7 +201,7 @@ fn link_commands_to_invocations_creates_flow_edge() {
 #[test]
 fn unmatched_invoke_creates_no_edge() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)

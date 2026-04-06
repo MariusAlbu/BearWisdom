@@ -11,7 +11,7 @@ fn insert_symbol(
     sig: Option<&str>,
     doc: Option<&str>,
 ) -> i64 {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'csharp', 0)
          ON CONFLICT(path) DO NOTHING",

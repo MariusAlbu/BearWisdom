@@ -11,7 +11,7 @@ fn incremental_detects_new_file() {
 
     // Full index first.
     crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
-    let count1: u32 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+    let count1: u32 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
 
     // Add a new file.
     fs::write(dir.path().join("b.cs"), "namespace App { class Bar {} }").unwrap();
@@ -20,7 +20,7 @@ fn incremental_detects_new_file() {
     assert_eq!(stats.files_added, 1);
     assert_eq!(stats.files_unchanged, count1);
 
-    let count2: u32 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+    let count2: u32 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
     assert_eq!(count2, count1 + 1);
 }
 
@@ -55,7 +55,7 @@ fn incremental_detects_deleted_file() {
     let stats = incremental_index(&mut db, dir.path(), None).unwrap();
     assert_eq!(stats.files_deleted, 1);
 
-    let count: u32 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+    let count: u32 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
     assert_eq!(count, 1);
 }
 
@@ -100,7 +100,7 @@ fn reindex_files_handles_single_create() {
     assert_eq!(stats.files_deleted, 0);
 
     let count: u32 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 2);
@@ -131,7 +131,7 @@ fn reindex_files_handles_modify() {
 
     // Should have more symbols now (Foo + Bar method).
     let sym_count: u32 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
         .unwrap();
     assert!(sym_count >= 2, "Expected at least Foo + Bar, got {sym_count}");
@@ -158,7 +158,7 @@ fn reindex_files_handles_delete() {
     assert_eq!(stats.files_deleted, 1);
 
     let count: u32 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
         .unwrap();
     assert_eq!(count, 1);
@@ -237,7 +237,7 @@ fn blast_radius_reresolved_on_modify() {
 
     // Verify there's at least one edge from B → A.
     let edge_count_before: u32 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
         .unwrap();
 
@@ -265,7 +265,7 @@ fn blast_radius_reresolved_on_modify() {
     // The old edge (B → DoWork) should be gone since DoWork no longer exists.
     // B's reference to DoWork is now unresolvable.
     let unresolved: u32 = db
-        .conn
+        .conn()
         .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
         .unwrap();
     // B's call to DoWork() should now be in unresolved_refs.
@@ -329,7 +329,7 @@ fn blast_radius_resolves_previously_unresolved() {
 
     // Verify that MissingMethod is in unresolved_refs.
     let unresolved_before: u32 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM unresolved_refs WHERE target_name = 'MissingMethod'",
             [],

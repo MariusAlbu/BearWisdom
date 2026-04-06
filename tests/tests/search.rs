@@ -3,7 +3,7 @@
 use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
-use bearwisdom::search::content_index::rebuild_content_index;
+use bearwisdom::search::content_index::rebuild_content_index_db as rebuild_content_index;
 use bearwisdom::search::content_search::search_content;
 use bearwisdom::search::fuzzy::FuzzyIndex;
 use bearwisdom::search::grep::{grep_search, GrepOptions};
@@ -117,7 +117,7 @@ fn content_search_after_indexing() {
     full_index(&mut db, project.path(), None, None, None).unwrap();
 
     // Rebuild the FTS content index from the indexed files.
-    let indexed = rebuild_content_index(db.conn(), project.path()).unwrap();
+    let indexed = rebuild_content_index(&db, project.path()).unwrap();
     assert!(indexed > 0, "should index content from at least one file");
 
     let results = search_content(&db, "ProductService", &SearchScope::default(), 10).unwrap();
@@ -129,7 +129,7 @@ fn content_search_short_query_returns_empty() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, project.path(), None, None, None).unwrap();
-    rebuild_content_index(db.conn(), project.path()).unwrap();
+    rebuild_content_index(&db, project.path()).unwrap();
 
     // Queries shorter than 3 chars return empty (trigram minimum).
     let results = search_content(&db, "ab", &SearchScope::default(), 10).unwrap();

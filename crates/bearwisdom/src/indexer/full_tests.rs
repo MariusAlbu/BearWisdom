@@ -35,7 +35,7 @@ namespace App {
         let mut db = Database::open_in_memory().unwrap();
         full_index(&mut db, dir.path(), None, None, None).unwrap();
 
-        let qname: String = db.conn.query_row(
+        let qname: String = db.conn().query_row(
             "SELECT qualified_name FROM symbols WHERE name = 'List'",
             [],
             |r| r.get(0),

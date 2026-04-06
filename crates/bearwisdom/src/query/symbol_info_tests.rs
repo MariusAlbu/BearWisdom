@@ -12,7 +12,7 @@ fn insert_symbol_full(
     line: u32,
     end_line: u32,
 ) -> i64 {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'csharp', 0)
          ON CONFLICT(path) DO NOTHING",
@@ -57,7 +57,7 @@ fn symbol_info_edge_counts() {
     let s1 = insert_symbol_full(&db, "a.cs", "Caller", "App.Caller", "method", None, None, 1, 5);
     let s2 = insert_symbol_full(&db, "a.cs", "Callee", "App.Callee", "method", None, None, 10, 15);
 
-    db.conn.execute(
+    db.conn().execute(
         "INSERT INTO edges (source_id, target_id, kind, confidence) VALUES (?1, ?2, 'calls', 1.0)",
         rusqlite::params![s1, s2],
     ).unwrap();

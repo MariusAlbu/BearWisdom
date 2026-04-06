@@ -29,7 +29,7 @@ pub fn embed_chunks(
     embedder: &mut Embedder,
     batch_size: usize,
 ) -> Result<(u32, u32)> {
-    let conn = &db.conn;
+    let conn = db.conn();
     if !vector_store::vec_table_exists(conn) {
         match vector_store::init_vec_table(conn) {
             Ok(_) => info!("Created vec_chunks table"),

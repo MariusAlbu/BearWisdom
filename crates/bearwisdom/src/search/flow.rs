@@ -47,7 +47,7 @@ pub fn trace_flow(
     start_line: u32,
     max_depth: u32,
 ) -> Result<Vec<FlowStep>> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // The recursive CTE fans out from every edge that originates at
     // (start_file, start_line).  At each depth we follow all outbound edges
@@ -147,7 +147,7 @@ pub fn trace_flow_reverse(
     start_line: u32,
     max_depth: u32,
 ) -> Result<Vec<FlowStep>> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let sql = "
         WITH RECURSIVE flow_trace(
@@ -271,7 +271,7 @@ pub fn cross_language_paths(
     target_language: &str,
     limit: usize,
 ) -> Result<Vec<Vec<FlowStep>>> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Fetch direct cross-language edges.
     let sql = "

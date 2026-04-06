@@ -84,7 +84,7 @@ service PaymentService {
     // -----------------------------------------------------------------------
 
     fn seed_db_for_grpc(db: &Database) -> (i64, i64) {
-        let conn = &db.conn;
+        let conn = db.conn();
 
         // Proto file (in-memory, so path won't be readable — that's OK for
         // connect(); we test parse_proto_services separately).
@@ -140,11 +140,11 @@ service PaymentService {
             }],
         };
 
-        let created = match_service_to_csharp(&db.conn, &service).unwrap();
+        let created = match_service_to_csharp(db.conn(), &service).unwrap();
         assert_eq!(created, 1, "Expected one grpc flow_edge");
 
         let count: i64 = db
-            .conn
+            .conn()
             .query_row(
                 "SELECT COUNT(*) FROM flow_edges WHERE edge_type = 'grpc_call'",
                 [],
@@ -170,7 +170,7 @@ service PaymentService {
             }],
         };
 
-        let created = match_service_to_csharp(&db.conn, &service).unwrap();
+        let created = match_service_to_csharp(db.conn(), &service).unwrap();
         assert_eq!(created, 0);
     }
 

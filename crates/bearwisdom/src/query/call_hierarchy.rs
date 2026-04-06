@@ -46,7 +46,7 @@ pub struct CallHierarchyItem {
 /// Resolve `symbol_name` (simple or qualified) to a list of symbol IDs.
 /// Returns an empty vec if no match is found.
 fn resolve_ids(db: &Database, symbol_name: &str) -> QueryResult<Vec<i64>> {
-    let conn = &db.conn;
+    let conn = db.conn();
     let ids = if symbol_name.contains('.') {
         // Qualified name: expect exactly one match.
         let mut stmt = conn.prepare(
@@ -86,7 +86,7 @@ pub fn incoming_calls(
         return Ok(vec![]);
     }
 
-    let conn = &db.conn;
+    let conn = db.conn();
     let limit_clause = if limit > 0 { format!("LIMIT {limit}") } else { String::new() };
     let mut results = Vec::new();
 
@@ -152,7 +152,7 @@ pub fn outgoing_calls(
         return Ok(vec![]);
     }
 
-    let conn = &db.conn;
+    let conn = db.conn();
     let limit_clause = if limit > 0 { format!("LIMIT {limit}") } else { String::new() };
     let mut results = Vec::new();
 

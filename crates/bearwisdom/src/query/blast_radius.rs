@@ -77,7 +77,7 @@ pub fn blast_radius(
     max_results: u32,
 ) -> QueryResult<Option<BlastRadiusResult>> {
     let _timer = db.timer("blast_radius");
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // --- Resolve the symbol to an id + summary ---
     // Try exact qualified name first, then simple name fallback.

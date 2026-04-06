@@ -3,7 +3,7 @@ use crate::db::Database;
 
 /// Minimal setup: one file, multiple symbols and edges.
 fn setup_graph(db: &Database) -> (i64, i64, i64, i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('a.cs', 'h', 'csharp', 0)",
         [],
@@ -78,7 +78,7 @@ fn blast_radius_returns_none_for_unknown_symbol() {
 #[test]
 fn blast_radius_symbol_with_no_callers() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed) VALUES ('b.cs', 'h', 'csharp', 0)",
         [],

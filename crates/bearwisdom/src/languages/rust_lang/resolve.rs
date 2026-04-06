@@ -553,13 +553,13 @@ impl LanguageResolver for RustResolver {
             "private" => {
                 // Private in Rust = visible only within the same module (same file
                 // or same module path). Approximate: same file is always ok.
-                target.file_path == file_ctx.file_path
+                &*target.file_path == file_ctx.file_path
             }
             "internal" => {
                 // pub(crate) / pub(super) — same directory as an approximation.
                 let target_dir = builtins::parent_dir(&target.file_path);
                 let source_dir = builtins::parent_dir(&file_ctx.file_path);
-                target_dir == source_dir || target.file_path == file_ctx.file_path
+                target_dir == source_dir || &*target.file_path == file_ctx.file_path
             }
             _ => true, // public
         }

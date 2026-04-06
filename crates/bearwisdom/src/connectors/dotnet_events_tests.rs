@@ -39,7 +39,7 @@ fn extract_class_name_returns_none_for_no_class() {
 // -----------------------------------------------------------------------
 
 fn seed_event_and_handler(db: &Database) -> (i64, i64) {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Event file.
     conn.execute(
@@ -102,7 +102,7 @@ fn find_integration_events_detects_via_edges() {
     let db = Database::open_in_memory().unwrap();
     seed_event_and_handler(&db);
 
-    let events = find_integration_events(&db.conn).unwrap();
+    let events = find_integration_events(db.conn()).unwrap();
     assert_eq!(events.len(), 1);
     assert_eq!(events[0].name, "OrderCreatedIntegrationEvent");
 }
@@ -112,7 +112,7 @@ fn link_events_to_handlers_inserts_flow_edge() {
     let db = Database::open_in_memory().unwrap();
     seed_event_and_handler(&db);
 
-    let events = find_integration_events(&db.conn).unwrap();
+    let events = find_integration_events(db.conn()).unwrap();
 
     let handlers = vec![EventHandler {
         symbol_id: 99,
@@ -121,11 +121,11 @@ fn link_events_to_handlers_inserts_flow_edge() {
         file_path: "Handlers/OrderCreatedHandler.cs".to_string(),
     }];
 
-    let created = link_events_to_handlers(&db.conn, &events, &handlers).unwrap();
+    let created = link_events_to_handlers(db.conn(), &events, &handlers).unwrap();
     assert_eq!(created, 1, "Expected one flow_edge");
 
     let count: i64 = db
-        .conn
+        .conn()
         .query_row(
             "SELECT COUNT(*) FROM flow_edges WHERE edge_type = 'event_handler'",
             [],
@@ -140,7 +140,7 @@ fn no_matching_event_creates_no_edge() {
     let db = Database::open_in_memory().unwrap();
     seed_event_and_handler(&db);
 
-    let events = find_integration_events(&db.conn).unwrap();
+    let events = find_integration_events(db.conn()).unwrap();
 
     let handlers = vec![EventHandler {
         symbol_id: 1,
@@ -149,13 +149,13 @@ fn no_matching_event_creates_no_edge() {
         file_path: "Handlers/OrderCreatedHandler.cs".to_string(),
     }];
 
-    let created = link_events_to_handlers(&db.conn, &events, &handlers).unwrap();
+    let created = link_events_to_handlers(db.conn(), &events, &handlers).unwrap();
     assert_eq!(created, 0);
 }
 
 #[test]
 fn empty_inputs_return_zero() {
     let db = Database::open_in_memory().unwrap();
-    let created = link_events_to_handlers(&db.conn, &[], &[]).unwrap();
+    let created = link_events_to_handlers(db.conn(), &[], &[]).unwrap();
     assert_eq!(created, 0);
 }

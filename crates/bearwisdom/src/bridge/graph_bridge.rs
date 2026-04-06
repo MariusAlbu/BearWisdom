@@ -115,7 +115,7 @@ impl GraphBridge {
 
         let db = self.pool.get()?;
         let id: Option<i64> = db
-            .conn
+            .conn()
             .query_row(
                 "SELECT s.id
                  FROM symbols s
@@ -154,7 +154,7 @@ impl GraphBridge {
 
         // Try to upgrade an existing edge that is not yet at 1.0.
         let updated = db
-            .conn
+            .conn()
             .execute(
                 "UPDATE edges SET confidence = 1.0
                  WHERE source_id = ?1 AND target_id = ?2 AND kind = ?3
@@ -167,7 +167,7 @@ impl GraphBridge {
         if updated == 0 {
             // No existing sub-1.0 edge — try inserting (may be a no-op if already at 1.0).
             db
-                .conn
+                .conn()
                 .execute(
                     "INSERT OR IGNORE INTO edges (source_id, target_id, kind, source_line, confidence)
                      VALUES (?1, ?2, ?3, ?4, 1.0)",
@@ -178,7 +178,7 @@ impl GraphBridge {
 
         // Retrieve the edge's rowid so we can write lsp_edge_meta.
         let rowid: Option<i64> = db
-            .conn
+            .conn()
             .query_row(
                 "SELECT rowid FROM edges
                  WHERE source_id = ?1 AND target_id = ?2 AND kind = ?3
@@ -195,7 +195,7 @@ impl GraphBridge {
 
         // Check whether lsp_edge_meta already has a fresh entry for this edge.
         let meta_exists: bool = db
-            .conn
+            .conn()
             .query_row(
                 "SELECT 1 FROM lsp_edge_meta WHERE edge_rowid = ?1",
                 [edge_rowid],
@@ -207,7 +207,7 @@ impl GraphBridge {
 
         // Upsert lsp_edge_meta.
         db
-            .conn
+            .conn()
             .execute(
                 "INSERT OR REPLACE INTO lsp_edge_meta (edge_rowid, source, server, resolved_at)
                  VALUES (?1, 'lsp', ?2, strftime('%s', 'now'))",
@@ -230,7 +230,7 @@ impl GraphBridge {
     ) -> Result<bool> {
         let db = self.pool.get()?;
         let rows = db
-            .conn
+            .conn()
             .execute(
                 "UPDATE edges
                  SET confidence = MAX(confidence, ?1)
@@ -251,7 +251,7 @@ impl GraphBridge {
         let db = self.pool.get()?;
 
         // 1. Collect edge rowids that have LSP meta AND belong to the file.
-        let mut stmt = db.conn.prepare(
+        let mut stmt = db.conn().prepare(
             "SELECT lm.edge_rowid
              FROM lsp_edge_meta lm
              JOIN edges e ON e.rowid = lm.edge_rowid
@@ -279,7 +279,7 @@ impl GraphBridge {
         // 2. Delete the meta rows.
         for &rid in &rowids {
             db
-                .conn
+                .conn()
                 .execute("DELETE FROM lsp_edge_meta WHERE edge_rowid = ?1", [rid])
                 .context("invalidate_file_edges DELETE meta")?;
         }
@@ -287,7 +287,7 @@ impl GraphBridge {
         // 3. Reset confidence to 0.50 for those edges.
         for &rid in &rowids {
             db
-                .conn
+                .conn()
                 .execute(
                     "UPDATE edges SET confidence = 0.50 WHERE rowid = ?1",
                     [rid],
@@ -407,7 +407,7 @@ impl GraphBridge {
     pub fn unresolved_ref_count(&self) -> Result<u32> {
         let db = self.pool.get()?;
         let count: i64 = db
-            .conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |row| row.get(0))
             .context("unresolved_ref_count")?;
         Ok(count as u32)
@@ -416,7 +416,7 @@ impl GraphBridge {
     pub fn external_ref_count(&self) -> Result<u32> {
         let db = self.pool.get()?;
         let count: i64 = db
-            .conn
+            .conn()
             .query_row(
                 "SELECT COUNT(*) FROM external_refs",
                 [],
@@ -429,7 +429,7 @@ impl GraphBridge {
     pub fn lsp_edge_count(&self) -> Result<u32> {
         let db = self.pool.get()?;
         let count: i64 = db
-            .conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |row| row.get(0))
             .context("lsp_edge_count")?;
         Ok(count as u32)

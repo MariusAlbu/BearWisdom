@@ -5,9 +5,9 @@
 // for storing 768-dimensional code embeddings and performing k-nearest-neighbor
 // cosine similarity searches.
 //
-// The sqlite-vec extension must be loaded via `Database::open_with_vec()` before
-// any of these functions will work.  If the extension is unavailable, all
-// functions return graceful errors or empty results.
+// The sqlite-vec extension is statically linked and loaded automatically by
+// `Database::open()`.  If the extension is unavailable, all functions return
+// graceful errors or empty results.
 //
 // Wire format: little-endian IEEE 754 f32 bytes — the native format expected
 // by sqlite-vec for both INSERT and WHERE MATCH.
@@ -23,7 +23,7 @@ use tracing::{debug, trace};
 
 /// Create the `vec_chunks` virtual table.
 ///
-/// Requires sqlite-vec to be loaded (via `Database::open_with_vec`).
+/// Requires sqlite-vec to be loaded (available on any connection from `Database::open`).
 /// Returns `Ok(true)` if the table was created, `Ok(false)` if it already
 /// existed.
 pub fn init_vec_table(conn: &Connection) -> Result<bool> {

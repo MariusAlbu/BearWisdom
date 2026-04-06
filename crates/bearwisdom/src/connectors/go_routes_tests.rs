@@ -175,7 +175,7 @@ fn normalise_prefix_adds_leading_slash() {
 #[test]
 fn extracts_stdlib_handle_func() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_id = insert_go_file(conn, "main.go");
 
     let source = r#"
@@ -200,7 +200,7 @@ func main() {
 #[test]
 fn extracts_gin_get_route() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_id = insert_go_file(conn, "router.go");
 
     let source = r#"
@@ -231,7 +231,7 @@ func setupRouter() *gin.Engine {
 #[test]
 fn extracts_chi_title_case_routes() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_id = insert_go_file(conn, "routes.go");
 
     let source = r#"
@@ -256,7 +256,7 @@ func setupChi() {
 #[test]
 fn resolves_gin_group_prefix() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_id = insert_go_file(conn, "server.go");
 
     let source = r#"
@@ -298,7 +298,7 @@ func setupRoutes(r *gin.Engine) {
 #[test]
 fn resolves_echo_group_prefix() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_id = insert_go_file(conn, "echo_server.go");
 
     let source = r#"
@@ -323,7 +323,7 @@ func main() {
 #[test]
 fn extracts_method_handle_func_with_http_method_const() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_id = insert_go_file(conn, "handlers.go");
 
     let source = r#"
@@ -353,7 +353,7 @@ func register(r *MyRouter) {
 #[test]
 fn connect_with_stdlib_file_inserts_routes() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let dir = tempfile::TempDir::new().unwrap();
     let go_source = r#"
@@ -397,7 +397,7 @@ func main() {
 #[test]
 fn connect_with_gin_file_inserts_routes() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let dir = tempfile::TempDir::new().unwrap();
     let go_source = r#"
@@ -444,7 +444,7 @@ func main() {
 #[test]
 fn connect_with_group_prefix_resolves_routes() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let dir = tempfile::TempDir::new().unwrap();
     let go_source = r#"
@@ -491,14 +491,14 @@ func setupRouter() *gin.Engine {
 fn connect_on_empty_project_returns_zero() {
     let db = Database::open_in_memory().unwrap();
     let dir = tempfile::TempDir::new().unwrap();
-    let count = connect(&db.conn, dir.path()).unwrap();
+    let count = connect(db.conn(), dir.path()).unwrap();
     assert_eq!(count, 0);
 }
 
 #[test]
 fn connect_skips_unreadable_file_gracefully() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Register a file that doesn't exist on disk.
     conn.execute(
@@ -516,7 +516,7 @@ fn connect_skips_unreadable_file_gracefully() {
 #[test]
 fn symbol_id_is_populated_when_handler_exists_in_symbols() {
     let db = Database::open_in_memory().unwrap();
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let dir = tempfile::TempDir::new().unwrap();
     let go_source = r#"

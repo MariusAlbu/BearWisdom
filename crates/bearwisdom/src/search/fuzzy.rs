@@ -56,7 +56,7 @@ pub struct FuzzyIndex {
 impl FuzzyIndex {
     /// Load all file paths and symbol names from the database.
     pub fn from_db(db: &Database) -> Result<Self> {
-        let conn = &db.conn;
+        let conn = db.conn();
 
         // Load files.
         let mut stmt = conn

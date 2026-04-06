@@ -30,7 +30,7 @@ use bearwisdom::query::{
     QueryOptions,
 };
 use bearwisdom::search::{
-    content_index::rebuild_content_index,
+    content_index::rebuild_content_index_db as rebuild_content_index,
     content_search::search_content,
     fuzzy::FuzzyIndex,
     grep::{grep_search, GrepOptions},
@@ -629,7 +629,7 @@ fn test_cmd_content_search_after_index() {
     full_index(&mut db, project.path(), None, None, None).unwrap();
 
     // FTS content index must be built separately from the symbol index.
-    let indexed = rebuild_content_index(db.conn(), project.path()).unwrap();
+    let indexed = rebuild_content_index(&db, project.path()).unwrap();
     assert!(indexed > 0, "should have content-indexed at least one file");
 
     let results = search_content(&db, "ProductService", &SearchScope::default(), 10).unwrap();
@@ -648,7 +648,7 @@ fn test_cmd_content_search_short_query_empty() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, project.path(), None, None, None).unwrap();
-    rebuild_content_index(db.conn(), project.path()).unwrap();
+    rebuild_content_index(&db, project.path()).unwrap();
 
     // FTS5 trigram requires >= 3 chars; shorter queries must return empty.
     let results = search_content(&db, "ab", &SearchScope::default(), 10).unwrap();
@@ -660,7 +660,7 @@ fn test_cmd_content_search_returns_ranked_results() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
     full_index(&mut db, project.path(), None, None, None).unwrap();
-    rebuild_content_index(db.conn(), project.path()).unwrap();
+    rebuild_content_index(&db, project.path()).unwrap();
 
     let results = search_content(&db, "GetById", &SearchScope::default(), 10).unwrap();
     // Verify results are in descending score order (best first).
