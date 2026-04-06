@@ -46,8 +46,35 @@ pub fn resolve_and_write(
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
+    resolve_and_write_inner(db, parsed, symbol_id_map, project_ctx, false)
+}
+
+/// Incremental variant: augments the SymbolIndex with all symbols from DB
+/// so the engine resolver can find targets in unchanged files.
+pub fn resolve_and_write_incremental(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+) -> Result<ResolutionStats> {
+    resolve_and_write_inner(db, parsed, symbol_id_map, project_ctx, true)
+}
+
+fn resolve_and_write_inner(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    augment_from_db: bool,
+) -> Result<ResolutionStats> {
     let engine = ResolutionEngine::new();
-    let index = SymbolIndex::build_with_context(parsed, symbol_id_map, project_ctx);
+    let mut index = SymbolIndex::build_with_context(parsed, symbol_id_map, project_ctx);
+
+    // For incremental: load symbols from unchanged files so the engine
+    // resolver can find cross-file targets (CR #9).
+    if augment_from_db {
+        index.augment_from_db(&db.conn);
+    }
 
     let conn = &db.conn;
     let tx = conn

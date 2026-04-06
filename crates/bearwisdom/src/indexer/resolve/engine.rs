@@ -500,6 +500,76 @@ impl SymbolIndex {
             empty_reexports: Vec::new(),
         }
     }
+
+    /// Load all symbols from the database into the index, filling gaps left by
+    /// an incremental build where only changed files were parsed.
+    ///
+    /// Symbols already present (from parsed files) are NOT overwritten — the
+    /// parsed data is richer (has type info, reexports).  This only adds
+    /// entries for symbols in unchanged files so the engine resolver can find
+    /// them by name during cross-file resolution.
+    ///
+    /// Call this AFTER `build_with_context` for incremental resolution.
+    pub fn augment_from_db(&mut self, conn: &rusqlite::Connection) {
+        let mut stmt = match conn.prepare(
+            "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
+                    s.scope_path, s.visibility
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id",
+        ) {
+            Ok(s) => s,
+            Err(_) => return,
+        };
+
+        let rows = match stmt.query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(6)?,
+            ))
+        }) {
+            Ok(r) => r,
+            Err(_) => return,
+        };
+
+        let mut new_sorted = Vec::new();
+
+        for row in rows {
+            let Ok((id, name, qname, kind, file_path, scope_path, visibility)) = row else {
+                continue;
+            };
+
+            // Skip symbols already indexed from parsed files.
+            if self.by_qname.contains_key(&qname) {
+                continue;
+            }
+
+            let info = SymbolInfo {
+                id,
+                name: name.clone(),
+                qualified_name: qname.clone(),
+                kind,
+                visibility,
+                file_path: file_path.clone(),
+                scope_path,
+            };
+
+            self.by_name.entry(name).or_default().push(info.clone());
+            self.by_qname.insert(qname.clone(), info.clone());
+            self.by_file.entry(file_path).or_default().push(info.clone());
+            new_sorted.push((qname, info));
+        }
+
+        // Merge into sorted_qnames and re-sort.
+        if !new_sorted.is_empty() {
+            self.sorted_qnames.extend(new_sorted);
+            self.sorted_qnames.sort_by(|a, b| a.0.cmp(&b.0));
+        }
+    }
 }
 
 /// Lightweight chain resolution for variable type inference during index building.

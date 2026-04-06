@@ -194,11 +194,12 @@ fn run_incremental_pipeline(
     }
 
     // --- Step 5: Write files + symbols (shared pipeline) ---
-    let (file_id_map, mut symbol_id_map) = if !parsed.is_empty() {
+    let file_id_map = if !parsed.is_empty() {
         let (fmap, smap) =
             write::write_parsed_files(db, &parsed).context("Failed to write index")?;
         stats.symbols_written = smap.len() as u32;
-        (fmap, smap)
+        let _ = smap; // symbol IDs for parsed files are subset of full map below
+        fmap
     } else {
         Default::default()
     };
@@ -209,13 +210,10 @@ fn run_incremental_pipeline(
         write::update_chunks(db, &parsed, &file_id_map, false)?;
     }
 
-    // --- Step 7: Load full symbol map (post-commit, includes unchanged files) ---
-    {
-        let full_map = write::load_symbol_id_map(db)?;
-        for (key, id) in full_map {
-            symbol_id_map.entry(key).or_insert(id);
-        }
-    }
+    // --- Step 7: Load full symbol map (post-commit) ---
+    // Needed by the heuristic resolver to match targets from any file.
+    // The engine resolver gets completeness from SymbolIndex::augment_from_db.
+    let symbol_id_map = write::load_symbol_id_map(db)?;
 
     // --- Step 8: Blast radius re-resolution ---
     // Find files with unresolved refs matching symbols from changed files.
@@ -294,7 +292,7 @@ fn run_incremental_pipeline(
 
     // --- Step 9: Cross-file resolution ---
     let project_ctx = super::project_context::build_project_context(project_root);
-    let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
+    let rstats = resolve::resolve_and_write_incremental(db, &parsed, &symbol_id_map, Some(&project_ctx))
         .context("Failed to resolve references")?;
     stats.edges_written = rstats.resolved as u32;
     info!("Resolved {} edges for changed files", rstats.resolved);
