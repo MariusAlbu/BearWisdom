@@ -85,6 +85,7 @@ sha2                   = { workspace = true }
 anyhow                 = { workspace = true }
 serde                  = { workspace = true }
 serde_json             = { workspace = true }
+serde_yaml             = { workspace = true }
 tracing                = { workspace = true }
 rayon                  = { workspace = true }
 rustc-hash             = { workspace = true }

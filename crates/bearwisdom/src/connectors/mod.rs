@@ -16,6 +16,9 @@ pub mod di_connector;
 
 pub mod angular_di;
 pub mod django;
+pub mod docker_compose;
+pub mod dockerfile;
+pub mod kubernetes;
 pub mod dotnet_di;
 pub mod dotnet_events;
 pub mod dotnet_http_client;

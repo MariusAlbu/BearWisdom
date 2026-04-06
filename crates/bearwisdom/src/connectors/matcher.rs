@@ -36,6 +36,12 @@ impl ProtocolMatcher {
             Protocol::Ffi => match_exact(starts, stops, "ffi_call", false),
             Protocol::Ipc => match_exact(starts, stops, "ipc_call", false),
             Protocol::Di => match_exact(starts, stops, "di_binding", false),
+            // Infrastructure connectors (DockerCompose, Kubernetes) always supply a
+            // custom_match, so this arm is never reached in practice.  Fall back to
+            // exact-key matching as a safe default.
+            Protocol::Infrastructure => {
+                match_exact(starts, stops, "infrastructure_dependency", false)
+            }
         }
     }
 }

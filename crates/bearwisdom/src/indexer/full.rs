@@ -171,6 +171,18 @@ pub fn full_index(
                 warn!("Failed to store workspace_kind: {e}");
             }
         }
+
+        // Mark packages that contain a Dockerfile as deployable services.
+        let dockerfile_pairs =
+            crate::connectors::dockerfile::detect_dockerfiles(db.conn(), project_root);
+        if !dockerfile_pairs.is_empty() {
+            mark_service_packages(db.conn(), &dockerfile_pairs);
+            info!(
+                "Marked {} package(s) as services (Dockerfile detected)",
+                dockerfile_pairs.len()
+            );
+        }
+
         written
     } else {
         Vec::new()
@@ -629,6 +641,34 @@ fn manifest_to_kind(filename: &str) -> &str {
         "Package.swift" => "swift",
         "composer.json" => "php",
         _ => "unknown",
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Service package marking
+// ---------------------------------------------------------------------------
+
+/// Set `is_service = 1` on packages whose path matches a detected Dockerfile.
+///
+/// `pairs` is `(package_relative_path, dockerfile_relative_path)` as returned
+/// by `crate::connectors::dockerfile::detect_dockerfiles`.
+fn mark_service_packages(conn: &rusqlite::Connection, pairs: &[(String, String)]) {
+    for (pkg_path, dockerfile_path) in pairs {
+        match conn.execute(
+            "UPDATE packages SET is_service = 1 WHERE path = ?1",
+            rusqlite::params![pkg_path],
+        ) {
+            Ok(n) if n > 0 => {
+                debug!("Marked package '{}' as service ({})", pkg_path, dockerfile_path);
+            }
+            Ok(_) => {
+                // Package path not found — may have been cleaned up; not an error.
+                debug!("No package row for path '{}' — skipping is_service mark", pkg_path);
+            }
+            Err(e) => {
+                warn!("Failed to mark package '{}' as service: {e}", pkg_path);
+            }
+        }
     }
 }
 

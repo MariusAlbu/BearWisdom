@@ -20,6 +20,9 @@ pub enum Protocol {
     Ffi,
     Ipc,
     Di,
+    /// Infrastructure-level relationships: Docker Compose service dependencies,
+    /// Kubernetes deployments, etc.
+    Infrastructure,
 }
 
 impl Protocol {
@@ -34,6 +37,7 @@ impl Protocol {
             Self::Ffi => "ffi",
             Self::Ipc => "ipc",
             Self::Di => "di",
+            Self::Infrastructure => "infrastructure",
         }
     }
 }

@@ -184,6 +184,9 @@ pub fn build_default_registry() -> ConnectorRegistry {
     reg.register(Box::new(super::di_connector::DotnetDiConnector));
     reg.register(Box::new(super::di_connector::AngularDiConnector));
     reg.register(Box::new(super::di_connector::SpringDiConnector));
+    // Infrastructure connectors
+    reg.register(Box::new(super::docker_compose::DockerComposeConnector));
+    reg.register(Box::new(super::kubernetes::KubernetesConnector));
     reg
 }
 

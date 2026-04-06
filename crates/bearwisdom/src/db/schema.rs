@@ -99,6 +99,12 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_files_package ON files(package_id)"
     )?;
+    // v0.4: Add is_service flag to packages for Dockerfile-backed service detection.
+    if !column_exists(conn, "packages", "is_service") {
+        conn.execute_batch(
+            "ALTER TABLE packages ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0"
+        )?;
+    }
     Ok(())
 }
 
@@ -130,12 +136,13 @@ const SCHEMA_SQL: &str = "
 -- Single-project repos leave this table empty.
 
 CREATE TABLE IF NOT EXISTS packages (
-    id        INTEGER PRIMARY KEY,
-    name      TEXT    NOT NULL UNIQUE,
-    path      TEXT    NOT NULL UNIQUE,  -- relative to workspace root
-    kind      TEXT,                     -- ecosystem hint: npm, cargo, dotnet, go, etc.
-    manifest  TEXT,                     -- relative path to manifest file
-    parent_id INTEGER REFERENCES packages(id) ON DELETE SET NULL
+    id         INTEGER PRIMARY KEY,
+    name       TEXT    NOT NULL UNIQUE,
+    path       TEXT    NOT NULL UNIQUE,  -- relative to workspace root
+    kind       TEXT,                     -- ecosystem hint: npm, cargo, dotnet, go, etc.
+    manifest   TEXT,                     -- relative path to manifest file
+    parent_id  INTEGER REFERENCES packages(id) ON DELETE SET NULL,
+    is_service INTEGER NOT NULL DEFAULT 0  -- 1 if a Dockerfile was found in this package
 );
 
 CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);
