@@ -11,7 +11,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::query::architecture::SymbolSummary;
@@ -56,7 +57,7 @@ pub struct SymbolDetail {
 /// qualified name (returns at most one match).
 ///
 /// Returns an empty vec if nothing is found.
-pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Result<Vec<SymbolDetail>> {
+pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> QueryResult<Vec<SymbolDetail>> {
     let _timer = db.timer("symbol_info");
 
     // Check cache first.
@@ -231,6 +232,9 @@ pub struct FileSymbol {
     pub name: String,
     pub kind: String,
     pub line: u32,
+    /// Column offset (0-based).  Always populated in Full mode.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub col: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub end_line: Option<u32>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -248,11 +252,11 @@ pub fn file_symbols(
     db: &Database,
     file_path: &str,
     mode: FileSymbolsMode,
-) -> Result<Vec<FileSymbol>> {
+) -> QueryResult<Vec<FileSymbol>> {
     let _timer = db.timer("file_symbols");
     let conn = &db.conn;
     let mut stmt = conn.prepare(
-        "SELECT s.name, s.kind, s.line, s.end_line,
+        "SELECT s.name, s.kind, s.line, s.col, s.end_line,
                 s.signature, s.qualified_name, s.visibility, s.scope_path
          FROM symbols s JOIN files f ON s.file_id = f.id
          WHERE f.path = ?1
@@ -263,31 +267,33 @@ pub fn file_symbols(
         let name: String = row.get(0)?;
         let kind: String = row.get(1)?;
         let line: u32 = row.get(2)?;
-        let end_line: Option<u32> = row.get(3)?;
-        let signature: Option<String> = row.get(4)?;
-        let qualified_name: Option<String> = row.get(5)?;
-        let visibility: Option<String> = row.get(6)?;
-        let scope_path: Option<String> = row.get(7)?;
+        let col: u32 = row.get(3)?;
+        let end_line: Option<u32> = row.get(4)?;
+        let signature: Option<String> = row.get(5)?;
+        let qualified_name: Option<String> = row.get(6)?;
+        let visibility: Option<String> = row.get(7)?;
+        let scope_path: Option<String> = row.get(8)?;
 
         Ok(match mode {
             FileSymbolsMode::Names => FileSymbol {
                 name, kind, line,
-                end_line: None, signature: None,
+                col: None, end_line: None, signature: None,
                 qualified_name: None, visibility: None, scope_path: None,
             },
             FileSymbolsMode::Outline => FileSymbol {
-                name, kind, line, end_line, signature,
+                name, kind, line,
+                col: None, end_line, signature,
                 qualified_name: None, visibility: None, scope_path: None,
             },
             FileSymbolsMode::Full => FileSymbol {
-                name, kind, line, end_line, signature,
+                name, kind, line, col: Some(col), end_line, signature,
                 qualified_name, visibility, scope_path,
             },
         })
     }).context("file_symbols: query")?;
 
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .context("file_symbols: collect")
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("file_symbols: collect")?)
 }
 
 // ---------------------------------------------------------------------------

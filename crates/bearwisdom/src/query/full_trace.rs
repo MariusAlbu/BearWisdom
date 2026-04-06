@@ -17,7 +17,8 @@
 // The result is a forest of TraceNode trees, one per entry point.
 // =============================================================================
 
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
@@ -94,7 +95,7 @@ struct FlowJumpMap {
 }
 
 impl FlowJumpMap {
-    fn load(db: &Database) -> Result<Self> {
+    fn load(db: &Database) -> QueryResult<Self> {
         let _timer = db.timer("flow_jump_map_load");
         let conn = &db.conn;
         let mut by_source: HashMap<String, Vec<(String, String)>> = HashMap::new();
@@ -149,7 +150,7 @@ pub fn trace_from_symbol(
     db: &Database,
     symbol_name: &str,
     max_depth: u32,
-) -> Result<FullTraceResult> {
+) -> QueryResult<FullTraceResult> {
     let _timer = db.timer("trace_from_symbol");
     let conn = &db.conn;
     let jumps = FlowJumpMap::load(db)?;
@@ -208,7 +209,7 @@ pub fn trace_from_entry_points(
     db: &Database,
     max_depth: u32,
     max_traces: usize,
-) -> Result<FullTraceResult> {
+) -> QueryResult<FullTraceResult> {
     let _timer = db.timer("trace_from_entry_points");
     let conn = &db.conn;
     let jumps = FlowJumpMap::load(db)?;
@@ -330,7 +331,7 @@ fn build_trace_node(
     jumps: &FlowJumpMap,
     visited: &mut HashSet<i64>,
     flow_jump_count: &mut u32,
-) -> Result<TraceNode> {
+) -> QueryResult<TraceNode> {
     let mut children = Vec::new();
 
     if depth < max_depth {
@@ -473,7 +474,7 @@ fn build_trace_node(
 // Helpers
 // ---------------------------------------------------------------------------
 
-fn resolve_symbol_rows(conn: &rusqlite::Connection, name: &str) -> Result<Vec<SymRow>> {
+fn resolve_symbol_rows(conn: &rusqlite::Connection, name: &str) -> QueryResult<Vec<SymRow>> {
     // Try qualified name first, then simple name.
     let mut stmt = conn.prepare_cached(
         "SELECT s.id, s.name, s.qualified_name, s.kind, f.path, s.line

@@ -26,7 +26,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -65,7 +66,7 @@ pub fn search_symbols(
     query: &str,
     limit: usize,
     opts: &super::QueryOptions,
-) -> Result<Vec<SearchResult>> {
+) -> QueryResult<Vec<SearchResult>> {
     let _timer = db.timer("search_symbols");
     let conn = &db.conn;
 
@@ -163,8 +164,8 @@ pub fn search_symbols(
         })
     }).context("Failed to execute LIKE fallback query")?;
 
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect LIKE fallback results")
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect LIKE fallback results")?)
 }
 
 // ---------------------------------------------------------------------------

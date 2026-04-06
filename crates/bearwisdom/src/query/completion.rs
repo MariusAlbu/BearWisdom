@@ -13,7 +13,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use nucleo::pattern::{CaseMatching, Normalization, Pattern};
 use nucleo::{Config, Matcher, Utf32String};
 use rusqlite::OptionalExtension;
@@ -55,7 +56,7 @@ pub fn complete_at(
     _col: u32,
     prefix: &str,
     include_signature: bool,
-) -> Result<Vec<CompletionItem>> {
+) -> QueryResult<Vec<CompletionItem>> {
     let _timer = db.timer("complete_at");
     let conn = &db.conn;
 

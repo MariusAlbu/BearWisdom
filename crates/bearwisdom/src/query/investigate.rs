@@ -9,7 +9,8 @@
 use crate::db::Database;
 use crate::query::blast_radius::{self, AffectedSymbol};
 use crate::query::call_hierarchy::{self, CallHierarchyItem};
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use rusqlite::OptionalExtension;
 use serde::{Deserialize, Serialize};
 
@@ -84,7 +85,7 @@ pub fn investigate(
     db: &Database,
     symbol_name: &str,
     opts: &InvestigateOptions,
-) -> Result<Option<InvestigateResult>> {
+) -> QueryResult<Option<InvestigateResult>> {
     let _timer = db.timer("investigate");
     let conn = &db.conn;
 

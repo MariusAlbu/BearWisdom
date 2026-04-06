@@ -18,7 +18,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -44,7 +45,7 @@ pub struct CallHierarchyItem {
 
 /// Resolve `symbol_name` (simple or qualified) to a list of symbol IDs.
 /// Returns an empty vec if no match is found.
-fn resolve_ids(db: &Database, symbol_name: &str) -> Result<Vec<i64>> {
+fn resolve_ids(db: &Database, symbol_name: &str) -> QueryResult<Vec<i64>> {
     let conn = &db.conn;
     let ids = if symbol_name.contains('.') {
         // Qualified name: expect exactly one match.
@@ -78,7 +79,7 @@ pub fn incoming_calls(
     db: &Database,
     symbol_name: &str,
     limit: usize,
-) -> Result<Vec<CallHierarchyItem>> {
+) -> QueryResult<Vec<CallHierarchyItem>> {
     let _timer = db.timer("calls_in");
     let target_ids = resolve_ids(db, symbol_name)?;
     if target_ids.is_empty() {
@@ -144,7 +145,7 @@ pub fn outgoing_calls(
     db: &Database,
     symbol_name: &str,
     limit: usize,
-) -> Result<Vec<CallHierarchyItem>> {
+) -> QueryResult<Vec<CallHierarchyItem>> {
     let _timer = db.timer("calls_out");
     let source_ids = resolve_ids(db, symbol_name)?;
     if source_ids.is_empty() {

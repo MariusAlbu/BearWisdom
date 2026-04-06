@@ -13,72 +13,6 @@ use crate::db::{db_exists, resolve_db_path};
 use crate::AppState;
 
 // ---------------------------------------------------------------------------
-// Directory-based concept discovery (fallback for languages without dotted namespaces)
-// ---------------------------------------------------------------------------
-
-/// Groups symbols by the first 2 directory segments of their file path.
-/// E.g. `crates/bearwisdom/src/query/blast_radius.rs` → concept `"crates/bearwisdom"`.
-fn discover_directory_concepts(db: &bearwisdom::Database) -> anyhow::Result<()> {
-    let conn = db.conn();
-
-    // Find distinct directory prefixes (first 2 segments).
-    let prefixes: Vec<String> = {
-        let mut stmt = conn.prepare(
-            "SELECT DISTINCT
-                 CASE
-                   WHEN instr(substr(path, instr(path, '/') + 1), '/') > 0
-                   THEN substr(path, 1,
-                        instr(path, '/') +
-                        instr(substr(path, instr(path, '/') + 1), '/') - 1)
-                   ELSE
-                     CASE WHEN instr(path, '/') > 0
-                     THEN substr(path, 1, instr(path, '/') - 1)
-                     ELSE NULL END
-                 END AS dir_prefix
-             FROM files
-             WHERE dir_prefix IS NOT NULL"
-        )?;
-
-        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
-        rows.filter_map(|r| r.ok())
-            .filter(|p| !p.is_empty())
-            .collect()
-    };
-
-    for prefix in &prefixes {
-        // Count symbols in this directory prefix to skip tiny groups.
-        let count: u32 = conn.query_row(
-            "SELECT COUNT(*) FROM symbols s JOIN files f ON s.file_id = f.id
-             WHERE f.path LIKE ?1 || '/%'",
-            rusqlite::params![prefix],
-            |r| r.get(0),
-        ).unwrap_or(0);
-
-        if count < 3 { continue; } // Skip trivially small groups
-
-        let auto_pattern = format!("{prefix}/*");
-        conn.execute(
-            "INSERT OR IGNORE INTO concepts (name, auto_pattern, created_at)
-             VALUES (?1, ?2, strftime('%s', 'now'))",
-            rusqlite::params![prefix, auto_pattern],
-        )?;
-
-        // Assign members: all symbols whose file path starts with this prefix.
-        conn.execute(
-            "INSERT OR IGNORE INTO concept_members (concept_id, symbol_id, auto_assigned)
-             SELECT c.id, s.id, 1
-             FROM concepts c, symbols s
-             JOIN files f ON s.file_id = f.id
-             WHERE c.name = ?1
-               AND f.path LIKE ?1 || '/%'",
-            rusqlite::params![prefix],
-        )?;
-    }
-
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // Response helpers
 // ---------------------------------------------------------------------------
 
@@ -208,15 +142,7 @@ fn index_project(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Resu
 
     if already_existed {
         // DB exists — read stats without re-indexing, then register pool.
-        let (file_count, symbol_count, edge_count, unresolved, external) = {
-            let conn = db.conn();
-            let fc: u32 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-            let sc: u32 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
-            let ec: u32 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-            let ur: u32 = conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0)).unwrap_or(0);
-            let xr: u32 = conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0)).unwrap_or(0);
-            (fc, sc, ec, ur, xr)
-        };
+        let s = bearwisdom::query::stats::index_stats(&db)?;
 
         // Register a pool so subsequent GET handlers use pooled connections.
         drop(db);
@@ -224,11 +150,11 @@ fn index_project(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Resu
         pool_state.set_pool(root, pool);
 
         return Ok(json!({
-            "file_count": file_count,
-            "symbol_count": symbol_count,
-            "edge_count": edge_count,
-            "unresolved_ref_count": unresolved,
-            "external_ref_count": external,
+            "file_count": s.file_count,
+            "symbol_count": s.symbol_count,
+            "edge_count": s.edge_count,
+            "unresolved_ref_count": s.unresolved_ref_count,
+            "external_ref_count": s.external_ref_count,
             "duration_ms": 0,
             "cached": true,
         }));
@@ -239,11 +165,8 @@ fn index_project(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Resu
     let _ = bearwisdom::query::concepts::auto_assign_concepts(&db);
 
     // If no concepts were discovered (flat qualified names), create directory-based concepts.
-    let concept_count: u32 = db.conn().query_row(
-        "SELECT COUNT(*) FROM concepts", [], |r| r.get(0)
-    ).unwrap_or(0);
-    if concept_count == 0 {
-        let _ = discover_directory_concepts(&db);
+    if bearwisdom::query::stats::concept_count(&db)? == 0 {
+        let _ = bearwisdom::query::concepts::discover_directory_concepts(&db);
     }
 
     // Embedding runs separately — too slow to block the index response.
@@ -282,15 +205,11 @@ pub async fn get_status(
 
 fn status_counts(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Result<serde_json::Value> {
     let db = pool_state.get_db(root)?;
-    let conn = db.conn();
-    let file_count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-    let symbol_count: i64 =
-        conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
-    let edge_count: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
+    let s = bearwisdom::query::stats::index_stats(&db)?;
     Ok(json!({
-        "file_count": file_count,
-        "symbol_count": symbol_count,
-        "edge_count": edge_count,
+        "file_count": s.file_count,
+        "symbol_count": s.symbol_count,
+        "edge_count": s.edge_count,
     }))
 }
 
@@ -654,45 +573,13 @@ pub async fn get_file_symbols(
     }
 }
 
-#[derive(serde::Serialize)]
-struct FileSymbolRow {
-    name: String,
-    qualified_name: String,
-    kind: String,
-    line: u32,
-    col: u32,
-    end_line: u32,
-    scope_path: Option<String>,
-    signature: Option<String>,
-    visibility: Option<String>,
-}
-
-fn file_symbols(root: &Path, file: &str, pool_state: &crate::db::PoolState) -> anyhow::Result<Vec<FileSymbolRow>> {
+fn file_symbols(
+    root: &Path,
+    file: &str,
+    pool_state: &crate::db::PoolState,
+) -> anyhow::Result<Vec<bearwisdom::FileSymbol>> {
     let db = pool_state.get_db(root)?;
-    let conn = db.conn();
-    let mut stmt = conn.prepare(
-        "SELECT s.name, s.qualified_name, s.kind, s.line, s.col, s.end_line,
-                s.scope_path, s.signature, s.visibility
-         FROM symbols s
-         JOIN files f ON s.file_id = f.id
-         WHERE f.path = ?1
-         ORDER BY s.line",
-    )?;
-    let rows = stmt.query_map([file], |row| {
-        Ok(FileSymbolRow {
-            name:           row.get(0)?,
-            qualified_name: row.get(1)?,
-            kind:           row.get(2)?,
-            line:           row.get(3)?,
-            col:            row.get(4)?,
-            end_line:       row.get(5)?,
-            scope_path:     row.get(6)?,
-            signature:      row.get(7)?,
-            visibility:     row.get(8)?,
-        })
-    })?;
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .map_err(anyhow::Error::from)
+    Ok(bearwisdom::query::symbol_info::file_symbols(&db, file, bearwisdom::FileSymbolsMode::Full)?)
 }
 
 // ---------------------------------------------------------------------------
@@ -845,21 +732,6 @@ pub struct FlowEdgesQuery {
     limit: usize,
 }
 
-#[derive(serde::Serialize)]
-struct FlowEdgeRow {
-    source_file: String,
-    source_line: Option<i64>,
-    source_symbol: Option<String>,
-    source_language: String,
-    target_file: Option<String>,
-    target_line: Option<i64>,
-    target_symbol: Option<String>,
-    target_language: String,
-    edge_type: String,
-    protocol: Option<String>,
-    url_pattern: Option<String>,
-}
-
 pub async fn get_flow_edges(
     State(state): State<AppState>,
     Query(params): Query<FlowEdgesQuery>,
@@ -875,89 +747,13 @@ pub async fn get_flow_edges(
 }
 
 fn query_flow_edges(db: &bearwisdom::Database, limit: usize) -> anyhow::Result<serde_json::Value> {
-    use std::collections::HashMap;
-
-    let conn = db.conn();
-
-    // Summary counts from the full dataset (before limit).
-    let mut by_edge_type: HashMap<String, u32> = HashMap::new();
-    let mut by_language_pair: HashMap<String, u32> = HashMap::new();
-    let total: u32 = {
-        let mut stmt = conn.prepare(
-            "SELECT fe.edge_type,
-                    COALESCE(fe.source_language, sf.language, '') AS src_lang,
-                    COALESCE(fe.target_language, tf.language, '') AS tgt_lang,
-                    COUNT(*) AS cnt
-             FROM flow_edges fe
-             JOIN files sf ON sf.id = fe.source_file_id
-             LEFT JOIN files tf ON tf.id = fe.target_file_id
-             GROUP BY fe.edge_type, src_lang, tgt_lang"
-        )?;
-        let mut total = 0u32;
-        let mut rows = stmt.query([])?;
-        while let Some(row) = rows.next()? {
-            let et: String = row.get(0)?;
-            let src: String = row.get::<_, Option<String>>(1)?.unwrap_or_default();
-            let tgt: String = row.get::<_, Option<String>>(2)?.unwrap_or_default();
-            let cnt: u32 = row.get(3)?;
-            *by_edge_type.entry(et).or_default() += cnt;
-            let pair = format!("{src} → {tgt}");
-            *by_language_pair.entry(pair).or_default() += cnt;
-            total += cnt;
-        }
-        total
-    };
-
-    // Interleave edge types so the limit gets a fair mix.
-    let mut stmt = conn.prepare(
-        "SELECT source_file, source_line, source_symbol, source_language,
-                target_file, target_line, target_symbol, target_language,
-                edge_type, protocol, url_pattern
-         FROM (
-             SELECT
-                 sf.path                                       AS source_file,
-                 fe.source_line,
-                 fe.source_symbol,
-                 COALESCE(fe.source_language, sf.language, '') AS source_language,
-                 tf.path                                       AS target_file,
-                 fe.target_line,
-                 fe.target_symbol,
-                 COALESCE(fe.target_language, tf.language, '') AS target_language,
-                 fe.edge_type,
-                 fe.protocol,
-                 fe.url_pattern,
-                 ROW_NUMBER() OVER (PARTITION BY fe.edge_type ORDER BY sf.path, fe.source_line) AS rn
-             FROM flow_edges fe
-             JOIN files sf ON sf.id = fe.source_file_id
-             LEFT JOIN files tf ON tf.id = fe.target_file_id
-         )
-         ORDER BY rn, edge_type
-         LIMIT ?1",
-    )?;
-
-    let rows = stmt.query_map([limit as i64], |row| {
-        Ok(FlowEdgeRow {
-            source_file:     row.get(0)?,
-            source_line:     row.get(1)?,
-            source_symbol:   row.get(2)?,
-            source_language: row.get::<_, Option<String>>(3)?.unwrap_or_default(),
-            target_file:     row.get(4)?,
-            target_line:     row.get(5)?,
-            target_symbol:   row.get(6)?,
-            target_language: row.get::<_, Option<String>>(7)?.unwrap_or_default(),
-            edge_type:       row.get(8)?,
-            protocol:        row.get(9)?,
-            url_pattern:     row.get(10)?,
-        })
-    })?
-    .collect::<rusqlite::Result<Vec<_>>>()?;
-
+    let d = bearwisdom::query::stats::flow_edges_data(db, limit)?;
     Ok(json!({
-        "edges": rows,
+        "edges": d.edges,
         "summary": {
-            "total": total,
-            "by_edge_type": by_edge_type,
-            "by_language_pair": by_language_pair,
+            "total": d.total,
+            "by_edge_type": d.by_edge_type,
+            "by_language_pair": d.by_language_pair,
         }
     }))
 }

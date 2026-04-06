@@ -15,7 +15,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 use crate::query::architecture::SymbolSummary;
@@ -74,7 +75,7 @@ pub fn blast_radius(
     symbol_name: &str,
     max_depth: u32,
     max_results: u32,
-) -> Result<Option<BlastRadiusResult>> {
+) -> QueryResult<Option<BlastRadiusResult>> {
     let _timer = db.timer("blast_radius");
     let conn = &db.conn;
 
@@ -115,7 +116,7 @@ pub fn blast_radius(
     let (center_id, center) = match center_result {
         Ok(pair) => pair,
         Err(rusqlite::Error::QueryReturnedNoRows) => return Ok(None),
-        Err(e) => return Err(e).context("Failed to look up center symbol"),
+        Err(e) => return Err(e).context("Failed to look up center symbol").map_err(Into::into),
     };
 
     // --- Recursive CTE: walk backwards through the edge graph ---

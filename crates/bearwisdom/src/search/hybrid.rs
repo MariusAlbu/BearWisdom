@@ -118,12 +118,11 @@ pub fn hybrid_search(
 
     // --- Collect candidate chunk IDs ---
     // Union of chunks from text-matching files and KNN-matched chunk IDs.
-    let mut candidate_chunk_ids: HashSet<i64> = HashSet::new();
-
-    for path in text_file_rank.keys() {
-        let ids = chunk_ids_for_file_path(&db.conn, path)?;
-        candidate_chunk_ids.extend(ids);
-    }
+    // Batch-fetch all chunk IDs for the FTS-matched files in one query rather
+    // than one query per file path.
+    let fts_paths: Vec<&str> = text_file_rank.keys().map(|s| s.as_str()).collect();
+    let mut candidate_chunk_ids: HashSet<i64> =
+        batch_chunk_ids_for_files(&db.conn, &fts_paths)?;
 
     for &chunk_id in vec_chunk_rank.keys() {
         candidate_chunk_ids.insert(chunk_id);
@@ -132,14 +131,19 @@ pub fn hybrid_search(
     let mut candidate_chunk_ids: Vec<i64> = candidate_chunk_ids.into_iter().collect();
     candidate_chunk_ids.sort_unstable();
 
+    // --- Batch-fetch metadata for all candidates (1 query) ---
+    // file_path is available in the metadata, so we do not need a separate
+    // chunk→file_path pass; this single batch covers both the RRF scoring step
+    // and the final result-building step.
+    let meta_map = batch_fetch_chunk_meta(&db.conn, &candidate_chunk_ids)?;
+
     // --- RRF merge at chunk level ---
     let mut scored: Vec<(i64, f64, Option<u32>, Option<u32>)> = candidate_chunk_ids
         .iter()
         .filter_map(|&chunk_id| {
-            // Determine this chunk's file path so we can look up its text rank.
-            let file_path = chunk_file_path(&db.conn, chunk_id).ok()?;
+            let meta = meta_map.get(&chunk_id)?;
 
-            let text_rank = text_file_rank.get(&file_path).copied();
+            let text_rank = text_file_rank.get(&meta.file_path).copied();
             let vec_rank = vec_chunk_rank.get(&chunk_id).copied();
 
             if text_rank.is_none() && vec_rank.is_none() {
@@ -154,14 +158,14 @@ pub fn hybrid_search(
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     scored.truncate(fetch_n);
 
-    // --- Build results with metadata ---
+    // --- Build results from the already-fetched metadata map ---
     let mut results: Vec<HybridSearchResult> = Vec::new();
 
     for (chunk_id, rrf, text_rank, vec_rank) in scored {
-        let meta = match fetch_chunk_meta(&db.conn, chunk_id) {
-            Ok(m) => m,
-            Err(e) => {
-                warn!(chunk_id, "Failed to fetch chunk metadata: {e}");
+        let meta = match meta_map.get(&chunk_id) {
+            Some(m) => m,
+            None => {
+                warn!(chunk_id, "chunk_id disappeared from meta_map during result build");
                 continue;
             }
         };
@@ -171,12 +175,12 @@ pub fn hybrid_search(
         }
 
         results.push(HybridSearchResult {
-            file_path: meta.file_path,
-            symbol_name: meta.symbol_name,
-            kind: meta.symbol_kind,
+            file_path: meta.file_path.clone(),
+            symbol_name: meta.symbol_name.clone(),
+            kind: meta.symbol_kind.clone(),
             start_line: meta.start_line,
             end_line: meta.end_line,
-            content_preview: meta.content_preview,
+            content_preview: meta.content_preview.clone(),
             rrf_score: rrf,
             text_rank,
             vector_rank: vec_rank,
@@ -215,13 +219,16 @@ pub fn semantic_search(
 
     let knn = knn_search(&db.conn, &query_vec, limit)?;
 
+    let knn_ids: Vec<i64> = knn.iter().map(|(id, _)| *id).collect();
+    let meta_map = batch_fetch_chunk_meta(&db.conn, &knn_ids)?;
+
     let mut results: Vec<HybridSearchResult> = Vec::new();
 
     for (rank_0, (chunk_id, _dist)) in knn.iter().enumerate() {
-        let meta = match fetch_chunk_meta(&db.conn, *chunk_id) {
-            Ok(m) => m,
-            Err(e) => {
-                warn!(chunk_id, "Failed to fetch chunk metadata: {e}");
+        let meta = match meta_map.get(chunk_id) {
+            Some(m) => m,
+            None => {
+                warn!(chunk_id, "Failed to fetch chunk metadata");
                 continue;
             }
         };
@@ -230,12 +237,12 @@ pub fn semantic_search(
         let rrf = 1.0 / (RRF_K + vector_rank as f64);
 
         results.push(HybridSearchResult {
-            file_path: meta.file_path,
-            symbol_name: meta.symbol_name,
-            kind: meta.symbol_kind,
+            file_path: meta.file_path.clone(),
+            symbol_name: meta.symbol_name.clone(),
+            kind: meta.symbol_kind.clone(),
             start_line: meta.start_line,
             end_line: meta.end_line,
-            content_preview: meta.content_preview,
+            content_preview: meta.content_preview.clone(),
             rrf_score: rrf,
             text_rank: None,
             vector_rank: Some(vector_rank),
@@ -352,37 +359,6 @@ pub fn cosine_similarity(a: &[f32], b: &[f32]) -> f32 {
     }
 }
 
-/// Return all chunk IDs for the file at `file_path`.
-fn chunk_ids_for_file_path(
-    conn: &rusqlite::Connection,
-    file_path: &str,
-) -> Result<Vec<i64>> {
-    let mut stmt = conn.prepare_cached(
-        "SELECT cc.id
-         FROM code_chunks cc
-         JOIN files f ON f.id = cc.file_id
-         WHERE f.path = ?1",
-    )?;
-    let ids = stmt
-        .query_map(params![file_path], |row| row.get::<_, i64>(0))?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to query chunk ids for file")?;
-    Ok(ids)
-}
-
-/// Return the file path for a given `chunk_id`.
-fn chunk_file_path(conn: &rusqlite::Connection, chunk_id: i64) -> Result<String> {
-    conn.query_row(
-        "SELECT f.path
-         FROM code_chunks cc
-         JOIN files f ON f.id = cc.file_id
-         WHERE cc.id = ?1",
-        params![chunk_id],
-        |row| row.get::<_, String>(0),
-    )
-    .context("Failed to look up file path for chunk")
-}
-
 /// Intermediate metadata row fetched for a chunk.
 struct ChunkMeta {
     file_path: String,
@@ -394,37 +370,112 @@ struct ChunkMeta {
     language: String,
 }
 
-/// Fetch display metadata for a chunk from `code_chunks` + `files` + `symbols`.
-fn fetch_chunk_meta(conn: &rusqlite::Connection, chunk_id: i64) -> Result<ChunkMeta> {
-    conn.query_row(
-        "SELECT
-             f.path,
-             cc.content,
-             cc.start_line,
-             cc.end_line,
-             f.language,
-             s.name  AS symbol_name,
-             s.kind  AS symbol_kind
+/// Batch-fetch all chunk IDs that belong to any of the given file paths.
+///
+/// Uses a temp table to avoid a per-path round-trip.  Returns the union of
+/// chunk IDs across all supplied paths.  An empty input returns an empty set.
+fn batch_chunk_ids_for_files(
+    conn: &rusqlite::Connection,
+    file_paths: &[&str],
+) -> Result<HashSet<i64>> {
+    if file_paths.is_empty() {
+        return Ok(HashSet::new());
+    }
+
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _search_paths (path TEXT PRIMARY KEY)",
+        [],
+    )?;
+    conn.execute("DELETE FROM _search_paths", [])?;
+
+    {
+        let mut ins =
+            conn.prepare("INSERT OR IGNORE INTO _search_paths (path) VALUES (?1)")?;
+        for path in file_paths {
+            ins.execute([*path])?;
+        }
+    }
+
+    let mut stmt = conn.prepare(
+        "SELECT cc.id
+         FROM code_chunks cc
+         JOIN files f ON f.id = cc.file_id
+         JOIN _search_paths sp ON sp.path = f.path",
+    )?;
+    let ids: HashSet<i64> = stmt
+        .query_map([], |row| row.get::<_, i64>(0))?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    conn.execute("DELETE FROM _search_paths", [])?;
+    Ok(ids)
+}
+
+/// Batch-fetch display metadata for a set of chunk IDs in a single query.
+///
+/// Uses a temp table to avoid a per-chunk round-trip.  Returns a map from
+/// chunk ID to `ChunkMeta`.  Missing chunk IDs are silently absent from the
+/// result (callers should warn on a cache miss).
+fn batch_fetch_chunk_meta(
+    conn: &rusqlite::Connection,
+    chunk_ids: &[i64],
+) -> Result<HashMap<i64, ChunkMeta>> {
+    if chunk_ids.is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _search_chunks (id INTEGER PRIMARY KEY)",
+        [],
+    )?;
+    conn.execute("DELETE FROM _search_chunks", [])?;
+
+    {
+        let mut ins =
+            conn.prepare("INSERT OR IGNORE INTO _search_chunks (id) VALUES (?1)")?;
+        for &id in chunk_ids {
+            ins.execute([id])?;
+        }
+    }
+
+    let mut stmt = conn.prepare(
+        "SELECT cc.id,
+                f.path,
+                cc.content,
+                cc.start_line,
+                cc.end_line,
+                f.language,
+                s.name  AS symbol_name,
+                s.kind  AS symbol_kind
          FROM code_chunks cc
          JOIN files f ON f.id = cc.file_id
          LEFT JOIN symbols s ON s.id = cc.symbol_id
-         WHERE cc.id = ?1",
-        params![chunk_id],
-        |row| {
-            let content: String = row.get(1)?;
+         JOIN _search_chunks sc ON sc.id = cc.id",
+    )?;
+
+    let map: HashMap<i64, ChunkMeta> = stmt
+        .query_map([], |row| {
+            let chunk_id: i64 = row.get(0)?;
+            let content: String = row.get(2)?;
             let preview: String = content.chars().take(200).collect();
-            Ok(ChunkMeta {
-                file_path: row.get(0)?,
-                content_preview: preview,
-                start_line: row.get(2)?,
-                end_line: row.get(3)?,
-                language: row.get(4)?,
-                symbol_name: row.get(5)?,
-                symbol_kind: row.get(6)?,
-            })
-        },
-    )
-    .context("Failed to fetch chunk metadata")
+            Ok((
+                chunk_id,
+                ChunkMeta {
+                    file_path: row.get(1)?,
+                    content_preview: preview,
+                    start_line: row.get(3)?,
+                    end_line: row.get(4)?,
+                    language: row.get(5)?,
+                    symbol_name: row.get(6)?,
+                    symbol_kind: row.get(7)?,
+                },
+            ))
+        })?
+        .filter_map(|r| r.ok())
+        .collect();
+
+    conn.execute("DELETE FROM _search_chunks", [])?;
+    Ok(map)
 }
 
 /// Return the content of the `code_chunks` row whose line range covers `line`

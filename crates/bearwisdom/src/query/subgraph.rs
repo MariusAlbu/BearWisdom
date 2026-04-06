@@ -18,7 +18,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -79,7 +80,7 @@ pub fn export_graph(
     db: &Database,
     filter: Option<&str>,
     max_nodes: usize,
-) -> Result<SubgraphResult> {
+) -> QueryResult<SubgraphResult> {
     let _timer = db.timer("export_graph");
     let conn = &db.conn;
 
@@ -266,9 +267,9 @@ pub fn export_graph_json(
     db: &Database,
     filter: Option<&str>,
     max_nodes: usize,
-) -> Result<String> {
+) -> QueryResult<String> {
     let graph = export_graph(db, filter, max_nodes)?;
-    serde_json::to_string(&graph).context("Failed to serialise graph to JSON")
+    Ok(serde_json::to_string(&graph).context("Failed to serialise graph to JSON")?)
 }
 
 // ---------------------------------------------------------------------------

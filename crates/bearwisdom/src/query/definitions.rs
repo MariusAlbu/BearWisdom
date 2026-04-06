@@ -10,8 +10,9 @@
 // =============================================================================
 
 use crate::db::Database;
+use crate::query::QueryResult;
 use crate::types::DefinitionResult;
-use anyhow::{Context, Result};
+use anyhow::Context;
 
 /// Look up definition(s) for a symbol by name or qualified name.
 ///
@@ -20,7 +21,7 @@ use anyhow::{Context, Result};
 ///   - A simple name:     "MapCatalogApiV1" (may return multiple hits)
 ///
 /// Returns results ordered by confidence descending.
-pub fn goto_definition(db: &Database, query: &str) -> Result<Vec<DefinitionResult>> {
+pub fn goto_definition(db: &Database, query: &str) -> QueryResult<Vec<DefinitionResult>> {
     let _timer = db.timer("find_definitions");
     let conn = &db.conn;
     let mut results: Vec<DefinitionResult> = Vec::new();

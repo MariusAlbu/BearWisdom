@@ -28,7 +28,8 @@
 use crate::db::Database;
 use crate::query::architecture::SymbolSummary;
 use crate::query::subgraph::SubgraphResult;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -58,7 +59,7 @@ pub struct ConceptSummary {
 ///
 /// Returns the number of new memberships inserted (already-existing ones are
 /// silently skipped).
-pub fn auto_assign_concepts(db: &Database) -> Result<u32> {
+pub fn auto_assign_concepts(db: &Database) -> QueryResult<u32> {
     let _timer = db.timer("auto_assign_concepts");
     let conn = &db.conn;
 
@@ -105,7 +106,7 @@ pub fn auto_assign_concepts(db: &Database) -> Result<u32> {
 }
 
 /// Return a summary of every concept in the index, ordered by name.
-pub fn list_concepts(db: &Database) -> Result<Vec<ConceptSummary>> {
+pub fn list_concepts(db: &Database) -> QueryResult<Vec<ConceptSummary>> {
     let _timer = db.timer("list_concepts");
     let conn = &db.conn;
 
@@ -131,8 +132,8 @@ pub fn list_concepts(db: &Database) -> Result<Vec<ConceptSummary>> {
         })
     }).context("Failed to execute list_concepts query")?;
 
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect concept list")
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect concept list")?)
 }
 
 /// Return all symbols that belong to `concept_name`, up to `limit` results.
@@ -142,7 +143,7 @@ pub fn concept_members(
     db: &Database,
     concept_name: &str,
     limit: usize,
-) -> Result<Vec<SymbolSummary>> {
+) -> QueryResult<Vec<SymbolSummary>> {
     let _timer = db.timer("concept_members");
     let conn = &db.conn;
 
@@ -172,8 +173,8 @@ pub fn concept_members(
         })
     }).context("Failed to execute concept_members query")?;
 
-    rows.collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect concept members")
+    Ok(rows.collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect concept members")?)
 }
 
 /// Build a subgraph of all symbols in `concept_name` plus any symbols
@@ -185,7 +186,7 @@ pub fn concept_subgraph(
     db: &Database,
     concept_name: &str,
     max_depth: u32,
-) -> Result<SubgraphResult> {
+) -> QueryResult<SubgraphResult> {
     let _timer = db.timer("concept_subgraph");
     // Quick check: does the concept have any members?
     // We use this to avoid running the heavier export_graph when there is nothing to return.
@@ -213,6 +214,79 @@ pub fn concept_subgraph(
     )
 }
 
+/// Groups symbols by the first 2 directory segments of their file path and
+/// creates a concept for each group with at least 3 symbols.
+///
+/// This is a fallback for languages without dotted qualified names (e.g. C, Go,
+/// plain Rust modules without deep paths).  It runs after [`discover_concepts`]
+/// and should only be called when that function produced no concepts.
+///
+/// E.g. `crates/bearwisdom/src/query/blast_radius.rs` → concept `"crates/bearwisdom"`.
+pub fn discover_directory_concepts(db: &Database) -> QueryResult<()> {
+    let _timer = db.timer("discover_directory_concepts");
+    let conn = &db.conn;
+
+    // Find distinct directory prefixes (first 2 segments).
+    let prefixes: Vec<String> = {
+        let mut stmt = conn.prepare(
+            "SELECT DISTINCT
+                 CASE
+                   WHEN instr(substr(path, instr(path, '/') + 1), '/') > 0
+                   THEN substr(path, 1,
+                        instr(path, '/') +
+                        instr(substr(path, instr(path, '/') + 1), '/') - 1)
+                   ELSE
+                     CASE WHEN instr(path, '/') > 0
+                     THEN substr(path, 1, instr(path, '/') - 1)
+                     ELSE NULL END
+                 END AS dir_prefix
+             FROM files
+             WHERE dir_prefix IS NOT NULL",
+        )?;
+
+        let rows = stmt.query_map([], |row| row.get::<_, String>(0))?;
+        rows.filter_map(|r| r.ok())
+            .filter(|p| !p.is_empty())
+            .collect()
+    };
+
+    for prefix in &prefixes {
+        // Count symbols in this directory prefix to skip tiny groups.
+        let count: u32 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM symbols s JOIN files f ON s.file_id = f.id
+                 WHERE f.path LIKE ?1 || '/%'",
+                rusqlite::params![prefix],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+
+        if count < 3 {
+            continue;
+        } // Skip trivially small groups
+
+        let auto_pattern = format!("{prefix}/*");
+        conn.execute(
+            "INSERT OR IGNORE INTO concepts (name, auto_pattern, created_at)
+             VALUES (?1, ?2, strftime('%s', 'now'))",
+            rusqlite::params![prefix, auto_pattern],
+        )?;
+
+        // Assign members: all symbols whose file path starts with this prefix.
+        conn.execute(
+            "INSERT OR IGNORE INTO concept_members (concept_id, symbol_id, auto_assigned)
+             SELECT c.id, s.id, 1
+             FROM concepts c, symbols s
+             JOIN files f ON s.file_id = f.id
+             WHERE c.name = ?1
+               AND f.path LIKE ?1 || '/%'",
+            rusqlite::params![prefix],
+        )?;
+    }
+
+    Ok(())
+}
+
 /// Auto-discover concepts by analyzing namespace structure.
 ///
 /// Groups all symbols by the first two segments of their qualified name
@@ -220,7 +294,7 @@ pub fn concept_subgraph(
 /// that does not already exist.  Sets `auto_pattern = "{prefix}.*"`.
 ///
 /// Returns the names of all concepts created (not including pre-existing ones).
-pub fn discover_concepts(db: &Database) -> Result<Vec<String>> {
+pub fn discover_concepts(db: &Database) -> QueryResult<Vec<String>> {
     let _timer = db.timer("discover_concepts");
     let conn = &db.conn;
 

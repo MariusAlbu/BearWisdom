@@ -15,8 +15,7 @@
 // =============================================================================
 
 use crate::db::Database;
-use crate::query::architecture::SymbolSummary;
-use anyhow::{Context as _, Result};
+use crate::query::QueryResult;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
@@ -222,7 +221,7 @@ pub fn smart_context(
     task: &str,
     budget: u32,
     depth: u32,
-) -> Result<SmartContextResult> {
+) -> QueryResult<SmartContextResult> {
     let _timer = db.timer("smart_context");
     let conn = &db.conn;
 

@@ -393,18 +393,6 @@ enum Commands {
         path: String,
     },
 
-    /// Execute a raw SQL query against a project's index database.
-    /// Returns rows as a JSON array. For development and investigation only.
-    Sql {
-        /// Absolute path to the project root.
-        path: String,
-        /// SQL query to execute.
-        query: String,
-        /// Maximum rows to return (default: 200).
-        #[arg(long, default_value = "200")]
-        limit: usize,
-    },
-
     /// Analyze tree-sitter extraction coverage for a project.
     /// Shows which node kinds appear in real code and how many symbols/refs
     /// the extractor produces per language.
@@ -541,7 +529,6 @@ fn run(command: Commands, full: bool) -> Result<String> {
             cmd_full_trace(&path, symbol.as_deref(), depth, max_traces)
         }
         Commands::Reindex { path } => cmd_reindex(&path),
-        Commands::Sql { path, query, limit } => cmd_sql(&path, &query, limit),
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
         Commands::QualityCheck { baseline, reindex } => {
             cmd_quality_check(&baseline, reindex)
@@ -1194,50 +1181,6 @@ fn cmd_reindex(project_path: &str) -> Result<String> {
     }))
 }
 
-// ---------------------------------------------------------------------------
-// SQL
-// ---------------------------------------------------------------------------
-
-fn cmd_sql(project_path: &str, query: &str, limit: usize) -> Result<String> {
-    let db = open_existing_db(project_path)?;
-    let conn = db.conn();
-
-    let mut stmt = conn
-        .prepare(query)
-        .with_context(|| format!("Failed to prepare query: {query}"))?;
-
-    let col_count = stmt.column_count();
-    let col_names: Vec<String> = (0..col_count)
-        .map(|i| stmt.column_name(i).unwrap_or("?").to_string())
-        .collect();
-
-    let mut rows: Vec<serde_json::Value> = Vec::new();
-
-    let mut result = stmt.query([]).context("Query execution failed")?;
-    while let Some(row) = result.next().context("Failed to iterate rows")? {
-        if rows.len() >= limit {
-            break;
-        }
-        let mut obj = serde_json::Map::new();
-        for (i, name) in col_names.iter().enumerate() {
-            let val: serde_json::Value = match row.get_ref(i)? {
-                rusqlite::types::ValueRef::Null => serde_json::Value::Null,
-                rusqlite::types::ValueRef::Integer(n) => serde_json::json!(n),
-                rusqlite::types::ValueRef::Real(f) => serde_json::json!(f),
-                rusqlite::types::ValueRef::Text(s) => {
-                    serde_json::Value::String(String::from_utf8_lossy(s).into_owned())
-                }
-                rusqlite::types::ValueRef::Blob(b) => {
-                    serde_json::Value::String(format!("<blob {} bytes>", b.len()))
-                }
-            };
-            obj.insert(name.clone(), val);
-        }
-        rows.push(serde_json::Value::Object(obj));
-    }
-
-    ok_json(serde_json::json!({ "rows": rows, "count": rows.len() }))
-}
 
 // ---------------------------------------------------------------------------
 // Quality check
@@ -1291,17 +1234,8 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         let routes = stats.route_count as i64;
         let flow_edges = stats.flow_edge_count as i64;
         let unresolved = stats.unresolved_ref_count as i64;
-        let unresolved_flows: i64 = db.conn().query_row(
-            "SELECT COUNT(*) FROM connection_points cp
-             WHERE cp.direction = 'start'
-               AND NOT EXISTS (
-                   SELECT 1 FROM flow_edges fe
-                   WHERE fe.source_file_id = cp.file_id
-                     AND fe.source_line    = cp.line
-               )",
-            [],
-            |r| r.get(0),
-        )?;
+        let unresolved_flows: i64 =
+            bearwisdom::unresolved_flow_count(&db)? as i64;
 
         // Per-type flow edge counts.
         let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
@@ -1357,12 +1291,8 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
                         "min_flow_edges" => flow_edges,
                         k if k.starts_with("min_") && k.ends_with("_edges") => {
                             let edge_type = &k[4..k.len() - 6]; // strip min_ and _edges
-                            db.conn().query_row(
-                                "SELECT COUNT(*) FROM flow_edges WHERE edge_type = ?1",
-                                [edge_type],
-                                |r| r.get(0),
-                            )
-                            .unwrap_or(0)
+                            bearwisdom::flow_edge_count_by_type(&db, edge_type)
+                                .unwrap_or(0) as i64
                         }
                         _ => continue,
                     };

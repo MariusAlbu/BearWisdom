@@ -34,7 +34,10 @@ pub use indexer::full::{full_index, ProgressFn};
 pub use indexer::incremental::{incremental_index, git_reindex, reindex_files, ChangeKind, FileChangeEvent};
 pub use types::{EdgeKind, EdgeSource, IndexStats, Symbol, SymbolKind};
 pub use indexer::post_index::embed_chunks;
-pub use query::stats::{index_stats, flow_edge_breakdown, FlowEdgeBreakdown};
+pub use query::stats::{
+    concept_count, flow_edge_breakdown, flow_edge_count_by_type, flow_edges_data,
+    index_stats, unresolved_flow_count, FlowEdgeBreakdown, FlowEdgeRow, FlowEdgesData,
+};
 pub use walker::WalkedFile;
 
 // Re-export query result types for consumers that only depend on this crate.

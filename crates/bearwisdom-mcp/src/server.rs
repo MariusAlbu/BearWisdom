@@ -244,9 +244,30 @@ impl BearWisdomServer {
             .map_err(|e| error_response("SERIALIZATION_ERROR", &format!("{e}")))
     }
 
-    /// Map an `anyhow::Error` from a query function to an error response string.
-    fn query_err(e: anyhow::Error) -> String {
-        error_response("QUERY_ERROR", &format!("{e}"))
+    /// Map a `QueryError` to a structured error response string.
+    ///
+    /// Variant-specific codes let callers distinguish retryable and actionable errors:
+    ///   - `NOT_INDEXED`    — no index exists yet; caller should index first.
+    ///   - `NOT_FOUND`      — the requested symbol/file does not exist in the index.
+    ///   - `DATABASE_BUSY`  — SQLite lock contention; caller may retry after a short delay.
+    ///   - `QUERY_ERROR`    — internal error (schema mismatch, I/O, etc.).
+    fn query_err(e: bearwisdom::QueryError) -> String {
+        match e {
+            bearwisdom::QueryError::NotIndexed => error_response(
+                "NOT_INDEXED",
+                "The project has not been indexed yet. Run `bw open <path>` first.",
+            ),
+            bearwisdom::QueryError::NotFound(ref name) => {
+                error_response("NOT_FOUND", &format!("Not found: {name}"))
+            }
+            bearwisdom::QueryError::DatabaseBusy => error_response(
+                "DATABASE_BUSY",
+                "Database is busy (another writer holds the lock). Retry after a short delay.",
+            ),
+            bearwisdom::QueryError::Internal(ref inner) => {
+                error_response("QUERY_ERROR", &format!("{inner}"))
+            }
+        }
     }
 }
 
@@ -277,7 +298,7 @@ impl BearWisdomServer {
                 ..QueryOptions::default()
             };
             bearwisdom::query::search::search_symbols(db, &params.query, limit, &opts)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -307,7 +328,7 @@ impl BearWisdomServer {
             };
             let mut results =
                 bearwisdom::search::grep::grep_search(&root, &params.pattern, &options, &cancelled)
-                    .map_err(|e| Self::query_err(anyhow::Error::from(e)))?;
+                    .map_err(|e| error_response("QUERY_ERROR", &format!("{e}")))?;
             let max_len = params.max_line_length.unwrap_or(120);
             bearwisdom::search::grep::truncate_matches(&mut results, max_len);
             Self::to_json(&results)
@@ -329,7 +350,7 @@ impl BearWisdomServer {
                 ..QueryOptions::default()
             };
             bearwisdom::query::symbol_info::symbol_info(db, &params.name, &opts)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -343,7 +364,7 @@ impl BearWisdomServer {
             }
             let limit = params.limit.unwrap_or(20);
             bearwisdom::query::references::find_references(db, &params.name, limit)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -363,7 +384,7 @@ impl BearWisdomServer {
                 _ => bearwisdom::query::call_hierarchy::incoming_calls(db, &params.name, limit),
             };
             query_result
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -379,7 +400,7 @@ impl BearWisdomServer {
                 params.mode.as_deref().unwrap_or("outline"),
             );
             bearwisdom::query::symbol_info::file_symbols(db, &params.file_path, mode)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -393,7 +414,7 @@ impl BearWisdomServer {
             }
             let depth = params.depth.unwrap_or(2).min(10).max(1);
             bearwisdom::query::blast_radius::blast_radius(db, &params.symbol, depth, 500)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -406,7 +427,7 @@ impl BearWisdomServer {
     ) -> String {
         self.run_tool("bw_architecture_overview", &params, |db| {
             bearwisdom::query::architecture::get_overview(db)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -422,7 +443,7 @@ impl BearWisdomServer {
                 bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
             );
             bearwisdom::query::diagnostics::get_diagnostics(db, &params.file_path, threshold)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -439,7 +460,7 @@ impl BearWisdomServer {
                 &params.prefix,
                 params.include_signature.unwrap_or(false),
             )
-            .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+            .map_err(Self::query_err)
             .and_then(|r| Self::to_json(&r))
         })
     }
@@ -455,7 +476,7 @@ impl BearWisdomServer {
             let budget = params.budget.unwrap_or(8000);
             let depth = params.depth.unwrap_or(2);
             bearwisdom::query::context::smart_context(db, &params.task, budget, depth)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }
@@ -474,7 +495,7 @@ impl BearWisdomServer {
                 blast_depth: params.blast_depth.unwrap_or(1),
             };
             bearwisdom::query::investigate::investigate(db, &params.symbol, &opts)
-                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })
     }

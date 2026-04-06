@@ -9,8 +9,9 @@
 // =============================================================================
 
 use crate::db::Database;
+use crate::query::QueryResult;
 use crate::types::ReferenceResult;
-use anyhow::{Context, Result};
+use anyhow::Context;
 
 /// Find all symbols that reference `target_name`.
 ///
@@ -19,7 +20,7 @@ use anyhow::{Context, Result};
 /// (returns references to all overloads / same-named symbols).
 ///
 /// `limit`: maximum number of results (0 = unlimited).
-pub fn find_references(db: &Database, target_name: &str, limit: usize) -> Result<Vec<ReferenceResult>> {
+pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryResult<Vec<ReferenceResult>> {
     let _timer = db.timer("find_references");
 
     // Check cache first.

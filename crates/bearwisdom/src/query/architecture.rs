@@ -14,7 +14,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -95,7 +96,7 @@ pub struct ArchitectureOverview {
 ///
 /// All four sub-queries run against the open database; no indexing happens here.
 /// Build overview with default limits (10 hotspots, 20 entry points).
-pub fn get_overview(db: &Database) -> Result<ArchitectureOverview> {
+pub fn get_overview(db: &Database) -> QueryResult<ArchitectureOverview> {
     // Check cache first — architecture rarely changes between reindexes.
     if let Some(ref cache) = db.query_cache {
         if let Some(cached) = cache.get_architecture() {
@@ -122,7 +123,7 @@ pub fn get_overview_with_limits(
     db: &Database,
     hotspot_limit: usize,
     entry_point_limit: usize,
-) -> Result<ArchitectureOverview> {
+) -> QueryResult<ArchitectureOverview> {
     let _timer = db.timer("architecture_overview");
     let conn = &db.conn;
 

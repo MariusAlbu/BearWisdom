@@ -9,7 +9,8 @@
 // =============================================================================
 
 use crate::db::Database;
-use anyhow::{Context, Result};
+use crate::query::QueryResult;
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
 
 // ---------------------------------------------------------------------------
@@ -69,7 +70,7 @@ pub fn get_diagnostics(
     db: &Database,
     file_path: &str,
     confidence_threshold: f64,
-) -> Result<FileDiagnostics> {
+) -> QueryResult<FileDiagnostics> {
     let _timer = db.timer("diagnostics");
     let conn = &db.conn;
 
