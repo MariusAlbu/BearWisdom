@@ -1,0 +1,276 @@
+/* ================================================================
+   HierarchyGraph — architectural zoom visualization
+   Dark theme, consistent with the Scholar's Workshop design system.
+   ================================================================ */
+
+.hierarchyGraph {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* ---- Breadcrumb bar ---- */
+.breadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  padding: 0 16px;
+  height: 36px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.breadcrumbs::-webkit-scrollbar {
+  display: none;
+}
+
+.breadcrumbEntry {
+  display: flex;
+  align-items: center;
+}
+
+.breadcrumbSep {
+  color: var(--text-faint);
+  font-size: 14px;
+  padding: 0 4px;
+  user-select: none;
+}
+
+.breadcrumbItem {
+  background: none;
+  border: none;
+  color: var(--teal);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  white-space: nowrap;
+  transition: background 0.15s, color 0.15s;
+}
+
+.breadcrumbItem:hover {
+  background: var(--teal-glow);
+  color: var(--teal-bright);
+}
+
+.breadcrumbCurrent {
+  color: var(--copper);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 6px;
+  white-space: nowrap;
+}
+
+/* ---- Graph canvas ---- */
+.canvas {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+  background: #1e1915;
+}
+
+.canvas > svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* ---- Overlays ---- */
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: rgba(26, 20, 16, 0.85);
+  backdrop-filter: blur(2px);
+}
+
+.overlayTitle {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.overlayText {
+  font-size: 13px;
+  color: var(--text-muted);
+  max-width: 300px;
+  text-align: center;
+}
+
+.retryBtn {
+  margin-top: 8px;
+  padding: 6px 18px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  color: var(--text-secondary);
+  font-family: 'DM Sans', sans-serif;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.retryBtn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
+/* ---- Level badge (bottom-left) ---- */
+.levelBadge {
+  position: absolute;
+  bottom: 36px;
+  left: 12px;
+  padding: 3px 10px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  text-transform: uppercase;
+  color: var(--copper);
+  pointer-events: none;
+  user-select: none;
+}
+
+/* ---- Legend (bottom-right) ---- */
+.legend {
+  position: absolute;
+  bottom: 36px;
+  right: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  pointer-events: none;
+  user-select: none;
+}
+
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.legendSwatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+  flex-shrink: 0;
+  opacity: 0.9;
+}
+
+.legendLabel {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: 'Source Code Pro', monospace;
+}
+
+.legendItemDrill .drillIndicator {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--copper);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--bg-base);
+  flex-shrink: 0;
+  line-height: 1;
+  text-align: center;
+}
+
+/* ---- Hint bar ---- */
+.hintBar {
+  height: 26px;
+  background: var(--bg-surface);
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-faint);
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.hintSep {
+  color: var(--border);
+}
+
+/* ---- SVG node/edge classes — injected by D3 ---- */
+
+:global(.hg-node) {
+  cursor: pointer;
+}
+
+:global(.hg-node rect),
+:global(.hg-node path),
+:global(.hg-node circle) {
+  transition: filter 0.15s;
+}
+
+:global(.hg-node--dimmed) {
+  opacity: 0.07;
+}
+
+:global(.hg-node--highlighted rect),
+:global(.hg-node--highlighted path),
+:global(.hg-node--highlighted circle) {
+  filter: drop-shadow(0 0 8px currentColor);
+  stroke-width: 2.5 !important;
+}
+
+:global(.hg-node-label) {
+  fill: #e0d6c6;
+  font-size: 11px;
+  font-family: 'Source Code Pro', monospace;
+  font-weight: 500;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #1e1915;
+  stroke-width: 3px;
+  stroke-linejoin: round;
+}
+
+:global(.hg-node-sublabel) {
+  fill: #8b7d6b;
+  font-size: 9px;
+  font-family: 'DM Sans', sans-serif;
+  font-weight: 400;
+  pointer-events: none;
+  paint-order: stroke;
+  stroke: #1e1915;
+  stroke-width: 2px;
+  stroke-linejoin: round;
+}
+
+:global(.hg-edge) {
+  transition: stroke-opacity 0.15s;
+}
+
+:global(.hg-edge--dimmed) {
+  stroke-opacity: 0.04 !important;
+}
+
+:global(.hg-edge-label) {
+  font-family: 'Source Code Pro', monospace;
+}

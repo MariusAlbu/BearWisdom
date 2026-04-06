@@ -196,6 +196,43 @@ export interface FullTraceResult {
 }
 
 // ---------------------------------------------------------------------------
+// Hierarchy (architectural zoom levels)
+// ---------------------------------------------------------------------------
+
+export interface HierarchyNode {
+  id: string
+  name: string
+  kind: string // "service" | "package" | "file" | "class" | "method" | etc.
+  file_path?: string
+  package?: string
+  weight: number
+  child_count: number
+  metadata?: string // JSON string
+}
+
+export interface HierarchyEdge {
+  source: string
+  target: string
+  kind: string // "service_dependency" | "cross_package" | "file_dependency" | "calls"
+  weight: number
+  confidence: number
+}
+
+export interface Breadcrumb {
+  label: string
+  level: string
+  scope?: string
+}
+
+export interface HierarchyResult {
+  nodes: HierarchyNode[]
+  edges: HierarchyEdge[]
+  level: string // "services" | "packages" | "files" | "symbols"
+  scope?: string
+  breadcrumbs: Breadcrumb[]
+}
+
+// ---------------------------------------------------------------------------
 // MCP Audit log
 // ---------------------------------------------------------------------------
 

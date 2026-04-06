@@ -408,6 +408,25 @@ enum Commands {
         reindex: bool,
     },
 
+    // ---- Hierarchy ---------------------------------------------------------
+    /// Hierarchical graph at four zoom levels: services → packages → files → symbols.
+    ///
+    /// Use --level to select the zoom level and --scope to drill into a
+    /// specific package (for "files") or file (for "symbols").
+    Hierarchy {
+        /// Absolute path to the project root.
+        path: String,
+        /// Zoom level: "services", "packages", "files", or "symbols".
+        #[arg(long, default_value = "packages")]
+        level: String,
+        /// Package path (for --level files) or file path (for --level symbols).
+        #[arg(long)]
+        scope: Option<String>,
+        /// Maximum nodes to return (default: 500).
+        #[arg(long, default_value = "500")]
+        max_nodes: usize,
+    },
+
     // ---- Workspace ---------------------------------------------------------
     /// List all detected packages with file/symbol/edge counts.
     /// Returns an empty array for single-project repos.
@@ -540,6 +559,10 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
         Commands::QualityCheck { baseline, reindex } => {
             cmd_quality_check(&baseline, reindex)
+        }
+
+        Commands::Hierarchy { path, level, scope, max_nodes } => {
+            cmd_hierarchy(&path, &level, scope.as_deref(), max_nodes)
         }
 
         Commands::Packages { path } => cmd_packages(&path),
@@ -1385,6 +1408,23 @@ fn cmd_coverage(project: &str, lang_filter: Option<&str>, _top: usize) -> Result
     }
 
     ok_json(serde_json::json!({"languages": summaries}))
+}
+
+// ---------------------------------------------------------------------------
+// Hierarchy helper
+// ---------------------------------------------------------------------------
+
+/// Hierarchical graph at four zoom levels.
+fn cmd_hierarchy(
+    project_path: &str,
+    level: &str,
+    scope: Option<&str>,
+    max_nodes: usize,
+) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let result = bearwisdom::hierarchical_graph(&db, level, scope, max_nodes)
+        .context("hierarchical_graph failed")?;
+    ok_json(result)
 }
 
 // ---------------------------------------------------------------------------

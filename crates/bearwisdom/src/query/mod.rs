@@ -6,6 +6,7 @@ pub mod definitions;
 pub mod references;
 
 // New modules added in this update.
+pub mod hierarchy;
 pub mod architecture;
 pub mod blast_radius;
 pub mod call_hierarchy;

@@ -5,9 +5,10 @@ import { KnowledgeTree } from './KnowledgeTree'
 import { FileViewer } from './FileViewer'
 import { FlowExplorer } from './FlowExplorer'
 import { Inspector } from './Inspector'
+import { HierarchyGraph } from './HierarchyGraph'
 import styles from './Explorer.module.css'
 
-type MainView = 'graph' | 'flow' | 'inspector'
+type MainView = 'graph' | 'flow' | 'inspector' | 'architecture'
 
 interface ExplorerProps {
   workspacePath: string
@@ -79,6 +80,12 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
         >
           Inspector
         </button>
+        <button
+          className={`${styles.viewTab}${mainView === 'architecture' ? ' ' + styles.viewTabActive : ''}`}
+          onClick={() => { setMainView('architecture'); setFileView(null) }}
+        >
+          Architecture
+        </button>
       </div>
       <div className={styles.main}>
         {fileView ? (
@@ -96,6 +103,8 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
             workspacePath={workspacePath}
             onFileNavigate={handleFileNavigate}
           />
+        ) : mainView === 'architecture' ? (
+          <HierarchyGraph workspacePath={workspacePath} />
         ) : (
           <KnowledgeTree
             workspacePath={workspacePath}

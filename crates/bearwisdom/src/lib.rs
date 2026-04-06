@@ -49,6 +49,7 @@ pub use query::call_hierarchy::CallHierarchyItem;
 pub use query::concepts::ConceptSummary;
 pub use query::search::SearchResult;
 pub use query::subgraph::{GraphEdge, GraphNode, SubgraphResult};
+pub use query::hierarchy::{hierarchical_graph, Breadcrumb, HierarchyEdge, HierarchyNode, HierarchyResult};
 pub use query::symbol_info::{SymbolDetail, FileSymbol, FileSymbolsMode};
 pub use query::investigate::{InvestigateOptions, InvestigateResult, SlimSymbol, BlastRadiusSlim};
 pub use query::QueryOptions;

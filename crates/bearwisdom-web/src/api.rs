@@ -990,6 +990,42 @@ pub async fn delete_audit_session(
 }
 
 // ---------------------------------------------------------------------------
+// GET /api/hierarchy
+// ---------------------------------------------------------------------------
+
+#[derive(Deserialize)]
+pub struct HierarchyQuery {
+    path: String,
+    /// "services", "packages", "files", or "symbols". Defaults to "packages".
+    #[serde(default = "default_level_packages")]
+    level: String,
+    /// Package path (for "files" level) or file path (for "symbols" level).
+    scope: Option<String>,
+    /// Maximum nodes to return (default: 500).
+    #[serde(default = "default_max_nodes")]
+    max_nodes: usize,
+}
+
+fn default_level_packages() -> String { "packages".to_string() }
+
+pub async fn get_hierarchy(
+    State(state): State<AppState>,
+    Query(params): Query<HierarchyQuery>,
+) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match state.pool.get_db(&root) {
+        Ok(db) => {
+            let scope = params.scope.as_deref().filter(|s| !s.is_empty());
+            match bearwisdom::hierarchical_graph(&db, &params.level, scope, params.max_nodes) {
+                Ok(result) => ok_json(result).into_response(),
+                Err(e) => err_json(e).into_response(),
+            }
+        }
+        Err(e) => err_json(e).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
 // GET /api/packages
 // ---------------------------------------------------------------------------
 

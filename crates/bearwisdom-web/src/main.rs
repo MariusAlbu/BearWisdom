@@ -85,6 +85,7 @@ async fn main() {
         .route("/audit/stats",             axum::routing::get(api::get_audit_stats))
         .route("/audit/stream",            axum::routing::get(api::get_audit_stream))
         .route("/audit/sessions/{id}",      axum::routing::delete(api::delete_audit_session))
+        .route("/hierarchy",               axum::routing::get(api::get_hierarchy))
         .route("/packages",                axum::routing::get(api::get_packages))
         .route("/workspace",               axum::routing::get(api::get_workspace))
         .route("/dependencies",            axum::routing::get(api::get_dependencies))
