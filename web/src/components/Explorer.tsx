@@ -1,14 +1,13 @@
 import { useState, useEffect, useCallback } from 'react'
 import { api } from '../api'
 import { Header } from './Header'
-import { KnowledgeTree } from './KnowledgeTree'
 import { FileViewer } from './FileViewer'
 import { FlowExplorer } from './FlowExplorer'
 import { Inspector } from './Inspector'
 import { HierarchyGraph } from './HierarchyGraph'
 import styles from './Explorer.module.css'
 
-type MainView = 'graph' | 'flow' | 'inspector' | 'architecture'
+type MainView = 'graph' | 'flow' | 'inspector'
 
 interface ExplorerProps {
   workspacePath: string
@@ -24,7 +23,7 @@ interface FileViewState {
 
 export function Explorer({ workspacePath, stats }: ExplorerProps) {
   const [mainView, setMainView] = useState<MainView>('graph')
-  const [pendingSearch, setPendingSearch] = useState<string | null>(null)
+  const [_pendingSearch, setPendingSearch] = useState<string | null>(null)
   const [fileView, setFileView] = useState<FileViewState | null>(null)
 
   const handleFileNavigate = useCallback(
@@ -80,12 +79,6 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
         >
           Inspector
         </button>
-        <button
-          className={`${styles.viewTab}${mainView === 'architecture' ? ' ' + styles.viewTabActive : ''}`}
-          onClick={() => { setMainView('architecture'); setFileView(null) }}
-        >
-          Architecture
-        </button>
       </div>
       <div className={styles.main}>
         {fileView ? (
@@ -103,15 +96,8 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
             workspacePath={workspacePath}
             onFileNavigate={handleFileNavigate}
           />
-        ) : mainView === 'architecture' ? (
-          <HierarchyGraph workspacePath={workspacePath} />
         ) : (
-          <KnowledgeTree
-            workspacePath={workspacePath}
-            stats={stats}
-            pendingNavigate={pendingSearch}
-            onPendingNavigateConsumed={() => setPendingSearch(null)}
-          />
+          <HierarchyGraph workspacePath={workspacePath} />
         )}
       </div>
     </div>

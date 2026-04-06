@@ -1,29 +1,34 @@
-import { useCallback, useEffect } from 'react'
+import { useCallback, useEffect, useRef } from 'react'
 import { useHierarchyStore } from '../stores/hierarchy.store'
 
 export function useHierarchyData(workspacePath: string) {
-  const store = useHierarchyStore()
+  const setLoadState = useHierarchyStore((s) => s.setLoadState)
+  const setData = useHierarchyStore((s) => s.setData)
   const pendingDrill = useHierarchyStore((s) => s.pendingDrill)
   const clearPendingDrill = useHierarchyStore((s) => s.clearPendingDrill)
 
+  // Stable ref for workspacePath to avoid re-creating loadLevel on path change
+  const pathRef = useRef(workspacePath)
+  pathRef.current = workspacePath
+
   const loadLevel = useCallback(
     async (level: string, scope?: string) => {
-      store.setLoadState('loading')
+      setLoadState('loading')
       try {
-        const params = new URLSearchParams({ path: workspacePath, level })
+        const params = new URLSearchParams({ path: pathRef.current, level })
         if (scope) params.set('scope', scope)
         const res = await fetch(`/api/hierarchy?${params}`)
         const data = (await res.json()) as { ok: boolean; data?: unknown; error?: string }
         if (data.ok && data.data) {
-          store.setData(data.data as Parameters<typeof store.setData>[0])
+          setData(data.data as Parameters<typeof setData>[0])
         } else {
-          store.setLoadState('error', data.error ?? 'Unknown error')
+          setLoadState('error', data.error ?? 'Unknown error')
         }
       } catch (err) {
-        store.setLoadState('error', err instanceof Error ? err.message : String(err))
+        setLoadState('error', err instanceof Error ? err.message : String(err))
       }
     },
-    [workspacePath, store],
+    [setLoadState, setData],
   )
 
   // Consume pendingDrill set by drillDown() / navigateTo()
@@ -33,12 +38,15 @@ export function useHierarchyData(workspacePath: string) {
     void loadLevel(pendingDrill.level, pendingDrill.scope || undefined)
   }, [pendingDrill, loadLevel, clearPendingDrill])
 
-  // Load default level on mount / workspace change
+  // Load default level on mount
+  const mountedRef = useRef(false)
   useEffect(() => {
+    if (mountedRef.current) return
+    mountedRef.current = true
     if (workspacePath) {
       void loadLevel('packages')
     }
   }, [workspacePath, loadLevel])
 
-  return { ...store, loadLevel }
+  return { loadLevel }
 }
