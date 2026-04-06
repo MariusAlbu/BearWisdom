@@ -61,7 +61,7 @@ tree-sitter-language  = "0.1"      # Required by tree-sitter-sequel
 # tree-sitter-toml = "0.20.0"     # TODO: incompatible with tree-sitter 0.25 (uses 0.20 API)
 bearwisdom-profile    = { path = "crates/bearwisdom-profile" }
 rusqlite              = { version = "0.33", features = ["bundled-full"] }
-sqlite-vec            = "0.1.7"
+sqlite-vec            = "0.1.9"
 ignore                = "0.4"
 sha2                  = "0.10"
 anyhow                = "1"
