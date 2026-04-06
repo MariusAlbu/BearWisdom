@@ -20,7 +20,12 @@ pub struct EmbedStatus {
     pub error: Option<String>,
 }
 
-pub type SharedEmbedStatus = Arc<Mutex<EmbedStatus>>;
+/// Combined application state shared across all handlers.
+#[derive(Clone)]
+pub struct AppState {
+    pub embed_status: Arc<Mutex<EmbedStatus>>,
+    pub pool: Arc<db::PoolState>,
+}
 
 #[derive(Parser)]
 #[command(name = "bw-web", about = "BearWisdom web UI server")]
@@ -39,11 +44,14 @@ async fn main() {
 
     let args = Args::parse();
 
-    let embed_status: SharedEmbedStatus = Arc::new(Mutex::new(EmbedStatus {
-        state: "idle",
-        embedded: 0,
-        error: None,
-    }));
+    let state = AppState {
+        embed_status: Arc::new(Mutex::new(EmbedStatus {
+            state: "idle",
+            embedded: 0,
+            error: None,
+        })),
+        pool: Arc::new(db::PoolState::new()),
+    };
 
     let api_router = Router::new()
         .route("/index",          axum::routing::post(api::post_index))
@@ -77,7 +85,7 @@ async fn main() {
         .route("/audit/stats",             axum::routing::get(api::get_audit_stats))
         .route("/audit/stream",            axum::routing::get(api::get_audit_stream))
         .route("/audit/sessions/{id}",      axum::routing::delete(api::delete_audit_session))
-        .with_state(embed_status);
+        .with_state(state);
 
     let mut app = Router::new()
         .nest("/api", api_router)

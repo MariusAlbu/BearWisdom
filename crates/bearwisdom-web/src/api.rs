@@ -9,8 +9,8 @@ use axum::Json;
 use serde::Deserialize;
 use serde_json::json;
 
-use crate::db::{db_exists, open_existing_db, resolve_db_path};
-use crate::SharedEmbedStatus;
+use crate::db::{db_exists, resolve_db_path};
+use crate::AppState;
 
 // ---------------------------------------------------------------------------
 // Directory-based concept discovery (fallback for languages without dotted namespaces)
@@ -189,28 +189,39 @@ pub struct IndexBody {
     path: String,
 }
 
-pub async fn post_index(Json(body): Json<IndexBody>) -> impl IntoResponse {
+pub async fn post_index(
+    State(state): State<AppState>,
+    Json(body): Json<IndexBody>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&body.path);
-    match index_project(&root) {
+    match index_project(&root, &state.pool) {
         Ok(stats) => ok_json(stats).into_response(),
         Err(e) => err_json(e).into_response(),
     }
 }
 
-fn index_project(root: &Path) -> anyhow::Result<serde_json::Value> {
+fn index_project(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Result<serde_json::Value> {
     let db_path = resolve_db_path(root)?;
     let already_existed = db_exists(root);
 
     let mut db = bearwisdom::Database::open_with_vec(&db_path)?;
 
     if already_existed {
-        // DB exists — read stats without re-indexing
-        let conn = db.conn();
-        let file_count: u32 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-        let symbol_count: u32 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
-        let edge_count: u32 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-        let unresolved: u32 = conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0)).unwrap_or(0);
-        let external: u32 = conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0)).unwrap_or(0);
+        // DB exists — read stats without re-indexing, then register pool.
+        let (file_count, symbol_count, edge_count, unresolved, external) = {
+            let conn = db.conn();
+            let fc: u32 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
+            let sc: u32 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
+            let ec: u32 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
+            let ur: u32 = conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0)).unwrap_or(0);
+            let xr: u32 = conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0)).unwrap_or(0);
+            (fc, sc, ec, ur, xr)
+        };
+
+        // Register a pool so subsequent GET handlers use pooled connections.
+        drop(db);
+        let pool = bearwisdom::DbPool::new(&db_path, 4)?;
+        pool_state.set_pool(root, pool);
 
         return Ok(json!({
             "file_count": file_count,
@@ -238,6 +249,11 @@ fn index_project(root: &Path) -> anyhow::Result<serde_json::Value> {
     // Embedding runs separately — too slow to block the index response.
     // Use `bw embed` CLI or the hybrid search will embed on first query.
 
+    // Register a pool for subsequent GET handlers.
+    drop(db);
+    let pool = bearwisdom::DbPool::new(&db_path, 4)?;
+    pool_state.set_pool(root, pool);
+
     Ok(json!({
         "file_count": stats.file_count,
         "symbol_count": stats.symbol_count,
@@ -253,16 +269,19 @@ fn index_project(root: &Path) -> anyhow::Result<serde_json::Value> {
 // GET /api/status
 // ---------------------------------------------------------------------------
 
-pub async fn get_status(Query(params): Query<PathParam>) -> impl IntoResponse {
+pub async fn get_status(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match status_counts(&root) {
+    match status_counts(&root, &state.pool) {
         Ok(v) => ok_json(v).into_response(),
         Err(e) => err_json(e).into_response(),
     }
 }
 
-fn status_counts(root: &Path) -> anyhow::Result<serde_json::Value> {
-    let db = open_existing_db(root)?;
+fn status_counts(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Result<serde_json::Value> {
+    let db = pool_state.get_db(root)?;
     let conn = db.conn();
     let file_count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
     let symbol_count: i64 =
@@ -279,9 +298,12 @@ fn status_counts(root: &Path) -> anyhow::Result<serde_json::Value> {
 // GET /api/architecture
 // ---------------------------------------------------------------------------
 
-pub async fn get_architecture(Query(params): Query<PathParam>) -> impl IntoResponse {
+pub async fn get_architecture(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => match bearwisdom::query::architecture::get_overview(&db) {
             Ok(overview) => ok_json(overview).into_response(),
             Err(e) => err_json(e).into_response(),
@@ -294,10 +316,13 @@ pub async fn get_architecture(Query(params): Query<PathParam>) -> impl IntoRespo
 // GET /api/search-symbols
 // ---------------------------------------------------------------------------
 
-pub async fn get_search_symbols(Query(params): Query<SearchQuery>) -> impl IntoResponse {
+pub async fn get_search_symbols(
+    State(state): State<AppState>,
+    Query(params): Query<SearchQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
     let query = params.q.unwrap_or_default();
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::search::search_symbols(&db, &query, params.limit, &bearwisdom::query::QueryOptions::full()) {
                 Ok(results) => ok_json(results).into_response(),
@@ -312,10 +337,13 @@ pub async fn get_search_symbols(Query(params): Query<SearchQuery>) -> impl IntoR
 // GET /api/fuzzy-files
 // ---------------------------------------------------------------------------
 
-pub async fn get_fuzzy_files(Query(params): Query<SearchQuery>) -> impl IntoResponse {
+pub async fn get_fuzzy_files(
+    State(state): State<AppState>,
+    Query(params): Query<SearchQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
     let query = params.q.unwrap_or_default();
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::search::fuzzy::FuzzyIndex::from_db(&db) {
                 Ok(idx) => ok_json(idx.match_files(&query, params.limit)).into_response(),
@@ -330,10 +358,13 @@ pub async fn get_fuzzy_files(Query(params): Query<SearchQuery>) -> impl IntoResp
 // GET /api/fuzzy-symbols
 // ---------------------------------------------------------------------------
 
-pub async fn get_fuzzy_symbols(Query(params): Query<SearchQuery>) -> impl IntoResponse {
+pub async fn get_fuzzy_symbols(
+    State(state): State<AppState>,
+    Query(params): Query<SearchQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
     let query = params.q.unwrap_or_default();
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::search::fuzzy::FuzzyIndex::from_db(&db) {
                 Ok(idx) => ok_json(idx.match_symbols(&query, params.limit)).into_response(),
@@ -367,9 +398,12 @@ pub async fn get_grep(Query(params): Query<GrepQuery>) -> impl IntoResponse {
 // GET /api/search-content
 // ---------------------------------------------------------------------------
 
-pub async fn get_search_content(Query(params): Query<SearchQuery>) -> impl IntoResponse {
+pub async fn get_search_content(
+    State(state): State<AppState>,
+    Query(params): Query<SearchQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             let scope = bearwisdom::search::scope::SearchScope::default();
             let query = params.q.as_deref().unwrap_or("");
@@ -386,9 +420,12 @@ pub async fn get_search_content(Query(params): Query<SearchQuery>) -> impl IntoR
 // GET /api/hybrid
 // ---------------------------------------------------------------------------
 
-pub async fn get_hybrid(Query(params): Query<SearchQuery>) -> impl IntoResponse {
+pub async fn get_hybrid(
+    State(state): State<AppState>,
+    Query(params): Query<SearchQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             let model_dir = bearwisdom::search::embedder::Embedder::resolve_model_dir(&root)
                 .unwrap_or_else(|| root.join("models").join("CodeRankEmbed"));
@@ -408,10 +445,13 @@ pub async fn get_hybrid(Query(params): Query<SearchQuery>) -> impl IntoResponse 
 // GET /api/graph
 // ---------------------------------------------------------------------------
 
-pub async fn get_graph(Query(params): Query<GraphQuery>) -> impl IntoResponse {
+pub async fn get_graph(
+    State(state): State<AppState>,
+    Query(params): Query<GraphQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
     let filter = params.filter.as_deref().filter(|f| !f.is_empty());
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::subgraph::export_graph(&db, filter, params.max_nodes) {
                 Ok(result) => ok_json(result).into_response(),
@@ -426,9 +466,12 @@ pub async fn get_graph(Query(params): Query<GraphQuery>) -> impl IntoResponse {
 // GET /api/concepts
 // ---------------------------------------------------------------------------
 
-pub async fn get_concepts(Query(params): Query<PathParam>) -> impl IntoResponse {
+pub async fn get_concepts(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => match bearwisdom::query::concepts::list_concepts(&db) {
             Ok(concepts) => ok_json(concepts).into_response(),
             Err(e) => err_json(e).into_response(),
@@ -442,10 +485,11 @@ pub async fn get_concepts(Query(params): Query<PathParam>) -> impl IntoResponse 
 // ---------------------------------------------------------------------------
 
 pub async fn get_concept_members(
+    State(state): State<AppState>,
     Query(params): Query<ConceptMembersQuery>,
 ) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::concepts::concept_members(
                 &db,
@@ -464,9 +508,12 @@ pub async fn get_concept_members(
 // GET /api/symbol-info
 // ---------------------------------------------------------------------------
 
-pub async fn get_symbol_info(Query(params): Query<SymbolQuery>) -> impl IntoResponse {
+pub async fn get_symbol_info(
+    State(state): State<AppState>,
+    Query(params): Query<SymbolQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => match bearwisdom::query::symbol_info::symbol_info(&db, &params.symbol, &bearwisdom::query::QueryOptions::full()) {
             Ok(info) => ok_json(info).into_response(),
             Err(e) => err_json(e).into_response(),
@@ -479,9 +526,12 @@ pub async fn get_symbol_info(Query(params): Query<SymbolQuery>) -> impl IntoResp
 // GET /api/definition
 // ---------------------------------------------------------------------------
 
-pub async fn get_definition(Query(params): Query<SymbolQuery>) -> impl IntoResponse {
+pub async fn get_definition(
+    State(state): State<AppState>,
+    Query(params): Query<SymbolQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::definitions::goto_definition(&db, &params.symbol) {
                 Ok(defs) => ok_json(defs).into_response(),
@@ -496,9 +546,12 @@ pub async fn get_definition(Query(params): Query<SymbolQuery>) -> impl IntoRespo
 // GET /api/references
 // ---------------------------------------------------------------------------
 
-pub async fn get_references(Query(params): Query<SymbolLimitQuery>) -> impl IntoResponse {
+pub async fn get_references(
+    State(state): State<AppState>,
+    Query(params): Query<SymbolLimitQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::references::find_references(
                 &db,
@@ -517,9 +570,12 @@ pub async fn get_references(Query(params): Query<SymbolLimitQuery>) -> impl Into
 // GET /api/calls-in
 // ---------------------------------------------------------------------------
 
-pub async fn get_calls_in(Query(params): Query<SymbolLimitQuery>) -> impl IntoResponse {
+pub async fn get_calls_in(
+    State(state): State<AppState>,
+    Query(params): Query<SymbolLimitQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::call_hierarchy::incoming_calls(
                 &db,
@@ -538,9 +594,12 @@ pub async fn get_calls_in(Query(params): Query<SymbolLimitQuery>) -> impl IntoRe
 // GET /api/calls-out
 // ---------------------------------------------------------------------------
 
-pub async fn get_calls_out(Query(params): Query<SymbolLimitQuery>) -> impl IntoResponse {
+pub async fn get_calls_out(
+    State(state): State<AppState>,
+    Query(params): Query<SymbolLimitQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::call_hierarchy::outgoing_calls(
                 &db,
@@ -559,9 +618,12 @@ pub async fn get_calls_out(Query(params): Query<SymbolLimitQuery>) -> impl IntoR
 // GET /api/blast-radius
 // ---------------------------------------------------------------------------
 
-pub async fn get_blast_radius(Query(params): Query<BlastQuery>) -> impl IntoResponse {
+pub async fn get_blast_radius(
+    State(state): State<AppState>,
+    Query(params): Query<BlastQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match bearwisdom::query::blast_radius::blast_radius(
                 &db,
@@ -580,9 +642,12 @@ pub async fn get_blast_radius(Query(params): Query<BlastQuery>) -> impl IntoResp
 // GET /api/file-symbols
 // ---------------------------------------------------------------------------
 
-pub async fn get_file_symbols(Query(params): Query<FileQuery>) -> impl IntoResponse {
+pub async fn get_file_symbols(
+    State(state): State<AppState>,
+    Query(params): Query<FileQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match file_symbols(&root, &params.file) {
+    match file_symbols(&root, &params.file, &state.pool) {
         Ok(v) => ok_json(v).into_response(),
         Err(e) => err_json(e).into_response(),
     }
@@ -601,8 +666,8 @@ struct FileSymbolRow {
     visibility: Option<String>,
 }
 
-fn file_symbols(root: &Path, file: &str) -> anyhow::Result<Vec<FileSymbolRow>> {
-    let db = open_existing_db(root)?;
+fn file_symbols(root: &Path, file: &str, pool_state: &crate::db::PoolState) -> anyhow::Result<Vec<FileSymbolRow>> {
+    let db = pool_state.get_db(root)?;
     let conn = db.conn();
     let mut stmt = conn.prepare(
         "SELECT s.name, s.qualified_name, s.kind, s.line, s.col, s.end_line,
@@ -701,12 +766,12 @@ fn browse_dir(dir: &Path) -> anyhow::Result<(Vec<String>, Vec<String>)> {
 // ---------------------------------------------------------------------------
 
 pub async fn post_embed(
-    State(status): State<SharedEmbedStatus>,
+    State(state): State<AppState>,
     Json(body): Json<IndexBody>,
 ) -> impl IntoResponse {
     // Reject if already running.
     {
-        let s = status.lock().unwrap();
+        let s = state.embed_status.lock().unwrap();
         if s.state == "running" {
             return ok_json(json!({"started": false, "reason": "already running"})).into_response();
         }
@@ -714,14 +779,14 @@ pub async fn post_embed(
 
     // Mark as running immediately.
     {
-        let mut s = status.lock().unwrap();
+        let mut s = state.embed_status.lock().unwrap();
         s.state = "running";
         s.embedded = 0;
         s.error = None;
     }
 
     let root = PathBuf::from(&body.path);
-    let bg_status = status.clone();
+    let bg_status = state.embed_status.clone();
 
     // Run embedding in a background thread — don't block the request.
     tokio::task::spawn_blocking(move || {
@@ -758,8 +823,8 @@ pub async fn post_embed(
 // GET /api/embed-status
 // ---------------------------------------------------------------------------
 
-pub async fn get_embed_status(State(status): State<SharedEmbedStatus>) -> impl IntoResponse {
-    let s = status.lock().unwrap();
+pub async fn get_embed_status(State(state): State<AppState>) -> impl IntoResponse {
+    let s = state.embed_status.lock().unwrap();
     ok_json(json!({
         "state": s.state,
         "embedded": s.embedded,
@@ -794,9 +859,12 @@ struct FlowEdgeRow {
     url_pattern: Option<String>,
 }
 
-pub async fn get_flow_edges(Query(params): Query<FlowEdgesQuery>) -> impl IntoResponse {
+pub async fn get_flow_edges(
+    State(state): State<AppState>,
+    Query(params): Query<FlowEdgesQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => match query_flow_edges(&db, params.limit) {
             Ok(v) => ok_json(v).into_response(),
             Err(e) => err_json(e).into_response(),
@@ -909,9 +977,12 @@ pub struct TraceFlowQuery {
     direction: String,
 }
 
-pub async fn get_trace_flow(Query(params): Query<TraceFlowQuery>) -> impl IntoResponse {
+pub async fn get_trace_flow(
+    State(state): State<AppState>,
+    Query(params): Query<TraceFlowQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             let result = match params.direction.as_str() {
                 "backward" => bearwisdom::search::flow::trace_flow_reverse(
@@ -954,9 +1025,12 @@ pub struct FullTraceQuery {
 
 fn default_max_traces() -> usize { 15 }
 
-pub async fn get_full_trace(Query(params): Query<FullTraceQuery>) -> impl IntoResponse {
+pub async fn get_full_trace(
+    State(state): State<AppState>,
+    Query(params): Query<FullTraceQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             let result = match params.symbol.as_deref() {
                 Some(sym) => bearwisdom::query::full_trace::trace_from_symbol(&db, sym, params.depth),
@@ -1007,9 +1081,12 @@ pub struct AuditCallsQuery {
 
 fn default_audit_limit() -> i64 { 100 }
 
-pub async fn get_audit_sessions(Query(params): Query<PathParam>) -> impl IntoResponse {
+pub async fn get_audit_sessions(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => match db.list_audit_sessions() {
             Ok(sessions) => ok_json(sessions).into_response(),
             Err(e) => err_json(e).into_response(),
@@ -1018,9 +1095,12 @@ pub async fn get_audit_sessions(Query(params): Query<PathParam>) -> impl IntoRes
     }
 }
 
-pub async fn get_audit_calls(Query(params): Query<AuditCallsQuery>) -> impl IntoResponse {
+pub async fn get_audit_calls(
+    State(state): State<AppState>,
+    Query(params): Query<AuditCallsQuery>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => {
             match db.list_audit_calls(&params.session_id, params.limit, params.offset) {
                 Ok(calls) => ok_json(calls).into_response(),
@@ -1031,9 +1111,12 @@ pub async fn get_audit_calls(Query(params): Query<AuditCallsQuery>) -> impl Into
     }
 }
 
-pub async fn get_audit_stats(Query(params): Query<PathParam>) -> impl IntoResponse {
+pub async fn get_audit_stats(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => match db.get_audit_stats() {
             Ok(stats) => ok_json(stats).into_response(),
             Err(e) => err_json(e).into_response(),
@@ -1045,6 +1128,7 @@ pub async fn get_audit_stats(Query(params): Query<PathParam>) -> impl IntoRespon
 /// SSE stream: emits new `AuditRecord[]` JSON arrays as they arrive, polling every 500 ms.
 /// The client receives `[]` keep-alive payloads between real events.
 pub async fn get_audit_stream(
+    State(state): State<AppState>,
     Query(params): Query<PathParam>,
 ) -> axum::response::sse::Sse<
     impl futures::stream::Stream<
@@ -1054,17 +1138,18 @@ pub async fn get_audit_stream(
     use axum::response::sse::{Event, KeepAlive};
 
     let path = PathBuf::from(&params.path);
+    let pool = state.pool.clone();
 
     let stream = futures::stream::unfold(0i64, move |last_id| {
         let path = path.clone();
+        let pool = pool.clone();
         async move {
             tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
-            // Open the DB and read new records inside spawn_blocking.
             // rusqlite::Connection is !Send so it cannot cross an await; doing
             // all DB work inside the blocking closure keeps the async future Send.
             let (records, new_id) = tokio::task::spawn_blocking(move || {
-                let db = match open_existing_db(&path) {
+                let db = match pool.get_db(&path) {
                     Ok(d) => d,
                     Err(_) => return (Vec::<bearwisdom::AuditRecord>::new(), last_id),
                 };
@@ -1093,11 +1178,12 @@ pub async fn get_audit_stream(
 }
 
 pub async fn delete_audit_session(
+    State(state): State<AppState>,
     axum::extract::Path(session_id): axum::extract::Path<String>,
     Query(params): Query<PathParam>,
 ) -> impl IntoResponse {
     let root = PathBuf::from(&params.path);
-    match open_existing_db(&root) {
+    match state.pool.get_db(&root) {
         Ok(db) => match db.delete_audit_session(&session_id) {
             Ok(deleted) => ok_json(json!({ "deleted": deleted })).into_response(),
             Err(e) => err_json(e).into_response(),
