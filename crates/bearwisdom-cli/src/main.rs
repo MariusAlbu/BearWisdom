@@ -407,6 +407,28 @@ enum Commands {
         #[arg(long)]
         reindex: bool,
     },
+
+    // ---- Workspace ---------------------------------------------------------
+    /// List all detected packages with file/symbol/edge counts.
+    /// Returns an empty array for single-project repos.
+    Packages {
+        /// Absolute path to the project root.
+        path: String,
+    },
+
+    /// Workspace overview: per-package breakdown + cross-package coupling.
+    /// Returns zero/empty fields for single-project repos.
+    Workspace {
+        /// Absolute path to the project root.
+        path: String,
+    },
+
+    /// Inter-package dependency graph inferred from cross-package edges.
+    /// Returns an empty array for single-project repos.
+    Dependencies {
+        /// Absolute path to the project root.
+        path: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -519,6 +541,10 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::QualityCheck { baseline, reindex } => {
             cmd_quality_check(&baseline, reindex)
         }
+
+        Commands::Packages { path } => cmd_packages(&path),
+        Commands::Workspace { path } => cmd_workspace(&path),
+        Commands::Dependencies { path } => cmd_dependencies(&path),
     }
 }
 
@@ -644,6 +670,7 @@ fn cmd_status(project_path: &str) -> Result<String> {
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
         "external_ref_count": stats.external_ref_count,
+        "package_count": stats.package_count,
     }))
 }
 
@@ -1358,6 +1385,31 @@ fn cmd_coverage(project: &str, lang_filter: Option<&str>, _top: usize) -> Result
     }
 
     ok_json(serde_json::json!({"languages": summaries}))
+}
+
+// ---------------------------------------------------------------------------
+// Workspace helpers
+// ---------------------------------------------------------------------------
+
+/// List detected packages with file/symbol/edge counts.
+fn cmd_packages(project_path: &str) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let packages = bearwisdom::list_packages(&db).context("list_packages failed")?;
+    ok_json(packages)
+}
+
+/// Workspace overview: per-package breakdown + cross-package coupling.
+fn cmd_workspace(project_path: &str) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let overview = bearwisdom::workspace_overview(&db).context("workspace_overview failed")?;
+    ok_json(overview)
+}
+
+/// Inter-package dependency graph inferred from cross-package edges.
+fn cmd_dependencies(project_path: &str) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let deps = bearwisdom::package_dependencies(&db).context("package_dependencies failed")?;
+    ok_json(deps)
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.

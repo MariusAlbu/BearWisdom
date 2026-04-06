@@ -28,7 +28,8 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         route_count,
         db_mapping_count,
         flow_edge_count,
-    ): (u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
+        package_count,
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
         "SELECT
            (SELECT COUNT(*) FROM files),
            (SELECT COUNT(*) FROM symbols),
@@ -37,7 +38,8 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
            (SELECT COUNT(*) FROM external_refs),
            (SELECT COUNT(*) FROM routes),
            (SELECT COUNT(*) FROM db_mappings),
-           (SELECT COUNT(*) FROM flow_edges)",
+           (SELECT COUNT(*) FROM flow_edges),
+           (SELECT COUNT(*) FROM packages)",
         [],
         |r| {
             Ok((
@@ -49,6 +51,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
                 r.get(5)?,
                 r.get(6)?,
                 r.get(7)?,
+                r.get(8)?,
             ))
         },
     )?;
@@ -62,6 +65,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         route_count,
         db_mapping_count,
         flow_edge_count,
+        package_count,
         files_with_errors: 0,
         duration_ms: 0,
     })

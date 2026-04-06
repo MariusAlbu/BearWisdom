@@ -67,6 +67,7 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         size: 0,
         line_count: 0,
         mtime: None,
+        package_id: None,
         content: None,
         has_errors: false,
         symbols,
@@ -94,6 +95,7 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             size: 0,
             line_count: 0,
             mtime: None,
+            package_id: None,
             content: None,
             has_errors: false,
             symbols: f.symbols.clone(),
@@ -943,6 +945,7 @@ fn test_is_visible_public_always() {
         visibility: Some("public".to_string()),
         file_path: Arc::from("other/b.go"),
         scope_path: Some("other".to_string()),
+        package_id: None,
     };
 
     // Dummy ref_ctx (not used by is_visible for public symbols)
@@ -982,6 +985,7 @@ fn test_is_visible_private_same_dir() {
         visibility: Some("private".to_string()),
         file_path: Arc::from("pkg/b.go"), // same directory
         scope_path: Some("pkg".to_string()),
+        package_id: None,
     };
 
     let sym_ref = ExtractedRef {
@@ -1020,6 +1024,7 @@ fn test_is_visible_private_different_dir() {
         visibility: Some("private".to_string()),
         file_path: Arc::from("pkg/b.go"), // different directory
         scope_path: Some("pkg".to_string()),
+        package_id: None,
     };
 
     let sym_ref = ExtractedRef {

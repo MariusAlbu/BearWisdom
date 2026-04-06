@@ -116,14 +116,18 @@ pub fn reindex_files(
 /// The unified incremental pipeline.  All non-full index paths call this.
 ///
 /// Steps:
-///   1. Compute blast radius BEFORE any mutations (edges will be deleted by CASCADE).
-///   2. Delete removed files.
-///   3. Parse changed files (parallel via Rayon).
-///   4. Write files + symbols via shared pipeline.
-///   5. Update FTS content + code chunks.
-///   6. Load full symbol map (changed + unchanged).
-///   7. Parse + re-resolve blast-radius affected files.
-///   8. Store indexed_commit in metadata.
+///   1.  Check for manifest changes — warn if package re-detection needed.
+///   2.  Compute blast radius BEFORE any mutations (edges deleted by CASCADE).
+///   3.  Delete removed files.
+///   4.  Invalidate ref cache for changed files.
+///   5.  Parse changed files (parallel via Rayon).
+///   6.  Assign package_id to parsed files from DB packages table.
+///   7.  Write files + symbols via shared pipeline.
+///   8.  Update FTS content + code chunks.
+///   9.  Load full symbol map (changed + unchanged).
+///   10. Parse + re-resolve blast-radius affected files.
+///   11. Cross-file resolution.
+///   12. Store indexed_commit in metadata.
 fn run_incremental_pipeline(
     db: &mut Database,
     project_root: &Path,
@@ -154,7 +158,29 @@ fn run_incremental_pipeline(
         .chain(cs.deleted.iter().cloned())
         .collect();
 
-    // --- Step 1: Blast radius (find dependents before CASCADE deletes edges) ---
+    // --- Step 1: Manifest change check (5b) ---
+    // If any changed file is a package manifest, package detection may be stale.
+    // Full re-detection incrementally is not yet supported; warn and let the
+    // caller decide whether to trigger a full reindex.
+    const MANIFEST_NAMES: &[&str] = &[
+        "package.json", "Cargo.toml", "go.mod", "pyproject.toml",
+        "pubspec.yaml", "mix.exs", "Package.swift", "composer.json",
+    ];
+    let manifest_changed = changed_paths.iter().any(|p| {
+        std::path::Path::new(p)
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| MANIFEST_NAMES.contains(&n))
+            .unwrap_or(false)
+    });
+    if manifest_changed {
+        warn!(
+            "A package manifest file changed. Package membership may be stale. \
+             Run a full reindex to update package assignments."
+        );
+    }
+
+    // --- Step 2: Blast radius (find dependents before CASCADE deletes edges) ---
     let dependent_paths = find_dependent_files(db, &changed_paths)?;
     if !dependent_paths.is_empty() {
         debug!(
@@ -163,12 +189,12 @@ fn run_incremental_pipeline(
         );
     }
 
-    // --- Step 2: Delete removed files ---
+    // --- Step 3: Delete removed files ---
     if !cs.deleted.is_empty() {
         write::delete_files(db, &cs.deleted)?;
     }
 
-    // --- Step 3: Invalidate ref cache ---
+    // --- Step 4: Invalidate ref cache ---
     if let Some(rc) = ref_cache {
         let mut guard = rc.lock().unwrap();
         for path in &cs.deleted {
@@ -179,7 +205,7 @@ fn run_incremental_pipeline(
         }
     }
 
-    // --- Step 4: Parse changed files (parallel) ---
+    // --- Step 5: Parse changed files (parallel) ---
     let files_to_parse: Vec<_> = cs.added.into_iter().chain(cs.modified).collect();
     let registry = languages::default_registry();
     let parse_results: Vec<Result<ParsedFile>> = files_to_parse
@@ -195,12 +221,22 @@ fn run_incremental_pipeline(
         }
     }
 
+    // --- Step 6: Assign package_id (5a) ---
+    // Load existing packages from DB and assign to parsed files before writing.
+    // This ensures new/modified files always have the correct package_id.
+    if !parsed.is_empty() {
+        match write::load_packages_from_db(db) {
+            Ok(packages) => write::assign_package_ids(&mut parsed, &packages),
+            Err(e) => warn!("Failed to load packages for package_id assignment: {e}"),
+        }
+    }
+
     if parsed.is_empty() && cs.deleted.is_empty() {
         stats.duration_ms = start.elapsed().as_millis() as u64;
         return Ok(stats);
     }
 
-    // --- Step 5: Write files + symbols (shared pipeline) ---
+    // --- Step 7: Write files + symbols (shared pipeline) ---
     let file_id_map = if !parsed.is_empty() {
         let (fmap, smap) =
             write::write_parsed_files(db, &parsed).context("Failed to write index")?;
@@ -211,18 +247,18 @@ fn run_incremental_pipeline(
         Default::default()
     };
 
-    // --- Step 6: FTS + chunks (shared pipeline) ---
+    // --- Step 8: FTS + chunks (shared pipeline) ---
     if !parsed.is_empty() {
         write::update_fts_content(db, &parsed, &file_id_map)?;
         write::update_chunks(db, &parsed, &file_id_map, false)?;
     }
 
-    // --- Step 7: Load full symbol map (post-commit) ---
+    // --- Step 9: Load full symbol map (post-commit) ---
     // Needed by the heuristic resolver to match targets from any file.
     // The engine resolver gets completeness from SymbolIndex::augment_from_db.
     let symbol_id_map = write::load_symbol_id_map(db)?;
 
-    // --- Step 8: Blast radius re-resolution ---
+    // --- Step 10: Blast radius re-resolution ---
     // Find files with unresolved refs matching symbols from changed files.
     let new_symbol_names: HashSet<String> = parsed
         .iter()
@@ -313,14 +349,14 @@ fn run_incremental_pipeline(
         parsed.extend(affected_parsed);
     }
 
-    // --- Step 9: Cross-file resolution ---
+    // --- Step 11: Cross-file resolution ---
     let project_ctx = super::project_context::build_project_context(project_root);
     let rstats = resolve::resolve_and_write_incremental(db, &parsed, &symbol_id_map, Some(&project_ctx))
         .context("Failed to resolve references")?;
     stats.edges_written = rstats.resolved as u32;
     info!("Resolved {} edges for changed files", rstats.resolved);
 
-    // --- Step 10: Store indexed commit ---
+    // --- Step 12: Store indexed commit ---
     if let Some(commit) = cs.commit {
         if let Err(e) = changeset::set_meta(db, "indexed_commit", &commit) {
             warn!("Failed to store indexed_commit: {e}");

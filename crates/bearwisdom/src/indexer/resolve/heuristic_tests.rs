@@ -9,6 +9,7 @@ fn make_parsed_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<Extract
         size: 100,
         line_count: 10,
         mtime: None,
+        package_id: None,
         symbols,
         refs,
         routes: vec![],

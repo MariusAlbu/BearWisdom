@@ -114,6 +114,12 @@ pub struct SmartContextParams {
 pub struct ArchitectureParams {}
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct PackagesParams {}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct WorkspaceOverviewParams {}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct InvestigateParams {
     /// Symbol name or qualified name to investigate
     pub symbol: String,
@@ -425,6 +431,28 @@ impl BearWisdomServer {
     ) -> String {
         self.run_tool("bw_architecture_overview", &params, |db| {
             bearwisdom::query::architecture::get_overview(db)
+                .map_err(Self::query_err)
+                .and_then(|r| Self::to_json(&r))
+        })
+    }
+
+    /// List detected packages with file/symbol/edge counts.
+    /// Returns an empty array for single-project repos — no error.
+    #[tool(name = "bw_packages")]
+    fn packages(&self, Parameters(params): Parameters<PackagesParams>) -> String {
+        self.run_tool("bw_packages", &params, |db| {
+            bearwisdom::list_packages(db)
+                .map_err(Self::query_err)
+                .and_then(|r| Self::to_json(&r))
+        })
+    }
+
+    /// Workspace overview: per-package breakdown + cross-package edge count + shared hotspots.
+    /// Returns empty/zero fields for single-project repos — no error.
+    #[tool(name = "bw_workspace_overview")]
+    fn workspace_overview(&self, Parameters(params): Parameters<WorkspaceOverviewParams>) -> String {
+        self.run_tool("bw_workspace_overview", &params, |db| {
+            bearwisdom::workspace_overview(db)
                 .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })

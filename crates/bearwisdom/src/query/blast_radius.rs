@@ -36,6 +36,10 @@ pub struct AffectedSymbol {
     pub depth: u32,
     /// The kind of edge connecting this symbol to its predecessor in the path.
     pub edge_kind: String,
+    /// Package this symbol belongs to, if the repo is a workspace/monorepo.
+    /// `None` for single-project repos or files not linked to any package.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub package: Option<String>,
 }
 
 /// The complete blast radius result.
@@ -150,7 +154,8 @@ pub fn blast_radius(
             WHERE blast.depth < ?2
         )
         SELECT s.name, s.qualified_name, s.kind,
-               f.path AS file_path, sub.depth, sub.edge_kind
+               f.path AS file_path, sub.depth, sub.edge_kind,
+               p.name AS package_name
         FROM (
             SELECT id, depth, edge_kind,
                    ROW_NUMBER() OVER (PARTITION BY id ORDER BY depth) AS rn
@@ -159,6 +164,7 @@ pub fn blast_radius(
         ) sub
         JOIN symbols s ON s.id = sub.id
         JOIN files   f ON f.id = s.file_id
+        LEFT JOIN packages p ON p.id = f.package_id
         WHERE sub.rn = 1
         ORDER BY sub.depth, f.path
         LIMIT ?3
@@ -175,6 +181,7 @@ pub fn blast_radius(
                 file_path:      row.get(3)?,
                 depth:          row.get(4)?,
                 edge_kind:      row.get(5)?,
+                package:        row.get(6)?,
             })
         })
         .context("Failed to execute blast radius query")?;

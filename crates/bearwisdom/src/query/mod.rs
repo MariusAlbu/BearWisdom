@@ -20,6 +20,7 @@ pub mod full_trace;
 pub mod stats;
 pub mod subgraph;
 pub mod symbol_info;
+pub mod workspace;
 
 // ---------------------------------------------------------------------------
 // Shared query options — slim by default, opt-in for verbose

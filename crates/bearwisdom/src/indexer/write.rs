@@ -50,19 +50,20 @@ pub fn write_parsed_files(
         // Upsert file row and capture the assigned id via RETURNING.
         let file_id: i64 = tx
             .prepare_cached(
-                "INSERT INTO files (path, hash, language, last_indexed, mtime, size)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                "INSERT INTO files (path, hash, language, last_indexed, mtime, size, package_id)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
                  ON CONFLICT(path) DO UPDATE SET
                    hash = excluded.hash,
                    language = excluded.language,
                    last_indexed = excluded.last_indexed,
                    mtime = excluded.mtime,
-                   size = excluded.size
+                   size = excluded.size,
+                   package_id = excluded.package_id
                  RETURNING id",
             )
             .context("Failed to prepare file upsert")?
             .query_row(
-                rusqlite::params![pf.path, pf.content_hash, pf.language, now, pf.mtime, pf.size as i64],
+                rusqlite::params![pf.path, pf.content_hash, pf.language, now, pf.mtime, pf.size as i64, pf.package_id],
                 |r| r.get(0),
             )
             .with_context(|| format!("Failed to upsert file {}", pf.path))?;
@@ -340,6 +341,120 @@ pub fn delete_files(db: &Database, paths: &[String]) -> Result<Vec<(i64, String)
     tx.commit().context("Failed to commit delete transaction")?;
 
     Ok(deleted)
+}
+
+// ---------------------------------------------------------------------------
+// Package write/detect
+// ---------------------------------------------------------------------------
+
+/// Write detected packages to the `packages` table and return them with IDs assigned.
+///
+/// Existing packages (matched by path) are updated; new ones are inserted.
+/// Returns the full list with `id` populated.
+pub fn write_packages(
+    db: &Database,
+    packages: &[crate::types::PackageInfo],
+) -> Result<Vec<crate::types::PackageInfo>> {
+    let conn = db.conn();
+    let mut result = Vec::with_capacity(packages.len());
+
+    for pkg in packages {
+        let id: i64 = conn
+            .prepare_cached(
+                "INSERT INTO packages (name, path, kind, manifest)
+                 VALUES (?1, ?2, ?3, ?4)
+                 ON CONFLICT(path) DO UPDATE SET
+                   name = excluded.name,
+                   kind = excluded.kind,
+                   manifest = excluded.manifest
+                 RETURNING id",
+            )?
+            .query_row(
+                rusqlite::params![pkg.name, pkg.path, pkg.kind, pkg.manifest],
+                |r| r.get(0),
+            )
+            .with_context(|| format!("Failed to upsert package {}", pkg.name))?;
+
+        result.push(crate::types::PackageInfo {
+            id: Some(id),
+            name: pkg.name.clone(),
+            path: pkg.path.clone(),
+            kind: pkg.kind.clone(),
+            manifest: pkg.manifest.clone(),
+        });
+    }
+
+    // Remove packages that are no longer detected.
+    let known_paths: Vec<&str> = packages.iter().map(|p| p.path.as_str()).collect();
+    if !known_paths.is_empty() {
+        let placeholders: String = (1..=known_paths.len())
+            .map(|i| format!("?{i}"))
+            .collect::<Vec<_>>()
+            .join(",");
+        let sql = format!("DELETE FROM packages WHERE path NOT IN ({placeholders})");
+        let mut stmt = conn.prepare_cached(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> =
+            known_paths.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
+        stmt.execute(params.as_slice())?;
+    }
+
+    Ok(result)
+}
+
+/// Assign `package_id` to each parsed file based on longest path-prefix match.
+pub fn assign_package_ids(
+    parsed: &mut [crate::types::ParsedFile],
+    packages: &[crate::types::PackageInfo],
+) {
+    if packages.is_empty() {
+        return;
+    }
+    // Sort packages by path length descending for longest-prefix-first matching.
+    let mut sorted: Vec<&crate::types::PackageInfo> = packages.iter().collect();
+    sorted.sort_by(|a, b| b.path.len().cmp(&a.path.len()));
+
+    for pf in parsed.iter_mut() {
+        for pkg in &sorted {
+            // Normalize separators for comparison.
+            let file_path = pf.path.replace('\\', "/");
+            let pkg_path = pkg.path.replace('\\', "/");
+            if file_path.starts_with(&pkg_path)
+                && (file_path.len() == pkg_path.len()
+                    || file_path.as_bytes()[pkg_path.len()] == b'/')
+            {
+                pf.package_id = pkg.id;
+                break;
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Package loading (for incremental package_id assignment)
+// ---------------------------------------------------------------------------
+
+/// Load all packages from the `packages` table.
+///
+/// Used during incremental indexing to assign `package_id` to newly parsed
+/// files without re-running full package detection.
+pub fn load_packages_from_db(db: &Database) -> Result<Vec<crate::types::PackageInfo>> {
+    let mut stmt = db.conn().prepare(
+        "SELECT id, name, path, kind, manifest FROM packages",
+    )?;
+    let rows = stmt.query_map([], |r| {
+        Ok(crate::types::PackageInfo {
+            id: Some(r.get::<_, i64>(0)?),
+            name: r.get::<_, String>(1)?,
+            path: r.get::<_, String>(2)?,
+            kind: r.get::<_, Option<String>>(3)?,
+            manifest: r.get::<_, Option<String>>(4)?,
+        })
+    })?;
+    let mut packages = Vec::new();
+    for row in rows {
+        packages.push(row?);
+    }
+    Ok(packages)
 }
 
 // ---------------------------------------------------------------------------

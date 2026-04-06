@@ -99,6 +99,10 @@ pub struct SymbolInfo {
     pub visibility: Option<String>,
     pub file_path: Arc<str>,
     pub scope_path: Option<String>,
+    /// The package this symbol belongs to, if the project is a monorepo.
+    /// Derived from `ParsedFile::package_id` at index build time,
+    /// or from the `files.package_id` column when augmenting from DB.
+    pub package_id: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -238,6 +242,7 @@ impl SymbolIndex {
                     visibility: sym.visibility.as_ref().map(|v| format!("{v:?}").to_lowercase()),
                     file_path: Arc::clone(&file_path),
                     scope_path: sym.scope_path.clone(),
+                    package_id: pf.package_id,
                 };
 
                 // Simple name index
@@ -482,6 +487,17 @@ impl SymbolIndex {
         }
 
         // Build test-framework globals from manifest dependencies.
+        //
+        // TODO(future): Per-package external classification.
+        // Currently the ProjectContext (and thus `test_globals` / `external_prefixes`) is
+        // built once for the whole project root and shared across all files in all packages.
+        // This is correct for resolution — the SymbolIndex already contains every package's
+        // symbols — but it means a `shared-lib` package that does not declare `react` as a
+        // dependency will still have react imports classified as external, because another
+        // package in the monorepo does.  Per-package classification would require building
+        // one ProjectContext per package (keyed by package_id) and selecting it at resolve
+        // time via `SymbolInfo::package_id`.  Defer until package-level dependency graphs
+        // are fully materialised in the `packages` table.
         let test_globals: HashSet<String> = if let Some(ctx) = project_ctx {
             // Collect all known dependency names across ecosystems.
             let mut all_deps: HashSet<String> = HashSet::new();
@@ -535,7 +551,7 @@ impl SymbolIndex {
     pub fn augment_from_db(&mut self, conn: &rusqlite::Connection) {
         let mut stmt = match conn.prepare(
             "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
-                    s.scope_path, s.visibility
+                    s.scope_path, s.visibility, f.package_id
              FROM symbols s
              JOIN files f ON f.id = s.file_id",
         ) {
@@ -552,6 +568,7 @@ impl SymbolIndex {
                 row.get::<_, String>(4)?,
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, Option<String>>(6)?,
+                row.get::<_, Option<i64>>(7)?,
             ))
         }) {
             Ok(r) => r,
@@ -559,7 +576,8 @@ impl SymbolIndex {
         };
 
         for row in rows {
-            let Ok((id, name, qname, kind, file_path, scope_path, visibility)) = row else {
+            let Ok((id, name, qname, kind, file_path, scope_path, visibility, package_id)) = row
+            else {
                 continue;
             };
 
@@ -580,6 +598,7 @@ impl SymbolIndex {
                 visibility,
                 file_path: Arc::clone(&file_arc),
                 scope_path,
+                package_id,
             };
 
             self.by_name.entry(name).or_default().push(info.clone());
@@ -1114,6 +1133,7 @@ mod tests {
             size: 0,
             line_count: 0,
             mtime: None,
+            package_id: None,
             content: None,
             has_errors: false,
             symbols: vec![
@@ -1191,6 +1211,7 @@ mod tests {
             size: 0,
             line_count: 0,
             mtime: None,
+            package_id: None,
             content: None,
             has_errors: false,
             symbols: syms,

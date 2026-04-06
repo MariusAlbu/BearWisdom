@@ -337,6 +337,21 @@ impl ExtractionResult {
     }
 }
 
+/// A detected package within a monorepo / workspace.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PackageInfo {
+    /// Database row ID (assigned after INSERT).
+    pub id: Option<i64>,
+    /// Package name (ecosystem-native if available, else directory name).
+    pub name: String,
+    /// Relative path from workspace root to package directory.
+    pub path: String,
+    /// Ecosystem hint: "npm", "cargo", "dotnet", "go", etc.
+    pub kind: Option<String>,
+    /// Relative path to the manifest file (e.g., "services/api/package.json").
+    pub manifest: Option<String>,
+}
+
 /// Everything extracted from a single source file.
 #[derive(Debug)]
 pub struct ParsedFile {
@@ -347,6 +362,8 @@ pub struct ParsedFile {
     pub line_count: u32,
     /// File modification time (seconds since epoch), for fast change detection.
     pub mtime: Option<i64>,
+    /// Package this file belongs to (assigned during indexing, `None` for root files).
+    pub package_id: Option<i64>,
     pub symbols: Vec<ExtractedSymbol>,
     pub refs: Vec<ExtractedRef>,
     pub routes: Vec<ExtractedRoute>,
@@ -455,6 +472,7 @@ pub struct IndexStats {
     pub route_count: u32,
     pub db_mapping_count: u32,
     pub flow_edge_count: u32,
+    pub package_count: u32,
     pub files_with_errors: u32,
     pub duration_ms: u64,
 }

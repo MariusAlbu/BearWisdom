@@ -34,7 +34,7 @@ pub use db::metrics::{QueryMetrics, QueryStats};
 pub use db::audit::{AuditRecord, AuditSessionSummary, AuditStats};
 pub use indexer::full::{full_index, ProgressFn};
 pub use indexer::incremental::{incremental_index, git_reindex, reindex_files, ChangeKind, FileChangeEvent};
-pub use types::{EdgeKind, EdgeSource, IndexStats, Symbol, SymbolKind};
+pub use types::{EdgeKind, EdgeSource, IndexStats, PackageInfo, Symbol, SymbolKind};
 pub use indexer::post_index::embed_chunks;
 pub use query::stats::{
     concept_count, flow_edge_breakdown, flow_edge_count_by_type, flow_edges_data,
@@ -54,6 +54,8 @@ pub use query::investigate::{InvestigateOptions, InvestigateResult, SlimSymbol, 
 pub use query::QueryOptions;
 pub use query::error::{QueryError, QueryResult};
 pub use query::cache::QueryCache;
+pub use query::workspace::{PackageDependency, PackageStats, WorkspaceOverview};
+pub use query::workspace::{list_packages, package_dependencies, workspace_overview};
 pub use indexer::ref_cache::RefCache;
 
 pub use indexer::scip::{import_scip, ScipImportStats};

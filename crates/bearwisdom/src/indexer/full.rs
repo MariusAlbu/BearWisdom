@@ -119,6 +119,7 @@ pub fn full_index(
                  DROP TABLE IF EXISTS external_refs;
                  DROP TABLE IF EXISTS symbols;
                  DROP TABLE IF EXISTS files;
+                 DROP TABLE IF EXISTS packages;
                  PRAGMA foreign_keys = ON;",
             );
 
@@ -157,6 +158,23 @@ pub fn full_index(
     }
     info!("Parsed {} files ({} with syntax errors)", parsed.len(), files_with_errors);
     emit("parsing", 1.0, Some(&format!("{} files parsed", parsed.len())));
+
+    // --- Step 3b: Detect workspace packages ---
+    let (packages, workspace_kind) = detect_packages(project_root);
+    let _packages = if !packages.is_empty() {
+        let written = write::write_packages(db, &packages)
+            .context("Failed to write packages")?;
+        info!("Detected {} workspace packages", written.len());
+        write::assign_package_ids(&mut parsed, &written);
+        if let Some(ref kind) = workspace_kind {
+            if let Err(e) = changeset::set_meta(db, "workspace_kind", kind) {
+                warn!("Failed to store workspace_kind: {e}");
+            }
+        }
+        written
+    } else {
+        Vec::new()
+    };
 
     // --- Step 4: Write files + symbols (shared pipeline) ---
     let (file_id_map, symbol_id_map) =
@@ -248,13 +266,14 @@ pub fn full_index(
 
     let stats = read_stats(db.conn(), files_with_errors, duration.as_millis() as u64)?;
     info!(
-        "Full index complete in {:.2}s: {} files, {} symbols, {} edges, {} routes, {} db_mappings",
+        "Full index complete in {:.2}s: {} files, {} symbols, {} edges, {} routes, {} db_mappings, {} packages",
         duration.as_secs_f64(),
         stats.file_count,
         stats.symbol_count,
         stats.edge_count,
         stats.route_count,
         stats.db_mapping_count,
+        stats.package_count,
     );
 
     // Populate the pool-level ref cache (if the caller supplied one) so
@@ -312,6 +331,7 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
         size,
         line_count,
         mtime,
+        package_id: None, // assigned later by assign_package_ids
         symbols: r.symbols,
         refs: r.refs,
         routes: r.routes,
@@ -342,6 +362,277 @@ fn run_react_patterns(conn: &rusqlite::Connection, project_root: &Path) {
 }
 
 // ---------------------------------------------------------------------------
+// Package detection
+// ---------------------------------------------------------------------------
+
+/// Detect workspace packages from monorepo patterns and manifest files.
+///
+/// Returns the package list and the workspace kind string (e.g. `"cargo-workspace"`,
+/// `"pnpm-workspace"`) so the caller can persist it as `workspace_kind` metadata.
+///
+/// Uses bearwisdom-profile's monorepo detection first (Cargo workspace,
+/// npm workspaces, Turborepo, Nx, Lerna), then falls back to scanning
+/// for manifest files in immediate subdirectories.
+fn detect_packages(project_root: &Path) -> (Vec<crate::types::PackageInfo>, Option<String>) {
+    use crate::types::PackageInfo;
+
+    // 1. Try bearwisdom-profile monorepo detection.
+    if let Some(mono) = bearwisdom_profile::scanner::monorepo::detect_monorepo(project_root) {
+        let workspace_kind = mono.kind.clone();
+        let kind_hint = match mono.kind.as_str() {
+            "cargo-workspace" => "cargo",
+            "npm-workspaces" | "pnpm-workspace" | "turborepo" | "lerna" => "npm",
+            "nx" => "npm",
+            other => other,
+        };
+
+        let mut packages: Vec<PackageInfo> = Vec::new();
+
+        if mono.packages.is_empty() {
+            // Profile detected a monorepo kind but no explicit package list.
+            // Scan common workspace directories (packages/, apps/, libs/, crates/).
+            packages = scan_workspace_dirs(project_root, kind_hint);
+        } else {
+            // Profile returned explicit package paths — these may be globs or
+            // directory names. Resolve each to a PackageInfo.
+            for rel_path in &mono.packages {
+                // Handle glob patterns like "crates/*" from Cargo workspace members.
+                if rel_path.contains('*') {
+                    let base = rel_path.trim_end_matches("/*").trim_end_matches("\\*");
+                    let base_dir = project_root.join(base);
+                    if base_dir.is_dir() {
+                        if let Ok(entries) = std::fs::read_dir(&base_dir) {
+                            for entry in entries.flatten() {
+                                if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                                    continue;
+                                }
+                                let sub_name = entry.file_name().to_string_lossy().into_owned();
+                                if sub_name.starts_with('.') { continue; }
+                                let full_rel = format!("{}/{}", base, sub_name);
+                                let abs = project_root.join(&full_rel);
+                                let name = package_name_from_manifest(&abs, kind_hint)
+                                    .unwrap_or_else(|| sub_name.clone());
+                                packages.push(PackageInfo {
+                                    id: None,
+                                    name,
+                                    path: full_rel.replace('\\', "/"),
+                                    kind: Some(kind_hint.to_string()),
+                                    manifest: find_manifest_path_abs(&abs, kind_hint),
+                                });
+                            }
+                        }
+                    }
+                } else {
+                    let abs = project_root.join(rel_path);
+                    if !abs.is_dir() { continue; }
+                    let name = package_name_from_manifest(&abs, kind_hint)
+                        .unwrap_or_else(|| dir_name(rel_path));
+                    packages.push(PackageInfo {
+                        id: None,
+                        name,
+                        path: rel_path.replace('\\', "/"),
+                        kind: Some(kind_hint.to_string()),
+                        manifest: find_manifest_path_abs(&abs, kind_hint),
+                    });
+                }
+            }
+        }
+
+        if !packages.is_empty() {
+            info!("Monorepo detected ({}) — {} packages", workspace_kind, packages.len());
+            return (packages, Some(workspace_kind));
+        }
+    }
+
+    // 2. Fallback: scan workspace-style directories.
+    let packages = scan_workspace_dirs(project_root, "unknown");
+    if packages.len() >= 2 {
+        info!("Fallback package scan — {} packages", packages.len());
+        (packages, None)
+    } else {
+        (Vec::new(), None)
+    }
+}
+
+/// Scan common workspace directory patterns (packages/, apps/, libs/, crates/, etc.)
+/// for sub-packages containing manifest files.
+fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<crate::types::PackageInfo> {
+    use crate::types::PackageInfo;
+
+    let workspace_dirs = ["packages", "apps", "libs", "crates", "modules",
+                          "services", "plugins", "integrations", "examples", "src"];
+    let manifest_names: &[&str] = &[
+        "package.json", "Cargo.toml", "go.mod", "pyproject.toml",
+        "pubspec.yaml", "mix.exs", "Package.swift", "composer.json",
+    ];
+    let mut packages = Vec::new();
+
+    for ws_dir in &workspace_dirs {
+        let base = project_root.join(ws_dir);
+        if !base.is_dir() { continue; }
+        if let Ok(entries) = std::fs::read_dir(&base) {
+            for entry in entries.flatten() {
+                if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                    continue;
+                }
+                let sub_name = entry.file_name().to_string_lossy().into_owned();
+                if sub_name.starts_with('.') || sub_name == "node_modules" {
+                    continue;
+                }
+                let sub = entry.path();
+                // Check standard manifest files.
+                let mut found = false;
+                for mf in manifest_names {
+                    if sub.join(mf).exists() {
+                        let rel = format!("{}/{}", ws_dir, sub_name);
+                        let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
+                        let name = package_name_from_manifest(&sub, kind)
+                            .unwrap_or_else(|| sub_name.clone());
+                        packages.push(PackageInfo {
+                            id: None,
+                            name,
+                            path: rel,
+                            kind: Some(kind.to_string()),
+                            manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, mf)),
+                        });
+                        found = true;
+                        break;
+                    }
+                }
+                // Check for .csproj (one per directory is a package).
+                if !found {
+                    if let Some(csproj) = find_csproj(&sub) {
+                        let rel = format!("{}/{}", ws_dir, sub_name);
+                        packages.push(PackageInfo {
+                            id: None,
+                            name: sub_name.clone(),
+                            path: rel,
+                            kind: Some("dotnet".to_string()),
+                            manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, csproj)),
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    // Also check root-level subdirectories (for .NET solutions, Go multi-module, etc.)
+    if let Ok(entries) = std::fs::read_dir(project_root) {
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let dir_name_str = entry.file_name().to_string_lossy().into_owned();
+            if dir_name_str.starts_with('.')
+                || dir_name_str == "node_modules"
+                || dir_name_str == "target"
+                || workspace_dirs.contains(&dir_name_str.as_str())
+            {
+                continue;
+            }
+            let sub = entry.path();
+            for mf in manifest_names {
+                if sub.join(mf).exists() {
+                    let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
+                    let name = package_name_from_manifest(&sub, kind)
+                        .unwrap_or_else(|| dir_name_str.clone());
+                    // Avoid duplicates from workspace_dirs scan.
+                    if !packages.iter().any(|p| p.path == dir_name_str) {
+                        packages.push(PackageInfo {
+                            id: None,
+                            name,
+                            path: dir_name_str.clone(),
+                            kind: Some(kind.to_string()),
+                            manifest: Some(format!("{}/{}", dir_name_str, mf)),
+                        });
+                    }
+                    break;
+                }
+            }
+        }
+    }
+
+    packages
+}
+
+/// Try to extract the native package name from a manifest file.
+fn package_name_from_manifest(dir: &Path, kind: &str) -> Option<String> {
+    match kind {
+        "npm" => {
+            let content = std::fs::read_to_string(dir.join("package.json")).ok()?;
+            let v: serde_json::Value = serde_json::from_str(&content).ok()?;
+            v.get("name")?.as_str().map(|s| s.to_string())
+        }
+        "cargo" => {
+            let content = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;
+            // Simple TOML parse: find `name = "..."` under [package].
+            let in_package = content.find("[package]")?;
+            content[in_package..]
+                .lines()
+                .find(|l| l.trim().starts_with("name"))
+                .and_then(|l| {
+                    let val = l.split('=').nth(1)?.trim().trim_matches('"');
+                    Some(val.to_string())
+                })
+        }
+        "go" => {
+            let content = std::fs::read_to_string(dir.join("go.mod")).ok()?;
+            content.lines().next().and_then(|l| {
+                l.strip_prefix("module ").map(|m| m.trim().to_string())
+            })
+        }
+        _ => None,
+    }
+}
+
+fn dir_name(rel_path: &str) -> String {
+    rel_path.rsplit('/').next()
+        .or_else(|| rel_path.rsplit('\\').next())
+        .unwrap_or(rel_path)
+        .to_string()
+}
+
+fn find_manifest_path_abs(abs_dir: &Path, kind: &str) -> Option<String> {
+    let candidates: &[&str] = match kind {
+        "cargo" => &["Cargo.toml"],
+        "npm" => &["package.json"],
+        "go" => &["go.mod"],
+        "python" => &["pyproject.toml"],
+        "dart" => &["pubspec.yaml"],
+        "elixir" => &["mix.exs"],
+        _ => &["package.json", "Cargo.toml", "go.mod", "pyproject.toml"],
+    };
+    for c in candidates {
+        if abs_dir.join(c).exists() {
+            // Return path relative to workspace root — caller uses the rel path.
+            return Some(c.to_string());
+        }
+    }
+    None
+}
+
+fn find_csproj(dir: &Path) -> Option<String> {
+    std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+        let name = e.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".csproj") { Some(name) } else { None }
+    })
+}
+
+fn manifest_to_kind(filename: &str) -> &str {
+    match filename {
+        "package.json" => "npm",
+        "Cargo.toml" => "cargo",
+        "go.mod" => "go",
+        "pyproject.toml" => "python",
+        "pubspec.yaml" => "dart",
+        "mix.exs" => "elixir",
+        "Package.swift" => "swift",
+        "composer.json" => "php",
+        _ => "unknown",
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Statistics
 // ---------------------------------------------------------------------------
 
@@ -350,23 +641,28 @@ pub(crate) fn read_stats(
     files_with_errors: u32,
     duration_ms: u64,
 ) -> Result<IndexStats> {
-    let file_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-    let symbol_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
-    let edge_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-    let unresolved_ref_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
-    let external_ref_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0))?;
-    let route_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))?;
-    let db_mapping_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM db_mappings", [], |r| r.get(0))?;
-
-    let flow_edge_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))?;
+    let (
+        file_count, symbol_count, edge_count,
+        unresolved_ref_count, external_ref_count,
+        route_count, db_mapping_count, flow_edge_count, package_count,
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
+        "SELECT
+           (SELECT COUNT(*) FROM files),
+           (SELECT COUNT(*) FROM symbols),
+           (SELECT COUNT(*) FROM edges),
+           (SELECT COUNT(*) FROM unresolved_refs),
+           (SELECT COUNT(*) FROM external_refs),
+           (SELECT COUNT(*) FROM routes),
+           (SELECT COUNT(*) FROM db_mappings),
+           (SELECT COUNT(*) FROM flow_edges),
+           (SELECT COUNT(*) FROM packages)",
+        [],
+        |r| Ok((
+            r.get(0)?, r.get(1)?, r.get(2)?,
+            r.get(3)?, r.get(4)?,
+            r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?,
+        )),
+    )?;
 
     Ok(IndexStats {
         file_count,
@@ -377,6 +673,7 @@ pub(crate) fn read_stats(
         route_count,
         db_mapping_count,
         flow_edge_count,
+        package_count,
         files_with_errors,
         duration_ms,
     })

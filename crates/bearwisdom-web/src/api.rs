@@ -988,3 +988,57 @@ pub async fn delete_audit_session(
         Err(e) => err_json(e).into_response(),
     }
 }
+
+// ---------------------------------------------------------------------------
+// GET /api/packages
+// ---------------------------------------------------------------------------
+
+pub async fn get_packages(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match state.pool.get_db(&root) {
+        Ok(db) => match bearwisdom::list_packages(&db) {
+            Ok(packages) => ok_json(packages).into_response(),
+            Err(e) => err_json(e).into_response(),
+        },
+        Err(e) => err_json(e).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/workspace
+// ---------------------------------------------------------------------------
+
+pub async fn get_workspace(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match state.pool.get_db(&root) {
+        Ok(db) => match bearwisdom::workspace_overview(&db) {
+            Ok(overview) => ok_json(overview).into_response(),
+            Err(e) => err_json(e).into_response(),
+        },
+        Err(e) => err_json(e).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/dependencies
+// ---------------------------------------------------------------------------
+
+pub async fn get_dependencies(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match state.pool.get_db(&root) {
+        Ok(db) => match bearwisdom::package_dependencies(&db) {
+            Ok(deps) => ok_json(deps).into_response(),
+            Err(e) => err_json(e).into_response(),
+        },
+        Err(e) => err_json(e).into_response(),
+    }
+}

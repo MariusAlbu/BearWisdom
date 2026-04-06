@@ -88,6 +88,17 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE symbols ADD COLUMN incoming_edge_count INTEGER NOT NULL DEFAULT 0"
         )?;
     }
+    // v0.3: Add package_id to files for monorepo/workspace support.
+    if !column_exists(conn, "files", "package_id") {
+        conn.execute_batch(
+            "ALTER TABLE files ADD COLUMN package_id INTEGER REFERENCES packages(id) ON DELETE SET NULL"
+        )?;
+    }
+    // Always ensure the index exists — covers both new DBs (column from CREATE
+    // TABLE) and migrated DBs (column from ALTER TABLE above).
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_files_package ON files(package_id)"
+    )?;
     Ok(())
 }
 
@@ -113,6 +124,23 @@ fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
 
 const SCHEMA_SQL: &str = "
 -- ============================================================
+-- WORKSPACE PACKAGES
+-- ============================================================
+-- One row per detected package in a monorepo / workspace.
+-- Single-project repos leave this table empty.
+
+CREATE TABLE IF NOT EXISTS packages (
+    id        INTEGER PRIMARY KEY,
+    name      TEXT    NOT NULL UNIQUE,
+    path      TEXT    NOT NULL UNIQUE,  -- relative to workspace root
+    kind      TEXT,                     -- ecosystem hint: npm, cargo, dotnet, go, etc.
+    manifest  TEXT,                     -- relative path to manifest file
+    parent_id INTEGER REFERENCES packages(id) ON DELETE SET NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);
+
+-- ============================================================
 -- FILE TRACKING
 -- ============================================================
 
@@ -126,13 +154,16 @@ CREATE TABLE IF NOT EXISTS files (
     language     TEXT    NOT NULL,
     last_indexed INTEGER NOT NULL,  -- Unix timestamp (seconds since epoch)
     mtime        INTEGER,           -- file mtime (seconds since epoch), for fast change detection
-    size         INTEGER            -- file size in bytes, for fast change detection
+    size         INTEGER,           -- file size in bytes, for fast change detection
+    package_id   INTEGER REFERENCES packages(id) ON DELETE SET NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_language  ON files(language);
 -- Covers both hash-only lookups (incremental change detection) and
 -- path+hash scans — replaces the old idx_files_hash single-column index.
 CREATE INDEX IF NOT EXISTS idx_files_path_hash ON files(path, hash);
+-- idx_files_package is created by migrate() to handle existing DBs
+-- where the column is added via ALTER TABLE.
 
 -- ============================================================
 -- CODE GRAPH: SYMBOLS
