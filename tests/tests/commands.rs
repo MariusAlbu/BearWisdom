@@ -51,7 +51,7 @@ use bearwisdom_tests::TestProject;
 fn csharp_db() -> Database {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
     db
 }
 
@@ -241,7 +241,7 @@ fn test_cmd_file_symbols_missing_file_returns_empty() {
 #[test]
 fn test_cmd_blast_radius_model() {
     let db = csharp_db();
-    let result = blast_radius(&db, "Product", 3).unwrap();
+    let result = blast_radius(&db, "Product", 3, 500).unwrap();
 
     if let Some(br) = result {
         assert_eq!(br.center.name, "Product");
@@ -255,7 +255,7 @@ fn test_cmd_blast_radius_model() {
 #[test]
 fn test_cmd_blast_radius_unknown() {
     let db = csharp_db();
-    let result = blast_radius(&db, "AbsolutelyUnknownSymbol", 2).unwrap();
+    let result = blast_radius(&db, "AbsolutelyUnknownSymbol", 2, 500).unwrap();
     assert!(result.is_none());
 }
 
@@ -626,7 +626,7 @@ fn test_cmd_fuzzy_match_symbols_partial() {
 fn test_cmd_content_search_after_index() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     // FTS content index must be built separately from the symbol index.
     let indexed = rebuild_content_index(db.conn(), project.path()).unwrap();
@@ -647,7 +647,7 @@ fn test_cmd_content_search_after_index() {
 fn test_cmd_content_search_short_query_empty() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
     rebuild_content_index(db.conn(), project.path()).unwrap();
 
     // FTS5 trigram requires >= 3 chars; shorter queries must return empty.
@@ -659,7 +659,7 @@ fn test_cmd_content_search_short_query_empty() {
 fn test_cmd_content_search_returns_ranked_results() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
     rebuild_content_index(db.conn(), project.path()).unwrap();
 
     let results = search_content(&db, "GetById", &SearchScope::default(), 10).unwrap();

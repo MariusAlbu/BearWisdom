@@ -11,6 +11,11 @@
 
 pub mod extract;
 
+mod builtins;
+pub(crate) mod resolve;
+
+pub use resolve::AdaResolver;
+
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
@@ -64,5 +69,9 @@ impl LanguagePlugin for AdaPlugin {
             "Boolean", "Duration",
             "Standard",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::AdaResolver))
     }
 }

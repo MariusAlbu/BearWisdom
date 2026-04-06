@@ -5,6 +5,9 @@
 
 pub mod extract;
 
+mod builtins;
+pub(crate) mod resolve;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;
@@ -55,5 +58,9 @@ impl LanguagePlugin for LuaPlugin {
             "string", "number", "boolean", "nil", "table", "function",
             "thread", "userdata", "integer", "float",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::LuaResolver))
     }
 }

@@ -11,11 +11,13 @@
 //   • New `lsp_edge_meta` table in the schema for LSP edge bookkeeping
 // =============================================================================
 
+#[cfg(feature = "lsp")]
 pub mod bridge;
 pub mod connectors;
 pub mod db;
 pub mod indexer;
 pub mod languages;
+#[cfg(feature = "lsp")]
 pub mod lsp;
 pub mod parser;
 pub mod query;
@@ -45,12 +47,18 @@ pub use query::subgraph::{GraphEdge, GraphNode, SubgraphResult};
 pub use query::symbol_info::{SymbolDetail, FileSymbol, FileSymbolsMode};
 pub use query::investigate::{InvestigateOptions, InvestigateResult, SlimSymbol, BlastRadiusSlim};
 pub use query::QueryOptions;
+pub use query::error::{QueryError, QueryResult};
 pub use query::cache::QueryCache;
 pub use indexer::ref_cache::RefCache;
 
-// Re-export new v3 types.
+// Re-export new v3 types (only available with the `lsp` feature).
+#[cfg(feature = "lsp")]
 pub use bridge::enricher::BackgroundEnricher;
+#[cfg(feature = "lsp")]
 pub use bridge::graph_bridge::GraphBridge;
+#[cfg(feature = "lsp")]
 pub use bridge::scip::{import_scip, ScipImportStats};
+#[cfg(feature = "lsp")]
 pub use lsp::manager::LspManager;
+#[cfg(feature = "lsp")]
 pub use lsp::types::{Language, ServerState, ServerStatus};

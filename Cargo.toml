@@ -126,6 +126,7 @@ tower-http            = { version = "0.6", features = ["cors", "fs"] }
 dirs                  = "6"
 notify                = "7"
 lru                   = "0.12"
+strum                 = { version = "0.26", features = ["derive"] }
 
 [profile.release]
 strip   = true

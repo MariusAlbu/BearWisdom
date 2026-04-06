@@ -565,7 +565,7 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
 
     eprintln!("Running full index for {} ...", root.display());
 
-    let stats = bearwisdom::full_index(&mut db, &root, None, None)
+    let stats = bearwisdom::full_index(&mut db, &root, None, None, None)
         .context("Full index failed")?;
 
     // Auto-discover namespace concepts and assign members.
@@ -809,7 +809,7 @@ fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
         }
 
         eprintln!("Detected {} file change(s), re-indexing...", changes.len());
-        match bearwisdom::reindex_files(&mut db, &root, &changes) {
+        match bearwisdom::reindex_files(&mut db, &root, &changes, None) {
             Ok(stats) => {
                 let json = serde_json::json!({
                     "event": "reindex",
@@ -984,7 +984,7 @@ fn cmd_architecture(project_path: &str) -> Result<String> {
 
 fn cmd_blast_radius(project_path: &str, symbol: &str, depth: u32) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let result = bearwisdom::query::blast_radius::blast_radius(&db, symbol, depth)
+    let result = bearwisdom::query::blast_radius::blast_radius(&db, symbol, depth, 500)
         .context("blast_radius failed")?;
     ok_json(result)
 }
@@ -1165,7 +1165,7 @@ fn cmd_reindex(project_path: &str) -> Result<String> {
     let mut db = Database::open_with_vec(&db_path)
         .with_context(|| format!("Failed to open DB at {}", db_path.display()))?;
 
-    bearwisdom::full_index(&mut db, &root, None, None)
+    bearwisdom::full_index(&mut db, &root, None, None, None)
         .with_context(|| format!("Index failed for {}", root.display()))?;
 
     let stats = bearwisdom::index_stats(&db)?;
@@ -1276,7 +1276,7 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
             eprintln!("Indexing...");
             let mut db = Database::open_with_vec(&db_path)
                 .with_context(|| format!("Failed to open DB for {name}"))?;
-            bearwisdom::full_index(&mut db, &root, None, None)
+            bearwisdom::full_index(&mut db, &root, None, None, None)
                 .with_context(|| format!("Index failed for {name}"))?;
         }
 

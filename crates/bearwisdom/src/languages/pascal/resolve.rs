@@ -1,0 +1,138 @@
+// =============================================================================
+// pascal/resolve.rs — Pascal/Delphi resolution rules
+//
+// Scope rules for Pascal/Delphi:
+//
+//   1. Scope chain walk: innermost procedure/function → class → unit.
+//   2. Same-file resolution: all declarations in the same unit are visible.
+//   3. Import-based resolution:
+//        `uses Unit1, Unit2;` → all public symbols from each unit enter scope
+//
+// The extractor emits EdgeKind::Imports with:
+//   target_name = unit name (e.g., "SysUtils", "Classes")
+//   module      = None (Pascal `uses` clauses always name the unit directly)
+// =============================================================================
+
+use super::builtins;
+use crate::indexer::resolve::engine::{
+    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+};
+use crate::indexer::project_context::ProjectContext;
+use crate::types::{EdgeKind, ParsedFile};
+
+/// Pascal/Delphi language resolver.
+pub struct PascalResolver;
+
+impl LanguageResolver for PascalResolver {
+    fn language_ids(&self) -> &[&str] {
+        &["pascal", "delphi"]
+    }
+
+    fn build_file_context(
+        &self,
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> FileContext {
+        let mut imports = Vec::new();
+
+        for r in &file.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            // `uses UnitName` → each unit is a wildcard import (all public names visible).
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path: Some(r.target_name.clone()),
+                alias: None,
+                is_wildcard: true,
+            });
+        }
+
+        FileContext {
+            file_path: file.path.clone(),
+            language: "pascal".to_string(),
+            imports,
+            file_namespace: None,
+        }
+    }
+
+    fn resolve(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+
+        if edge_kind == EdgeKind::Imports {
+            return None;
+        }
+
+        if builtins::is_pascal_builtin(target) {
+            return None;
+        }
+
+        // Pascal is case-insensitive; use lowercase for comparisons.
+        let target_lower = target.to_lowercase();
+
+        // Step 1: Scope chain walk.
+        for scope in &ref_ctx.scope_chain {
+            let candidate = format!("{scope}.{target}");
+            if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "pascal_scope_chain",
+                    });
+                }
+            }
+        }
+
+        // Step 2: Same-file resolution (case-insensitive).
+        for sym in lookup.in_file(&file_ctx.file_path) {
+            if sym.name.to_lowercase() == target_lower
+                && builtins::kind_compatible(edge_kind, &sym.kind)
+            {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "pascal_same_file",
+                });
+            }
+        }
+
+        // Step 3: Simple name lookup across the project.
+        for sym in lookup.by_name(target) {
+            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: "pascal_by_name",
+                });
+            }
+        }
+
+        None
+    }
+
+    fn infer_external_namespace(
+        &self,
+        _file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        let target = &ref_ctx.extracted_ref.target_name;
+
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            return None;
+        }
+
+        if builtins::is_pascal_builtin(target) {
+            return Some("pascal.rtl".to_string());
+        }
+
+        None
+    }
+}

@@ -10,6 +10,11 @@
 
 pub mod extract;
 
+mod builtins;
+pub(crate) mod resolve;
+
+pub use resolve::FortranResolver;
+
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
@@ -60,5 +65,9 @@ impl LanguagePlugin for FortranPlugin {
             "INTEGER", "REAL", "DOUBLE", "COMPLEX", "LOGICAL", "CHARACTER",
             "DOUBLEPRECISION", "double precision",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::FortranResolver))
     }
 }

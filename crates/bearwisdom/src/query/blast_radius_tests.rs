@@ -35,7 +35,7 @@ fn blast_radius_direct_callers_depth_1() {
     let db = Database::open_in_memory().unwrap();
     setup_graph(&db);
 
-    let result = blast_radius(&db, "A", 1).unwrap().expect("symbol not found");
+    let result = blast_radius(&db, "A", 1, 500).unwrap().expect("symbol not found");
     assert_eq!(result.center.name, "A");
     // Only B directly calls A.
     assert_eq!(result.affected.len(), 1);
@@ -48,7 +48,7 @@ fn blast_radius_depth_2_includes_transitive() {
     let db = Database::open_in_memory().unwrap();
     setup_graph(&db);
 
-    let result = blast_radius(&db, "A", 2).unwrap().expect("symbol not found");
+    let result = blast_radius(&db, "A", 2, 500).unwrap().expect("symbol not found");
     let names: Vec<&str> = result.affected.iter().map(|a| a.name.as_str()).collect();
     assert!(names.contains(&"B"), "B should be at depth 1");
     assert!(names.contains(&"C"), "C should be at depth 2");
@@ -60,7 +60,7 @@ fn blast_radius_full_chain() {
     let db = Database::open_in_memory().unwrap();
     setup_graph(&db);
 
-    let result = blast_radius(&db, "A", 10).unwrap().expect("symbol not found");
+    let result = blast_radius(&db, "A", 10, 500).unwrap().expect("symbol not found");
     let names: Vec<&str> = result.affected.iter().map(|a| a.name.as_str()).collect();
     assert!(names.contains(&"B"));
     assert!(names.contains(&"C"));
@@ -71,7 +71,7 @@ fn blast_radius_full_chain() {
 #[test]
 fn blast_radius_returns_none_for_unknown_symbol() {
     let db = Database::open_in_memory().unwrap();
-    let result = blast_radius(&db, "DoesNotExist", 3).unwrap();
+    let result = blast_radius(&db, "DoesNotExist", 3, 500).unwrap();
     assert!(result.is_none());
 }
 
@@ -89,7 +89,7 @@ fn blast_radius_symbol_with_no_callers() {
         [fid],
     ).unwrap();
 
-    let result = blast_radius(&db, "Lonely", 5).unwrap().expect("symbol should exist");
+    let result = blast_radius(&db, "Lonely", 5, 500).unwrap().expect("symbol should exist");
     assert_eq!(result.center.name, "Lonely");
     assert!(result.affected.is_empty());
     assert_eq!(result.total_affected, 0);

@@ -36,13 +36,10 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
     }
 }
 
-/// Build a `HashSet<String>` from the primitives for a given language.
-/// Convenience wrapper for callers that need owned-string set membership.
-pub fn primitives_set_for_language(lang: &str) -> std::collections::HashSet<String> {
-    primitives_for_language(lang)
-        .iter()
-        .map(|s| s.to_string())
-        .collect()
+/// Build a `HashSet<&'static str>` from the primitives for a given language.
+/// Convenience wrapper for callers that need set membership checks.
+pub fn primitives_set_for_language(lang: &str) -> std::collections::HashSet<&'static str> {
+    primitives_for_language(lang).iter().copied().collect()
 }
 
 #[cfg(test)]

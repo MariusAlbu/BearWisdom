@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // types.rs  —  all data types shared across the crate
 //
 // Convention:
@@ -17,8 +17,12 @@ use serde::{Deserialize, Serialize};
 /// The syntactic kind of a symbol.
 ///
 /// C# adds Namespace, Field, Event, Delegate that v1 was missing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
+    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum SymbolKind {
     // Shared
     Class,
@@ -44,58 +48,21 @@ pub enum SymbolKind {
 
 impl SymbolKind {
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Class => "class",
-            Self::Struct => "struct",
-            Self::Interface => "interface",
-            Self::Enum => "enum",
-            Self::EnumMember => "enum_member",
-            Self::Method => "method",
-            Self::Constructor => "constructor",
-            Self::Property => "property",
-            Self::Field => "field",
-            Self::Namespace => "namespace",
-            Self::Event => "event",
-            Self::Delegate => "delegate",
-            Self::Function => "function",
-            Self::TypeAlias => "type_alias",
-            Self::Variable => "variable",
-            Self::Test => "test",
-        }
+        self.into()
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "class" => Some(Self::Class),
-            "struct" => Some(Self::Struct),
-            "interface" => Some(Self::Interface),
-            "enum" => Some(Self::Enum),
-            "enum_member" => Some(Self::EnumMember),
-            "method" => Some(Self::Method),
-            "constructor" => Some(Self::Constructor),
-            "property" => Some(Self::Property),
-            "field" => Some(Self::Field),
-            "namespace" => Some(Self::Namespace),
-            "event" => Some(Self::Event),
-            "delegate" => Some(Self::Delegate),
-            "function" => Some(Self::Function),
-            "type_alias" => Some(Self::TypeAlias),
-            "variable" => Some(Self::Variable),
-            "test" => Some(Self::Test),
-            _ => None,
-        }
-    }
-}
-
-impl std::fmt::Display for SymbolKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        s.parse().ok()
     }
 }
 
 /// Kinds of directed edges in the code graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize,
+    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum EdgeKind {
     /// A method/function calls another method/function.
     Calls,
@@ -121,44 +88,21 @@ pub enum EdgeKind {
 
 impl EdgeKind {
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Calls => "calls",
-            Self::Inherits => "inherits",
-            Self::Implements => "implements",
-            Self::TypeRef => "type_ref",
-            Self::Instantiates => "instantiates",
-            Self::Imports => "imports",
-            Self::HttpCall => "http_call",
-            Self::DbEntity => "db_entity",
-            Self::LspResolved => "lsp_resolved",
-        }
+        self.into()
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "calls" => Some(Self::Calls),
-            "inherits" => Some(Self::Inherits),
-            "implements" => Some(Self::Implements),
-            "type_ref" => Some(Self::TypeRef),
-            "instantiates" => Some(Self::Instantiates),
-            "imports" => Some(Self::Imports),
-            "http_call" => Some(Self::HttpCall),
-            "db_entity" => Some(Self::DbEntity),
-            "lsp_resolved" => Some(Self::LspResolved),
-            _ => None,
-        }
-    }
-}
-
-impl std::fmt::Display for EdgeKind {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(self.as_str())
+        s.parse().ok()
     }
 }
 
 /// C# and TypeScript visibility modifiers.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize,
+    strum::AsRefStr, strum::IntoStaticStr, strum::EnumString, strum::Display,
+)]
 #[serde(rename_all = "snake_case")]
+#[strum(serialize_all = "snake_case")]
 pub enum Visibility {
     Public,
     Private,
@@ -169,22 +113,11 @@ pub enum Visibility {
 
 impl Visibility {
     pub fn as_str(self) -> &'static str {
-        match self {
-            Self::Public => "public",
-            Self::Private => "private",
-            Self::Protected => "protected",
-            Self::Internal => "internal",
-        }
+        self.into()
     }
 
     pub fn from_str(s: &str) -> Option<Self> {
-        match s {
-            "public" => Some(Self::Public),
-            "private" => Some(Self::Private),
-            "protected" => Some(Self::Protected),
-            "internal" => Some(Self::Internal),
-            _ => None,
-        }
+        s.parse().ok()
     }
 }
 

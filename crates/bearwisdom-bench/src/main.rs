@@ -442,7 +442,7 @@ fn cmd_index(path: &Path, db_path: Option<&Path>) -> Result<()> {
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     let start = Instant::now();
-    let stats = full_index(&mut db, path, None, None)
+    let stats = full_index(&mut db, path, None, None, None)
         .with_context(|| format!("Failed to index {}", path.display()))?;
     let elapsed = start.elapsed();
 
@@ -465,7 +465,7 @@ fn cmd_incremental_index(path: &Path, db_path: &Path) -> Result<()> {
     let mut db = Database::open(db_path)
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
-    let stats = bearwisdom::incremental_index(&mut db, path)?;
+    let stats = bearwisdom::incremental_index(&mut db, path, None)?;
 
     println!("=== Incremental Index ===");
     println!("  Added:      {}", stats.files_added);
@@ -572,7 +572,7 @@ fn cmd_report(path: &Path, db_path: Option<&Path>) -> Result<()> {
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let t0 = Instant::now();
-    let stats = full_index(&mut db, path, None, None)
+    let stats = full_index(&mut db, path, None, None, None)
         .with_context(|| format!("Failed to index {}", path.display()))?;
     let index_duration = t0.elapsed();
 
@@ -675,7 +675,7 @@ fn cmd_blast_radius(symbol: &str, db_path: &Path, depth: u32) -> Result<()> {
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
-    let result = blast_radius_mod::blast_radius(&db, symbol, depth)?;
+    let result = blast_radius_mod::blast_radius(&db, symbol, depth, 500)?;
     let elapsed = start.elapsed();
 
     match result {

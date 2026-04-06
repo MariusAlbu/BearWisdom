@@ -9,6 +9,8 @@
 //! - `def` → Variable
 //! - `defmacro` → Function (macro)
 
+mod builtins;
+pub(crate) mod resolve;
 pub mod extract;
 
 #[cfg(test)]
@@ -60,5 +62,9 @@ impl LanguagePlugin for ClojurePlugin {
             "Object", "Class", "Symbol", "Keyword",
             "List", "Vector", "Map", "Set", "Seq", "Fn",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::ClojureResolver))
     }
 }

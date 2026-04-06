@@ -9,6 +9,8 @@
 //! - `module_definition` → Namespace
 //! - `open_module` → Imports edge
 
+mod builtins;
+pub(crate) mod resolve;
 pub mod extract;
 
 #[cfg(test)]
@@ -64,5 +66,9 @@ impl LanguagePlugin for OcamlPlugin {
             "list", "array", "option", "result",
             "int32", "int64", "nativeint",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::OcamlResolver))
     }
 }

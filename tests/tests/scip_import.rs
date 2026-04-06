@@ -160,7 +160,7 @@ fn symbol_end_line(db: &bearwisdom::Database, name: &str) -> i32 {
 fn test_scip_import_creates_edges() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     // Identify the paths and lines the indexer actually recorded.
     let svc_path = db_file_path(&db, "ProductService.cs");
@@ -284,7 +284,7 @@ fn test_scip_import_creates_edges() {
 fn test_scip_import_upgrades_confidence() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let svc_path = db_file_path(&db, "ProductService.cs");
     let repo_path = db_file_path(&db, "IProductRepository.cs");
@@ -421,7 +421,7 @@ fn test_scip_import_upgrades_confidence() {
 fn test_scip_import_idempotent() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let svc_path = db_file_path(&db, "ProductService.cs");
     let repo_path = db_file_path(&db, "IProductRepository.cs");
@@ -503,7 +503,7 @@ fn test_scip_import_idempotent() {
 fn test_scip_import_empty_index() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let edges_before = edge_count(&db);
 
@@ -536,7 +536,7 @@ fn test_scip_import_empty_index() {
 fn test_scip_import_unmatched_file_path() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let index = ScipIndex {
         metadata: Some(metadata_for(project.path())),

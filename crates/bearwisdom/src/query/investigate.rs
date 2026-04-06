@@ -137,7 +137,7 @@ pub fn investigate(
         .unwrap_or_default();
 
     // --- Blast radius ---
-    let blast_radius = blast_radius::blast_radius(db, symbol_name, opts.blast_depth)
+    let blast_radius = blast_radius::blast_radius(db, symbol_name, opts.blast_depth, 500)
         .ok()
         .flatten()
         .map(|br| BlastRadiusSlim {

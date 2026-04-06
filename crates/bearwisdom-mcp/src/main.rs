@@ -94,9 +94,10 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     let _bg_handle = tokio::task::spawn(async move {
         let idx_pool = bg_pool;
         let idx_project = bg_project;
+        let idx_ref_cache = idx_pool.ref_cache().clone();
         let index_result = tokio::task::spawn_blocking(move || {
             let mut db = idx_pool.get().expect("pool get for indexing");
-            bearwisdom::full_index(&mut db, &idx_project, None, None)
+            bearwisdom::full_index(&mut db, &idx_project, None, None, Some(&idx_ref_cache))
         })
         .await;
 

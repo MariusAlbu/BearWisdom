@@ -1,4 +1,6 @@
 // Existing modules.
+pub mod error;
+pub use error::{QueryError, QueryResult};
 pub mod cache;
 pub mod definitions;
 pub mod references;

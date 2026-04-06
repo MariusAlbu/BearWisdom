@@ -1,5 +1,5 @@
 # Build
-/target
+/target*
 web/dist/
 
 # Data
@@ -13,6 +13,7 @@ node_modules/
 
 # Benchmark output
 bench-archive/
+bench-results/
 
 # Local / session
 .claude/

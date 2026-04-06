@@ -32,7 +32,7 @@ pub fn generate_tasks(project_root: &Path, count_per_category: usize) -> Result<
     let db = if !db_path.exists() {
         tracing::info!("No index found — running full index on {}", project_root.display());
         let mut db = Database::open(&db_path).context("Failed to open database")?;
-        bearwisdom::full_index(&mut db, project_root, None, None)
+        bearwisdom::full_index(&mut db, project_root, None, None, None)
             .context("Failed to index project")?;
         db
     } else {
@@ -77,7 +77,7 @@ fn generate_impact_analysis(
     let mut tasks = Vec::new();
 
     for hotspot in &hotspots {
-        let br = blast_radius_mod::blast_radius(db, &hotspot.qualified_name, 3)
+        let br = blast_radius_mod::blast_radius(db, &hotspot.qualified_name, 3, 500)
             .with_context(|| format!("blast_radius failed for {}", hotspot.qualified_name))?;
 
         let (affected_names, affected_files) = match br {

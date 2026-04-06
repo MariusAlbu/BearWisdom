@@ -19,6 +19,7 @@ use crate::query::architecture::SymbolSummary;
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
+use std::sync::LazyLock;
 
 // ---------------------------------------------------------------------------
 // Result types
@@ -102,7 +103,7 @@ fn estimate_tokens(kind: &str) -> u32 {
 // ---------------------------------------------------------------------------
 
 /// Common English stop words that are useless as FTS5 symbol search terms.
-fn stop_words() -> HashSet<&'static str> {
+static STOP_WORDS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
     [
         "a", "an", "the", "is", "are", "to", "from", "with", "for", "of",
         "in", "on", "by", "and", "or", "not", "this", "that", "it", "be",
@@ -112,7 +113,7 @@ fn stop_words() -> HashSet<&'static str> {
     ]
     .into_iter()
     .collect()
-}
+});
 
 /// Multi-strategy seed collection.
 ///
@@ -137,12 +138,11 @@ fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::S
 
     // --- Strategy 2: per-keyword FTS5 ---
     if by_qn.is_empty() {
-        let stops = stop_words();
         let keywords: Vec<&str> = task
             .split_whitespace()
             .filter(|w| {
                 let lower = w.to_lowercase();
-                !stops.contains(lower.as_str())
+                !STOP_WORDS.contains(lower.as_str())
             })
             .collect();
 

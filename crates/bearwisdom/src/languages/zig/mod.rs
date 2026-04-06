@@ -19,6 +19,11 @@
 
 pub mod extract;
 
+mod builtins;
+pub(crate) mod resolve;
+
+pub use resolve::ZigResolver;
+
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
@@ -83,5 +88,9 @@ impl LanguagePlugin for ZigPlugin {
             "c_ushort", "c_uint", "c_ulong", "c_ulonglong",
             "c_char", "c_longdouble",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::ZigResolver))
     }
 }

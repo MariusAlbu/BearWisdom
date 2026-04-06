@@ -114,7 +114,7 @@ fn grep_respects_cancellation() {
 fn content_search_after_indexing() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     // Rebuild the FTS content index from the indexed files.
     let indexed = rebuild_content_index(db.conn(), project.path()).unwrap();
@@ -128,7 +128,7 @@ fn content_search_after_indexing() {
 fn content_search_short_query_returns_empty() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
     rebuild_content_index(db.conn(), project.path()).unwrap();
 
     // Queries shorter than 3 chars return empty (trigram minimum).
@@ -142,7 +142,7 @@ fn content_search_short_query_returns_empty() {
 fn fuzzy_match_files() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let index = FuzzyIndex::from_db(&db).unwrap();
     let matches = index.match_files("ProdServ", 10);
@@ -154,7 +154,7 @@ fn fuzzy_match_files() {
 fn fuzzy_match_symbols() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let index = FuzzyIndex::from_db(&db).unwrap();
     let matches = index.match_symbols("GetById", 10);
@@ -166,7 +166,7 @@ fn fuzzy_match_symbols() {
 fn fuzzy_empty_query_returns_nothing() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let index = FuzzyIndex::from_db(&db).unwrap();
     assert!(index.match_files("", 10).is_empty());

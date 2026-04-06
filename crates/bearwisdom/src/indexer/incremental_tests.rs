@@ -10,13 +10,13 @@ fn incremental_detects_new_file() {
     let mut db = Database::open_in_memory().unwrap();
 
     // Full index first.
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
     let count1: u32 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
 
     // Add a new file.
     fs::write(dir.path().join("b.cs"), "namespace App { class Bar {} }").unwrap();
 
-    let stats = incremental_index(&mut db, dir.path()).unwrap();
+    let stats = incremental_index(&mut db, dir.path(), None).unwrap();
     assert_eq!(stats.files_added, 1);
     assert_eq!(stats.files_unchanged, count1);
 
@@ -30,12 +30,12 @@ fn incremental_detects_modified_file() {
     fs::write(dir.path().join("a.cs"), "namespace App { class Foo {} }").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Modify the file.
     fs::write(dir.path().join("a.cs"), "namespace App { class Foo { void Bar() {} } }").unwrap();
 
-    let stats = incremental_index(&mut db, dir.path()).unwrap();
+    let stats = incremental_index(&mut db, dir.path(), None).unwrap();
     assert_eq!(stats.files_modified, 1);
     assert_eq!(stats.files_added, 0);
 }
@@ -47,12 +47,12 @@ fn incremental_detects_deleted_file() {
     fs::write(dir.path().join("b.cs"), "namespace App { class Bar {} }").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Delete one file.
     fs::remove_file(dir.path().join("b.cs")).unwrap();
 
-    let stats = incremental_index(&mut db, dir.path()).unwrap();
+    let stats = incremental_index(&mut db, dir.path(), None).unwrap();
     assert_eq!(stats.files_deleted, 1);
 
     let count: u32 = db.conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
@@ -65,9 +65,9 @@ fn incremental_no_changes_is_fast() {
     fs::write(dir.path().join("a.cs"), "namespace App { class Foo {} }").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
-    let stats = incremental_index(&mut db, dir.path()).unwrap();
+    let stats = incremental_index(&mut db, dir.path(), None).unwrap();
     assert_eq!(stats.files_added, 0);
     assert_eq!(stats.files_modified, 0);
     assert_eq!(stats.files_deleted, 0);
@@ -84,7 +84,7 @@ fn reindex_files_handles_single_create() {
     fs::write(dir.path().join("a.cs"), "namespace App { class Foo {} }").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Add a new file.
     fs::write(dir.path().join("b.cs"), "namespace App { class Bar {} }").unwrap();
@@ -94,7 +94,7 @@ fn reindex_files_handles_single_create() {
         change_kind: ChangeKind::Created,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_added, 1);
     assert_eq!(stats.files_modified, 0);
     assert_eq!(stats.files_deleted, 0);
@@ -112,7 +112,7 @@ fn reindex_files_handles_modify() {
     fs::write(dir.path().join("a.cs"), "namespace App { class Foo {} }").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Modify the file to add a method.
     fs::write(
@@ -126,7 +126,7 @@ fn reindex_files_handles_modify() {
         change_kind: ChangeKind::Modified,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_modified, 1);
 
     // Should have more symbols now (Foo + Bar method).
@@ -144,7 +144,7 @@ fn reindex_files_handles_delete() {
     fs::write(dir.path().join("b.cs"), "namespace App { class Bar {} }").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Delete one file from disk.
     fs::remove_file(dir.path().join("b.cs")).unwrap();
@@ -154,7 +154,7 @@ fn reindex_files_handles_delete() {
         change_kind: ChangeKind::Deleted,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_deleted, 1);
 
     let count: u32 = db
@@ -168,7 +168,7 @@ fn reindex_files_handles_delete() {
 fn reindex_files_skips_missing_created_file() {
     let dir = TempDir::new().unwrap();
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Report a created file that doesn't actually exist (race condition).
     let changes = vec![FileChangeEvent {
@@ -176,7 +176,7 @@ fn reindex_files_skips_missing_created_file() {
         change_kind: ChangeKind::Created,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_added, 0);
     assert_eq!(stats.files_modified, 0);
 }
@@ -187,14 +187,14 @@ fn reindex_files_skips_unsupported_extensions() {
     fs::write(dir.path().join("image.png"), "binary data").unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     let changes = vec![FileChangeEvent {
         relative_path: "image.png".to_string(),
         change_kind: ChangeKind::Modified,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_added, 0);
     assert_eq!(stats.files_modified, 0);
 }
@@ -203,7 +203,7 @@ fn reindex_files_skips_unsupported_extensions() {
 fn reindex_files_empty_changes_is_noop() {
     let dir = TempDir::new().unwrap();
     let mut db = Database::open_in_memory().unwrap();
-    let stats = reindex_files(&mut db, dir.path(), &[]).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &[], None).unwrap();
     assert_eq!(stats.files_added, 0);
     assert_eq!(stats.duration_ms, 0);
 }
@@ -233,7 +233,7 @@ fn blast_radius_reresolved_on_modify() {
     .unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Verify there's at least one edge from B → A.
     let edge_count_before: u32 = db
@@ -253,7 +253,7 @@ fn blast_radius_reresolved_on_modify() {
         change_kind: ChangeKind::Modified,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_modified, 1);
     // B should be re-resolved via blast radius.
     assert!(
@@ -292,7 +292,7 @@ fn blast_radius_reresolved_on_delete() {
     .unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Delete A.
     fs::remove_file(dir.path().join("a.cs")).unwrap();
@@ -302,7 +302,7 @@ fn blast_radius_reresolved_on_delete() {
         change_kind: ChangeKind::Deleted,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_deleted, 1);
     assert!(
         stats.files_reresolved >= 1,
@@ -325,7 +325,7 @@ fn blast_radius_resolves_previously_unresolved() {
     .unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Verify that MissingMethod is in unresolved_refs.
     let unresolved_before: u32 = db
@@ -353,7 +353,7 @@ fn blast_radius_resolves_previously_unresolved() {
         change_kind: ChangeKind::Created,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_added, 1);
     assert!(
         stats.files_reresolved >= 1,
@@ -378,7 +378,7 @@ fn blast_radius_zero_when_no_dependents() {
     .unwrap();
 
     let mut db = Database::open_in_memory().unwrap();
-    crate::indexer::full::full_index(&mut db, dir.path(), None, None).unwrap();
+    crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
 
     // Modify A — B has no references to A.
     fs::write(
@@ -392,7 +392,7 @@ fn blast_radius_zero_when_no_dependents() {
         change_kind: ChangeKind::Modified,
     }];
 
-    let stats = reindex_files(&mut db, dir.path(), &changes).unwrap();
+    let stats = reindex_files(&mut db, dir.path(), &changes, None).unwrap();
     assert_eq!(stats.files_modified, 1);
     assert_eq!(
         stats.files_reresolved, 0,

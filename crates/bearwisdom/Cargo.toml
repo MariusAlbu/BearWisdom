@@ -99,11 +99,15 @@ nucleo                 = { workspace = true }
 ort                    = { workspace = true }
 tokenizers             = { workspace = true }
 # Model directory resolution
-dirs                   = "5"
+dirs                   = { workspace = true }
 # SCIP import
 prost                  = { workspace = true }
 # LRU cache for query results and ref caching
 lru                    = { workspace = true }
+strum                  = { workspace = true }
+
+[features]
+lsp = []
 
 [dev-dependencies]
 tempfile               = "3"

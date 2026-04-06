@@ -2,6 +2,9 @@
 
 pub mod extract;
 
+mod builtins;
+pub(crate) mod resolve;
+
 #[cfg(test)]
 #[path = "extract_tests.rs"]
 mod extract_tests;
@@ -58,5 +61,9 @@ impl LanguagePlugin for BashPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::BashResolver))
     }
 }

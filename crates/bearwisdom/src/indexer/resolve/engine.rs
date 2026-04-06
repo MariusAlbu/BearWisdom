@@ -171,7 +171,7 @@ pub struct SymbolIndex {
     /// Primitive type names keyed by language id → set of primitive names.
     /// Built once from `primitives::primitives_for_language` for all languages
     /// present in the parsed files.
-    primitives_by_language: FxHashMap<String, HashSet<String>>,
+    primitives_by_language: FxHashMap<String, HashSet<&'static str>>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -475,7 +475,7 @@ impl SymbolIndex {
         };
 
         // Build per-language primitive sets for all languages present in parsed files.
-        let mut primitives_by_language: FxHashMap<String, HashSet<String>> =
+        let mut primitives_by_language: FxHashMap<String, HashSet<&'static str>> =
             FxHashMap::default();
         for pf in parsed {
             if !primitives_by_language.contains_key(&pf.language) {

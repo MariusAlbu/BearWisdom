@@ -18,7 +18,7 @@ namespace App {
         ).unwrap();
 
         let mut db = Database::open_in_memory().unwrap();
-        let stats = full_index(&mut db, dir.path(), None, None).unwrap();
+        let stats = full_index(&mut db, dir.path(), None, None, None).unwrap();
 
         assert!(stats.file_count >= 1, "No files indexed");
         assert!(stats.symbol_count >= 2, "Expected at least FooService + DoSomething");
@@ -33,7 +33,7 @@ namespace App {
         ).unwrap();
 
         let mut db = Database::open_in_memory().unwrap();
-        full_index(&mut db, dir.path(), None, None).unwrap();
+        full_index(&mut db, dir.path(), None, None, None).unwrap();
 
         let qname: String = db.conn.query_row(
             "SELECT qualified_name FROM symbols WHERE name = 'List'",
@@ -47,7 +47,7 @@ namespace App {
     fn index_empty_directory_produces_zero_stats() {
         let dir = TempDir::new().unwrap();
         let mut db = Database::open_in_memory().unwrap();
-        let stats = full_index(&mut db, dir.path(), None, None).unwrap();
+        let stats = full_index(&mut db, dir.path(), None, None, None).unwrap();
         assert_eq!(stats.file_count, 0);
         assert_eq!(stats.symbol_count, 0);
     }

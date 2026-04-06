@@ -146,7 +146,7 @@ async fn test_enrich_typescript_resolves_refs() {
     std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
     {
         let mut db = bearwisdom::Database::open(&db_path).expect("open index db");
-        full_index(&mut db, workspace_root, None, None).expect("full_index");
+        full_index(&mut db, workspace_root, None, None, None).expect("full_index");
     }
 
     let pool = DbPool::new(&db_path, 2).expect("DbPool::new");
@@ -217,7 +217,7 @@ async fn test_enrich_low_confidence_upgrade() {
     std::fs::create_dir_all(db_path.parent().unwrap()).unwrap();
     {
         let mut db = bearwisdom::Database::open(&db_path).expect("open index db");
-        full_index(&mut db, workspace_root, None, None).expect("full_index");
+        full_index(&mut db, workspace_root, None, None, None).expect("full_index");
     }
 
     let pool = DbPool::new(&db_path, 2).expect("DbPool::new");
@@ -350,7 +350,7 @@ async fn test_enrich_empty_unresolved() {
             std::process::id()
         ));
         let mut db = bearwisdom::Database::open(&db_path).expect("open db");
-        full_index(&mut db, workspace_root, None, None).expect("full_index");
+        full_index(&mut db, workspace_root, None, None, None).expect("full_index");
 
         // Copy symbols/files into the pool's DB so the schema is populated,
         // but we don't actually need them — we just need the tables to exist.

@@ -95,6 +95,9 @@ pub struct BlastRadiusParams {
     pub symbol: String,
     /// Max traversal depth (default: 2, max: 10)
     pub depth: Option<u32>,
+    /// Maximum number of affected symbols to return (default: 500, max: 5000).
+    /// When the cap is hit the response includes ``truncated: true``.
+    pub max_results: Option<u32>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -189,6 +192,62 @@ impl BearWisdomServer {
             );
         }
     }
+
+    /// Shared dispatch helper for tools that acquire a db connection.
+    ///
+    /// Handles timing, audit, and pool errors. The closure receives a `PoolGuard`
+    /// and returns `Ok(json_string)` on success or `Err(error_response_string)` on failure.
+    fn run_tool<P, F>(&self, tool_name: &str, params: &P, f: F) -> String
+    where
+        P: Serialize,
+        F: FnOnce(&bearwisdom::PoolGuard) -> Result<String, String>,
+    {
+        let t0 = std::time::Instant::now();
+        let params_json = serde_json::to_string(params).unwrap_or_default();
+        let db = match self.get_db() {
+            Ok(d) => d,
+            Err(e) => {
+                self.audit_call(tool_name, &params_json, &e, t0.elapsed().as_millis() as u64);
+                return e;
+            }
+        };
+        let result = f(&db).unwrap_or_else(|e| e);
+        self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
+        result
+    }
+
+    /// Shared dispatch helper for tools that do NOT need a db connection (e.g. bw_grep).
+    ///
+    /// Handles timing and audit only. The closure returns `Ok(json_string)` or
+    /// `Err(error_response_string)`.
+    fn run_tool_no_db<P, F>(&self, tool_name: &str, params: &P, f: F) -> String
+    where
+        P: Serialize,
+        F: FnOnce() -> Result<String, String>,
+    {
+        let t0 = std::time::Instant::now();
+        let params_json = serde_json::to_string(params).unwrap_or_default();
+        let result = f().unwrap_or_else(|e| e);
+        self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
+        result
+    }
+
+    /// Return an `Err(error_response)` for a missing/empty required input field.
+    /// Intended for use as an early-return inside a `run_tool` / `run_tool_no_db` closure.
+    fn invalid_input(message: &str) -> Result<String, String> {
+        Err(error_response("INVALID_INPUT", message))
+    }
+
+    /// Serialize a query result to JSON, mapping serialization failures to an error response.
+    fn to_json<T: Serialize>(value: &T) -> Result<String, String> {
+        serde_json::to_string(value)
+            .map_err(|e| error_response("SERIALIZATION_ERROR", &format!("{e}")))
+    }
+
+    /// Map an `anyhow::Error` from a query function to an error response string.
+    fn query_err(e: anyhow::Error) -> String {
+        error_response("QUERY_ERROR", &format!("{e}"))
+    }
 }
 
 #[tool_handler(router = self.tool_router)]
@@ -208,33 +267,19 @@ impl BearWisdomServer {
     /// Pass include_signature: true for full signatures. Use bw_grep for raw text search.
     #[tool(name = "bw_search")]
     fn search(&self, Parameters(params): Parameters<SearchParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.query.trim().is_empty() {
-            let r = error_response("INVALID_INPUT", "Query cannot be empty");
-            self.audit_call("bw_search", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_search", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_search", &params, |db| {
+            if params.query.trim().is_empty() {
+                return Self::invalid_input("Query cannot be empty");
             }
-        };
-        let limit = params.limit.unwrap_or(10);
-        let opts = QueryOptions {
-            include_signature: params.include_signature.unwrap_or(false),
-            ..QueryOptions::default()
-        };
-        let result = match bearwisdom::query::search::search_symbols(&db, &params.query, limit, &opts) {
-            Ok(results) => serde_json::to_string(&results)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_search", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let limit = params.limit.unwrap_or(10);
+            let opts = QueryOptions {
+                include_signature: params.include_signature.unwrap_or(false),
+                ..QueryOptions::default()
+            };
+            bearwisdom::query::search::search_symbols(db, &params.query, limit, &opts)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Fast substring or regex search across source files. Returns ~20 matching lines.
@@ -242,197 +287,115 @@ impl BearWisdomServer {
     /// Use bw_search for semantic symbol lookup.
     #[tool(name = "bw_grep")]
     fn grep(&self, Parameters(params): Parameters<GrepParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.pattern.is_empty() {
-            let r = error_response("INVALID_INPUT", "Pattern cannot be empty");
-            self.audit_call("bw_grep", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let mut scope = bearwisdom::search::scope::SearchScope::default();
-        if let Some(lang) = &params.language {
-            scope = scope.with_language(lang);
-        }
-        let options = bearwisdom::search::grep::GrepOptions {
-            regex: params.regex.unwrap_or(false),
-            case_sensitive: !params.case_insensitive.unwrap_or(false),
-            whole_word: params.whole_word.unwrap_or(false),
-            max_results: params.limit.unwrap_or(20),
-            scope,
-            context_lines: 0,
-        };
-        let result = match bearwisdom::search::grep::grep_search(
-            &self.project_root,
-            &params.pattern,
-            &options,
-            &cancelled,
-        ) {
-            Ok(mut results) => {
-                let max_len = params.max_line_length.unwrap_or(120);
-                bearwisdom::search::grep::truncate_matches(&mut results, max_len);
-                serde_json::to_string(&results)
-                    .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}")))
+        let root = self.project_root.clone();
+        self.run_tool_no_db("bw_grep", &params, || {
+            if params.pattern.is_empty() {
+                return Self::invalid_input("Pattern cannot be empty");
             }
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_grep", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let cancelled = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let mut scope = bearwisdom::search::scope::SearchScope::default();
+            if let Some(lang) = &params.language {
+                scope = scope.with_language(lang);
+            }
+            let options = bearwisdom::search::grep::GrepOptions {
+                regex: params.regex.unwrap_or(false),
+                case_sensitive: !params.case_insensitive.unwrap_or(false),
+                whole_word: params.whole_word.unwrap_or(false),
+                max_results: params.limit.unwrap_or(20),
+                scope,
+                context_lines: 0,
+            };
+            let mut results =
+                bearwisdom::search::grep::grep_search(&root, &params.pattern, &options, &cancelled)
+                    .map_err(|e| Self::query_err(anyhow::Error::from(e)))?;
+            let max_len = params.max_line_length.unwrap_or(120);
+            bearwisdom::search::grep::truncate_matches(&mut results, max_len);
+            Self::to_json(&results)
+        })
     }
 
     /// Get symbol details: location, edge counts, visibility. Returns slim output by default.
     /// Pass include_signature/include_doc/include_children: true for richer data.
     #[tool(name = "bw_symbol_info")]
     fn symbol_info(&self, Parameters(params): Parameters<SymbolInfoParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.name.is_empty() {
-            let r = error_response("INVALID_INPUT", "Symbol name cannot be empty");
-            self.audit_call("bw_symbol_info", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_symbol_info", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_symbol_info", &params, |db| {
+            if params.name.is_empty() {
+                return Self::invalid_input("Symbol name cannot be empty");
             }
-        };
-        let opts = QueryOptions {
-            include_signature: params.include_signature.unwrap_or(false),
-            include_doc: params.include_doc.unwrap_or(false),
-            include_children: params.include_children.unwrap_or(false),
-            ..QueryOptions::default()
-        };
-        let result = match bearwisdom::query::symbol_info::symbol_info(&db, &params.name, &opts) {
-            Ok(results) => serde_json::to_string(&results)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_symbol_info", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let opts = QueryOptions {
+                include_signature: params.include_signature.unwrap_or(false),
+                include_doc: params.include_doc.unwrap_or(false),
+                include_children: params.include_children.unwrap_or(false),
+                ..QueryOptions::default()
+            };
+            bearwisdom::query::symbol_info::symbol_info(db, &params.name, &opts)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Find all references to a symbol. Returns ~20 results with file, line, edge kind.
     #[tool(name = "bw_find_references")]
     fn find_references(&self, Parameters(params): Parameters<FindReferencesParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.name.is_empty() {
-            let r = error_response("INVALID_INPUT", "Symbol name cannot be empty");
-            self.audit_call("bw_find_references", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_find_references", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_find_references", &params, |db| {
+            if params.name.is_empty() {
+                return Self::invalid_input("Symbol name cannot be empty");
             }
-        };
-        let limit = params.limit.unwrap_or(20);
-        let result = match bearwisdom::query::references::find_references(&db, &params.name, limit) {
-            Ok(results) => serde_json::to_string(&results)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_find_references", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let limit = params.limit.unwrap_or(20);
+            bearwisdom::query::references::find_references(db, &params.name, limit)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Show call hierarchy: "in" = who calls this, "out" = what does this call. ~20 results.
     #[tool(name = "bw_call_hierarchy")]
     fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.name.is_empty() {
-            let r = error_response("INVALID_INPUT", "Symbol name cannot be empty");
-            self.audit_call("bw_call_hierarchy", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_call_hierarchy", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_call_hierarchy", &params, |db| {
+            if params.name.is_empty() {
+                return Self::invalid_input("Symbol name cannot be empty");
             }
-        };
-        let limit = params.limit.unwrap_or(20);
-        let query_result = match params.direction.as_deref() {
-            Some("out") => {
-                bearwisdom::query::call_hierarchy::outgoing_calls(&db, &params.name, limit)
-            }
-            _ => bearwisdom::query::call_hierarchy::incoming_calls(&db, &params.name, limit),
-        };
-        let result = match query_result {
-            Ok(items) => serde_json::to_string(&items)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_call_hierarchy", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let limit = params.limit.unwrap_or(20);
+            let query_result = match params.direction.as_deref() {
+                Some("out") => {
+                    bearwisdom::query::call_hierarchy::outgoing_calls(db, &params.name, limit)
+                }
+                _ => bearwisdom::query::call_hierarchy::incoming_calls(db, &params.name, limit),
+            };
+            query_result
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// List symbols in a file. Modes: "names" (minimal), "outline" (default), "full".
     #[tool(name = "bw_file_symbols")]
     fn file_symbols(&self, Parameters(params): Parameters<FileSymbolsParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.file_path.is_empty() {
-            let r = error_response("INVALID_INPUT", "file_path is required");
-            self.audit_call("bw_file_symbols", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_file_symbols", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_file_symbols", &params, |db| {
+            if params.file_path.is_empty() {
+                return Self::invalid_input("file_path is required");
             }
-        };
-        let mode = bearwisdom::query::symbol_info::FileSymbolsMode::from_str(
-            params.mode.as_deref().unwrap_or("outline"),
-        );
-        let result = match bearwisdom::query::symbol_info::file_symbols(&db, &params.file_path, mode) {
-            Ok(symbols) => serde_json::to_string(&symbols)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_file_symbols", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let mode = bearwisdom::query::symbol_info::FileSymbolsMode::from_str(
+                params.mode.as_deref().unwrap_or("outline"),
+            );
+            bearwisdom::query::symbol_info::file_symbols(db, &params.file_path, mode)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Blast radius: what breaks if this symbol changes? Default depth 2.
     #[tool(name = "bw_blast_radius")]
     fn blast_radius(&self, Parameters(params): Parameters<BlastRadiusParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.symbol.is_empty() {
-            let r = error_response("INVALID_INPUT", "Symbol name cannot be empty");
-            self.audit_call("bw_blast_radius", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_blast_radius", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_blast_radius", &params, |db| {
+            if params.symbol.is_empty() {
+                return Self::invalid_input("Symbol name cannot be empty");
             }
-        };
-        let depth = params.depth.unwrap_or(2).min(10).max(1);
-        let result = match bearwisdom::query::blast_radius::blast_radius(&db, &params.symbol, depth) {
-            Ok(result) => serde_json::to_string(&result)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_blast_radius", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let depth = params.depth.unwrap_or(2).min(10).max(1);
+            bearwisdom::query::blast_radius::blast_radius(db, &params.symbol, depth, 500)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// High-level project summary: languages, file/symbol counts, top hotspots, entry points.
@@ -441,144 +404,78 @@ impl BearWisdomServer {
         &self,
         Parameters(params): Parameters<ArchitectureParams>,
     ) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_architecture_overview", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
-            }
-        };
-        let result = match bearwisdom::query::architecture::get_overview(&db) {
-            Ok(report) => serde_json::to_string(&report)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_architecture_overview", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+        self.run_tool("bw_architecture_overview", &params, |db| {
+            bearwisdom::query::architecture::get_overview(db)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Get diagnostics for a file: unresolved symbols + low-confidence edges.
     #[tool(name = "bw_diagnostics")]
     fn diagnostics(&self, Parameters(params): Parameters<DiagnosticsParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.file_path.is_empty() {
-            let r = error_response("INVALID_INPUT", "file_path is required");
-            self.audit_call("bw_diagnostics", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_diagnostics", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_diagnostics", &params, |db| {
+            if params.file_path.is_empty() {
+                return Self::invalid_input("file_path is required");
             }
-        };
-        let threshold = params.confidence_threshold.unwrap_or(
-            bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
-        );
-        let result = match bearwisdom::query::diagnostics::get_diagnostics(&db, &params.file_path, threshold) {
-            Ok(result) => serde_json::to_string(&result)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_diagnostics", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let threshold = params.confidence_threshold.unwrap_or(
+                bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
+            );
+            bearwisdom::query::diagnostics::get_diagnostics(db, &params.file_path, threshold)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Auto-complete symbols at a cursor position. Returns scope-aware candidates ranked by distance and relevance.
     #[tool(name = "bw_complete")]
     fn complete_at(&self, Parameters(params): Parameters<CompleteAtParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_complete", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
-            }
-        };
-        let result = match bearwisdom::query::completion::complete_at(
-            &db,
-            &params.file_path,
-            params.line,
-            params.col,
-            &params.prefix,
-            params.include_signature.unwrap_or(false),
-        ) {
-            Ok(results) => serde_json::to_string(&results)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_complete", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+        self.run_tool("bw_complete", &params, |db| {
+            bearwisdom::query::completion::complete_at(
+                db,
+                &params.file_path,
+                params.line,
+                params.col,
+                &params.prefix,
+                params.include_signature.unwrap_or(false),
+            )
+            .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+            .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Build smart context for a task: returns the most relevant symbols, files, and concepts
     /// to include in the LLM context window. Uses semantic search + graph expansion + scoring.
     #[tool(name = "bw_context")]
     fn smart_context(&self, Parameters(params): Parameters<SmartContextParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.task.trim().is_empty() {
-            let r = error_response("INVALID_INPUT", "Task description cannot be empty");
-            self.audit_call("bw_context", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_context", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_context", &params, |db| {
+            if params.task.trim().is_empty() {
+                return Self::invalid_input("Task description cannot be empty");
             }
-        };
-        let budget = params.budget.unwrap_or(8000);
-        let depth = params.depth.unwrap_or(2);
-        let result = match bearwisdom::query::context::smart_context(&db, &params.task, budget, depth) {
-            Ok(result) => serde_json::to_string(&result)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_context", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let budget = params.budget.unwrap_or(8000);
+            let depth = params.depth.unwrap_or(2);
+            bearwisdom::query::context::smart_context(db, &params.task, budget, depth)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 
     /// Deep-dive a symbol in one call: info + callers + callees + blast radius.
     /// Use this instead of calling bw_symbol_info + bw_call_hierarchy + bw_blast_radius separately.
     #[tool(name = "bw_investigate")]
     fn investigate(&self, Parameters(params): Parameters<InvestigateParams>) -> String {
-        let t0 = std::time::Instant::now();
-        let params_json = serde_json::to_string(&params).unwrap_or_default();
-
-        if params.symbol.is_empty() {
-            let r = error_response("INVALID_INPUT", "Symbol name cannot be empty");
-            self.audit_call("bw_investigate", &params_json, &r, t0.elapsed().as_millis() as u64);
-            return r;
-        }
-        let db = match self.get_db() {
-            Ok(d) => d,
-            Err(e) => {
-                self.audit_call("bw_investigate", &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+        self.run_tool("bw_investigate", &params, |db| {
+            if params.symbol.is_empty() {
+                return Self::invalid_input("Symbol name cannot be empty");
             }
-        };
-        let opts = bearwisdom::query::investigate::InvestigateOptions {
-            caller_limit: params.caller_limit.unwrap_or(10),
-            callee_limit: params.callee_limit.unwrap_or(10),
-            blast_depth: params.blast_depth.unwrap_or(1),
-        };
-        let result = match bearwisdom::query::investigate::investigate(&db, &params.symbol, &opts) {
-            Ok(result) => serde_json::to_string(&result)
-                .unwrap_or_else(|e| error_response("SERIALIZATION_ERROR", &format!("{e}"))),
-            Err(e) => error_response("QUERY_ERROR", &format!("{e}")),
-        };
-        self.audit_call("bw_investigate", &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+            let opts = bearwisdom::query::investigate::InvestigateOptions {
+                caller_limit: params.caller_limit.unwrap_or(10),
+                callee_limit: params.callee_limit.unwrap_or(10),
+                blast_depth: params.blast_depth.unwrap_or(1),
+            };
+            bearwisdom::query::investigate::investigate(db, &params.symbol, &opts)
+                .map_err(|e| Self::query_err(anyhow::Error::from(e)))
+                .and_then(|r| Self::to_json(&r))
+        })
     }
 }

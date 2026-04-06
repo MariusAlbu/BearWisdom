@@ -5,6 +5,9 @@
 
 pub mod extract;
 
+mod builtins;
+pub(crate) mod resolve;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;
@@ -58,5 +61,9 @@ impl LanguagePlugin for RLangPlugin {
             "logical", "list", "vector", "matrix", "data.frame",
             "factor", "NULL", "NA", "TRUE", "FALSE", "Inf", "NaN",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::RResolver))
     }
 }

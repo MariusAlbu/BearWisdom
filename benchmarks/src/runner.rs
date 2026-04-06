@@ -591,7 +591,7 @@ impl Runner {
             Ok(d) => d,
             Err(_) => return r#"{"error": "pool connection failed"}"#.to_owned(),
         };
-        match blast_radius_mod::blast_radius(&db, &symbol, depth) {
+        match blast_radius_mod::blast_radius(&db, &symbol, depth, 500) {
             Ok(result) => serde_json::to_string(&result)
                 .unwrap_or_else(|e| format!("{{\"error\": \"{e}\"}}")),
             Err(e) => format!("{{\"error\": \"{e}\"}}"),

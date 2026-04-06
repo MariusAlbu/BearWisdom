@@ -234,7 +234,7 @@ fn index_project(root: &Path, pool_state: &crate::db::PoolState) -> anyhow::Resu
         }));
     }
 
-    let stats = bearwisdom::full_index(&mut db, root, None, None)?;
+    let stats = bearwisdom::full_index(&mut db, root, None, None, None)?;
     let _ = bearwisdom::query::concepts::discover_concepts(&db);
     let _ = bearwisdom::query::concepts::auto_assign_concepts(&db);
 
@@ -629,6 +629,7 @@ pub async fn get_blast_radius(
                 &db,
                 &params.symbol,
                 params.depth,
+                500,
             ) {
                 Ok(result) => ok_json(result).into_response(),
                 Err(e) => err_json(e).into_response(),

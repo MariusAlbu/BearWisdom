@@ -96,4 +96,8 @@ impl LanguagePlugin for CLangPlugin {
     fn builtin_type_names(&self) -> &[&str] {
         &["int", "char", "void", "float", "double", "short", "long", "unsigned", "signed", "size_t", "bool", "auto"]
     }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::CLangResolver))
+    }
 }

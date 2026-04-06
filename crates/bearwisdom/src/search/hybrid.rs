@@ -21,7 +21,7 @@
 // fall back to FTS5-only with vector_rank absent from the RRF sum.
 // =============================================================================
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use anyhow::{Context, Result};
 use rusqlite::params;
@@ -118,7 +118,7 @@ pub fn hybrid_search(
 
     // --- Collect candidate chunk IDs ---
     // Union of chunks from text-matching files and KNN-matched chunk IDs.
-    let mut candidate_chunk_ids: Vec<i64> = Vec::new();
+    let mut candidate_chunk_ids: HashSet<i64> = HashSet::new();
 
     for path in text_file_rank.keys() {
         let ids = chunk_ids_for_file_path(&db.conn, path)?;
@@ -126,13 +126,11 @@ pub fn hybrid_search(
     }
 
     for &chunk_id in vec_chunk_rank.keys() {
-        if !candidate_chunk_ids.contains(&chunk_id) {
-            candidate_chunk_ids.push(chunk_id);
-        }
+        candidate_chunk_ids.insert(chunk_id);
     }
 
+    let mut candidate_chunk_ids: Vec<i64> = candidate_chunk_ids.into_iter().collect();
     candidate_chunk_ids.sort_unstable();
-    candidate_chunk_ids.dedup();
 
     // --- RRF merge at chunk level ---
     let mut scored: Vec<(i64, f64, Option<u32>, Option<u32>)> = candidate_chunk_ids

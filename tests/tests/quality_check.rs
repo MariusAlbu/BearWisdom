@@ -124,7 +124,7 @@ fn compare_against_baseline(
 fn index_on_disk(project: &TestProject) -> Database {
     let db_path = resolve_db_path(project.path()).unwrap();
     let mut db = Database::open_with_vec(&db_path).unwrap();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
     // Re-open read-only style (connection already has the data).
     db
 }

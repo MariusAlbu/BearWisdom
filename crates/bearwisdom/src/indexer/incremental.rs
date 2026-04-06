@@ -16,6 +16,7 @@
 use crate::db::Database;
 use crate::indexer::changeset::{self, ChangeSet};
 use crate::indexer::full;
+use crate::indexer::ref_cache::RefCache;
 use crate::indexer::resolve;
 use crate::indexer::write;
 use crate::languages;
@@ -24,6 +25,7 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use std::collections::HashSet;
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -59,12 +61,13 @@ pub struct IncrementalStats {
 pub fn incremental_index(
     db: &mut Database,
     project_root: &Path,
+    ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IncrementalStats> {
     let start = Instant::now();
     info!("Starting incremental index (HashDiff) of {}", project_root.display());
 
     let cs = changeset::hash_diff(db, project_root)?;
-    run_incremental_pipeline(db, project_root, cs, start)
+    run_incremental_pipeline(db, project_root, cs, start, ref_cache)
 }
 
 /// Incrementally update the index using git diff change detection.
@@ -75,12 +78,13 @@ pub fn incremental_index(
 pub fn git_reindex(
     db: &mut Database,
     project_root: &Path,
+    ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IncrementalStats> {
     let start = Instant::now();
     info!("Starting incremental index (GitDiff) of {}", project_root.display());
 
     let cs = changeset::git_diff(db, project_root)?;
-    run_incremental_pipeline(db, project_root, cs, start)
+    run_incremental_pipeline(db, project_root, cs, start, ref_cache)
 }
 
 /// Re-index specific files from IDE/watcher events.
@@ -91,6 +95,7 @@ pub fn reindex_files(
     db: &mut Database,
     project_root: &Path,
     changes: &[FileChangeEvent],
+    ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IncrementalStats> {
     let start = Instant::now();
 
@@ -101,7 +106,7 @@ pub fn reindex_files(
     info!("Targeted reindex: {} file changes", changes.len());
 
     let cs = changeset::from_file_events(project_root, changes)?;
-    run_incremental_pipeline(db, project_root, cs, start)
+    run_incremental_pipeline(db, project_root, cs, start, ref_cache)
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +129,7 @@ fn run_incremental_pipeline(
     project_root: &Path,
     cs: ChangeSet,
     start: Instant,
+    ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IncrementalStats> {
     let mut stats = IncrementalStats {
         files_added: cs.added.len() as u32,
@@ -163,12 +169,13 @@ fn run_incremental_pipeline(
     }
 
     // --- Step 3: Invalidate ref cache ---
-    if let Some(ref_cache) = db.ref_cache.as_mut() {
+    if let Some(rc) = ref_cache {
+        let mut guard = rc.lock().unwrap();
         for path in &cs.deleted {
-            ref_cache.invalidate(path);
+            guard.invalidate(path);
         }
         for w in cs.added.iter().chain(cs.modified.iter()) {
-            ref_cache.invalidate(&w.relative_path);
+            guard.invalidate(&w.relative_path);
         }
     }
 
@@ -177,7 +184,7 @@ fn run_incremental_pipeline(
     let registry = languages::default_registry();
     let parse_results: Vec<Result<ParsedFile>> = files_to_parse
         .par_iter()
-        .map(|w| full::parse_file(w, &registry))
+        .map(|w| full::parse_file(w, registry))
         .collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files_to_parse.len());
@@ -255,7 +262,7 @@ fn run_incremental_pipeline(
 
         let affected_results: Vec<Result<ParsedFile>> = affected_walked
             .par_iter()
-            .map(|w| full::parse_file(w, &registry))
+            .map(|w| full::parse_file(w, registry))
             .collect();
 
         let mut affected_parsed: Vec<ParsedFile> = Vec::new();
@@ -329,6 +336,9 @@ fn run_incremental_pipeline(
 /// edges pointing TO symbols in the source files.  These dependents need
 /// re-resolution when source files are modified or deleted, because CASCADE
 /// will delete the edges when the target symbols are replaced.
+///
+/// Uses a temp table to batch all paths into a single 6-way JOIN, avoiding
+/// an N-query loop.
 fn find_dependent_files(
     db: &Database,
     source_paths: &HashSet<String>,
@@ -337,33 +347,48 @@ fn find_dependent_files(
         return Ok(HashSet::new());
     }
 
-    let mut dependents = HashSet::new();
+    db.conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _changed_paths (path TEXT PRIMARY KEY)",
+        [],
+    )?;
+    db.conn.execute("DELETE FROM _changed_paths", [])?;
 
-    for path in source_paths {
-        let mut stmt = db.conn.prepare(
-            "SELECT DISTINCT f_dep.path
-             FROM edges e
-             JOIN symbols s_target ON e.target_id = s_target.id
-             JOIN files   f_target ON s_target.file_id = f_target.id
-             JOIN symbols s_dep    ON e.source_id = s_dep.id
-             JOIN files   f_dep    ON s_dep.file_id = f_dep.id
-             WHERE f_target.path = ?1",
-        )?;
-        let rows = stmt.query_map([path], |r| r.get::<_, String>(0))?;
-        for row in rows {
-            let dep_path = row?;
-            if !source_paths.contains(&dep_path) {
-                dependents.insert(dep_path);
-            }
+    {
+        let mut ins = db
+            .conn
+            .prepare("INSERT OR IGNORE INTO _changed_paths (path) VALUES (?1)")?;
+        for path in source_paths {
+            ins.execute([path.as_str()])?;
         }
     }
 
+    let mut stmt = db.conn.prepare(
+        "SELECT DISTINCT f_dep.path
+         FROM edges e
+         JOIN symbols s_target ON e.target_id = s_target.id
+         JOIN files   f_target ON s_target.file_id = f_target.id
+         JOIN symbols s_dep    ON e.source_id = s_dep.id
+         JOIN files   f_dep    ON s_dep.file_id = f_dep.id
+         JOIN _changed_paths cp ON cp.path = f_target.path
+         WHERE f_dep.path NOT IN (SELECT path FROM _changed_paths)",
+    )?;
+
+    let mut dependents = HashSet::new();
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    for row in rows {
+        dependents.insert(row?);
+    }
+
+    db.conn.execute("DELETE FROM _changed_paths", [])?;
     Ok(dependents)
 }
 
 /// Find files with unresolved references whose `target_name` matches any of
 /// the given symbol names.  These files may now be resolvable because the
 /// target symbols have been added or restored.
+///
+/// Uses a temp table to batch all names into a single JOIN, avoiding an
+/// N-query loop.
 fn find_newly_resolvable_files(
     db: &Database,
     symbol_names: &HashSet<String>,
@@ -373,25 +398,54 @@ fn find_newly_resolvable_files(
         return Ok(HashSet::new());
     }
 
-    let mut resolvable = HashSet::new();
+    db.conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _changed_names (name TEXT PRIMARY KEY)",
+        [],
+    )?;
+    db.conn.execute("DELETE FROM _changed_names", [])?;
 
-    for name in symbol_names {
-        let mut stmt = db.conn.prepare(
-            "SELECT DISTINCT f.path
-             FROM unresolved_refs ur
-             JOIN symbols s ON ur.source_id = s.id
-             JOIN files   f ON s.file_id = f.id
-             WHERE ur.target_name = ?1",
-        )?;
-        let rows = stmt.query_map([name.as_str()], |r| r.get::<_, String>(0))?;
-        for row in rows {
-            let path = row?;
-            if !exclude_paths.contains(&path) {
-                resolvable.insert(path);
-            }
+    {
+        let mut ins = db
+            .conn
+            .prepare("INSERT OR IGNORE INTO _changed_names (name) VALUES (?1)")?;
+        for name in symbol_names {
+            ins.execute([name.as_str()])?;
         }
     }
 
+    // Exclude paths that were themselves changed — they are re-parsed directly.
+    db.conn.execute(
+        "CREATE TEMP TABLE IF NOT EXISTS _exclude_paths (path TEXT PRIMARY KEY)",
+        [],
+    )?;
+    db.conn.execute("DELETE FROM _exclude_paths", [])?;
+
+    {
+        let mut ins = db
+            .conn
+            .prepare("INSERT OR IGNORE INTO _exclude_paths (path) VALUES (?1)")?;
+        for path in exclude_paths {
+            ins.execute([path.as_str()])?;
+        }
+    }
+
+    let mut stmt = db.conn.prepare(
+        "SELECT DISTINCT f.path
+         FROM unresolved_refs ur
+         JOIN symbols s ON ur.source_id = s.id
+         JOIN files   f ON s.file_id = f.id
+         JOIN _changed_names cn ON cn.name = ur.target_name
+         WHERE f.path NOT IN (SELECT path FROM _exclude_paths)",
+    )?;
+
+    let mut resolvable = HashSet::new();
+    let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;
+    for row in rows {
+        resolvable.insert(row?);
+    }
+
+    db.conn.execute("DELETE FROM _changed_names", [])?;
+    db.conn.execute("DELETE FROM _exclude_paths", [])?;
     Ok(resolvable)
 }
 

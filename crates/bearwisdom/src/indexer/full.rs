@@ -13,6 +13,7 @@
 
 use crate::db::Database;
 use crate::indexer::changeset;
+use crate::indexer::ref_cache::RefCache;
 use crate::indexer::resolve;
 use crate::indexer::write;
 use crate::languages::{self, LanguageRegistry};
@@ -22,6 +23,7 @@ use anyhow::{Context, Result};
 use rayon::prelude::*;
 use sha2::{Digest, Sha256};
 use std::path::Path;
+use std::sync::{Arc, Mutex};
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
@@ -54,6 +56,7 @@ pub fn full_index(
     project_root: &Path,
     progress: Option<ProgressFn>,
     pre_walked: Option<Vec<WalkedFile>>,
+    ref_cache: Option<&Arc<Mutex<RefCache>>>,
 ) -> Result<IndexStats> {
     let emit = |step: &str, pct: f64, detail: Option<&str>| {
         if let Some(ref cb) = progress {
@@ -133,7 +136,7 @@ pub fn full_index(
     let files = cs.added; // FullScan puts everything in `added`
     emit("parsing", 0.0, Some(&format!("0/{} files", files.len())));
     let results: Vec<Result<ParsedFile>> =
-        files.par_iter().map(|w| parse_file(w, &registry)).collect();
+        files.par_iter().map(|w| parse_file(w, registry)).collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
     let mut files_with_errors = 0u32;
@@ -254,11 +257,14 @@ pub fn full_index(
         stats.db_mapping_count,
     );
 
-    // Populate the ref cache (if the caller opted in) so incremental reindex
-    // can skip re-parsing unchanged dependent files on the next pass.
-    if let Some(ref_cache) = db.ref_cache.as_mut() {
-        ref_cache.store_all(&parsed);
-        tracing::debug!("RefCache populated: {} files", parsed.len());
+    // Populate the pool-level ref cache (if the caller supplied one) so
+    // incremental reindex can skip re-parsing unchanged dependent files on the
+    // next pass.  The lock is held only long enough to drain parsed into the
+    // cache; the pool connection that ran full_index is irrelevant after this.
+    if let Some(rc) = ref_cache {
+        let mut guard = rc.lock().unwrap();
+        guard.store_all(&parsed);
+        debug!("RefCache populated: {} files", parsed.len());
     }
 
     Ok(stats)
@@ -269,15 +275,18 @@ pub fn full_index(
 // ---------------------------------------------------------------------------
 
 pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
-    let content = std::fs::read_to_string(&walked.absolute_path)
+    let bytes = std::fs::read(&walked.absolute_path)
         .with_context(|| format!("Cannot read {}", walked.relative_path))?;
 
     // SHA-256 of the raw bytes for change detection.
     let hash = {
         let mut hasher = Sha256::new();
-        hasher.update(content.as_bytes());
+        hasher.update(&bytes);
         format!("{:x}", hasher.finalize())
     };
+
+    let content = String::from_utf8(bytes)
+        .with_context(|| format!("Non-UTF-8 content in {}", walked.relative_path))?;
 
     let size = content.len() as u64;
     let line_count = content.lines().count() as u32;

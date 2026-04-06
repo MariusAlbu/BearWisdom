@@ -15,11 +15,12 @@
 //! 1. Create `languages/<lang>/mod.rs` with a struct implementing [`LanguagePlugin`]
 //! 2. Add extraction logic in `extract.rs` (and sub-files as needed)
 //! 3. Optionally add a resolver in `resolve.rs` implementing `LanguageResolver`
+//!    and return it from [`LanguagePlugin::resolver()`]
 //! 4. Register the plugin in [`default_registry()`]
-//! 5. Register the resolver (if any) in [`default_resolvers()`]
 
 pub mod registry;
 
+use crate::indexer::resolve::engine::LanguageResolver;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
 
@@ -82,13 +83,19 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// here tells the coverage walker to skip inner apply nodes whose parent is also
     /// an apply.
     fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] { &[] }
+
+    /// Return the language resolver for this plugin, if one exists.
+    ///
+    /// This ties plugin and resolver together — no separate registration list.
+    /// The engine collects resolvers by calling this on every registered plugin.
+    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> { None }
 }
 
 // ---------------------------------------------------------------------------
 // Built-in plugin registration
 // ---------------------------------------------------------------------------
 
-use std::sync::Arc;
+use std::sync::{Arc, LazyLock};
 
 pub mod angular;
 pub mod astro;
@@ -153,12 +160,7 @@ pub mod erlang;
 pub mod fsharp;
 pub mod gdscript;
 
-/// Build the default language registry with all built-in plugins.
-///
-/// During the migration period, this coexists with the match statement in
-/// `indexer/full.rs`. Once all languages are migrated, the match disappears
-/// and this becomes the sole dispatch mechanism.
-pub fn default_registry() -> LanguageRegistry {
+static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     // The generic plugin handles any language with a tree-sitter grammar
     // but no dedicated extractor.
     let generic = Arc::new(GenericPlugin);
@@ -227,29 +229,28 @@ pub fn default_registry() -> LanguageRegistry {
     reg.register(Arc::new(gdscript::GDScriptPlugin));
 
     reg
+});
+
+/// Return a reference to the shared default language registry.
+///
+/// The registry is built once on first access (all 59 plugins + lookup map)
+/// and reused for the lifetime of the process. During the migration period
+/// this coexists with the match statement in `indexer/full.rs`; once all
+/// languages are migrated, the match disappears and this becomes the sole
+/// dispatch mechanism.
+pub fn default_registry() -> &'static LanguageRegistry {
+    &DEFAULT_REGISTRY
 }
 
-/// Collect language-specific resolvers from all language modules.
+/// Collect language-specific resolvers from all registered plugins.
 ///
-/// During migration, this coexists with `indexer::resolve::rules::default_resolvers()`.
-/// Once all resolvers are migrated, this replaces it.
-pub fn default_resolvers() -> Vec<Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-    vec![
-        Arc::new(c_lang::CLangResolver),
-        Arc::new(csharp::CSharpResolver),
-        Arc::new(dart::DartResolver),
-        Arc::new(elixir::ElixirResolver),
-        Arc::new(go::GoResolver),
-        Arc::new(java::JavaResolver),
-        Arc::new(kotlin::KotlinResolver),
-        Arc::new(php::PhpResolver),
-        Arc::new(python::PythonResolver),
-        Arc::new(ruby::RubyResolver),
-        Arc::new(rust_lang::RustResolver),
-        Arc::new(scala::ScalaResolver),
-        Arc::new(swift::SwiftResolver),
-        Arc::new(typescript::TypeScriptResolver),
-    ]
+/// Derived from `LanguagePlugin::resolver()` — no separate list to maintain.
+pub fn default_resolvers() -> Vec<Arc<dyn LanguageResolver>> {
+    default_registry()
+        .all()
+        .iter()
+        .filter_map(|plugin| plugin.resolver())
+        .collect()
 }
 
 // ---------------------------------------------------------------------------

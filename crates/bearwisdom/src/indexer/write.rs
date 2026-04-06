@@ -47,34 +47,25 @@ pub fn write_parsed_files(
     let mut symbol_id_map: SymbolIdMap = HashMap::new();
 
     for pf in parsed {
-        // Upsert file row.
-        tx.prepare_cached(
-            "INSERT INTO files (path, hash, language, last_indexed, mtime, size)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6)
-             ON CONFLICT(path) DO UPDATE SET
-               hash = excluded.hash,
-               language = excluded.language,
-               last_indexed = excluded.last_indexed,
-               mtime = excluded.mtime,
-               size = excluded.size",
-        )
-        .context("Failed to prepare file upsert")?
-        .execute(rusqlite::params![
-            pf.path,
-            pf.content_hash,
-            pf.language,
-            now,
-            pf.mtime,
-            pf.size as i64,
-        ])
-        .with_context(|| format!("Failed to upsert file {}", pf.path))?;
-
-        // Re-fetch ID (last_insert_rowid returns 0 on UPDATE on some platforms).
+        // Upsert file row and capture the assigned id via RETURNING.
         let file_id: i64 = tx
-            .prepare_cached("SELECT id FROM files WHERE path = ?1")
-            .context("Failed to prepare file id select")?
-            .query_row([&pf.path], |r| r.get(0))
-            .with_context(|| format!("Failed to get file_id for {}", pf.path))?;
+            .prepare_cached(
+                "INSERT INTO files (path, hash, language, last_indexed, mtime, size)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+                 ON CONFLICT(path) DO UPDATE SET
+                   hash = excluded.hash,
+                   language = excluded.language,
+                   last_indexed = excluded.last_indexed,
+                   mtime = excluded.mtime,
+                   size = excluded.size
+                 RETURNING id",
+            )
+            .context("Failed to prepare file upsert")?
+            .query_row(
+                rusqlite::params![pf.path, pf.content_hash, pf.language, now, pf.mtime, pf.size as i64],
+                |r| r.get(0),
+            )
+            .with_context(|| format!("Failed to upsert file {}", pf.path))?;
 
         file_id_map.insert(pf.path.clone(), file_id);
 

@@ -10,6 +10,8 @@
 //! - `export_attribute` → marks functions as public
 //! - `import_attribute` / `pp_include` → Imports
 
+mod builtins;
+pub(crate) mod resolve;
 pub mod extract;
 
 #[cfg(test)]
@@ -64,5 +66,9 @@ impl LanguagePlugin for ErlangPlugin {
             "iolist", "iodata", "string", "char", "byte", "timeout",
             "any", "none", "term", "number",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::ErlangResolver))
     }
 }

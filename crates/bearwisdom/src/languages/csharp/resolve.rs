@@ -29,7 +29,7 @@ pub struct CSharpResolver;
 
 impl LanguageResolver for CSharpResolver {
     fn language_ids(&self) -> &[&str] {
-        &["csharp"]
+        &["csharp", "vbnet"]
     }
 
     fn build_file_context(

@@ -1,0 +1,119 @@
+// =============================================================================
+// matlab/resolve.rs — MATLAB resolution rules
+//
+// MATLAB module system:
+//   - No explicit import statements in general code.
+//   - `addpath('dir')` adds a directory to the search path at runtime.
+//   - Each .m file defines one primary function or a classdef.
+//   - Package directories are prefixed with `+`: `+mypackage/MyClass.m`.
+//   - Within a classdef, methods reference other methods by name directly.
+//
+// Resolution strategy:
+//   1. Scope chain walk (class method → class → file).
+//   2. Same-file symbols (nested functions, local helpers).
+//   3. Project-wide name lookup (each .m file is a callable unit).
+// =============================================================================
+
+use super::builtins;
+use crate::indexer::resolve::engine::{
+    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+};
+use crate::indexer::project_context::ProjectContext;
+use crate::types::{EdgeKind, ParsedFile};
+
+/// MATLAB language resolver.
+pub struct MatlabResolver;
+
+impl LanguageResolver for MatlabResolver {
+    fn language_ids(&self) -> &[&str] {
+        &["matlab"]
+    }
+
+    fn build_file_context(
+        &self,
+        file: &ParsedFile,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> FileContext {
+        let mut imports = Vec::new();
+
+        // MATLAB uses addpath() rather than import directives, but the extractor
+        // may emit EdgeKind::Imports for `import pkg.*` (OOP MATLAB). Collect
+        // those here so downstream steps can use them.
+        for r in &file.refs {
+            if r.kind != EdgeKind::Imports {
+                continue;
+            }
+            let module_path = r.module.clone().or_else(|| Some(r.target_name.clone()));
+            imports.push(ImportEntry {
+                imported_name: r.target_name.clone(),
+                module_path,
+                alias: None,
+                is_wildcard: r.target_name.ends_with(".*"),
+            });
+        }
+
+        FileContext {
+            file_path: file.path.clone(),
+            language: "matlab".to_string(),
+            imports,
+            file_namespace: None,
+        }
+    }
+
+    fn resolve(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+
+        if edge_kind == EdgeKind::Imports {
+            return None;
+        }
+
+        // MATLAB builtins are never in the index.
+        if builtins::is_matlab_builtin(target) {
+            return None;
+        }
+
+        // Step 1: Scope chain walk (e.g., classdef method resolution).
+        for scope in &ref_ctx.scope_chain {
+            let candidate = format!("{scope}.{target}");
+            if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "matlab_scope_chain",
+                    });
+                }
+            }
+        }
+
+        // Step 2: Same-file resolution (nested functions, local helpers).
+        for sym in lookup.in_file(&file_ctx.file_path) {
+            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "matlab_same_file",
+                });
+            }
+        }
+
+        // Step 3: Project-wide name lookup (each .m file is a callable unit).
+        for sym in lookup.by_name(target) {
+            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: "matlab_by_name",
+                });
+            }
+        }
+
+        None
+    }
+}

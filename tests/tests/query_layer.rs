@@ -21,7 +21,7 @@ use bearwisdom_tests::TestProject;
 fn indexed_csharp_db() -> Database {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
     db
 }
 
@@ -119,7 +119,7 @@ fn symbol_info_returns_detail() {
 #[test]
 fn blast_radius_from_model() {
     let db = indexed_csharp_db();
-    let result = blast_radius(&db, "Product", 3).unwrap();
+    let result = blast_radius(&db, "Product", 3, 500).unwrap();
 
     // Product is used by repository and service, so blast radius should exist.
     if let Some(br) = result {
@@ -133,7 +133,7 @@ fn blast_radius_from_model() {
 #[test]
 fn blast_radius_unknown_symbol() {
     let db = indexed_csharp_db();
-    let result = blast_radius(&db, "CompletelyUnknown", 3).unwrap();
+    let result = blast_radius(&db, "CompletelyUnknown", 3, 500).unwrap();
     assert!(result.is_none());
 }
 
@@ -206,7 +206,7 @@ fn auto_assign_and_discover_concepts() {
 fn query_multi_lang_overview() {
     let project = TestProject::multi_lang();
     let mut db = TestProject::in_memory_db();
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let overview = get_overview(&db).unwrap();
     assert!(overview.languages.len() >= 2, "should detect multiple languages");

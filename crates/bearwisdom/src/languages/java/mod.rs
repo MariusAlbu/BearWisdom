@@ -92,4 +92,8 @@ impl LanguagePlugin for JavaPlugin {
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::JavaResolver))
+    }
 }

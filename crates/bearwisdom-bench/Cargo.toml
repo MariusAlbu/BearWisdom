@@ -14,7 +14,7 @@ name = "bearwisdom-bench"
 path = "src/main.rs"
 
 [dependencies]
-bearwisdom        = { path = "../bearwisdom" }
+bearwisdom        = { path = "../bearwisdom", features = ["lsp"] }
 rusqlite          = { workspace = true }
 sqlite-vec        = { workspace = true }
 anyhow            = { workspace = true }

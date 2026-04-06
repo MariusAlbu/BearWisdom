@@ -4,6 +4,8 @@
 //! Extraction covers top-level functions, data/newtype, type classes, instances,
 //! type synonyms, imports, and function-application calls.
 
+mod builtins;
+pub(crate) mod resolve;
 pub mod extract;
 
 use crate::languages::LanguagePlugin;
@@ -65,5 +67,9 @@ impl LanguagePlugin for HaskellPlugin {
             "Word8", "Word16", "Word32", "Word64",
             "Natural", "Rational", "Complex",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::HaskellResolver))
     }
 }

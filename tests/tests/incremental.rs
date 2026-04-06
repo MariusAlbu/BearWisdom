@@ -13,7 +13,7 @@ fn incremental_detects_new_file() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
 
-    let stats1 = full_index(&mut db, project.path(), None, None).unwrap();
+    let stats1 = full_index(&mut db, project.path(), None, None, None).unwrap();
     let count_before = stats1.symbol_count;
 
     // Add a new file after the initial index.
@@ -27,7 +27,7 @@ namespace MyApp.Services
 }
 "#);
 
-    let stats2 = incremental_index(&mut db, project.path()).unwrap();
+    let stats2 = incremental_index(&mut db, project.path(), None).unwrap();
 
     // The new file should contribute at least one new symbol.
     let overview = get_overview(&db).unwrap();
@@ -44,7 +44,7 @@ fn incremental_detects_modified_file() {
     let project = TestProject::python_app();
     let mut db = TestProject::in_memory_db();
 
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     // Modify an existing file — add a new class.
     let path = project.path().join("models.py");
@@ -57,7 +57,7 @@ class Bird(Animal):
 "#);
     fs::write(&path, content).unwrap();
 
-    let stats = incremental_index(&mut db, project.path()).unwrap();
+    let stats = incremental_index(&mut db, project.path(), None).unwrap();
     let _ = stats;
 
     // "Bird" should now be findable.
@@ -70,14 +70,14 @@ fn incremental_detects_deleted_file() {
     let project = TestProject::typescript_app();
     let mut db = TestProject::in_memory_db();
 
-    let stats1 = full_index(&mut db, project.path(), None, None).unwrap();
+    let stats1 = full_index(&mut db, project.path(), None, None, None).unwrap();
     let files_before = stats1.file_count;
 
     // Delete one of the two files.
     let target = project.path().join("types.ts");
     fs::remove_file(&target).unwrap();
 
-    let stats2 = incremental_index(&mut db, project.path()).unwrap();
+    let stats2 = incremental_index(&mut db, project.path(), None).unwrap();
     let _ = stats2;
 
     let overview = get_overview(&db).unwrap();
@@ -93,13 +93,13 @@ fn incremental_on_unchanged_project_is_noop() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();
 
-    full_index(&mut db, project.path(), None, None).unwrap();
+    full_index(&mut db, project.path(), None, None, None).unwrap();
 
     let overview_before = get_overview(&db).unwrap();
     let syms_before = overview_before.total_symbols;
 
     // Run incremental with no changes.
-    incremental_index(&mut db, project.path()).unwrap();
+    incremental_index(&mut db, project.path(), None).unwrap();
 
     let overview_after = get_overview(&db).unwrap();
     assert_eq!(

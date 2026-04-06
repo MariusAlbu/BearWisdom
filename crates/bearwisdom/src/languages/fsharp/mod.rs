@@ -13,6 +13,8 @@
 //! - `import_decl` → Imports (open declarations)
 
 pub(crate) mod primitives;
+mod builtins;
+pub(crate) mod resolve;
 pub mod extract;
 
 #[cfg(test)]
@@ -73,5 +75,9 @@ impl LanguagePlugin for FSharpPlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::FSharpResolver))
     }
 }

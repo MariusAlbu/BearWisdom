@@ -17,6 +17,11 @@
 
 pub mod extract;
 
+mod builtins;
+pub(crate) mod resolve;
+
+pub use resolve::NimResolver;
+
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
@@ -84,5 +89,9 @@ impl LanguagePlugin for NimPlugin {
             "string", "bool", "char", "void",
             "seq", "openArray", "Natural", "Positive",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::NimResolver))
     }
 }

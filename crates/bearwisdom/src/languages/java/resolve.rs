@@ -38,7 +38,7 @@ pub struct JavaResolver;
 
 impl LanguageResolver for JavaResolver {
     fn language_ids(&self) -> &[&str] {
-        &["java"]
+        &["java", "groovy"]
     }
 
     fn build_file_context(

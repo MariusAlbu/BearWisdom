@@ -49,6 +49,9 @@ pub struct BlastRadiusResult {
     pub total_affected: u32,
     /// The maximum depth actually found (may be less than the requested limit).
     pub max_depth: u32,
+    /// True when the result set was capped by `max_results`.
+    /// MCP/CLI consumers should surface this to the caller.
+    pub truncated: bool,
 }
 
 // ---------------------------------------------------------------------------
@@ -61,11 +64,16 @@ pub struct BlastRadiusResult {
 /// When the name is ambiguous (multiple symbols share it), the first match
 /// by qualified_name alphabetically is used.
 ///
+/// `max_results` caps the number of rows returned by the final SELECT.
+/// When the cap is hit, `BlastRadiusResult::truncated` is set to `true`.
+/// Pass `500` as a safe default; use a lower value for UI previews.
+///
 /// Returns `Ok(None)` if the symbol is not found in the index.
 pub fn blast_radius(
     db: &Database,
     symbol_name: &str,
     max_depth: u32,
+    max_results: u32,
 ) -> Result<Option<BlastRadiusResult>> {
     let _timer = db.timer("blast_radius");
     let conn = &db.conn;
@@ -121,6 +129,9 @@ pub fn blast_radius(
     // creating cycles.  We let the CTE run (bounded by max_depth) and then
     // use ROW_NUMBER() to keep only the first (shallowest) occurrence of
     // each symbol in the output.
+    //
+    // LIMIT ?3 caps the output row count.  When the cap is reached, the caller
+    // sets BlastRadiusResult::truncated so consumers know the list is partial.
     let sql = "
         WITH RECURSIVE blast(id, depth, edge_kind) AS (
             -- Seed: the center symbol itself at depth 0.
@@ -149,25 +160,29 @@ pub fn blast_radius(
         JOIN files   f ON f.id = s.file_id
         WHERE sub.rn = 1
         ORDER BY sub.depth, f.path
+        LIMIT ?3
     ";
 
     let mut stmt = conn.prepare(sql).context("Failed to prepare blast radius CTE")?;
 
-    let rows = stmt.query_map(rusqlite::params![center_id, max_depth], |row| {
-        Ok(AffectedSymbol {
-            name:           row.get(0)?,
-            qualified_name: row.get(1)?,
-            kind:           row.get(2)?,
-            file_path:      row.get(3)?,
-            depth:          row.get(4)?,
-            edge_kind:      row.get(5)?,
+    let rows = stmt
+        .query_map(rusqlite::params![center_id, max_depth, max_results], |row| {
+            Ok(AffectedSymbol {
+                name:           row.get(0)?,
+                qualified_name: row.get(1)?,
+                kind:           row.get(2)?,
+                file_path:      row.get(3)?,
+                depth:          row.get(4)?,
+                edge_kind:      row.get(5)?,
+            })
         })
-    }).context("Failed to execute blast radius query")?;
+        .context("Failed to execute blast radius query")?;
 
-    let affected: Vec<AffectedSymbol> =
-        rows.collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect blast radius rows")?;
+    let affected: Vec<AffectedSymbol> = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect blast radius rows")?;
 
+    let truncated = (affected.len() as u32) >= max_results;
     let total_affected = affected.len() as u32;
     let max_depth_found = affected.iter().map(|a| a.depth).max().unwrap_or(0);
 
@@ -176,6 +191,7 @@ pub fn blast_radius(
         affected,
         total_affected,
         max_depth: max_depth_found,
+        truncated,
     }))
 }
 

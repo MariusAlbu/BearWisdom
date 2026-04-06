@@ -72,17 +72,15 @@ pub struct Database {
     pub(crate) conn: Connection,
     /// Path to the database file, or `None` for in-memory databases.
     pub path: Option<PathBuf>,
-    /// Optional in-memory cache of parsed symbols + refs for each indexed
-    /// file.  Populated by `full_index` when present; consulted by the
-    /// blast-radius pass in `reindex_files` to avoid re-parsing unchanged
-    /// dependent files.  `None` by default — callers opt in explicitly.
-    pub ref_cache: Option<RefCache>,
     /// Optional query-result cache (LRU per kind).  Shared across pool
     /// connections when created via `DbPool::with_cache`.
     pub query_cache: Option<Arc<QueryCache>>,
     /// Optional query metrics collector.  When present, delegation methods
     /// record per-label timing data.
     pub metrics: Option<Arc<metrics::QueryMetrics>>,
+    /// Cached result of the sqlite-vec probe.  Populated on first call to
+    /// `has_vec_extension()` and reused for all subsequent calls.
+    has_vec: std::cell::OnceCell<bool>,
 }
 
 impl Database {
@@ -112,9 +110,9 @@ impl Database {
         Ok(Self {
             conn,
             path: Some(path.to_path_buf()),
-            ref_cache: None,
             query_cache: Some(Arc::new(QueryCache::new(256))),
             metrics: Some(Arc::new(metrics::QueryMetrics::new())),
+            has_vec: std::cell::OnceCell::new(),
         })
     }
 
@@ -127,13 +125,18 @@ impl Database {
     }
 
     /// Returns true if the sqlite-vec extension is loaded and operational.
+    ///
+    /// The result is cached after the first call — the probe DDL executes at
+    /// most once per `Database` instance.
     pub fn has_vec_extension(&self) -> bool {
-        self.conn
-            .execute_batch(
-                "CREATE VIRTUAL TABLE IF NOT EXISTS _vec_probe USING vec0(x float[1]);
-                 DROP TABLE IF EXISTS _vec_probe;",
-            )
-            .is_ok()
+        *self.has_vec.get_or_init(|| {
+            self.conn
+                .execute_batch(
+                    "CREATE VIRTUAL TABLE IF NOT EXISTS _vec_probe USING vec0(x float[1]);
+                     DROP TABLE IF EXISTS _vec_probe;",
+                )
+                .is_ok()
+        })
     }
 
     /// Borrow the underlying SQLite connection.
@@ -205,9 +208,9 @@ impl Database {
         Ok(Self {
             conn,
             path: None,
-            ref_cache: None,
             query_cache: Some(Arc::new(QueryCache::new(256))),
             metrics: Some(Arc::new(metrics::QueryMetrics::new())),
+            has_vec: std::cell::OnceCell::new(),
         })
     }
 }
@@ -225,6 +228,12 @@ struct DbPoolInner {
     cache: Option<Arc<QueryCache>>,
     /// Shared metrics collector across all pool connections.
     metrics: Option<Arc<metrics::QueryMetrics>>,
+    /// Pool-level ref cache shared across all connections.
+    ///
+    /// Populated by `full_index` (via the `ref_cache` parameter) so the cache
+    /// persists across pool checkout boundaries.  Always present — opt-in is
+    /// whether anyone calls `store_all`, not whether the field exists.
+    ref_cache: Arc<Mutex<RefCache>>,
 }
 
 /// A pool of `Database` connections to the same SQLite file.
@@ -258,6 +267,7 @@ impl DbPool {
             max_size,
             cache: Some(cache),
             metrics: Some(metrics),
+            ref_cache: Arc::new(Mutex::new(RefCache::new())),
         })))
     }
 
@@ -276,6 +286,7 @@ impl DbPool {
             max_size,
             cache: Some(cache),
             metrics: Some(metrics),
+            ref_cache: Arc::new(Mutex::new(RefCache::new())),
         })))
     }
 
@@ -318,12 +329,21 @@ impl DbPool {
             max_size,
             cache,
             metrics: Some(metrics),
+            ref_cache: Arc::new(Mutex::new(RefCache::new())),
         })))
     }
 
     /// Return the shared metrics collector, if enabled.
     pub fn metrics(&self) -> Option<&Arc<metrics::QueryMetrics>> {
         self.0.metrics.as_ref()
+    }
+
+    /// Return the pool-level [`RefCache`] shared across all connections.
+    ///
+    /// Pass this to `full_index` / `incremental_index` / `git_reindex` /
+    /// `reindex_files` so the cache survives connection checkout boundaries.
+    pub fn ref_cache(&self) -> &Arc<Mutex<RefCache>> {
+        &self.0.ref_cache
     }
 
     /// Check out a connection.  Reuses an idle connection when available,
