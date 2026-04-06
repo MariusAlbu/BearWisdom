@@ -185,7 +185,14 @@ pub fn full_index(
     info!("Created {total_chunks} code chunks");
     emit("indexing_content", 1.0, Some(&format!("{total_chunks} chunks created")));
 
-    // --- Step 7: Connectors (registry-based) ---
+    // --- Step 7a: Flow connectors (registry pipeline) ---
+    //
+    // All cross-framework flow connectors run through the ConnectorRegistry:
+    //   detect → extract ConnectionPoints → match start↔stop → write flow_edges
+    //
+    // 18 connectors: REST, gRPC, MQ, GraphQL, events, IPC (Tauri + Electron),
+    // DI (.NET + Angular + Spring), routes (Spring, Django, FastAPI, Go, Rails,
+    // Laravel, NestJS, Next.js).
     emit("connectors", 0.0, Some("Running connectors"));
     let connector_start = Instant::now();
 
@@ -206,7 +213,10 @@ pub fn full_index(
         Err(e) => warn!("Connector registry failed: {e}"),
     }
 
-    // Non-flow post-steps: EF Core (DB mappings), Django (views/models), React patterns.
+    // --- Step 7b: Non-flow post-index hooks ---
+    //
+    // These write to tables other than flow_edges (db_mappings, concepts) so
+    // they don't fit the ConnectionPoint → flow_edge pipeline.  Called directly.
     if let Err(e) = crate::connectors::ef_core::connect(db) {
         warn!("EF Core connector: {e}");
     }

@@ -30,9 +30,11 @@ pub struct ConnectorRegistry {
 impl ConnectorRegistry {
     /// Create an empty registry.
     ///
-    /// Connectors will be registered here as they are migrated to the new
-    /// architecture.  The existing connector modules continue to run through
-    /// the old `full.rs` pipeline in parallel during the migration.
+    /// All flow-based connectors (REST, gRPC, MQ, GraphQL, events, IPC, DI,
+    /// routes) are registered here.  Non-flow post-index hooks (EF Core DB
+    /// mappings, Django model linking, React concept creation) run separately
+    /// in `full.rs` because they write to different tables (db_mappings,
+    /// concepts), not flow_edges.
     pub fn new() -> Self {
         Self {
             connectors: vec![],
