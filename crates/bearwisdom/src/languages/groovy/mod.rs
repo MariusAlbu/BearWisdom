@@ -10,6 +10,7 @@
 //! - `import_declaration` → Imports
 //! - `method_invocation` → Calls
 
+pub(crate) mod primitives;
 pub mod extract;
 
 #[cfg(test)]
@@ -61,5 +62,9 @@ impl LanguagePlugin for GroovyPlugin {
             "float", "double", "def", "String", "Object", "List", "Map",
             "GString", "BigDecimal", "BigInteger",
         ]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

@@ -141,6 +141,7 @@ mod tests {
             content_hash: hash.to_string(),
             size: 100,
             line_count: 10,
+            mtime: None,
             symbols: vec![crate::types::ExtractedSymbol {
                 name: symbol_name.to_string(),
                 qualified_name: format!("Root.{symbol_name}"),

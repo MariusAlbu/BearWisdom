@@ -109,3 +109,4 @@ lru                    = { workspace = true }
 tempfile               = "3"
 tracing-subscriber     = { workspace = true }
 tokio                  = { version = "1", features = ["test-util", "macros"] }
+walkdir                = "2"

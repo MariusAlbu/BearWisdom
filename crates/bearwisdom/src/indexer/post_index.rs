@@ -7,10 +7,10 @@
 // sqlite-vec extension is unavailable.
 // =============================================================================
 
+use crate::db::Database;
 use crate::search::embedder::Embedder;
 use crate::search::vector_store;
 use anyhow::Result;
-use rusqlite::Connection;
 use tracing::info;
 
 /// Embed all code chunks that don't yet have a vector in `vec_chunks`.
@@ -25,10 +25,11 @@ use tracing::info;
 /// - Returns `(0, 0)` if sqlite-vec is not loaded (`vec_chunks` missing).
 /// - Returns an error only if the embedder fails mid-batch.
 pub fn embed_chunks(
-    conn: &Connection,
+    db: &Database,
     embedder: &mut Embedder,
     batch_size: usize,
 ) -> Result<(u32, u32)> {
+    let conn = &db.conn;
     if !vector_store::vec_table_exists(conn) {
         match vector_store::init_vec_table(conn) {
             Ok(_) => info!("Created vec_chunks table"),

@@ -155,7 +155,7 @@ async fn test_enrich_typescript_resolves_refs() {
     let unresolved_before: i64 = {
         let guard = pool.get().unwrap();
         guard
-            .conn
+            .conn()
             .query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
             .unwrap_or(0)
     };
@@ -185,7 +185,7 @@ async fn test_enrich_typescript_resolves_refs() {
     let high_conf_edges: i64 = {
         let guard = pool.get().unwrap();
         guard
-            .conn
+            .conn()
             .query_row(
                 "SELECT COUNT(*) FROM edges WHERE confidence = 1.0",
                 [],
@@ -228,7 +228,7 @@ async fn test_enrich_low_confidence_upgrade() {
         let guard = pool.get().unwrap();
 
         let source: Option<i64> = guard
-            .conn
+            .conn()
             .query_row(
                 "SELECT s.id FROM symbols s
                  JOIN files f ON f.id = s.file_id
@@ -241,7 +241,7 @@ async fn test_enrich_low_confidence_upgrade() {
             .ok();
 
         let target: Option<i64> = guard
-            .conn
+            .conn()
             .query_row(
                 "SELECT s.id FROM symbols s
                  JOIN files f ON f.id = s.file_id
@@ -276,7 +276,7 @@ async fn test_enrich_low_confidence_upgrade() {
 
         // Delete any existing edge so we start clean.
         guard
-            .conn
+            .conn()
             .execute(
                 "DELETE FROM edges WHERE source_id = ?1 AND target_id = ?2 AND kind = 'calls'",
                 rusqlite::params![source_id, target_id],
@@ -284,7 +284,7 @@ async fn test_enrich_low_confidence_upgrade() {
             .unwrap();
 
         guard
-            .conn
+            .conn()
             .execute(
                 "INSERT INTO edges (source_id, target_id, kind, source_line, confidence)
                  VALUES (?1, ?2, 'calls', ?3, 0.5)",
@@ -312,7 +312,7 @@ async fn test_enrich_low_confidence_upgrade() {
     let upgraded_conf: f64 = {
         let guard = pool.get().unwrap();
         guard
-            .conn
+            .conn()
             .query_row(
                 "SELECT confidence FROM edges
                  WHERE source_id = ?1 AND target_id = ?2 AND kind = 'calls'",
@@ -361,7 +361,7 @@ async fn test_enrich_empty_unresolved() {
     {
         let guard = pool.get().unwrap();
         guard
-            .conn
+            .conn()
             .execute("DELETE FROM unresolved_refs", [])
             .unwrap();
     }

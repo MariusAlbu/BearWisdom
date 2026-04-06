@@ -11,6 +11,7 @@ mod helpers;
 mod imports;
 mod narrowing;
 mod params;
+pub(crate) mod primitives;
 mod symbols;
 mod types;
 
@@ -105,5 +106,9 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &["string", "number", "boolean", "void", "any", "unknown", "never", "undefined", "null", "object", "symbol", "bigint"]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

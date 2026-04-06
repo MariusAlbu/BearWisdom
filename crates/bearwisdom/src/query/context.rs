@@ -223,6 +223,7 @@ pub fn smart_context(
     budget: u32,
     depth: u32,
 ) -> Result<SmartContextResult> {
+    let _timer = db.timer("smart_context");
     let conn = &db.conn;
 
     if task.trim().is_empty() {
@@ -256,56 +257,82 @@ pub fn smart_context(
     // Build candidate map: qualified_name → Candidate.
     let mut candidates: HashMap<String, Candidate> = HashMap::new();
 
-    // Resolve seed symbol IDs and populate initial candidates.
+    // Resolve seed symbol IDs in one batched query.
     let mut seed_ids: Vec<i64> = Vec::new();
     let mut seed_concepts: HashSet<String> = HashSet::new();
 
-    for seed in &seeds {
-        let row: Option<(i64, u32)> = conn
-            .query_row(
-                "SELECT s.id, (SELECT COUNT(*) FROM edges WHERE target_id = s.id)
-                 FROM symbols s JOIN files f ON f.id = s.file_id
-                 WHERE s.qualified_name = ?1 LIMIT 1",
-                [&seed.qualified_name],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            )
-            .ok();
+    // Build a lookup from qualified_name → seed info.
+    let seed_qnames: Vec<&str> = seeds.iter().map(|s| s.qualified_name.as_str()).collect();
+    let seed_map: HashMap<&str, &super::search::SearchResult> = seeds
+        .iter()
+        .map(|s| (s.qualified_name.as_str(), s))
+        .collect();
 
-        let Some((sym_id, incoming)) = row else { continue };
-        seed_ids.push(sym_id);
-
-        candidates.insert(
-            seed.qualified_name.clone(),
-            Candidate {
-                id: sym_id,
-                name: seed.name.clone(),
-                qualified_name: seed.qualified_name.clone(),
-                kind: seed.kind.clone(),
-                file_path: seed.file_path.clone(),
-                line: seed.start_line,
-                semantic_score: seed.score / max_score,
-                min_hop: 0,
-                incoming_edges: incoming,
-                concept_overlap: true, // seeds always overlap
-                avg_confidence: 1.0,
-            },
+    // Batch resolve: one query for all seed qualified_names.
+    if !seed_qnames.is_empty() {
+        let placeholders = seed_qnames.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        let sql = format!(
+            "SELECT s.id, s.qualified_name, s.incoming_edge_count
+             FROM symbols s
+             WHERE s.qualified_name IN ({placeholders})"
         );
-
-        // Collect concept memberships for seeds.
-        let mut stmt = conn.prepare_cached(
-            "SELECT c.name FROM concepts c
-             JOIN concept_members cm ON cm.concept_id = c.id
-             WHERE cm.symbol_id = ?1",
-        )?;
-        let concepts: Vec<String> = stmt
-            .query_map([sym_id], |r| r.get(0))?
+        let mut stmt = conn.prepare(&sql)?;
+        let params: Vec<&dyn rusqlite::types::ToSql> = seed_qnames
+            .iter()
+            .map(|s| s as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows: Vec<(i64, String, u32)> = stmt
+            .query_map(params.as_slice(), |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
             .filter_map(|r| r.ok())
             .collect();
-        seed_concepts.extend(concepts);
+
+        for (sym_id, qn, incoming) in rows {
+            if let Some(seed) = seed_map.get(qn.as_str()) {
+                seed_ids.push(sym_id);
+                candidates.insert(
+                    qn.clone(),
+                    Candidate {
+                        id: sym_id,
+                        name: seed.name.clone(),
+                        qualified_name: qn.clone(),
+                        kind: seed.kind.clone(),
+                        file_path: seed.file_path.clone(),
+                        line: seed.start_line,
+                        semantic_score: seed.score / max_score,
+                        min_hop: 0,
+                        incoming_edges: incoming,
+                        concept_overlap: true,
+                        avg_confidence: 1.0,
+                    },
+                );
+            }
+        }
+
+        // Batch collect concept memberships for all seeds.
+        if !seed_ids.is_empty() {
+            let placeholders = seed_ids.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+            let sql = format!(
+                "SELECT cm.symbol_id, c.name FROM concepts c
+                 JOIN concept_members cm ON cm.concept_id = c.id
+                 WHERE cm.symbol_id IN ({placeholders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::types::ToSql> = seed_ids
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
+            let rows = stmt
+                .query_map(params.as_slice(), |r| Ok(r.get::<_, String>(1)?))?;
+            for row in rows {
+                if let Ok(concept) = row {
+                    seed_concepts.insert(concept);
+                }
+            }
+        }
     }
 
     // =====================================================================
-    // Step 2: Graph expansion — follow edges from seeds
+    // Step 2: Graph expansion — follow edges from seeds (batched per depth)
     // =====================================================================
     let mut frontier: Vec<i64> = seed_ids.clone();
     let mut visited: HashSet<i64> = seed_ids.iter().copied().collect();
@@ -317,21 +344,24 @@ pub fn smart_context(
 
         let mut next_frontier: Vec<i64> = Vec::new();
 
-        for &source_id in &frontier {
-            // Outgoing edges (callees / dependencies).
-            let mut stmt = conn.prepare_cached(
+        // Batch outgoing edges: WHERE source_id IN (frontier), uses s.incoming_edge_count.
+        let placeholders = frontier.iter().map(|_| "?").collect::<Vec<_>>().join(",");
+        {
+            let sql = format!(
                 "SELECT e.target_id, s.name, s.qualified_name, s.kind, f.path, s.line,
-                        e.confidence,
-                        (SELECT COUNT(*) FROM edges WHERE target_id = e.target_id)
+                        e.confidence, s.incoming_edge_count
                  FROM edges e
                  JOIN symbols s ON s.id = e.target_id
                  JOIN files f ON f.id = s.file_id
-                 WHERE e.source_id = ?1
-                 LIMIT 20",
-            )?;
-
+                 WHERE e.source_id IN ({placeholders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::types::ToSql> = frontier
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
             let rows: Vec<(i64, String, String, String, String, u32, f64, u32)> = stmt
-                .query_map([source_id], |r| {
+                .query_map(params.as_slice(), |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
                         r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
                 })?
@@ -340,43 +370,37 @@ pub fn smart_context(
 
             for (id, name, qn, kind, fp, line, conf, incoming) in rows {
                 if !visited.insert(id) {
-                    // Already visited — update min_hop if closer.
                     if let Some(c) = candidates.get_mut(&qn) {
                         c.min_hop = c.min_hop.min(hop);
                     }
                     continue;
                 }
-
                 next_frontier.push(id);
                 candidates.insert(qn.clone(), Candidate {
-                    id,
-                    name,
-                    qualified_name: qn,
-                    kind,
-                    file_path: fp,
-                    line,
-                    semantic_score: 0.0,
-                    min_hop: hop,
-                    incoming_edges: incoming,
-                    concept_overlap: false, // updated in step 3
-                    avg_confidence: conf,
+                    id, name, qualified_name: qn, kind, file_path: fp, line,
+                    semantic_score: 0.0, min_hop: hop, incoming_edges: incoming,
+                    concept_overlap: false, avg_confidence: conf,
                 });
             }
+        }
 
-            // Incoming edges (callers).
-            let mut stmt = conn.prepare_cached(
+        // Batch incoming edges (callers): WHERE target_id IN (frontier).
+        {
+            let sql = format!(
                 "SELECT e.source_id, s.name, s.qualified_name, s.kind, f.path, s.line,
-                        e.confidence,
-                        (SELECT COUNT(*) FROM edges WHERE target_id = e.source_id)
+                        e.confidence, s.incoming_edge_count
                  FROM edges e
                  JOIN symbols s ON s.id = e.source_id
                  JOIN files f ON f.id = s.file_id
-                 WHERE e.target_id = ?1
-                 LIMIT 20",
-            )?;
-
+                 WHERE e.target_id IN ({placeholders})"
+            );
+            let mut stmt = conn.prepare(&sql)?;
+            let params: Vec<&dyn rusqlite::types::ToSql> = frontier
+                .iter()
+                .map(|id| id as &dyn rusqlite::types::ToSql)
+                .collect();
             let rows: Vec<(i64, String, String, String, String, u32, f64, u32)> = stmt
-                .query_map([source_id], |r| {
+                .query_map(params.as_slice(), |r| {
                     Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?,
                         r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?))
                 })?
@@ -390,20 +414,11 @@ pub fn smart_context(
                     }
                     continue;
                 }
-
                 next_frontier.push(id);
                 candidates.insert(qn.clone(), Candidate {
-                    id,
-                    name,
-                    qualified_name: qn,
-                    kind,
-                    file_path: fp,
-                    line,
-                    semantic_score: 0.0,
-                    min_hop: hop,
-                    incoming_edges: incoming,
-                    concept_overlap: false,
-                    avg_confidence: conf,
+                    id, name, qualified_name: qn, kind, file_path: fp, line,
+                    semantic_score: 0.0, min_hop: hop, incoming_edges: incoming,
+                    concept_overlap: false, avg_confidence: conf,
                 });
             }
         }

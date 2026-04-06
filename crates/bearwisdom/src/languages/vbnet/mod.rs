@@ -13,6 +13,7 @@
 //! - `imports_statement` → Imports edge
 //! - `inherits_clause` → Inherits edge
 
+pub(crate) mod primitives;
 pub mod extract;
 
 #[cfg(test)]
@@ -71,5 +72,9 @@ impl LanguagePlugin for VbNetPlugin {
             "Long", "ULong", "Short", "UShort",
             "String", "Object", "Date", "Void",
         ]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

@@ -61,8 +61,54 @@ pub fn apply_pragmas(conn: &Connection, is_new: bool) -> rusqlite::Result<()> {
 }
 
 /// Create all tables and indexes (idempotent — uses IF NOT EXISTS).
+///
+/// Also runs lightweight migrations for columns added after initial release.
 pub fn create_schema(conn: &Connection) -> rusqlite::Result<()> {
-    conn.execute_batch(SCHEMA_SQL)
+    conn.execute_batch(SCHEMA_SQL)?;
+    migrate(conn)?;
+    Ok(())
+}
+
+/// Lightweight schema migrations for columns added to existing tables.
+///
+/// Each migration checks whether the column already exists (via PRAGMA
+/// table_info) before running ALTER TABLE.  This is idempotent and safe
+/// to run on every open.
+fn migrate(conn: &Connection) -> rusqlite::Result<()> {
+    // v0.3: Add mtime + size to files for fast change detection.
+    if !column_exists(conn, "files", "mtime") {
+        conn.execute_batch("ALTER TABLE files ADD COLUMN mtime INTEGER")?;
+    }
+    if !column_exists(conn, "files", "size") {
+        conn.execute_batch("ALTER TABLE files ADD COLUMN size INTEGER")?;
+    }
+    // v0.3: Add incoming_edge_count to symbols for materialized centrality.
+    if !column_exists(conn, "symbols", "incoming_edge_count") {
+        conn.execute_batch(
+            "ALTER TABLE symbols ADD COLUMN incoming_edge_count INTEGER NOT NULL DEFAULT 0"
+        )?;
+    }
+    Ok(())
+}
+
+fn column_exists(conn: &Connection, table: &str, column: &str) -> bool {
+    let sql = format!("PRAGMA table_info({table})");
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    let rows = match stmt.query_map([], |row| row.get::<_, String>(1)) {
+        Ok(r) => r,
+        Err(_) => return false,
+    };
+    for row in rows {
+        if let Ok(name) = row {
+            if name == column {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 const SCHEMA_SQL: &str = "
@@ -78,7 +124,9 @@ CREATE TABLE IF NOT EXISTS files (
     path         TEXT    NOT NULL UNIQUE,
     hash         TEXT    NOT NULL,
     language     TEXT    NOT NULL,
-    last_indexed INTEGER NOT NULL   -- Unix timestamp (seconds since epoch)
+    last_indexed INTEGER NOT NULL,  -- Unix timestamp (seconds since epoch)
+    mtime        INTEGER,           -- file mtime (seconds since epoch), for fast change detection
+    size         INTEGER            -- file size in bytes, for fast change detection
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_language  ON files(language);
@@ -108,7 +156,8 @@ CREATE TABLE IF NOT EXISTS symbols (
     scope_path     TEXT,
     signature      TEXT,
     doc_comment    TEXT,   -- XML doc comment (C#) or JSDoc (TS), used by FTS5
-    visibility     TEXT
+    visibility     TEXT,
+    incoming_edge_count INTEGER NOT NULL DEFAULT 0  -- materialized centrality signal
 );
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);
@@ -490,6 +539,18 @@ CREATE TABLE IF NOT EXISTS mcp_audit (
 CREATE INDEX IF NOT EXISTS idx_audit_session ON mcp_audit(session_id, id);
 -- Covers timestamp-based range scans for the SSE tail query.
 CREATE INDEX IF NOT EXISTS idx_audit_ts ON mcp_audit(ts);
+
+-- ============================================================
+-- INDEX METADATA  (key-value)
+-- ============================================================
+-- Stores per-index metadata: indexed_commit (git HEAD at last
+-- successful index), schema_version, etc.  Queried at reindex
+-- time to select the optimal change detection strategy.
+
+CREATE TABLE IF NOT EXISTS _bearwisdom_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT
+);
 ";
 
 // ---------------------------------------------------------------------------

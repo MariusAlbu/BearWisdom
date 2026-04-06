@@ -3,6 +3,7 @@
 mod calls;
 pub(crate) mod decorators;
 mod helpers;
+pub(crate) mod primitives;
 mod symbols;
 pub mod extract;
 
@@ -73,5 +74,9 @@ impl LanguagePlugin for PythonPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &["int", "float", "str", "bool", "bytes", "None", "list", "dict", "set", "tuple", "type", "object", "complex"]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

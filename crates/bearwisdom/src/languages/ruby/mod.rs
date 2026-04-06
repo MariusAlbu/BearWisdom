@@ -3,6 +3,7 @@
 mod calls;
 mod helpers;
 mod params;
+pub(crate) mod primitives;
 mod symbols;
 pub mod extract;
 
@@ -69,5 +70,9 @@ impl LanguagePlugin for RubyPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

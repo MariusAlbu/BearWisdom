@@ -3,6 +3,7 @@
 mod calls;
 pub(crate) mod decorators;
 mod helpers;
+pub(crate) mod primitives;
 mod symbols;
 pub mod extract;
 
@@ -84,5 +85,9 @@ impl LanguagePlugin for PhpPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &["int", "float", "string", "bool", "void", "null", "array", "object", "mixed", "never", "callable", "iterable", "self", "static", "parent", "true", "false"]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

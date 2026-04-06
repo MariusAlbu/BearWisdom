@@ -236,7 +236,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     let db = Database::open(&db_path)?;
 
     // 1. Basic stats
-    let (total_files, total_symbols, total_edges): (i64, i64, i64) = db.conn.query_row(
+    let (total_files, total_symbols, total_edges): (i64, i64, i64) = db.conn().query_row(
         "SELECT
             (SELECT COUNT(*) FROM files),
             (SELECT COUNT(*) FROM symbols),
@@ -249,7 +249,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 
     // 2. Visibility distribution
     println!("\n  Visibility distribution:");
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn().prepare(
         "SELECT COALESCE(visibility, 'NULL'), COUNT(*) FROM symbols GROUP BY visibility ORDER BY COUNT(*) DESC"
     )?;
     let mut rows = Vec::new();
@@ -265,7 +265,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 
     // 3. Kind distribution
     println!("\n  Kind distribution (top 15):");
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn().prepare(
         "SELECT kind, COUNT(*) FROM symbols GROUP BY kind ORDER BY COUNT(*) DESC LIMIT 15"
     )?;
     let mut rows = Vec::new();
@@ -281,7 +281,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 
     // 4. Sampler-critical: type-like symbols by kind and visibility
     println!("\n  Type-like symbols (interface/trait/class/struct/type_alias):");
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn().prepare(
         "SELECT kind, COALESCE(visibility, 'NULL'), COUNT(*)
          FROM symbols
          WHERE kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
@@ -301,7 +301,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     }
 
     // 5. Sampler query simulation: what the current sampler would find
-    let current_sampler_count: i64 = db.conn.query_row(
+    let current_sampler_count: i64 = db.conn().query_row(
         "SELECT COUNT(*) FROM symbols
          WHERE kind IN ('interface', 'trait', 'class')
            AND visibility = 'public'",
@@ -311,7 +311,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     println!("\n  Current sampler CrossFileRef candidates (interface/trait/class + public): {current_sampler_count}");
 
     // What the fixed sampler would find
-    let fixed_sampler_count: i64 = db.conn.query_row(
+    let fixed_sampler_count: i64 = db.conn().query_row(
         "SELECT COUNT(*) FROM symbols
          WHERE kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
            AND (visibility = 'public' OR visibility IS NULL)",
@@ -321,7 +321,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     println!("  Fixed sampler CrossFileRef candidates (+ struct/type_alias, + NULL vis): {fixed_sampler_count}");
 
     // Of those, how many have incoming edges (actually referenced)?
-    let referenced_count: i64 = db.conn.query_row(
+    let referenced_count: i64 = db.conn().query_row(
         "SELECT COUNT(*) FROM symbols s
          WHERE s.kind IN ('interface', 'trait', 'class', 'struct', 'type_alias')
            AND (s.visibility = 'public' OR s.visibility IS NULL)
@@ -332,7 +332,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     println!("  Of those, referenced (has incoming edges): {referenced_count}");
 
     // 6. Architecture overview viability
-    let hotspot_count: i64 = db.conn.query_row(
+    let hotspot_count: i64 = db.conn().query_row(
         "SELECT COUNT(*) FROM (
             SELECT s.id FROM symbols s
             JOIN edges e ON e.target_id = s.id
@@ -346,7 +346,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 
     // 7. find_references viability: pick top 3 referenced symbols and test
     println!("\n  Top 5 most-referenced symbols:");
-    let mut stmt = db.conn.prepare(
+    let mut stmt = db.conn().prepare(
         "SELECT s.qualified_name, s.kind, COALESCE(s.visibility, 'NULL'), COUNT(*) as ref_count
          FROM symbols s
          JOIN edges e ON e.target_id = s.id
@@ -370,7 +370,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     // 8. Unresolved refs breakdown
     println!("\n  Unresolved refs by kind:");
     {
-        let mut stmt = db.conn.prepare(
+        let mut stmt = db.conn().prepare(
             "SELECT kind, COUNT(*) FROM unresolved_refs GROUP BY kind ORDER BY COUNT(*) DESC"
         )?;
         let mut rows = stmt.query([])?;
@@ -382,12 +382,12 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
     }
 
     // External refs (separate table)
-    let external_count: i64 = db.conn.query_row(
+    let external_count: i64 = db.conn().query_row(
         "SELECT COUNT(*) FROM external_refs",
         [],
         |row| row.get(0),
     )?;
-    let unresolved_count: i64 = db.conn.query_row(
+    let unresolved_count: i64 = db.conn().query_row(
         "SELECT COUNT(*) FROM unresolved_refs",
         [],
         |row| row.get(0),
@@ -397,7 +397,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 
     println!("\n  Top 10 external namespaces:");
     {
-        let mut stmt = db.conn.prepare(
+        let mut stmt = db.conn().prepare(
             "SELECT namespace, COUNT(*) as cnt FROM external_refs
              GROUP BY namespace ORDER BY cnt DESC LIMIT 10"
         )?;
@@ -411,7 +411,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 
     println!("\n  Top 20 truly unresolved target names:");
     {
-        let mut stmt = db.conn.prepare(
+        let mut stmt = db.conn().prepare(
             "SELECT target_name, kind, COUNT(*) as cnt
              FROM unresolved_refs
              GROUP BY target_name, kind
@@ -429,7 +429,7 @@ fn cmd_diagnose(project: &std::path::Path) -> Result<()> {
 
     println!("\n  Edge confidence distribution:");
     {
-        let mut stmt = db.conn.prepare(
+        let mut stmt = db.conn().prepare(
             "SELECT
                 CASE
                     WHEN confidence = 1.0 THEN '1.00 (engine)'

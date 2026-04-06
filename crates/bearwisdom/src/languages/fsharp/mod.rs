@@ -12,6 +12,7 @@
 //! - `module_defn` / `named_module` / `namespace` → Namespace
 //! - `import_decl` → Imports (open declarations)
 
+pub(crate) mod primitives;
 pub mod extract;
 
 #[cfg(test)]
@@ -68,5 +69,9 @@ impl LanguagePlugin for FSharpPlugin {
             "sbyte", "nativeint", "unativeint", "bigint",
             "exn", "void",
         ]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

@@ -115,6 +115,45 @@ pub fn chunk_file(
     Ok(chunks)
 }
 
+/// Bulk-insert chunks for multiple files in a single transaction.
+///
+/// Skips all dedup logic — intended for full index after DROP+CREATE when the
+/// `code_chunks` table is empty.  Computes chunks in memory, then batch-inserts.
+///
+/// Returns the total number of chunks inserted.
+pub fn bulk_chunk_and_store(
+    conn: &Connection,
+    files: &[(i64, &str)],  // (file_id, content)
+) -> Result<u32> {
+    let tx = conn.unchecked_transaction()
+        .context("Failed to begin chunk transaction")?;
+
+    let mut total = 0u32;
+    let mut stmt = tx.prepare_cached(
+        "INSERT INTO code_chunks (file_id, symbol_id, content_hash, content, start_line, end_line)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+
+    for &(file_id, content) in files {
+        let chunks = chunk_file(&tx, file_id, content, DEFAULT_MAX_TOKENS)?;
+        for chunk in &chunks {
+            stmt.execute(params![
+                chunk.file_id,
+                chunk.symbol_id,
+                chunk.content_hash,
+                chunk.content,
+                chunk.start_line,
+                chunk.end_line,
+            ])?;
+        }
+        total += chunks.len() as u32;
+    }
+
+    drop(stmt);
+    tx.commit().context("Failed to commit bulk chunks")?;
+    Ok(total)
+}
+
 /// Chunk and persist all chunks for a file into `code_chunks`.
 ///
 /// Uses hash-based dedup: chunks whose `content_hash` matches an existing

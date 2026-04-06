@@ -3,6 +3,7 @@
 mod calls;
 pub(crate) mod decorators;
 mod helpers;
+pub(crate) mod primitives;
 mod symbols;
 pub mod extract;
 
@@ -103,5 +104,9 @@ impl LanguagePlugin for SwiftPlugin {
             "EnvironmentObject", "StateObject", "Environment",
             "some", "Self", "self",
         ]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

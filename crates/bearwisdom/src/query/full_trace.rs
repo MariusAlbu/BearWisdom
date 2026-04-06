@@ -95,6 +95,7 @@ struct FlowJumpMap {
 
 impl FlowJumpMap {
     fn load(db: &Database) -> Result<Self> {
+        let _timer = db.timer("flow_jump_map_load");
         let conn = &db.conn;
         let mut by_source: HashMap<String, Vec<(String, String)>> = HashMap::new();
         let mut by_target: HashMap<String, Vec<(String, String)>> = HashMap::new();
@@ -149,6 +150,7 @@ pub fn trace_from_symbol(
     symbol_name: &str,
     max_depth: u32,
 ) -> Result<FullTraceResult> {
+    let _timer = db.timer("trace_from_symbol");
     let conn = &db.conn;
     let jumps = FlowJumpMap::load(db)?;
     let mut visited_global = HashSet::new();
@@ -207,6 +209,7 @@ pub fn trace_from_entry_points(
     max_depth: u32,
     max_traces: usize,
 ) -> Result<FullTraceResult> {
+    let _timer = db.timer("trace_from_entry_points");
     let conn = &db.conn;
     let jumps = FlowJumpMap::load(db)?;
 

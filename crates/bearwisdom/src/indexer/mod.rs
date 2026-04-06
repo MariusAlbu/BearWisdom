@@ -1,3 +1,4 @@
+pub mod changeset;
 pub mod full;
 pub mod incremental;
 pub mod manifest;
@@ -8,3 +9,4 @@ pub mod project_context;
 pub mod ref_cache;
 pub mod resolve;
 pub mod test_frameworks;
+pub mod write;

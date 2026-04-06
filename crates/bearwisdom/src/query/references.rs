@@ -20,6 +20,17 @@ use anyhow::{Context, Result};
 ///
 /// `limit`: maximum number of results (0 = unlimited).
 pub fn find_references(db: &Database, target_name: &str, limit: usize) -> Result<Vec<ReferenceResult>> {
+    let _timer = db.timer("find_references");
+
+    // Check cache first.
+    if let Some(ref cache) = db.query_cache {
+        if let Some(cached) = cache.get_references(target_name) {
+            if let Ok(result) = serde_json::from_str::<Vec<ReferenceResult>>(&cached) {
+                return Ok(result);
+            }
+        }
+    }
+
     let conn = &db.conn;
 
     // Resolve the target name to one or more symbol IDs.
@@ -92,6 +103,13 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> Result
 
     if limit > 0 && results.len() > limit {
         results.truncate(limit);
+    }
+
+    // Store in cache.
+    if let Some(ref cache) = db.query_cache {
+        if let Ok(json) = serde_json::to_string(&results) {
+            cache.put_references(target_name.to_string(), json);
+        }
     }
 
     Ok(results)

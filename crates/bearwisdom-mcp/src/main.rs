@@ -74,6 +74,7 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     info!("Starting BearWisdom for project: {}", project.display());
 
     // Open or create the index database via a connection pool (4 connections).
+    // Cache and metrics are enabled by default in the core library.
     let db_path = resolve_db_path(&project)?;
     let pool = bearwisdom::DbPool::new(&db_path, 4)
         .with_context(|| format!("Failed to create pool for {}", db_path.display()))?;

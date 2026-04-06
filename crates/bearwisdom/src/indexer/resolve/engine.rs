@@ -1027,6 +1027,7 @@ mod tests {
             content_hash: String::new(),
             size: 0,
             line_count: 0,
+            mtime: None,
             content: None,
             has_errors: false,
             symbols: vec![
@@ -1103,6 +1104,7 @@ mod tests {
             content_hash: String::new(),
             size: 0,
             line_count: 0,
+            mtime: None,
             content: None,
             has_errors: false,
             symbols: syms,

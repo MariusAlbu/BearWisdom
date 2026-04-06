@@ -56,6 +56,7 @@ pub fn complete_at(
     prefix: &str,
     include_signature: bool,
 ) -> Result<Vec<CompletionItem>> {
+    let _timer = db.timer("complete_at");
     let conn = &db.conn;
 
     // --- Step 1: Resolve file_id and containing scope ---

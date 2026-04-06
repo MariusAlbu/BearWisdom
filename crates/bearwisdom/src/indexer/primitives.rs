@@ -1,92 +1,37 @@
 // =============================================================================
 // indexer/primitives.rs — Language primitive type sets
 //
-// Returns the set of built-in/primitive type names for each supported language.
-// These are never in the project's symbol index and should be classified as
-// external (or simply filtered) rather than emitting unresolved edges.
+// Delegates to per-language primitives files in languages/<lang>/primitives.rs.
+// This module provides the language-ID routing (including aliases like tsx → TS)
+// while each language owns its own primitive list.
 // =============================================================================
 
 /// Return the slice of primitive/built-in type names for the given language
 /// identifier. Returns an empty slice for unrecognised languages.
 pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
     match lang {
-        "typescript" | "javascript" | "tsx" | "jsx" | "svelte" | "astro" | "vue" | "angular" => &[
-            "string", "number", "boolean", "void", "null", "undefined", "any", "never",
-            "object", "symbol", "bigint", "unknown", "String", "Number", "Boolean", "Object",
-            "Array", "Function", "Symbol", "RegExp", "Date", "Error", "Promise", "Map", "Set",
-            // Generic type parameters
-            "T", "U", "K", "V", "P", "R", "S", "E",
-        ],
-        "java" | "kotlin" | "scala" | "groovy" => &[
-            "int", "long", "float", "double", "boolean", "char", "byte", "short", "void",
-            "Integer", "Long", "Float", "Double", "Boolean", "Character", "Byte", "Short",
-            "String", "Object", "Void",
-            "T", "U", "K", "V", "E", "R", "S",
-        ],
-        "csharp" | "fsharp" | "vbnet" => &[
-            "int", "long", "float", "double", "bool", "char", "byte", "string", "object",
-            "void", "decimal", "dynamic", "short", "ushort", "uint", "ulong", "sbyte",
-            "nint", "nuint",
-        ],
-        "rust" => &[
-            "i8", "i16", "i32", "i64", "i128", "u8", "u16", "u32", "u64", "u128",
-            "f32", "f64", "bool", "char", "str", "usize", "isize", "String", "Vec",
-            "Option", "Result", "Box", "Rc", "Arc", "Self",
-            // Generic type parameters — can never resolve to a concrete symbol
-            "T", "U", "K", "V", "E", "R", "S", "P", "A", "B", "C", "D", "N", "M",
-            "Fn", "FnMut", "FnOnce",
-        ],
-        "python" => &[
-            "int", "float", "str", "bool", "None", "bytes", "list", "dict", "tuple",
-            "set", "type", "object", "complex", "frozenset", "memoryview", "range",
-            "True", "False",
-        ],
-        "go" => &[
-            "int", "int8", "int16", "int32", "int64", "uint", "uint8", "uint16", "uint32",
-            "uint64", "float32", "float64", "bool", "string", "byte", "rune", "error", "any",
-            "complex64", "complex128", "uintptr",
-            "T", "K", "V", "E",
-        ],
-        "swift" => &[
-            "Int", "Int8", "Int16", "Int32", "Int64", "UInt", "UInt8", "UInt16", "UInt32",
-            "UInt64", "Float", "Double", "Bool", "String", "Character", "Void", "Any",
-            "AnyObject", "Self", "Optional", "Array", "Dictionary", "Set",
-        ],
-        "dart" => &[
-            "int", "double", "num", "bool", "String", "List", "Map", "Set", "dynamic",
-            "void", "Null", "Object", "Future", "Stream", "Iterable", "Type", "Function",
-        ],
-        "php" => &[
-            "int", "float", "string", "bool", "array", "object", "null", "void", "mixed",
-            "never", "callable", "iterable", "self", "static", "parent", "true", "false",
-        ],
-        "ruby" => &[
-            "Integer", "Float", "String", "Symbol", "Array", "Hash", "NilClass", "TrueClass",
-            "FalseClass", "Numeric", "Object", "BasicObject", "Kernel", "Comparable",
-            "Enumerable",
-        ],
-        "elixir" => &[
-            "integer", "float", "atom", "string", "boolean", "list", "tuple", "map",
-            "nil", "pid", "reference", "binary", "function", "port",
-        ],
-        "sql" => &[
-            // SQL keywords and functions that appear as type_ref noise
-            "NEW", "OLD", "NULL", "TRUE", "FALSE", "DEFAULT",
-            "INTEGER", "TEXT", "REAL", "BLOB", "BOOLEAN", "TIMESTAMP",
-            "VARCHAR", "CHAR", "BIGINT", "SMALLINT", "DECIMAL", "NUMERIC",
-            "SERIAL", "UUID", "JSONB", "JSON",
-            // SQL built-in functions
-            "count", "sum", "avg", "min", "max", "coalesce", "nullif",
-            "now", "current_timestamp", "nextval", "currval",
-            "lower", "upper", "trim", "length", "substring",
-            "EXTRACT", "CAST", "CASE", "WHEN", "THEN", "ELSE", "END",
-            "ALTER", "DROP", "CREATE", "INSERT", "UPDATE", "DELETE", "SELECT",
-            "LEFT", "RIGHT", "INNER", "OUTER", "JOIN", "ON", "WHERE", "FROM",
-            "GROUP", "ORDER", "BY", "HAVING", "LIMIT", "OFFSET",
-            "IF", "EXISTS", "NOT", "AND", "OR", "IN", "LIKE", "BETWEEN",
-            "SET", "VALUES", "INTO", "TABLE", "INDEX", "VIEW", "TRIGGER",
-            "FUNCTION", "PROCEDURE", "RETURN", "RETURNS", "BEGIN", "DECLARE",
-        ],
+        "typescript" | "tsx" => crate::languages::typescript::primitives::PRIMITIVES,
+        "javascript" | "jsx" => crate::languages::javascript::primitives::PRIMITIVES,
+        "svelte" => crate::languages::typescript::primitives::PRIMITIVES,
+        "astro" => crate::languages::typescript::primitives::PRIMITIVES,
+        "vue" => crate::languages::typescript::primitives::PRIMITIVES,
+        "angular" => crate::languages::typescript::primitives::PRIMITIVES,
+        "java" => crate::languages::java::primitives::PRIMITIVES,
+        "kotlin" => crate::languages::kotlin::primitives::PRIMITIVES,
+        "scala" => crate::languages::scala::primitives::PRIMITIVES,
+        "groovy" => crate::languages::groovy::primitives::PRIMITIVES,
+        "csharp" => crate::languages::csharp::primitives::PRIMITIVES,
+        "fsharp" => crate::languages::fsharp::primitives::PRIMITIVES,
+        "vbnet" => crate::languages::vbnet::primitives::PRIMITIVES,
+        "rust" => crate::languages::rust_lang::primitives::PRIMITIVES,
+        "python" => crate::languages::python::primitives::PRIMITIVES,
+        "go" => crate::languages::go::primitives::PRIMITIVES,
+        "swift" => crate::languages::swift::primitives::PRIMITIVES,
+        "dart" => crate::languages::dart::primitives::PRIMITIVES,
+        "php" => crate::languages::php::primitives::PRIMITIVES,
+        "ruby" => crate::languages::ruby::primitives::PRIMITIVES,
+        "elixir" => crate::languages::elixir::primitives::PRIMITIVES,
+        "sql" => crate::languages::sql::primitives::PRIMITIVES,
         _ => &[],
     }
 }
@@ -139,5 +84,25 @@ mod tests {
             primitives_for_language("tsx"),
             primitives_for_language("typescript")
         );
+    }
+
+    #[test]
+    fn kotlin_has_own_primitives() {
+        let k = primitives_for_language("kotlin");
+        let j = primitives_for_language("java");
+        // Kotlin uses "Unit" not "void", "Int" not "int"
+        assert!(k.contains(&"Unit"));
+        assert!(k.contains(&"Int"));
+        assert!(!std::ptr::eq(k, j));
+    }
+
+    #[test]
+    fn fsharp_has_own_primitives() {
+        let f = primitives_for_language("fsharp");
+        let c = primitives_for_language("csharp");
+        // F# uses "unit" and "obj", C# does not
+        assert!(f.contains(&"unit"));
+        assert!(f.contains(&"obj"));
+        assert!(!std::ptr::eq(f, c));
     }
 }

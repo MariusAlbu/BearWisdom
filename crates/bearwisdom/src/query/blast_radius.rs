@@ -67,6 +67,7 @@ pub fn blast_radius(
     symbol_name: &str,
     max_depth: u32,
 ) -> Result<Option<BlastRadiusResult>> {
+    let _timer = db.timer("blast_radius");
     let conn = &db.conn;
 
     // --- Resolve the symbol to an id + summary ---

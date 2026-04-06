@@ -79,6 +79,7 @@ pub fn incoming_calls(
     symbol_name: &str,
     limit: usize,
 ) -> Result<Vec<CallHierarchyItem>> {
+    let _timer = db.timer("calls_in");
     let target_ids = resolve_ids(db, symbol_name)?;
     if target_ids.is_empty() {
         return Ok(vec![]);
@@ -144,6 +145,7 @@ pub fn outgoing_calls(
     symbol_name: &str,
     limit: usize,
 ) -> Result<Vec<CallHierarchyItem>> {
+    let _timer = db.timer("calls_out");
     let source_ids = resolve_ids(db, symbol_name)?;
     if source_ids.is_empty() {
         return Ok(vec![]);

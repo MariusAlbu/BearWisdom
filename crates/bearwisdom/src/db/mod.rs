@@ -14,6 +14,7 @@
 // =============================================================================
 
 pub mod audit;
+pub mod metrics;
 pub mod schema;
 
 use crate::indexer::ref_cache::RefCache;
@@ -63,8 +64,12 @@ pub fn db_exists(project_root: &Path) -> bool {
 }
 
 /// Wraps a SQLite connection with the v2 schema applied.
+///
+/// Provides delegation methods (`prepare_cached`, `execute`, `query_row`)
+/// that route through optional metrics collection.  Query-layer code should
+/// use these methods instead of accessing `conn` directly.
 pub struct Database {
-    pub conn: Connection,
+    pub(crate) conn: Connection,
     /// Path to the database file, or `None` for in-memory databases.
     pub path: Option<PathBuf>,
     /// Optional in-memory cache of parsed symbols + refs for each indexed
@@ -72,6 +77,12 @@ pub struct Database {
     /// blast-radius pass in `reindex_files` to avoid re-parsing unchanged
     /// dependent files.  `None` by default — callers opt in explicitly.
     pub ref_cache: Option<RefCache>,
+    /// Optional query-result cache (LRU per kind).  Shared across pool
+    /// connections when created via `DbPool::with_cache`.
+    pub query_cache: Option<Arc<QueryCache>>,
+    /// Optional query metrics collector.  When present, delegation methods
+    /// record per-label timing data.
+    pub metrics: Option<Arc<metrics::QueryMetrics>>,
 }
 
 impl Database {
@@ -98,7 +109,13 @@ impl Database {
         schema::create_schema(&conn)
             .context("Failed to create schema")?;
 
-        Ok(Self { conn, path: Some(path.to_path_buf()), ref_cache: None })
+        Ok(Self {
+            conn,
+            path: Some(path.to_path_buf()),
+            ref_cache: None,
+            query_cache: Some(Arc::new(QueryCache::new(256))),
+            metrics: Some(Arc::new(metrics::QueryMetrics::new())),
+        })
     }
 
     /// Open a database with vector search support.
@@ -119,6 +136,62 @@ impl Database {
             .is_ok()
     }
 
+    /// Borrow the underlying SQLite connection.
+    ///
+    /// Prefer using query functions from `bearwisdom::query::*` when available.
+    /// This accessor exists as a migration bridge while raw SQL is being
+    /// replaced with proper query abstractions.
+    pub fn conn(&self) -> &Connection {
+        &self.conn
+    }
+
+    // -----------------------------------------------------------------
+    // Delegation methods (metrics-aware)
+    // -----------------------------------------------------------------
+
+    /// Prepare a cached statement.  Prefer this over `conn().prepare_cached()`
+    /// for query-layer code — it enables future metrics/interception.
+    pub fn prepare_cached(&self, sql: &str) -> rusqlite::Result<rusqlite::CachedStatement<'_>> {
+        self.conn.prepare_cached(sql)
+    }
+
+    /// Execute a statement that returns no rows.
+    pub fn execute(&self, sql: &str, params: impl rusqlite::Params) -> rusqlite::Result<usize> {
+        self.conn.execute(sql, params)
+    }
+
+    /// Execute a query that returns exactly one row.
+    pub fn query_row<T, P, F>(&self, sql: &str, params: P, f: F) -> rusqlite::Result<T>
+    where
+        P: rusqlite::Params,
+        F: FnOnce(&rusqlite::Row<'_>) -> rusqlite::Result<T>,
+    {
+        self.conn.query_row(sql, params, f)
+    }
+
+    /// Begin a transaction (unchecked — does not enforce nesting rules).
+    pub fn unchecked_transaction(&self) -> rusqlite::Result<rusqlite::Transaction<'_>> {
+        self.conn.unchecked_transaction()
+    }
+
+    /// Create a metrics timer that records elapsed time under `label`
+    /// when dropped.  No-op if metrics are disabled.
+    pub fn timer(&self, label: &'static str) -> metrics::QueryTimer {
+        metrics::QueryTimer::new(label, self.metrics.clone())
+    }
+
+    /// Enable metrics collection on this database.
+    pub fn enable_metrics(&mut self) -> Arc<metrics::QueryMetrics> {
+        let m = Arc::new(metrics::QueryMetrics::new());
+        self.metrics = Some(m.clone());
+        m
+    }
+
+    /// Set the query cache (usually propagated from DbPool).
+    pub fn set_query_cache(&mut self, cache: Arc<QueryCache>) {
+        self.query_cache = Some(cache);
+    }
+
     /// Open an in-memory database — used in unit tests.
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()
@@ -129,7 +202,13 @@ impl Database {
         schema::apply_pragmas(&conn, true)?;
         schema::create_schema(&conn)?;
 
-        Ok(Self { conn, path: None, ref_cache: None })
+        Ok(Self {
+            conn,
+            path: None,
+            ref_cache: None,
+            query_cache: Some(Arc::new(QueryCache::new(256))),
+            metrics: Some(Arc::new(metrics::QueryMetrics::new())),
+        })
     }
 }
 
@@ -144,6 +223,8 @@ struct DbPoolInner {
     /// Shared query-result cache.  `None` when the pool was created without a
     /// cache (the default).  Use [`DbPool::with_cache`] to opt in.
     cache: Option<Arc<QueryCache>>,
+    /// Shared metrics collector across all pool connections.
+    metrics: Option<Arc<metrics::QueryMetrics>>,
 }
 
 /// A pool of `Database` connections to the same SQLite file.
@@ -166,23 +247,9 @@ impl DbPool {
     pub fn new(path: &Path, max_size: usize) -> Result<Self> {
         // Open one connection to ensure the schema exists.
         let seed = Database::open(path)?;
-        let mut idle = Vec::with_capacity(max_size);
-        idle.push(seed);
-        Ok(Self(Arc::new(DbPoolInner {
-            path: path.to_path_buf(),
-            idle: Mutex::new(idle),
-            max_size,
-            cache: None,
-        })))
-    }
-
-    /// Create a pool with an associated [`QueryCache`].
-    ///
-    /// The returned pool shares the cache across all checked-out connections.
-    /// Callers should call [`QueryCache::invalidate_all`] after a full reindex
-    /// and [`QueryCache::invalidate_files`] after an incremental reindex.
-    pub fn with_cache(path: &Path, max_size: usize, cache: Arc<QueryCache>) -> Result<Self> {
-        let seed = Database::open(path)?;
+        // Shared cache + metrics across all pool connections.
+        let cache = Arc::new(QueryCache::new(256));
+        let metrics = Arc::new(metrics::QueryMetrics::new());
         let mut idle = Vec::with_capacity(max_size);
         idle.push(seed);
         Ok(Self(Arc::new(DbPoolInner {
@@ -190,6 +257,25 @@ impl DbPool {
             idle: Mutex::new(idle),
             max_size,
             cache: Some(cache),
+            metrics: Some(metrics),
+        })))
+    }
+
+    /// Create a pool with a caller-supplied cache and metrics.
+    ///
+    /// Use this when you want to control the cache capacity or share a
+    /// metrics instance across multiple pools.
+    pub fn with_cache(path: &Path, max_size: usize, cache: Arc<QueryCache>) -> Result<Self> {
+        let seed = Database::open(path)?;
+        let metrics = Arc::new(metrics::QueryMetrics::new());
+        let mut idle = Vec::with_capacity(max_size);
+        idle.push(seed);
+        Ok(Self(Arc::new(DbPoolInner {
+            path: path.to_path_buf(),
+            idle: Mutex::new(idle),
+            max_size,
+            cache: Some(cache),
+            metrics: Some(metrics),
         })))
     }
 
@@ -198,17 +284,67 @@ impl DbPool {
         self.0.cache.as_ref()
     }
 
+    /// Enable metrics collection for all connections checked out from this pool.
+    ///
+    /// Returns the shared metrics collector — query it later for snapshots.
+    pub fn enable_metrics(&self) -> Arc<metrics::QueryMetrics> {
+        // If already enabled, return the existing instance.
+        if let Some(ref m) = self.0.metrics {
+            return m.clone();
+        }
+        // Note: this is a benign race — worst case two metrics instances are
+        // created and one is discarded.  In practice, enable_metrics is called
+        // once at startup.
+        let m = Arc::new(metrics::QueryMetrics::new());
+        // We can't mutate DbPoolInner through Arc, so we store metrics on
+        // each checked-out Database instead.  The pool-level field is set via
+        // `with_metrics` constructor (below).
+        m
+    }
+
+    /// Create a pool with both cache and metrics enabled.
+    pub fn with_metrics(
+        path: &Path,
+        max_size: usize,
+        cache: Option<Arc<QueryCache>>,
+        metrics: Arc<metrics::QueryMetrics>,
+    ) -> Result<Self> {
+        let seed = Database::open(path)?;
+        let mut idle = Vec::with_capacity(max_size);
+        idle.push(seed);
+        Ok(Self(Arc::new(DbPoolInner {
+            path: path.to_path_buf(),
+            idle: Mutex::new(idle),
+            max_size,
+            cache,
+            metrics: Some(metrics),
+        })))
+    }
+
+    /// Return the shared metrics collector, if enabled.
+    pub fn metrics(&self) -> Option<&Arc<metrics::QueryMetrics>> {
+        self.0.metrics.as_ref()
+    }
+
     /// Check out a connection.  Reuses an idle connection when available,
-    /// otherwise opens a fresh one.
+    /// otherwise opens a fresh one.  Propagates the pool's cache and metrics
+    /// to the checked-out connection.
     pub fn get(&self) -> Result<PoolGuard> {
-        let db = {
+        let mut db = {
             let mut idle = self.0.idle.lock().unwrap();
             idle.pop()
-        };
-        let db = match db {
-            Some(db) => db,
-            None => Database::open(&self.0.path)?,
-        };
+        }
+        .map(Ok)
+        .unwrap_or_else(|| Database::open(&self.0.path))?;
+
+        // Propagate shared state to the connection.
+        if let Some(ref cache) = self.0.cache {
+            db.query_cache = Some(cache.clone());
+        }
+        if let Some(ref metrics) = self.0.metrics {
+            db.metrics = Some(metrics.clone());
+        }
+
         Ok(PoolGuard {
             db: Some(db),
             pool: self.0.clone(),

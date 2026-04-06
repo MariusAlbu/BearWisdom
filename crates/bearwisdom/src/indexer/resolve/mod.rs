@@ -265,6 +265,16 @@ pub fn resolve_and_write(
     tx.commit()
         .context("Failed to commit resolution transaction")?;
 
+    // Materialize incoming_edge_count on symbols for fast centrality lookups.
+    // Single UPDATE uses the existing idx_edges_target index.
+    conn.execute(
+        "UPDATE symbols SET incoming_edge_count = (
+            SELECT COUNT(*) FROM edges WHERE target_id = symbols.id
+        )",
+        [],
+    )
+    .context("Failed to materialize incoming_edge_count")?;
+
     if stats.engine_resolved > 0 || stats.external > 0 {
         info!(
             "Resolution: {} by engine, {} by heuristic, {} external, {} unresolved",

@@ -280,7 +280,7 @@ fn generate_cross_file_references(
     // Find type-like symbols that are referenced across files.
     // Includes struct/type_alias for Go/TS, and accepts NULL visibility for TS/JS.
     let candidates: Vec<(String, String, String)> = {
-        let mut stmt = db.conn.prepare(
+        let mut stmt = db.conn().prepare(
             "SELECT s.name, s.qualified_name, f.path
              FROM symbols s
              JOIN files f ON f.id = s.file_id

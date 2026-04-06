@@ -65,6 +65,12 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// denominator — they're correctly skipped by extractors.
     fn builtin_type_names(&self) -> &[&str] { &[] }
 
+    /// Primitive and built-in type names that can never appear in a project's
+    /// symbol index. Used by the resolution engine to classify unresolvable
+    /// references as "external" rather than "unresolved". Includes primitive
+    /// keywords, wrapper types, and generic type parameter names.
+    fn primitives(&self) -> &'static [&'static str] { &[] }
+
     /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
     /// be counted in the coverage denominator when it appears as a direct child of
     /// the given parent kind.

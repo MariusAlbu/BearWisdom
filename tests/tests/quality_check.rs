@@ -39,7 +39,7 @@ struct ProjectStats {
 
 /// Read the same counters that `cmd_quality_check` reads.
 fn read_project_stats(db: &Database) -> ProjectStats {
-    let conn = &db.conn;
+    let conn = db.conn();
     ProjectStats {
         files: conn
             .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))

@@ -96,7 +96,25 @@ pub struct ArchitectureOverview {
 /// All four sub-queries run against the open database; no indexing happens here.
 /// Build overview with default limits (10 hotspots, 20 entry points).
 pub fn get_overview(db: &Database) -> Result<ArchitectureOverview> {
-    get_overview_with_limits(db, 10, 20)
+    // Check cache first — architecture rarely changes between reindexes.
+    if let Some(ref cache) = db.query_cache {
+        if let Some(cached) = cache.get_architecture() {
+            if let Ok(result) = serde_json::from_str::<ArchitectureOverview>(&cached) {
+                return Ok(result);
+            }
+        }
+    }
+
+    let result = get_overview_with_limits(db, 10, 20)?;
+
+    // Store in cache.
+    if let Some(ref cache) = db.query_cache {
+        if let Ok(json) = serde_json::to_string(&result) {
+            cache.put_architecture(json);
+        }
+    }
+
+    Ok(result)
 }
 
 /// Build overview with custom limits.
@@ -105,6 +123,7 @@ pub fn get_overview_with_limits(
     hotspot_limit: usize,
     entry_point_limit: usize,
 ) -> Result<ArchitectureOverview> {
+    let _timer = db.timer("architecture_overview");
     let conn = &db.conn;
 
     // --- 1. Totals ---

@@ -73,4 +73,8 @@ impl LanguagePlugin for AngularPlugin {
     fn builtin_type_names(&self) -> &[&str] {
         &[]
     }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        crate::languages::typescript::primitives::PRIMITIVES
+    }
 }

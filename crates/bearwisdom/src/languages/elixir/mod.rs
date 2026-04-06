@@ -1,6 +1,7 @@
 //! elixir language plugin.
 
 mod helpers;
+pub(crate) mod primitives;
 pub mod extract;
 
 mod builtins;
@@ -67,5 +68,9 @@ impl LanguagePlugin for ElixirPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

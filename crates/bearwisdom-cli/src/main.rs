@@ -585,7 +585,7 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
         if let Some(ref dir) = model_dir {
             eprintln!("Computing embeddings ...");
             let mut embedder = bearwisdom::search::embedder::Embedder::new(dir.clone());
-            match bearwisdom::embed_chunks(&db.conn, &mut embedder, 4) {
+            match bearwisdom::embed_chunks(&db, &mut embedder, 4) {
                 Ok((n, _)) => {
                     chunks_embedded = n;
                     eprintln!("Embedded {n} chunks");
@@ -623,7 +623,7 @@ fn cmd_embed(project_path: &str, batch_size: usize) -> Result<String> {
     eprintln!("Loading model from {} ...", model_dir.display());
     let mut embedder = bearwisdom::search::embedder::Embedder::new(model_dir);
 
-    match bearwisdom::embed_chunks(&db.conn, &mut embedder, batch_size) {
+    match bearwisdom::embed_chunks(&db, &mut embedder, batch_size) {
         Ok((n, _)) => {
             embedder.unload();
             eprintln!("Embedded {n} chunks");
@@ -699,31 +699,15 @@ fn cmd_import_scip(project_path: &str, scip_path: &str) -> Result<String> {
 /// Report the current index status without re-indexing.
 fn cmd_status(project_path: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let conn = &db.conn;
-
-    let files: u32 =
-        conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
-            .unwrap_or(0);
-    let symbols: u32 =
-        conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
-            .unwrap_or(0);
-    let edges: u32 =
-        conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))
-            .unwrap_or(0);
-    let unresolved: u32 =
-        conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))
-            .unwrap_or(0);
-    let external: u32 =
-        conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0))
-            .unwrap_or(0);
+    let stats = bearwisdom::index_stats(&db)?;
 
     ok_json(serde_json::json!({
         "state": "ready",
-        "file_count": files,
-        "symbol_count": symbols,
-        "edge_count": edges,
-        "unresolved_ref_count": unresolved,
-        "external_ref_count": external,
+        "file_count": stats.file_count,
+        "symbol_count": stats.symbol_count,
+        "edge_count": stats.edge_count,
+        "unresolved_ref_count": stats.unresolved_ref_count,
+        "external_ref_count": stats.external_ref_count,
     }))
 }
 
@@ -1184,36 +1168,28 @@ fn cmd_reindex(project_path: &str) -> Result<String> {
     bearwisdom::full_index(&mut db, &root, None, None)
         .with_context(|| format!("Index failed for {}", root.display()))?;
 
-    let conn = &db.conn;
-    let files: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-    let symbols: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
-    let edges: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-    let routes: i64 = conn.query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))?;
-    let flow_edges: i64 = conn.query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))?;
-    let unresolved: i64 = conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
-
-    let mut flow_edge_types: std::collections::BTreeMap<String, i64> =
-        std::collections::BTreeMap::new();
-    {
-        let mut stmt = conn.prepare("SELECT edge_type, COUNT(*) FROM flow_edges GROUP BY edge_type")?;
-        for row in stmt.query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))?.flatten() {
-            flow_edge_types.insert(row.0, row.1);
-        }
-    }
+    let stats = bearwisdom::index_stats(&db)?;
+    let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
+    let flow_edge_types: std::collections::BTreeMap<String, u32> = flow_breakdown
+        .into_iter()
+        .map(|b| (b.edge_type, b.count))
+        .collect();
 
     let elapsed_ms = start.elapsed().as_millis() as u64;
-    eprintln!("Done in {:.2}s: {files} files, {symbols} symbols, {edges} edges, {routes} routes, {flow_edges} flow_edges",
-        elapsed_ms as f64 / 1000.0);
+    eprintln!("Done in {:.2}s: {} files, {} symbols, {} edges, {} routes, {} flow_edges",
+        elapsed_ms as f64 / 1000.0,
+        stats.file_count, stats.symbol_count, stats.edge_count,
+        stats.route_count, stats.flow_edge_count);
 
     ok_json(serde_json::json!({
         "project": root.display().to_string(),
         "duration_ms": elapsed_ms,
-        "files": files,
-        "symbols": symbols,
-        "edges": edges,
-        "routes": routes,
-        "flow_edges": flow_edges,
-        "unresolved_refs": unresolved,
+        "files": stats.file_count,
+        "symbols": stats.symbol_count,
+        "edges": stats.edge_count,
+        "routes": stats.route_count,
+        "flow_edges": stats.flow_edge_count,
+        "unresolved_refs": stats.unresolved_ref_count,
         "flow_edge_types": flow_edge_types,
     }))
 }
@@ -1224,7 +1200,7 @@ fn cmd_reindex(project_path: &str) -> Result<String> {
 
 fn cmd_sql(project_path: &str, query: &str, limit: usize) -> Result<String> {
     let db = open_existing_db(project_path)?;
-    let conn = &db.conn;
+    let conn = db.conn();
 
     let mut stmt = conn
         .prepare(query)
@@ -1306,17 +1282,16 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
 
         let db = Database::open_with_vec(&db_path)
             .with_context(|| format!("Failed to open DB for {name}"))?;
-        let conn = &db.conn;
 
-        // Read current counts.
-        let files: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-        let symbols: i64 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
-        let edges: i64 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-        let routes: i64 = conn.query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))?;
-        let flow_edges: i64 = conn.query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))?;
-        let unresolved: i64 =
-            conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
-        let unresolved_flows: i64 = conn.query_row(
+        // Read current counts via core library.
+        let stats = bearwisdom::index_stats(&db)?;
+        let files = stats.file_count as i64;
+        let symbols = stats.symbol_count as i64;
+        let edges = stats.edge_count as i64;
+        let routes = stats.route_count as i64;
+        let flow_edges = stats.flow_edge_count as i64;
+        let unresolved = stats.unresolved_ref_count as i64;
+        let unresolved_flows: i64 = db.conn().query_row(
             "SELECT COUNT(*) FROM connection_points cp
              WHERE cp.direction = 'start'
                AND NOT EXISTS (
@@ -1329,26 +1304,18 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         )?;
 
         // Per-type flow edge counts.
-        let mut flow_edge_types: std::collections::BTreeMap<String, i64> =
-            std::collections::BTreeMap::new();
-        {
-            let mut stmt = conn
-                .prepare("SELECT edge_type, COUNT(*) FROM flow_edges GROUP BY edge_type")
-                .unwrap();
-            let rows = stmt
-                .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))
-                .unwrap();
-            for row in rows.flatten() {
-                flow_edge_types.insert(row.0, row.1);
-            }
-        }
+        let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
+        let flow_edge_types: std::collections::BTreeMap<String, i64> = flow_breakdown
+            .into_iter()
+            .map(|b| (b.edge_type, b.count as i64))
+            .collect();
 
         // Compare against assertions.
         let assertions = &proj["assertions"];
         let mut proj_regressions: Vec<String> = Vec::new();
         let mut proj_improvements: Vec<String> = Vec::new();
 
-        let check = |field: &str, current: i64, baseline_val: i64| -> (bool, bool) {
+        let check = |_field: &str, current: i64, baseline_val: i64| -> (bool, bool) {
             // regression if current < baseline, improvement if current > baseline
             (current < baseline_val, current > baseline_val)
         };
@@ -1390,7 +1357,7 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
                         "min_flow_edges" => flow_edges,
                         k if k.starts_with("min_") && k.ends_with("_edges") => {
                             let edge_type = &k[4..k.len() - 6]; // strip min_ and _edges
-                            conn.query_row(
+                            db.conn().query_row(
                                 "SELECT COUNT(*) FROM flow_edges WHERE edge_type = ?1",
                                 [edge_type],
                                 |r| r.get(0),

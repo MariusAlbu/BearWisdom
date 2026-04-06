@@ -26,11 +26,13 @@ pub mod walker;
 // Re-export the most commonly used entry points at the crate root so callers
 // don't need to dig through module paths.
 pub use db::{resolve_db_path, db_exists, Database, DbPool, PoolGuard};
+pub use db::metrics::{QueryMetrics, QueryStats};
 pub use db::audit::{AuditRecord, AuditSessionSummary, AuditStats};
 pub use indexer::full::{full_index, ProgressFn};
-pub use indexer::incremental::{incremental_index, reindex_files, ChangeKind, FileChangeEvent};
-pub use types::{EdgeKind, EdgeSource, Symbol, SymbolKind};
+pub use indexer::incremental::{incremental_index, git_reindex, reindex_files, ChangeKind, FileChangeEvent};
+pub use types::{EdgeKind, EdgeSource, IndexStats, Symbol, SymbolKind};
 pub use indexer::post_index::embed_chunks;
+pub use query::stats::{index_stats, flow_edge_breakdown, FlowEdgeBreakdown};
 pub use walker::WalkedFile;
 
 // Re-export query result types for consumers that only depend on this crate.

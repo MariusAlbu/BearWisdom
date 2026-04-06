@@ -39,6 +39,11 @@ pub struct GraphNode {
     pub concept: Option<String>,
     /// The first annotation attached to this symbol (if any).
     pub annotation: Option<String>,
+    /// Number of edges in the full graph (not just the visible subgraph).
+    /// Lets the UI show "this node has N connections" even when edges are
+    /// hidden because partner nodes fell outside the cap.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub total_edges: Option<u32>,
 }
 
 /// A directed edge between two nodes.
@@ -75,6 +80,7 @@ pub fn export_graph(
     filter: Option<&str>,
     max_nodes: usize,
 ) -> Result<SubgraphResult> {
+    let _timer = db.timer("export_graph");
     let conn = &db.conn;
 
     // Effective cap: never export more than 10 000 nodes unconditionally.
@@ -96,6 +102,7 @@ pub fn export_graph(
                 file_path:      row.get(4)?,
                 concept:        row.get(5)?,
                 annotation:     row.get(6)?,
+                total_edges:    row.get(7)?,
             })
         };
 
@@ -123,12 +130,35 @@ pub fn export_graph(
     let node_ids: std::collections::HashSet<i64> = nodes.iter().map(|n| n.id).collect();
 
     // --- Step 2: Load edges where BOTH endpoints are in node_ids ---
-    // We do this in Rust rather than with a complex SQL sub-query, because
-    // the node set is already in memory and the SQL alternative (IN clause)
-    // can be very slow for large ID sets.
+    // Insert node IDs into a temp table, then JOIN edges against it.
+    // This is O(nodes + matching edges) via index, vs the old approach of
+    // scanning the entire edges table and filtering in Rust.
     let edges: Vec<GraphEdge> = {
+        conn.execute_batch(
+            "CREATE TEMP TABLE IF NOT EXISTS _export_nodes (id INTEGER PRIMARY KEY)"
+        ).context("Failed to create temp table")?;
+        conn.execute("DELETE FROM _export_nodes", [])
+            .context("Failed to clear temp table")?;
+
+        // Batch-insert node IDs.
+        {
+            let tx = conn.unchecked_transaction()
+                .context("Failed to begin temp insert transaction")?;
+            let mut ins = tx.prepare_cached(
+                "INSERT OR IGNORE INTO _export_nodes (id) VALUES (?1)"
+            )?;
+            for &id in &node_ids {
+                ins.execute([id])?;
+            }
+            drop(ins);
+            tx.commit().context("Failed to commit temp inserts")?;
+        }
+
         let mut stmt = conn.prepare(
-            "SELECT source_id, target_id, kind, confidence FROM edges"
+            "SELECT e.source_id, e.target_id, e.kind, e.confidence
+             FROM edges e
+             JOIN _export_nodes ns ON e.source_id = ns.id
+             JOIN _export_nodes nt ON e.target_id = nt.id"
         ).context("Failed to prepare edge export query")?;
 
         let rows = stmt.query_map([], |row| {
@@ -140,28 +170,26 @@ pub fn export_graph(
             })
         }).context("Failed to execute edge export query")?;
 
-        rows.collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect graph edges")?
-            .into_iter()
-            .filter(|e| node_ids.contains(&e.source_id) && node_ids.contains(&e.target_id))
-            .collect()
+        let result = rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect graph edges")?;
+
+        // Clean up temp table.
+        let _ = conn.execute("DELETE FROM _export_nodes", []);
+
+        result
     };
 
-    // --- Step 3: Prune nodes that became isolated after edge filtering ---
-    // When no filter is applied, a node may be connected in the full graph but
-    // have all its edges cut because the partner nodes fell outside the cap.
-    // Remove these to keep the visualization clean.
-    // When a filter IS applied, keep all matched nodes — the user explicitly
-    // asked for them even if they have no internal edges.
+    // --- Step 3: Keep nodes that have ANY edge in the full graph ---
+    // A node may appear disconnected in the subgraph because its partner nodes
+    // fell outside the node cap. But it's still a connected symbol in the full
+    // graph. We keep it so the user can click it and see its connections in the
+    // detail panel. Only prune truly isolated nodes (zero edges in the DB).
+    // When a filter IS applied, keep all matched nodes unconditionally.
     let nodes = if filter.is_none() {
-        let edge_ids: std::collections::HashSet<i64> = edges
-            .iter()
-            .flat_map(|e| [e.source_id, e.target_id])
-            .collect();
+        // node_ids already loaded from the query which has `connected_filter`
+        // (EXISTS edges), so all nodes here are connected in the full graph.
+        // No pruning needed.
         nodes
-            .into_iter()
-            .filter(|n| edge_ids.contains(&n.id))
-            .collect::<Vec<_>>()
     } else {
         nodes
     };
@@ -181,7 +209,8 @@ fn build_node_sql(filter: Option<&str>, cap: usize) -> String {
                s.kind,
                f.path       AS file_path,
                MIN(c.name)  AS concept,
-               MIN(a.content) AS annotation
+               MIN(a.content) AS annotation,
+               (SELECT COUNT(*) FROM edges e2 WHERE e2.source_id = s.id OR e2.target_id = s.id) AS total_edges
         FROM symbols s
         JOIN files f ON f.id = s.file_id
         LEFT JOIN concept_members cm ON cm.symbol_id = s.id

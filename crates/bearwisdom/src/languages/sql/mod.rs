@@ -1,5 +1,6 @@
 //! SQL language plugin.
 
+pub(crate) mod primitives;
 pub mod extract;
 
 use crate::languages::LanguagePlugin;
@@ -62,5 +63,9 @@ impl LanguagePlugin for SqlPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

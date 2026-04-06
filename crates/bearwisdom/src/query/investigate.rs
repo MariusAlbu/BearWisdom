@@ -85,6 +85,7 @@ pub fn investigate(
     symbol_name: &str,
     opts: &InvestigateOptions,
 ) -> Result<Option<InvestigateResult>> {
+    let _timer = db.timer("investigate");
     let conn = &db.conn;
 
     // --- Resolve the symbol ---

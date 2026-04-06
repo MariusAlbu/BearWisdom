@@ -66,6 +66,7 @@ pub fn search_symbols(
     limit: usize,
     opts: &super::QueryOptions,
 ) -> Result<Vec<SearchResult>> {
+    let _timer = db.timer("search_symbols");
     let conn = &db.conn;
 
     // Guard: FTS5 needs at least one term.

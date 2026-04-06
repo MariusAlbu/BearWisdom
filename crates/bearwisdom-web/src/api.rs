@@ -19,7 +19,7 @@ use crate::SharedEmbedStatus;
 /// Groups symbols by the first 2 directory segments of their file path.
 /// E.g. `crates/bearwisdom/src/query/blast_radius.rs` → concept `"crates/bearwisdom"`.
 fn discover_directory_concepts(db: &bearwisdom::Database) -> anyhow::Result<()> {
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Find distinct directory prefixes (first 2 segments).
     let prefixes: Vec<String> = {
@@ -205,7 +205,7 @@ fn index_project(root: &Path) -> anyhow::Result<serde_json::Value> {
 
     if already_existed {
         // DB exists — read stats without re-indexing
-        let conn = &db.conn;
+        let conn = db.conn();
         let file_count: u32 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
         let symbol_count: u32 = conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
         let edge_count: u32 = conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
@@ -228,7 +228,7 @@ fn index_project(root: &Path) -> anyhow::Result<serde_json::Value> {
     let _ = bearwisdom::query::concepts::auto_assign_concepts(&db);
 
     // If no concepts were discovered (flat qualified names), create directory-based concepts.
-    let concept_count: u32 = db.conn.query_row(
+    let concept_count: u32 = db.conn().query_row(
         "SELECT COUNT(*) FROM concepts", [], |r| r.get(0)
     ).unwrap_or(0);
     if concept_count == 0 {
@@ -263,7 +263,7 @@ pub async fn get_status(Query(params): Query<PathParam>) -> impl IntoResponse {
 
 fn status_counts(root: &Path) -> anyhow::Result<serde_json::Value> {
     let db = open_existing_db(root)?;
-    let conn = &db.conn;
+    let conn = db.conn();
     let file_count: i64 = conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
     let symbol_count: i64 =
         conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
@@ -603,7 +603,7 @@ struct FileSymbolRow {
 
 fn file_symbols(root: &Path, file: &str) -> anyhow::Result<Vec<FileSymbolRow>> {
     let db = open_existing_db(root)?;
-    let conn = &db.conn;
+    let conn = db.conn();
     let mut stmt = conn.prepare(
         "SELECT s.name, s.qualified_name, s.kind, s.line, s.col, s.end_line,
                 s.scope_path, s.signature, s.visibility
@@ -731,7 +731,7 @@ pub async fn post_embed(
             let model_dir = bearwisdom::search::embedder::Embedder::resolve_model_dir(&root)
                 .ok_or_else(|| anyhow::anyhow!("No CodeRankEmbed model found"))?;
             let mut embedder = bearwisdom::search::embedder::Embedder::new(model_dir);
-            let (n, _) = bearwisdom::embed_chunks(&db.conn, &mut embedder, 4)?;
+            let (n, _) = bearwisdom::embed_chunks(&db, &mut embedder, 4)?;
             embedder.unload();
             Ok(n)
         })();
@@ -808,7 +808,7 @@ pub async fn get_flow_edges(Query(params): Query<FlowEdgesQuery>) -> impl IntoRe
 fn query_flow_edges(db: &bearwisdom::Database, limit: usize) -> anyhow::Result<serde_json::Value> {
     use std::collections::HashMap;
 
-    let conn = &db.conn;
+    let conn = db.conn();
 
     // Summary counts from the full dataset (before limit).
     let mut by_edge_type: HashMap<String, u32> = HashMap::new();

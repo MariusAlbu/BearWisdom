@@ -1,6 +1,7 @@
 //! javascript language plugin.
 
 mod helpers;
+pub(crate) mod primitives;
 pub mod extract;
 
 #[cfg(test)]
@@ -67,5 +68,9 @@ impl LanguagePlugin for JavascriptPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
     }
 }

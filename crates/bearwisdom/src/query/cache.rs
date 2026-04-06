@@ -32,10 +32,12 @@ use std::sync::Mutex;
 pub struct QueryCache {
     /// `symbol_info` cache keyed by qualified name → serialised JSON result.
     symbol_info: Mutex<LruCache<String, String>>,
-    /// `references` cache keyed by symbol DB id → serialised JSON result.
-    references: Mutex<LruCache<i64, String>>,
+    /// `references` cache keyed by target name → serialised JSON result.
+    references: Mutex<LruCache<String, String>>,
     /// `search` cache keyed by raw query string → serialised JSON result.
     search: Mutex<LruCache<String, String>>,
+    /// `architecture` cache — single entry (keyed by "default").
+    architecture: Mutex<LruCache<String, String>>,
 }
 
 impl QueryCache {
@@ -49,6 +51,7 @@ impl QueryCache {
             symbol_info: Mutex::new(LruCache::new(cap)),
             references: Mutex::new(LruCache::new(cap)),
             search: Mutex::new(LruCache::new(cap)),
+            architecture: Mutex::new(LruCache::new(NonZeroUsize::new(1).unwrap())),
         }
     }
 
@@ -71,15 +74,29 @@ impl QueryCache {
 
     // ── references ───────────────────────────────────────────────────────────
 
-    /// Look up a cached `references` result by symbol DB id.
-    pub fn get_references(&self, symbol_id: i64) -> Option<String> {
-        self.references.lock().ok()?.get(&symbol_id).cloned()
+    /// Look up a cached `references` result by target name.
+    pub fn get_references(&self, target_name: &str) -> Option<String> {
+        self.references.lock().ok()?.get(target_name).cloned()
     }
 
-    /// Store a `references` result keyed by symbol DB id.
-    pub fn put_references(&self, symbol_id: i64, value: String) {
+    /// Store a `references` result keyed by target name.
+    pub fn put_references(&self, target_name: String, value: String) {
         if let Ok(mut cache) = self.references.lock() {
-            cache.put(symbol_id, value);
+            cache.put(target_name, value);
+        }
+    }
+
+    // ── architecture ────────────────────────────────────────────────────────
+
+    /// Look up the cached architecture overview.
+    pub fn get_architecture(&self) -> Option<String> {
+        self.architecture.lock().ok()?.get("default").cloned()
+    }
+
+    /// Store the architecture overview result.
+    pub fn put_architecture(&self, value: String) {
+        if let Ok(mut cache) = self.architecture.lock() {
+            cache.put("default".to_string(), value);
         }
     }
 
@@ -108,6 +125,9 @@ impl QueryCache {
             c.clear();
         }
         if let Ok(mut c) = self.search.lock() {
+            c.clear();
+        }
+        if let Ok(mut c) = self.architecture.lock() {
             c.clear();
         }
     }
@@ -145,11 +165,11 @@ mod tests {
     #[test]
     fn test_references_roundtrip() {
         let cache = QueryCache::new(10);
-        assert!(cache.get_references(42).is_none());
+        assert!(cache.get_references("Foo.Bar").is_none());
 
-        cache.put_references(42, r#"[{"file":"a.cs"}]"#.to_string());
+        cache.put_references("Foo.Bar".to_string(), r#"[{"file":"a.cs"}]"#.to_string());
         assert_eq!(
-            cache.get_references(42),
+            cache.get_references("Foo.Bar"),
             Some(r#"[{"file":"a.cs"}]"#.to_string())
         );
     }
@@ -173,13 +193,13 @@ mod tests {
     fn test_invalidate_all_clears_all_caches() {
         let cache = QueryCache::new(10);
         cache.put_symbol_info("A.B".to_string(), "{}".to_string());
-        cache.put_references(1, "[]".to_string());
+        cache.put_references("X.Y".to_string(), "[]".to_string());
         cache.put_search("q".to_string(), "[]".to_string());
 
         cache.invalidate_all();
 
         assert!(cache.get_symbol_info("A.B").is_none());
-        assert!(cache.get_references(1).is_none());
+        assert!(cache.get_references("X.Y").is_none());
         assert!(cache.get_search("q").is_none());
     }
 

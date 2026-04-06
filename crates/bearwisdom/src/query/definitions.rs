@@ -21,6 +21,7 @@ use anyhow::{Context, Result};
 ///
 /// Returns results ordered by confidence descending.
 pub fn goto_definition(db: &Database, query: &str) -> Result<Vec<DefinitionResult>> {
+    let _timer = db.timer("find_definitions");
     let conn = &db.conn;
     let mut results: Vec<DefinitionResult> = Vec::new();
 

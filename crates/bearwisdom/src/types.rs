@@ -424,6 +424,8 @@ pub struct ParsedFile {
     pub content_hash: String,
     pub size: u64,
     pub line_count: u32,
+    /// File modification time (seconds since epoch), for fast change detection.
+    pub mtime: Option<i64>,
     pub symbols: Vec<ExtractedSymbol>,
     pub refs: Vec<ExtractedRef>,
     pub routes: Vec<ExtractedRoute>,
@@ -531,6 +533,7 @@ pub struct IndexStats {
     pub external_ref_count: u32,
     pub route_count: u32,
     pub db_mapping_count: u32,
+    pub flow_edge_count: u32,
     pub files_with_errors: u32,
     pub duration_ms: u64,
 }

@@ -1,126 +1,37 @@
 // =============================================================================
-// indexer/incremental.rs  —  incremental re-indexing
+// indexer/incremental.rs  —  incremental + targeted re-indexing
 //
-// Instead of re-indexing every file on every change, this module:
-//   1. Walks the project tree and computes SHA-256 hashes.
-//   2. Compares hashes against the `files.hash` column.
-//   3. Only re-parses files whose hash changed or that are new.
-//   4. Deletes symbols/edges for removed files.
-//   5. Re-runs cross-file resolution only for affected files.
-//   6. Re-runs connectors that depend on changed files.
+// All non-full index paths flow through this module.  Each uses a different
+// change detection strategy (see changeset.rs) but feeds into the same
+// shared write pipeline (write.rs):
 //
-// Performance target: <100ms for a single file change in a 1000-file project.
+//   • incremental_index — HashDiff (walk + SHA-256, for non-git repos)
+//   • git_reindex       — GitDiff  (git diff, preferred for git repos)
+//   • reindex_files     — FileEvents (IDE/watcher push, fastest path)
+//
+// After writing changed files, all paths run blast-radius analysis to find
+// dependent files that need re-resolution, then re-resolve the combined set.
 // =============================================================================
 
 use crate::db::Database;
+use crate::indexer::changeset::{self, ChangeSet};
 use crate::indexer::full;
 use crate::indexer::resolve;
+use crate::indexer::write;
 use crate::languages;
 use crate::types::ParsedFile;
-use crate::walker::{self, WalkedFile};
 use anyhow::{Context, Result};
 use rayon::prelude::*;
-use sha2::{Digest, Sha256};
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::path::Path;
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
-// ---------------------------------------------------------------------------
-// Change detection
-// ---------------------------------------------------------------------------
-
-/// Classification of what happened to a file since last index.
-#[derive(Debug)]
-enum FileChange {
-    /// File is new (not in the database).
-    Added(WalkedFile),
-    /// File content changed (hash differs).
-    Modified(WalkedFile),
-    /// File was deleted (in database but not on disk).
-    Deleted { file_id: i64, path: String },
-    /// File is unchanged (hash matches).
-    Unchanged,
-}
-
-/// Detect which files have changed since the last index.
-fn detect_changes(
-    db: &Database,
-    project_root: &Path,
-) -> Result<Vec<FileChange>> {
-    let files_on_disk = walker::walk(project_root)
-        .with_context(|| format!("Failed to walk {}", project_root.display()))?;
-
-    // Load existing file records from the database.
-    let mut existing: HashMap<String, (i64, String)> = HashMap::new();
-    {
-        let mut stmt = db
-            .conn
-            .prepare("SELECT id, path, hash FROM files")
-            .context("Failed to query files")?;
-        let rows = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .context("Failed to read files")?;
-        for row in rows {
-            let (id, path, hash) = row?;
-            existing.insert(path, (id, hash));
-        }
-    }
-
-    let mut changes = Vec::new();
-    let mut seen_paths: HashSet<String> = HashSet::new();
-
-    for walked in files_on_disk {
-        seen_paths.insert(walked.relative_path.clone());
-
-        // Compute hash of current file content.
-        let content = match std::fs::read(&walked.absolute_path) {
-            Ok(c) => c,
-            Err(e) => {
-                debug!("Cannot read {}: {e}", walked.relative_path);
-                continue;
-            }
-        };
-        let hash = {
-            let mut hasher = Sha256::new();
-            hasher.update(&content);
-            format!("{:x}", hasher.finalize())
-        };
-
-        match existing.get(&walked.relative_path) {
-            Some((_id, old_hash)) if *old_hash == hash => {
-                changes.push(FileChange::Unchanged);
-            }
-            Some(_) => {
-                changes.push(FileChange::Modified(walked));
-            }
-            None => {
-                changes.push(FileChange::Added(walked));
-            }
-        }
-    }
-
-    // Detect deleted files (in DB but not on disk).
-    for (path, (file_id, _hash)) in &existing {
-        if !seen_paths.contains(path) {
-            changes.push(FileChange::Deleted {
-                file_id: *file_id,
-                path: path.clone(),
-            });
-        }
-    }
-
-    Ok(changes)
-}
+// Re-export watcher event types from changeset (public API).
+pub use crate::indexer::changeset::{ChangeKind, FileChangeEvent};
 
 // ---------------------------------------------------------------------------
-// Incremental index
+// Stats
 // ---------------------------------------------------------------------------
 
 /// Result of an incremental index pass.
@@ -136,87 +47,138 @@ pub struct IncrementalStats {
     pub duration_ms: u64,
 }
 
-/// Incrementally update the index for changed files only.
+// ---------------------------------------------------------------------------
+// Public entry points
+// ---------------------------------------------------------------------------
+
+/// Incrementally update the index using hash-based change detection.
 ///
-/// This is much faster than `full_index` when only a few files changed.
-/// For a full rebuild, use `full_index` instead.
+/// Walks the project tree and compares SHA-256 hashes against the database.
+/// This is the fallback for non-git repos.  For git repos, prefer
+/// `git_reindex` which avoids reading every file.
 pub fn incremental_index(
     db: &mut Database,
     project_root: &Path,
 ) -> Result<IncrementalStats> {
     let start = Instant::now();
-    info!("Starting incremental index of {}", project_root.display());
+    info!("Starting incremental index (HashDiff) of {}", project_root.display());
 
-    // Step 1: Detect changes.
-    let changes = detect_changes(db, project_root)?;
+    let cs = changeset::hash_diff(db, project_root)?;
+    run_incremental_pipeline(db, project_root, cs, start)
+}
 
-    let mut stats = IncrementalStats::default();
-    let mut files_to_parse: Vec<WalkedFile> = Vec::new();
-    let mut files_to_delete: Vec<(i64, String)> = Vec::new();
+/// Incrementally update the index using git diff change detection.
+///
+/// Uses `git diff --name-status` between the last indexed commit and HEAD.
+/// Falls back to hash-based detection if not a git repo or the indexed
+/// commit is unreachable (force push, rebase).
+pub fn git_reindex(
+    db: &mut Database,
+    project_root: &Path,
+) -> Result<IncrementalStats> {
+    let start = Instant::now();
+    info!("Starting incremental index (GitDiff) of {}", project_root.display());
 
-    for change in changes {
-        match change {
-            FileChange::Added(w) => {
-                stats.files_added += 1;
-                files_to_parse.push(w);
-            }
-            FileChange::Modified(w) => {
-                stats.files_modified += 1;
-                files_to_parse.push(w);
-            }
-            FileChange::Deleted { file_id, path } => {
-                stats.files_deleted += 1;
-                files_to_delete.push((file_id, path));
-            }
-            FileChange::Unchanged => {
-                stats.files_unchanged += 1;
-            }
-        }
+    let cs = changeset::git_diff(db, project_root)?;
+    run_incremental_pipeline(db, project_root, cs, start)
+}
+
+/// Re-index specific files from IDE/watcher events.
+///
+/// This is the fast path — no tree walk, no hashing.  The caller supplies
+/// exactly which files changed and how.
+pub fn reindex_files(
+    db: &mut Database,
+    project_root: &Path,
+    changes: &[FileChangeEvent],
+) -> Result<IncrementalStats> {
+    let start = Instant::now();
+
+    if changes.is_empty() {
+        return Ok(IncrementalStats::default());
     }
 
-    info!(
-        "Change detection: {} added, {} modified, {} deleted, {} unchanged",
-        stats.files_added, stats.files_modified, stats.files_deleted, stats.files_unchanged
-    );
+    info!("Targeted reindex: {} file changes", changes.len());
 
-    if files_to_parse.is_empty() && files_to_delete.is_empty() {
+    let cs = changeset::from_file_events(project_root, changes)?;
+    run_incremental_pipeline(db, project_root, cs, start)
+}
+
+// ---------------------------------------------------------------------------
+// Shared incremental pipeline
+// ---------------------------------------------------------------------------
+
+/// The unified incremental pipeline.  All non-full index paths call this.
+///
+/// Steps:
+///   1. Compute blast radius BEFORE any mutations (edges will be deleted by CASCADE).
+///   2. Delete removed files.
+///   3. Parse changed files (parallel via Rayon).
+///   4. Write files + symbols via shared pipeline.
+///   5. Update FTS content + code chunks.
+///   6. Load full symbol map (changed + unchanged).
+///   7. Parse + re-resolve blast-radius affected files.
+///   8. Store indexed_commit in metadata.
+fn run_incremental_pipeline(
+    db: &mut Database,
+    project_root: &Path,
+    cs: ChangeSet,
+    start: Instant,
+) -> Result<IncrementalStats> {
+    let mut stats = IncrementalStats {
+        files_added: cs.added.len() as u32,
+        files_modified: cs.modified.len() as u32,
+        files_deleted: cs.deleted.len() as u32,
+        files_unchanged: cs.unchanged,
+        ..Default::default()
+    };
+
+    if cs.is_empty() {
         info!("No changes detected, index is up to date");
         stats.duration_ms = start.elapsed().as_millis() as u64;
         return Ok(stats);
     }
 
-    // Step 2: Delete removed files (CASCADE removes symbols, edges, chunks, etc.)
-    for (file_id, path) in &files_to_delete {
-        // Clean up vec_chunks (virtual table — not covered by CASCADE).
-        let _ = crate::search::vector_store::delete_file_vectors(&db.conn, *file_id);
+    // Collect paths for blast radius lookup BEFORE any DB mutations.
+    let changed_paths: HashSet<String> = cs
+        .added
+        .iter()
+        .chain(cs.modified.iter())
+        .map(|w| w.relative_path.clone())
+        .chain(cs.deleted.iter().cloned())
+        .collect();
 
-        db.conn
-            .execute("DELETE FROM files WHERE id = ?1", [file_id])
-            .with_context(|| format!("Failed to delete file {path}"))?;
-
-        // Also clean up FTS content and flow edges.
-        let _ = db.conn.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id]);
-        let _ = db.conn.execute(
-            "DELETE FROM flow_edges WHERE source_file_id = ?1 OR target_file_id = ?1",
-            [file_id],
+    // --- Step 1: Blast radius (find dependents before CASCADE deletes edges) ---
+    let dependent_paths = find_dependent_files(db, &changed_paths)?;
+    if !dependent_paths.is_empty() {
+        debug!(
+            "Blast radius: {} files depend on changed files",
+            dependent_paths.len()
         );
-        debug!("Deleted file from index: {path}");
     }
 
-    // Invalidate ref cache entries for files that changed or were deleted.
+    // --- Step 2: Delete removed files ---
+    if !cs.deleted.is_empty() {
+        write::delete_files(db, &cs.deleted)?;
+    }
+
+    // --- Step 3: Invalidate ref cache ---
     if let Some(ref_cache) = db.ref_cache.as_mut() {
-        for (_, path) in &files_to_delete {
+        for path in &cs.deleted {
             ref_cache.invalidate(path);
         }
-        for walked in &files_to_parse {
-            ref_cache.invalidate(&walked.relative_path);
+        for w in cs.added.iter().chain(cs.modified.iter()) {
+            ref_cache.invalidate(&w.relative_path);
         }
     }
 
-        // Step 3: Parse changed/new files (parallel).
+    // --- Step 4: Parse changed files (parallel) ---
+    let files_to_parse: Vec<_> = cs.added.into_iter().chain(cs.modified).collect();
     let registry = languages::default_registry();
-    let parse_results: Vec<Result<ParsedFile>> =
-        files_to_parse.par_iter().map(|w| full::parse_file(w, &registry)).collect();
+    let parse_results: Vec<Result<ParsedFile>> = files_to_parse
+        .par_iter()
+        .map(|w| full::parse_file(w, &registry))
+        .collect();
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files_to_parse.len());
     for (walked, result) in files_to_parse.iter().zip(parse_results) {
@@ -226,175 +188,137 @@ pub fn incremental_index(
         }
     }
 
-    if parsed.is_empty() {
+    if parsed.is_empty() && cs.deleted.is_empty() {
         stats.duration_ms = start.elapsed().as_millis() as u64;
         return Ok(stats);
     }
 
-    // Step 4: Write files + symbols (reuses full_index write logic).
-    let conn = &db.conn;
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_secs() as i64;
+    // --- Step 5: Write files + symbols (shared pipeline) ---
+    let (file_id_map, mut symbol_id_map) = if !parsed.is_empty() {
+        let (fmap, smap) =
+            write::write_parsed_files(db, &parsed).context("Failed to write index")?;
+        stats.symbols_written = smap.len() as u32;
+        (fmap, smap)
+    } else {
+        Default::default()
+    };
 
-    let tx = conn
-        .unchecked_transaction()
-        .context("Failed to begin transaction")?;
+    // --- Step 6: FTS + chunks (shared pipeline) ---
+    if !parsed.is_empty() {
+        write::update_fts_content(db, &parsed, &file_id_map)?;
+        write::update_chunks(db, &parsed, &file_id_map, false)?;
+    }
 
-    let mut file_id_map: HashMap<String, i64> = HashMap::new();
-    let mut symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
-
-    for pf in &parsed {
-        // Upsert file row.
-        tx.execute(
-            "INSERT INTO files (path, hash, language, last_indexed)
-             VALUES (?1, ?2, ?3, ?4)
-             ON CONFLICT(path) DO UPDATE SET
-               hash = excluded.hash,
-               language = excluded.language,
-               last_indexed = excluded.last_indexed",
-            rusqlite::params![pf.path, pf.content_hash, pf.language, now],
-        )?;
-
-        let file_id: i64 = tx.query_row(
-            "SELECT id FROM files WHERE path = ?1",
-            [&pf.path],
-            |r| r.get(0),
-        )?;
-
-        file_id_map.insert(pf.path.clone(), file_id);
-
-        // Delete existing symbols for this file.
-        tx.execute("DELETE FROM symbols WHERE file_id = ?1", [file_id])?;
-        tx.execute("DELETE FROM imports WHERE file_id = ?1", [file_id])?;
-
-        // Insert symbols.
-        for sym in &pf.symbols {
-            tx.execute(
-                "INSERT INTO symbols
-                   (file_id, name, qualified_name, kind, line, col,
-                    end_line, end_col, scope_path, signature, doc_comment, visibility)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-                rusqlite::params![
-                    file_id,
-                    sym.name,
-                    sym.qualified_name,
-                    sym.kind.as_str(),
-                    sym.start_line,
-                    sym.start_col,
-                    sym.end_line,
-                    sym.end_col,
-                    sym.scope_path,
-                    sym.signature,
-                    sym.doc_comment,
-                    sym.visibility.map(|v| v.as_str()),
-                ],
-            )?;
-
-            let sym_id = tx.last_insert_rowid();
-            symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), sym_id);
-            stats.symbols_written += 1;
-        }
-
-        // Insert imports.
-        for r in &pf.refs {
-            if r.kind != crate::types::EdgeKind::Imports {
-                continue;
-            }
-            tx.execute(
-                "INSERT INTO imports (file_id, imported_name, module_path, alias, line)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![
-                    file_id,
-                    r.target_name,
-                    r.module,
-                    Option::<&str>::None,
-                    r.line,
-                ],
-            )?;
-        }
-
-        // Update FTS content.
-        let _ = tx.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id]);
-        if let Some(content) = &pf.content {
-            let _ = tx.execute(
-                "INSERT INTO fts_content(rowid, path, content) VALUES (?1, ?2, ?3)",
-                rusqlite::params![file_id, pf.path, content],
-            );
-        }
-
-        // Update code chunks (delete old vectors first — virtual table, no CASCADE).
-        let _ = crate::search::vector_store::delete_file_vectors(&tx, file_id);
-        let _ = tx.execute("DELETE FROM code_chunks WHERE file_id = ?1", [file_id]);
-        if let Some(content) = &pf.content {
-            if let Err(e) = crate::search::chunker::chunk_and_store(&tx, file_id, content) {
-                debug!("Chunking failed for {}: {e}", pf.path);
-            }
+    // --- Step 7: Load full symbol map (post-commit, includes unchanged files) ---
+    {
+        let full_map = write::load_symbol_id_map(db)?;
+        for (key, id) in full_map {
+            symbol_id_map.entry(key).or_insert(id);
         }
     }
 
-    tx.commit().context("Failed to commit incremental update")?;
+    // --- Step 8: Blast radius re-resolution ---
+    // Find files with unresolved refs matching symbols from changed files.
+    let new_symbol_names: HashSet<String> = parsed
+        .iter()
+        .flat_map(|pf| pf.symbols.iter().map(|s| s.name.clone()))
+        .collect();
+    let newly_resolvable =
+        find_newly_resolvable_files(db, &new_symbol_names, &changed_paths)?;
 
-    // Step 5: Re-run cross-file resolution for changed files.
-    // We need to include ALL parsed files in the resolution pass, plus
-    // load the full symbol_id_map (including unchanged files) for resolution.
-    {
-        // Load symbol IDs for unchanged files too.
-        // Scope the statement so it's dropped before resolve_and_write borrows db mutably.
-        {
-            let mut stmt = db.conn.prepare(
-                "SELECT f.path, s.qualified_name, s.id FROM symbols s JOIN files f ON f.id = s.file_id",
-            )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?))
-            })?;
-            for row in rows {
-                let (path, qname, id) = row?;
-                symbol_id_map.entry((path, qname)).or_insert(id);
+    let all_affected: HashSet<String> = dependent_paths
+        .into_iter()
+        .chain(newly_resolvable)
+        .collect();
+
+    if !all_affected.is_empty() {
+        info!(
+            "Blast radius: re-resolving {} dependent files",
+            all_affected.len()
+        );
+        stats.files_reresolved = all_affected.len() as u32;
+
+        // Parse affected files (source unchanged but need refs for resolver).
+        let affected_walked: Vec<_> = all_affected
+            .iter()
+            .filter_map(|rel_path| {
+                let abs_path = project_root.join(rel_path);
+                if !abs_path.exists() {
+                    return None;
+                }
+                let language = crate::walker::detect_language(&abs_path)?;
+                Some(crate::walker::WalkedFile {
+                    relative_path: rel_path.clone(),
+                    absolute_path: abs_path,
+                    language,
+                })
+            })
+            .collect();
+
+        let affected_results: Vec<Result<ParsedFile>> = affected_walked
+            .par_iter()
+            .map(|w| full::parse_file(w, &registry))
+            .collect();
+
+        let mut affected_parsed: Vec<ParsedFile> = Vec::new();
+        for (walked, result) in affected_walked.iter().zip(affected_results) {
+            match result {
+                Ok(pf) => affected_parsed.push(pf),
+                Err(e) => warn!("Failed to parse dependent {}: {e}", walked.relative_path),
             }
         }
 
-        let project_ctx = super::project_context::build_project_context(project_root);
-        let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
-            .context("Failed to resolve references")?;
-        stats.edges_written = rstats.resolved as u32;
-        info!("Resolved {} edges for changed files", rstats.resolved);
+        // Clean stale unresolved/external refs for affected files.
+        for pf in &affected_parsed {
+            if let Ok(file_id) = db.conn.query_row(
+                "SELECT id FROM files WHERE path = ?1",
+                [&pf.path],
+                |r| r.get::<_, i64>(0),
+            ) {
+                let _ = db.conn.execute(
+                    "DELETE FROM unresolved_refs WHERE source_id IN \
+                     (SELECT id FROM symbols WHERE file_id = ?1)",
+                    [file_id],
+                );
+                let _ = db.conn.execute(
+                    "DELETE FROM external_refs WHERE source_id IN \
+                     (SELECT id FROM symbols WHERE file_id = ?1)",
+                    [file_id],
+                );
+            }
+        }
+
+        // Extend parsed with affected files for combined resolution.
+        parsed.extend(affected_parsed);
+    }
+
+    // --- Step 9: Cross-file resolution ---
+    let project_ctx = super::project_context::build_project_context(project_root);
+    let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
+        .context("Failed to resolve references")?;
+    stats.edges_written = rstats.resolved as u32;
+    info!("Resolved {} edges for changed files", rstats.resolved);
+
+    // --- Step 10: Store indexed commit ---
+    if let Some(commit) = cs.commit {
+        if let Err(e) = changeset::set_meta(db, "indexed_commit", &commit) {
+            warn!("Failed to store indexed_commit: {e}");
+        }
     }
 
     stats.duration_ms = start.elapsed().as_millis() as u64;
     info!(
-        "Incremental index complete in {:.2}s: {} added, {} modified, {} deleted, {} symbols, {} edges",
+        "Incremental index complete in {:.2}s: +{} ~{} -{} re-resolved:{} symbols:{} edges:{}",
         stats.duration_ms as f64 / 1000.0,
         stats.files_added,
         stats.files_modified,
         stats.files_deleted,
+        stats.files_reresolved,
         stats.symbols_written,
         stats.edges_written,
     );
 
     Ok(stats)
-}
-
-// ---------------------------------------------------------------------------
-// Targeted reindex (fast path for file watcher events)
-// ---------------------------------------------------------------------------
-
-/// Describes a file change reported by a file watcher.
-#[derive(Debug, Clone)]
-pub struct FileChangeEvent {
-    /// Path relative to project root, forward-slash normalised.
-    pub relative_path: String,
-    /// What happened to the file.
-    pub change_kind: ChangeKind,
-}
-
-/// The kind of change a file watcher observed.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ChangeKind {
-    Created,
-    Modified,
-    Deleted,
 }
 
 // ---------------------------------------------------------------------------
@@ -471,360 +395,6 @@ fn find_newly_resolvable_files(
     }
 
     Ok(resolvable)
-}
-
-/// Re-index specific files that changed, without walking the project tree.
-///
-/// This is the fast path for file watcher events.  Instead of walking the
-/// entire tree and comparing hashes (what `incremental_index` does), this
-/// function directly processes the caller-supplied change list.
-///
-/// Returns an empty `IncrementalStats` immediately when `changes` is empty.
-pub fn reindex_files(
-    db: &mut Database,
-    project_root: &Path,
-    changes: &[FileChangeEvent],
-) -> Result<IncrementalStats> {
-    let start = Instant::now();
-
-    if changes.is_empty() {
-        return Ok(IncrementalStats::default());
-    }
-
-    info!("Targeted reindex: {} file changes", changes.len());
-
-    let mut stats = IncrementalStats::default();
-    let mut files_to_parse: Vec<WalkedFile> = Vec::new();
-    let mut files_to_delete: Vec<String> = Vec::new(); // relative paths
-
-    for change in changes {
-        match change.change_kind {
-            ChangeKind::Deleted => {
-                stats.files_deleted += 1;
-                files_to_delete.push(change.relative_path.clone());
-            }
-            ChangeKind::Created | ChangeKind::Modified => {
-                let abs_path = project_root.join(&change.relative_path);
-
-                // Skip if the file no longer exists (race: deleted between watcher
-                // event and reindex).
-                if !abs_path.exists() {
-                    debug!(
-                        "File no longer exists, skipping: {}",
-                        change.relative_path
-                    );
-                    continue;
-                }
-
-                // Detect language — skip unsupported files.
-                let language = match walker::detect_language(&abs_path) {
-                    Some(l) => l,
-                    None => continue,
-                };
-
-                if change.change_kind == ChangeKind::Created {
-                    stats.files_added += 1;
-                } else {
-                    stats.files_modified += 1;
-                }
-
-                files_to_parse.push(WalkedFile {
-                    relative_path: change.relative_path.clone(),
-                    absolute_path: abs_path,
-                    language,
-                });
-            }
-        }
-    }
-
-    // ── Blast radius: find dependents BEFORE modifications ──────────
-    // We must query edges before CASCADE deletes them when symbols are
-    // replaced or files are removed.
-    let changed_paths: HashSet<String> = files_to_parse
-        .iter()
-        .map(|w| w.relative_path.clone())
-        .chain(files_to_delete.iter().cloned())
-        .collect();
-    let dependent_paths = find_dependent_files(db, &changed_paths)?;
-    if !dependent_paths.is_empty() {
-        debug!(
-            "Blast radius: {} files depend on changed files",
-            dependent_paths.len()
-        );
-    }
-
-    // Handle deletions.
-    for rel_path in &files_to_delete {
-        let file_id: Option<i64> = db
-            .conn
-            .query_row(
-                "SELECT id FROM files WHERE path = ?1",
-                [rel_path],
-                |r| r.get(0),
-            )
-            .ok();
-
-        if let Some(file_id) = file_id {
-            // Clean up vec_chunks (virtual table — not covered by CASCADE).
-            let _ = crate::search::vector_store::delete_file_vectors(&db.conn, file_id);
-
-            db.conn
-                .execute("DELETE FROM files WHERE id = ?1", [file_id])?;
-            let _ = db
-                .conn
-                .execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id]);
-            let _ = db.conn.execute(
-                "DELETE FROM flow_edges WHERE source_file_id = ?1 OR target_file_id = ?1",
-                [file_id],
-            );
-            debug!("Deleted file from index: {rel_path}");
-        }
-    }
-
-    if files_to_parse.is_empty() && files_to_delete.is_empty() {
-        stats.duration_ms = start.elapsed().as_millis() as u64;
-        return Ok(stats);
-    }
-
-    // Invalidate ref cache entries for files about to be replaced or deleted.
-    if let Some(ref_cache) = db.ref_cache.as_mut() {
-        for rel_path in &files_to_delete {
-            ref_cache.invalidate(rel_path);
-        }
-        for walked in &files_to_parse {
-            ref_cache.invalidate(&walked.relative_path);
-        }
-    }
-
-        // Parse changed/new files (parallel via Rayon, mirroring incremental_index).
-    let registry = languages::default_registry();
-    let parse_results: Vec<Result<ParsedFile>> =
-        files_to_parse.par_iter().map(|w| full::parse_file(w, &registry)).collect();
-
-    let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files_to_parse.len());
-    for (walked, result) in files_to_parse.iter().zip(parse_results) {
-        match result {
-            Ok(pf) => parsed.push(pf),
-            Err(e) => warn!("Failed to parse {}: {e}", walked.relative_path),
-        }
-    }
-
-    // ── Step 1: Write changed files to DB ──────────────────────────
-    if !parsed.is_empty() {
-        let conn = &db.conn;
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs() as i64;
-
-        let tx = conn
-            .unchecked_transaction()
-            .context("Failed to begin transaction")?;
-
-        for pf in &parsed {
-            tx.execute(
-                "INSERT INTO files (path, hash, language, last_indexed)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(path) DO UPDATE SET
-                   hash = excluded.hash,
-                   language = excluded.language,
-                   last_indexed = excluded.last_indexed",
-                rusqlite::params![pf.path, pf.content_hash, pf.language, now],
-            )?;
-
-            let file_id: i64 = tx.query_row(
-                "SELECT id FROM files WHERE path = ?1",
-                [&pf.path],
-                |r| r.get(0),
-            )?;
-
-            tx.execute("DELETE FROM symbols WHERE file_id = ?1", [file_id])?;
-            tx.execute("DELETE FROM imports WHERE file_id = ?1", [file_id])?;
-
-            for sym in &pf.symbols {
-                tx.execute(
-                    "INSERT INTO symbols
-                       (file_id, name, qualified_name, kind, line, col,
-                        end_line, end_col, scope_path, signature, doc_comment, visibility)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
-                    rusqlite::params![
-                        file_id,
-                        sym.name,
-                        sym.qualified_name,
-                        sym.kind.as_str(),
-                        sym.start_line,
-                        sym.start_col,
-                        sym.end_line,
-                        sym.end_col,
-                        sym.scope_path,
-                        sym.signature,
-                        sym.doc_comment,
-                        sym.visibility.map(|v| v.as_str()),
-                    ],
-                )?;
-
-                stats.symbols_written += 1;
-            }
-
-            for r in &pf.refs {
-                if r.kind != crate::types::EdgeKind::Imports {
-                    continue;
-                }
-                tx.execute(
-                    "INSERT INTO imports (file_id, imported_name, module_path, alias, line)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                    rusqlite::params![
-                        file_id,
-                        r.target_name,
-                        r.module,
-                        Option::<&str>::None,
-                        r.line,
-                    ],
-                )?;
-            }
-
-            let _ = tx.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id]);
-            if let Some(content) = &pf.content {
-                let _ = tx.execute(
-                    "INSERT INTO fts_content(rowid, path, content) VALUES (?1, ?2, ?3)",
-                    rusqlite::params![file_id, pf.path, content],
-                );
-            }
-
-            let _ = crate::search::vector_store::delete_file_vectors(&tx, file_id);
-            let _ = tx.execute("DELETE FROM code_chunks WHERE file_id = ?1", [file_id]);
-            if let Some(content) = &pf.content {
-                if let Err(e) =
-                    crate::search::chunker::chunk_and_store(&tx, file_id, content)
-                {
-                    debug!("Chunking failed for {}: {e}", pf.path);
-                }
-            }
-        }
-
-        tx.commit().context("Failed to commit targeted reindex")?;
-    }
-
-    // ── Step 2: Blast-radius resolution ─────────────────────────────
-    // Runs when there are changed files OR dependents from deletions.
-    if !parsed.is_empty() || !dependent_paths.is_empty() {
-        // Load full symbol map (post-commit, DB has all current symbols).
-        let mut symbol_id_map: HashMap<(String, String), i64> = HashMap::new();
-        {
-            let mut stmt = db.conn.prepare(
-                "SELECT f.path, s.qualified_name, s.id
-                 FROM symbols s
-                 JOIN files f ON f.id = s.file_id",
-            )?;
-            let rows = stmt.query_map([], |r| {
-                Ok((
-                    r.get::<_, String>(0)?,
-                    r.get::<_, String>(1)?,
-                    r.get::<_, i64>(2)?,
-                ))
-            })?;
-            for row in rows {
-                let (path, qname, id) = row?;
-                symbol_id_map.insert((path, qname), id);
-            }
-        }
-
-        // Find files with unresolved refs matching symbols from changed files.
-        let new_symbol_names: HashSet<String> = parsed
-            .iter()
-            .flat_map(|pf| pf.symbols.iter().map(|s| s.name.clone()))
-            .collect();
-        let newly_resolvable =
-            find_newly_resolvable_files(db, &new_symbol_names, &changed_paths)?;
-
-        // Combine all affected files (edge dependents + newly resolvable).
-        let all_affected: HashSet<String> = dependent_paths
-            .into_iter()
-            .chain(newly_resolvable)
-            .collect();
-
-        if !all_affected.is_empty() {
-            info!(
-                "Blast radius: re-resolving {} dependent files",
-                all_affected.len()
-            );
-            stats.files_reresolved = all_affected.len() as u32;
-
-            // Parse affected files — source hasn't changed, but we need
-            // their refs for the resolver.
-            let affected_walked: Vec<WalkedFile> = all_affected
-                .iter()
-                .filter_map(|rel_path| {
-                    let abs_path = project_root.join(rel_path);
-                    if !abs_path.exists() {
-                        return None;
-                    }
-                    let language = walker::detect_language(&abs_path)?;
-                    Some(WalkedFile {
-                        relative_path: rel_path.clone(),
-                        absolute_path: abs_path,
-                        language,
-                    })
-                })
-                .collect();
-
-            let affected_registry = languages::default_registry();
-            let affected_results: Vec<Result<ParsedFile>> =
-                affected_walked.par_iter().map(|w| full::parse_file(w, &affected_registry)).collect();
-            let mut affected_parsed: Vec<ParsedFile> = Vec::new();
-            for (walked, result) in affected_walked.iter().zip(affected_results) {
-                match result {
-                    Ok(pf) => affected_parsed.push(pf),
-                    Err(e) => {
-                        warn!("Failed to parse dependent {}: {e}", walked.relative_path)
-                    }
-                }
-            }
-
-            // Clean up stale unresolved_refs and external_refs for affected files —
-            // re-resolution will recreate any that are still unresolvable.
-            for pf in &affected_parsed {
-                if let Ok(file_id) = db.conn.query_row(
-                    "SELECT id FROM files WHERE path = ?1",
-                    [&pf.path],
-                    |r| r.get::<_, i64>(0),
-                ) {
-                    let _ = db.conn.execute(
-                        "DELETE FROM unresolved_refs WHERE source_id IN \
-                         (SELECT id FROM symbols WHERE file_id = ?1)",
-                        [file_id],
-                    );
-                    let _ = db.conn.execute(
-                        "DELETE FROM external_refs WHERE source_id IN \
-                         (SELECT id FROM symbols WHERE file_id = ?1)",
-                        [file_id],
-                    );
-                }
-            }
-
-            // Extend parsed with affected files for combined resolution.
-            parsed.extend(affected_parsed);
-        }
-
-        let project_ctx = super::project_context::build_project_context(project_root);
-        let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
-            .context("Failed to resolve references")?;
-        stats.edges_written = rstats.resolved as u32;
-    }
-
-    stats.duration_ms = start.elapsed().as_millis() as u64;
-    info!(
-        "Targeted reindex complete in {:.2}s: +{} ~{} -{} re-resolved:{} symbols:{} edges:{}",
-        stats.duration_ms as f64 / 1000.0,
-        stats.files_added,
-        stats.files_modified,
-        stats.files_deleted,
-        stats.files_reresolved,
-        stats.symbols_written,
-        stats.edges_written,
-    );
-
-    Ok(stats)
 }
 
 // ---------------------------------------------------------------------------

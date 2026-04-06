@@ -57,6 +57,17 @@ pub struct SymbolDetail {
 ///
 /// Returns an empty vec if nothing is found.
 pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Result<Vec<SymbolDetail>> {
+    let _timer = db.timer("symbol_info");
+
+    // Check cache first.
+    if let Some(ref cache) = db.query_cache {
+        if let Some(cached) = cache.get_symbol_info(query) {
+            if let Ok(result) = serde_json::from_str::<Vec<SymbolDetail>>(&cached) {
+                return Ok(result);
+            }
+        }
+    }
+
     let conn = &db.conn;
 
     // --- Step 1: Resolve to symbol rows ---
@@ -173,6 +184,13 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Re
         });
     }
 
+    // Store in cache.
+    if let Some(ref cache) = db.query_cache {
+        if let Ok(json) = serde_json::to_string(&details) {
+            cache.put_symbol_info(query.to_string(), json);
+        }
+    }
+
     Ok(details)
 }
 
@@ -231,6 +249,7 @@ pub fn file_symbols(
     file_path: &str,
     mode: FileSymbolsMode,
 ) -> Result<Vec<FileSymbol>> {
+    let _timer = db.timer("file_symbols");
     let conn = &db.conn;
     let mut stmt = conn.prepare(
         "SELECT s.name, s.kind, s.line, s.end_line,

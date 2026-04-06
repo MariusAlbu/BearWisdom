@@ -59,6 +59,7 @@ pub struct ConceptSummary {
 /// Returns the number of new memberships inserted (already-existing ones are
 /// silently skipped).
 pub fn auto_assign_concepts(db: &Database) -> Result<u32> {
+    let _timer = db.timer("auto_assign_concepts");
     let conn = &db.conn;
 
     // Fetch all concepts that have an auto_pattern.
@@ -105,6 +106,7 @@ pub fn auto_assign_concepts(db: &Database) -> Result<u32> {
 
 /// Return a summary of every concept in the index, ordered by name.
 pub fn list_concepts(db: &Database) -> Result<Vec<ConceptSummary>> {
+    let _timer = db.timer("list_concepts");
     let conn = &db.conn;
 
     let mut stmt = conn.prepare(
@@ -141,6 +143,7 @@ pub fn concept_members(
     concept_name: &str,
     limit: usize,
 ) -> Result<Vec<SymbolSummary>> {
+    let _timer = db.timer("concept_members");
     let conn = &db.conn;
 
     let limit_clause = if limit > 0 { format!("LIMIT {limit}") } else { String::new() };
@@ -183,6 +186,7 @@ pub fn concept_subgraph(
     concept_name: &str,
     max_depth: u32,
 ) -> Result<SubgraphResult> {
+    let _timer = db.timer("concept_subgraph");
     // Quick check: does the concept have any members?
     // We use this to avoid running the heavier export_graph when there is nothing to return.
     let conn = &db.conn;
@@ -217,6 +221,7 @@ pub fn concept_subgraph(
 ///
 /// Returns the names of all concepts created (not including pre-existing ones).
 pub fn discover_concepts(db: &Database) -> Result<Vec<String>> {
+    let _timer = db.timer("discover_concepts");
     let conn = &db.conn;
 
     // Extract the first-two-segment prefix from every qualified_name that

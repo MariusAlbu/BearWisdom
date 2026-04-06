@@ -70,6 +70,7 @@ pub fn get_diagnostics(
     file_path: &str,
     confidence_threshold: f64,
 ) -> Result<FileDiagnostics> {
+    let _timer = db.timer("diagnostics");
     let conn = &db.conn;
 
     let mut diagnostics: Vec<Diagnostic> = Vec::new();

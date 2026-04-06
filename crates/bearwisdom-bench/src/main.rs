@@ -935,9 +935,9 @@ fn cmd_enrich(project_root: &Path, db_path: &Path, batch_size: usize, threshold:
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
     // Pre-enrichment stats
-    let pre_edges: u32 = db.conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-    let pre_unresolved: u32 = db.conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
-    let pre_lsp: u32 = db.conn.query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r| r.get(0))?;
+    let pre_edges: u32 = db.conn().query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
+    let pre_unresolved: u32 = db.conn().query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
+    let pre_lsp: u32 = db.conn().query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r| r.get(0))?;
 
     println!("=== Pre-Enrichment ===");
     println!("  Edges:       {pre_edges}");
@@ -984,9 +984,9 @@ fn cmd_enrich(project_root: &Path, db_path: &Path, batch_size: usize, threshold:
 
     // Post-enrichment stats
     let db_guard = pool.get()?;
-    let post_edges: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM edges", [], |r: &rusqlite::Row<'_>| r.get(0))?;
-    let post_unresolved: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r: &rusqlite::Row<'_>| r.get(0))?;
-    let post_lsp: u32 = db_guard.conn.query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r: &rusqlite::Row<'_>| r.get(0))?;
+    let post_edges: u32 = db_guard.conn().query_row("SELECT COUNT(*) FROM edges", [], |r: &rusqlite::Row<'_>| r.get(0))?;
+    let post_unresolved: u32 = db_guard.conn().query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r: &rusqlite::Row<'_>| r.get(0))?;
+    let post_lsp: u32 = db_guard.conn().query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r: &rusqlite::Row<'_>| r.get(0))?;
 
     println!("=== Post-Enrichment ===");
     println!("  Edges:       {post_edges}  (was {pre_edges}, +{})", post_edges.saturating_sub(pre_edges));
@@ -999,7 +999,7 @@ fn cmd_enrich(project_root: &Path, db_path: &Path, batch_size: usize, threshold:
     // Confidence distribution
     println!();
     println!("=== Confidence Distribution ===");
-    let mut stmt = db_guard.conn.prepare(
+    let mut stmt = db_guard.conn().prepare(
         "SELECT CASE
             WHEN confidence = 1.0 THEN '1.00 (LSP)'
             WHEN confidence >= 0.95 THEN '0.95'
@@ -1255,7 +1255,7 @@ fn cmd_history(db_path: &Path, limit: usize) -> Result<()> {
     let db = Database::open(db_path)
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
-    let entries = history::recent_searches(&db.conn, None, limit)?;
+    let entries = history::recent_searches(db.conn(), None, limit)?;
 
     println!("=== Search History ({} entries) ===", entries.len());
     for e in &entries {
@@ -1263,7 +1263,7 @@ fn cmd_history(db_path: &Path, limit: usize) -> Result<()> {
         println!("  [{}] {} (type={}, count={}){}", e.id, e.query, e.query_type, e.use_count, saved);
     }
 
-    let saved = history::saved_searches(&db.conn)?;
+    let saved = history::saved_searches(db.conn())?;
     if !saved.is_empty() {
         println!();
         println!("  Saved searches: {}", saved.len());
