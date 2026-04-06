@@ -24,7 +24,7 @@ keywords     = ["code-intelligence", "tree-sitter", "code-search", "knowledge-gr
 categories   = ["development-tools", "command-line-utilities", "text-processing"]
 
 [workspace.dependencies]
-tree-sitter            = "0.25"
+tree-sitter            = "0.26"
 tree-sitter-c-sharp    = "0.23"
 tree-sitter-typescript = "0.23"
 # Additional grammars — 30-language support
