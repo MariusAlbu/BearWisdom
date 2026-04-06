@@ -96,7 +96,13 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
         let idx_project = bg_project;
         let idx_ref_cache = idx_pool.ref_cache().clone();
         let index_result = tokio::task::spawn_blocking(move || {
-            let mut db = idx_pool.get().expect("pool get for indexing");
+            let mut db = match idx_pool.get() {
+                Ok(db) => db,
+                Err(e) => {
+                    tracing::error!("Background indexer could not acquire DB connection: {e}");
+                    return Err(anyhow::anyhow!("pool get failed: {e}"));
+                }
+            };
             bearwisdom::full_index(&mut db, &idx_project, None, None, Some(&idx_ref_cache))
         })
         .await;

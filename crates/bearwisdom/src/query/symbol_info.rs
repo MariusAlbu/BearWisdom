@@ -195,6 +195,30 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
     Ok(details)
 }
 
+/// JSON-returning variant of [`symbol_info`] for use in MCP and CLI paths.
+///
+/// Checks the cache for a raw JSON hit first and returns it directly, avoiding
+/// the deserialize → struct → reserialize roundtrip that occurs when the
+/// caller would otherwise call `symbol_info` and then `serde_json::to_string`.
+///
+/// On a cache miss the function delegates to [`symbol_info`] and serializes
+/// the result exactly once before returning it.
+pub fn symbol_info_json(
+    db: &Database,
+    query: &str,
+    opts: &super::QueryOptions,
+) -> super::QueryResult<String> {
+    // Raw cache hit: return JSON directly without deserializing.
+    if let Some(ref cache) = db.query_cache {
+        if let Some(raw) = cache.get_symbol_info_raw(query) {
+            return Ok(raw);
+        }
+    }
+    let result = symbol_info(db, query, opts)?;
+    serde_json::to_string(&result)
+        .map_err(|e| super::QueryError::Internal(anyhow::anyhow!("serialization error: {e}")))
+}
+
 // ---------------------------------------------------------------------------
 // File symbols — structured outline of a single file
 // ---------------------------------------------------------------------------

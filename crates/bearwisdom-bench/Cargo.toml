@@ -14,11 +14,10 @@ name = "bearwisdom-bench"
 path = "src/main.rs"
 
 [dependencies]
-bearwisdom        = { path = "../bearwisdom", features = ["lsp"] }
+bearwisdom        = { path = "../bearwisdom" }
 rusqlite          = { workspace = true }
 sqlite-vec        = { workspace = true }
 anyhow            = { workspace = true }
 clap              = { workspace = true }
 tracing           = { workspace = true }
 tracing-subscriber = { workspace = true }
-tokio              = { workspace = true }

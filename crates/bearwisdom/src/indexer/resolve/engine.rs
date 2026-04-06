@@ -14,6 +14,30 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
+// Bracket-matching utility
+// ---------------------------------------------------------------------------
+
+/// Find the index of the closing bracket that matches the first opening bracket
+/// in `s`.  Uses depth counting so nested brackets are handled correctly.
+///
+/// Example: `find_matching_bracket("Map<K, List<V>>", '<', '>')` → `Some(14)`.
+/// `s.find('>')` would incorrectly return `Some(11)` for this input.
+fn find_matching_bracket(s: &str, open: char, close: char) -> Option<usize> {
+    let mut depth = 0usize;
+    for (i, c) in s.char_indices() {
+        if c == open {
+            depth += 1;
+        } else if c == close {
+            depth = depth.saturating_sub(1);
+            if depth == 0 {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
+// ---------------------------------------------------------------------------
 // Public types used by LanguageResolver implementations
 // ---------------------------------------------------------------------------
 
@@ -319,8 +343,11 @@ impl SymbolIndex {
                 if let Some(sig) = &sym.signature {
                     // Parse generic params from signature: "interface Repository<T>" → ["T"]
                     // "class Map<K, V>" → ["K", "V"]
+                    // Use depth-counted bracket matching so nested generics like
+                    // "class Map<K, List<V>>" find the correct closing bracket.
                     if let Some(start) = sig.find('<') {
-                        if let Some(end) = sig.find('>') {
+                        if let Some(relative_end) = find_matching_bracket(&sig[start..], '<', '>') {
+                            let end = start + relative_end;
                             let params_str = &sig[start + 1..end];
                             let params: Vec<String> = params_str
                                 .split(',')

@@ -1,5 +1,5 @@
 // =============================================================================
-// bridge/scip.rs  —  SCIP index import
+// indexer/scip.rs  —  SCIP index import
 //
 // Reads a binary SCIP index produced by scip-typescript, scip-dotnet,
 // rust-analyzer, scip-python, etc. and merges its edges into the SQLite graph

@@ -54,11 +54,9 @@
 extern crate sqlite_vec;
 
 use bearwisdom::{
-    bridge::{enricher::BackgroundEnricher, graph_bridge::GraphBridge},
     connectors::{ef_core, http_api},
-    db::Database,
     full_index,
-    lsp::manager::LspManager,
+    db::Database,
     query::{
         architecture, blast_radius as blast_radius_mod, call_hierarchy, concepts as concepts_mod,
         definitions, references, search as search_mod, subgraph as subgraph_mod, symbol_info,
@@ -227,22 +225,6 @@ enum Command {
         limit: usize,
     },
 
-    /// Run LSP enrichment on an existing index database.
-    Enrich {
-        /// Path to the project root (needed for LSP workspace root and file reading).
-        path: PathBuf,
-        /// Path to an existing index database.
-        #[arg(long)]
-        db: PathBuf,
-        /// Maximum number of unresolved refs to process.
-        #[arg(long, default_value = "200")]
-        batch_size: usize,
-        /// Confidence threshold — upgrade edges below this value.
-        #[arg(long, default_value = "0.90")]
-        threshold: f64,
-    },
-
-    /// Grep: on-demand text/regex search across project files.
     Grep {
         /// Search pattern (literal or regex).
         pattern: String,
@@ -401,8 +383,6 @@ fn main() -> Result<()> {
         Command::Search { query, db, limit }           => cmd_search(&query, &db, limit),
         Command::DiscoverConcepts { db }               => cmd_discover_concepts(&db),
         Command::Concept { name, db, limit }           => cmd_concept(&name, &db, limit),
-        Command::Enrich { path, db, batch_size, threshold } =>
-            cmd_enrich(&path, &db, batch_size, threshold),
         Command::Grep { pattern, project, regex, case_sensitive, lang, limit } =>
             cmd_grep(&pattern, &project, regex, case_sensitive, lang.as_deref(), limit),
         Command::ContentSearch { query, db, limit } =>
@@ -925,103 +905,6 @@ fn tempfile_path() -> PathBuf {
     p.push(format!("bearwisdom-bench-{}.db", std::process::id()));
     p
 }
-
-// ---------------------------------------------------------------------------
-// Enrich
-// ---------------------------------------------------------------------------
-
-fn cmd_enrich(project_root: &Path, db_path: &Path, batch_size: usize, threshold: f64) -> Result<()> {
-    let db = Database::open(db_path)
-        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
-
-    // Pre-enrichment stats
-    let pre_edges: u32 = db.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-    let pre_unresolved: u32 = db.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
-    let pre_lsp: u32 = db.query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r| r.get(0))?;
-
-    println!("=== Pre-Enrichment ===");
-    println!("  Edges:       {pre_edges}");
-    println!("  Unresolved:  {pre_unresolved}");
-    println!("  LSP meta:    {pre_lsp}");
-    println!("  Rate:        {:.1}%", pre_edges as f64 / (pre_edges + pre_unresolved) as f64 * 100.0);
-    println!();
-
-    // Create LSP manager + bridge + enricher
-    let pool = bearwisdom::DbPool::new(
-        db.path.as_deref().expect("file-backed database required"),
-        4,
-    )?;
-    let lsp = std::sync::Arc::new(LspManager::new(project_root));
-    let bridge = std::sync::Arc::new(GraphBridge::new(
-        pool.clone(),
-        lsp.clone(),
-        project_root,
-    ));
-    let enricher = BackgroundEnricher::new(bridge);
-
-    // Run enrichment using tokio runtime
-    let rt = tokio::runtime::Builder::new_multi_thread()
-        .enable_all()
-        .build()
-        .context("Failed to build tokio runtime")?;
-
-    println!("--- Phase 1: Resolving unresolved refs via LSP (batch={batch_size}) ---");
-    let progress = rt.block_on(enricher.enrich_unresolved(batch_size))?;
-    println!("  Total unresolved:   {}", progress.total_unresolved);
-    println!("  Resolved this pass: {}", progress.resolved_this_pass);
-    println!("  Still unresolved:   {}", progress.still_unresolved);
-    println!("  Elapsed:            {}ms", progress.elapsed_ms);
-    println!();
-
-    println!("--- Phase 2: Upgrading low-confidence edges (threshold={threshold}) ---");
-    let progress2 = rt.block_on(enricher.enrich_low_confidence(threshold, batch_size))?;
-    println!("  Upgraded this pass: {}", progress2.upgraded_this_pass);
-    println!("  Elapsed:            {}ms", progress2.elapsed_ms);
-    println!();
-
-    // Shutdown LSP servers
-    rt.block_on(lsp.shutdown_all())?;
-
-    // Post-enrichment stats
-    let db_guard = pool.get()?;
-    let post_edges: u32 = db_guard.query_row("SELECT COUNT(*) FROM edges", [], |r: &rusqlite::Row<'_>| r.get(0))?;
-    let post_unresolved: u32 = db_guard.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r: &rusqlite::Row<'_>| r.get(0))?;
-    let post_lsp: u32 = db_guard.query_row("SELECT COUNT(*) FROM lsp_edge_meta", [], |r: &rusqlite::Row<'_>| r.get(0))?;
-
-    println!("=== Post-Enrichment ===");
-    println!("  Edges:       {post_edges}  (was {pre_edges}, +{})", post_edges.saturating_sub(pre_edges));
-    println!("  Unresolved:  {post_unresolved}  (was {pre_unresolved}, -{})", pre_unresolved.saturating_sub(post_unresolved));
-    println!("  LSP meta:    {post_lsp}  (was {pre_lsp}, +{})", post_lsp.saturating_sub(pre_lsp));
-    println!("  Rate:        {:.1}%  (was {:.1}%)",
-        post_edges as f64 / (post_edges + post_unresolved) as f64 * 100.0,
-        pre_edges as f64 / (pre_edges + pre_unresolved) as f64 * 100.0);
-
-    // Confidence distribution
-    println!();
-    println!("=== Confidence Distribution ===");
-    let mut stmt = db_guard.prepare(
-        "SELECT CASE
-            WHEN confidence = 1.0 THEN '1.00 (LSP)'
-            WHEN confidence >= 0.95 THEN '0.95'
-            WHEN confidence >= 0.92 THEN '0.92'
-            WHEN confidence >= 0.90 THEN '0.90'
-            WHEN confidence >= 0.85 THEN '0.85'
-            WHEN confidence >= 0.80 THEN '0.80'
-            WHEN confidence >= 0.50 THEN '0.50'
-            ELSE '<0.50' END as bucket,
-            COUNT(*) FROM edges GROUP BY bucket ORDER BY bucket DESC"
-    )?;
-    let rows = stmt.query_map([], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, u32>(1)?))
-    })?;
-    for row in rows {
-        let (bucket, count) = row?;
-        println!("  {bucket:12}  {count:>6}");
-    }
-
-    Ok(())
-}
-
 // ---------------------------------------------------------------------------
 // Grep
 // ---------------------------------------------------------------------------
@@ -1226,13 +1109,12 @@ fn cmd_trace_flow(file: &str, line: u32, db_path: &Path, depth: u32) -> Result<(
 // ---------------------------------------------------------------------------
 
 fn cmd_import_scip(scip_path: &Path, db_path: &Path, project_root: &Path) -> Result<()> {
-    use bearwisdom::bridge::scip;
 
     let db = Database::open(db_path)
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
     let start = Instant::now();
-    let stats = scip::import_scip(&db, scip_path, project_root)?;
+    let stats = bearwisdom::import_scip(&db, scip_path, project_root)?;
     let elapsed = start.elapsed();
 
     println!("=== SCIP Import ({:.1}ms) ===", elapsed.as_secs_f64() * 1000.0);

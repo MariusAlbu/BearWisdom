@@ -349,9 +349,8 @@ impl BearWisdomServer {
                 include_children: params.include_children.unwrap_or(false),
                 ..QueryOptions::default()
             };
-            bearwisdom::query::symbol_info::symbol_info(db, &params.name, &opts)
+            bearwisdom::query::symbol_info::symbol_info_json(db, &params.name, &opts)
                 .map_err(Self::query_err)
-                .and_then(|r| Self::to_json(&r))
         })
     }
 
@@ -363,9 +362,8 @@ impl BearWisdomServer {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
             let limit = params.limit.unwrap_or(20);
-            bearwisdom::query::references::find_references(db, &params.name, limit)
+            bearwisdom::query::references::find_references_json(db, &params.name, limit)
                 .map_err(Self::query_err)
-                .and_then(|r| Self::to_json(&r))
         })
     }
 

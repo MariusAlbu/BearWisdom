@@ -1,24 +1,26 @@
 // =============================================================================
-// bearwisdom  —  hybrid code intelligence engine (tree-sitter + LSP)
+// bearwisdom  —  universal code intelligence engine
 //
-// Design goals vs. v2:
-//   • All v2 capabilities preserved unchanged (scope tree, 5-priority resolver,
-//     HTTP-route and EF Core connectors)
-//   • New `lsp` module: lifecycle manager for external language servers
-//   • New `bridge` module: GraphBridge (merges LSP edges into SQLite) and
-//     BackgroundEnricher (idle-time resolution of unresolved_refs)
-//   • New `EdgeKind::LspResolved` and `EdgeSource` type for edge provenance
-//   • New `lsp_edge_meta` table in the schema for LSP edge bookkeeping
+// BearWisdom replaces LSP servers entirely: tree-sitter parsing builds a
+// SQLite graph that answers go-to-definition, find-references, call hierarchy,
+// blast-radius, and architecture queries in milliseconds.
+//
+// Key subsystems:
+//   • Parser layer   — 18 dedicated extractors + generic fallback (31 grammars)
+//   • Indexer        — full parallel index + incremental file-change index
+//   • Connectors     — 21 cross-framework connectors (routes, DI, events, gRPC, …)
+//   • Query layer    — search, symbol_info, references, call_hierarchy, blast_radius,
+//                      architecture, diagnostics, completion, context, investigate
+//   • Search         — FTS5 trigram, nucleo fuzzy, grep (ripgrep), hybrid RRF,
+//                      vector KNN (CodeRankEmbed via ONNX)
+//   • SCIP import    — merge SCIP index edges (confidence 1.0) into the graph
+//   • DB             — SQLite WAL + sqlite-vec, connection pool (DbPool)
 // =============================================================================
 
-#[cfg(feature = "lsp")]
-pub mod bridge;
 pub mod connectors;
 pub mod db;
 pub mod indexer;
 pub mod languages;
-#[cfg(feature = "lsp")]
-pub mod lsp;
 pub mod parser;
 pub mod query;
 pub mod search;
@@ -54,14 +56,4 @@ pub use query::error::{QueryError, QueryResult};
 pub use query::cache::QueryCache;
 pub use indexer::ref_cache::RefCache;
 
-// Re-export new v3 types (only available with the `lsp` feature).
-#[cfg(feature = "lsp")]
-pub use bridge::enricher::BackgroundEnricher;
-#[cfg(feature = "lsp")]
-pub use bridge::graph_bridge::GraphBridge;
-#[cfg(feature = "lsp")]
-pub use bridge::scip::{import_scip, ScipImportStats};
-#[cfg(feature = "lsp")]
-pub use lsp::manager::LspManager;
-#[cfg(feature = "lsp")]
-pub use lsp::types::{Language, ServerState, ServerStatus};
+pub use indexer::scip::{import_scip, ScipImportStats};

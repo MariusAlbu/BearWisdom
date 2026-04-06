@@ -10,7 +10,7 @@
 //! isolation; these tests cover the contract between the indexer output and
 //! the SCIP importer input.
 
-use bearwisdom::bridge::scip::{
+use bearwisdom::indexer::scip::{
     Document, Metadata, Occurrence, ProtocolVersion, ScipIndex, TextEncoding, ToolInfo,
     SYMBOL_ROLE_DEFINITION, SYMBOL_ROLE_READ_ACCESS,
 };

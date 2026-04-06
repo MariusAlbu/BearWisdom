@@ -88,7 +88,6 @@ serde_json             = { workspace = true }
 tracing                = { workspace = true }
 rayon                  = { workspace = true }
 rustc-hash             = { workspace = true }
-tokio                  = { workspace = true }
 # Search engine
 grep-matcher           = { workspace = true }
 grep-regex             = { workspace = true }
@@ -106,8 +105,6 @@ prost                  = { workspace = true }
 lru                    = { workspace = true }
 strum                  = { workspace = true }
 
-[features]
-lsp = []
 
 [dev-dependencies]
 tempfile               = "3"

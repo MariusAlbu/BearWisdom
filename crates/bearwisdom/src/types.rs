@@ -1,4 +1,4 @@
-﻿// =============================================================================
+// =============================================================================
 // types.rs  —  all data types shared across the crate
 //
 // Convention:
@@ -50,10 +50,6 @@ impl SymbolKind {
     pub fn as_str(self) -> &'static str {
         self.into()
     }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        s.parse().ok()
-    }
 }
 
 /// Kinds of directed edges in the code graph.
@@ -90,10 +86,6 @@ impl EdgeKind {
     pub fn as_str(self) -> &'static str {
         self.into()
     }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        s.parse().ok()
-    }
 }
 
 /// C# and TypeScript visibility modifiers.
@@ -114,10 +106,6 @@ pub enum Visibility {
 impl Visibility {
     pub fn as_str(self) -> &'static str {
         self.into()
-    }
-
-    pub fn from_str(s: &str) -> Option<Self> {
-        s.parse().ok()
     }
 }
 

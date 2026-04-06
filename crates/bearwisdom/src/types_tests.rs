@@ -1,4 +1,5 @@
 use super::*;
+use std::str::FromStr;
 
 #[test]
 fn symbol_kind_roundtrip() {
@@ -21,7 +22,7 @@ fn symbol_kind_roundtrip() {
         SymbolKind::Test,
     ] {
         let s = kind.as_str();
-        let back = SymbolKind::from_str(s);
+        let back = SymbolKind::from_str(s).ok();
         assert_eq!(back, Some(kind), "round-trip failed for {kind:?}");
     }
 }
@@ -52,7 +53,7 @@ fn edge_kind_roundtrip() {
         EdgeKind::LspResolved,
     ] {
         let s = kind.as_str();
-        let back = EdgeKind::from_str(s);
+        let back = EdgeKind::from_str(s).ok();
         assert_eq!(back, Some(kind), "round-trip failed for {kind:?}");
     }
 }
@@ -73,7 +74,7 @@ fn visibility_roundtrip() {
         Visibility::Internal,
     ] {
         let s = v.as_str();
-        let back = Visibility::from_str(s);
+        let back = Visibility::from_str(s).ok();
         assert_eq!(back, Some(v), "round-trip failed for {v:?}");
     }
 }
@@ -87,8 +88,8 @@ fn visibility_display_matches_as_str() {
 
 #[test]
 fn unknown_strings_return_none() {
-    assert!(SymbolKind::from_str("Class").is_none()); // PascalCase rejected
-    assert!(SymbolKind::from_str("").is_none());
-    assert!(EdgeKind::from_str("http-call").is_none()); // wrong separator
-    assert!(Visibility::from_str("Public").is_none()); // PascalCase rejected
+    assert!(SymbolKind::from_str("Class").is_err()); // PascalCase rejected
+    assert!(SymbolKind::from_str("").is_err());
+    assert!(EdgeKind::from_str("http-call").is_err()); // wrong separator
+    assert!(Visibility::from_str("Public").is_err()); // PascalCase rejected
 }

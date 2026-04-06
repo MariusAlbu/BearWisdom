@@ -8,5 +8,6 @@ pub mod primitives;
 pub mod project_context;
 pub mod ref_cache;
 pub mod resolve;
+pub mod scip;
 pub mod test_frameworks;
 pub mod write;

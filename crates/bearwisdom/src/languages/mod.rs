@@ -18,12 +18,16 @@
 //!    and return it from [`LanguagePlugin::resolver()`]
 //! 4. Register the plugin in [`default_registry()`]
 
+pub mod common;
 pub mod registry;
 
 use crate::indexer::resolve::engine::LanguageResolver;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
 
+// Re-export the shared utility from common so existing callers using
+// `crate::languages::emit_chain_type_ref` continue to work without changes.
+pub use common::emit_chain_type_ref;
 pub use registry::LanguageRegistry;
 
 /// A language plugin provides grammar, scope config, and extraction for one or
@@ -251,36 +255,6 @@ pub fn default_resolvers() -> Vec<Arc<dyn LanguageResolver>> {
         .iter()
         .filter_map(|plugin| plugin.resolver())
         .collect()
-}
-
-// ---------------------------------------------------------------------------
-// Shared extraction utilities
-// ---------------------------------------------------------------------------
-
-/// When a call has a chain (e.g. `Foo::bar()`, `Foo.bar()`), emit a `TypeRef`
-/// for the type prefix — the segment before the final method name — if it
-/// looks like a type (starts with uppercase).
-pub fn emit_chain_type_ref(
-    chain: &Option<crate::types::MemberChain>,
-    source_symbol_index: usize,
-    func_node: &tree_sitter::Node,
-    refs: &mut Vec<crate::types::ExtractedRef>,
-) {
-    let c = match chain.as_ref() {
-        Some(c) if c.segments.len() >= 2 => c,
-        _ => return,
-    };
-    let type_seg = &c.segments[c.segments.len() - 2];
-    if type_seg.name.chars().next().map_or(false, |ch| ch.is_uppercase()) {
-        refs.push(crate::types::ExtractedRef {
-            source_symbol_index,
-            target_name: type_seg.name.clone(),
-            kind: crate::types::EdgeKind::TypeRef,
-            line: func_node.start_position().row as u32,
-            module: None,
-            chain: None,
-        });
-    }
 }
 
 // ---------------------------------------------------------------------------

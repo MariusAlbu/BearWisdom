@@ -64,6 +64,16 @@ impl QueryCache {
         self.symbol_info.lock().ok()?.get(key).cloned()
     }
 
+    /// Return the raw cached JSON string for a `symbol_info` result.
+    ///
+    /// Identical to [`get_symbol_info`] but named to signal the caller's intent:
+    /// the returned string is forwarded directly to the wire without any
+    /// deserialize → reserialize roundtrip.  Use this in MCP/CLI paths that
+    /// need to return JSON as-is.
+    pub fn get_symbol_info_raw(&self, key: &str) -> Option<String> {
+        self.get_symbol_info(key)
+    }
+
     /// Store a `symbol_info` result.  Silently drops the value if the mutex
     /// is poisoned.
     pub fn put_symbol_info(&self, key: String, value: String) {
@@ -77,6 +87,14 @@ impl QueryCache {
     /// Look up a cached `references` result by target name.
     pub fn get_references(&self, target_name: &str) -> Option<String> {
         self.references.lock().ok()?.get(target_name).cloned()
+    }
+
+    /// Return the raw cached JSON string for a `references` result.
+    ///
+    /// Same as [`get_references`] but signals that the caller is forwarding
+    /// the JSON directly rather than deserializing it.
+    pub fn get_references_raw(&self, target_name: &str) -> Option<String> {
+        self.get_references(target_name)
     }
 
     /// Store a `references` result keyed by target name.
@@ -93,6 +111,11 @@ impl QueryCache {
         self.architecture.lock().ok()?.get("default").cloned()
     }
 
+    /// Return the raw cached JSON string for the architecture overview.
+    pub fn get_architecture_raw(&self) -> Option<String> {
+        self.get_architecture()
+    }
+
     /// Store the architecture overview result.
     pub fn put_architecture(&self, value: String) {
         if let Ok(mut cache) = self.architecture.lock() {
@@ -105,6 +128,11 @@ impl QueryCache {
     /// Look up a cached `search` result by raw query string.
     pub fn get_search(&self, query: &str) -> Option<String> {
         self.search.lock().ok()?.get(query).cloned()
+    }
+
+    /// Return the raw cached JSON string for a `search` result.
+    pub fn get_search_raw(&self, query: &str) -> Option<String> {
+        self.get_search(query)
     }
 
     /// Store a `search` result keyed by raw query string.

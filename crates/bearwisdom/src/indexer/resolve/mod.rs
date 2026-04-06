@@ -22,7 +22,7 @@ use crate::types::{EdgeKind, ParsedFile};
 use anyhow::{Context, Result};
 use engine::{build_scope_chain, RefContext, ResolutionEngine, SymbolIndex};
 use std::collections::HashMap;
-use tracing::{debug, info};
+use tracing::{debug, info, warn};
 
 /// Stats returned by `resolve_and_write`.
 #[derive(Debug, Clone, Default)]
@@ -200,21 +200,27 @@ fn resolve_and_write_inner(
 
             if let Some(ns) = &inferred_ns {
                 // Known external framework ref → external_refs table.
-                tx.prepare_cached(
-                    "INSERT INTO external_refs
-                       (source_id, target_name, kind, source_line, namespace)
-                     VALUES (?1, ?2, ?3, ?4, ?5)",
-                )
-                .and_then(|mut stmt| {
-                    stmt.execute(rusqlite::params![
-                        source_id,
-                        r.target_name,
-                        r.kind.as_str(),
-                        r.line,
-                        ns,
-                    ])
-                })
-                .ok();
+                if let Err(e) = tx
+                    .prepare_cached(
+                        "INSERT INTO external_refs
+                           (source_id, target_name, kind, source_line, namespace)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.execute(rusqlite::params![
+                            source_id,
+                            r.target_name,
+                            r.kind.as_str(),
+                            r.line,
+                            ns,
+                        ])
+                    })
+                {
+                    warn!(
+                        "external_refs INSERT failed for '{}' (source_id={source_id}): {e}",
+                        r.target_name
+                    );
+                }
                 stats.external += 1;
                 continue;
             }

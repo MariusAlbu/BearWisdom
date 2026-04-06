@@ -291,7 +291,6 @@ dependencies = [
  "clap",
  "rusqlite",
  "sqlite-vec",
- "tokio",
  "tracing",
  "tracing-subscriber",
 ]
@@ -310,7 +309,6 @@ dependencies = [
  "serde_json",
  "sha2",
  "sqlite-vec",
- "tokio",
  "tracing",
  "tracing-subscriber",
 ]

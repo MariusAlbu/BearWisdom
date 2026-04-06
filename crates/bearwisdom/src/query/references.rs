@@ -116,6 +116,27 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
     Ok(results)
 }
 
+/// JSON-returning variant of [`find_references`] for use in MCP and CLI paths.
+///
+/// Returns the raw cached JSON string on a cache hit, skipping the
+/// deserialize → struct → reserialize roundtrip that occurs when the caller
+/// would otherwise call `find_references` and then `serde_json::to_string`.
+pub fn find_references_json(
+    db: &Database,
+    target_name: &str,
+    limit: usize,
+) -> super::QueryResult<String> {
+    // Raw cache hit: return JSON directly without deserializing.
+    if let Some(ref cache) = db.query_cache {
+        if let Some(raw) = cache.get_references_raw(target_name) {
+            return Ok(raw);
+        }
+    }
+    let result = find_references(db, target_name, limit)?;
+    serde_json::to_string(&result)
+        .map_err(|e| super::QueryError::Internal(anyhow::anyhow!("serialization error: {e}")))
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

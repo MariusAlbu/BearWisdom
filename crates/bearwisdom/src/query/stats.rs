@@ -19,22 +19,39 @@ use serde::{Deserialize, Serialize};
 pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
     let _timer = db.timer("index_stats");
     let conn = db.conn();
-    let file_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))?;
-    let symbol_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))?;
-    let edge_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM edges", [], |r| r.get(0))?;
-    let unresolved_ref_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM unresolved_refs", [], |r| r.get(0))?;
-    let external_ref_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM external_refs", [], |r| r.get(0))?;
-    let route_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM routes", [], |r| r.get(0))?;
-    let db_mapping_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM db_mappings", [], |r| r.get(0))?;
-    let flow_edge_count: u32 =
-        conn.query_row("SELECT COUNT(*) FROM flow_edges", [], |r| r.get(0))?;
+    let (
+        file_count,
+        symbol_count,
+        edge_count,
+        unresolved_ref_count,
+        external_ref_count,
+        route_count,
+        db_mapping_count,
+        flow_edge_count,
+    ): (u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
+        "SELECT
+           (SELECT COUNT(*) FROM files),
+           (SELECT COUNT(*) FROM symbols),
+           (SELECT COUNT(*) FROM edges),
+           (SELECT COUNT(*) FROM unresolved_refs),
+           (SELECT COUNT(*) FROM external_refs),
+           (SELECT COUNT(*) FROM routes),
+           (SELECT COUNT(*) FROM db_mappings),
+           (SELECT COUNT(*) FROM flow_edges)",
+        [],
+        |r| {
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+                r.get(6)?,
+                r.get(7)?,
+            ))
+        },
+    )?;
 
     Ok(IndexStats {
         file_count,

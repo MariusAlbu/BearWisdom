@@ -368,7 +368,7 @@ impl DbPool {
     /// to the checked-out connection.
     pub fn get(&self) -> Result<PoolGuard> {
         let mut db = {
-            let mut idle = self.0.idle.lock().unwrap();
+            let mut idle = self.0.idle.lock().unwrap_or_else(|e| e.into_inner());
             idle.pop()
         }
         .map(Ok)
@@ -383,7 +383,7 @@ impl DbPool {
         }
 
         Ok(PoolGuard {
-            db: Some(db),
+            db: std::mem::ManuallyDrop::new(db),
             pool: self.0.clone(),
         })
     }
@@ -392,32 +392,33 @@ impl DbPool {
 /// RAII guard that dereferences to `Database` and returns the connection
 /// to the pool on drop.
 pub struct PoolGuard {
-    db: Option<Database>,
+    db: std::mem::ManuallyDrop<Database>,
     pool: Arc<DbPoolInner>,
 }
 
 impl std::ops::Deref for PoolGuard {
     type Target = Database;
     fn deref(&self) -> &Database {
-        self.db.as_ref().expect("PoolGuard used after drop")
+        &self.db
     }
 }
 
 impl std::ops::DerefMut for PoolGuard {
     fn deref_mut(&mut self) -> &mut Database {
-        self.db.as_mut().expect("PoolGuard used after drop")
+        &mut self.db
     }
 }
 
 impl Drop for PoolGuard {
     fn drop(&mut self) {
-        if let Some(db) = self.db.take() {
-            let mut idle = self.pool.idle.lock().unwrap();
-            if idle.len() < self.pool.max_size {
-                idle.push(db);
-            }
-            // else: connection is dropped (closed)
+        // SAFETY: `self.db` is valid — ManuallyDrop prevents the inner drop,
+        // so we own the value here and can take it exactly once (on drop).
+        let db = unsafe { std::mem::ManuallyDrop::take(&mut self.db) };
+        let mut idle = self.pool.idle.lock().unwrap_or_else(|e| e.into_inner());
+        if idle.len() < self.pool.max_size {
+            idle.push(db);
         }
+        // else: connection falls out of scope here and is closed
     }
 }
 

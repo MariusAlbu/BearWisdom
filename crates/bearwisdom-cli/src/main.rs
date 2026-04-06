@@ -333,17 +333,6 @@ enum Commands {
         batch_size: usize,
     },
 
-    /// Enrich the index via LSP (resolve unresolved refs, upgrade low-confidence edges).
-    Enrich {
-        /// Absolute path to the project root.
-        path: String,
-        /// Maximum number of refs to process per pass.
-        #[arg(long, default_value = "500")]
-        batch_size: usize,
-        /// Confidence threshold below which edges get upgraded via LSP.
-        #[arg(long, default_value = "0.85")]
-        threshold: f64,
-    },
 
     /// Import a SCIP index to upgrade edge confidence (from rust-analyzer, scip-typescript, etc.).
     ImportScip {
@@ -514,9 +503,6 @@ fn run(command: Commands, full: bool) -> Result<String> {
         }
 
         Commands::Embed { path, batch_size } => cmd_embed(&path, batch_size),
-        Commands::Enrich { path, batch_size, threshold } => {
-            cmd_enrich(&path, batch_size, threshold)
-        }
         Commands::ImportScip { path, scip } => cmd_import_scip(&path, &scip),
 
         Commands::ExportGraph { path, filter, max_nodes } => {
@@ -621,43 +607,6 @@ fn cmd_embed(project_path: &str, batch_size: usize) -> Result<String> {
             Err(e).context("Embedding failed")
         }
     }
-}
-
-/// Enrich the index by resolving unresolved refs and upgrading low-confidence edges via LSP.
-fn cmd_enrich(project_path: &str, batch_size: usize, threshold: f64) -> Result<String> {
-    let root = PathBuf::from(project_path);
-    let db_path = resolve_db_path(&root)?;
-    let pool = bearwisdom::DbPool::new(&db_path, 4)
-        .with_context(|| format!("Failed to create pool for {}", db_path.display()))?;
-
-    let lsp = Arc::new(bearwisdom::LspManager::new(&root));
-    let bridge = Arc::new(bearwisdom::GraphBridge::new(pool, lsp.clone(), &root));
-    let enricher = bearwisdom::BackgroundEnricher::new(bridge);
-
-    let rt = tokio::runtime::Builder::new_current_thread()
-        .enable_all()
-        .build()
-        .context("Failed to create Tokio runtime")?;
-
-    eprintln!("Resolving unresolved refs via LSP ...");
-    let progress = rt.block_on(enricher.enrich_unresolved(batch_size))?;
-    eprintln!(
-        "Resolved {} / {} refs ({} still unresolved)",
-        progress.resolved_this_pass, progress.total_unresolved, progress.still_unresolved
-    );
-
-    eprintln!("Upgrading low-confidence edges (threshold={threshold}) ...");
-    let upgrade = rt.block_on(enricher.enrich_low_confidence(threshold, batch_size))?;
-    eprintln!("Upgraded {} edges", upgrade.upgraded_this_pass);
-
-    let _ = rt.block_on(lsp.shutdown_all());
-
-    ok_json(serde_json::json!({
-        "resolved": progress.resolved_this_pass,
-        "still_unresolved": progress.still_unresolved,
-        "upgraded": upgrade.upgraded_this_pass,
-        "elapsed_ms": progress.elapsed_ms + upgrade.elapsed_ms,
-    }))
 }
 
 /// Import a SCIP index to upgrade edge confidence.

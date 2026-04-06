@@ -281,38 +281,63 @@ pub fn update_chunks(
 /// Handles CASCADE-covered tables (symbols, edges, etc.) via the FK
 /// constraint, plus virtual tables (vec_chunks, fts_content, flow_edges)
 /// that require manual cleanup.
+///
+/// All per-file DELETE statements run inside a single transaction so the
+/// database is never left in a partially-deleted state if the process is
+/// interrupted mid-batch.
 pub fn delete_files(db: &Database, paths: &[String]) -> Result<Vec<(i64, String)>> {
     let conn = db.conn();
     let mut deleted = Vec::new();
 
+    if paths.is_empty() {
+        return Ok(deleted);
+    }
+
+    // Resolve file IDs outside the transaction (read-only).
+    let mut file_ids: Vec<(i64, &String)> = Vec::with_capacity(paths.len());
     for rel_path in paths {
-        let file_id: Option<i64> = conn
-            .query_row(
-                "SELECT id FROM files WHERE path = ?1",
-                [rel_path],
-                |r| r.get(0),
-            )
-            .ok();
-
-        if let Some(file_id) = file_id {
-            // Virtual table cleanup (not covered by CASCADE).
-            let _ = crate::search::vector_store::delete_file_vectors(conn, file_id);
-
-            // CASCADE handles symbols, edges, imports, routes, code_chunks,
-            // connection_points, etc.
-            conn.execute("DELETE FROM files WHERE id = ?1", [file_id])?;
-
-            // Manual cleanup for tables without FK to files.
-            let _ = conn.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id]);
-            let _ = conn.execute(
-                "DELETE FROM flow_edges WHERE source_file_id = ?1 OR target_file_id = ?1",
-                [file_id],
-            );
-
-            deleted.push((file_id, rel_path.clone()));
-            debug!("Deleted file from index: {rel_path}");
+        if let Ok(file_id) = conn.query_row(
+            "SELECT id FROM files WHERE path = ?1",
+            [rel_path.as_str()],
+            |r| r.get::<_, i64>(0),
+        ) {
+            file_ids.push((file_id, rel_path));
         }
     }
+
+    if file_ids.is_empty() {
+        return Ok(deleted);
+    }
+
+    // Virtual-table cleanup must happen before the transaction DELETEs the
+    // rows that the virtual tables reference.  sqlite-vec is not transactional
+    // in the same sense, so we clean it up first while the rows still exist.
+    for (file_id, _) in &file_ids {
+        let _ = crate::search::vector_store::delete_file_vectors(conn, *file_id);
+    }
+
+    // Wrap all DELETE statements in one transaction.
+    let tx = conn
+        .unchecked_transaction()
+        .context("Failed to begin delete transaction")?;
+
+    for (file_id, rel_path) in &file_ids {
+        // CASCADE handles symbols, edges, imports, routes, code_chunks,
+        // connection_points, etc.
+        tx.execute("DELETE FROM files WHERE id = ?1", [file_id])?;
+
+        // Manual cleanup for tables without FK to files.
+        let _ = tx.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id]);
+        let _ = tx.execute(
+            "DELETE FROM flow_edges WHERE source_file_id = ?1 OR target_file_id = ?1",
+            [file_id],
+        );
+
+        deleted.push((*file_id, (*rel_path).clone()));
+        debug!("Deleted file from index: {rel_path}");
+    }
+
+    tx.commit().context("Failed to commit delete transaction")?;
 
     Ok(deleted)
 }
