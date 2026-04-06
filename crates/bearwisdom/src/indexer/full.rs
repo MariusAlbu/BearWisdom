@@ -253,6 +253,16 @@ pub fn full_index(
     if let Err(e) = crate::connectors::ef_core::connect(db) {
         warn!("EF Core connector: {e}");
     }
+    match crate::connectors::docker_compose::connect(db, project_root) {
+        Ok(n) if n > 0 => info!("Docker Compose: {n} service dependency edges"),
+        Err(e) => warn!("Docker Compose connector: {e}"),
+        _ => {}
+    }
+    match crate::connectors::kubernetes::connect(db, project_root) {
+        Ok(n) if n > 0 => info!("Kubernetes: {n} service reference edges"),
+        Err(e) => warn!("Kubernetes connector: {e}"),
+        _ => {}
+    }
     if project_ctx.python_packages.contains("django") {
         if let Err(e) = crate::connectors::django::connect(db, project_root) {
             warn!("Django connector: {e}");

@@ -1,25 +1,30 @@
 // =============================================================================
 // connectors/docker_compose.rs — Docker Compose connector
 //
-// Maps Compose service definitions and inter-service dependencies to
-// ConnectionPoints, then matches them into flow_edges.
+// Standalone post-index hook (not a Connector trait impl).
 //
-// Stop:  service with a `build` context (the service itself is a deployable unit)
-// Start: service's `depends_on` entries (this service depends on another)
+// For each compose file found in the project:
+//   1. Parse services with a `build` context.
+//   2. Map each build context to a package by matching the package path.
+//   3. For each `depends_on` entry, write a flow_edge from the depender's
+//      package to the dependency's package.
 //
-// Matching key: service name.  custom_match emits "service_dependency" edges.
+// Services backed only by external images (e.g. `postgres:15`) cannot be
+// mapped to a package and are skipped — no code, no edge.
+//
+// edge_type: "service_dependency"
+// protocol:  "infrastructure"
 // =============================================================================
 
-use std::path::Path;
+use std::collections::HashMap;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
-use rusqlite::Connection;
 use serde_yaml::Value;
 use tracing::warn;
 
-use super::traits::{Connector, ConnectorDescriptor};
-use super::types::{ConnectionPoint, FlowDirection, Protocol, ResolvedFlow};
-use crate::indexer::project_context::ProjectContext;
+use super::types::Protocol;
+use crate::db::Database;
 
 /// Compose file names searched in the project root and common sub-directories.
 const COMPOSE_NAMES: &[&str] = &[
@@ -27,103 +32,213 @@ const COMPOSE_NAMES: &[&str] = &[
     "docker-compose.yaml",
     "compose.yml",
     "compose.yaml",
-    // Override files are not primary descriptors — skip them to avoid double-counting.
+    // Override/local files often have build contexts that the production
+    // compose files replace with pre-built images.
+    "docker-compose.override.yml",
+    "docker-compose.override.yaml",
+    "compose.override.yml",
+    "compose.override.yaml",
+    "compose.local.yml",
+    "compose.local.yaml",
+    "docker-compose.local.yml",
+    "docker-compose.local.yaml",
 ];
 
 /// Sub-directories to check for compose files in addition to the project root.
 const COMPOSE_SUBDIRS: &[&str] = &["deploy", "docker", "infra", "infrastructure", ".docker"];
 
-pub struct DockerComposeConnector;
+// ---------------------------------------------------------------------------
+// Internal types
+// ---------------------------------------------------------------------------
 
-impl Connector for DockerComposeConnector {
-    fn descriptor(&self) -> ConnectorDescriptor {
-        ConnectorDescriptor {
-            name: "docker_compose",
-            protocols: &[Protocol::Infrastructure],
-            languages: &["yaml"],
-        }
+/// Metadata extracted for a single compose service.
+struct ServiceInfo {
+    /// The resolved package_id (None for external/image-only services).
+    package_id: Option<i64>,
+    /// Logical names of services this one depends on.
+    depends_on: Vec<String>,
+}
+
+// ---------------------------------------------------------------------------
+// Public entry point
+// ---------------------------------------------------------------------------
+
+/// Connect Docker Compose service dependencies into the graph.
+///
+/// For each compose file found:
+/// 1. Parse services with `build` contexts.
+/// 2. Map build contexts to packages (via packages table paths).
+/// 3. For each `depends_on`, write a flow_edge from the depender's package to
+///    the dependency's package.
+///
+/// Returns the number of flow_edges written.
+pub fn connect(db: &Database, project_root: &Path) -> Result<u32> {
+    let compose_files = find_compose_files(project_root);
+    if compose_files.is_empty() {
+        return Ok(0);
     }
 
-    fn detect(&self, _ctx: &ProjectContext) -> bool {
-        // detect() is cheap — always run; extract() short-circuits if no files found.
-        true
-    }
+    let conn = db.conn();
+    let mut total = 0u32;
+    tracing::debug!("docker_compose: found {} compose files", compose_files.len());
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        let compose_files = find_compose_files(project_root);
-        if compose_files.is_empty() {
-            return Ok(Vec::new());
-        }
+    for compose_path in compose_files {
+        let content = match std::fs::read_to_string(&compose_path) {
+            Ok(c) => c,
+            Err(e) => {
+                warn!("docker_compose: cannot read {}: {e}", compose_path.display());
+                continue;
+            }
+        };
 
-        let mut points = Vec::new();
+        let doc: Value = match serde_yaml::from_str(&content) {
+            Ok(v) => v,
+            Err(e) => {
+                warn!("docker_compose: failed to parse {}: {e}", compose_path.display());
+                continue;
+            }
+        };
 
-        for compose_path in compose_files {
-            let file_id = match lookup_file_id(conn, &compose_path) {
+        let services = extract_services_with_packages(conn, project_root, &compose_path, &doc);
+        tracing::debug!(
+            "docker_compose: {} — {} services ({} with packages)",
+            compose_path.display(),
+            services.len(),
+            services.values().filter(|s| s.package_id.is_some()).count(),
+        );
+
+        for (depender_name, service) in &services {
+            let Some(depender_pkg_id) = service.package_id else {
+                // External image — no code to link.
+                continue;
+            };
+            let depender_file_id = match representative_file_id(conn, depender_pkg_id) {
                 Some(id) => id,
                 None => {
-                    // File exists on disk but is not in the index — this can happen
-                    // if the walker is run with a language filter that excludes YAML.
-                    // Skip: we cannot emit valid ConnectionPoints without a file_id.
                     warn!(
-                        "docker_compose: {} not in files table — skipping",
-                        compose_path.display()
+                        "docker_compose: no files for package_id={depender_pkg_id} \
+                         (service '{depender_name}') — skipping"
                     );
                     continue;
                 }
             };
 
-            let content = match std::fs::read_to_string(&compose_path) {
-                Ok(c) => c,
-                Err(e) => {
-                    warn!("docker_compose: cannot read {}: {e}", compose_path.display());
-                    continue;
-                }
-            };
+            for dep_name in &service.depends_on {
+                let dep_pkg_id = match services.get(dep_name).and_then(|s| s.package_id) {
+                    Some(id) => id,
+                    None => {
+                        // External service (e.g. postgres image) — skip.
+                        continue;
+                    }
+                };
 
-            let doc: Value = match serde_yaml::from_str(&content) {
-                Ok(v) => v,
-                Err(e) => {
-                    warn!("docker_compose: failed to parse {}: {e}", compose_path.display());
-                    continue;
-                }
-            };
+                let dep_file_id = match representative_file_id(conn, dep_pkg_id) {
+                    Some(id) => id,
+                    None => {
+                        warn!(
+                            "docker_compose: no files for package_id={dep_pkg_id} \
+                             (service '{dep_name}') — skipping"
+                        );
+                        continue;
+                    }
+                };
 
-            extract_from_compose(file_id, &doc, &mut points);
+                let metadata = serde_json::json!({
+                    "depender": depender_name,
+                    "dependency": dep_name,
+                })
+                .to_string();
+
+                match conn.prepare_cached(
+                    "INSERT OR IGNORE INTO flow_edges
+                        (source_file_id, source_line, source_symbol, source_language,
+                         target_file_id, target_line, target_symbol, target_language,
+                         edge_type, protocol, confidence, metadata)
+                     VALUES (?1, 1, ?2, NULL, ?3, 1, ?4, NULL,
+                             'service_dependency', ?5, 0.9, ?6)",
+                ) {
+                    Ok(mut stmt) => match stmt.execute(rusqlite::params![
+                        depender_file_id,
+                        depender_name,
+                        dep_file_id,
+                        dep_name,
+                        Protocol::Infrastructure.as_str(),
+                        metadata,
+                    ]) {
+                        Ok(n) => total += n as u32,
+                        Err(e) => warn!(
+                            "docker_compose: failed to insert flow_edge \
+                             '{depender_name}' → '{dep_name}': {e}"
+                        ),
+                    },
+                    Err(e) => warn!("docker_compose: prepare_cached failed: {e}"),
+                }
+            }
         }
-
-        Ok(points)
     }
 
-    fn custom_match(
-        &self,
-        _conn: &Connection,
-        starts: &[ConnectionPoint],
-        stops: &[ConnectionPoint],
-    ) -> Result<Option<Vec<ResolvedFlow>>> {
-        // Match depends_on entries (Start) to their service definition (Stop) by
-        // exact service name key.
-        let mut flows = Vec::new();
+    Ok(total)
+}
 
-        for start in starts {
-            if start.framework != "docker-compose" {
-                continue;
-            }
-            for stop in stops {
-                if stop.framework == "docker-compose" && stop.key == start.key {
-                    flows.push(ResolvedFlow {
-                        start: start.clone(),
-                        stop: stop.clone(),
-                        confidence: 0.9,
-                        edge_type: "service_dependency".to_string(),
-                    });
-                    // One service definition per name — no need to keep searching.
-                    break;
-                }
-            }
+// ---------------------------------------------------------------------------
+// Package resolution helpers
+// ---------------------------------------------------------------------------
+
+/// Resolve a compose build context string to a package_id.
+///
+/// `build_context` is relative to the compose file's directory.
+fn resolve_package_id(
+    conn: &rusqlite::Connection,
+    project_root: &Path,
+    compose_dir: &Path,
+    build_context: &str,
+) -> Option<i64> {
+    let abs = if Path::new(build_context).is_absolute() {
+        PathBuf::from(build_context)
+    } else {
+        compose_dir.join(build_context)
+    };
+
+    let rel = abs
+        .strip_prefix(project_root)
+        .ok()
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_else(|| build_context.replace('\\', "/"));
+
+    let normalised = rel
+        .trim_start_matches("./")
+        .trim_end_matches('/')
+        .to_string();
+
+    // Exact path match (try both with and without leading "./").
+    conn.query_row(
+        "SELECT id FROM packages WHERE path = ?1 OR path = ?2 LIMIT 1",
+        rusqlite::params![normalised, format!("./{normalised}")],
+        |row| row.get(0),
+    )
+    .ok()
+    .or_else(|| {
+        // Suffix/prefix match for edge cases (e.g. "." in a subdirectory context).
+        if normalised.is_empty() || normalised == "." {
+            return None;
         }
+        conn.query_row(
+            "SELECT id FROM packages WHERE path LIKE ('%' || ?1) LIMIT 1",
+            rusqlite::params![normalised],
+            |row| row.get(0),
+        )
+        .ok()
+    })
+}
 
-        Ok(Some(flows))
-    }
+/// Get a representative file_id for a package (any source file in the package).
+fn representative_file_id(conn: &rusqlite::Connection, package_id: i64) -> Option<i64> {
+    conn.query_row(
+        "SELECT id FROM files WHERE package_id = ?1 LIMIT 1",
+        rusqlite::params![package_id],
+        |row| row.get(0),
+    )
+    .ok()
 }
 
 // ---------------------------------------------------------------------------
@@ -131,10 +246,9 @@ impl Connector for DockerComposeConnector {
 // ---------------------------------------------------------------------------
 
 /// Return absolute paths to all compose files found in the project.
-fn find_compose_files(project_root: &Path) -> Vec<std::path::PathBuf> {
+fn find_compose_files(project_root: &Path) -> Vec<PathBuf> {
     let mut found = Vec::new();
 
-    // Project root first.
     for name in COMPOSE_NAMES {
         let candidate = project_root.join(name);
         if candidate.is_file() {
@@ -142,7 +256,6 @@ fn find_compose_files(project_root: &Path) -> Vec<std::path::PathBuf> {
         }
     }
 
-    // Common sub-directories.
     for subdir in COMPOSE_SUBDIRS {
         let dir = project_root.join(subdir);
         if dir.is_dir() {
@@ -158,108 +271,66 @@ fn find_compose_files(project_root: &Path) -> Vec<std::path::PathBuf> {
     found
 }
 
-/// Look up the `files` table id for an absolute path.
-///
-/// Tries both the canonical path string and a LIKE pattern that matches the
-/// path with either forward- or back-slashes, since BearWisdom normalises
-/// paths to forward-slashes but the OS may return backslashes on Windows.
-fn lookup_file_id(conn: &Connection, abs_path: &Path) -> Option<i64> {
-    let path_str = abs_path.to_string_lossy().replace('\\', "/");
-
-    // Exact match on normalised path.
-    let result: rusqlite::Result<i64> = conn.query_row(
-        "SELECT id FROM files WHERE path = ?1 LIMIT 1",
-        rusqlite::params![path_str],
-        |row| row.get(0),
-    );
-    if let Ok(id) = result {
-        return Some(id);
-    }
-
-    // Suffix match — the stored path is relative to the project root.
-    let file_name = abs_path.file_name()?.to_string_lossy().into_owned();
-    let result: rusqlite::Result<i64> = conn.query_row(
-        "SELECT id FROM files WHERE path LIKE ?1 LIMIT 1",
-        rusqlite::params![format!("%/{file_name}")],
-        |row| row.get(0),
-    );
-    result.ok()
-}
-
 // ---------------------------------------------------------------------------
 // Extraction
 // ---------------------------------------------------------------------------
 
-/// Parse a Compose document and push ConnectionPoints into `out`.
-fn extract_from_compose(file_id: i64, doc: &Value, out: &mut Vec<ConnectionPoint>) {
-    // Compose v2/v3: top-level `services` mapping.
-    let services = match doc.get("services").and_then(|v| v.as_mapping()) {
+/// Parse a Compose document and return a map of service_name → ServiceInfo,
+/// with package_ids resolved from the database.
+fn extract_services_with_packages(
+    conn: &rusqlite::Connection,
+    project_root: &Path,
+    compose_path: &Path,
+    doc: &Value,
+) -> HashMap<String, ServiceInfo> {
+    let compose_dir = compose_path.parent().unwrap_or(project_root);
+    let mut services = HashMap::new();
+
+    let svc_map = match doc.get("services").and_then(|v| v.as_mapping()) {
         Some(m) => m,
-        None => return,
+        None => return services,
     };
 
-    for (svc_key, svc_val) in services {
+    for (svc_key, svc_val) in svc_map {
         let service_name = match svc_key.as_str() {
             Some(n) => n.to_string(),
             None => continue,
         };
 
-        // Stop point: service that has a `build` key (it is a local buildable image).
-        if svc_val.get("build").is_some() {
-            let build_context = svc_val
-                .get("build")
-                .and_then(|b| {
-                    // `build` can be a plain string or a mapping with `context`.
-                    b.as_str()
-                        .map(|s| s.to_string())
-                        .or_else(|| b.get("context").and_then(|c| c.as_str()).map(|s| s.to_string()))
-                })
+        // Resolve build context → package_id.  Services with only an `image`
+        // key (no `build`) get None — they are external and can't be linked.
+        let package_id = svc_val.get("build").and_then(|b| {
+            let ctx = b
+                .as_str()
+                .map(|s| s.to_string())
+                .or_else(|| b.get("context").and_then(|c| c.as_str()).map(|s| s.to_string()))
                 .unwrap_or_else(|| ".".to_string());
 
-            let ports = collect_ports(svc_val);
-            let image = svc_val
-                .get("image")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
+            // Try build context first.
+            resolve_package_id(conn, project_root, compose_dir, &ctx)
+                .or_else(|| {
+                    // If build context is "." (root), try the Dockerfile's directory
+                    // as the package path.  e.g. `dockerfile: apps/api/Dockerfile`
+                    // implies the service belongs to the `apps/api` package.
+                    b.get("dockerfile")
+                        .and_then(|d| d.as_str())
+                        .and_then(|df| {
+                            let df_dir = Path::new(df).parent()?;
+                            if df_dir.as_os_str().is_empty() {
+                                return None;
+                            }
+                            let df_rel = df_dir.to_string_lossy().replace('\\', "/");
+                            resolve_package_id(conn, project_root, compose_dir, &df_rel)
+                        })
+                })
+        });
 
-            let metadata = serde_json::json!({
-                "build_context": build_context,
-                "ports": ports,
-                "image": image,
-            })
-            .to_string();
+        let depends_on = collect_depends_on(svc_val);
 
-            out.push(ConnectionPoint {
-                file_id,
-                symbol_id: None,
-                line: 1, // YAML line tracking is not available without a full YAML parser with spans
-                protocol: Protocol::Infrastructure,
-                direction: FlowDirection::Stop,
-                key: service_name.clone(),
-                method: String::new(),
-                framework: "docker-compose".to_string(),
-                metadata: Some(metadata),
-            });
-        }
-
-        // Start points: each entry in `depends_on` (this service depends on another).
-        for dep_name in collect_depends_on(svc_val) {
-            out.push(ConnectionPoint {
-                file_id,
-                symbol_id: None,
-                line: 1,
-                protocol: Protocol::Infrastructure,
-                direction: FlowDirection::Start,
-                key: dep_name,
-                method: String::new(),
-                framework: "docker-compose".to_string(),
-                metadata: Some(
-                    serde_json::json!({ "depender": service_name }).to_string(),
-                ),
-            });
-        }
+        services.insert(service_name, ServiceInfo { package_id, depends_on });
     }
+
+    services
 }
 
 /// Collect port strings from a service value.
@@ -272,7 +343,6 @@ fn collect_ports(svc: &Value) -> Vec<String> {
             } else if let Some(n) = p.as_u64() {
                 ports.push(n.to_string());
             } else if let Some(m) = p.as_mapping() {
-                // Long-form port syntax: {target: 8080, published: 8080}
                 if let Some(target) = m.get("target").and_then(|v| v.as_u64()) {
                     if let Some(published) = m.get("published").and_then(|v| v.as_u64()) {
                         ports.push(format!("{published}:{target}"));
@@ -293,7 +363,6 @@ fn collect_depends_on(svc: &Value) -> Vec<String> {
         return deps;
     };
 
-    // Short form: list of service names.
     if let Some(list) = dep_val.as_sequence() {
         for item in list {
             if let Some(name) = item.as_str() {
@@ -303,7 +372,6 @@ fn collect_depends_on(svc: &Value) -> Vec<String> {
         return deps;
     }
 
-    // Long form: mapping of service_name → {condition: ...}
     if let Some(map) = dep_val.as_mapping() {
         for (key, _) in map {
             if let Some(name) = key.as_str() {
@@ -323,12 +391,98 @@ fn collect_depends_on(svc: &Value) -> Vec<String> {
 mod tests {
     use super::*;
 
-    fn make_compose_doc(yaml: &str) -> Value {
+    fn make_doc(yaml: &str) -> Value {
         serde_yaml::from_str(yaml).unwrap()
     }
 
+    fn in_memory_db_with_packages() -> rusqlite::Connection {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        conn.execute_batch(
+            "CREATE TABLE packages (
+                 id INTEGER PRIMARY KEY,
+                 path TEXT NOT NULL,
+                 name TEXT,
+                 kind TEXT,
+                 is_service INTEGER DEFAULT 0
+             );
+             CREATE TABLE files (
+                 id INTEGER PRIMARY KEY,
+                 path TEXT NOT NULL,
+                 package_id INTEGER
+             );",
+        )
+        .unwrap();
+        conn
+    }
+
+    // ---------------------------------------------------------------------------
+    // YAML parsing helpers
+    // ---------------------------------------------------------------------------
+
     #[test]
-    fn test_extract_service_with_build_and_depends_on() {
+    fn test_collect_depends_on_short_form() {
+        let yaml = "depends_on:\n  - db\n  - redis\n";
+        let doc = make_doc(yaml);
+        let deps = collect_depends_on(&doc);
+        assert_eq!(deps.len(), 2);
+        assert!(deps.contains(&"db".to_string()));
+        assert!(deps.contains(&"redis".to_string()));
+    }
+
+    #[test]
+    fn test_collect_depends_on_long_form() {
+        let yaml = r#"
+depends_on:
+  redis:
+    condition: service_healthy
+  db:
+    condition: service_started
+"#;
+        let doc = make_doc(yaml);
+        let deps = collect_depends_on(&doc);
+        assert_eq!(deps.len(), 2);
+        assert!(deps.contains(&"redis".to_string()));
+        assert!(deps.contains(&"db".to_string()));
+    }
+
+    #[test]
+    fn test_collect_depends_on_absent() {
+        let yaml = "image: postgres:15\n";
+        let doc = make_doc(yaml);
+        assert!(collect_depends_on(&doc).is_empty());
+    }
+
+    #[test]
+    fn test_collect_ports_long_form() {
+        let yaml = "ports:\n  - target: 80\n    published: 8080\n";
+        let doc = make_doc(yaml);
+        assert_eq!(collect_ports(&doc), vec!["8080:80"]);
+    }
+
+    #[test]
+    fn test_collect_ports_short_form() {
+        let yaml = "ports:\n  - \"8080:8080\"\n  - \"5432\"\n";
+        let doc = make_doc(yaml);
+        assert_eq!(collect_ports(&doc), vec!["8080:8080", "5432"]);
+    }
+
+    #[test]
+    fn test_no_services_key_returns_empty() {
+        let yaml = "version: '3.8'\nname: test\n";
+        let doc = make_doc(yaml);
+        let conn = in_memory_db_with_packages();
+        let root = Path::new("/project");
+        let compose = root.join("docker-compose.yml");
+        let result = extract_services_with_packages(&conn, root, &compose, &doc);
+        assert!(result.is_empty());
+    }
+
+    // ---------------------------------------------------------------------------
+    // Package mapping
+    // ---------------------------------------------------------------------------
+
+    #[test]
+    fn test_extract_service_with_build_context_maps_package() {
         let yaml = r#"
 services:
   api:
@@ -341,32 +495,34 @@ services:
     build:
       context: ./db
     image: postgres:15
+  cache:
+    image: redis:7
 "#;
-        let doc = make_compose_doc(yaml);
-        let mut points = Vec::new();
-        extract_from_compose(42, &doc, &mut points);
+        let doc = make_doc(yaml);
+        let conn = in_memory_db_with_packages();
+        conn.execute_batch(
+            "INSERT INTO packages (id, path, name) VALUES (1, 'api', 'api');
+             INSERT INTO packages (id, path, name) VALUES (2, 'db', 'db');",
+        )
+        .unwrap();
 
-        // Stops: api (has build), db (has build)
-        let stops: Vec<_> = points.iter().filter(|p| p.direction == FlowDirection::Stop).collect();
-        assert_eq!(stops.len(), 2, "expected 2 stop points");
-        assert!(stops.iter().any(|p| p.key == "api"));
-        assert!(stops.iter().any(|p| p.key == "db"));
+        let root = Path::new("/project");
+        let compose = root.join("docker-compose.yml");
+        let services = extract_services_with_packages(&conn, root, &compose, &doc);
 
-        // Start: api depends_on db
-        let starts: Vec<_> = points.iter().filter(|p| p.direction == FlowDirection::Start).collect();
-        assert_eq!(starts.len(), 1, "expected 1 start point (depends_on)");
-        assert_eq!(starts[0].key, "db");
+        assert!(services.contains_key("api"));
+        assert!(services.contains_key("db"));
+        assert!(services.contains_key("cache"));
 
-        // All have correct protocol and framework
-        for p in &points {
-            assert_eq!(p.protocol, Protocol::Infrastructure);
-            assert_eq!(p.framework, "docker-compose");
-            assert_eq!(p.file_id, 42);
-        }
+        assert_eq!(services["api"].package_id, Some(1));
+        assert_eq!(services["db"].package_id, Some(2));
+        assert_eq!(services["cache"].package_id, None, "image-only service has no package");
+
+        assert!(services["api"].depends_on.contains(&"db".to_string()));
     }
 
     #[test]
-    fn test_extract_depends_on_long_form() {
+    fn test_extract_depends_on_long_form_service() {
         let yaml = r#"
 services:
   worker:
@@ -381,75 +537,25 @@ services:
   db:
     image: postgres:15
 "#;
-        let doc = make_compose_doc(yaml);
-        let mut points = Vec::new();
-        extract_from_compose(1, &doc, &mut points);
+        let doc = make_doc(yaml);
+        let conn = in_memory_db_with_packages();
+        let root = Path::new("/project");
+        let compose = root.join("docker-compose.yml");
+        let services = extract_services_with_packages(&conn, root, &compose, &doc);
 
-        let starts: Vec<_> = points.iter().filter(|p| p.direction == FlowDirection::Start).collect();
-        // worker depends_on redis and db
-        assert_eq!(starts.len(), 2);
-        let dep_keys: Vec<_> = starts.iter().map(|p| p.key.as_str()).collect();
-        assert!(dep_keys.contains(&"redis"));
-        assert!(dep_keys.contains(&"db"));
+        let worker_deps = &services["worker"].depends_on;
+        assert_eq!(worker_deps.len(), 2);
+        assert!(worker_deps.contains(&"redis".to_string()));
+        assert!(worker_deps.contains(&"db".to_string()));
     }
 
-    #[test]
-    fn test_extract_no_services_key() {
-        let yaml = "version: '3.8'\nname: test\n";
-        let doc = make_compose_doc(yaml);
-        let mut points = Vec::new();
-        extract_from_compose(1, &doc, &mut points);
-        assert!(points.is_empty());
-    }
+    // ---------------------------------------------------------------------------
+    // Discovery
+    // ---------------------------------------------------------------------------
 
     #[test]
-    fn test_collect_ports_long_form() {
-        let yaml = r#"
-ports:
-  - target: 80
-    published: 8080
-"#;
-        let doc: Value = serde_yaml::from_str(yaml).unwrap();
-        let ports = collect_ports(&doc);
-        assert_eq!(ports, vec!["8080:80"]);
-    }
-
-    #[test]
-    fn test_custom_match_produces_service_dependency_edges() {
-        let connector = DockerComposeConnector;
-
-        let start = ConnectionPoint {
-            file_id: 1,
-            symbol_id: None,
-            line: 1,
-            protocol: Protocol::Infrastructure,
-            direction: FlowDirection::Start,
-            key: "db".to_string(),
-            method: String::new(),
-            framework: "docker-compose".to_string(),
-            metadata: None,
-        };
-        let stop = ConnectionPoint {
-            file_id: 1,
-            symbol_id: None,
-            line: 1,
-            protocol: Protocol::Infrastructure,
-            direction: FlowDirection::Stop,
-            key: "db".to_string(),
-            method: String::new(),
-            framework: "docker-compose".to_string(),
-            metadata: None,
-        };
-
-        // custom_match requires a real Connection — use a dummy rusqlite in-memory db.
-        let conn = rusqlite::Connection::open_in_memory().unwrap();
-        let flows = connector
-            .custom_match(&conn, &[start], &[stop])
-            .unwrap()
-            .unwrap();
-
-        assert_eq!(flows.len(), 1);
-        assert_eq!(flows[0].edge_type, "service_dependency");
-        assert!((flows[0].confidence - 0.9).abs() < f64::EPSILON);
+    fn test_find_compose_files_nonexistent_root() {
+        let root = Path::new("/nonexistent_bearwisdom_test_root_xyz_abc");
+        assert!(find_compose_files(root).is_empty());
     }
 }
