@@ -176,6 +176,33 @@
   border-radius: 8px;
   overflow: hidden;
   opacity: 0.85;
+}
+
+.shapeLegend {
+  position: absolute;
+  bottom: 14px;
+  left: 14px;
+  display: flex;
+  gap: 12px;
+  padding: 8px 14px;
+  background: rgba(22, 27, 34, 0.88);
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  backdrop-filter: blur(8px);
+}
+
+.legendEntry {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.legendText {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #7d8590;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   pointer-events: none;
 }
 

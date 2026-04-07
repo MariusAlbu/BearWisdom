@@ -32,6 +32,69 @@ function nodeColor(kind: string): string {
   return HIERARCHY_COLORS[kind.toLowerCase()] ?? DEFAULT_COLOR
 }
 
+// Shape paths centered at (0,0) for each node kind.
+// Returns an SVG path `d` string sized to the given radius.
+function shapePath(kind: string, r: number): string {
+  const k = kind.toLowerCase()
+  switch (k) {
+    case 'service': {
+      // Rounded rectangle (wide) — server/container
+      const w = r * 2.2, h = r * 1.4, rx = r * 0.25
+      return `M ${-w/2 + rx} ${-h/2}
+        h ${w - 2*rx} a ${rx} ${rx} 0 0 1 ${rx} ${rx}
+        v ${h - 2*rx} a ${rx} ${rx} 0 0 1 ${-rx} ${rx}
+        h ${-(w - 2*rx)} a ${rx} ${rx} 0 0 1 ${-rx} ${-rx}
+        v ${-(h - 2*rx)} a ${rx} ${rx} 0 0 1 ${rx} ${-rx} Z`
+    }
+    case 'package': {
+      // Hexagon — package/module
+      const pts: string[] = []
+      for (let i = 0; i < 6; i++) {
+        const a = (Math.PI / 3) * i - Math.PI / 2
+        pts.push(`${r * 1.1 * Math.cos(a)},${r * 1.1 * Math.sin(a)}`)
+      }
+      return `M ${pts[0]} L ${pts[1]} L ${pts[2]} L ${pts[3]} L ${pts[4]} L ${pts[5]} Z`
+    }
+    case 'file': {
+      // Rectangle with folded top-right corner — file icon
+      const w = r * 1.8, h = r * 1.5, fold = r * 0.35
+      return `M ${-w/2} ${-h/2}
+        L ${w/2 - fold} ${-h/2}
+        L ${w/2} ${-h/2 + fold}
+        L ${w/2} ${h/2}
+        L ${-w/2} ${h/2} Z`
+    }
+    case 'class':
+    case 'struct': {
+      // Rounded square — solid, foundational
+      const s = r * 1.6, rx = r * 0.2
+      return `M ${-s/2 + rx} ${-s/2}
+        h ${s - 2*rx} a ${rx} ${rx} 0 0 1 ${rx} ${rx}
+        v ${s - 2*rx} a ${rx} ${rx} 0 0 1 ${-rx} ${rx}
+        h ${-(s - 2*rx)} a ${rx} ${rx} 0 0 1 ${-rx} ${-rx}
+        v ${-(s - 2*rx)} a ${rx} ${rx} 0 0 1 ${rx} ${-rx} Z`
+    }
+    case 'interface':
+    case 'trait': {
+      // Diamond — abstract concept
+      const d = r * 1.3
+      return `M 0 ${-d} L ${d} 0 L 0 ${d} L ${-d} 0 Z`
+    }
+    case 'enum': {
+      // Octagon — enumerated set
+      const s = r * 1.1, c = s * 0.4
+      return `M ${-s + c} ${-s}
+        L ${s - c} ${-s} L ${s} ${-s + c}
+        L ${s} ${s - c} L ${s - c} ${s}
+        L ${-s + c} ${s} L ${-s} ${s - c}
+        L ${-s} ${-s + c} Z`
+    }
+    default:
+      // Circle (method, function, constant, field, etc.)
+      return ''  // empty = use <circle> element instead
+  }
+}
+
 function levelLabel(level: string): string {
   const map: Record<string, string> = {
     services: 'Services',
@@ -337,30 +400,67 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
       const { size, color } = pos
       const k = d.kind.toLowerCase()
 
-      // Outer glow halo (blurred circle behind)
-      g.append('circle')
-        .attr('r', size + 10)
-        .attr('fill', color)
-        .attr('fill-opacity', 0.18)
-        .attr('filter', `url(#hg-glow-${gen})`)
-        .attr('pointer-events', 'none')
+      const path = shapePath(k, size)
 
-      // Main circle with radial-gradient-like appearance (inner bright, outer dim)
-      g.append('circle')
-        .attr('class', 'hg-node-circle')
-        .attr('r', size)
-        .attr('fill', color)
-        .attr('fill-opacity', 0.82)
-        .attr('stroke', color)
-        .attr('stroke-width', 1.5)
-        .attr('stroke-opacity', 0.6)
+      if (path) {
+        // Non-circle shape — use <path> for both glow and main shape
+        // Outer glow halo
+        g.append('path')
+          .attr('d', shapePath(k, size + 10))
+          .attr('fill', color)
+          .attr('fill-opacity', 0.15)
+          .attr('filter', `url(#hg-glow-${gen})`)
+          .attr('pointer-events', 'none')
+
+        // Main shape
+        g.append('path')
+          .attr('class', 'hg-node-shape')
+          .attr('d', path)
+          .attr('fill', color)
+          .attr('fill-opacity', 0.18)
+          .attr('stroke', color)
+          .attr('stroke-width', 1.5)
+          .attr('stroke-opacity', 0.7)
+
+        // Kind label inside shape (small, uppercase)
+        g.append('text')
+          .attr('class', 'hg-kind-label')
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'central')
+          .attr('fill', color)
+          .attr('fill-opacity', 0.9)
+          .style('font-size', `${Math.max(8, Math.min(12, size * 0.4))}px`)
+          .style('font-weight', '700')
+          .style('font-family', 'var(--font-mono)')
+          .style('text-transform', 'uppercase')
+          .style('letter-spacing', '0.05em')
+          .style('pointer-events', 'none')
+          .text(k.slice(0, 3))
+      } else {
+        // Circle shape (methods, functions, constants, etc.)
+        g.append('circle')
+          .attr('r', size + 10)
+          .attr('fill', color)
+          .attr('fill-opacity', 0.18)
+          .attr('filter', `url(#hg-glow-${gen})`)
+          .attr('pointer-events', 'none')
+
+        g.append('circle')
+          .attr('class', 'hg-node-circle')
+          .attr('r', size)
+          .attr('fill', color)
+          .attr('fill-opacity', 0.82)
+          .attr('stroke', color)
+          .attr('stroke-width', 1.5)
+          .attr('stroke-opacity', 0.6)
+      }
 
       // Pulse rings for service nodes (3 animated expanding rings)
       if (k === 'service') {
         for (let i = 0; i < 3; i++) {
           const ring = g.append('circle')
             .attr('class', 'hg-pulse-ring')
-            .attr('r', size + 4)
+            .attr('r', size * 1.3)
             .attr('fill', 'none')
             .attr('stroke', color)
             .attr('stroke-width', 1.5)
@@ -370,8 +470,8 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
           ring
             .append('animate')
             .attr('attributeName', 'r')
-            .attr('from', size + 4)
-            .attr('to', size * 2.4)
+            .attr('from', size * 1.3)
+            .attr('to', size * 2.6)
             .attr('dur', '3s')
             .attr('begin', `${i}s`)
             .attr('repeatCount', 'indefinite')
@@ -899,6 +999,46 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
               height={100}
               aria-hidden="true"
             />
+          </div>
+
+          {/* Shape legend */}
+          <div className={styles.shapeLegend}>
+            {[
+              { kind: 'service', label: 'Service', shape: 'rrect' },
+              { kind: 'package', label: 'Package', shape: 'hex' },
+              { kind: 'file', label: 'File', shape: 'filerect' },
+              { kind: 'class', label: 'Class', shape: 'square' },
+              { kind: 'interface', label: 'Interface', shape: 'diamond' },
+              { kind: 'enum', label: 'Enum', shape: 'octagon' },
+              { kind: 'function', label: 'Function', shape: 'circle' },
+            ].map(({ kind, label, shape }) => (
+              <div key={kind} className={styles.legendEntry}>
+                <svg width="18" height="18" viewBox="-10 -10 20 20">
+                  {shape === 'circle' && (
+                    <circle r="7" fill={nodeColor(kind)} fillOpacity="0.8" stroke={nodeColor(kind)} strokeWidth="1" strokeOpacity="0.6" />
+                  )}
+                  {shape === 'rrect' && (
+                    <rect x="-9" y="-6" width="18" height="12" rx="3" fill={nodeColor(kind)} fillOpacity="0.18" stroke={nodeColor(kind)} strokeWidth="1.2" strokeOpacity="0.7" />
+                  )}
+                  {shape === 'hex' && (
+                    <path d="M 0 -8 L 7 -4 L 7 4 L 0 8 L -7 4 L -7 -4 Z" fill={nodeColor(kind)} fillOpacity="0.18" stroke={nodeColor(kind)} strokeWidth="1.2" strokeOpacity="0.7" />
+                  )}
+                  {shape === 'filerect' && (
+                    <path d="M -8 -7 L 5 -7 L 8 -4 L 8 7 L -8 7 Z" fill={nodeColor(kind)} fillOpacity="0.18" stroke={nodeColor(kind)} strokeWidth="1.2" strokeOpacity="0.7" />
+                  )}
+                  {shape === 'square' && (
+                    <rect x="-7" y="-7" width="14" height="14" rx="2" fill={nodeColor(kind)} fillOpacity="0.18" stroke={nodeColor(kind)} strokeWidth="1.2" strokeOpacity="0.7" />
+                  )}
+                  {shape === 'diamond' && (
+                    <path d="M 0 -8 L 8 0 L 0 8 L -8 0 Z" fill={nodeColor(kind)} fillOpacity="0.18" stroke={nodeColor(kind)} strokeWidth="1.2" strokeOpacity="0.7" />
+                  )}
+                  {shape === 'octagon' && (
+                    <path d="M -3 -7 L 3 -7 L 7 -3 L 7 3 L 3 7 L -3 7 L -7 3 L -7 -3 Z" fill={nodeColor(kind)} fillOpacity="0.18" stroke={nodeColor(kind)} strokeWidth="1.2" strokeOpacity="0.7" />
+                  )}
+                </svg>
+                <span className={styles.legendText}>{label}</span>
+              </div>
+            ))}
           </div>
         </div>
 
