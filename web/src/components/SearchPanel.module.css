@@ -86,8 +86,8 @@
 
 .secondary {
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--dimmed-brown);
+  font-size: 11px;
+  color: #94a3b8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -96,8 +96,8 @@
 
 .grepLine {
   font-family: var(--font-mono);
-  font-size: 10px;
-  color: #64748b;
+  font-size: 11px;
+  color: #94a3b8;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -105,8 +105,10 @@
 }
 
 .score {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  color: var(--dimmed-brown);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--warm-amber);
   flex-shrink: 0;
+  opacity: 0.85;
 }
