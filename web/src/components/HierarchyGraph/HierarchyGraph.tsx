@@ -1,9 +1,9 @@
 import * as d3 from 'd3'
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useHierarchyData } from '../../hooks/useHierarchyData'
 import { useHierarchyStore } from '../../stores/hierarchy.store'
 import { ZoomControls } from '../ZoomControls'
-import type { HierarchyNode } from '../../types/api.types'
+import type { HierarchyNode, HierarchyEdge } from '../../types/api.types'
 import styles from './HierarchyGraph.module.css'
 
 // ---------------------------------------------------------------------------
@@ -11,50 +11,23 @@ import styles from './HierarchyGraph.module.css'
 // ---------------------------------------------------------------------------
 
 const HIERARCHY_COLORS: Record<string, string> = {
-  service: '#f85149',
-  package: '#6495ed',
-  file: '#3fb950',
+  service: '#ffbf00', // amber — inner ring
+  package: '#6495ed', // cornflower — outer ring
+  file: '#3fb950', // green
   class: '#6495ed',
-  interface: '#6495ed',
-  method: '#6495ed',
+  interface: '#58a6ff',
+  method: '#3fb950',
   function: '#ffbf00',
-  enum: '#ffbf00',
+  enum: '#bc8cff',
   struct: '#6495ed',
   module: '#ffbf00',
-  constant: '#ffbf00',
+  constant: '#d29922',
   field: '#8b949e',
 }
 const DEFAULT_COLOR = '#64748b'
 
-const EDGE_DASH: Record<string, string | null> = {
-  service_dependency: null,
-  cross_package: '6 3',
-  file_dependency: '4 2',
-  calls: '3 3',
-}
-
-// Per-level force simulation parameters
-const LEVEL_FORCES: Record<string, { charge: number; linkDistance: number; collisionPad: number }> = {
-  services: { charge: -600, linkDistance: 220, collisionPad: 24 },
-  packages: { charge: -400, linkDistance: 160, collisionPad: 18 },
-  files: { charge: -280, linkDistance: 110, collisionPad: 12 },
-  symbols: { charge: -200, linkDistance: 80, collisionPad: 8 },
-}
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
 function nodeColor(kind: string): string {
   return HIERARCHY_COLORS[kind.toLowerCase()] ?? DEFAULT_COLOR
-}
-
-function nodeRadius(node: HierarchyNode): number {
-  return Math.max(20, Math.min(60, 15 + Math.sqrt(node.weight) * 3))
-}
-
-function edgeThickness(weight: number): number {
-  return 1 + Math.log2(Math.max(1, weight))
 }
 
 function levelLabel(level: string): string {
@@ -67,17 +40,100 @@ function levelLabel(level: string): string {
   return map[level] ?? level
 }
 
-// D3 simulation node — extends HierarchyNode with simulation coords
-interface SimNode extends d3.SimulationNodeDatum, HierarchyNode {
-  radius: number
+// ---------------------------------------------------------------------------
+// Radial layout
+// ---------------------------------------------------------------------------
+
+interface NodePos {
+  x: number
+  y: number
+  size: number
   color: string
 }
 
-// D3 simulation link
-interface SimEdge extends d3.SimulationLinkDatum<SimNode> {
-  kind: string
-  weight: number
-  confidence: number
+/**
+ * Computes radial positions for all nodes.
+ * Services go to the inner ring, everything else to the outer ring.
+ * For large node counts (files/symbols) we use multiple rings to avoid overlap.
+ */
+function radialLayout(
+  nodes: HierarchyNode[],
+  width: number,
+  height: number,
+): Map<string, NodePos> {
+  const cx = width / 2
+  const cy = height / 2
+  const positions = new Map<string, NodePos>()
+
+  if (nodes.length === 0) return positions
+
+  const minDim = Math.min(width, height)
+
+  // Determine ring assignment
+  const isInner = (n: HierarchyNode) => n.kind === 'service'
+
+  const innerNodes = nodes.filter(isInner)
+  const outerNodes = nodes.filter((n) => !isInner(n))
+
+  // For very large outer rings, we split into multiple rings
+  const MAX_PER_RING = 24
+
+  function placeRing(
+    ring: HierarchyNode[],
+    radius: number,
+    offsetAngle = 0,
+  ): void {
+    ring.forEach((n, i) => {
+      const angle = offsetAngle + (i / Math.max(ring.length, 1)) * Math.PI * 2
+      const size = Math.max(12, Math.min(55, Math.sqrt(n.weight) * 0.9))
+      positions.set(n.id, {
+        x: cx + Math.cos(angle) * radius,
+        y: cy + Math.sin(angle) * radius,
+        size,
+        color: nodeColor(n.kind),
+      })
+    })
+  }
+
+  if (innerNodes.length > 0) {
+    const innerR = minDim * 0.14
+    placeRing(innerNodes, innerR, -Math.PI / 2)
+  } else if (outerNodes.length > 0 && outerNodes.length <= 4) {
+    // If no inner ring and few nodes, just put them all in one ring centered
+    const r = minDim * 0.22
+    placeRing(outerNodes, r, -Math.PI / 2)
+    return positions
+  }
+
+  if (outerNodes.length > 0) {
+    if (outerNodes.length <= MAX_PER_RING) {
+      const outerR = minDim * 0.31
+      const offset = innerNodes.length > 0 ? Math.PI / outerNodes.length : -Math.PI / 2
+      placeRing(outerNodes, outerR, offset)
+    } else {
+      // Multi-ring: distribute across concentric rings
+      const rings = Math.ceil(outerNodes.length / MAX_PER_RING)
+      for (let ring = 0; ring < rings; ring++) {
+        const start = ring * MAX_PER_RING
+        const slice = outerNodes.slice(start, start + MAX_PER_RING)
+        const r = minDim * (0.28 + ring * 0.12)
+        const offset = ring % 2 === 0 ? -Math.PI / 2 : -Math.PI / 2 + Math.PI / slice.length
+        placeRing(slice, r, offset)
+      }
+    }
+  }
+
+  return positions
+}
+
+// ---------------------------------------------------------------------------
+// Selected node details (for side panel)
+// ---------------------------------------------------------------------------
+
+interface SelectedDetails {
+  node: HierarchyNode
+  edgesOut: HierarchyEdge[]
+  edgesIn: HierarchyEdge[]
 }
 
 // ---------------------------------------------------------------------------
@@ -91,13 +147,11 @@ interface HierarchyGraphProps {
 export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
   const svgRef = useRef<SVGSVGElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
-  const simulationRef = useRef<d3.Simulation<SimNode, SimEdge> | null>(null)
   const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null)
   const genRef = useRef(0)
 
   const { loadLevel } = useHierarchyData(workspacePath)
 
-  // Select state individually to avoid identity changes on every store update.
   const nodes = useHierarchyStore((s) => s.nodes)
   const edges = useHierarchyStore((s) => s.edges)
   const level = useHierarchyStore((s) => s.level)
@@ -109,8 +163,14 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
   const navigateTo = useHierarchyStore((s) => s.navigateTo)
   const selectNode = useHierarchyStore((s) => s.selectNode)
 
+  // Side panel state (React-driven, not D3)
+  const [selectedDetails, setSelectedDetails] = useState<SelectedDetails | null>(null)
+
+  // Minimap ref
+  const minimapRef = useRef<SVGSVGElement>(null)
+
   // -------------------------------------------------------------------------
-  // D3 render
+  // Main D3 render
   // -------------------------------------------------------------------------
   useEffect(() => {
     if (loadState !== 'ready') return
@@ -124,50 +184,66 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
     const height = container.clientHeight || 600
 
     d3.select(thisSvg).selectAll('*').remove()
-    simulationRef.current?.stop()
 
     const svgSel = d3
       .select<SVGSVGElement, unknown>(thisSvg)
       .attr('width', width)
       .attr('height', height)
 
-    // Arrow marker
+    // Compute radial positions once
+    const positions = radialLayout(nodes, width, height)
+
+    // Build node lookup
+    const nodeById = new Map<string, HierarchyNode>(nodes.map((n) => [n.id, n]))
+
+    // Filter edges to those with valid endpoints
+    const validEdges = edges.filter(
+      (e) => positions.has(e.source) && positions.has(e.target),
+    )
+
+    // ---- Defs (gradients, filters) ----
     const defs = svgSel.append('defs')
+
+    // Blur filter for glow halos
     defs
-      .append('marker')
-      .attr('id', `hg-arrow-${gen}`)
-      .attr('viewBox', '0 -4 8 8')
-      .attr('refX', 12)
-      .attr('refY', 0)
-      .attr('markerWidth', 6)
-      .attr('markerHeight', 6)
-      .attr('orient', 'auto')
-      .append('path')
-      .attr('d', 'M 0 -4 L 8 0 L 0 4')
-      .attr('fill', '#475569')
+      .append('filter')
+      .attr('id', `hg-glow-${gen}`)
+      .attr('x', '-50%')
+      .attr('y', '-50%')
+      .attr('width', '200%')
+      .attr('height', '200%')
+      .append('feGaussianBlur')
+      .attr('in', 'SourceGraphic')
+      .attr('stdDeviation', '4')
 
-    // Build sim nodes/edges
-    const simNodes: SimNode[] = nodes.map((n) => ({
-      ...n,
-      radius: nodeRadius(n),
-      color: nodeColor(n.kind),
-    }))
-    const nodeById = new Map<string, SimNode>(simNodes.map((n) => [n.id, n]))
+    // Per-edge gradients
+    validEdges.forEach((e) => {
+      const srcPos = positions.get(e.source)!
+      const tgtPos = positions.get(e.target)!
+      const srcColor = nodeColor(nodeById.get(e.source)?.kind ?? '')
+      const tgtColor = nodeColor(nodeById.get(e.target)?.kind ?? '')
 
-    const simEdges: SimEdge[] = edges
-      .filter((e) => nodeById.has(e.source) && nodeById.has(e.target))
-      .map((e) => ({
-        source: nodeById.get(e.source)!,
-        target: nodeById.get(e.target)!,
-        kind: e.kind,
-        weight: e.weight,
-        confidence: e.confidence,
-      }))
+      defs
+        .append('linearGradient')
+        .attr('id', `hg-grad-${gen}-${e.source}-${e.target}`)
+        .attr('gradientUnits', 'userSpaceOnUse')
+        .attr('x1', srcPos.x)
+        .attr('y1', srcPos.y)
+        .attr('x2', tgtPos.x)
+        .attr('y2', tgtPos.y)
+        .selectAll('stop')
+        .data([
+          { offset: '0%', color: srcColor },
+          { offset: '100%', color: tgtColor },
+        ])
+        .join('stop')
+        .attr('offset', (d) => d.offset)
+        .attr('stop-color', (d) => d.color)
+    })
 
-    // Zoom + pan
+    // ---- Zoom + pan ----
     const zoomGroup = svgSel.append('g').attr('class', 'hg-zoom-group')
     const edgesGroup = zoomGroup.append('g').attr('class', 'hg-edges')
-    const edgeLabelsGroup = zoomGroup.append('g').attr('class', 'hg-edge-labels')
     const nodesGroup = zoomGroup.append('g').attr('class', 'hg-nodes')
 
     const zoom = d3
@@ -180,359 +256,290 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
     svgSel.call(zoom)
 
     // ---- Edges ----
-    const edgeSel = edgesGroup
-      .selectAll<SVGLineElement, SimEdge>('line')
-      .data(simEdges)
-      .join('line')
-      .attr('class', 'hg-edge')
-      .attr('stroke', 'rgba(100, 149, 237, 0.35)')
-      .attr('stroke-opacity', 0.6)
-      .attr('stroke-width', (d) => edgeThickness(d.weight))
-      .attr('stroke-dasharray', (d) => EDGE_DASH[d.kind] ?? null)
-      .attr('marker-end', (d) =>
-        d.kind === 'calls' || d.kind === 'service_dependency'
-          ? `url(#hg-arrow-${gen})`
-          : null,
-      )
+    const edgeGroups = edgesGroup
+      .selectAll<SVGGElement, HierarchyEdge>('g.hg-edge-group')
+      .data(validEdges)
+      .join('g')
+      .attr('class', 'hg-edge-group')
 
-    // Edge weight labels (only for heavier edges to avoid clutter)
-    const edgeLabelSel = edgeLabelsGroup
-      .selectAll<SVGTextElement, SimEdge>('text')
-      .data(simEdges.filter((e) => e.weight > 1))
-      .join('text')
-      .attr('class', 'hg-edge-label')
-      .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'middle')
-      .attr('font-size', '9px')
-      .attr('fill', '#475569')
-      .attr('pointer-events', 'none')
-      .text((d) => String(d.weight))
+    // Bezier path builder
+    const buildPath = (e: HierarchyEdge): string => {
+      const s = positions.get(e.source)!
+      const t = positions.get(e.target)!
+      const mx = (s.x + t.x) / 2
+      const my = (s.y + t.y) / 2
+      const dx = t.x - s.x
+      const dy = t.y - s.y
+      // Perpendicular offset to curve outward
+      const cx1 = mx - dy * 0.2
+      const cy1 = my + dx * 0.2
+      return `M ${s.x} ${s.y} Q ${cx1} ${cy1} ${t.x} ${t.y}`
+    }
+
+    const edgePaths = edgeGroups
+      .append('path')
+      .attr('class', 'hg-edge-path')
+      .attr('d', buildPath)
+      .attr('fill', 'none')
+      .attr('stroke', (e) => `url(#hg-grad-${gen}-${e.source}-${e.target})`)
+      .attr('stroke-width', (e) => Math.max(1, Math.min(4, e.weight / 200)))
+      .attr('opacity', 0.4)
+
+    // Flowing dots along each edge
+    edgeGroups.append('circle').attr('class', 'hg-flow-dot').attr('r', 2.5).each(function (e) {
+      const dot = d3.select(this)
+      const srcColor = nodeColor(nodeById.get(e.source)?.kind ?? '')
+      dot.attr('fill', srcColor).attr('opacity', 0.7)
+      const dur = Math.max(2, 8 - e.weight / 200)
+      dot
+        .append('animateMotion')
+        .attr('dur', `${dur}s`)
+        .attr('repeatCount', 'indefinite')
+        .attr('path', buildPath(e))
+    })
 
     // ---- Nodes ----
-    const nodeSel = nodesGroup
-      .selectAll<SVGGElement, SimNode>('g.hg-node')
-      .data(simNodes, (d) => d.id)
+    const nodeGroups = nodesGroup
+      .selectAll<SVGGElement, HierarchyNode>('g.hg-node')
+      .data(nodes, (d) => d.id)
       .join('g')
       .attr('class', 'hg-node')
+      .attr('transform', (d) => {
+        const pos = positions.get(d.id)
+        return pos ? `translate(${pos.x},${pos.y})` : 'translate(0,0)'
+      })
 
-    // Render shape by kind — rectangles for service/package/file, circles/diamonds/hexagons for symbols
-    nodeSel.each(function (d: SimNode) {
+    nodeGroups.each(function (d: HierarchyNode) {
       const g = d3.select(this)
+      const pos = positions.get(d.id)
+      if (!pos) return
+      const { size, color } = pos
       const k = d.kind.toLowerCase()
-      const r = d.radius
-      const col = d.color
 
+      // Outer glow halo (blurred circle behind)
+      g.append('circle')
+        .attr('r', size + 10)
+        .attr('fill', color)
+        .attr('fill-opacity', 0.18)
+        .attr('filter', `url(#hg-glow-${gen})`)
+        .attr('pointer-events', 'none')
+
+      // Main circle with radial-gradient-like appearance (inner bright, outer dim)
+      g.append('circle')
+        .attr('class', 'hg-node-circle')
+        .attr('r', size)
+        .attr('fill', color)
+        .attr('fill-opacity', 0.82)
+        .attr('stroke', color)
+        .attr('stroke-width', 1.5)
+        .attr('stroke-opacity', 0.6)
+
+      // Pulse rings for service nodes (3 animated expanding rings)
       if (k === 'service') {
-        // Large rounded rectangle
-        const w = r * 2.8
-        const h = r * 1.6
-        g.append('rect')
-          .attr('x', -w / 2)
-          .attr('y', -h / 2)
-          .attr('width', w)
-          .attr('height', h)
-          .attr('rx', 8)
-          .attr('fill', col)
-          .attr('fill-opacity', 0.2)
-          .attr('stroke', col)
-          .attr('stroke-width', 2)
-      } else if (k === 'package') {
-        // Medium rounded rectangle with tab notch
-        const w = r * 2.4
-        const h = r * 1.4
-        g.append('rect')
-          .attr('x', -w / 2)
-          .attr('y', -h / 2)
-          .attr('width', w)
-          .attr('height', h)
-          .attr('rx', 5)
-          .attr('fill', col)
-          .attr('fill-opacity', 0.18)
-          .attr('stroke', col)
-          .attr('stroke-width', 1.5)
-      } else if (k === 'file') {
-        // Small rect with slightly angled top-right corner (file icon feel)
-        const w = r * 2.0
-        const h = r * 1.3
-        const cut = r * 0.28
-        g.append('path')
-          .attr(
-            'd',
-            `M ${-w / 2} ${-h / 2}
-             L ${w / 2 - cut} ${-h / 2}
-             L ${w / 2} ${-h / 2 + cut}
-             L ${w / 2} ${h / 2}
-             L ${-w / 2} ${h / 2} Z`,
-          )
-          .attr('fill', col)
-          .attr('fill-opacity', 0.16)
-          .attr('stroke', col)
-          .attr('stroke-width', 1.2)
-      } else if (k === 'interface') {
-        g.append('path')
-          .attr('d', `M 0 ${-r} L ${r} 0 L 0 ${r} L ${-r} 0 Z`)
-          .attr('fill', col)
-          .attr('fill-opacity', 0.85)
-          .attr('stroke', col)
-          .attr('stroke-width', 1)
-      } else if (k === 'enum') {
-        const pts: string[] = []
-        for (let i = 0; i < 6; i++) {
-          const angle = (Math.PI / 3) * i - Math.PI / 2
-          pts.push(`${r * Math.cos(angle)},${r * Math.sin(angle)}`)
+        for (let i = 0; i < 3; i++) {
+          const ring = g.append('circle')
+            .attr('class', 'hg-pulse-ring')
+            .attr('r', size + 4)
+            .attr('fill', 'none')
+            .attr('stroke', color)
+            .attr('stroke-width', 1.5)
+            .attr('opacity', 0)
+            .attr('pointer-events', 'none')
+
+          ring
+            .append('animate')
+            .attr('attributeName', 'r')
+            .attr('from', size + 4)
+            .attr('to', size * 2.4)
+            .attr('dur', '3s')
+            .attr('begin', `${i}s`)
+            .attr('repeatCount', 'indefinite')
+
+          ring
+            .append('animate')
+            .attr('attributeName', 'opacity')
+            .attr('from', 0.5)
+            .attr('to', 0)
+            .attr('dur', '3s')
+            .attr('begin', `${i}s`)
+            .attr('repeatCount', 'indefinite')
         }
-        g.append('path')
-          .attr('d', `M ${pts.join(' L ')} Z`)
-          .attr('fill', col)
-          .attr('fill-opacity', 0.85)
-          .attr('stroke', col)
-          .attr('stroke-width', 1)
-      } else {
-        g.append('circle')
-          .attr('r', r)
-          .attr('fill', col)
-          .attr('fill-opacity', 0.85)
-          .attr('stroke', col)
-          .attr('stroke-width', 1)
       }
 
-      // Drillable badge — "+" on top-right when child_count > 0
+      // Drillable badge "+" if child_count > 0
       if (d.child_count > 0) {
         g.append('circle')
           .attr('class', 'hg-drill-badge')
-          .attr('cx', r * 0.7)
-          .attr('cy', -r * 0.7)
+          .attr('cx', size * 0.65)
+          .attr('cy', -size * 0.65)
           .attr('r', 6)
           .attr('fill', '#ffbf00')
-          .attr('stroke', '#0f172a')
+          .attr('stroke', '#0d1117')
           .attr('stroke-width', 1.5)
+          .attr('pointer-events', 'none')
         g.append('text')
-          .attr('class', 'hg-drill-badge-text')
-          .attr('x', r * 0.7)
-          .attr('y', -r * 0.7)
+          .attr('x', size * 0.65)
+          .attr('y', -size * 0.65)
           .attr('text-anchor', 'middle')
           .attr('dominant-baseline', 'central')
           .attr('font-size', '8px')
           .attr('font-weight', '700')
-          .attr('fill', '#0f172a')
+          .attr('fill', '#0d1117')
           .attr('pointer-events', 'none')
           .text('+')
       }
+
+      // Name label below node
+      const labelOffset = size + 14
+      g.append('text')
+        .attr('class', 'hg-node-label')
+        .attr('y', labelOffset)
+        .attr('text-anchor', 'middle')
+        .attr('dominant-baseline', 'hanging')
+        .attr('fill', color)
+        .attr('pointer-events', 'none')
+        .text(d.name)
+
+      // Sub-label: child count
+      if (d.child_count > 0) {
+        g.append('text')
+          .attr('class', 'hg-node-sublabel')
+          .attr('y', labelOffset + 15)
+          .attr('text-anchor', 'middle')
+          .attr('dominant-baseline', 'hanging')
+          .attr('pointer-events', 'none')
+          .text(`${d.child_count} items`)
+      }
     })
 
-    // Node labels
-    nodeSel
-      .append('text')
-      .attr('class', 'hg-node-label')
-      .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'middle')
-      .attr('dy', (d) => {
-        const k = d.kind.toLowerCase()
-        const r = d.radius
-        if (k === 'service') return r * 1.6 / 2 + 13
-        if (k === 'package') return r * 1.4 / 2 + 12
-        if (k === 'file') return r * 1.3 / 2 + 11
-        return r + 12
-      })
-      .text((d) => d.name)
-
-    // Sub-label: child count or package path
-    nodeSel
-      .filter((d) => {
-        const k = d.kind.toLowerCase()
-        return (k === 'package' || k === 'service' || k === 'file') && d.child_count > 0
-      })
-      .append('text')
-      .attr('class', 'hg-node-sublabel')
-      .attr('text-anchor', 'middle')
-      .attr('dominant-baseline', 'middle')
-      .attr('dy', (d) => {
-        const k = d.kind.toLowerCase()
-        const r = d.radius
-        if (k === 'service') return r * 1.6 / 2 + 25
-        if (k === 'package') return r * 1.4 / 2 + 24
-        return r * 1.3 / 2 + 23
-      })
-      .text((d) => `${d.child_count} items`)
-
-    // ---- Interaction ----
-    const drag = d3
-      .drag<SVGGElement, SimNode>()
-      .on('start', (event: d3.D3DragEvent<SVGGElement, SimNode, SimNode>, d: SimNode) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0.3).restart()
-        d.fx = d.x
-        d.fy = d.y
-      })
-      .on('drag', (event: d3.D3DragEvent<SVGGElement, SimNode, SimNode>, d: SimNode) => {
-        d.fx = event.x
-        d.fy = event.y
-      })
-      .on('end', (event: d3.D3DragEvent<SVGGElement, SimNode, SimNode>, d: SimNode) => {
-        if (!event.active) simulationRef.current?.alphaTarget(0)
-        d.fx = null
-        d.fy = null
-      })
-
-    nodeSel.call(drag)
-
-    nodeSel
-      .on('click', (_event: MouseEvent, d: SimNode) => {
-        selectNode(d.id)
-      })
-      .on('dblclick', (_event: MouseEvent, d: SimNode) => {
-        _event.stopPropagation()
-        drillDown(d.id)
-      })
-      .on('mouseenter', (_event: MouseEvent, d: SimNode) => {
-        // Highlight connected edges and neighbors
+    // ---- Interactions ----
+    nodeGroups
+      .style('cursor', 'pointer')
+      .on('mouseenter', (_event: MouseEvent, d: HierarchyNode) => {
         const connectedIds = new Set<string>([d.id])
-        simEdges.forEach((e) => {
-          const src = (e.source as SimNode).id
-          const tgt = (e.target as SimNode).id
-          if (src === d.id) connectedIds.add(tgt)
-          if (tgt === d.id) connectedIds.add(src)
+        validEdges.forEach((e) => {
+          if (e.source === d.id) connectedIds.add(e.target)
+          if (e.target === d.id) connectedIds.add(e.source)
         })
-        nodeSel.classed('hg-node--dimmed', (n) => !connectedIds.has(n.id))
-        nodeSel.classed('hg-node--highlighted', (n) => connectedIds.has(n.id) && n.id !== d.id)
-        edgeSel.classed('hg-edge--dimmed', (e) => {
-          const src = (e.source as SimNode).id
-          const tgt = (e.target as SimNode).id
-          return src !== d.id && tgt !== d.id
-        })
+        nodeGroups.classed('hg-node--dimmed', (n) => !connectedIds.has(n.id))
+        nodeGroups.classed('hg-node--highlighted', (n) => connectedIds.has(n.id) && n.id !== d.id)
+        edgePaths.classed(
+          'hg-edge-path--dimmed',
+          (e) => e.source !== d.id && e.target !== d.id,
+        )
+        edgePaths.classed(
+          'hg-edge-path--highlight',
+          (e) => e.source === d.id || e.target === d.id,
+        )
       })
       .on('mouseleave', () => {
-        nodeSel.classed('hg-node--dimmed', false)
-        nodeSel.classed('hg-node--highlighted', false)
-        edgeSel.classed('hg-edge--dimmed', false)
+        nodeGroups.classed('hg-node--dimmed', false)
+        nodeGroups.classed('hg-node--highlighted', false)
+        edgePaths.classed('hg-edge-path--dimmed', false)
+        edgePaths.classed('hg-edge-path--highlight', false)
+      })
+      .on('click', (_event: MouseEvent, d: HierarchyNode) => {
+        selectNode(d.id)
+        const edgesOut = validEdges.filter((e) => e.source === d.id)
+        const edgesIn = validEdges.filter((e) => e.target === d.id)
+        setSelectedDetails({ node: d, edgesOut, edgesIn })
+      })
+      .on('dblclick', (event: MouseEvent, d: HierarchyNode) => {
+        event.stopPropagation()
+        drillDown(d.id)
       })
 
-    // ---- Force simulation ----
-    const forces = LEVEL_FORCES[level] ?? LEVEL_FORCES.packages
+    // Drag — positional drag updates translate directly (no sim)
+    const drag = d3
+      .drag<SVGGElement, HierarchyNode>()
+      .on('drag', function (event: d3.D3DragEvent<SVGGElement, HierarchyNode, HierarchyNode>) {
+        const g = d3.select<SVGGElement, HierarchyNode>(this)
+        // Read current transform, apply delta
+        const current = (this as SVGGElement).getAttribute('transform') ?? 'translate(0,0)'
+        const match = current.match(/translate\(([^,]+),([^)]+)\)/)
+        const cx = match ? parseFloat(match[1]) : 0
+        const cy = match ? parseFloat(match[2]) : 0
+        const nx = cx + event.dx
+        const ny = cy + event.dy
+        g.attr('transform', `translate(${nx},${ny})`)
 
-    const simulation = d3
-      .forceSimulation<SimNode>(simNodes)
-      .force(
-        'link',
-        d3
-          .forceLink<SimNode, SimEdge>(simEdges)
-          .id((d) => d.id)
-          .distance(forces.linkDistance)
-          .strength(0.4),
-      )
-      .force('charge', d3.forceManyBody<SimNode>().strength(forces.charge))
-      .force('center', d3.forceCenter<SimNode>(width / 2, height / 2))
-      .force('collision', d3.forceCollide<SimNode>().radius((d) => d.radius + forces.collisionPad))
+        // Update position map for edge redraw (best-effort during drag)
+        const d = event.subject
+        const pos = positions.get(d.id)
+        if (pos) {
+          pos.x = nx
+          pos.y = ny
+          // Redraw connected edges
+          edgePaths.filter((e) => e.source === d.id || e.target === d.id).attr('d', buildPath)
+        }
+      })
 
-    simulationRef.current = simulation
+    nodeGroups.call(drag)
 
-    simulation.on('tick', () => {
-      if (gen !== genRef.current) {
-        simulation.stop()
-        return
-      }
+    // ---- Minimap ----
+    renderMinimap(positions, nodes, width, height)
 
-      edgeSel
-        .attr('x1', (d) => (d.source as SimNode).x ?? 0)
-        .attr('y1', (d) => (d.source as SimNode).y ?? 0)
-        .attr('x2', (d) => {
-          const src = d.source as SimNode
-          const tgt = d.target as SimNode
-          const dx = (tgt.x ?? 0) - (src.x ?? 0)
-          const dy = (tgt.y ?? 0) - (src.y ?? 0)
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          return (tgt.x ?? 0) - (dx / dist) * tgt.radius
-        })
-        .attr('y2', (d) => {
-          const src = d.source as SimNode
-          const tgt = d.target as SimNode
-          const dx = (tgt.x ?? 0) - (src.x ?? 0)
-          const dy = (tgt.y ?? 0) - (src.y ?? 0)
-          const dist = Math.sqrt(dx * dx + dy * dy) || 1
-          return (tgt.y ?? 0) - (dy / dist) * tgt.radius
-        })
-
-      edgeLabelSel
-        .attr('x', (d) => {
-          const sx = (d.source as SimNode).x ?? 0
-          const tx = (d.target as SimNode).x ?? 0
-          return (sx + tx) / 2
-        })
-        .attr('y', (d) => {
-          const sy = (d.source as SimNode).y ?? 0
-          const ty = (d.target as SimNode).y ?? 0
-          return (sy + ty) / 2
-        })
-
-      nodeSel.attr('transform', (d) => `translate(${d.x ?? 0},${d.y ?? 0})`)
-    })
-
-    // Fit all nodes after simulation settles a bit
-    setTimeout(() => {
-      if (gen !== genRef.current) return
-      if (simNodes.length === 0) return
+    // ---- Auto-fit on load ----
+    if (nodes.length > 0) {
       let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity
-      for (const n of simNodes) {
-        const x = n.x ?? 0
-        const y = n.y ?? 0
-        if (x - n.radius < minX) minX = x - n.radius
-        if (x + n.radius > maxX) maxX = x + n.radius
-        if (y - n.radius < minY) minY = y - n.radius
-        if (y + n.radius > maxY) maxY = y + n.radius
-      }
-      const pad = 80
+      positions.forEach(({ x, y, size }) => {
+        if (x - size < minX) minX = x - size
+        if (x + size > maxX) maxX = x + size
+        if (y - size < minY) minY = y - size
+        if (y + size > maxY) maxY = y + size
+      })
+      const pad = 100
       const bw = maxX - minX + pad * 2
       const bh = maxY - minY + pad * 2
       const scale = Math.min(width / bw, height / bh, 2.5)
-      const cx = (minX + maxX) / 2
-      const cy = (minY + maxY) / 2
-      d3.select<SVGSVGElement, unknown>(thisSvg)
+      const midX = (minX + maxX) / 2
+      const midY = (minY + maxY) / 2
+      svgSel
         .transition()
-        .duration(500)
+        .duration(400)
         .call(
           zoom.transform,
-          d3.zoomIdentity.translate(width / 2 - cx * scale, height / 2 - cy * scale).scale(scale),
+          d3.zoomIdentity
+            .translate(width / 2 - midX * scale, height / 2 - midY * scale)
+            .scale(scale),
         )
-    }, 900)
-
-    return () => {
-      simulation.stop()
     }
+
+    // Clear selected details when level changes
+    setSelectedDetails(null)
+
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [loadState, nodes, edges, level, drillDown, selectNode])
 
-  // ---- Selection ring ----
+  // ---- Selection highlight ----
   useEffect(() => {
-    if (!svgRef.current || !selectedNodeId) return
-    const svg = d3.select(svgRef.current)
-    svg.selectAll('.hg-selection-ring').remove()
+    if (!svgRef.current) return
+    const svgSel = d3.select(svgRef.current)
+    svgSel.selectAll('.hg-selection-ring').remove()
 
-    const nodeSel = svg.selectAll<SVGGElement, SimNode>('g.hg-node')
-    nodeSel.each(function (d: SimNode) {
+    if (!selectedNodeId) return
+
+    const nodeGroups = svgSel.selectAll<SVGGElement, HierarchyNode>('g.hg-node')
+    nodeGroups.each(function (d: HierarchyNode) {
       if (d.id !== selectedNodeId) return
       const g = d3.select(this)
-      const r = d.radius
+      const container = containerRef.current
+      const width = container?.clientWidth || 900
+      const height = container?.clientHeight || 600
+      const pos = radialLayout(nodes, width, height).get(d.id)
+      const size = pos?.size ?? 24
+
       const ring = g.append('g').attr('class', 'hg-selection-ring')
       ring
         .append('circle')
-        .attr('r', r + 8)
+        .attr('r', size + 8)
         .attr('fill', 'none')
-        .attr('stroke', d.color)
+        .attr('stroke', nodeColor(d.kind))
         .attr('stroke-width', 2)
         .attr('stroke-opacity', 0.9)
-      ring
-        .append('circle')
-        .attr('r', r + 8)
-        .attr('fill', 'none')
-        .attr('stroke', d.color)
-        .attr('stroke-width', 2)
-        .attr('stroke-opacity', 0.5)
-        .append('animate')
-        .attr('attributeName', 'r')
-        .attr('from', r + 8)
-        .attr('to', r + 20)
-        .attr('dur', '1.5s')
-        .attr('repeatCount', 'indefinite')
+        .attr('pointer-events', 'none')
     })
-  }, [selectedNodeId])
+  }, [selectedNodeId, nodes])
 
   // ---- ResizeObserver ----
   useEffect(() => {
@@ -546,16 +553,42 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
       const { width, height } = entry.contentRect
       svgEl.setAttribute('width', String(width))
       svgEl.setAttribute('height', String(height))
-      if (simulationRef.current) {
-        simulationRef.current
-          .force('center', d3.forceCenter(width / 2, height / 2))
-          .alpha(0.2)
-          .restart()
-      }
     })
     ro.observe(container)
     return () => ro.disconnect()
   }, [])
+
+  // ---- Minimap render ----
+  function renderMinimap(
+    positions: Map<string, NodePos>,
+    nodes: HierarchyNode[],
+    width: number,
+    height: number,
+  ) {
+    const mm = minimapRef.current
+    if (!mm) return
+
+    const mw = 160
+    const mh = 100
+    const scaleX = mw / width
+    const scaleY = mh / height
+
+    d3.select(mm).selectAll('*').remove()
+    const mmSel = d3.select(mm)
+
+    nodes.forEach((n) => {
+      const pos = positions.get(n.id)
+      if (!pos) return
+      const r = Math.max(3, pos.size * Math.min(scaleX, scaleY))
+      mmSel
+        .append('circle')
+        .attr('cx', pos.x * scaleX)
+        .attr('cy', pos.y * scaleY)
+        .attr('r', r)
+        .attr('fill', pos.color)
+        .attr('fill-opacity', 0.75)
+    })
+  }
 
   // ---- Zoom controls ----
   const handleZoomIn = useCallback(() => {
@@ -582,7 +615,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
       .call(zoomRef.current.transform, d3.zoomIdentity)
   }, [])
 
-  // ---- Breadcrumb click handler ----
+  // ---- Breadcrumb click ----
   const handleBreadcrumbClick = useCallback(
     (level: string, scope: string | undefined) => {
       navigateTo(level, scope)
@@ -590,8 +623,83 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
     [navigateTo],
   )
 
-  // ---- Empty state after ready ----
   const isEmpty = loadState === 'ready' && nodes.length === 0
+
+  // ---- Side panel contents ----
+  function renderPanel() {
+    if (!selectedDetails) {
+      return (
+        <p className={styles.panelPlaceholder}>Click a node to see details</p>
+      )
+    }
+    const { node, edgesOut, edgesIn } = selectedDetails
+    const color = nodeColor(node.kind)
+    return (
+      <>
+        <div className={styles.panelNodeName} style={{ color }}>
+          {node.name}
+        </div>
+        <div className={styles.panelStats}>
+          <div className={styles.statCard}>
+            <div className={styles.statValue} style={{ color }}>
+              {node.child_count}
+            </div>
+            <div className={styles.statLabel}>Items</div>
+          </div>
+          <div className={styles.statCard}>
+            <div className={styles.statValue} style={{ color }}>
+              {node.weight.toLocaleString()}
+            </div>
+            <div className={styles.statLabel}>Weight</div>
+          </div>
+        </div>
+        {node.kind && (
+          <div className={styles.panelKind} style={{ color }}>
+            {node.kind.toUpperCase()}
+          </div>
+        )}
+        {(edgesOut.length > 0 || edgesIn.length > 0) && (
+          <div className={styles.panelSection}>
+            <div className={styles.panelSectionTitle}>Connections</div>
+            {edgesOut.map((e) => {
+              const tgt = nodes.find((n) => n.id === e.target)
+              return (
+                <div key={`out-${e.target}`} className={styles.connItem}>
+                  <span className={styles.connDir}>→ {tgt?.name ?? e.target}</span>
+                  <span className={styles.connCount}>{e.weight}</span>
+                </div>
+              )
+            })}
+            {edgesIn.map((e) => {
+              const src = nodes.find((n) => n.id === e.source)
+              return (
+                <div key={`in-${e.source}`} className={styles.connItem}>
+                  <span className={styles.connDir}>← {src?.name ?? e.source}</span>
+                  <span className={styles.connCount}>{e.weight}</span>
+                </div>
+              )
+            })}
+          </div>
+        )}
+        {node.file_path && (
+          <div className={styles.panelSection}>
+            <div className={styles.panelSectionTitle}>File</div>
+            <div className={styles.connItem}>
+              <span className={styles.fileName}>{node.file_path}</span>
+            </div>
+          </div>
+        )}
+        {node.child_count > 0 && (
+          <button
+            className={styles.drillBtn}
+            onClick={() => drillDown(node.id)}
+          >
+            Drill down →
+          </button>
+        )}
+      </>
+    )
+  }
 
   return (
     <div className={styles.hierarchyGraph}>
@@ -614,82 +722,79 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
             </button>
           </span>
         ))}
-        {/* Current level indicator */}
         <span className={styles.breadcrumbEntry}>
           <span className={styles.breadcrumbSep} aria-hidden="true">›</span>
           <span className={styles.breadcrumbCurrent}>{levelLabel(level)}</span>
         </span>
       </div>
 
-      {/* Graph canvas */}
-      <div ref={containerRef} className={styles.canvas}>
-        <svg ref={svgRef} role="img" aria-label={`Architecture graph — ${levelLabel(level)} level`} />
+      {/* Main area: graph canvas + side panel */}
+      <div className={styles.mainArea}>
+        {/* Graph canvas */}
+        <div ref={containerRef} className={styles.canvas}>
+          <svg
+            ref={svgRef}
+            role="img"
+            aria-label={`Architecture graph — ${levelLabel(level)} level`}
+          />
 
-        {loadState === 'loading' && (
-          <div className={styles.overlay}>
-            <p className={styles.overlayText}>Loading {levelLabel(level).toLowerCase()}...</p>
-          </div>
-        )}
+          {loadState === 'loading' && (
+            <div className={styles.overlay}>
+              <p className={styles.overlayText}>Loading {levelLabel(level).toLowerCase()}...</p>
+            </div>
+          )}
 
-        {loadState === 'error' && (
-          <div className={styles.overlay}>
-            <p className={styles.overlayTitle}>Failed to load hierarchy</p>
-            {errorMessage && <p className={styles.overlayText}>{errorMessage}</p>}
-            <button
-              className={styles.retryBtn}
-              onClick={() => loadLevel(level)}
-            >
-              Retry
-            </button>
-          </div>
-        )}
+          {loadState === 'error' && (
+            <div className={styles.overlay}>
+              <p className={styles.overlayTitle}>Failed to load hierarchy</p>
+              {errorMessage && <p className={styles.overlayText}>{errorMessage}</p>}
+              <button className={styles.retryBtn} onClick={() => loadLevel(level)}>
+                Retry
+              </button>
+            </div>
+          )}
 
-        {isEmpty && (
-          <div className={styles.overlay}>
-            <p className={styles.overlayTitle}>No data at this level</p>
-            <p className={styles.overlayText}>
-              The backend returned no nodes for the current scope.
-            </p>
-          </div>
-        )}
+          {isEmpty && (
+            <div className={styles.overlay}>
+              <p className={styles.overlayTitle}>No data at this level</p>
+              <p className={styles.overlayText}>
+                The backend returned no nodes for the current scope.
+              </p>
+            </div>
+          )}
 
-        <ZoomControls
-          onZoomIn={handleZoomIn}
-          onZoomOut={handleZoomOut}
-          onZoomReset={handleZoomReset}
-        />
+          <ZoomControls
+            onZoomIn={handleZoomIn}
+            onZoomOut={handleZoomOut}
+            onZoomReset={handleZoomReset}
+          />
 
-        {/* Level indicator badge */}
-        <div className={styles.levelBadge}>{levelLabel(level)}</div>
+          {/* Level badge */}
+          <div className={styles.levelBadge}>{levelLabel(level)}</div>
 
-        {/* Legend — floating pill bar */}
-        <div className={styles.legend}>
-          <div className={styles.legendItem}>
-            <span className={styles.legendSwatch} style={{ background: '#ffbf00' }} />
-            <span className={styles.legendLabel}>Main Branch</span>
+          {/* Minimap */}
+          <div className={styles.minimap}>
+            <svg
+              ref={minimapRef}
+              width={160}
+              height={100}
+              aria-hidden="true"
+            />
           </div>
-          <div className={styles.legendItem}>
-            <span className={styles.legendSwatch} style={{ background: '#6495ed' }} />
-            <span className={styles.legendLabel}>External Dep</span>
-          </div>
-          <div className={styles.legendItem}>
-            <span className={styles.legendSwatch} style={{ background: '#3fb950' }} />
-            <span className={styles.legendLabel}>Files</span>
-          </div>
-          <div className={`${styles.legendItem} ${styles.legendItemDrill}`}>
-            <span className={styles.drillIndicator}>+</span>
-            <span className={styles.legendLabel}>Drillable</span>
-          </div>
-          <div className={styles.legendDivider} />
-          <span className={styles.legendLabel}>{levelLabel(level)}</span>
+        </div>
+
+        {/* Side panel */}
+        <div className={styles.panel}>
+          <div className={styles.panelTitle}>Node Details</div>
+          {renderPanel()}
         </div>
       </div>
 
       {/* Hint bar */}
       <div className={styles.hintBar}>
-        <span>Double-click a node to drill down</span>
+        <span>Click node to inspect</span>
         <span className={styles.hintSep}>·</span>
-        <span>Drag to rearrange</span>
+        <span>Double-click to drill down</span>
         <span className={styles.hintSep}>·</span>
         <span>Scroll to zoom</span>
       </div>
