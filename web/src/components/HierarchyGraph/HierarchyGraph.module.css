@@ -416,6 +416,114 @@
   pointer-events: none;
 }
 
+/* ---- Search filter badge (top of canvas) ---- */
+.filterBadge {
+  position: absolute;
+  top: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px 4px 14px;
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #79c0ff;
+  backdrop-filter: blur(4px);
+  pointer-events: auto;
+  z-index: 10;
+  white-space: nowrap;
+}
+
+.filterClearBtn {
+  background: none;
+  border: none;
+  color: #7d8590;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+  border-radius: 4px;
+  transition: color 0.15s;
+}
+
+.filterClearBtn:hover {
+  color: #e6edf3;
+}
+
+/* ---- Connection items — clickable + code button ---- */
+.connClickArea {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex: 1;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  gap: 8px;
+  min-width: 0;
+  text-align: left;
+}
+
+.connClickArea:hover .connDir {
+  color: #e6edf3;
+}
+
+.connItemHighlighted {
+  border-color: #58a6ff !important;
+  background: rgba(88, 166, 255, 0.06) !important;
+}
+
+.connCodeBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #484f58;
+  padding: 2px 3px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.connCodeBtn .material-symbols-outlined {
+  font-size: 14px;
+}
+
+.connCodeBtn:hover {
+  color: #3fb950;
+  background: rgba(63, 185, 80, 0.08);
+}
+
+.connCodeBtnDisabled {
+  color: #30363d;
+  padding: 2px 3px;
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  cursor: not-allowed;
+}
+
+.connCodeBtnDisabled .material-symbols-outlined {
+  font-size: 14px;
+}
+
+/* ---- D3 edge highlighting from panel ---- */
+:global(.hg-edge-path--edge-highlight) {
+  opacity: 1 !important;
+  stroke-width: 3px !important;
+  filter: drop-shadow(0 0 4px currentColor);
+}
+
+:global(.hg-edge-path--edge-dimmed) {
+  opacity: 0.06 !important;
+}
+
 /* ---- Responsive collapse (narrow viewports) ---- */
 @media (max-width: 768px) {
   .mainArea {

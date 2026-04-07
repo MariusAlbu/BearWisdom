@@ -22,6 +22,10 @@ interface HierarchyState {
   selectedNodeId: string | null
   // Resolved drill-down target — set by drillDown(), consumed by the hook
   pendingDrill: { level: string; scope: string } | null
+  // Search filter — when set, only these node IDs are rendered in the graph
+  searchFilter: string[] | null
+  // Highlighted edge — when set, that edge is emphasised in D3
+  highlightedEdge: { source: string; target: string } | null
 }
 
 interface HierarchyActions {
@@ -31,6 +35,8 @@ interface HierarchyActions {
   navigateTo(level: string, scope?: string): void
   selectNode(id: string | null): void
   clearPendingDrill(): void
+  setSearchFilter(ids: string[] | null): void
+  setHighlightedEdge(edge: { source: string; target: string } | null): void
   reset(): void
 }
 
@@ -44,6 +50,8 @@ const initialState: HierarchyState = {
   errorMessage: null,
   selectedNodeId: null,
   pendingDrill: null,
+  searchFilter: null,
+  highlightedEdge: null,
 }
 
 export const useHierarchyStore = create<HierarchyState & HierarchyActions>()((set, get) => ({
@@ -79,6 +87,10 @@ export const useHierarchyStore = create<HierarchyState & HierarchyActions>()((se
   selectNode: (id) => set({ selectedNodeId: id }),
 
   clearPendingDrill: () => set({ pendingDrill: null }),
+
+  setSearchFilter: (ids) => set({ searchFilter: ids }),
+
+  setHighlightedEdge: (edge) => set({ highlightedEdge: edge }),
 
   reset: () => set(initialState),
 }))

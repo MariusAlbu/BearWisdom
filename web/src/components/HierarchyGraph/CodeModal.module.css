@@ -1,0 +1,162 @@
+/* ================================================================
+   CodeModal — dark code preview overlay
+   JetBrains Mono font, line numbers, matches constellation theme.
+   ================================================================ */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.72);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 32px;
+}
+
+.modal {
+  background: #0d1117;
+  border: 1px solid #30363d;
+  border-radius: 10px;
+  width: 100%;
+  max-width: 900px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  box-shadow:
+    0 24px 80px rgba(0, 0, 0, 0.6),
+    0 0 0 1px rgba(255, 255, 255, 0.04);
+  overflow: hidden;
+}
+
+/* ---- Header ---- */
+.header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  flex-shrink: 0;
+}
+
+.filePath {
+  flex: 1;
+  font-family: 'JetBrains Mono', 'Source Code Pro', monospace;
+  font-size: 12px;
+  color: #e6edf3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.closeBtn {
+  background: none;
+  border: none;
+  color: #7d8590;
+  font-size: 20px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 4px;
+  border-radius: 4px;
+  transition: color 0.15s, background 0.15s;
+  flex-shrink: 0;
+}
+
+.closeBtn:hover {
+  color: #e6edf3;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+/* ---- Body ---- */
+.body {
+  overflow: auto;
+  flex: 1;
+  scrollbar-width: thin;
+  scrollbar-color: #30363d transparent;
+}
+
+.body::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.body::-webkit-scrollbar-thumb {
+  background: #30363d;
+  border-radius: 3px;
+}
+
+/* ---- States ---- */
+.stateMsg {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 32px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: #7d8590;
+}
+
+.spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid #30363d;
+  border-top-color: #58a6ff;
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.errorMsg {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 24px 32px;
+  font-size: 13px;
+  color: #f85149;
+}
+
+/* ---- Code table ---- */
+.codeTable {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: 'JetBrains Mono', 'Source Code Pro', 'Fira Code', monospace;
+  font-size: 12.5px;
+  line-height: 1.6;
+  tab-size: 2;
+}
+
+.codeLine {
+  vertical-align: top;
+}
+
+.codeLine:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.lineNumber {
+  padding: 0 16px 0 16px;
+  text-align: right;
+  color: #484f58;
+  user-select: none;
+  white-space: nowrap;
+  min-width: 48px;
+  border-right: 1px solid #21262d;
+  font-size: 11px;
+  vertical-align: top;
+  padding-top: 1px;
+}
+
+.lineContent {
+  padding: 0 16px;
+  color: #e6edf3;
+  white-space: pre;
+  word-break: normal;
+}

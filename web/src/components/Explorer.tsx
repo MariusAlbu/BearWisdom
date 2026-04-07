@@ -7,6 +7,7 @@ import { HierarchyGraph } from './HierarchyGraph'
 import { useEmbedding } from '../hooks/useEmbedding'
 import { useHeaderSearch } from './Header/useHeaderSearch'
 import { SearchPanel } from './SearchPanel'
+import { useHierarchyStore } from '../stores/hierarchy.store'
 import type { AnyResult } from './Header'
 import type { SearchMode } from '../types/api.types'
 import styles from './Explorer.module.css'
@@ -55,6 +56,10 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
   const { query, results, panelOpen, searching, setPanelOpen, search, handleChange, handleKeyDown, clearSearch } =
     useHeaderSearch(workspacePath)
 
+  // Hierarchy store — for search-filter mapping
+  const hierarchyNodes = useHierarchyStore((s) => s.nodes)
+  const setSearchFilter = useHierarchyStore((s) => s.setSearchFilter)
+
   const embedReady = embedState === 'done'
   const MODES = embedReady ? [...MODES_BASE, AI_MODE] : MODES_BASE
 
@@ -68,11 +73,32 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
     clearSearch()
     setPanelOpen(false)
     switch (result.type) {
-      case 'symbol':
+      case 'symbol': {
+        // Find the hierarchy node matching this symbol by name or file_path
+        const matched = hierarchyNodes.find(
+          (n) =>
+            n.name === result.data.name ||
+            n.id === result.data.qualified_name ||
+            n.file_path === result.data.file_path,
+        )
+        if (matched) {
+          setSearchFilter([matched.id])
+        }
         break
-      case 'fuzzy':
-        if (result.data.metadata.File) handleFileNavigate(result.data.text)
+      }
+      case 'fuzzy': {
+        // fuzzy-symbol: match by name; fuzzy-file: match by file_path
+        const isSymbol = Boolean(result.data.metadata.Symbol)
+        const matched = hierarchyNodes.find((n) =>
+          isSymbol ? n.name === result.data.text : n.file_path === result.data.text,
+        )
+        if (matched) {
+          setSearchFilter([matched.id])
+        } else if (!isSymbol) {
+          handleFileNavigate(result.data.text)
+        }
         break
+      }
       case 'content':
         handleFileNavigate(result.data.file_path)
         break
@@ -97,6 +123,54 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
     },
     [workspacePath],
   )
+
+  // Map search results to hierarchy node IDs and push into the store filter.
+  // When the panel closes or results are cleared, remove the filter.
+  useEffect(() => {
+    if (!panelOpen || results.length === 0) {
+      setSearchFilter(null)
+      return
+    }
+    // Only apply bulk filter if we're on the graph view (not file viewer or other views)
+    const ids = new Set<string>()
+    for (const result of results) {
+      switch (result.type) {
+        case 'symbol': {
+          const matched = hierarchyNodes.find(
+            (n) =>
+              n.name === result.data.name ||
+              n.id === result.data.qualified_name ||
+              n.file_path === result.data.file_path,
+          )
+          if (matched) ids.add(matched.id)
+          break
+        }
+        case 'fuzzy': {
+          const isSymbol = Boolean(result.data.metadata.Symbol)
+          const matched = hierarchyNodes.find((n) =>
+            isSymbol ? n.name === result.data.text : n.file_path === result.data.text,
+          )
+          if (matched) ids.add(matched.id)
+          break
+        }
+        case 'content':
+        case 'hybrid': {
+          const fp = result.type === 'content' ? result.data.file_path : result.data.file_path
+          const matched = hierarchyNodes.find((n) => n.file_path === fp || n.id === fp)
+          if (matched) ids.add(matched.id)
+          break
+        }
+        case 'grep': {
+          const matched = hierarchyNodes.find(
+            (n) => n.file_path === result.data.file_path || n.id === result.data.file_path,
+          )
+          if (matched) ids.add(matched.id)
+          break
+        }
+      }
+    }
+    setSearchFilter(ids.size > 0 ? Array.from(ids) : null)
+  }, [panelOpen, results, hierarchyNodes, setSearchFilter])
 
   // Scroll to line when content loads
   useEffect(() => {

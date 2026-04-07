@@ -3,6 +3,8 @@ import { useEffect, useRef, useCallback, useState } from 'react'
 import { useHierarchyData } from '../../hooks/useHierarchyData'
 import { useHierarchyStore } from '../../stores/hierarchy.store'
 import { ZoomControls } from '../ZoomControls'
+import { CodeModal } from './CodeModal'
+import { api } from '../../api'
 import type { HierarchyNode, HierarchyEdge } from '../../types/api.types'
 import styles from './HierarchyGraph.module.css'
 
@@ -162,9 +164,21 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
   const drillDown = useHierarchyStore((s) => s.drillDown)
   const navigateTo = useHierarchyStore((s) => s.navigateTo)
   const selectNode = useHierarchyStore((s) => s.selectNode)
+  const searchFilter = useHierarchyStore((s) => s.searchFilter)
+  const highlightedEdge = useHierarchyStore((s) => s.highlightedEdge)
+  const setSearchFilter = useHierarchyStore((s) => s.setSearchFilter)
+  const setHighlightedEdge = useHierarchyStore((s) => s.setHighlightedEdge)
 
   // Side panel state (React-driven, not D3)
   const [selectedDetails, setSelectedDetails] = useState<SelectedDetails | null>(null)
+
+  // Code modal state
+  const [codeModal, setCodeModal] = useState<{
+    filePath: string
+    content: string | null
+    loading: boolean
+    error: string | null
+  } | null>(null)
 
   // Minimap ref
   const minimapRef = useRef<SVGSVGElement>(null)
@@ -190,14 +204,21 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
       .attr('width', width)
       .attr('height', height)
 
-    // Compute radial positions once
-    const positions = radialLayout(nodes, width, height)
+    // Apply search filter: when active, only render matching nodes + edges between them
+    const filterSet = searchFilter ? new Set(searchFilter) : null
+    const visibleNodes = filterSet ? nodes.filter((n) => filterSet.has(n.id)) : nodes
+    const visibleEdges = filterSet
+      ? edges.filter((e) => filterSet.has(e.source) && filterSet.has(e.target))
+      : edges
 
-    // Build node lookup
+    // Compute radial positions once (using only visible nodes)
+    const positions = radialLayout(visibleNodes, width, height)
+
+    // Build node lookup (full set so connections can still resolve names)
     const nodeById = new Map<string, HierarchyNode>(nodes.map((n) => [n.id, n]))
 
     // Filter edges to those with valid endpoints
-    const validEdges = edges.filter(
+    const validEdges = visibleEdges.filter(
       (e) => positions.has(e.source) && positions.has(e.target),
     )
 
@@ -301,7 +322,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
     // ---- Nodes ----
     const nodeGroups = nodesGroup
       .selectAll<SVGGElement, HierarchyNode>('g.hg-node')
-      .data(nodes, (d) => d.id)
+      .data(visibleNodes, (d) => d.id)
       .join('g')
       .attr('class', 'hg-node')
       .attr('transform', (d) => {
@@ -477,7 +498,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
     nodeGroups.call(drag)
 
     // ---- Minimap ----
-    renderMinimap(positions, nodes, width, height)
+    renderMinimap(positions, visibleNodes, width, height)
 
     // ---- Auto-fit on load ----
     if (nodes.length > 0) {
@@ -509,7 +530,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
     setSelectedDetails(null)
 
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [loadState, nodes, edges, level, drillDown, selectNode])
+  }, [loadState, nodes, edges, level, searchFilter, drillDown, selectNode])
 
   // ---- Selection highlight ----
   useEffect(() => {
@@ -540,6 +561,29 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
         .attr('pointer-events', 'none')
     })
   }, [selectedNodeId, nodes])
+
+  // ---- Highlighted edge (from panel connection click) ----
+  useEffect(() => {
+    if (!svgRef.current) return
+    const svgSel = d3.select(svgRef.current)
+    const edgePaths = svgSel.selectAll<SVGPathElement, HierarchyEdge>('.hg-edge-path')
+
+    if (!highlightedEdge) {
+      // Remove any lingering highlight-edge classes
+      edgePaths.classed('hg-edge-path--edge-highlight', false)
+      edgePaths.classed('hg-edge-path--edge-dimmed', false)
+      return
+    }
+
+    edgePaths.classed(
+      'hg-edge-path--edge-highlight',
+      (e) => e.source === highlightedEdge.source && e.target === highlightedEdge.target,
+    )
+    edgePaths.classed(
+      'hg-edge-path--edge-dimmed',
+      (e) => !(e.source === highlightedEdge.source && e.target === highlightedEdge.target),
+    )
+  }, [highlightedEdge])
 
   // ---- ResizeObserver ----
   useEffect(() => {
@@ -625,6 +669,22 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
 
   const isEmpty = loadState === 'ready' && nodes.length === 0
 
+  // ---- Code modal helpers ----
+  async function openCodeModal(filePath: string) {
+    setCodeModal({ filePath, content: null, loading: true, error: null })
+    try {
+      const result = await api.fileContent(workspacePath, filePath)
+      setCodeModal({ filePath, content: result.content, loading: false, error: null })
+    } catch (err) {
+      setCodeModal({
+        filePath,
+        content: null,
+        loading: false,
+        error: err instanceof Error ? err.message : 'Failed to load file',
+      })
+    }
+  }
+
   // ---- Side panel contents ----
   function renderPanel() {
     if (!selectedDetails) {
@@ -634,6 +694,52 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
     }
     const { node, edgesOut, edgesIn } = selectedDetails
     const color = nodeColor(node.kind)
+
+    function renderConnItem(
+      e: HierarchyEdge,
+      dir: 'out' | 'in',
+      peer: HierarchyNode | undefined,
+      key: string,
+    ) {
+      const isHighlighted =
+        highlightedEdge?.source === e.source && highlightedEdge?.target === e.target
+      const peerFilePath = peer?.file_path
+      const label = dir === 'out' ? `→ ${peer?.name ?? e.target}` : `← ${peer?.name ?? e.source}`
+
+      function handleConnClick() {
+        if (isHighlighted) {
+          setHighlightedEdge(null)
+        } else {
+          setHighlightedEdge({ source: e.source, target: e.target })
+        }
+      }
+
+      return (
+        <div
+          key={key}
+          className={`${styles.connItem} ${isHighlighted ? styles.connItemHighlighted : ''}`}
+        >
+          <button className={styles.connClickArea} onClick={handleConnClick} title="Highlight edge">
+            <span className={styles.connDir}>{label}</span>
+            <span className={styles.connCount}>{e.weight}</span>
+          </button>
+          {peerFilePath ? (
+            <button
+              className={styles.connCodeBtn}
+              title={`View code: ${peerFilePath}`}
+              onClick={() => openCodeModal(peerFilePath)}
+            >
+              <span className="material-symbols-outlined">code</span>
+            </button>
+          ) : (
+            <span className={styles.connCodeBtnDisabled} title="Navigate to file level to see code">
+              <span className="material-symbols-outlined">code</span>
+            </span>
+          )}
+        </div>
+      )
+    }
+
     return (
       <>
         <div className={styles.panelNodeName} style={{ color }}>
@@ -663,21 +769,11 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
             <div className={styles.panelSectionTitle}>Connections</div>
             {edgesOut.map((e) => {
               const tgt = nodes.find((n) => n.id === e.target)
-              return (
-                <div key={`out-${e.target}`} className={styles.connItem}>
-                  <span className={styles.connDir}>→ {tgt?.name ?? e.target}</span>
-                  <span className={styles.connCount}>{e.weight}</span>
-                </div>
-              )
+              return renderConnItem(e, 'out', tgt, `out-${e.target}`)
             })}
             {edgesIn.map((e) => {
               const src = nodes.find((n) => n.id === e.source)
-              return (
-                <div key={`in-${e.source}`} className={styles.connItem}>
-                  <span className={styles.connDir}>← {src?.name ?? e.source}</span>
-                  <span className={styles.connCount}>{e.weight}</span>
-                </div>
-              )
+              return renderConnItem(e, 'in', src, `in-${e.source}`)
             })}
           </div>
         )}
@@ -686,6 +782,13 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
             <div className={styles.panelSectionTitle}>File</div>
             <div className={styles.connItem}>
               <span className={styles.fileName}>{node.file_path}</span>
+              <button
+                className={styles.connCodeBtn}
+                title={`View code: ${node.file_path}`}
+                onClick={() => openCodeModal(node.file_path!)}
+              >
+                <span className="material-symbols-outlined">code</span>
+              </button>
             </div>
           </div>
         )}
@@ -772,6 +875,22 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
           {/* Level badge */}
           <div className={styles.levelBadge}>{levelLabel(level)}</div>
 
+          {/* Search filter badge */}
+          {searchFilter !== null && (
+            <div className={styles.filterBadge}>
+              <span>
+                Filtered: {searchFilter.length} node{searchFilter.length !== 1 ? 's' : ''}
+              </span>
+              <button
+                className={styles.filterClearBtn}
+                onClick={() => setSearchFilter(null)}
+                aria-label="Clear filter"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {/* Minimap */}
           <div className={styles.minimap}>
             <svg
@@ -798,6 +917,17 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
         <span className={styles.hintSep}>·</span>
         <span>Scroll to zoom</span>
       </div>
+
+      {/* Code preview modal */}
+      {codeModal && (
+        <CodeModal
+          filePath={codeModal.filePath}
+          content={codeModal.content}
+          loading={codeModal.loading}
+          error={codeModal.error}
+          onClose={() => setCodeModal(null)}
+        />
+      )}
     </div>
   )
 }
