@@ -12,19 +12,19 @@ import styles from './HierarchyGraph.module.css'
 
 const HIERARCHY_COLORS: Record<string, string> = {
   service: '#f85149',
-  package: '#58a6ff',
+  package: '#6495ed',
   file: '#3fb950',
-  class: '#58a6ff',
-  interface: '#bc8cff',
-  method: '#3fb950',
-  function: '#3fb950',
-  enum: '#d29922',
-  struct: '#58a6ff',
-  module: '#39c5cf',
-  constant: '#e3b341',
+  class: '#6495ed',
+  interface: '#6495ed',
+  method: '#6495ed',
+  function: '#ffbf00',
+  enum: '#ffbf00',
+  struct: '#6495ed',
+  module: '#ffbf00',
+  constant: '#ffbf00',
   field: '#8b949e',
 }
-const DEFAULT_COLOR = '#6e7681'
+const DEFAULT_COLOR = '#64748b'
 
 const EDGE_DASH: Record<string, string | null> = {
   service_dependency: null,
@@ -144,7 +144,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
       .attr('orient', 'auto')
       .append('path')
       .attr('d', 'M 0 -4 L 8 0 L 0 4')
-      .attr('fill', '#484f58')
+      .attr('fill', '#475569')
 
     // Build sim nodes/edges
     const simNodes: SimNode[] = nodes.map((n) => ({
@@ -185,8 +185,8 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
       .data(simEdges)
       .join('line')
       .attr('class', 'hg-edge')
-      .attr('stroke', '#9da5ae')
-      .attr('stroke-opacity', 0.5)
+      .attr('stroke', 'rgba(100, 149, 237, 0.35)')
+      .attr('stroke-opacity', 0.6)
       .attr('stroke-width', (d) => edgeThickness(d.weight))
       .attr('stroke-dasharray', (d) => EDGE_DASH[d.kind] ?? null)
       .attr('marker-end', (d) =>
@@ -204,7 +204,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
       .attr('text-anchor', 'middle')
       .attr('dominant-baseline', 'middle')
       .attr('font-size', '9px')
-      .attr('fill', '#8b949e')
+      .attr('fill', '#475569')
       .attr('pointer-events', 'none')
       .text((d) => String(d.weight))
 
@@ -303,8 +303,8 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
           .attr('cx', r * 0.7)
           .attr('cy', -r * 0.7)
           .attr('r', 6)
-          .attr('fill', '#C8915C')
-          .attr('stroke', '#1A1410')
+          .attr('fill', '#ffbf00')
+          .attr('stroke', '#0f172a')
           .attr('stroke-width', 1.5)
         g.append('text')
           .attr('class', 'hg-drill-badge-text')
@@ -314,7 +314,7 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
           .attr('dominant-baseline', 'central')
           .attr('font-size', '8px')
           .attr('font-weight', '700')
-          .attr('fill', '#1A1410')
+          .attr('fill', '#0f172a')
           .attr('pointer-events', 'none')
           .text('+')
       }
@@ -517,14 +517,14 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
         .attr('fill', 'none')
         .attr('stroke', d.color)
         .attr('stroke-width', 2)
-        .attr('stroke-opacity', 0.8)
+        .attr('stroke-opacity', 0.9)
       ring
         .append('circle')
         .attr('r', r + 8)
         .attr('fill', 'none')
         .attr('stroke', d.color)
         .attr('stroke-width', 2)
-        .attr('stroke-opacity', 0.6)
+        .attr('stroke-opacity', 0.5)
         .append('animate')
         .attr('attributeName', 'r')
         .attr('from', r + 8)
@@ -662,20 +662,26 @@ export function HierarchyGraph({ workspacePath }: HierarchyGraphProps) {
         {/* Level indicator badge */}
         <div className={styles.levelBadge}>{levelLabel(level)}</div>
 
-        {/* Legend */}
+        {/* Legend — floating pill bar */}
         <div className={styles.legend}>
-          {Object.entries(HIERARCHY_COLORS)
-            .filter(([k]) => ['service', 'package', 'file', 'class', 'interface', 'enum'].includes(k))
-            .map(([kind, color]) => (
-              <div key={kind} className={styles.legendItem}>
-                <span className={styles.legendSwatch} style={{ background: color }} />
-                <span className={styles.legendLabel}>{kind}</span>
-              </div>
-            ))}
+          <div className={styles.legendItem}>
+            <span className={styles.legendSwatch} style={{ background: '#ffbf00' }} />
+            <span className={styles.legendLabel}>Main Branch</span>
+          </div>
+          <div className={styles.legendItem}>
+            <span className={styles.legendSwatch} style={{ background: '#6495ed' }} />
+            <span className={styles.legendLabel}>External Dep</span>
+          </div>
+          <div className={styles.legendItem}>
+            <span className={styles.legendSwatch} style={{ background: '#3fb950' }} />
+            <span className={styles.legendLabel}>Files</span>
+          </div>
           <div className={`${styles.legendItem} ${styles.legendItemDrill}`}>
             <span className={styles.drillIndicator}>+</span>
-            <span className={styles.legendLabel}>drillable</span>
+            <span className={styles.legendLabel}>Drillable</span>
           </div>
+          <div className={styles.legendDivider} />
+          <span className={styles.legendLabel}>{levelLabel(level)}</span>
         </div>
       </div>
 

@@ -1,59 +1,89 @@
 /* ================================================================
-   BearWisdom Design System — "Scholar's Workshop"
-   Warm copper, teal, sage on dark leather-brown.
+   BearWisdom Design System — Warm Amber & Steel Blue
+   Dark navy graph, dark brown sidebar, warm amber + cornflower.
    ================================================================ */
 
 :root {
-  /* Backgrounds */
-  --bg-deepest:    #100D09;
-  --bg-base:       #1A1410;
-  --bg-surface:    #242019;
-  --bg-elevated:   #2E2820;
-  --bg-hover:      #38302A;
-  --bg-active:     #443A30;
+  /* Sidebar */
+  --sidebar-bg: #1e1b18;
+  --sidebar-border: #2d2824;
+  --sidebar-active-bg: #3a322b;
 
-  /* Copper — primary accent */
-  --copper-dim:    #8B6B3E;
-  --copper:        #C8915C;
-  --copper-bright: #E4AD74;
-  --copper-glow:   #C8915C33;
+  /* Accent colors */
+  --warm-amber: #ffbf00;
+  --warm-amber-glow: rgba(255, 191, 0, 0.2);
+  --warm-amber-dim: rgba(255, 191, 0, 0.4);
+  --dimmed-brown: #8c7e6e;
+  --cornflower: #6495ed;
+  --cornflower-glow: rgba(100, 149, 237, 0.2);
+  --cornflower-dim: rgba(100, 149, 237, 0.4);
 
-  /* Teal — interactive / links */
-  --teal-dim:      #1E6B6B;
-  --teal:          #2D8F8F;
-  --teal-bright:   #3CB8B8;
-  --teal-glow:     #2D8F8F33;
+  /* Graph canvas */
+  --graph-bg: #0f172a;
+  --graph-node: #1e293b;
+  --graph-node-border: rgba(71, 85, 105, 0.5);
+  --graph-amber: #ffbf00;
+  --graph-cornflower: #6495ed;
+  --graph-grid: rgba(100, 149, 237, 0.05);
 
-  /* Sage — success */
-  --sage:          #4A7C59;
-  --sage-bright:   #62A578;
+  /* Backgrounds (kept for component compat) */
+  --bg-deepest: #0a0f1e;
+  --bg-base: #0f172a;
+  --bg-surface: #1e1b18;
+  --bg-elevated: #262220;
+  --bg-hover: #3a322b;
+  --bg-active: #443a30;
 
   /* Text */
-  --text-primary:  #F0E6D6;
-  --text-secondary:#B8A892;
-  --text-muted:    #8B7D6B;
-  --text-faint:    #5C5044;
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #8c7e6e;
+  --text-faint: #5a5047;
 
   /* Borders */
-  --border:        #3D3226;
-  --border-subtle: #2E2820;
+  --border: #2d2824;
+  --border-subtle: #1e1b18;
 
-  /* Kind colors (graph nodes) */
-  --kind-class:     #58a6ff;
-  --kind-interface: #bc8cff;
-  --kind-method:    #3fb950;
-  --kind-function:  #3fb950;
-  --kind-enum:      #d29922;
-  --kind-struct:    #58a6ff;
-  --kind-module:    #39c5cf;
-  --kind-field:     #8b949e;
+  /* Kind colors — amber for logic, cornflower for types */
+  --kind-mod: #ffbf00;
+  --kind-fn: #ffbf00;
+  --kind-enum: #ffbf00;
+  --kind-constant: #ffbf00;
+  --kind-struct: #6495ed;
+  --kind-trait: #6495ed;
+  --kind-interface: #6495ed;
+  --kind-class: #6495ed;
+  --kind-field: #8b949e;
+  --kind-method: #6495ed;
+  --kind-function: #ffbf00;
+  --kind-module: #ffbf00;
+  --kind-service: #f85149;
+  --kind-package: #6495ed;
+  --kind-file: #3fb950;
+
+  /* Fonts */
+  --font-ui: 'Inter', system-ui, -apple-system, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Source Code Pro', monospace;
 
   /* Shadows */
-  --shadow-sm: 0 1px 3px rgba(0,0,0,0.4);
-  --shadow-md: 0 4px 12px rgba(0,0,0,0.5);
-  --shadow-lg: 0 8px 32px rgba(0,0,0,0.6);
-  --shadow-glow-copper: 0 0 20px var(--copper-glow);
-  --shadow-glow-teal: 0 0 20px var(--teal-glow);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.5);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.6);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.7);
+  --shadow-glow-amber: 0 0 20px rgba(255, 191, 0, 0.2);
+  --shadow-glow-cornflower: 0 0 20px rgba(100, 149, 237, 0.15);
+  --shadow-node: 0 0 25px rgba(100, 149, 237, 0.1);
+
+  /* Legacy aliases — keep these so existing components don't break */
+  --copper: #ffbf00;
+  --copper-bright: #ffd040;
+  --copper-dim: #c8a000;
+  --copper-glow: rgba(255, 191, 0, 0.2);
+  --teal: #6495ed;
+  --teal-bright: #7aaaf5;
+  --teal-dim: #3a5fa0;
+  --teal-glow: rgba(100, 149, 237, 0.2);
+  --sage: #3fb950;
+  --sage-bright: #62a578;
 
   /* Radii */
   --radius-sm: 4px;

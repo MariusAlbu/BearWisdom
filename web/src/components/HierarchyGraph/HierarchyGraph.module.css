@@ -1,6 +1,6 @@
 /* ================================================================
    HierarchyGraph — architectural zoom visualization
-   Dark theme, consistent with the Scholar's Workshop design system.
+   Warm Amber & Steel Blue design system.
    ================================================================ */
 
 .hierarchyGraph {
@@ -8,7 +8,7 @@
   flex-direction: column;
   flex: 1;
   overflow: hidden;
-  background: var(--bg-base);
+  background: var(--graph-bg);
 }
 
 /* ---- Breadcrumb bar ---- */
@@ -18,8 +18,8 @@
   gap: 0;
   padding: 0 16px;
   height: 36px;
-  background: var(--bg-surface);
-  border-bottom: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.8);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   flex-shrink: 0;
   overflow-x: auto;
   scrollbar-width: none;
@@ -35,7 +35,7 @@
 }
 
 .breadcrumbSep {
-  color: var(--text-faint);
+  color: #334155;
   font-size: 14px;
   padding: 0 4px;
   user-select: none;
@@ -44,10 +44,10 @@
 .breadcrumbItem {
   background: none;
   border: none;
-  color: var(--teal);
-  font-family: 'DM Sans', sans-serif;
+  color: var(--cornflower);
+  font-family: var(--font-mono);
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 500;
   cursor: pointer;
   padding: 4px 6px;
   border-radius: var(--radius-sm);
@@ -56,25 +56,29 @@
 }
 
 .breadcrumbItem:hover {
-  background: var(--teal-glow);
+  background: var(--cornflower-glow);
   color: var(--teal-bright);
 }
 
 .breadcrumbCurrent {
-  color: var(--copper);
-  font-family: 'DM Sans', sans-serif;
+  color: var(--warm-amber);
+  font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 700;
   padding: 4px 6px;
   white-space: nowrap;
 }
 
-/* ---- Graph canvas ---- */
+/* ---- Graph canvas — grid background ---- */
 .canvas {
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: #1e1915;
+  background-color: var(--graph-bg);
+  background-image:
+    linear-gradient(var(--graph-grid) 1px, transparent 1px),
+    linear-gradient(90deg, var(--graph-grid) 1px, transparent 1px);
+  background-size: 50px 50px;
 }
 
 .canvas > svg {
@@ -92,7 +96,7 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  background: rgba(26, 20, 16, 0.85);
+  background: rgba(15, 23, 42, 0.85);
   backdrop-filter: blur(2px);
 }
 
@@ -112,53 +116,61 @@
 .retryBtn {
   margin-top: 8px;
   padding: 6px 18px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  background: var(--graph-node);
+  border: 1px solid var(--graph-node-border);
   border-radius: var(--radius-md);
   color: var(--text-secondary);
-  font-family: 'DM Sans', sans-serif;
+  font-family: var(--font-ui);
   font-size: 13px;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s;
+  transition: background 0.15s, color 0.15s, border-color 0.15s;
 }
 
 .retryBtn:hover {
-  background: var(--bg-hover);
+  background: #2d3f5a;
   color: var(--text-primary);
+  border-color: var(--cornflower);
 }
 
 /* ---- Level badge (bottom-left) ---- */
 .levelBadge {
   position: absolute;
-  bottom: 36px;
-  left: 12px;
-  padding: 3px 10px;
-  background: var(--bg-elevated);
-  border: 1px solid var(--border);
+  bottom: 54px;
+  left: 14px;
+  padding: 3px 12px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 20px;
-  font-size: 11px;
+  font-family: var(--font-mono);
+  font-size: 10px;
   font-weight: 700;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.1em;
   text-transform: uppercase;
-  color: var(--copper);
+  color: var(--warm-amber);
   pointer-events: none;
   user-select: none;
+  backdrop-filter: blur(4px);
 }
 
-/* ---- Legend (bottom-right) ---- */
+/* ---- Legend — floating pill bar (bottom center) ---- */
 .legend {
   position: absolute;
-  bottom: 36px;
-  right: 12px;
+  bottom: 20px;
+  left: 50%;
+  transform: translateX(-50%);
   display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 8px 10px;
-  background: var(--bg-surface);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-md);
+  flex-direction: row;
+  align-items: center;
+  gap: 20px;
+  padding: 10px 24px;
+  background: rgba(15, 23, 42, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 999px;
   pointer-events: none;
   user-select: none;
+  backdrop-filter: blur(8px);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  white-space: nowrap;
 }
 
 .legendItem {
@@ -176,22 +188,30 @@
 }
 
 .legendLabel {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: 'Source Code Pro', monospace;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #94a3b8;
+}
+
+.legendDivider {
+  width: 1px;
+  height: 14px;
+  background: rgba(255, 255, 255, 0.1);
 }
 
 .legendItemDrill .drillIndicator {
   width: 10px;
   height: 10px;
   border-radius: 50%;
-  background: var(--copper);
+  background: var(--warm-amber);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 9px;
   font-weight: 700;
-  color: var(--bg-base);
+  color: var(--graph-bg);
   flex-shrink: 0;
   line-height: 1;
   text-align: center;
@@ -200,20 +220,21 @@
 /* ---- Hint bar ---- */
 .hintBar {
   height: 26px;
-  background: var(--bg-surface);
-  border-top: 1px solid var(--border);
+  background: rgba(15, 23, 42, 0.6);
+  border-top: 1px solid rgba(255, 255, 255, 0.04);
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  font-size: 11px;
-  color: var(--text-faint);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: #334155;
   flex-shrink: 0;
   user-select: none;
 }
 
 .hintSep {
-  color: var(--border);
+  color: #1e293b;
 }
 
 /* ---- SVG node/edge classes — injected by D3 ---- */
@@ -240,25 +261,25 @@
 }
 
 :global(.hg-node-label) {
-  fill: #e0d6c6;
+  fill: #f1f5f9;
   font-size: 11px;
-  font-family: 'Source Code Pro', monospace;
+  font-family: 'JetBrains Mono', 'Source Code Pro', monospace;
   font-weight: 500;
   pointer-events: none;
   paint-order: stroke;
-  stroke: #1e1915;
+  stroke: #0f172a;
   stroke-width: 3px;
   stroke-linejoin: round;
 }
 
 :global(.hg-node-sublabel) {
-  fill: #8b7d6b;
+  fill: #64748b;
   font-size: 9px;
-  font-family: 'DM Sans', sans-serif;
+  font-family: 'JetBrains Mono', 'Source Code Pro', monospace;
   font-weight: 400;
   pointer-events: none;
   paint-order: stroke;
-  stroke: #1e1915;
+  stroke: #0f172a;
   stroke-width: 2px;
   stroke-linejoin: round;
 }
@@ -272,5 +293,5 @@
 }
 
 :global(.hg-edge-label) {
-  font-family: 'Source Code Pro', monospace;
+  font-family: 'JetBrains Mono', 'Source Code Pro', monospace;
 }

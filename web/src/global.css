@@ -5,8 +5,8 @@
 }
 
 body {
-  font-family: 'DM Sans', system-ui, sans-serif;
-  background: var(--bg-deepest);
+  font-family: var(--font-ui);
+  background: var(--graph-bg);
   color: var(--text-primary);
   overflow: hidden;
   height: 100vh;
@@ -19,30 +19,49 @@ body {
   overflow: hidden;
 }
 
+/* Material Symbols helper */
+.material-symbols-outlined {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  font-size: 20px;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  display: inline-block;
+  white-space: nowrap;
+  word-wrap: normal;
+  direction: ltr;
+  -webkit-font-feature-settings: 'liga';
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
 /* Scrollbar defaults */
 ::-webkit-scrollbar { width: 5px; height: 5px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
 
 /* SVG graph node/edge classes — injected by D3, not React-managed */
-.kt-link { stroke: #9da5ae; stroke-width: 1.4; stroke-opacity: 0.55; }
-.kt-link--calls { stroke: #b0b8c1; stroke-width: 2; stroke-opacity: 0.7; }
-.kt-link--inherits { stroke: #79bfff; stroke-width: 3; stroke-opacity: 0.85; }
-.kt-link--implements { stroke: #d0a8ff; stroke-width: 2; stroke-dasharray: 5 3; stroke-opacity: 0.8; }
-.kt-link--type_ref { stroke: #8b949e; stroke-width: 1.2; stroke-dasharray: 3 3; stroke-opacity: 0.4; }
+.kt-link { stroke: rgba(100, 149, 237, 0.4); stroke-width: 1.4; stroke-opacity: 0.55; }
+.kt-link--calls { stroke: var(--graph-amber); stroke-width: 2; stroke-opacity: 0.5; }
+.kt-link--inherits { stroke: var(--graph-cornflower); stroke-width: 3; stroke-opacity: 0.7; }
+.kt-link--implements { stroke: var(--graph-cornflower); stroke-width: 2; stroke-dasharray: 5 3; stroke-opacity: 0.6; }
+.kt-link--type_ref { stroke: rgba(100, 149, 237, 0.25); stroke-width: 1.2; stroke-dasharray: 3 3; stroke-opacity: 0.4; }
 .kt-link--dimmed { stroke-opacity: 0.04 !important; }
 
 .kt-node { cursor: pointer; }
 .kt-node circle,
 .kt-node path { stroke-width: 1.5; }
 .kt-node-label {
-  fill: #e0d6c6;
+  fill: #f1f5f9;
   font-size: 11px;
-  font-family: 'Source Code Pro', monospace;
+  font-family: var(--font-mono);
   font-weight: 500;
   pointer-events: none;
   paint-order: stroke;
-  stroke: #1E1915;
+  stroke: #0f172a;
   stroke-width: 3px;
   stroke-linejoin: round;
 }
