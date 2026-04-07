@@ -27,13 +27,18 @@ fn main() {
     let registry_src = PathBuf::from(&home).join("registry/src");
 
     // Map of tree-sitter crate prefix -> BearWisdom language ID.
+    // Map tree-sitter crate name prefixes to BearWisdom language IDs.
+    // Order matters: more specific prefixes must come before shorter ones
+    // (e.g., "tree-sitter-c-sharp-" before "tree-sitter-c-0.").
     let lang_map: Vec<(&str, &str)> = vec![
         ("tree-sitter-ada-", "ada"),
         ("tree-sitter-bash-", "bash"),
         ("tree-sitter-bicep-", "bicep"),
         ("tree-sitter-c-sharp-", "csharp"),
         ("tree-sitter-c-0.", "c"),
+        ("tree-sitter-clojure-", "clojure"),
         ("tree-sitter-cmake-", "cmake"),
+        ("tree-sitter-cobol-", "cobol"),
         ("tree-sitter-cpp-", "cpp"),
         ("tree-sitter-css-", "css"),
         ("tree-sitter-dart-", "dart"),
@@ -42,20 +47,30 @@ fn main() {
         ("tree-sitter-erlang-", "erlang"),
         ("tree-sitter-fortran-", "fortran"),
         ("tree-sitter-fsharp-", "fsharp"),
+        ("tree-sitter-gdscript-", "gdscript"),
         ("tree-sitter-gleam-", "gleam"),
         ("tree-sitter-go-0.", "go"),
+        ("tree-sitter-graphql-", "graphql"),
+        ("tree-sitter-groovy-", "groovy"),
+        ("tree-sitter-hare-", "hare"),
         ("tree-sitter-haskell-", "haskell"),
+        ("tree-sitter-hcl-", "hcl"),
         ("tree-sitter-html-", "html"),
         ("tree-sitter-java-", "java"),
         ("tree-sitter-javascript-", "javascript"),
         ("tree-sitter-json-", "json"),
+        ("tree-sitter-kotlin-ng-", "kotlin"),
         ("tree-sitter-kotlin-", "kotlin"),
         ("tree-sitter-lua-", "lua"),
         ("tree-sitter-make-", "make"),
+        ("tree-sitter-markdown-", "markdown"),
+        ("tree-sitter-matlab-", "matlab"),
+        ("tree-sitter-md-", "markdown"),
         ("tree-sitter-nix-", "nix"),
         ("tree-sitter-ocaml-", "ocaml"),
         ("tree-sitter-odin-", "odin"),
         ("tree-sitter-pascal-", "pascal"),
+        ("tree-sitter-perl-", "perl"),
         ("tree-sitter-php-", "php"),
         ("tree-sitter-powershell-", "powershell"),
         ("tree-sitter-prisma-", "prisma"),
@@ -72,6 +87,8 @@ fn main() {
         ("tree-sitter-swift-", "swift"),
         ("tree-sitter-toml-", "toml"),
         ("tree-sitter-typescript-", "typescript"),
+        ("tree-sitter-vb-dotnet-", "vbnet"),
+        ("tree-sitter-xml-", "xml"),
         ("tree-sitter-yaml-", "yaml"),
         ("tree-sitter-zig-", "zig"),
     ];
@@ -147,10 +164,14 @@ fn main() {
         ("sh", "bash"),
         ("zsh", "bash"),
         ("terraform", "hcl"),
+        ("bicep", "hcl"),
         ("objectpascal", "pascal"),
         ("delphi", "pascal"),
         ("sass", "scss"),
         ("reason", "ocaml"),
+        ("clojurescript", "clojure"),
+        ("octave", "matlab"),
+        ("protobuf", "proto"),
     ];
 
     for (lang, names) in &all_builtins {
@@ -240,27 +261,63 @@ fn extract_eq_predicates(content: &str, names: &mut BTreeSet<String>) {
 }
 
 fn extract_keyword_strings(content: &str, names: &mut BTreeSet<String>) {
-    // Match: "word" @keyword  or  "word" @keyword.something
-    let re_kw = regex::Regex::new(
+    // Pattern A: inline "word" @keyword
+    let re_inline = regex::Regex::new(
         r#""([a-zA-Z_][a-zA-Z0-9_!?]*(?:::)?[a-zA-Z0-9_!?]*)"\s+@keyword"#,
     ).unwrap();
-
-    for cap in re_kw.captures_iter(content) {
+    for cap in re_inline.captures_iter(content) {
         if let Some(name) = cap.get(1) {
             names.insert(name.as_str().to_string());
         }
     }
+
+    // Pattern B: bracket blocks — [...] @keyword or [...] @keyword.xxx
+    // These span multiple lines with quoted strings inside brackets.
+    extract_bracket_block_names(content, "@keyword", names);
 }
 
 fn extract_builtin_strings(content: &str, names: &mut BTreeSet<String>) {
-    // Match: "word" @type.builtin  or  "word" @constant.builtin etc.
-    let re_bi = regex::Regex::new(
+    // Pattern A: inline "word" @*.builtin
+    let re_inline = regex::Regex::new(
         r#""([a-zA-Z_][a-zA-Z0-9_!?]*)"\s+@\w+\.builtin"#,
     ).unwrap();
-
-    for cap in re_bi.captures_iter(content) {
+    for cap in re_inline.captures_iter(content) {
         if let Some(name) = cap.get(1) {
             names.insert(name.as_str().to_string());
         }
+    }
+
+    // Pattern B: bracket blocks — [...] @type.builtin, [...] @constant.builtin, etc.
+    extract_bracket_block_names(content, "@type.builtin", names);
+    extract_bracket_block_names(content, "@constant.builtin", names);
+    extract_bracket_block_names(content, "@function.builtin", names);
+    extract_bracket_block_names(content, "@variable.builtin", names);
+}
+
+/// Extract quoted string names from bracket blocks like:
+/// ```
+/// [
+///   "word1"
+///   "word2"
+/// ] @keyword
+/// ```
+fn extract_bracket_block_names(content: &str, tag: &str, names: &mut BTreeSet<String>) {
+    let re_quoted = regex::Regex::new(r#""([a-zA-Z_][a-zA-Z0-9_!?]*)""#).unwrap();
+
+    // Find all occurrences of `] @tag` and walk backwards to find the opening `[`.
+    let tag_with_bracket = format!("] {}", tag);
+    let mut search_from = 0;
+    while let Some(pos) = content[search_from..].find(&tag_with_bracket) {
+        let abs_pos = search_from + pos;
+        // Walk backwards from `]` to find the matching `[`.
+        if let Some(bracket_start) = content[..abs_pos].rfind('[') {
+            let block = &content[bracket_start..abs_pos];
+            for cap in re_quoted.captures_iter(block) {
+                if let Some(name) = cap.get(1) {
+                    names.insert(name.as_str().to_string());
+                }
+            }
+        }
+        search_from = abs_pos + tag_with_bracket.len();
     }
 }
