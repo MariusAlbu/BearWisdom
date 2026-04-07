@@ -105,8 +105,24 @@ pub fn hierarchical_graph(
     let cap = if max_nodes == 0 { 500 } else { max_nodes.min(5_000) };
 
     match level {
-        "services" => services_level(db, cap),
-        "packages" => packages_level(db, cap),
+        "services" => {
+            let result = services_level(db, cap)?;
+            // If no services/packages exist, fall through to files level.
+            if result.nodes.is_empty() {
+                files_level(db, None, cap)
+            } else {
+                Ok(result)
+            }
+        }
+        "packages" => {
+            let result = packages_level(db, cap)?;
+            // Single-project repos have no packages — fall back to files.
+            if result.nodes.is_empty() {
+                files_level(db, None, cap)
+            } else {
+                Ok(result)
+            }
+        }
         "files"    => files_level(db, scope, cap),
         "symbols"  => symbols_level(db, scope, cap),
         other => Err(anyhow::anyhow!(
