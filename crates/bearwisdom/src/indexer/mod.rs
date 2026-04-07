@@ -5,6 +5,7 @@ pub mod manifest;
 pub mod module_resolution;
 pub mod post_index;
 pub mod primitives;
+pub mod query_builtins;
 pub mod project_context;
 pub mod ref_cache;
 pub mod resolve;

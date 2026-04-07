@@ -68,10 +68,21 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
     }
 }
 
-/// Build a `HashSet<&'static str>` from the primitives for a given language.
-/// Convenience wrapper for callers that need set membership checks.
+/// Build a `HashSet<&'static str>` from BOTH handcrafted primitives AND
+/// build-time query-extracted builtins for a given language.
+///
+/// The two sources are complementary:
+///   - Handcrafted: domain-specific (framework types, test globals, operators)
+///   - Query-extracted: language keywords and stdlib builtins from tree-sitter
+///     highlights.scm/locals.scm (auto-maintained by grammar community)
 pub fn primitives_set_for_language(lang: &str) -> std::collections::HashSet<&'static str> {
-    primitives_for_language(lang).iter().copied().collect()
+    let mut set: std::collections::HashSet<&'static str> =
+        primitives_for_language(lang).iter().copied().collect();
+    // Merge in query-extracted builtins from tree-sitter .scm files.
+    for name in super::query_builtins::query_builtins_for_language(lang) {
+        set.insert(name);
+    }
+    set
 }
 
 #[cfg(test)]
