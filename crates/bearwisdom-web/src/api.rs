@@ -105,6 +105,20 @@ pub struct BrowseQuery {
     path: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct DeadCodeQuery {
+    path: String,
+    scope: Option<String>,
+    #[serde(default = "default_visibility_all")]
+    visibility: String,
+    #[serde(default)]
+    include_tests: bool,
+    #[serde(default = "default_limit_100")]
+    limit: usize,
+}
+
+fn default_visibility_all() -> String { "all".to_string() }
+
 fn default_limit_20() -> usize { 20 }
 fn default_limit_100() -> usize { 100 }
 fn default_limit_200() -> usize { 200 }
@@ -225,6 +239,54 @@ pub async fn get_architecture(
     match state.pool.get_db(&root) {
         Ok(db) => match bearwisdom::query::architecture::get_overview(&db) {
             Ok(overview) => ok_json(overview).into_response(),
+            Err(e) => err_json(e).into_response(),
+        },
+        Err(e) => err_json(e).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/dead-code
+// ---------------------------------------------------------------------------
+
+pub async fn get_dead_code(
+    State(state): State<AppState>,
+    Query(params): Query<DeadCodeQuery>,
+) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    let vis = match params.visibility.as_str() {
+        "private" => bearwisdom::query::dead_code::VisibilityFilter::PrivateOnly,
+        "public" => bearwisdom::query::dead_code::VisibilityFilter::PublicOnly,
+        _ => bearwisdom::query::dead_code::VisibilityFilter::All,
+    };
+    let options = bearwisdom::query::dead_code::DeadCodeOptions {
+        scope: params.scope,
+        visibility_filter: vis,
+        include_tests: params.include_tests,
+        max_results: params.limit,
+        ..Default::default()
+    };
+    match state.pool.get_db(&root) {
+        Ok(db) => match bearwisdom::query::dead_code::find_dead_code(&db, &options) {
+            Ok(report) => ok_json(report).into_response(),
+            Err(e) => err_json(e).into_response(),
+        },
+        Err(e) => err_json(e).into_response(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// GET /api/entry-points
+// ---------------------------------------------------------------------------
+
+pub async fn get_entry_points(
+    State(state): State<AppState>,
+    Query(params): Query<PathParam>,
+) -> impl IntoResponse {
+    let root = PathBuf::from(&params.path);
+    match state.pool.get_db(&root) {
+        Ok(db) => match bearwisdom::query::dead_code::find_entry_points(&db) {
+            Ok(report) => ok_json(report).into_response(),
             Err(e) => err_json(e).into_response(),
         },
         Err(e) => err_json(e).into_response(),

@@ -27,7 +27,7 @@ impl Connector for RestConnector {
             protocols: &[Protocol::Rest],
             languages: &[
                 "csharp", "typescript", "tsx", "javascript", "jsx", "python",
-                "go", "java", "kotlin", "ruby", "php", "rust",
+                "go", "java", "kotlin", "ruby", "php", "rust", "dart", "swift",
             ],
         }
     }

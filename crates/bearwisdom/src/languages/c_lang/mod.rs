@@ -4,6 +4,7 @@ mod calls;
 mod helpers;
 mod symbols;
 pub mod extract;
+pub mod primitives;
 
 mod builtins;
 pub mod resolve;

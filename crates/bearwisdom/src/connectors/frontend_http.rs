@@ -66,6 +66,7 @@ pub fn detect_http_calls(conn: &Connection, project_root: &Path) -> Result<Vec<D
     let re_axios = build_axios_regex();
     let re_angular_http = build_angular_http_regex();
     let re_jquery = build_jquery_regex();
+    let re_generated_sdk = build_generated_sdk_regex();
 
     // Query all TS/JS files.
     let mut stmt = conn
@@ -99,6 +100,7 @@ pub fn detect_http_calls(conn: &Connection, project_root: &Path) -> Result<Vec<D
         detect_in_source(&source, file_id, &re_fetch, &re_axios, &mut calls);
         detect_angular_http(&source, file_id, &re_angular_http, &mut calls);
         detect_jquery_calls(&source, file_id, &re_jquery, &mut calls);
+        detect_generated_sdk_calls(&source, file_id, &re_generated_sdk, &mut calls);
     }
 
     Ok(calls)
@@ -785,6 +787,174 @@ fn build_csharp_patterns() -> LangPatterns {
     }
 }
 
+fn build_generated_sdk_regex() -> Regex {
+    // Matches generated SDK call patterns:
+    //   oazapfts.fetchJson<...>(`/path/${param}`, { method: "POST" })
+    //   oazapfts.fetchText(`/path`, { method: "DELETE" })
+    //   oazapfts.fetchBlob<...>(`/path/${param}`, { ... })
+    //   oazapfts.ok(oazapfts.fetchJson<...>(`/path`, ...))
+    Regex::new(
+        r#"oazapfts\s*\.\s*(?:ok\s*\(\s*oazapfts\s*\.\s*)?fetch(?:Json|Text|Blob)\s*(?:<[^>]*>)?\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    )
+    .expect("generated sdk regex is valid")
+}
+
+fn detect_generated_sdk_calls(
+    source: &str,
+    file_id: i64,
+    re: &Regex,
+    out: &mut Vec<DetectedHttpCall>,
+) {
+    // Also look for the method in a nearby { method: "POST" } object literal.
+    let re_method = Regex::new(r#"method\s*:\s*"(?P<method>GET|POST|PUT|DELETE|PATCH|HEAD)""#)
+        .expect("method regex is valid");
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for cap in re.captures_iter(line_text) {
+            let Some(raw_url) = extract_url_from_captures(&cap) else {
+                continue;
+            };
+
+            if !looks_like_api_url(&raw_url) {
+                continue;
+            }
+
+            // Try to extract method from the same line (e.g., { method: "POST" })
+            let method = re_method
+                .captures(line_text)
+                .and_then(|mc| mc.name("method"))
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_else(|| "GET".to_string());
+
+            let url_pattern = normalise_url_pattern(&raw_url);
+
+            out.push(DetectedHttpCall {
+                file_id,
+                symbol_id: None,
+                line: line_no,
+                http_method: method,
+                url_pattern,
+                raw_url,
+            });
+        }
+    }
+}
+
+fn build_kotlin_patterns() -> LangPatterns {
+    LangPatterns {
+        language: "kotlin",
+        matchers: vec![
+            // Retrofit annotations: @GET("path"), @POST("path"), @PUT("path"), @DELETE("path")
+            LangMatcher {
+                re: Regex::new(
+                    r#"@(?P<method>GET|POST|PUT|DELETE|PATCH|HEAD)\s*\(\s*"(?P<url>[^"]+)""#,
+                )
+                .expect("kotlin retrofit annotation regex is valid"),
+                method_group: Some("method"),
+                implied_method: "GET",
+                url_group: "url",
+            },
+            // OkHttp: Request.Builder().url("...").get() / .post(body)
+            LangMatcher {
+                re: Regex::new(
+                    r#"\.url\s*\(\s*"(?P<url>[^"]+)"\s*\)"#,
+                )
+                .expect("kotlin okhttp url regex is valid"),
+                method_group: None,
+                implied_method: "GET",
+                url_group: "url",
+            },
+            // Ktor client: client.get("path"), client.post("path")
+            LangMatcher {
+                re: Regex::new(
+                    r#"(?:client|httpClient)\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*(?:<[^>]*>)?\s*\(\s*"(?P<url>[^"]+)""#,
+                )
+                .expect("kotlin ktor client regex is valid"),
+                method_group: Some("method"),
+                implied_method: "GET",
+                url_group: "url",
+            },
+        ],
+    }
+}
+
+fn build_dart_patterns() -> LangPatterns {
+    LangPatterns {
+        language: "dart",
+        matchers: vec![
+            // http package: http.get(Uri.parse("url")), http.post(Uri.parse("url"))
+            LangMatcher {
+                re: Regex::new(
+                    r#"http\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*\(\s*Uri\.parse\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
+                )
+                .expect("dart http regex is valid"),
+                method_group: Some("method"),
+                implied_method: "GET",
+                url_group: "url1",
+            },
+            // Dio: dio.get("url"), dio.post("url")
+            LangMatcher {
+                re: Regex::new(
+                    r#"(?:dio|_dio|client)\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*(?:<[^>]*>)?\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
+                )
+                .expect("dart dio regex is valid"),
+                method_group: Some("method"),
+                implied_method: "GET",
+                url_group: "url1",
+            },
+            // Chopper annotation: @Get(path: "/api/...")
+            LangMatcher {
+                re: Regex::new(
+                    r#"@(?P<method>Get|Post|Put|Delete|Patch)\s*\(\s*path\s*:\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
+                )
+                .expect("dart chopper annotation regex is valid"),
+                method_group: Some("method"),
+                implied_method: "GET",
+                url_group: "url1",
+            },
+        ],
+    }
+}
+
+fn build_swift_patterns() -> LangPatterns {
+    LangPatterns {
+        language: "swift",
+        matchers: vec![
+            // URLSession: URL(string: "url")
+            LangMatcher {
+                re: Regex::new(
+                    r#"URL\s*\(\s*string\s*:\s*"(?P<url>[^"]+)""#,
+                )
+                .expect("swift url regex is valid"),
+                method_group: None,
+                implied_method: "GET",
+                url_group: "url",
+            },
+            // Alamofire: AF.request("url", method: .get)
+            LangMatcher {
+                re: Regex::new(
+                    r#"AF\s*\.\s*request\s*\(\s*"(?P<url>[^"]+)"(?:\s*,\s*method\s*:\s*\.(?P<method>get|post|put|delete|patch))?"#,
+                )
+                .expect("swift alamofire regex is valid"),
+                method_group: Some("method"),
+                implied_method: "GET",
+                url_group: "url",
+            },
+            // URLRequest with httpMethod: URLRequest(url: URL(string: "url")!)
+            LangMatcher {
+                re: Regex::new(
+                    r#"URLRequest\s*\(\s*url\s*:\s*URL\s*\(\s*string\s*:\s*"(?P<url>[^"]+)""#,
+                )
+                .expect("swift urlrequest regex is valid"),
+                method_group: None,
+                implied_method: "GET",
+                url_group: "url",
+            },
+        ],
+    }
+}
+
 /// Extract the URL from a capture that may have multiple url group variants
 /// (url1 / url2 / url3 naming convention used across this module).
 fn extract_url_multilang<'a>(cap: &'a regex::Captures<'_>, url_group: &str) -> Option<String> {
@@ -828,6 +998,9 @@ pub fn detect_http_calls_all_languages(
         build_python_patterns(),
         build_go_patterns(),
         build_java_patterns(),
+        build_kotlin_patterns(),
+        build_dart_patterns(),
+        build_swift_patterns(),
         build_ruby_patterns(),
         build_csharp_patterns(),
     ];

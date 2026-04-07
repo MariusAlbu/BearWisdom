@@ -8,6 +8,7 @@
 //! - `derived_type_definition` → Struct
 //! - `use_statement` → Imports edge
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

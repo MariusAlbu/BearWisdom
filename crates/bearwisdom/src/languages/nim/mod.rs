@@ -15,6 +15,7 @@
 //! - `type` section → scope; `TypeName = object/enum/concept/...` → Class/Struct/Enum/Interface/TypeAlias
 //! - `import`, `from ... import` → Imports edges
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

@@ -3,6 +3,7 @@
 //! Grammar: tree-sitter-lua (in Cargo.toml).
 //! Extraction covers top-level functions, table-based OOP, require imports, and calls.
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

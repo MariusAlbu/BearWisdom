@@ -4,6 +4,7 @@
 //! `grammar()` returns `None`; extraction uses a line-oriented parser that
 //! recognises Robot Framework's section-based structure.
 
+pub mod primitives;
 pub mod extract;
 
 #[cfg(test)]

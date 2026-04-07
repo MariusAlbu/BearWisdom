@@ -1,5 +1,6 @@
 //! Protocol Buffers language plugin.
 
+pub mod primitives;
 pub mod extract;
 
 #[cfg(test)]

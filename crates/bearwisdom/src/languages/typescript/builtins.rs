@@ -34,20 +34,35 @@ pub(super) fn is_js_runtime_global(target: &str) -> bool {
         // DOM / Browser APIs
         "document" | "window" | "navigator" | "location" | "history"
             | "localStorage" | "sessionStorage" | "performance"
+            | "screen" | "visualViewport" | "matchMedia"
             // Global objects
             | "console" | "JSON" | "Math" | "Object" | "Array"
             | "Promise" | "RegExp" | "Date" | "Map" | "Set"
             | "WeakMap" | "WeakSet" | "Symbol" | "Proxy" | "Reflect"
             | "Error" | "TypeError" | "RangeError" | "SyntaxError"
-            | "Intl" | "Number" | "String" | "Boolean"
+            | "ReferenceError" | "EvalError" | "URIError"
+            | "Intl" | "Number" | "String" | "Boolean" | "BigInt"
+            // Node.js globals
+            | "Buffer" | "process" | "global" | "globalThis" | "__dirname" | "__filename"
+            | "require" | "module" | "exports"
+            // Global constructors
+            | "URL" | "URLSearchParams" | "Headers" | "Request" | "Response"
+            | "FormData" | "Blob" | "File" | "AbortController"
+            | "TextEncoder" | "TextDecoder" | "ReadableStream" | "WritableStream"
+            | "WebSocket" | "EventSource" | "Worker" | "SharedWorker"
+            | "MessageChannel" | "BroadcastChannel"
+            | "IntersectionObserver" | "MutationObserver" | "ResizeObserver"
+            | "Crypto" | "crypto"
             // Global functions
             | "setTimeout" | "setInterval" | "clearTimeout" | "clearInterval"
             | "requestAnimationFrame" | "cancelAnimationFrame"
+            | "requestIdleCallback" | "cancelIdleCallback"
             | "fetch" | "atob" | "btoa"
             | "encodeURIComponent" | "decodeURIComponent"
             | "encodeURI" | "decodeURI"
             | "parseInt" | "parseFloat" | "isNaN" | "isFinite"
             | "structuredClone" | "queueMicrotask"
+            | "alert" | "confirm" | "prompt"
     )
 }
 
@@ -115,10 +130,31 @@ pub(super) fn is_common_builtin_method(name: &str) -> bool {
             | "then"
             | "catch"
             | "finally"
+            // Date methods
+            | "toISOString"
+            | "toLocaleDateString"
+            | "toLocaleTimeString"
+            | "toLocaleString"
+            | "getTime"
+            | "getDate"
+            | "getFullYear"
+            | "getMonth"
+            | "getHours"
+            | "getMinutes"
+            | "getSeconds"
             // Object methods
             | "toString"
             | "valueOf"
             | "hasOwnProperty"
+            | "toFixed"
+            | "toPrecision"
+            | "toExponential"
+            // Iteration / async
+            | "next"
+            | "return"
+            | "throw"
+            | "Symbol.iterator"
+            | "Symbol.asyncIterator"
     )
 }
 

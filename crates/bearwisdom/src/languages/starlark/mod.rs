@@ -3,6 +3,7 @@
 //! `grammar()` returns the tree-sitter-starlark grammar; extraction also uses a line-oriented parser that
 //! recognises Starlark's `def`, `load()`, rule assignments, and calls.
 
+pub mod primitives;
 pub mod extract;
 
 #[cfg(test)]

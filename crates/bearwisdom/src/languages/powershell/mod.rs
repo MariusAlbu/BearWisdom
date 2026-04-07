@@ -10,6 +10,7 @@
 //! - `class_property_definition` → Property
 //! - `using_statement` / `Import-Module` commands → Imports
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

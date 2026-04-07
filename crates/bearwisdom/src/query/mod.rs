@@ -22,6 +22,7 @@ pub mod stats;
 pub mod subgraph;
 pub mod symbol_info;
 pub mod workspace;
+pub mod dead_code;
 
 // ---------------------------------------------------------------------------
 // Shared query options — slim by default, opt-in for verbose

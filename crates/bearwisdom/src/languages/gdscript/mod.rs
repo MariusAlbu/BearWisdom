@@ -11,6 +11,7 @@
 //! - `variable_statement` / `const_statement` → Variable / Field
 //! - `enum_definition` → Enum
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

@@ -12,6 +12,7 @@
 //! - `import "path"` / `import name "path"` → Imports edges
 //! - `using expr` → TypeRef edge
 
+pub mod primitives;
 pub mod extract;
 
 #[cfg(test)]

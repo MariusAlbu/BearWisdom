@@ -1,5 +1,6 @@
 //! Nix language plugin.
 
+pub mod primitives;
 pub mod extract;
 
 #[cfg(test)]

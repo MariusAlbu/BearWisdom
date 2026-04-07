@@ -3,6 +3,7 @@
 //! Uses the dedicated SCSS tree-sitter grammar (tree-sitter-scss-local),
 //! compiled from MSVC-compatible pre-expanded C source.
 
+pub mod primitives;
 pub mod extract;
 
 use crate::languages::LanguagePlugin;

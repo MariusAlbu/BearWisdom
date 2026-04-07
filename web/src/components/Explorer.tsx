@@ -3,6 +3,7 @@ import { api } from '../api'
 import { FileViewer } from './FileViewer'
 import { FlowExplorer } from './FlowExplorer'
 import { Inspector } from './Inspector'
+import { DeadCode } from './DeadCode'
 import { HierarchyGraph } from './HierarchyGraph'
 import { useEmbedding } from '../hooks/useEmbedding'
 import { useHeaderSearch } from './Header/useHeaderSearch'
@@ -12,7 +13,7 @@ import type { AnyResult } from './Header'
 import type { SearchMode } from '../types/api.types'
 import styles from './Explorer.module.css'
 
-type MainView = 'graph' | 'flow' | 'inspector'
+type MainView = 'graph' | 'flow' | 'inspector' | 'dead-code'
 
 interface ExplorerProps {
   workspacePath: string
@@ -214,7 +215,9 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
       ? 'Architecture Graph'
       : mainView === 'flow'
         ? 'Flow Explorer'
-        : 'Inspector'
+        : mainView === 'dead-code'
+          ? 'Dead Code'
+          : 'Inspector'
 
   return (
     <div className={styles.explorer}>
@@ -295,6 +298,13 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
           >
             <span className="material-symbols-outlined">reorder</span>
             Flow
+          </button>
+          <button
+            className={`${styles.navBtn}${mainView === 'dead-code' && !fileView ? ' ' + styles.navBtnActive : ''}`}
+            onClick={() => { setMainView('dead-code'); setFileView(null) }}
+          >
+            <span className="material-symbols-outlined">delete_sweep</span>
+            Dead Code
           </button>
           <button
             className={`${styles.navBtn}${mainView === 'inspector' && !fileView ? ' ' + styles.navBtnActive : ''}`}
@@ -387,6 +397,8 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
               loading={fileView.loading}
               onClose={() => setFileView(null)}
             />
+          ) : mainView === 'dead-code' ? (
+            <DeadCode workspacePath={workspacePath} onFileNavigate={handleFileNavigate} />
           ) : mainView === 'inspector' ? (
             <Inspector workspacePath={workspacePath} searchQuery={query} />
           ) : mainView === 'flow' ? (

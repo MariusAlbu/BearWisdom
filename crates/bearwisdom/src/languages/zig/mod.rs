@@ -17,6 +17,7 @@
 //! - `identifier(` patterns in bodies → Calls edges
 //! - `@builtin(` patterns (everywhere) → Calls edges
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

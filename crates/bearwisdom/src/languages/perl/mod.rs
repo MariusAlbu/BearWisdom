@@ -11,6 +11,7 @@
 //! - `package Name::Space` → Namespace
 //! - `use Module` → Imports
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

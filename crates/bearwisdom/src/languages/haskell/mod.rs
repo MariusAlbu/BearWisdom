@@ -6,6 +6,7 @@
 
 mod builtins;
 pub(crate) mod resolve;
+pub mod primitives;
 pub mod extract;
 
 use crate::languages::LanguagePlugin;

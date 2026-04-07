@@ -192,6 +192,30 @@ enum Commands {
         threshold: f64,
     },
 
+    /// Find dead code candidates: symbols with zero incoming edges that are not entry points.
+    DeadCode {
+        /// Absolute path to the project root.
+        path: String,
+        /// Restrict to file path or directory prefix.
+        #[arg(long)]
+        scope: Option<String>,
+        /// Visibility filter: all, private, public (default: all).
+        #[arg(long, default_value = "all")]
+        visibility: String,
+        /// Include test file symbols (default: false).
+        #[arg(long, default_value = "false")]
+        include_tests: bool,
+        /// Maximum results (default: 100).
+        #[arg(long, default_value = "100")]
+        limit: usize,
+    },
+
+    /// List entry points: main functions, route handlers, test functions, event handlers.
+    EntryPoints {
+        /// Absolute path to the project root.
+        path: String,
+    },
+
     // ---- Architecture ------------------------------------------------------
     /// High-level architecture overview: totals, per-language stats, hotspots, entry points.
     Architecture {
@@ -521,6 +545,10 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::References { path, symbol, limit } => cmd_references(&path, &symbol, limit),
 
         Commands::Diagnostics { path, file, threshold } => cmd_diagnostics(&path, &file, threshold),
+        Commands::DeadCode { path, scope, visibility, include_tests, limit } => {
+            cmd_dead_code(&path, scope.as_deref(), &visibility, include_tests, limit)
+        }
+        Commands::EntryPoints { path } => cmd_entry_points(&path),
         Commands::CompleteAt { path, file, line, col, prefix } => {
             cmd_complete_at(&path, &file, line, col, &prefix, full)
         }
@@ -940,6 +968,38 @@ fn cmd_diagnostics(project_path: &str, file_path: &str, threshold: f64) -> Resul
     let db = open_existing_db(project_path)?;
     let result = bearwisdom::query::diagnostics::get_diagnostics(&db, file_path, threshold)
         .context("diagnostics failed")?;
+    ok_json(result)
+}
+
+fn cmd_dead_code(
+    project_path: &str,
+    scope: Option<&str>,
+    visibility: &str,
+    include_tests: bool,
+    limit: usize,
+) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let vis = match visibility {
+        "private" => bearwisdom::query::dead_code::VisibilityFilter::PrivateOnly,
+        "public" => bearwisdom::query::dead_code::VisibilityFilter::PublicOnly,
+        _ => bearwisdom::query::dead_code::VisibilityFilter::All,
+    };
+    let options = bearwisdom::query::dead_code::DeadCodeOptions {
+        scope: scope.map(|s| s.to_string()),
+        visibility_filter: vis,
+        include_tests,
+        max_results: limit,
+        ..Default::default()
+    };
+    let result = bearwisdom::query::dead_code::find_dead_code(&db, &options)
+        .context("dead code analysis failed")?;
+    ok_json(result)
+}
+
+fn cmd_entry_points(project_path: &str) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let result = bearwisdom::query::dead_code::find_entry_points(&db)
+        .context("entry points analysis failed")?;
     ok_json(result)
 }
 

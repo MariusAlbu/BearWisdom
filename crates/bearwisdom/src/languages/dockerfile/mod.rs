@@ -1,5 +1,6 @@
 //! Dockerfile language plugin.
 
+pub mod primitives;
 pub mod extract;
 
 use crate::languages::LanguagePlugin;

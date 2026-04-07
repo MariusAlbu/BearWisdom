@@ -3,6 +3,7 @@
 //! Grammar: tree-sitter-r (in Cargo.toml).
 //! Extraction covers function assignments, S4/R6 class patterns, library imports, and calls.
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

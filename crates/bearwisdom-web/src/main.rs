@@ -57,6 +57,8 @@ async fn main() {
         .route("/index",          axum::routing::post(api::post_index))
         .route("/status",         axum::routing::get(api::get_status))
         .route("/architecture",   axum::routing::get(api::get_architecture))
+        .route("/dead-code",      axum::routing::get(api::get_dead_code))
+        .route("/entry-points",   axum::routing::get(api::get_entry_points))
         .route("/search-symbols", axum::routing::get(api::get_search_symbols))
         .route("/fuzzy-files",    axum::routing::get(api::get_fuzzy_files))
         .route("/fuzzy-symbols",  axum::routing::get(api::get_fuzzy_symbols))

@@ -9,6 +9,7 @@
 //!
 //! MATLAB files are typically one function or class per `.m` file.
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

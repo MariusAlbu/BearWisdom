@@ -17,6 +17,8 @@ import type {
   AuditRecord,
   AuditSessionSummary,
   AuditStats,
+  DeadCodeReport,
+  EntryPointsReport,
 } from './types';
 
 const enc = encodeURIComponent;
@@ -154,4 +156,12 @@ export const api = {
 
   auditStream: (path: string): EventSource =>
     new EventSource(`/api/audit/stream?path=${enc(path)}`),
+
+  deadCode: (path: string, opts?: { scope?: string; visibility?: string; includeTests?: boolean; limit?: number }) =>
+    apiFetch<DeadCodeReport>(
+      `/api/dead-code?path=${enc(path)}${opts?.scope ? `&scope=${enc(opts.scope)}` : ''}${opts?.visibility ? `&visibility=${enc(opts.visibility)}` : ''}${opts?.includeTests ? '&include_tests=true' : ''}${opts?.limit ? `&limit=${opts.limit}` : ''}`,
+    ),
+
+  entryPoints: (path: string) =>
+    apiFetch<EntryPointsReport>(`/api/entry-points?path=${enc(path)}`),
 };

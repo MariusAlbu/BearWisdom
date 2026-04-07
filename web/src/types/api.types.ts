@@ -233,6 +233,55 @@ export interface HierarchyResult {
 }
 
 // ---------------------------------------------------------------------------
+// Dead Code / Entry Points
+// ---------------------------------------------------------------------------
+
+export interface DeadCodeEntry {
+  symbol_id: number
+  name: string
+  qualified_name: string
+  kind: string
+  visibility: string | null
+  file_path: string
+  line: number
+  confidence: number
+  reason: 'no_incoming_edges' | 'only_low_confidence_edges'
+  potentially_referenced?: boolean
+  unresolved_ref_matches?: number
+}
+
+export interface ResolutionHealth {
+  resolution_rate: number
+  resolved_refs: number
+  unresolved_refs: number
+  assessment: string
+}
+
+export interface DeadCodeReport {
+  total_symbols_checked: number
+  dead_candidates: DeadCodeEntry[]
+  entry_points_excluded: number
+  test_symbols_excluded: number
+  potentially_referenced_count: number
+  resolution_health: ResolutionHealth
+}
+
+export interface EntryPoint {
+  symbol_id: number
+  name: string
+  qualified_name: string
+  kind: string
+  file_path: string
+  line: number
+  entry_kind: 'main' | 'route_handler' | 'event_handler' | 'test_function' | 'exported_api' | 'lifecycle_hook' | 'di_registered'
+}
+
+export interface EntryPointsReport {
+  total: number
+  entry_points: EntryPoint[]
+}
+
+// ---------------------------------------------------------------------------
 // MCP Audit log
 // ---------------------------------------------------------------------------
 

@@ -140,6 +140,23 @@ pub struct DiagnosticsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct DeadCodeParams {
+    /// Restrict to a file path or directory prefix (optional)
+    pub scope: Option<String>,
+    /// Visibility filter: "all", "private", "public" (default: "all")
+    pub visibility: Option<String>,
+    /// Include symbols in test files (default: false)
+    pub include_tests: Option<bool>,
+    /// Maximum results (default: 100)
+    pub max_results: Option<usize>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct EntryPointsParams {
+    // No parameters needed — returns all entry points.
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CompleteAtParams {
     /// Relative file path
     pub file_path: String,
@@ -469,6 +486,41 @@ impl BearWisdomServer {
                 bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
             );
             bearwisdom::query::diagnostics::get_diagnostics(db, &params.file_path, threshold)
+                .map_err(Self::query_err)
+                .and_then(|r| Self::to_json(&r))
+        })
+    }
+
+    /// Find dead code candidates: symbols with zero incoming edges that are not entry points.
+    /// Returns symbols ranked by confidence (1.0 = definitely dead, 0.3 = only low-confidence edges).
+    /// Excludes: main functions, route handlers, test functions, event handlers, DI-registered services, lifecycle hooks.
+    #[tool(name = "bw_dead_code")]
+    fn dead_code(&self, Parameters(params): Parameters<DeadCodeParams>) -> String {
+        self.run_tool("bw_dead_code", &params, |db| {
+            let vis = match params.visibility.as_deref() {
+                Some("private") => bearwisdom::query::dead_code::VisibilityFilter::PrivateOnly,
+                Some("public") => bearwisdom::query::dead_code::VisibilityFilter::PublicOnly,
+                _ => bearwisdom::query::dead_code::VisibilityFilter::All,
+            };
+            let options = bearwisdom::query::dead_code::DeadCodeOptions {
+                scope: params.scope.clone(),
+                visibility_filter: vis,
+                include_tests: params.include_tests.unwrap_or(false),
+                max_results: params.max_results.unwrap_or(100),
+                ..Default::default()
+            };
+            bearwisdom::query::dead_code::find_dead_code(db, &options)
+                .map_err(Self::query_err)
+                .and_then(|r| Self::to_json(&r))
+        })
+    }
+
+    /// List all entry points in the project: main functions, route handlers, test functions,
+    /// event handlers, DI-registered services, and framework lifecycle hooks.
+    #[tool(name = "bw_entry_points")]
+    fn entry_points(&self, Parameters(params): Parameters<EntryPointsParams>) -> String {
+        self.run_tool("bw_entry_points", &params, |db| {
+            bearwisdom::query::dead_code::find_entry_points(db)
                 .map_err(Self::query_err)
                 .and_then(|r| Self::to_json(&r))
         })

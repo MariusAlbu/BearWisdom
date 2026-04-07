@@ -9,6 +9,7 @@
 //! - `full_type_declaration` → Struct or Enum
 //! - `with_clause` → Imports edge
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

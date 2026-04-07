@@ -2,6 +2,7 @@
 //!
 //! Grammar: tree-sitter-pascal 0.10.2 — real grammar, LANGUAGE constant available.
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

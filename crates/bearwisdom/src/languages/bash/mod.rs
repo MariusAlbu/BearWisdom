@@ -1,5 +1,6 @@
 //! bash language plugin.
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;

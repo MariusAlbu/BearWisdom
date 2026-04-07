@@ -4,6 +4,7 @@
 //! `grammar()` returns `None`; extraction uses a line-oriented scanner that
 //! recognises COBOL's division/section/paragraph structure.
 
+pub mod primitives;
 pub mod extract;
 
 mod builtins;
