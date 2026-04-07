@@ -31,6 +31,7 @@ fn main() {
     let registry_src = PathBuf::from(&home).join("registry/src");
 
     let mut all_builtins: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+    let mut all_locals: BTreeMap<String, String> = BTreeMap::new();
 
     // Scan all index directories in the cargo registry.
     if let Ok(index_dirs) = fs::read_dir(&registry_src) {
@@ -44,23 +45,27 @@ fn main() {
                     let crate_name = crate_entry.file_name().to_string_lossy().to_string();
                     let crate_path = crate_entry.path();
 
-                    // Auto-discover: any directory matching tree-sitter-*
                     let Some(lang_id) = extract_lang_id(&crate_name) else {
                         continue;
                     };
 
-                    // Only process if it has highlights.scm — that's where
-                    // builtins and keywords are tagged. locals.scm defines
-                    // scope/definition/reference patterns (no builtin names).
+                    // Extract builtins from highlights.scm.
                     let highlights = crate_path.join("queries/highlights.scm");
-                    if !highlights.exists() {
-                        continue;
+                    if highlights.exists() {
+                        if let Ok(content) = fs::read_to_string(&highlights) {
+                            let names = all_builtins.entry(lang_id.clone()).or_default();
+                            extract_builtins_from_scm(&content, names);
+                        }
                     }
 
-                    let names = all_builtins.entry(lang_id).or_default();
-
-                    if let Ok(content) = fs::read_to_string(&highlights) {
-                        extract_builtins_from_scm(&content, names);
+                    // Embed locals.scm content for scope resolution.
+                    let locals = crate_path.join("queries/locals.scm");
+                    if locals.exists() {
+                        if let Ok(content) = fs::read_to_string(&locals) {
+                            if !content.trim().is_empty() {
+                                all_locals.entry(lang_id).or_insert(content);
+                            }
+                        }
                     }
                 }
             }
@@ -101,6 +106,25 @@ fn main() {
     }
 
     output.push_str("        _ => &[],\n    }\n}\n");
+
+    // Append locals.scm content for scope resolution.
+    output.push_str("\n/// Return the locals.scm query string for a language, if available.\n");
+    output.push_str("/// Used by LocalResolver for scope-based local variable resolution.\n");
+    output.push_str("pub fn locals_scm_for_language(lang: &str) -> Option<&'static str> {\n");
+    output.push_str("    match lang {\n");
+
+    for (lang, content) in &all_locals {
+        let escaped = content
+            .replace('\\', "\\\\")
+            .replace('"', "\\\"")
+            .replace('\n', "\\n\\\n");
+        output.push_str(&format!(
+            "        \"{}\" => Some(\"{}\"),\n",
+            lang, escaped
+        ));
+    }
+
+    output.push_str("        _ => None,\n    }\n}\n");
 
     fs::write(&out_path, &output).expect("Failed to write query_builtins.rs");
 

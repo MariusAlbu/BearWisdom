@@ -1571,3 +1571,722 @@ pub fn query_builtins_for_language(lang: &str) -> &'static [&'static str] {
         _ => &[],
     }
 }
+
+/// Return the locals.scm query string for a language, if available.
+/// Used by LocalResolver for scope-based local variable resolution.
+pub fn locals_scm_for_language(lang: &str) -> Option<&'static str> {
+    match lang {
+        "ada" => Some(";;  Better highlighting by referencing to the definition, for variable\n\
+;;  references. However, this is not yet supported by neovim\n\
+;;  See https://tree-sitter.github.io/tree-sitter/syntax-highlighting#local-variables\n\
+\n\
+(compilation) @scope\n\
+(package_declaration) @scope\n\
+(package_body) @scope\n\
+(subprogram_declaration) @scope\n\
+(subprogram_body) @scope\n\
+(block_statement) @scope\n\
+\n\
+(with_clause (_) @definition.import)\n\
+(procedure_specification name: (_) @definition.function)\n\
+(function_specification name: (_) @definition.function)\n\
+(package_declaration name: (_) @definition.var)\n\
+(package_body name: (_) @definition.var)\n\
+(generic_instantiation . name: (_) @definition.var)\n\
+(component_declaration . (identifier) @definition.var)\n\
+(exception_declaration . (identifier) @definition.var)\n\
+(formal_object_declaration . (identifier) @definition.var)\n\
+(object_declaration . (identifier) @definition.var)\n\
+(parameter_specification . (identifier) @definition.var)\n\
+(full_type_declaration . (identifier) @definition.type)\n\
+(private_type_declaration . (identifier) @definition.type)\n\
+(private_extension_declaration . (identifier) @definition.type)\n\
+(incomplete_type_declaration . (identifier) @definition.type)\n\
+(protected_type_declaration . (identifier) @definition.type)\n\
+(formal_complete_type_declaration . (identifier) @definition.type)\n\
+(formal_incomplete_type_declaration . (identifier) @definition.type)\n\
+(task_type_declaration . (identifier) @definition.type)\n\
+(subtype_declaration . (identifier) @definition.type)\n\
+\n\
+(identifier) @reference\n\
+"),
+        "bicep" => Some("; Scopes\n\
+[\n\
+  (infrastructure)\n\
+  (call_expression)\n\
+  (lambda_expression)\n\
+  (subscript_expression)\n\
+  (if_statement)\n\
+  (for_statement)\n\
+  (array)\n\
+  (object)\n\
+  (interpolation)\n\
+] @local.scope\n\
+\n\
+; References\n\
+(property_identifier) @local.reference\n\
+\n\
+(call_expression\n\
+  (identifier) @local.reference)\n\
+\n\
+(object_property\n\
+  (_)\n\
+  \":\"\n\
+  (identifier) @local.reference)\n\
+\n\
+(resource_expression\n\
+  (identifier) @local.reference)\n\
+\n\
+; Definitions\n\
+(type) @local.definition.associated\n\
+\n\
+(object_property\n\
+  (identifier) @local.definition.field\n\
+  (_))\n\
+\n\
+(object_property\n\
+  (compatible_identifier) @local.definition.field\n\
+  (_))\n\
+\n\
+(user_defined_function\n\
+  name: (identifier) @local.definition.function)\n\
+\n\
+(module_declaration\n\
+  (identifier) @local.definition.namespace)\n\
+\n\
+(parameter_declaration\n\
+  (identifier) @local.definition.parameter\n\
+  (_))\n\
+\n\
+(parameter\n\
+  .\n\
+  (identifier) @local.definition.parameter)\n\
+\n\
+(type_declaration\n\
+  (identifier) @local.definition.type\n\
+  (_))\n\
+\n\
+(variable_declaration\n\
+  (identifier) @local.definition.var\n\
+  (_))\n\
+\n\
+(metadata_declaration\n\
+  (identifier) @local.definition.var\n\
+  (_))\n\
+\n\
+(output_declaration\n\
+  (identifier) @local.definition.var\n\
+  (_))\n\
+\n\
+(for_statement\n\
+  \"for\"\n\
+  (for_loop_parameters\n\
+    (loop_variable) @local.definition.var\n\
+    (loop_enumerator) @local.definition.var))\n\
+"),
+        "dart" => Some("; locals.scm - Dart scope and variable resolution queries\n\
+\n\
+; ============================================================================\n\
+; Scopes\n\
+; ============================================================================\n\
+\n\
+[\n\
+  (class_declaration)\n\
+  (mixin_declaration)\n\
+  (extension_declaration)\n\
+  (extension_type_declaration)\n\
+  (enum_declaration)\n\
+  (function_body)\n\
+  (function_expression)\n\
+  (block)\n\
+  (for_statement)\n\
+  (try_statement)\n\
+  (catch_clause)\n\
+  (finally_clause)\n\
+  (switch_statement_case)\n\
+] @local.scope\n\
+\n\
+; ============================================================================\n\
+; Definitions\n\
+; ============================================================================\n\
+\n\
+; Variables\n\
+(initialized_variable_definition\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(initialized_identifier\n\
+  (identifier) @local.definition)\n\
+\n\
+(static_final_declaration\n\
+  (identifier) @local.definition)\n\
+\n\
+; Parameters\n\
+(formal_parameter\n\
+  (identifier) @local.definition)\n\
+\n\
+(constructor_param\n\
+  (identifier) @local.definition)\n\
+\n\
+(super_formal_parameter\n\
+  (identifier) @local.definition)\n\
+\n\
+; Catch variables\n\
+(catch_clause\n\
+  exception: (identifier) @local.definition)\n\
+\n\
+(catch_clause\n\
+  stack_trace: (identifier) @local.definition)\n\
+\n\
+; Functions\n\
+(function_signature\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(getter_signature\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(setter_signature\n\
+  name: (identifier) @local.definition)\n\
+\n\
+; Types\n\
+(class_declaration\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(mixin_declaration\n\
+  (identifier) @local.definition)\n\
+\n\
+(enum_declaration\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(extension_declaration\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(type_alias\n\
+  (type_identifier) @local.definition)\n\
+\n\
+(type_parameter\n\
+  (type_identifier) @local.definition)\n\
+\n\
+; Import aliases\n\
+(import_specification\n\
+  alias: (identifier) @local.definition)\n\
+\n\
+; Pattern bindings (Dart 3.0)\n\
+(variable_pattern\n\
+  name: (identifier) @local.definition)\n\
+\n\
+; ============================================================================\n\
+; References\n\
+; ============================================================================\n\
+\n\
+(identifier) @local.reference\n\
+(type_identifier) @local.reference\n\
+"),
+        "fsharp" => Some("(identifier) @local.reference\n\
+\n\
+[\n\
+  (namespace)\n\
+  (named_module)\n\
+  (function_or_value_defn)\n\
+] @local.scope\n\
+\n\
+(value_declaration_left\n\
+  .\n\
+  [\n\
+   (_ (identifier) @local.definition.var)\n\
+   (_ (_ (identifier) @local.definition.var))\n\
+   (_ (_ (_ (identifier) @local.definition.var)))\n\
+   (_ (_ (_ (_ (identifier) @local.definition.var))))\n\
+   (_ (_ (_ (_ (_ (identifier) @local.definition.var)))))\n\
+   (_ (_ (_ (_ (_ (_ (identifier) @local.definition.var))))))\n\
+  ])\n\
+\n\
+(function_declaration_left\n\
+  .\n\
+  ((_) @local.definition.function\n\
+   (#set! \"definition.function.scope\" \"parent\"))\n\
+  ((argument_patterns\n\
+    [\n\
+     (_ (identifier) @local.definition.parameter)\n\
+     (_ (_ (identifier) @local.definition.parameter))\n\
+     (_ (_ (_ (identifier) @local.definition.parameter)))\n\
+     (_ (_ (_ (_ (identifier) @local.definition.parameter))))\n\
+     (_ (_ (_ (_ (_ (identifier) @local.definition.parameter)))))\n\
+     (_ (_ (_ (_ (_ (_ (identifier) @local.definition.parameter))))))\n\
+    ])\n\
+  ))\n\
+"),
+        "gleam" => Some("; Scopes\n\
+(block) @local.scope\n\
+\n\
+(function) @local.scope\n\
+\n\
+(case_clause) @local.scope\n\
+\n\
+; Definitions\n\
+(let pattern: (identifier) @local.definition)\n\
+(function_parameter name: (identifier) @local.definition)\n\
+(list_pattern (identifier) @local.definition)\n\
+(list_pattern assign: (identifier) @local.definition)\n\
+(tuple_pattern (identifier) @local.definition)\n\
+(record_pattern_argument pattern: (identifier) @local.definition)\n\
+\n\
+; References\n\
+(identifier) @local.reference\n\
+"),
+        "hare" => Some("(unit) @local.scope\n\
+\n\
+(function_declaration) @local.scope\n\
+\n\
+(global_binding\n\
+  (identifier) @local.definition)\n\
+(constant_binding \n\
+  (identifier) @local.definition)\n\
+(type_bindings\n\
+  (identifier) @local.definition)\n\
+\n\
+(function_declaration\n\
+  (prototype\n\
+    (parameter_list\n\
+      (parameters\n\
+        (parameter\n\
+          (name) @local.definition)))))\n\
+\n\
+(identifier) @local.reference\n\
+"),
+        "haskell" => Some("(signature name: (variable)) @local.definition\n\
+(function name: (variable)) @local.definition\n\
+(pattern/variable) @local.definition\n\
+(expression/variable) @local.reference\n\
+"),
+        "javascript" => Some("; Scopes\n\
+;-------\n\
+\n\
+[\n\
+  (statement_block)\n\
+  (function_expression)\n\
+  (arrow_function)\n\
+  (function_declaration)\n\
+  (method_definition)\n\
+] @local.scope\n\
+\n\
+; Definitions\n\
+;------------\n\
+\n\
+(pattern/identifier) @local.definition\n\
+\n\
+(variable_declarator\n\
+  name: (identifier) @local.definition)\n\
+\n\
+; References\n\
+;------------\n\
+\n\
+(identifier) @local.reference\n\
+"),
+        "lua" => Some("; Scopes\n\
+[\n\
+  (chunk)\n\
+  (do_statement)\n\
+  (while_statement)\n\
+  (repeat_statement)\n\
+  (if_statement)\n\
+  (for_statement)\n\
+  (function_declaration)\n\
+  (function_definition)\n\
+] @local.scope\n\
+\n\
+; Definitions\n\
+(assignment_statement\n\
+  (variable_list\n\
+    (identifier) @local.definition))\n\
+\n\
+(function_declaration\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(for_generic_clause\n\
+  (variable_list\n\
+    (identifier) @local.definition))\n\
+\n\
+(for_numeric_clause\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(parameters\n\
+  (identifier) @local.definition)\n\
+\n\
+; References\n\
+(identifier) @local.reference\n\
+"),
+        "nix" => Some(";; when using @local.reference, tree-sitter seems to \n\
+;; apply the scope from the identifier it has looked up,\n\
+;; which makes sense for most languages.\n\
+;; however, we want to highlight things as function based on their call-site,\n\
+;; not their definition; therefore using TS's support for tracking locals\n\
+;; impedes our ability to get the highlighting we want.\n\
+;;\n\
+;; also, TS doesn't seem to support scoping as implemented in languages\n\
+;; with lazy let bindings, which results in syntax highlighting/goto-reference\n\
+;; results that depend on the order of definitions, which is counter to the\n\
+;; semantics of Nix.\n\
+;;\n\
+;; so for now we'll opt for not having any locals queries.\n\
+;;\n\
+;; see: https://github.com/tree-sitter/tree-sitter/issues/918\n\
+\n\
+;(function_expression\n\
+;  universal: (identifier)? @local.definition\n\
+;  formals: (formals (formal name: (identifier) @local.definition)*)\n\
+;  universal: (identifier)? @local.definition\n\
+;  ) @local.scope\n\
+;\n\
+;(rec_attrset_expression\n\
+;  bind: (binding\n\
+;    attrpath: (attrpath . (attr_identifier) @local.definition)) \n\
+;) @local.scope\n\
+;\n\
+;(let_expression\n\
+;  bind: (binding\n\
+;    attrpath: (attrpath . (attr_identifier) @local.definition)) \n\
+;) @local.scope\n\
+;\n\
+;(identifier) @local.reference \n\
+"),
+        "ocaml" => Some("; Scopes\n\
+;-------\n\
+\n\
+[\n\
+  (let_binding)\n\
+  (class_binding)\n\
+  (class_function)\n\
+  (method_definition)\n\
+  (fun_expression)\n\
+  (object_expression)\n\
+  (for_expression)\n\
+  (match_case)\n\
+  (attribute_payload)\n\
+] @local.scope\n\
+\n\
+; Definitions\n\
+;------------\n\
+\n\
+(value_pattern) @local.definition\n\
+\n\
+; References\n\
+;-----------\n\
+\n\
+(value_path . (value_name) @local.reference)\n\
+"),
+        "odin" => Some("; Scopes\n\
+\n\
+[\n\
+  (block)\n\
+  (declaration)\n\
+  (statement)\n\
+] @scope\n\
+\n\
+; References\n\
+\n\
+(identifier) @reference\n\
+\n\
+; Definitions\n\
+\n\
+(package_declaration (identifier) @definition.namespace)\n\
+\n\
+(import_declaration alias: (identifier) @definition.namespace)\n\
+\n\
+(procedure_declaration (identifier) @definition.function)\n\
+\n\
+(struct_declaration (identifier) @definition.type \"::\")\n\
+\n\
+(enum_declaration (identifier) @definition.enum \"::\")\n\
+\n\
+(union_declaration (identifier) @definition.type \"::\")\n\
+\n\
+(bit_field_declaration (identifier) @definition.type \"::\")\n\
+\n\
+(variable_declaration (identifier) @definition.var \":=\")\n\
+\n\
+(const_declaration (identifier) @definition.constant \"::\")\n\
+\n\
+(const_type_declaration (identifier) @definition.type \":\")\n\
+\n\
+(parameter (identifier) @definition.parameter \":\"?)\n\
+\n\
+(default_parameter (identifier) @definition.parameter \":=\")\n\
+\n\
+(field (identifier) @definition.field \":\")\n\
+\n\
+(label_statement (identifier) @definition \":\")\n\
+"),
+        "pascal" => Some("\n\
+(root)                                   @local.scope\n\
+\n\
+(defProc)                                @local.scope\n\
+(lambda)                                 @local.scope\n\
+(interface   (declProc)                  @local.scope)\n\
+(declSection (declProc)                  @local.scope)\n\
+(declClass   (declProc)                  @local.scope)\n\
+(declHelper  (declProc)                  @local.scope)\n\
+(declProcRef)                            @local.scope\n\
+\n\
+(exceptionHandler)                       @local.scope\n\
+(exceptionHandler variable: (identifier) @local.definition)\n\
+\n\
+(declArg          name: (identifier)     @local.definition)\n\
+(declVar          name: (identifier)     @local.definition)\n\
+(declConst        name: (identifier)     @local.definition)\n\
+(declLabel        name: (identifier)     @local.definition)\n\
+(genericArg       name: (identifier)     @local.definition)\n\
+(declEnumValue    name: (identifier)     @local.definition)\n\
+(declType         name: (identifier)     @local.definition)\n\
+(declType         name: (genericTpl entity: (identifier)     @local.definition))\n\
+\n\
+(declProc         name: (identifier)     @local.definition)\n\
+\n\
+(identifier)                             @local.reference\n\
+"),
+        "puppet" => Some("; Scopes\n\
+\n\
+[\n\
+  (block)\n\
+  (defined_resource_type)\n\
+  (parameter_list)\n\
+  (attribute_type_entry)\n\
+  (class_definition)\n\
+  (node_definition)\n\
+  (resource_declaration)\n\
+  (selector)\n\
+  (iterator_statement)\n\
+  (case_statement)\n\
+  (hash)\n\
+  (array)\n\
+] @scope\n\
+\n\
+; References\n\
+\n\
+[\n\
+  (identifier)\n\
+  (class_identifier)\n\
+  (variable) \n\
+] @reference\n\
+\n\
+; Definitions\n\
+\n\
+(attribute [(identifier) (variable)] @definition.field)\n\
+\n\
+(function_declaration\n\
+  [(identifier) (class_identifier)] @definition.function)\n\
+\n\
+(include_statement [(identifier) (class_identifier)] @definition.import)\n\
+\n\
+(parameter (variable) @definition.parameter)\n\
+\n\
+(class_definition\n\
+  [(identifier) (class_identifier)] @definition.type)\n\
+\n\
+(node_definition\n\
+  (node_name (identifier) @definition.type))\n\
+\n\
+(resource_declaration\n\
+  [(identifier) (class_identifier)] @definition.type)\n\
+\n\
+(assignment . (variable) @definition.var)\n\
+"),
+        "r" => Some("; locals.scm\n\
+\n\
+(function_definition) @local.scope\n\
+\n\
+(argument  name: (identifier) @local.definition)\n\
+(parameter name: (identifier) @local.definition)\n\
+\n\
+(binary_operator\n\
+    lhs: (identifier) @local.definition\n\
+    operator: \"<-\")\n\
+(binary_operator\n\
+    lhs: (identifier) @local.definition\n\
+    operator: \"=\")\n\
+(binary_operator\n\
+    operator: \"->\"\n\
+    rhs: (identifier) @local.definition)\n\
+\n\
+(identifier) @local.reference\n\
+"),
+        "ruby" => Some("((method) @local.scope\n\
+ (#set! local.scope-inherits false))\n\
+\n\
+[\n\
+  (lambda)\n\
+  (block)\n\
+  (do_block)\n\
+] @local.scope\n\
+\n\
+(block_parameter (identifier) @local.definition)\n\
+(block_parameters (identifier) @local.definition)\n\
+(destructured_parameter (identifier) @local.definition)\n\
+(hash_splat_parameter (identifier) @local.definition)\n\
+(lambda_parameters (identifier) @local.definition)\n\
+(method_parameters (identifier) @local.definition)\n\
+(splat_parameter (identifier) @local.definition)\n\
+\n\
+(keyword_parameter name: (identifier) @local.definition)\n\
+(optional_parameter name: (identifier) @local.definition)\n\
+\n\
+(identifier) @local.reference\n\
+\n\
+(assignment left: (identifier) @local.definition)\n\
+(operator_assignment left: (identifier) @local.definition)\n\
+(left_assignment_list (identifier) @local.definition)\n\
+(rest_assignment (identifier) @local.definition)\n\
+(destructured_left_assignment (identifier) @local.definition)\n\
+"),
+        "scala" => Some("(template_body) @local.scope\n\
+(lambda_expression) @local.scope\n\
+\n\
+\n\
+(function_declaration\n\
+      name: (identifier) @local.definition) @local.scope\n\
+\n\
+(function_definition\n\
+      name: (identifier) @local.definition)\n\
+\n\
+(parameter\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(binding\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(val_definition\n\
+  pattern: (identifier) @local.definition)\n\
+\n\
+(var_definition\n\
+  pattern: (identifier) @local.definition)\n\
+\n\
+(val_declaration\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(var_declaration\n\
+  name: (identifier) @local.definition)\n\
+\n\
+(identifier) @local.reference\n\
+\n\
+"),
+        "starlark" => Some(";;; Program structure\n\
+(module) @scope\n\
+\n\
+; Function with parameters, defines parameters\n\
+(parameters\n\
+  (identifier) @definition.parameter)\n\
+\n\
+(default_parameter\n\
+  (identifier) @definition.parameter)\n\
+\n\
+(typed_parameter\n\
+  (identifier) @definition.parameter)\n\
+\n\
+(typed_default_parameter\n\
+  (identifier) @definition.parameter)\n\
+\n\
+; *args parameter\n\
+(parameters\n\
+  (list_splat_pattern\n\
+    (identifier) @definition.parameter))\n\
+\n\
+; **kwargs parameter\n\
+(parameters\n\
+  (dictionary_splat_pattern\n\
+    (identifier) @definition.parameter))\n\
+\n\
+; Function defines function and scope\n\
+((function_definition\n\
+  name: (identifier) @definition.function) @scope\n\
+ (#set! definition.function.scope \"parent\"))\n\
+\n\
+;;; Loops\n\
+; not a scope!\n\
+(for_statement\n\
+  left: (pattern_list\n\
+          (identifier) @definition.var))\n\
+(for_statement\n\
+  left: (tuple_pattern\n\
+          (identifier) @definition.var))\n\
+(for_statement\n\
+  left: (identifier) @definition.var)\n\
+\n\
+; for in list comprehension\n\
+(for_in_clause\n\
+  left: (identifier) @definition.var)\n\
+(for_in_clause\n\
+  left: (tuple_pattern\n\
+          (identifier) @definition.var))\n\
+(for_in_clause\n\
+  left: (pattern_list\n\
+          (identifier) @definition.var))\n\
+\n\
+(dictionary_comprehension) @scope\n\
+(list_comprehension) @scope\n\
+(set_comprehension) @scope\n\
+\n\
+;;; Assignments\n\
+\n\
+(assignment\n\
+ left: (identifier) @definition.var)\n\
+\n\
+(assignment\n\
+ left: (pattern_list\n\
+   (identifier) @definition.var))\n\
+(assignment\n\
+ left: (tuple_pattern\n\
+   (identifier) @definition.var))\n\
+\n\
+(assignment\n\
+ left: (attribute\n\
+   (identifier)\n\
+   (identifier) @definition.field))\n\
+\n\
+; Walrus operator  x := 1\n\
+(named_expression\n\
+  (identifier) @definition.var)\n\
+\n\
+(as_pattern \n\
+  alias: (as_pattern_target) @definition.var)\n\
+\n\
+;;; REFERENCES\n\
+(identifier) @reference\n\
+\n\
+;; Starlark-specific\n\
+\n\
+; Loads\n\
+((call\n\
+  function: (identifier) @_fn\n\
+  arguments: (argument_list\n\
+    (string) @definition.import))\n\
+  (#eq? @_fn \"load\"))\n\
+"),
+        "swift" => Some("(import_declaration\n\
+  (identifier) @local.definition.import)\n\
+\n\
+(function_declaration\n\
+  name: (simple_identifier) @local.definition.function)\n\
+\n\
+; Scopes\n\
+[\n\
+  (statements)\n\
+  (for_statement)\n\
+  (while_statement)\n\
+  (repeat_while_statement)\n\
+  (do_statement)\n\
+  (if_statement)\n\
+  (guard_statement)\n\
+  (switch_statement)\n\
+  (property_declaration)\n\
+  (function_declaration)\n\
+  (class_declaration)\n\
+  (protocol_declaration)\n\
+] @local.scope\n\
+\n\
+\n\
+"),
+        "typescript" => Some("(required_parameter (identifier) @local.definition)\n\
+(optional_parameter (identifier) @local.definition)\n\
+"),
+        _ => None,
+    }
+}
