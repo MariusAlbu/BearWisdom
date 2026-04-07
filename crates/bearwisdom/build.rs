@@ -1,101 +1,38 @@
 // =============================================================================
 // build.rs — Extract builtin/keyword names from tree-sitter query files
 //
-// Scans highlights.scm and locals.scm from tree-sitter grammar crates in the
-// cargo registry. Extracts:
-//   1. String literals matched with @keyword (e.g., "async" @keyword)
-//   2. Names from #match?/#eq? predicates on @*.builtin captures
-//   3. String literals in [...] @keyword blocks
+// Auto-discovers ALL tree-sitter grammar crates in the cargo registry.
+// No hardcoded grammar list — any crate matching `tree-sitter-*` with a
+// `queries/highlights.scm` or `queries/locals.scm` gets processed.
 //
-// Generates `src/indexer/query_builtins.rs` with per-language builtin arrays
-// that are used alongside the handcrafted primitives.rs files.
+// Extracts:
+//   1. String literals in [...] @keyword blocks
+//   2. String literals in [...] @*.builtin blocks
+//   3. Inline "word" @keyword / "word" @*.builtin
+//   4. Names from #match?/#eq? predicates on @*.builtin captures
+//
+// Generates `src/indexer/query_builtins.rs` with per-language builtin arrays.
+// Language aliases (tsx→typescript, etc.) are NOT handled here — they live
+// in the language plugin registry where they belong.
 // =============================================================================
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 fn main() {
     let out_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap();
     let out_path = PathBuf::from(&out_dir).join("src/indexer/query_builtins.rs");
 
-    // Find the cargo registry source directory.
     let home = std::env::var("CARGO_HOME")
         .or_else(|_| std::env::var("HOME").map(|h| format!("{h}/.cargo")))
         .or_else(|_| std::env::var("USERPROFILE").map(|h| format!("{h}/.cargo")))
         .unwrap_or_else(|_| String::from(".cargo"));
     let registry_src = PathBuf::from(&home).join("registry/src");
 
-    // Map of tree-sitter crate prefix -> BearWisdom language ID.
-    // Map tree-sitter crate name prefixes to BearWisdom language IDs.
-    // Order matters: more specific prefixes must come before shorter ones
-    // (e.g., "tree-sitter-c-sharp-" before "tree-sitter-c-0.").
-    let lang_map: Vec<(&str, &str)> = vec![
-        ("tree-sitter-ada-", "ada"),
-        ("tree-sitter-bash-", "bash"),
-        ("tree-sitter-bicep-", "bicep"),
-        ("tree-sitter-c-sharp-", "csharp"),
-        ("tree-sitter-c-0.", "c"),
-        ("tree-sitter-clojure-", "clojure"),
-        ("tree-sitter-cmake-", "cmake"),
-        ("tree-sitter-cobol-", "cobol"),
-        ("tree-sitter-cpp-", "cpp"),
-        ("tree-sitter-css-", "css"),
-        ("tree-sitter-dart-", "dart"),
-        ("tree-sitter-dockerfile-", "dockerfile"),
-        ("tree-sitter-elixir-", "elixir"),
-        ("tree-sitter-erlang-", "erlang"),
-        ("tree-sitter-fortran-", "fortran"),
-        ("tree-sitter-fsharp-", "fsharp"),
-        ("tree-sitter-gdscript-", "gdscript"),
-        ("tree-sitter-gleam-", "gleam"),
-        ("tree-sitter-go-0.", "go"),
-        ("tree-sitter-graphql-", "graphql"),
-        ("tree-sitter-groovy-", "groovy"),
-        ("tree-sitter-hare-", "hare"),
-        ("tree-sitter-haskell-", "haskell"),
-        ("tree-sitter-hcl-", "hcl"),
-        ("tree-sitter-html-", "html"),
-        ("tree-sitter-java-", "java"),
-        ("tree-sitter-javascript-", "javascript"),
-        ("tree-sitter-json-", "json"),
-        ("tree-sitter-kotlin-ng-", "kotlin"),
-        ("tree-sitter-kotlin-", "kotlin"),
-        ("tree-sitter-lua-", "lua"),
-        ("tree-sitter-make-", "make"),
-        ("tree-sitter-markdown-", "markdown"),
-        ("tree-sitter-matlab-", "matlab"),
-        ("tree-sitter-md-", "markdown"),
-        ("tree-sitter-nix-", "nix"),
-        ("tree-sitter-ocaml-", "ocaml"),
-        ("tree-sitter-odin-", "odin"),
-        ("tree-sitter-pascal-", "pascal"),
-        ("tree-sitter-perl-", "perl"),
-        ("tree-sitter-php-", "php"),
-        ("tree-sitter-powershell-", "powershell"),
-        ("tree-sitter-prisma-", "prisma"),
-        ("tree-sitter-proto-", "proto"),
-        ("tree-sitter-puppet-", "puppet"),
-        ("tree-sitter-python-", "python"),
-        ("tree-sitter-r-", "r"),
-        ("tree-sitter-ruby-", "ruby"),
-        ("tree-sitter-rust-", "rust"),
-        ("tree-sitter-scala-", "scala"),
-        ("tree-sitter-scss-", "scss"),
-        ("tree-sitter-sequel-", "sql"),
-        ("tree-sitter-starlark-", "starlark"),
-        ("tree-sitter-swift-", "swift"),
-        ("tree-sitter-toml-", "toml"),
-        ("tree-sitter-typescript-", "typescript"),
-        ("tree-sitter-vb-dotnet-", "vbnet"),
-        ("tree-sitter-xml-", "xml"),
-        ("tree-sitter-yaml-", "yaml"),
-        ("tree-sitter-zig-", "zig"),
-    ];
-
     let mut all_builtins: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
 
-    // Scan all index directories in the registry.
+    // Scan all index directories in the cargo registry.
     if let Ok(index_dirs) = fs::read_dir(&registry_src) {
         for index_entry in index_dirs.flatten() {
             let index_path = index_entry.path();
@@ -107,32 +44,25 @@ fn main() {
                     let crate_name = crate_entry.file_name().to_string_lossy().to_string();
                     let crate_path = crate_entry.path();
 
-                    for &(prefix, lang_id) in &lang_map {
-                        if !crate_name.starts_with(prefix) {
-                            continue;
-                        }
+                    // Auto-discover: any directory matching tree-sitter-*
+                    let Some(lang_id) = extract_lang_id(&crate_name) else {
+                        continue;
+                    };
 
-                        let names = all_builtins
-                            .entry(lang_id.to_string())
-                            .or_default();
+                    // Only process if it has query files.
+                    let highlights = crate_path.join("queries/highlights.scm");
+                    let locals = crate_path.join("queries/locals.scm");
+                    if !highlights.exists() && !locals.exists() {
+                        continue;
+                    }
 
-                        // Process highlights.scm
-                        let highlights = crate_path.join("queries/highlights.scm");
-                        if highlights.exists() {
-                            if let Ok(content) = fs::read_to_string(&highlights) {
-                                extract_builtins_from_scm(&content, names);
-                            }
-                        }
+                    let names = all_builtins.entry(lang_id).or_default();
 
-                        // Process locals.scm
-                        let locals = crate_path.join("queries/locals.scm");
-                        if locals.exists() {
-                            if let Ok(content) = fs::read_to_string(&locals) {
-                                extract_builtins_from_scm(&content, names);
-                            }
-                        }
-
-                        break;
+                    if let Ok(content) = fs::read_to_string(&highlights) {
+                        extract_builtins_from_scm(&content, names);
+                    }
+                    if let Ok(content) = fs::read_to_string(&locals) {
+                        extract_builtins_from_scm(&content, names);
                     }
                 }
             }
@@ -141,103 +71,122 @@ fn main() {
 
     // Generate the Rust source file.
     let mut output = String::new();
-    output.push_str("// AUTO-GENERATED by build.rs — do not edit manually.\n");
-    output.push_str("// Extracted from tree-sitter grammar query files (highlights.scm + locals.scm).\n");
-    output.push_str("//\n");
-    output.push_str("// These names are classified as builtins/keywords when they appear as\n");
-    output.push_str("// unresolved references during resolution.\n\n");
-
-    output.push_str("/// Return query-extracted builtins for a language.\n");
-    output.push_str("/// Returns an empty slice for languages without query files.\n");
-    output.push_str("pub fn query_builtins_for_language(lang: &str) -> &'static [&'static str] {\n");
-    output.push_str("    match lang {\n");
-
-    // Also generate aliases.
-    let aliases: Vec<(&str, &str)> = vec![
-        ("tsx", "typescript"),
-        ("jsx", "javascript"),
-        ("svelte", "typescript"),
-        ("astro", "typescript"),
-        ("vue", "typescript"),
-        ("angular", "typescript"),
-        ("shell", "bash"),
-        ("sh", "bash"),
-        ("zsh", "bash"),
-        ("terraform", "hcl"),
-        ("bicep", "hcl"),
-        ("objectpascal", "pascal"),
-        ("delphi", "pascal"),
-        ("sass", "scss"),
-        ("reason", "ocaml"),
-        ("clojurescript", "clojure"),
-        ("octave", "matlab"),
-        ("protobuf", "proto"),
-    ];
+    output.push_str(
+        "// AUTO-GENERATED by build.rs — do not edit manually.\n\
+         // Extracted from tree-sitter grammar query files (highlights.scm + locals.scm).\n\
+         //\n\
+         // Language IDs are derived from crate names: tree-sitter-foo-1.2.3 → \"foo\".\n\
+         // Aliases (tsx→typescript, etc.) are handled by the language plugin registry,\n\
+         // NOT here — build.rs only knows about crate names.\n\n\
+         /// Return query-extracted builtins for a language.\n\
+         /// Returns an empty slice for languages without query files.\n\
+         pub fn query_builtins_for_language(lang: &str) -> &'static [&'static str] {\n\
+         \x20   match lang {\n",
+    );
 
     for (lang, names) in &all_builtins {
-        if names.is_empty() {
+        let filtered: Vec<&String> = names
+            .iter()
+            .filter(|n| n.len() > 1 && n.starts_with(|c: char| c.is_alphanumeric() || c == '_'))
+            .collect();
+        if filtered.is_empty() {
             continue;
         }
         output.push_str(&format!("        \"{}\" => &[\n", lang));
-        for name in names {
-            // Skip very short names (single char) and operators.
-            if name.len() <= 1 || name.starts_with(|c: char| !c.is_alphanumeric() && c != '_') {
-                continue;
-            }
-            output.push_str(&format!("            \"{}\",\n", name.replace('"', "\\\"")));
+        for name in &filtered {
+            output.push_str(&format!(
+                "            \"{}\",\n",
+                name.replace('"', "\\\"")
+            ));
         }
         output.push_str("        ],\n");
     }
 
-    // Add aliases.
-    for (alias, target) in &aliases {
-        if all_builtins.contains_key(*target) {
-            output.push_str(&format!(
-                "        \"{}\" => query_builtins_for_language(\"{}\"),\n",
-                alias, target
-            ));
-        }
-    }
-
-    output.push_str("        _ => &[],\n");
-    output.push_str("    }\n");
-    output.push_str("}\n");
+    output.push_str("        _ => &[],\n    }\n}\n");
 
     fs::write(&out_path, &output).expect("Failed to write query_builtins.rs");
 
-    // Tell cargo to rerun only if build.rs changes (query files are stable).
+    // Rerun only when build.rs itself changes. Grammar query files in the
+    // cargo registry are stable per-version — they only change when crate
+    // versions are bumped in Cargo.toml.
     println!("cargo:rerun-if-changed=build.rs");
 }
 
-/// Extract builtin and keyword names from a .scm query file.
+/// Derive a BearWisdom language ID from a tree-sitter crate directory name.
+///
+/// Examples:
+///   "tree-sitter-rust-0.24.0"     → Some("rust")
+///   "tree-sitter-c-sharp-0.23.1"  → Some("c-sharp")
+///   "tree-sitter-c-0.24.1"        → Some("c")
+///   "tree-sitter-go-0.25.0"       → Some("go")
+///   "tree-sitter-kotlin-ng-0.1.0" → Some("kotlin-ng")
+///   "not-a-grammar"               → None
+fn extract_lang_id(crate_dir_name: &str) -> Option<String> {
+    let rest = crate_dir_name.strip_prefix("tree-sitter-")?;
+
+    // Strip the version suffix: find the last `-DIGIT` boundary.
+    // Walk from the end to find where the version starts.
+    // Version is always `-N.N.N` at the end.
+    let mut version_start = None;
+    let bytes = rest.as_bytes();
+    for i in (1..bytes.len()).rev() {
+        if bytes[i - 1] == b'-' && bytes[i].is_ascii_digit() {
+            // Check this looks like a version: digits, dots, possibly more digits.
+            let tail = &rest[i..];
+            if tail
+                .chars()
+                .all(|c| c.is_ascii_digit() || c == '.' || c == '-')
+            {
+                version_start = Some(i - 1);
+                break;
+            }
+        }
+    }
+
+    let lang_part = match version_start {
+        Some(pos) => &rest[..pos],
+        None => rest,
+    };
+
+    if lang_part.is_empty() {
+        return None;
+    }
+
+    // Normalize crate naming conventions to BearWisdom language IDs.
+    // This is NOT an alias system — it's purely fixing crate naming mismatches.
+    let normalized = match lang_part {
+        "c-sharp" => "csharp",
+        "vb-dotnet" => "vbnet",
+        "kotlin-ng" => "kotlin",
+        "sequel" => "sql",
+        "scss-local" => "scss",
+        "dockerfile-0-25" => "dockerfile",
+        "md" => "markdown",
+        other => other,
+    };
+
+    Some(normalized.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// SCM extraction
+// ---------------------------------------------------------------------------
+
 fn extract_builtins_from_scm(content: &str, names: &mut BTreeSet<String>) {
-    // Pattern 1: "#match?" predicates with regex alternation.
-    // e.g., (#match? @function.builtin "^(abs|all|any|...)$")
     extract_match_predicates(content, names);
-
-    // Pattern 2: "#eq?" predicates.
-    // e.g., (#eq? @function.builtin "require")
     extract_eq_predicates(content, names);
-
-    // Pattern 3: Quoted string literals tagged with @keyword.
-    // e.g., "async" @keyword
     extract_keyword_strings(content, names);
-
-    // Pattern 4: Quoted string literals tagged with @*.builtin.
-    // e.g., "nil" @constant.builtin
     extract_builtin_strings(content, names);
 }
 
 fn extract_match_predicates(content: &str, names: &mut BTreeSet<String>) {
-    // Find #match? predicates targeting @*.builtin captures.
-    // The regex pattern is typically: "^(name1|name2|...)$"
-    let re_match = regex::Regex::new(
+    let re = regex::Regex::new(
         r#"#match\?\s+@\w+(?:\.\w+)?\s+"[^^]*\^?\(([^)]+)\)\$?""#,
-    ).unwrap();
-
-    for cap in re_match.captures_iter(content) {
-        if let Some(alternation) = cap.get(1) {
-            for name in alternation.as_str().split('|') {
+    )
+    .unwrap();
+    for cap in re.captures_iter(content) {
+        if let Some(alt) = cap.get(1) {
+            for name in alt.as_str().split('|') {
                 let name = name.trim();
                 if !name.is_empty() {
                     names.insert(name.to_string());
@@ -248,12 +197,8 @@ fn extract_match_predicates(content: &str, names: &mut BTreeSet<String>) {
 }
 
 fn extract_eq_predicates(content: &str, names: &mut BTreeSet<String>) {
-    // Find #eq? predicates: (#eq? @variable.builtin "self")
-    let re_eq = regex::Regex::new(
-        r#"#eq\?\s+@\w+(?:\.\w+)?\s+"([^"]+)""#,
-    ).unwrap();
-
-    for cap in re_eq.captures_iter(content) {
+    let re = regex::Regex::new(r#"#eq\?\s+@\w+(?:\.\w+)?\s+"([^"]+)""#).unwrap();
+    for cap in re.captures_iter(content) {
         if let Some(name) = cap.get(1) {
             names.insert(name.as_str().to_string());
         }
@@ -261,63 +206,53 @@ fn extract_eq_predicates(content: &str, names: &mut BTreeSet<String>) {
 }
 
 fn extract_keyword_strings(content: &str, names: &mut BTreeSet<String>) {
-    // Pattern A: inline "word" @keyword
-    let re_inline = regex::Regex::new(
+    // Inline: "word" @keyword
+    let re = regex::Regex::new(
         r#""([a-zA-Z_][a-zA-Z0-9_!?]*(?:::)?[a-zA-Z0-9_!?]*)"\s+@keyword"#,
-    ).unwrap();
-    for cap in re_inline.captures_iter(content) {
+    )
+    .unwrap();
+    for cap in re.captures_iter(content) {
         if let Some(name) = cap.get(1) {
             names.insert(name.as_str().to_string());
         }
     }
-
-    // Pattern B: bracket blocks — [...] @keyword or [...] @keyword.xxx
-    // These span multiple lines with quoted strings inside brackets.
+    // Bracket blocks: [...] @keyword
     extract_bracket_block_names(content, "@keyword", names);
 }
 
 fn extract_builtin_strings(content: &str, names: &mut BTreeSet<String>) {
-    // Pattern A: inline "word" @*.builtin
-    let re_inline = regex::Regex::new(
-        r#""([a-zA-Z_][a-zA-Z0-9_!?]*)"\s+@\w+\.builtin"#,
-    ).unwrap();
-    for cap in re_inline.captures_iter(content) {
+    // Inline: "word" @*.builtin
+    let re = regex::Regex::new(r#""([a-zA-Z_][a-zA-Z0-9_!?]*)"\s+@\w+\.builtin"#).unwrap();
+    for cap in re.captures_iter(content) {
         if let Some(name) = cap.get(1) {
             names.insert(name.as_str().to_string());
         }
     }
-
-    // Pattern B: bracket blocks — [...] @type.builtin, [...] @constant.builtin, etc.
-    extract_bracket_block_names(content, "@type.builtin", names);
-    extract_bracket_block_names(content, "@constant.builtin", names);
-    extract_bracket_block_names(content, "@function.builtin", names);
-    extract_bracket_block_names(content, "@variable.builtin", names);
+    // Bracket blocks: [...] @type.builtin, [...] @constant.builtin, etc.
+    for tag in [
+        "@type.builtin",
+        "@constant.builtin",
+        "@function.builtin",
+        "@variable.builtin",
+    ] {
+        extract_bracket_block_names(content, tag, names);
+    }
 }
 
-/// Extract quoted string names from bracket blocks like:
-/// ```
-/// [
-///   "word1"
-///   "word2"
-/// ] @keyword
-/// ```
+/// Extract quoted names from `[ "w1" "w2" ... ] @tag` blocks.
 fn extract_bracket_block_names(content: &str, tag: &str, names: &mut BTreeSet<String>) {
     let re_quoted = regex::Regex::new(r#""([a-zA-Z_][a-zA-Z0-9_!?]*)""#).unwrap();
-
-    // Find all occurrences of `] @tag` and walk backwards to find the opening `[`.
-    let tag_with_bracket = format!("] {}", tag);
-    let mut search_from = 0;
-    while let Some(pos) = content[search_from..].find(&tag_with_bracket) {
-        let abs_pos = search_from + pos;
-        // Walk backwards from `]` to find the matching `[`.
-        if let Some(bracket_start) = content[..abs_pos].rfind('[') {
-            let block = &content[bracket_start..abs_pos];
-            for cap in re_quoted.captures_iter(block) {
+    let needle = format!("] {}", tag);
+    let mut pos = 0;
+    while let Some(found) = content[pos..].find(&needle) {
+        let abs = pos + found;
+        if let Some(open) = content[..abs].rfind('[') {
+            for cap in re_quoted.captures_iter(&content[open..abs]) {
                 if let Some(name) = cap.get(1) {
                     names.insert(name.as_str().to_string());
                 }
             }
         }
-        search_from = abs_pos + tag_with_bracket.len();
+        pos = abs + needle.len();
     }
 }
