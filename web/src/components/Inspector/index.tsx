@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useMemo } from 'react'
 import { api } from '../../api'
 import { useAuditStore } from '../../stores/audit.store'
 import type { AuditRecord } from '../../types/api.types'
@@ -186,9 +186,10 @@ function DetailPanel({ record }: { record: AuditRecord | null }) {
 
 export interface InspectorProps {
   workspacePath: string
+  searchQuery?: string
 }
 
-export function Inspector({ workspacePath }: InspectorProps) {
+export function Inspector({ workspacePath, searchQuery = '' }: InspectorProps) {
   const {
     sessions,
     activeSessionId,
@@ -278,6 +279,21 @@ export function Inspector({ workspacePath }: InspectorProps) {
   )
 
   const selectedCall = calls.find((c) => c.id === selectedCallId) ?? null
+
+  // Client-side filter by searchQuery — matches tool_name, params_json, or
+  // the first 500 chars of response_json (case-insensitive substring).
+  const filteredCalls = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return calls
+    return calls.filter(
+      (c) =>
+        c.tool_name.toLowerCase().includes(q) ||
+        c.params_json.toLowerCase().includes(q) ||
+        c.response_json.slice(0, 500).toLowerCase().includes(q),
+    )
+  }, [calls, searchQuery])
+
+  const isFiltered = searchQuery.trim().length > 0
 
   // Compute max tokens across sessions for the sidebar bar width.
   const maxSessionTokens = Math.max(...sessions.map((s) => s.total_tokens), 1)
@@ -373,18 +389,25 @@ export function Inspector({ workspacePath }: InspectorProps) {
             {activeSessionId
               ? `Calls — ${activeSessionId.slice(0, 8)}…`
               : 'Live stream — all sessions'}
+            {isFiltered && (
+              <span className={styles.filterBadge}>
+                {filteredCalls.length} / {calls.length} matching &ldquo;{searchQuery.trim()}&rdquo;
+              </span>
+            )}
           </div>
           <div className={styles.callList}>
             {loadingCalls ? (
               <div className={styles.emptyState}>Loading…</div>
-            ) : calls.length === 0 ? (
+            ) : filteredCalls.length === 0 ? (
               <div className={styles.emptyState}>
-                {activeSessionId
-                  ? 'No calls in this session.'
-                  : 'Waiting for MCP tool calls…'}
+                {isFiltered
+                  ? `No calls match "${searchQuery.trim()}".`
+                  : activeSessionId
+                    ? 'No calls in this session.'
+                    : 'Waiting for MCP tool calls…'}
               </div>
             ) : (
-              calls.map((c) => (
+              filteredCalls.map((c) => (
                 <CallRow key={c.id} record={c} active={c.id === selectedCallId} />
               ))
             )}

@@ -154,6 +154,31 @@
   flex-shrink: 0;
 }
 
+/* ---- Search filter badge ---- */
+
+.filterBadgeBar {
+  display: flex;
+  align-items: center;
+  padding: 5px 16px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.filterBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 14px;
+  background: rgba(22, 27, 34, 0.92);
+  border: 1px solid rgba(88, 166, 255, 0.4);
+  border-radius: 20px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: #79c0ff;
+  white-space: nowrap;
+}
+
 /* ---- SVG chart area ---- */
 
 .chartArea {

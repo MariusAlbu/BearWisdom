@@ -70,6 +70,13 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
   }
 
   function handleResultClick(result: AnyResult) {
+    // On Flow/Inspector tabs the search query drives live filtering — clicking
+    // a result just closes the panel and lets the active filter do the work.
+    if (mainView !== 'graph') {
+      setPanelOpen(false)
+      return
+    }
+
     clearSearch()
     setPanelOpen(false)
     switch (result.type) {
@@ -125,13 +132,13 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
   )
 
   // Map search results to hierarchy node IDs and push into the store filter.
-  // When the panel closes or results are cleared, remove the filter.
+  // Only active when on the graph tab — other tabs handle filtering locally.
+  // When the panel closes, results are cleared, or we leave the graph tab, remove the filter.
   useEffect(() => {
-    if (!panelOpen || results.length === 0) {
+    if (mainView !== 'graph' || !panelOpen || results.length === 0) {
       setSearchFilter(null)
       return
     }
-    // Only apply bulk filter if we're on the graph view (not file viewer or other views)
     const ids = new Set<string>()
     for (const result of results) {
       switch (result.type) {
@@ -170,7 +177,7 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
       }
     }
     setSearchFilter(ids.size > 0 ? Array.from(ids) : null)
-  }, [panelOpen, results, hierarchyNodes, setSearchFilter])
+  }, [mainView, panelOpen, results, hierarchyNodes, setSearchFilter])
 
   // Scroll to line when content loads
   useEffect(() => {
@@ -381,11 +388,12 @@ export function Explorer({ workspacePath, stats }: ExplorerProps) {
               onClose={() => setFileView(null)}
             />
           ) : mainView === 'inspector' ? (
-            <Inspector workspacePath={workspacePath} />
+            <Inspector workspacePath={workspacePath} searchQuery={query} />
           ) : mainView === 'flow' ? (
             <FlowExplorer
               workspacePath={workspacePath}
               onFileNavigate={handleFileNavigate}
+              searchQuery={query}
             />
           ) : (
             <HierarchyGraph workspacePath={workspacePath} />

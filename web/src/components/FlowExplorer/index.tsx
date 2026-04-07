@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import * as d3 from 'd3'
 import {
   sankey as d3Sankey,
@@ -18,6 +18,7 @@ import styles from './FlowExplorer.module.css'
 export interface FlowExplorerProps {
   workspacePath: string
   onFileNavigate?: (file: string, line?: number) => void
+  searchQuery?: string
 }
 
 // ---------------------------------------------------------------------------
@@ -170,7 +171,7 @@ function buildSankeyData(result: FullTraceResult): {
 // Component
 // ---------------------------------------------------------------------------
 
-export function FlowExplorer({ workspacePath, onFileNavigate }: FlowExplorerProps) {
+export function FlowExplorer({ workspacePath, onFileNavigate, searchQuery = '' }: FlowExplorerProps) {
   const [depth, setDepth] = useState(4)
   const [symbolFilter, setSymbolFilter] = useState('')
   const [activeSymbol, setActiveSymbol] = useState<string | undefined>(undefined)
@@ -182,6 +183,41 @@ export function FlowExplorer({ workspacePath, onFileNavigate }: FlowExplorerProp
   const svgRef = useRef<SVGSVGElement>(null)
   const chartRef = useRef<HTMLDivElement>(null)
   const tooltipRef = useRef<HTMLDivElement>(null)
+
+  // Build the base Sankey data from the fetched result, then apply searchQuery filter.
+  // Both derivations are memoized to avoid re-running on every render.
+  const baseSankeyData = useMemo(() => {
+    if (!result) return null
+    return buildSankeyData(result)
+  }, [result])
+
+  const filteredSankeyData = useMemo(() => {
+    if (!baseSankeyData) return null
+    const q = searchQuery.trim().toLowerCase()
+    if (!q) return baseSankeyData
+
+    const keptNodes = baseSankeyData.nodes.filter(
+      (n) =>
+        n.label.toLowerCase().includes(q) ||
+        n.qualifiedName.toLowerCase().includes(q) ||
+        n.file.toLowerCase().includes(q) ||
+        n.kind.toLowerCase().includes(q),
+    )
+    const keptIds = new Set(keptNodes.map((n) => n.id))
+    const keptLinks = baseSankeyData.links.filter(
+      (l) => keptIds.has(l.sourceId) && keptIds.has(l.targetId),
+    )
+    // Remove orphans (nodes with no remaining links after search filtering)
+    const linkedIds = new Set<string>()
+    for (const l of keptLinks) {
+      linkedIds.add(l.sourceId)
+      linkedIds.add(l.targetId)
+    }
+    return {
+      nodes: keptNodes.filter((n) => linkedIds.has(n.id)),
+      links: keptLinks,
+    }
+  }, [baseSankeyData, searchQuery])
 
   // Fetch
   useEffect(() => {
@@ -207,9 +243,9 @@ export function FlowExplorer({ workspacePath, onFileNavigate }: FlowExplorerProp
 
   // D3 Sankey render
   useEffect(() => {
-    if (!result || !svgRef.current || !chartRef.current) return
+    if (!filteredSankeyData || !svgRef.current || !chartRef.current) return
 
-    const { nodes: rawNodes, links: rawLinks } = buildSankeyData(result)
+    const { nodes: rawNodes, links: rawLinks } = filteredSankeyData
     if (rawNodes.length === 0 || rawLinks.length === 0) return
 
     const container = chartRef.current
@@ -674,7 +710,7 @@ export function FlowExplorer({ workspacePath, onFileNavigate }: FlowExplorerProp
       ro.disconnect()
       svg.selectAll('*').remove()
     }
-  }, [result, onFileNavigate])
+  }, [filteredSankeyData, onFileNavigate])
 
   // ---------------------------------------------------------------------------
   // Derived counts
@@ -687,6 +723,10 @@ export function FlowExplorer({ workspacePath, onFileNavigate }: FlowExplorerProp
   const traceCount = result?.traces.length ?? 0
   const totalSymbols = result?.total_symbols ?? 0
   const flowJumps = result?.flow_jumps ?? 0
+
+  const isFiltered = searchQuery.trim().length > 0
+  const filteredNodeCount = filteredSankeyData?.nodes.length ?? 0
+  const totalNodeCount = baseSankeyData?.nodes.length ?? 0
 
   // ---------------------------------------------------------------------------
   // Render
@@ -755,6 +795,14 @@ export function FlowExplorer({ workspacePath, onFileNavigate }: FlowExplorerProp
       />
 
       <KindLegend />
+
+      {isFiltered && (
+        <div className={styles.filterBadgeBar}>
+          <span className={styles.filterBadge}>
+            Filtered: {filteredNodeCount} / {totalNodeCount} nodes matching &ldquo;{searchQuery.trim()}&rdquo;
+          </span>
+        </div>
+      )}
 
       {!result || traceCount === 0 ? (
         <div className={styles.stateWrapper}>
