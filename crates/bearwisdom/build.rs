@@ -1,9 +1,9 @@
 // =============================================================================
-// build.rs — Extract builtin/keyword names from tree-sitter query files
+// build.rs — Extract builtin/keyword names from tree-sitter highlights.scm
 //
 // Auto-discovers ALL tree-sitter grammar crates in the cargo registry.
 // No hardcoded grammar list — any crate matching `tree-sitter-*` with a
-// `queries/highlights.scm` or `queries/locals.scm` gets processed.
+// `queries/highlights.scm` gets processed.
 //
 // Extracts:
 //   1. String literals in [...] @keyword blocks
@@ -49,19 +49,17 @@ fn main() {
                         continue;
                     };
 
-                    // Only process if it has query files.
+                    // Only process if it has highlights.scm — that's where
+                    // builtins and keywords are tagged. locals.scm defines
+                    // scope/definition/reference patterns (no builtin names).
                     let highlights = crate_path.join("queries/highlights.scm");
-                    let locals = crate_path.join("queries/locals.scm");
-                    if !highlights.exists() && !locals.exists() {
+                    if !highlights.exists() {
                         continue;
                     }
 
                     let names = all_builtins.entry(lang_id).or_default();
 
                     if let Ok(content) = fs::read_to_string(&highlights) {
-                        extract_builtins_from_scm(&content, names);
-                    }
-                    if let Ok(content) = fs::read_to_string(&locals) {
                         extract_builtins_from_scm(&content, names);
                     }
                 }
