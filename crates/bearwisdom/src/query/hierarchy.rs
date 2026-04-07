@@ -104,21 +104,30 @@ pub fn hierarchical_graph(
     let _timer = db.timer("hierarchical_graph");
     let cap = if max_nodes == 0 { 500 } else { max_nodes.min(5_000) };
 
+    // Strip node-ID prefixes that the frontend sends as scope values.
+    // Node IDs use "pkg:<path>" and "file:<path>" format, but backend
+    // queries expect bare paths.
+    let scope = scope.map(|s| {
+        s.strip_prefix("pkg:")
+            .or_else(|| s.strip_prefix("file:"))
+            .or_else(|| s.strip_prefix("dir:"))
+            .unwrap_or(s)
+    });
+
     match level {
         "services" => {
             let result = services_level(db, cap)?;
-            // If no services/packages exist, fall through to files level.
             if result.nodes.is_empty() {
-                files_level(db, None, cap)
+                // No packages at all — show directory groups as pseudo-packages.
+                directories_level(db, cap)
             } else {
                 Ok(result)
             }
         }
         "packages" => {
             let result = packages_level(db, cap)?;
-            // Single-project repos have no packages — fall back to files.
             if result.nodes.is_empty() {
-                files_level(db, None, cap)
+                directories_level(db, cap)
             } else {
                 Ok(result)
             }
@@ -326,6 +335,135 @@ fn services_level(db: &Database, cap: usize) -> QueryResult<HierarchyResult> {
 // Level: packages
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// Level: directories (fallback for repos with no packages)
+// ---------------------------------------------------------------------------
+
+/// Groups files by their top-level directory (first path segment) and returns
+/// those directories as drillable nodes.  Used as a fallback when the packages
+/// table is empty so the graph shows a useful high-level view instead of
+/// hundreds of individual file nodes.
+fn directories_level(db: &Database, cap: usize) -> QueryResult<HierarchyResult> {
+    let conn = db.conn();
+
+    // Group files by top-level directory.
+    let mut stmt = conn.prepare(
+        "SELECT f.path,
+                (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS sym_count,
+                f.language
+         FROM files f"
+    ).context("Failed to prepare directory scan")?;
+
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, u32>(1).unwrap_or(0),
+            r.get::<_, String>(2)?,
+        ))
+    }).context("Failed to execute directory scan")?;
+
+    // Accumulate per-directory stats.
+    let mut dirs: HashMap<String, (u32, u32, HashMap<String, u32>)> = HashMap::new(); // dir → (file_count, symbol_count, {lang → count})
+
+    for row in rows {
+        let (path, sym_count, lang) = row.context("Failed to read file row")?;
+        // Extract top-level directory (e.g., "server" from "server/src/main.ts").
+        // Files at root go into a "(root)" bucket.
+        let dir = path.split('/').next()
+            .filter(|seg| path.contains('/'))
+            .unwrap_or("(root)")
+            .to_string();
+
+        let entry = dirs.entry(dir).or_insert_with(|| (0, 0, HashMap::new()));
+        entry.0 += 1;
+        entry.1 += sym_count;
+        *entry.2.entry(lang).or_insert(0) += 1;
+    }
+
+    // Sort by symbol count descending, cap.
+    let mut dir_list: Vec<(String, u32, u32, HashMap<String, u32>)> = dirs
+        .into_iter()
+        .map(|(dir, (fc, sc, langs))| (dir, fc, sc, langs))
+        .collect();
+    dir_list.sort_by(|a, b| b.2.cmp(&a.2));
+    dir_list.truncate(cap);
+
+    let mut nodes = Vec::new();
+    for (dir, file_count, symbol_count, langs) in &dir_list {
+        let primary_lang = langs.iter().max_by_key(|(_, c)| *c).map(|(l, _)| l.as_str()).unwrap_or("unknown");
+        let metadata = serde_json::json!({ "language": primary_lang }).to_string();
+        nodes.push(HierarchyNode {
+            id: format!("dir:{dir}"),
+            name: dir.clone(),
+            kind: "package".to_string(), // render as package shape
+            file_path: None,
+            package: Some(dir.clone()),
+            weight: *symbol_count,
+            child_count: *file_count,
+            metadata: Some(metadata),
+        });
+    }
+
+    // Cross-directory edges (aggregate symbol edges by directory).
+    let dir_set: std::collections::HashSet<&str> = dir_list.iter().map(|(d, _, _, _)| d.as_str()).collect();
+    let mut edge_map: HashMap<(String, String), u32> = HashMap::new();
+
+    let mut edge_stmt = conn.prepare(
+        "SELECT f1.path, f2.path
+         FROM edges e
+         JOIN symbols s1 ON e.source_id = s1.id
+         JOIN files f1 ON s1.file_id = f1.id
+         JOIN symbols s2 ON e.target_id = s2.id
+         JOIN files f2 ON s2.file_id = f2.id"
+    ).context("Failed to prepare directory edge query")?;
+
+    let edge_rows = edge_stmt.query_map([], |r| {
+        Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+    }).context("Failed to execute directory edge query")?;
+
+    for row in edge_rows {
+        let (src_path, tgt_path) = row.context("Failed to read edge row")?;
+        let src_dir = src_path.split('/').next()
+            .filter(|_| src_path.contains('/'))
+            .unwrap_or("(root)");
+        let tgt_dir = tgt_path.split('/').next()
+            .filter(|_| tgt_path.contains('/'))
+            .unwrap_or("(root)");
+
+        if src_dir == tgt_dir { continue; }
+        if !dir_set.contains(src_dir) || !dir_set.contains(tgt_dir) { continue; }
+
+        *edge_map.entry((src_dir.to_string(), tgt_dir.to_string())).or_insert(0) += 1;
+    }
+
+    let edges: Vec<HierarchyEdge> = edge_map
+        .into_iter()
+        .map(|((src, tgt), weight)| HierarchyEdge {
+            source: format!("dir:{src}"),
+            target: format!("dir:{tgt}"),
+            kind: "cross_directory".to_string(),
+            weight,
+            confidence: 0.8,
+        })
+        .collect();
+
+    Ok(HierarchyResult {
+        nodes,
+        edges,
+        level: "packages".to_string(), // report as packages level so drill-down goes to files
+        scope: None,
+        breadcrumbs: vec![Breadcrumb {
+            label: "Workspace".to_string(),
+            level: "packages".to_string(),
+            scope: None,
+        }],
+    })
+}
+
+// ---------------------------------------------------------------------------
+// Level: packages
+// ---------------------------------------------------------------------------
+
 fn packages_level(db: &Database, cap: usize) -> QueryResult<HierarchyResult> {
     let conn = db.conn();
 
@@ -461,30 +599,43 @@ fn files_level(db: &Database, scope: Option<&str>, cap: usize) -> QueryResult<Hi
         None => None,
     };
 
-    // Nodes: files in the package (or all files if no package scope).
-    let (node_sql, params_needed) = if package_id.is_some() {
-        (
-            format!(
-                "SELECT f.id, f.path, f.language, f.package_id,
-                        (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
-                 FROM files f
-                 WHERE f.package_id = ?1
-                 ORDER BY symbol_count DESC
-                 LIMIT {cap}"
-            ),
-            true,
-        )
+    // Nodes: files scoped by package, directory prefix, or all files.
+    enum ScopeKind { Package(i64), DirPrefix(String), All }
+
+    let scope_kind = if let Some(pkg_id) = package_id {
+        ScopeKind::Package(pkg_id)
+    } else if let Some(s) = scope {
+        // No matching package — treat scope as a directory prefix.
+        let prefix = if s.ends_with('/') { s.to_string() } else { format!("{s}/") };
+        ScopeKind::DirPrefix(prefix)
     } else {
-        (
-            format!(
-                "SELECT f.id, f.path, f.language, f.package_id,
-                        (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
-                 FROM files f
-                 ORDER BY symbol_count DESC
-                 LIMIT {cap}"
-            ),
-            false,
-        )
+        ScopeKind::All
+    };
+
+    let node_sql = match &scope_kind {
+        ScopeKind::Package(_) => format!(
+            "SELECT f.id, f.path, f.language, f.package_id,
+                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
+             FROM files f
+             WHERE f.package_id = ?1
+             ORDER BY symbol_count DESC
+             LIMIT {cap}"
+        ),
+        ScopeKind::DirPrefix(_) => format!(
+            "SELECT f.id, f.path, f.language, f.package_id,
+                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
+             FROM files f
+             WHERE f.path LIKE (?1 || '%')
+             ORDER BY symbol_count DESC
+             LIMIT {cap}"
+        ),
+        ScopeKind::All => format!(
+            "SELECT f.id, f.path, f.language, f.package_id,
+                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
+             FROM files f
+             ORDER BY symbol_count DESC
+             LIMIT {cap}"
+        ),
     };
 
     let mut stmt = conn.prepare(&node_sql).context("Failed to prepare files node query")?;
@@ -499,10 +650,10 @@ fn files_level(db: &Database, scope: Option<&str>, cap: usize) -> QueryResult<Hi
         ))
     };
 
-    let file_rows = if params_needed {
-        stmt.query_map(rusqlite::params![package_id.unwrap()], map_row)
-    } else {
-        stmt.query_map([], map_row)
+    let file_rows = match &scope_kind {
+        ScopeKind::Package(pkg_id) => stmt.query_map(rusqlite::params![*pkg_id], map_row),
+        ScopeKind::DirPrefix(prefix) => stmt.query_map(rusqlite::params![prefix], map_row),
+        ScopeKind::All => stmt.query_map([], map_row),
     }
     .context("Failed to execute files node query")?;
 
@@ -558,27 +709,39 @@ fn files_level(db: &Database, scope: Option<&str>, cap: usize) -> QueryResult<Hi
     // When scoped to a package, only include edges where the source file is in
     // the package.  The target may be in any package (cross-package links are
     // still useful to show).
-    let edge_sql = if params_needed {
-        "SELECT f_src.path, f_tgt.path, e.kind, COUNT(*) AS edge_count, AVG(e.confidence) AS avg_conf
-         FROM edges e
-         JOIN symbols s1 ON e.source_id = s1.id
-         JOIN files f_src ON s1.file_id = f_src.id
-         JOIN symbols s2 ON e.target_id = s2.id
-         JOIN files f_tgt ON s2.file_id = f_tgt.id
-         WHERE f_src.package_id = ?1
-           AND f_src.id != f_tgt.id
-         GROUP BY f_src.path, f_tgt.path, e.kind
-         ORDER BY edge_count DESC"
-    } else {
-        "SELECT f_src.path, f_tgt.path, e.kind, COUNT(*) AS edge_count, AVG(e.confidence) AS avg_conf
-         FROM edges e
-         JOIN symbols s1 ON e.source_id = s1.id
-         JOIN files f_src ON s1.file_id = f_src.id
-         JOIN symbols s2 ON e.target_id = s2.id
-         JOIN files f_tgt ON s2.file_id = f_tgt.id
-         WHERE f_src.id != f_tgt.id
-         GROUP BY f_src.path, f_tgt.path, e.kind
-         ORDER BY edge_count DESC"
+    let edge_sql = match &scope_kind {
+        ScopeKind::Package(_) =>
+            "SELECT f_src.path, f_tgt.path, e.kind, COUNT(*) AS edge_count, AVG(e.confidence) AS avg_conf
+             FROM edges e
+             JOIN symbols s1 ON e.source_id = s1.id
+             JOIN files f_src ON s1.file_id = f_src.id
+             JOIN symbols s2 ON e.target_id = s2.id
+             JOIN files f_tgt ON s2.file_id = f_tgt.id
+             WHERE f_src.package_id = ?1
+               AND f_src.id != f_tgt.id
+             GROUP BY f_src.path, f_tgt.path, e.kind
+             ORDER BY edge_count DESC",
+        ScopeKind::DirPrefix(_) =>
+            "SELECT f_src.path, f_tgt.path, e.kind, COUNT(*) AS edge_count, AVG(e.confidence) AS avg_conf
+             FROM edges e
+             JOIN symbols s1 ON e.source_id = s1.id
+             JOIN files f_src ON s1.file_id = f_src.id
+             JOIN symbols s2 ON e.target_id = s2.id
+             JOIN files f_tgt ON s2.file_id = f_tgt.id
+             WHERE f_src.path LIKE (?1 || '%')
+               AND f_src.id != f_tgt.id
+             GROUP BY f_src.path, f_tgt.path, e.kind
+             ORDER BY edge_count DESC",
+        ScopeKind::All =>
+            "SELECT f_src.path, f_tgt.path, e.kind, COUNT(*) AS edge_count, AVG(e.confidence) AS avg_conf
+             FROM edges e
+             JOIN symbols s1 ON e.source_id = s1.id
+             JOIN files f_src ON s1.file_id = f_src.id
+             JOIN symbols s2 ON e.target_id = s2.id
+             JOIN files f_tgt ON s2.file_id = f_tgt.id
+             WHERE f_src.id != f_tgt.id
+             GROUP BY f_src.path, f_tgt.path, e.kind
+             ORDER BY edge_count DESC",
     };
 
     let mut estmt = conn.prepare_cached(edge_sql).context("Failed to prepare files edge query")?;
@@ -593,10 +756,10 @@ fn files_level(db: &Database, scope: Option<&str>, cap: usize) -> QueryResult<Hi
         ))
     };
 
-    let edge_rows = if params_needed {
-        estmt.query_map(rusqlite::params![package_id.unwrap()], emap_row)
-    } else {
-        estmt.query_map([], emap_row)
+    let edge_rows = match &scope_kind {
+        ScopeKind::Package(pkg_id) => estmt.query_map(rusqlite::params![*pkg_id], emap_row),
+        ScopeKind::DirPrefix(prefix) => estmt.query_map(rusqlite::params![prefix], emap_row),
+        ScopeKind::All => estmt.query_map([], emap_row),
     }
     .context("Failed to execute files edge query")?;
 
