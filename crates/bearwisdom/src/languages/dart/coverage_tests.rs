@@ -330,29 +330,26 @@ fn ref_part_of_directive() {
 
 #[test]
 fn ref_class_extends_inherits() {
-    // class_definition with superclass — extract_dart_heritage emits Inherits, but the
-    // post-traversal scan_all_type_identifiers pass also emits TypeRef for the same name.
-    // The extractor currently produces TypeRef (post-pass wins); the Inherits edge is
-    // emitted first but both are present. Assert the ref exists regardless of kind.
-    // TODO: verify Inherits edge kind once deduplication is applied during resolution.
+    // class_definition with superclass — extract_dart_heritage emits Inherits.
+    // The post-traversal scan_all_type_identifiers also emits TypeRef for the same name,
+    // but the Inherits edge is present regardless.
     let r = extract("class Animal {}\nclass Dog extends Animal {}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Animal"),
-        "expected ref to Animal from extends clause; got {:?}",
+        r.refs.iter().any(|rf| rf.target_name == "Animal" && rf.kind == EdgeKind::Inherits),
+        "expected Inherits edge to Animal from extends clause; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn ref_class_implements_edge() {
-    // class_definition with implements clause — extract_dart_heritage emits Implements, but
-    // the post-traversal scan_all_type_identifiers also emits TypeRef for the same name.
-    // Assert the ref exists regardless of kind.
-    // TODO: verify Implements edge kind once deduplication is applied during resolution.
+    // class_definition with implements clause — extract_dart_heritage emits Implements.
+    // The post-traversal scan_all_type_identifiers also emits TypeRef for the same name,
+    // but the Implements edge is present regardless.
     let r = extract("abstract class Runnable {}\nclass Runner implements Runnable {}");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Runnable"),
-        "expected ref to Runnable from implements clause; got {:?}",
+        r.refs.iter().any(|rf| rf.target_name == "Runnable" && rf.kind == EdgeKind::Implements),
+        "expected Implements edge to Runnable from implements clause; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }

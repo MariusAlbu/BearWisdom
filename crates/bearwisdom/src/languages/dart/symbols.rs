@@ -792,55 +792,94 @@ pub(super) fn extract_dart_heritage(
     source_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        match child.kind() {
-            "superclass" => {
-                let mut c = child.walk();
-                for n in child.children(&mut c) {
-                    if n.kind() == "type_name" || n.kind() == "identifier" {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: source_idx,
-                            target_name: node_text(n, src),
-                            kind: EdgeKind::Inherits,
-                            line: n.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
-                    }
+    // `superclass`, `interfaces`, and `mixins` are named FIELDS on class_definition /
+    // mixin_declaration, NOT plain children.  node.children() skips named fields —
+    // they must be accessed via child_by_field_name().
+
+    // `: extends Foo` → Inherits
+    // Grammar: superclass node has a `type` field containing type_identifier.
+    if let Some(superclass_node) = node.child_by_field_name("superclass") {
+        if let Some(type_node) = superclass_node.child_by_field_name("type") {
+            let name = node_text(type_node, src);
+            if !name.is_empty() {
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name: name,
+                    kind: EdgeKind::Inherits,
+                    line: type_node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        } else {
+            // Fallback: scan children of superclass for type_identifier.
+            let mut c = superclass_node.walk();
+            for n in superclass_node.children(&mut c) {
+                if n.kind() == "type_identifier" || n.kind() == "identifier" {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: node_text(n, src),
+                        kind: EdgeKind::Inherits,
+                        line: n.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
                 }
             }
-            "interfaces" => {
-                let mut c = child.walk();
-                for n in child.children(&mut c) {
-                    if n.kind() == "type_name" || n.kind() == "identifier" {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: source_idx,
-                            target_name: node_text(n, src),
-                            kind: EdgeKind::Implements,
-                            line: n.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
-                    }
-                }
+        }
+    }
+
+    // `implements Foo, Bar` → Implements (one edge per interface)
+    // Grammar: interfaces node has children() of type_identifier (no named fields).
+    if let Some(interfaces_node) = node.child_by_field_name("interfaces") {
+        let mut c = interfaces_node.walk();
+        for n in interfaces_node.children(&mut c) {
+            if n.kind() == "type_identifier" || n.kind() == "identifier" {
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name: node_text(n, src),
+                    kind: EdgeKind::Implements,
+                    line: n.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
             }
-            "mixins" | "mixin_application" => {
-                let mut c = child.walk();
-                for n in child.children(&mut c) {
-                    if n.kind() == "type_name" || n.kind() == "identifier" {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: source_idx,
-                            target_name: node_text(n, src),
-                            kind: EdgeKind::TypeRef,
-                            line: n.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
-                    }
-                }
+        }
+    }
+
+    // `with Mixin1, Mixin2` → TypeRef (mixins are applied, not inherited)
+    // The mixins field may live directly on the class node or as a child of the
+    // superclass node (when `class C extends Base with Mixin {}`).
+    let mut emit_mixin_refs = |mixins_node: Node| {
+        let mut c = mixins_node.walk();
+        for n in mixins_node.children(&mut c) {
+            if n.kind() == "type_identifier" || n.kind() == "identifier" {
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name: node_text(n, src),
+                    kind: EdgeKind::TypeRef,
+                    line: n.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
             }
-            _ => {}
+        }
+    };
+
+    if let Some(mixins_node) = node.child_by_field_name("mixins") {
+        emit_mixin_refs(mixins_node);
+    }
+    if let Some(sc) = node.child_by_field_name("superclass") {
+        if let Some(mixins_node) = sc.child_by_field_name("mixins") {
+            emit_mixin_refs(mixins_node);
+        } else {
+            // Fallback: scan sc children for a `mixins` node.
+            // Collect first to avoid TreeCursor lifetime issues.
+            let mut c = sc.walk();
+            let sc_children: Vec<Node> = sc.children(&mut c).collect();
+            if let Some(mixins_node) = sc_children.iter().find(|n| n.kind() == "mixins") {
+                emit_mixin_refs(*mixins_node);
+            }
         }
     }
 }

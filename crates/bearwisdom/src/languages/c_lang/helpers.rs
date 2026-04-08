@@ -182,7 +182,7 @@ pub(super) fn call_target_name(node: &Node, src: &[u8]) -> String {
 
 /// Walk a node tree looking for the first `type_identifier` leaf.
 pub(super) fn first_type_identifier(node: &Node, src: &[u8]) -> Option<String> {
-    if node.kind() == "type_identifier" || node.kind() == "identifier" {
+    if matches!(node.kind(), "type_identifier" | "identifier" | "field_identifier") {
         return Some(node_text(*node, src));
     }
     let mut cursor = node.walk();

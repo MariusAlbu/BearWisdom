@@ -233,6 +233,24 @@ pub(super) fn push_typedef(
     }
 }
 
+/// Returns true if `node` is or contains a `function_declarator` child,
+/// indicating this declarator represents a function forward declaration.
+fn has_function_declarator(node: &Node) -> bool {
+    if node.kind() == "function_declarator" {
+        return true;
+    }
+    // pointer_declarator and parenthesized_declarator can wrap a function_declarator,
+    // e.g. `(*fp)(int)` or `virtual int area() = 0` which becomes
+    // `pointer_declarator` → `function_declarator`.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if has_function_declarator(&child) {
+            return true;
+        }
+    }
+    false
+}
+
 pub(super) fn push_declaration(
     node: &Node,
     src: &[u8],
@@ -266,10 +284,21 @@ pub(super) fn push_declaration(
         };
         if let Some(name) = name_opt {
             let qualified_name = scope_tree::qualify(&name, scope);
+            // Forward declarations whose declarator is (or contains) a
+            // function_declarator represent function/method signatures, not variables.
+            let kind = if has_function_declarator(&child) {
+                if scope.is_some() {
+                    SymbolKind::Method
+                } else {
+                    SymbolKind::Function
+                }
+            } else {
+                SymbolKind::Variable
+            };
             symbols.push(ExtractedSymbol {
                 name: name.clone(),
                 qualified_name,
-                kind: SymbolKind::Variable,
+                kind,
                 visibility: detect_visibility(node, src),
                 start_line: child.start_position().row as u32,
                 end_line: child.end_position().row as u32,

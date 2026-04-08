@@ -303,21 +303,16 @@ fn cov_import_declaration_does_not_crash() {
 // symbol_node_kinds — C (additional)
 // ---------------------------------------------------------------------------
 
-/// declaration with function_declarator → forward declaration
-// TODO: push_declaration emits all declarations as Variable regardless of whether the
-// declarator is a function_declarator.  The extractor would need to inspect child kinds
-// to distinguish `int compute(int a, int b);` (Function) from `int x;` (Variable).
-// For now verify no crash and the symbol is present in some form.
+/// declaration with function_declarator → forward declaration emits Function
 #[test]
 fn cov_declaration_function_declarator_emits_function() {
     let r = extract::extract("int compute(int a, int b);", "c");
     let sym = r.symbols.iter().find(|s| s.name == "compute");
     assert!(sym.is_some(), "expected a symbol for forward-decl 'compute'; got: {:?}", r.symbols);
-    // Kind is Variable today (push_declaration doesn't check for function_declarator).
-    // Update this assertion when the extractor learns to emit Function for fn-decls.
-    assert!(
-        sym.unwrap().kind == SymbolKind::Variable || sym.unwrap().kind == SymbolKind::Function,
-        "expected Variable or Function for 'compute'; got: {:?}", sym.unwrap().kind
+    assert_eq!(
+        sym.unwrap().kind,
+        SymbolKind::Function,
+        "expected Function for forward-decl 'compute'; got: {:?}", sym.unwrap().kind
     );
 }
 
@@ -430,26 +425,19 @@ fn cov_operator_overload_emits_method() {
 }
 
 /// pure virtual declaration in class → Method (virtual/abstract)
-// TODO: abstract method declarations (`virtual int area() = 0;`) are `declaration` nodes,
-// not `function_definition` nodes.  push_declaration emits them as Variable today.
-// The extractor would need to detect `function_declarator` children inside `declaration`
-// and emit SymbolKind::Method instead.
 #[test]
 fn cov_pure_virtual_declaration_emits_method() {
     let src = "class Shape { public: virtual int area() = 0; };";
     let r = extract::extract(src, "cpp");
-    // Shape is always extracted; area may be missing or emitted as Variable.
     let shape = r.symbols.iter().find(|s| s.name == "Shape");
     assert!(shape.is_some(), "expected Class 'Shape' to be extracted; got: {:?}", r.symbols);
-    // area: accepted as absent, Variable, or Method — document current state.
     let area = r.symbols.iter().find(|s| s.name == "area");
-    if let Some(sym) = area {
-        assert!(
-            sym.kind == SymbolKind::Variable || sym.kind == SymbolKind::Method,
-            "expected Variable or Method for pure-virtual 'area'; got: {:?}", sym.kind
-        );
-    }
-    // No panic is the primary requirement for this node type.
+    assert!(area.is_some(), "expected Method 'area' from pure-virtual declaration; got: {:?}", r.symbols);
+    assert_eq!(
+        area.unwrap().kind,
+        SymbolKind::Method,
+        "expected Method for pure-virtual 'area'; got: {:?}", area.unwrap().kind
+    );
 }
 
 /// nested class inside outer class → Class with qualified name

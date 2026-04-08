@@ -371,6 +371,8 @@ fn extract_node_inner(
                     if let Some(params) = child.child_by_field_name("parameters") {
                         types::extract_csharp_typed_params_as_symbols(params, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
+                    // `: base(...)` / `: this(...)` in constructor initializer.
+                    extract_constructor_initializer_call(child, src, sym_idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         calls::extract_calls_from_body(&body, src, sym_idx, refs);
                         // Extract lambda params, LINQ range vars, and pattern binding
@@ -535,6 +537,107 @@ fn extract_node_inner(
                 extract_node(*child, src, scope_tree, symbols, refs, routes, db_sets, effective_parent_index);
             }
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Constructor initializer call extraction
+// ---------------------------------------------------------------------------
+
+/// Emit a `Calls` edge for `: base(...)` or `: this(...)` in a constructor
+/// initializer (e.g. `Child() : base() {}`).
+///
+/// For `base(...)`: the callee is the parent class's constructor.  We resolve
+/// the parent class name by walking up the tree-sitter parent chain:
+///   constructor_declaration → declaration_list → class_declaration
+/// then extracting the first non-interface name from `base_list`.
+///
+/// For `this(...)`: the callee is another constructor on the same class,
+/// identified by the enclosing class name.
+fn extract_constructor_initializer_call(
+    constructor_node: &Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use super::helpers::node_text;
+
+    // Find the constructor_initializer child (not a named field — lives in children).
+    let mut cursor = constructor_node.walk();
+    let initializer = constructor_node
+        .children(&mut cursor)
+        .find(|n| n.kind() == "constructor_initializer");
+
+    let initializer = match initializer {
+        Some(n) => n,
+        None => return,
+    };
+
+    // Determine whether this is `base` or `this`.  The constructor_initializer
+    // children are: `:` [anon], `base`|`this` [anon], `argument_list` [named].
+    // We check all unnamed children for the keyword text.
+    let mut ic = initializer.walk();
+    let is_base = initializer
+        .children(&mut ic)
+        .any(|n| !n.is_named() && node_text(n, src) == "base");
+    let mut ic2 = initializer.walk();
+    let is_this = initializer
+        .children(&mut ic2)
+        .any(|n| !n.is_named() && node_text(n, src) == "this");
+
+    if !is_base && !is_this {
+        return;
+    }
+
+    // Walk up to find the enclosing class node.
+    // constructor_declaration → body (declaration_list) → class_declaration / struct_declaration
+    let target_name: Option<String> = if is_base {
+        // Go up two levels: constructor → declaration_list → class node.
+        let class_node = constructor_node
+            .parent()
+            .and_then(|body| body.parent());
+
+        class_node.and_then(|cls| {
+            if !matches!(cls.kind(), "class_declaration" | "struct_declaration" | "record_declaration") {
+                return None;
+            }
+            // Find the base_list and pick the first non-interface name.
+            let mut cc = cls.walk();
+            for cls_child in cls.children(&mut cc) {
+                if cls_child.kind() == "base_list" {
+                    let mut bc = cls_child.walk();
+                    for base in cls_child.children(&mut bc) {
+                        match base.kind() {
+                            "identifier" | "generic_name" | "qualified_name" => {
+                                let name = super::types::simple_type_name(base, src);
+                                if !super::types::looks_like_interface(&name) {
+                                    return Some(name);
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+            }
+            None
+        })
+    } else {
+        // `this(...)` — callee is another constructor on the same class.
+        // The class name is the constructor's own name (constructor name == class name in C#).
+        constructor_node
+            .child_by_field_name("name")
+            .map(|n| node_text(n, src))
+    };
+
+    if let Some(name) = target_name {
+        refs.push(ExtractedRef {
+            source_symbol_index: sym_idx,
+            target_name: name,
+            kind: EdgeKind::Calls,
+            line: initializer.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
     }
 }
 

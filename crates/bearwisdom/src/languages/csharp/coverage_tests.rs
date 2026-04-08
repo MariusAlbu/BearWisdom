@@ -455,10 +455,18 @@ fn coverage_array_creation_expression() {
     );
 }
 
-// TODO: extractor does not emit Calls for constructor_initializer base() — it
-// emits Inherits for the base type instead. Skipped until extractor is extended.
-// #[test]
-// fn coverage_constructor_initializer_base_call() { ... }
+#[test]
+fn coverage_constructor_initializer_base_call() {
+    // `class Child : Parent { Child() : base() {} }` — the `: base()` constructor
+    // initializer should emit a Calls edge targeting the parent class name.
+    let src = "class Parent {}\nclass Child : Parent { Child() : base() {} }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Parent" && r.kind == EdgeKind::Calls),
+        "expected Calls edge to Parent from constructor_initializer base(); refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
 
 #[test]
 fn coverage_using_directive_static() {
