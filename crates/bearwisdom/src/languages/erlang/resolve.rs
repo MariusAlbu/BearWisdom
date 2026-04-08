@@ -17,7 +17,8 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -78,42 +79,15 @@ impl LanguageResolver for ErlangResolver {
             return None;
         }
 
-        // Step 1: Scope chain walk.
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "erlang_scope_chain",
-                    });
-                }
-            }
-        }
+        engine::resolve_common("erlang", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+    }
 
-        // Step 2: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "erlang_same_file",
-                });
-            }
-        }
-
-        // Step 3: Simple name lookup across the project.
-        for sym in lookup.by_name(target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "erlang_by_name",
-                });
-            }
-        }
-
-        None
+    fn infer_external_namespace(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_erlang_builtin)
     }
 }

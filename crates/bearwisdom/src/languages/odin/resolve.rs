@@ -20,7 +20,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -88,73 +89,25 @@ impl LanguageResolver for OdinResolver {
             return None;
         }
 
-        // Step 1: Scope chain walk.
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "odin_scope_chain",
-                });
-            }
-        }
-
-        // Step 2: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "odin_same_file",
-                });
-            }
-        }
-
-        // Step 3: Fully qualified dotted name.
-        if target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(target) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "odin_qualified_name",
-                });
-            }
-        }
-
-        // Step 4: Global name lookup.
-        let candidates = lookup.by_name(target);
-        if let Some(sym) = candidates.into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "odin_global_name",
-            });
-        }
-
-        None
+        engine::resolve_common("odin", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
+        // Language-specific: Odin core:/vendor:/base: package paths are external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            // Mark core: / vendor: / base: packages as external.
             if target.starts_with("core:") || target.starts_with("vendor:") || target.starts_with("base:") {
                 return Some(target.clone());
             }
         }
 
-        if is_odin_builtin(target) {
-            return Some("builtin".to_string());
-        }
-
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_odin_builtin)
     }
 }
 

@@ -17,7 +17,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -45,7 +45,7 @@ impl LanguageResolver for SqlResolver {
 
     fn resolve(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
@@ -63,11 +63,8 @@ impl LanguageResolver for SqlResolver {
         }
 
         // Direct lookup by name — SQL symbols have bare names as qualified_name.
-        // Prefer Struct (table) and Class (view) matches for TypeRef edges.
-        let candidates = lookup.by_name(target);
-
-        // First pass: prefer tables and views (most common FK/ALTER targets).
-        for sym in candidates {
+        // Prefer tables (Struct) and views (Class) for TypeRef edges.
+        for sym in lookup.by_name(target) {
             if matches!(sym.kind.as_str(), "struct" | "class" | "function") {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -77,31 +74,27 @@ impl LanguageResolver for SqlResolver {
             }
         }
 
-        // Second pass: any match (covers custom types, sequences, etc.).
-        let candidates = lookup.by_name(target);
-        if let Some(sym) = candidates.into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.9,
-                strategy: "sql_name_fallback",
-            });
-        }
-
-        None
+        // Fall through to common resolution (handles qualified names, same-file).
+        engine::resolve_common("sql", file_ctx, ref_ctx, lookup, sql_kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        // SQL built-in types are always external (database engine provides them).
-        if is_sql_builtin_type(target) {
-            return Some("builtin".to_string());
-        }
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_sql_builtin_type)
+    }
+}
+
+/// Edge-kind / symbol-kind compatibility for SQL.
+/// SQL refs are almost exclusively TypeRef (table/view/function references).
+fn sql_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    match edge_kind {
+        EdgeKind::TypeRef => matches!(sym_kind, "struct" | "class" | "function" | "variable"),
+        EdgeKind::Calls => matches!(sym_kind, "function" | "method"),
+        _ => true,
     }
 }
 

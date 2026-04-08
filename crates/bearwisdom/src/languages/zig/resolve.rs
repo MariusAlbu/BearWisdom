@@ -16,7 +16,8 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -81,43 +82,7 @@ impl LanguageResolver for ZigResolver {
             return None;
         }
 
-        // Step 1: Scope chain walk.
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "zig_scope_chain",
-                    });
-                }
-            }
-        }
-
-        // Step 2: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "zig_same_file",
-                });
-            }
-        }
-
-        // Step 3: Simple name lookup across the project.
-        for sym in lookup.by_name(target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "zig_by_name",
-                });
-            }
-        }
-
-        None
+        engine::resolve_common("zig", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -128,17 +93,19 @@ impl LanguageResolver for ZigResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
+        // Imports: only non-relative, non-.zig paths are external (e.g. @import("std")).
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let uri = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            // @import("std") and other non-relative imports are external.
             if !uri.starts_with('.') && !uri.ends_with(".zig") {
                 return Some(format!("zig.{uri}"));
             }
             return None;
         }
 
-        if builtins::is_zig_builtin(target) {
-            return Some("zig.builtin".to_string());
+        // Delegate builtin detection to the common helper.
+        if let Some(ns) = engine::infer_external_common(file_ctx, ref_ctx, builtins::is_zig_builtin) {
+            // Common returns "builtin"; remap to zig's "zig.builtin" label.
+            return Some(if ns == "builtin" { "zig.builtin".to_string() } else { ns });
         }
 
         // Alias-qualified: `std.mem.Allocator` → check if `std` is an external import.

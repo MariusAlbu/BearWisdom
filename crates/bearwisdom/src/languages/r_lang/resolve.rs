@@ -19,7 +19,7 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -65,54 +65,24 @@ impl LanguageResolver for RResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if edge_kind == EdgeKind::Imports {
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             return None;
         }
 
         // R builtins are never in the index.
-        if builtins::is_r_builtin(target) {
+        if builtins::is_r_builtin(&ref_ctx.extracted_ref.target_name) {
             return None;
         }
 
-        // Step 1: Scope chain walk (R uses lexical scoping).
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "r_scope_chain",
-                    });
-                }
-            }
-        }
+        engine::resolve_common("r", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+    }
 
-        // Step 2: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "r_same_file",
-                });
-            }
-        }
-
-        // Step 3: By-name lookup across the project (library/source'd files).
-        for sym in lookup.by_name(target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "r_by_name",
-                });
-            }
-        }
-
-        None
+    fn infer_external_namespace(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_r_builtin)
     }
 }

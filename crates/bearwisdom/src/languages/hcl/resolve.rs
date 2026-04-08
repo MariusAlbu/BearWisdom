@@ -22,7 +22,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -69,36 +69,27 @@ impl LanguageResolver for HclResolver {
             return None;
         }
 
-        // Strip common prefixes like "var.", "local.", "module." to get the
-        // bare name for lookup.
+        // Language-specific: strip common prefixes ("var.", "local.", "module.",
+        // "data.") and try the bare name against same-file symbols first.
         let bare = strip_hcl_prefix(target);
-
-        // Step 1: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == bare || sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "hcl_same_file",
-                });
+        if bare != target.as_str() {
+            for sym in lookup.in_file(&file_ctx.file_path) {
+                if sym.name == bare {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "hcl_same_file_bare",
+                    });
+                }
             }
         }
 
-        // Step 2: Global lookup (cross-file within same Terraform module dir).
-        for sym in lookup.by_name(bare) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "hcl_global",
-            });
-        }
-
-        None
+        engine::resolve_common("hcl", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
@@ -108,8 +99,8 @@ impl LanguageResolver for HclResolver {
             return Some("hcl".to_string());
         }
 
-        // Provider resource type references (e.g. "aws_instance", "azurerm_resource_group")
-        // and module source registry references are external.
+        // Provider resource type references and module source registry references
+        // are external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             return Some("terraform".to_string());
         }
@@ -122,7 +113,7 @@ impl LanguageResolver for HclResolver {
             }
         }
 
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_hcl_builtin)
     }
 }
 

@@ -20,7 +20,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -79,30 +80,19 @@ impl LanguageResolver for NixResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "nix_same_file",
-                });
-            }
-        }
-
-        // Step 2: Dotted attribute path — try as qualified name directly.
+        // Language-specific: dotted attribute path — try as qualified name directly,
+        // then fall back to the last segment. This is Nix-specific and happens before
+        // the shared resolution steps.
         if target.contains('.') {
-            if let Some(sym) = lookup.by_qualified_name(target) {
+            if let Some(sym) = lookup.by_qualified_name(target.as_str()) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "nix_qualified_name",
                 });
             }
-            // Fall back to using just the last segment.
             let last_seg = target.rsplit('.').next().unwrap_or(target.as_str());
-            let candidates = lookup.by_name(last_seg);
-            if let Some(sym) = candidates.into_iter().next() {
+            if let Some(sym) = lookup.by_name(last_seg).first() {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 0.75,
@@ -111,48 +101,32 @@ impl LanguageResolver for NixResolver {
             }
         }
 
-        // Step 3: Global name lookup.
-        let candidates = lookup.by_name(target);
-        if let Some(sym) = candidates.into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "nix_global_name",
-            });
-        }
-
-        None
+        engine::resolve_common("nix", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        // Import refs: classify by path type.
+        // Language-specific: Nix channel refs like <nixpkgs> are external; relative
+        // path imports are local and must NOT be marked external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let path = ref_ctx
                 .extracted_ref
                 .module
                 .as_deref()
                 .unwrap_or(target.as_str());
-
             if path.starts_with('<') && path.ends_with('>') {
-                // Channel reference like <nixpkgs> — always external.
                 return Some(path.to_string());
             }
-            // Relative paths are local files — not external.
             return None;
         }
 
-        if is_nix_builtin(target) {
-            return Some("builtin".to_string());
-        }
-
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_nix_builtin)
     }
 }
 

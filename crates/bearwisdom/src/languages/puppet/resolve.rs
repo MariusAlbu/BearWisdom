@@ -19,7 +19,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -64,60 +64,20 @@ impl LanguageResolver for PuppetResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target || sym.qualified_name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "puppet_same_file",
-                });
-            }
-        }
-
-        // Step 2: Global lookup — Puppet qualified names use "::".
-        // Try exact qualified name match first.
-        if let Some(sym) = lookup.by_qualified_name(target) {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 1.0,
-                strategy: "puppet_qualified",
-            });
-        }
-
-        // Try the bare (unqualified) name.
-        let bare = target.rsplit("::").next().unwrap_or(target.as_str());
-        for sym in lookup.by_name(bare) {
-            if matches!(sym.kind.as_str(), "class" | "function" | "struct") {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "puppet_global_name",
-                });
-            }
-        }
-
-        None
+        engine::resolve_common("puppet", file_ctx, ref_ctx, lookup, puppet_kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        if is_puppet_builtin(target) {
-            return Some("puppet".to_string());
-        }
-
-        // Puppet built-in functions.
-        if is_puppet_builtin_function(target) {
-            return Some("puppet".to_string());
-        }
-
-        None
+        // Combine both builtin predicates into one for the common helper.
+        engine::infer_external_common(file_ctx, ref_ctx, |name| {
+            is_puppet_builtin(name) || is_puppet_builtin_function(name)
+        })
+        .map(|_| "puppet".to_string())
     }
 }
 
@@ -139,6 +99,16 @@ fn is_puppet_builtin(name: &str) -> bool {
             | "selmodule" | "ssh_authorized_key" | "sshkey" | "stage"
             | "tidy" | "vlan" | "whit" | "yumrepo" | "zfs" | "zone" | "zpool"
     )
+}
+
+/// Edge-kind / symbol-kind compatibility for Puppet.
+fn puppet_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    match edge_kind {
+        EdgeKind::Calls => matches!(sym_kind, "method" | "function" | "class"),
+        EdgeKind::TypeRef | EdgeKind::Instantiates => matches!(sym_kind, "class" | "struct"),
+        EdgeKind::Inherits => matches!(sym_kind, "class"),
+        _ => true,
+    }
 }
 
 /// Puppet built-in functions.

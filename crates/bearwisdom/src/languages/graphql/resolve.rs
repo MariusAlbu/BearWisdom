@@ -18,7 +18,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -64,61 +64,29 @@ impl LanguageResolver for GraphQlResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "graphql_same_file",
-                });
-            }
-        }
-
-        // Step 2: Global lookup (schema type defined in another file).
-        for sym in lookup.by_name(target) {
-            if matches!(
-                sym.kind.as_str(),
+        engine::resolve_common("graphql", file_ctx, ref_ctx, lookup, |_, sym_kind| {
+            matches!(
+                sym_kind,
                 "class" | "interface" | "enum" | "struct" | "type_alias"
-            ) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "graphql_global_type",
-                });
-            }
-        }
-
-        // Fallback: any matching symbol.
-        if let Some(sym) = lookup.by_name(target).into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "graphql_global_fallback",
-            });
-        }
-
-        None
+            )
+        })
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
-
-        if is_graphql_builtin(target) {
-            return Some("graphql".to_string());
-        }
 
         // Introspection types (double-underscore prefix) are built-in.
         if target.starts_with("__") {
             return Some("graphql".to_string());
         }
 
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_graphql_builtin)
+            .map(|_| "graphql".to_string())
     }
 }
 

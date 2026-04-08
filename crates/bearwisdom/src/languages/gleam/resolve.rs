@@ -19,7 +19,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -78,20 +79,8 @@ impl LanguageResolver for GleamResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "gleam_same_file",
-                });
-            }
-        }
-
-        // Step 2: Import-based resolution.
-        // For each import, try `{module_name}.{target}` (Gleam qualified names
-        // are stored as `module.function` in the symbol index).
+        // Language-specific: import-based resolution with module alias lookup.
+        // Gleam qualified names are stored as `module.function` in the index.
         for import in &file_ctx.imports {
             let Some(full_path) = &import.module_path else {
                 continue;
@@ -125,34 +114,25 @@ impl LanguageResolver for GleamResolver {
             }
         }
 
-        // Step 3: Global name fallback.
-        let candidates = lookup.by_name(target);
-        if let Some(sym) = candidates.into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.8,
-                strategy: "gleam_global_name",
-            });
-        }
-
-        None
+        engine::resolve_common("gleam", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
+        // Gleam stdlib modules start with "gleam/" — mark them external before
+        // the common handler so the specific namespace is preserved.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let path = ref_ctx
                 .extracted_ref
                 .module
                 .as_deref()
                 .unwrap_or(target.as_str());
-            // Gleam stdlib modules start with "gleam/" — mark them external.
             if path.starts_with("gleam/") {
                 return Some(path.to_string());
             }
@@ -162,7 +142,7 @@ impl LanguageResolver for GleamResolver {
             return Some("builtin".to_string());
         }
 
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, |_| false)
     }
 }
 

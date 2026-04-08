@@ -17,7 +17,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -75,27 +76,7 @@ impl LanguageResolver for MakeResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution (variables and targets).
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "make_same_file",
-                });
-            }
-        }
-
-        // Step 2: Global lookup (from included .mk files).
-        if let Some(sym) = lookup.by_name(target).into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "make_global",
-            });
-        }
-
-        None
+        engine::resolve_common("make", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
     fn infer_external_namespace(
@@ -104,12 +85,9 @@ impl LanguageResolver for MakeResolver {
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        if is_make_builtin(target) {
+        if is_make_builtin(&ref_ctx.extracted_ref.target_name) {
             return Some("make".to_string());
         }
-
         None
     }
 }

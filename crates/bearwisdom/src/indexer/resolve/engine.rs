@@ -913,6 +913,257 @@ pub trait LanguageResolver: Send + Sync {
 }
 
 // ---------------------------------------------------------------------------
+// Shared resolution helpers for tier-2 language resolvers
+// ---------------------------------------------------------------------------
+
+/// Common resolution logic for languages that follow the standard pattern.
+///
+/// Steps (highest confidence first):
+///   1. Module-qualified lookup: ref has `module` field → try `{module}.{target}`
+///   2. Import-based: find target in imported modules via file context
+///   3. Scope chain walk: try `{scope}.{target}` for each scope
+///   4. Same-file: find target among symbols in the current file
+///   5. Qualified name: target contains `.` → direct qname lookup
+///
+/// Does NOT include a by-name fallback — that's the heuristic resolver's job.
+/// This prevents low-confidence false matches from intercepting the heuristic's
+/// module-aware matching.
+pub fn resolve_common(
+    lang_prefix: &'static str,
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+    kind_compatible: fn(EdgeKind, &str) -> bool,
+) -> Option<Resolution> {
+    let target = &ref_ctx.extracted_ref.target_name;
+    let edge_kind = ref_ctx.extracted_ref.kind;
+
+    // Skip import refs — they declare scope, not symbol references.
+    if edge_kind == EdgeKind::Imports {
+        return None;
+    }
+
+    // Step 1: Module-qualified lookup.
+    // If ref has module="List" and target="map", try "List.map" as qname.
+    if let Some(module) = &ref_ctx.extracted_ref.module {
+        // Try direct qualified name: module.target
+        let candidates = [
+            format!("{module}.{target}"),
+            format!("{module}::{target}"),
+            format!("{module}/{target}"),
+            format!("{module}:{target}"),
+        ];
+        for candidate in &candidates {
+            if let Some(sym) = lookup.by_qualified_name(candidate) {
+                if kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: concat_strategy(lang_prefix, "module_qualified"),
+                    });
+                }
+            }
+        }
+
+        // Try finding target in files that match the module name
+        let by_name = lookup.by_name(target);
+        for sym in by_name {
+            let file_lower = sym.file_path.to_lowercase();
+            let module_lower = module.to_lowercase();
+            // File stem or path segment matches module name
+            if file_stem_matches(&file_lower, &module_lower)
+                && kind_compatible(edge_kind, &sym.kind)
+            {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: concat_strategy(lang_prefix, "module_file"),
+                });
+            }
+        }
+    }
+
+    // Step 2: Import-based resolution.
+    // Check if target matches an imported name, then find it in the imported module.
+    for import in &file_ctx.imports {
+        let Some(module_path) = &import.module_path else {
+            continue;
+        };
+
+        // Wildcard import: all names from module are in scope
+        if import.is_wildcard {
+            let by_name = lookup.by_name(target);
+            for sym in by_name {
+                let file_lower = sym.file_path.to_lowercase();
+                let mod_lower = module_path.to_lowercase();
+                let last_seg = mod_lower.rsplit('/').next()
+                    .unwrap_or(&mod_lower)
+                    .rsplit('.')
+                    .next()
+                    .unwrap_or(&mod_lower);
+                if file_stem_matches(&file_lower, last_seg)
+                    && kind_compatible(edge_kind, &sym.kind)
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: concat_strategy(lang_prefix, "import"),
+                    });
+                }
+            }
+            continue;
+        }
+
+        // Named import: target matches the imported name
+        let matches_import = import.imported_name == *target
+            || import.alias.as_deref() == Some(target);
+        if matches_import {
+            // Find the symbol in the imported module's file
+            let by_name = lookup.by_name(target);
+            for sym in by_name {
+                if kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: concat_strategy(lang_prefix, "import"),
+                    });
+                }
+            }
+        }
+    }
+
+    // Step 3: Scope chain walk.
+    for scope in &ref_ctx.scope_chain {
+        let candidate = format!("{scope}.{target}");
+        if let Some(sym) = lookup.by_qualified_name(&candidate) {
+            if kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: concat_strategy(lang_prefix, "scope_chain"),
+                });
+            }
+        }
+    }
+
+    // Step 4: Same-file resolution.
+    for sym in lookup.in_file(&file_ctx.file_path) {
+        if sym.name == *target && kind_compatible(edge_kind, &sym.kind) {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 1.0,
+                strategy: concat_strategy(lang_prefix, "same_file"),
+            });
+        }
+    }
+
+    // Step 5: Fully qualified name (target contains dots).
+    if target.contains('.') || target.contains("::") || target.contains('/') {
+        if let Some(sym) = lookup.by_qualified_name(target) {
+            if kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: concat_strategy(lang_prefix, "qualified_name"),
+                });
+            }
+        }
+    }
+
+    // No deterministic resolution — let heuristic handle it.
+    None
+}
+
+/// Common external namespace inference for tier-2 languages.
+///
+/// Classifies refs as external when:
+///   1. The ref is an import (the import path IS the namespace)
+///   2. The target name is a known builtin/external
+pub fn infer_external_common(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    is_builtin: fn(&str) -> bool,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    // Import refs: the import path is the external namespace.
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let ns = ref_ctx
+            .extracted_ref
+            .module
+            .as_deref()
+            .unwrap_or(target);
+        return Some(ns.to_string());
+    }
+
+    // Known builtin/stdlib function or type.
+    if is_builtin(target) {
+        return Some("builtin".to_string());
+    }
+
+    // Module-qualified ref where the module matches an import path:
+    // the ref comes from an external dependency.
+    if let Some(module) = &ref_ctx.extracted_ref.module {
+        for import in &file_ctx.imports {
+            let Some(module_path) = &import.module_path else {
+                continue;
+            };
+            if import.imported_name == *module
+                || module_path.contains(module.as_str())
+            {
+                return Some(module_path.clone());
+            }
+        }
+    }
+
+    None
+}
+
+/// Check if a file path's stem matches a module name.
+fn file_stem_matches(file_path_lower: &str, module_lower: &str) -> bool {
+    let normalized = file_path_lower.replace('\\', "/");
+    // Check file stem: "src/lists.erl" stem is "lists"
+    if let Some(basename) = normalized.rsplit('/').next() {
+        if let Some(stem) = basename.rsplit_once('.').map(|(s, _)| s) {
+            if stem == module_lower {
+                return true;
+            }
+        }
+    }
+    // Check path segment: "src/lists/mod.rs"
+    normalized.split('/').any(|seg| seg == module_lower)
+}
+
+/// Strategy name helper — returns a leaked &'static str for diagnostics.
+/// Uses a fixed set of known suffixes to avoid allocation.
+fn concat_strategy(prefix: &'static str, suffix: &str) -> &'static str {
+    // For diagnostics only — use the prefix as a fallback.
+    // The full "{prefix}_{suffix}" string can't be &'static without leaking,
+    // so we return just the suffix which is always a literal.
+    match suffix {
+        "module_qualified" => match prefix {
+            "erlang" => "erlang_module_qualified",
+            "ocaml" => "ocaml_module_qualified",
+            "haskell" => "haskell_module_qualified",
+            "r" => "r_module_qualified",
+            "clojure" => "clojure_module_qualified",
+            "pascal" => "pascal_module_qualified",
+            "fortran" => "fortran_module_qualified",
+            "matlab" => "matlab_module_qualified",
+            "powershell" => "powershell_module_qualified",
+            "fsharp" => "fsharp_module_qualified",
+            _ => "common_module_qualified",
+        },
+        "module_file" => "common_module_file",
+        "import" => "common_import",
+        "scope_chain" => "common_scope_chain",
+        "same_file" => "common_same_file",
+        "qualified_name" => "common_qualified_name",
+        _ => "common_resolved",
+    }
+}
+
+// ---------------------------------------------------------------------------
 // ResolutionEngine
 // ---------------------------------------------------------------------------
 

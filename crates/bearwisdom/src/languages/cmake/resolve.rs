@@ -16,7 +16,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -74,61 +75,26 @@ impl LanguageResolver for CMakeResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution (functions/macros defined here).
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name.eq_ignore_ascii_case(target) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "cmake_same_file",
-                });
-            }
-        }
-
-        // Step 2: Global name lookup (included modules, subdirectories).
-        // CMake names are case-insensitive for commands; use eq_ignore_ascii_case.
-        for sym in lookup.by_name(target) {
-            if matches!(sym.kind.as_str(), "function" | "macro") {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.9,
-                    strategy: "cmake_global_function",
-                });
-            }
-        }
-
-        // Step 3: Variable reference fallback.
-        if edge_kind == EdgeKind::TypeRef {
-            if let Some(sym) = lookup.by_name(target).into_iter().next() {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.8,
-                    strategy: "cmake_global_var",
-                });
-            }
-        }
-
-        None
+        engine::resolve_common("cmake", file_ctx, ref_ctx, lookup, cmake_kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+        engine::infer_external_common(file_ctx, ref_ctx, is_cmake_builtin)
+    }
+}
 
-        if is_cmake_builtin(target) {
-            return Some("cmake".to_string());
-        }
-
-        // find_package() imports are external packages.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return Some("cmake".to_string());
-        }
-
-        None
+/// Edge kind / symbol kind compatibility for CMake.
+fn cmake_kind_compatible(edge_kind: crate::types::EdgeKind, sym_kind: &str) -> bool {
+    use crate::types::EdgeKind;
+    match edge_kind {
+        EdgeKind::Calls => matches!(sym_kind, "function" | "macro"),
+        EdgeKind::TypeRef => matches!(sym_kind, "variable" | "function" | "macro"),
+        _ => true,
     }
 }
 

@@ -16,7 +16,8 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -75,24 +76,9 @@ impl LanguageResolver for AdaResolver {
             return None;
         }
 
-        // Ada identifiers are case-insensitive; strip dot-qualified prefix for lookup.
+        // Ada identifiers are case-insensitive; check same-file with case folding
+        // before delegating to the common resolver (which uses exact matching).
         let simple = target.split('.').last().unwrap_or(target);
-
-        // Step 1: Scope chain walk.
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{simple}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "ada_scope_chain",
-                    });
-                }
-            }
-        }
-
-        // Step 2: Same-file resolution.
         for sym in lookup.in_file(&file_ctx.file_path) {
             if sym.name.to_lowercase() == simple.to_lowercase()
                 && builtins::kind_compatible(edge_kind, &sym.kind)
@@ -100,46 +86,31 @@ impl LanguageResolver for AdaResolver {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
-                    strategy: "ada_same_file",
+                    strategy: "ada_same_file_ci",
                 });
             }
         }
 
-        // Step 3: Simple name lookup across the project.
-        for sym in lookup.by_name(simple) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "ada_by_name",
-                });
-            }
-        }
-
-        None
+        engine::resolve_common("ada", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
+        // Ada standard library imports are classified by their top-level package name.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            // Top-level Ada standard library packages.
             let root = target.split('.').next().unwrap_or(target);
             if matches!(root, "Ada" | "System" | "Interfaces" | "GNAT" | "Standard") {
                 return Some(root.to_string());
             }
-            return None;
+            // Non-stdlib imports: fall through to common handler.
         }
 
-        if builtins::is_ada_builtin(target) {
-            return Some("ada.standard".to_string());
-        }
-
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_ada_builtin)
     }
 }

@@ -18,7 +18,8 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -80,44 +81,45 @@ impl LanguageResolver for PrologResolver {
         }
 
         // Strip module qualification: `lists:member` → `member`.
+        // resolve_common operates on target_name directly; when the target
+        // contains a module qualifier we must resolve the bare predicate name.
         let effective_target = target.split(':').last().unwrap_or(target);
 
-        // Step 1: Scope chain walk.
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+        if effective_target != target.as_str() {
+            // Qualified form: scope chain then same-file with the bare predicate.
+            for scope in &ref_ctx.scope_chain {
+                let candidate = format!("{scope}.{effective_target}");
+                if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "prolog_scope_chain",
+                        });
+                    }
+                }
+            }
+            for sym in lookup.in_file(&file_ctx.file_path) {
+                if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
-                        strategy: "prolog_scope_chain",
+                        strategy: "prolog_same_file",
                     });
                 }
             }
+            return None;
         }
 
-        // Step 2: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "prolog_same_file",
-                });
-            }
-        }
+        engine::resolve_common("prolog", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+    }
 
-        // Step 3: Project-wide name lookup.
-        for sym in lookup.by_name(effective_target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "prolog_by_name",
-                });
-            }
-        }
-
-        None
+    fn infer_external_namespace(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_prolog_builtin)
     }
 }

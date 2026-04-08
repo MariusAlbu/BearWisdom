@@ -16,13 +16,20 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
 /// Fortran language resolver.
 pub struct FortranResolver;
+
+/// Case-insensitive builtin check: `is_fortran_builtin` expects lowercased input,
+/// so normalise here to satisfy the `fn(&str) -> bool` signature required by
+/// `infer_external_common`.
+fn is_fortran_builtin_ci(name: &str) -> bool {
+    builtins::is_fortran_builtin(name) || builtins::is_fortran_builtin(&name.to_lowercase())
+}
 
 impl LanguageResolver for FortranResolver {
     fn language_ids(&self) -> &[&str] {
@@ -67,37 +74,22 @@ impl LanguageResolver for FortranResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        let edge_kind = ref_ctx.extracted_ref.kind;
-
-        if edge_kind == EdgeKind::Imports {
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             return None;
         }
 
         // Fortran is case-insensitive; check both as-is and lowercased.
+        let target = &ref_ctx.extracted_ref.target_name;
         let target_lower = target.to_lowercase();
         if builtins::is_fortran_builtin(target) || builtins::is_fortran_builtin(&target_lower) {
             return None;
         }
 
-        // Step 1: Scope chain walk.
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "fortran_scope_chain",
-                    });
-                }
-            }
-        }
-
-        // Step 2: Same-file resolution.
+        // Fortran is case-insensitive: check same-file with lowercased comparison
+        // before delegating to resolve_common (which is case-sensitive).
         for sym in lookup.in_file(&file_ctx.file_path) {
             if sym.name.to_lowercase() == target_lower
-                && builtins::kind_compatible(edge_kind, &sym.kind)
+                && builtins::kind_compatible(ref_ctx.extracted_ref.kind, &sym.kind)
             {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -107,37 +99,15 @@ impl LanguageResolver for FortranResolver {
             }
         }
 
-        // Step 3: Simple name lookup across the project (case-insensitive).
-        for sym in lookup.by_name(target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "fortran_by_name",
-                });
-            }
-        }
-
-        None
+        engine::resolve_common("fortran", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return None;
-        }
-
-        let target_lower = target.to_lowercase();
-        if builtins::is_fortran_builtin(target) || builtins::is_fortran_builtin(&target_lower) {
-            return Some("fortran.intrinsic".to_string());
-        }
-
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_fortran_builtin_ci)
     }
 }

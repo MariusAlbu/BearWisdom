@@ -21,7 +21,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -95,19 +96,8 @@ impl LanguageResolver for ProtoResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "proto_same_file",
-                });
-            }
-        }
-
-        // Step 2: Package-qualified lookup.
-        // Fully qualified names like ".mypackage.MyMessage" (leading dot).
+        // Language-specific: strip leading dot from fully qualified names and try
+        // package-prefixed lookup before falling through to the shared resolver.
         let bare_target = target.trim_start_matches('.');
         if let Some(sym) = lookup.by_qualified_name(bare_target) {
             return Some(Resolution {
@@ -116,8 +106,6 @@ impl LanguageResolver for ProtoResolver {
                 strategy: "proto_qualified",
             });
         }
-
-        // Try with the file's own package prefix.
         if let Some(pkg) = &file_ctx.file_namespace {
             let candidate = format!("{pkg}.{bare_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
@@ -129,37 +117,27 @@ impl LanguageResolver for ProtoResolver {
             }
         }
 
-        // Step 3: Global name lookup (from imported .proto files).
-        for sym in lookup.by_name(bare_target) {
-            if matches!(sym.kind.as_str(), "struct" | "enum" | "class") {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.9,
-                    strategy: "proto_global_type",
-                });
-            }
-        }
-
-        None
+        engine::resolve_common(
+            "proto",
+            file_ctx,
+            ref_ctx,
+            lookup,
+            |_edge_kind, sym_kind| matches!(sym_kind, "struct" | "enum" | "class"),
+        )
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        if is_proto_scalar(target) {
-            return Some("protobuf".to_string());
-        }
-
+        // Language-specific: well-known google.protobuf types and google/protobuf/* imports.
         if target.starts_with("google.protobuf.") || target.starts_with(".google.protobuf.") {
             return Some("protobuf".to_string());
         }
-
-        // google/protobuf/* imports are well-known types.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let module = ref_ctx
                 .extracted_ref
@@ -171,7 +149,7 @@ impl LanguageResolver for ProtoResolver {
             }
         }
 
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_proto_scalar)
     }
 }
 

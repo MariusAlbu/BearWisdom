@@ -21,7 +21,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -86,24 +87,12 @@ impl LanguageResolver for HareResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "hare_same_file",
-                });
-            }
-        }
-
-        // Step 2: Import-based qualified lookup.
-        // Hare qualified names use `::` as separator.
-        // Try: for each imported module, look up `{module}::{target}`.
+        // Language-specific: import-based qualified lookup with `::` separator.
         for import in &file_ctx.imports {
             let Some(mod_path) = &import.module_path else {
                 continue;
             };
+            // Try full module path prefix: `{mod_path}::{target}`.
             let candidate = format!("{mod_path}::{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 return Some(Resolution {
@@ -113,7 +102,7 @@ impl LanguageResolver for HareResolver {
                 });
             }
 
-            // Also try just the local module name prefix.
+            // Try local module name prefix: `{local_name}::{target}`.
             let candidate2 = format!("{}::{}", import.imported_name, target);
             if let Some(sym) = lookup.by_qualified_name(&candidate2) {
                 return Some(Resolution {
@@ -124,26 +113,18 @@ impl LanguageResolver for HareResolver {
             }
         }
 
-        // Step 3: Global name fallback.
-        if let Some(sym) = lookup.by_name(target).into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.8,
-                strategy: "hare_global_name",
-            });
-        }
-
-        None
+        engine::resolve_common("hare", file_ctx, ref_ctx, lookup, |_, _| true)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
+        // Hare stdlib modules take precedence — label them specifically.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let module = ref_ctx
                 .extracted_ref
@@ -155,11 +136,7 @@ impl LanguageResolver for HareResolver {
             }
         }
 
-        if is_hare_primitive(target) {
-            return Some("builtin".to_string());
-        }
-
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_hare_primitive)
     }
 }
 

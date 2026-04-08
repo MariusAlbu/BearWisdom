@@ -16,7 +16,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -62,58 +62,31 @@ impl LanguageResolver for PrismaResolver {
             return None;
         }
 
-        // Step 1: Same-file resolution (most Prisma projects use one schema file).
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "prisma_same_file",
-                });
-            }
-        }
-
-        // Step 2: Global lookup (multi-file Prisma schemas).
-        for sym in lookup.by_name(target) {
-            if matches!(sym.kind.as_str(), "struct" | "enum" | "class" | "type_alias") {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "prisma_global_type",
-                });
-            }
-        }
-
-        // Step 3: Any matching symbol.
-        if let Some(sym) = lookup.by_name(target).into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "prisma_global_fallback",
-            });
-        }
-
-        None
+        engine::resolve_common(
+            "prisma",
+            file_ctx,
+            ref_ctx,
+            lookup,
+            |_edge_kind, sym_kind| {
+                matches!(sym_kind, "struct" | "enum" | "class" | "type_alias")
+            },
+        )
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        if is_prisma_scalar(target) {
-            return Some("prisma".to_string());
-        }
-
-        // Prisma attribute functions like @db.Text, @db.VarChar are provider-specific.
+        // Language-specific: provider attribute paths like @db.Text are Prisma-external.
         if target.starts_with("@db.") || target.starts_with("db.") {
             return Some("prisma".to_string());
         }
 
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_prisma_scalar)
     }
 }
 

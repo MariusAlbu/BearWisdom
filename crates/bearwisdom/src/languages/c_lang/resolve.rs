@@ -21,7 +21,8 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -68,7 +69,7 @@ impl LanguageResolver for CLangResolver {
 
     fn resolve(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
@@ -90,7 +91,7 @@ impl LanguageResolver for CLangResolver {
             .or_else(|| target.strip_prefix("this."))
             .unwrap_or(target);
 
-        // Step 1: Scope chain walk.
+        // Step 1 (C-specific): Scope chain walk using `::` separator.
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}::{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
@@ -102,20 +103,9 @@ impl LanguageResolver for CLangResolver {
                     });
                 }
             }
-            // Also try dot-separated qualified name (some extractors use `.` not `::`).
-            let candidate_dot = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate_dot) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "c_scope_chain_dot",
-                    });
-                }
-            }
         }
 
-        // Step 2: Namespace-qualified lookup (e.g., `MyNS::Foo`).
+        // Step 2 (C-specific): Namespace-qualified lookup (e.g., `MyNS::Foo`).
         if effective_target.contains("::") {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
                 if builtins::kind_compatible(edge_kind, &sym.kind) {
@@ -128,18 +118,22 @@ impl LanguageResolver for CLangResolver {
             }
         }
 
-        // Step 3: Simple name lookup (global / anonymous namespace).
-        for sym in lookup.by_name(effective_target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
+        // Step 3: Common resolution (dot-scope chain, same-file, import-based).
+        // `effective_target` may differ from `target` (this-> stripped), so we
+        // build a synthetic RefContext-alike by delegating with the original ref_ctx.
+        // resolve_common uses ref_ctx.extracted_ref.target_name directly, which is
+        // the unstripped `target`. Re-check with the stripped name via same-file lookup.
+        for sym in lookup.in_file(&file_ctx.file_path) {
+            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "c_simple_name",
+                    confidence: 1.0,
+                    strategy: "c_same_file",
                 });
             }
         }
 
-        None
+        engine::resolve_common("c", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(

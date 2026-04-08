@@ -20,7 +20,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -80,69 +81,26 @@ impl LanguageResolver for ScssResolver {
             return None;
         }
 
-        // Step 1: Same-file — SCSS mixins/functions defined in the same file
-        // are always in scope.
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "scss_same_file",
-                });
-            }
-        }
-
-        // Step 2: Search imported modules. For each @use/@import path, look for
-        // the target in the corresponding file.
-        for import in &file_ctx.imports {
-            let Some(module_path) = &import.module_path else {
-                continue;
-            };
-            for sym in lookup.in_file(module_path) {
-                if sym.name == *target {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "scss_import",
-                    });
-                }
-            }
-        }
-
-        // Step 3: Global lookup by name — covers partial imports and shared
-        // design-system files accessible from anywhere in the project.
-        let candidates = lookup.by_name(target);
-        if let Some(sym) = candidates.into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.85,
-                strategy: "scss_global_name",
-            });
-        }
-
-        None
+        engine::resolve_common("scss", file_ctx, ref_ctx, lookup, scss_kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
-        // Mark Imports refs as their module path (moves them out of unresolved).
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let path = ref_ctx
-                .extracted_ref
-                .module
-                .as_deref()
-                .unwrap_or(target.as_str());
-            return Some(path.to_string());
-        }
-        if is_css_builtin(target) {
-            return Some("builtin".to_string());
-        }
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_css_builtin)
+    }
+}
+
+/// Edge-kind / symbol-kind compatibility for SCSS.
+/// SCSS has mixins (function), placeholders/extends (class), and variables (variable).
+fn scss_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    match edge_kind {
+        EdgeKind::Calls => matches!(sym_kind, "function" | "method"),
+        EdgeKind::Inherits => matches!(sym_kind, "class"),
+        _ => true,
     }
 }
 

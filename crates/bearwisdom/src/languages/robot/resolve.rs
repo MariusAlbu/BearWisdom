@@ -22,7 +22,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -115,46 +116,31 @@ impl LanguageResolver for RobotResolver {
             }
         }
 
-        // Step 3: Global name lookup (normalized).
-        for sym in lookup.by_name(target) {
-            if normalize_robot_name(&sym.name) == normalized_target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "robot_global",
-                });
-            }
-        }
-
-        None
+        // Step 3: Common resolution (handles import-based, scope chain, qualified names).
+        // Robot has no scope chain, but resolve_common covers cross-file imports and
+        // qualified lookups without adding a raw by_name fallback.
+        engine::resolve_common("robot", file_ctx, ref_ctx, lookup, robot_kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        if is_robot_builtin(target) {
-            return Some("robot".to_string());
-        }
-
-        // Library imports are always external.
+        // Library imports: non-file-path imports are external Robot libraries.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let path = ref_ctx
-                .extracted_ref
-                .module
-                .as_deref()
-                .unwrap_or(target.as_str());
-            // Heuristic: if it doesn't look like a file path, it's a library.
+            let path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
             if !path.contains('/') && !path.contains('\\') && !path.ends_with(".robot") {
                 return Some("robot".to_string());
             }
+            return None;
         }
 
-        None
+        engine::infer_external_common(file_ctx, ref_ctx, is_robot_builtin)
+            .map(|_| "robot".to_string())
     }
 }
 
@@ -165,6 +151,15 @@ fn normalize_robot_name(name: &str) -> String {
         .chars()
         .map(|c| if c == ' ' || c == '_' { '_' } else { c })
         .collect()
+}
+
+/// Edge-kind / symbol-kind compatibility for Robot Framework.
+/// Robot only has keywords (function) — all call edges target functions.
+fn robot_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    match edge_kind {
+        EdgeKind::Calls => matches!(sym_kind, "function" | "method"),
+        _ => true,
+    }
 }
 
 /// Robot Framework BuiltIn library keywords.

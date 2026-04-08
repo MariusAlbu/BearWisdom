@@ -16,7 +16,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -48,7 +48,6 @@ impl LanguageResolver for DockerfileResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
         // Imports (FROM base images) are always external.
@@ -58,36 +57,45 @@ impl LanguageResolver for DockerfileResolver {
 
         // COPY --from=<stage> — resolve against stage symbols in the same file.
         // Stage names are emitted as symbols from `from_instruction` with an
-        // alias (AS clause).
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name.eq_ignore_ascii_case(target) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "dockerfile_stage_ref",
-                });
-            }
-        }
-
-        None
+        // alias (AS clause). Delegate to the common resolver (same-file step).
+        engine::resolve_common(
+            "dockerfile",
+            file_ctx,
+            ref_ctx,
+            lookup,
+            dockerfile_kind_compatible,
+        )
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        // Base image references in FROM instructions are always external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            return Some("docker".to_string());
-        }
-
-        // Scratch is a special Docker pseudo-image.
+        // Scratch is a special Docker pseudo-image — classify before common handler.
         if ref_ctx.extracted_ref.target_name.eq_ignore_ascii_case("scratch") {
             return Some("docker".to_string());
         }
 
-        None
+        // Base image references in FROM (Imports) are always external; common
+        // handler returns Some(ns) for Imports edges, using "builtin" fallback.
+        // Override the namespace label to "docker" for all Dockerfile externals.
+        engine::infer_external_common(file_ctx, ref_ctx, no_dockerfile_builtin)
+            .map(|_| "docker".to_string())
+    }
+}
+
+/// Dockerfile has no builtin functions — placeholder for infer_external_common.
+fn no_dockerfile_builtin(_: &str) -> bool {
+    false
+}
+
+/// Edge kind / symbol kind compatibility for Dockerfile.
+fn dockerfile_kind_compatible(edge_kind: crate::types::EdgeKind, sym_kind: &str) -> bool {
+    use crate::types::EdgeKind;
+    match edge_kind {
+        EdgeKind::Calls | EdgeKind::TypeRef => matches!(sym_kind, "class" | "variable"),
+        _ => true,
     }
 }

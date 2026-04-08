@@ -17,7 +17,8 @@
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -78,46 +79,15 @@ impl LanguageResolver for CobolResolver {
             return None;
         }
 
-        // Normalise: COBOL is case-insensitive; names are typically uppercased.
-        // The extractor should already normalise, but guard here for safety.
-        let effective_target = target.as_str();
+        engine::resolve_common("cobol", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+    }
 
-        // Step 1: Scope chain walk (section → program division).
-        for scope in &ref_ctx.scope_chain {
-            let candidate = format!("{scope}.{effective_target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "cobol_scope_chain",
-                    });
-                }
-            }
-        }
-
-        // Step 2: Same-file resolution (paragraphs and sections in the same program).
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "cobol_same_file",
-                });
-            }
-        }
-
-        // Step 3: Project-wide name lookup (external CALL targets).
-        for sym in lookup.by_name(effective_target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "cobol_by_name",
-                });
-            }
-        }
-
-        None
+    fn infer_external_namespace(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_cobol_builtin)
     }
 }

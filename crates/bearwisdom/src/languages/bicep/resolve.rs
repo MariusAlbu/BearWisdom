@@ -23,7 +23,8 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -81,47 +82,37 @@ impl LanguageResolver for BicepResolver {
             return None;
         }
 
-        // Step 1: Same-file — all top-level Bicep declarations are visible
-        // across the whole file (no block scoping at the top level).
-        for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "bicep_same_file",
-                });
-            }
-        }
-
-        // Step 2: Global name fallback (cross-file module references).
-        if let Some(sym) = lookup.by_name(target).into_iter().next() {
-            return Some(Resolution {
-                target_symbol_id: sym.id,
-                confidence: 0.8,
-                strategy: "bicep_global_name",
-            });
-        }
-
-        None
+        engine::resolve_common("bicep", file_ctx, ref_ctx, lookup, bicep_kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
+        // Azure resource type strings take priority.
         if is_azure_resource_type(target) {
             return Some("azure".to_string());
         }
 
-        if is_bicep_builtin(target) {
-            return Some("bicep".to_string());
-        }
+        engine::infer_external_common(file_ctx, ref_ctx, is_bicep_builtin)
+    }
+}
 
-        None
+/// Edge kind / symbol kind compatibility for Bicep.
+fn bicep_kind_compatible(edge_kind: crate::types::EdgeKind, sym_kind: &str) -> bool {
+    use crate::types::EdgeKind;
+    match edge_kind {
+        EdgeKind::Calls => matches!(sym_kind, "method" | "function" | "constructor"),
+        EdgeKind::TypeRef => matches!(
+            sym_kind,
+            "class" | "interface" | "enum" | "type_alias" | "variable" | "function"
+        ),
+        EdgeKind::Instantiates => matches!(sym_kind, "class" | "function"),
+        _ => true,
     }
 }
 
