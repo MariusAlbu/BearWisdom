@@ -156,7 +156,32 @@ fn extract_class(
         parent_index,
     });
 
-    // Walk class body for methods and nested classes.
+    // Extract superclass (extends) → Inherits edge
+    if let Some(superclass_node) = node.child_by_field_name("superclass") {
+        let mut sc = superclass_node.walk();
+        for sc_child in superclass_node.children(&mut sc) {
+            if sc_child.kind() == "type_identifier" || sc_child.kind() == "identifier" {
+                let target = node_text(&sc_child, src).to_string();
+                if !target.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: class_idx,
+                        target_name: target,
+                        kind: EdgeKind::Inherits,
+                        line: superclass_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+    }
+
+    // Extract interfaces (implements) → Implements edges
+    if let Some(interfaces_node) = node.child_by_field_name("interfaces") {
+        extract_type_list_refs(&interfaces_node, src, class_idx, EdgeKind::Implements, refs);
+    }
+
+    // Walk class body for methods, fields, and nested classes.
     if let Some(body) = node.child_by_field_name("body") {
         let mut cursor = body.walk();
         for child in body.children(&mut cursor) {
@@ -171,12 +196,91 @@ fn extract_class(
                     // Inner / nested class — recurse so its methods are found.
                     extract_class(&child, src, symbols, refs, Some(class_idx));
                 }
+                "field_declaration" => {
+                    extract_field(&child, src, symbols, Some(class_idx));
+                }
                 "method_invocation" => {
                     extract_call(&child, src, class_idx, refs);
                 }
                 _ => {
                     visit_for_calls(&child, src, class_idx, refs);
                 }
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Field extraction (class body `field_declaration`)
+// ---------------------------------------------------------------------------
+
+fn extract_field(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let type_name = named_field_text(node, "type", src).unwrap_or_default();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "variable_declarator" {
+            let field_name = match named_field_text(&child, "name", src) {
+                Some(n) => n,
+                None => continue,
+            };
+            let line = child.start_position().row as u32;
+            let sig = if type_name.is_empty() {
+                field_name.clone()
+            } else {
+                format!("{} {}", type_name, field_name)
+            };
+            symbols.push(ExtractedSymbol {
+                name: field_name.clone(),
+                qualified_name: field_name.clone(),
+                kind: SymbolKind::Field,
+                visibility: Some(Visibility::Public),
+                start_line: line,
+                end_line: child.end_position().row as u32,
+                start_col: child.start_position().column as u32,
+                end_col: 0,
+                signature: Some(sig),
+                doc_comment: None,
+                scope_path: None,
+                parent_index,
+            });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Type list helper — walks super_interfaces / type_list for Inherits/Implements
+// ---------------------------------------------------------------------------
+
+fn extract_type_list_refs(
+    node: &Node,
+    src: &str,
+    source_idx: usize,
+    kind: EdgeKind,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let name = node_text(&child, src).to_string();
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: name,
+                        kind,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            _ => {
+                extract_type_list_refs(&child, src, source_idx, kind, refs);
             }
         }
     }

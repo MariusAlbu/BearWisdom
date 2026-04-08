@@ -74,6 +74,29 @@ fn walk_node(
             symbols.push(make_sym(name, SymbolKind::Class, Visibility::Public, node, parent_idx));
             walk_children(node, src, symbols, refs, Some(idx));
         }
+        "methods" => {
+            // `methods` block inside a `class_definition` — extract nested
+            // function_definition nodes as Method symbols.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "function_definition" {
+                    let name = child
+                        .child_by_field_name("name")
+                        .map(|n| text(n, src))
+                        .unwrap_or_default();
+                    let name = if name.is_empty() {
+                        format!("<anon_method_{}>", child.start_position().row + 1)
+                    } else {
+                        name
+                    };
+                    let idx = symbols.len();
+                    symbols.push(make_sym(name, SymbolKind::Method, Visibility::Public, child, parent_idx));
+                    walk_children(child, src, symbols, refs, Some(idx));
+                } else {
+                    walk_node(child, src, symbols, refs, parent_idx);
+                }
+            }
+        }
         "assignment" => {
             // Capture assignments at any scope as Variable symbols.
             // field "left" holds the LHS.

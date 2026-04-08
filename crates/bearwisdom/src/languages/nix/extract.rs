@@ -494,21 +494,39 @@ fn extract_inherit_from(
 }
 
 /// Find the source expression name in `inherit (src) ...`.
+///
+/// tree-sitter-nix 0.3: `inherit_from` has an `expression` named field that
+/// holds the source attrset expression (the part in parentheses).
 fn find_inherit_from_source(node: &Node, src: &str) -> Option<String> {
+    // Primary: use the `expression` named field (tree-sitter-nix 0.3+)
+    if let Some(expr) = node.child_by_field_name("expression") {
+        if let Some(name) = resolve_var_name(expr, src) {
+            return Some(name);
+        }
+        return first_identifier_text(&expr, src);
+    }
+    // Fallback: iterate children looking for parenthesized or variable expressions.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "parenthesized_expression" || child.kind() == "expression" {
-            // Get the identifier inside
-            if let Some(ident) = first_identifier_text(&child, src) {
-                return Some(ident);
-            }
-            // Try select_expression (e.g., `inherit (pkgs.lib) ...`)
-            let mut cc = child.walk();
-            for inner in child.children(&mut cc) {
-                if inner.kind() == "variable_expression" || inner.kind() == "identifier" {
-                    return Some(node_text(inner, src));
+        match child.kind() {
+            "parenthesized_expression" | "expression" => {
+                if let Some(ident) = first_identifier_text(&child, src) {
+                    return Some(ident);
+                }
+                let mut cc = child.walk();
+                for inner in child.children(&mut cc) {
+                    if inner.kind() == "variable_expression" || inner.kind() == "identifier" {
+                        return Some(node_text(inner, src));
+                    }
                 }
             }
+            "variable_expression" | "identifier" => {
+                let t = node_text(child, src);
+                if !t.is_empty() && t != "inherit" {
+                    return Some(t);
+                }
+            }
+            _ => {}
         }
     }
     None

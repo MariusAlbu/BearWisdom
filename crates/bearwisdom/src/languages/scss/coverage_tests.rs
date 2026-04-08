@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // scss/coverage_tests.rs — Node-kind coverage tests for the SCSS extractor
 //
 // symbol_node_kinds:
@@ -212,13 +212,22 @@ fn cov_scss_variable_declaration() {
 }
 
 // ---------------------------------------------------------------------------
-// ref_node_kinds: use_statement
-// TODO: extract.rs has no use_statement handler — @use produces no Imports refs.
-// The grammar parses @use as a use_statement but the extractor falls through
-// to the default branch which only recurses children without emitting Imports.
-// Add a handle_use() in extract.rs mirroring handle_forward() to enable these.
+// ref_node_kinds: use_statement -> Imports ref
 // ---------------------------------------------------------------------------
 
+#[test]
+fn cov_use_statement_emits_imports() {
+    let r = extract::extract("@use 'sass:math';", "");
+    let imp = r.refs.iter().find(|e| e.kind == EdgeKind::Imports && e.target_name == "sass:math");
+    assert!(imp.is_some(), "expected Imports ref to 'sass:math' from @use; got: {:?}", r.refs);
+}
+
+#[test]
+fn cov_use_statement_simple_path_emits_imports() {
+    let r = extract::extract("@use 'variables';", "");
+    let imp = r.refs.iter().find(|e| e.kind == EdgeKind::Imports && e.target_name == "variables");
+    assert!(imp.is_some(), "expected Imports ref to 'variables' from @use; got: {:?}", r.refs);
+}
 // ---------------------------------------------------------------------------
 // symbol_node_kinds: variable_name — signature includes declaration line
 // ---------------------------------------------------------------------------

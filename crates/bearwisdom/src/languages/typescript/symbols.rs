@@ -678,10 +678,18 @@ pub(super) fn push_variable_decl(
                     let name = node_text(name_node, src);
                     let qualified_name = scope_tree::qualify(&name, parent_scope);
                     let idx = symbols.len();
+                    // Promote to Function when the initializer is a function-like expression.
+                    // `const f = function() {}` or `const f = () => {}` -- standard TS idiom
+                    // for top-level functions written as variable assignments.
+                    let init_kind = child.child_by_field_name("value").map(|v| v.kind());
+                    let sym_kind = match init_kind.as_deref() {
+                        Some("arrow_function" | "function_expression") => SymbolKind::Function,
+                        _ => SymbolKind::Variable,
+                    };
                     symbols.push(ExtractedSymbol {
                         name: name.clone(),
                         qualified_name,
-                        kind: SymbolKind::Variable,
+                        kind: sym_kind,
                         visibility: detect_visibility(node, src),
                         start_line: child.start_position().row as u32,
                         end_line: child.end_position().row as u32,

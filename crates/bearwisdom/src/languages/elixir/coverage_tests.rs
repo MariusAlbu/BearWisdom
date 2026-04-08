@@ -256,8 +256,17 @@ fn ref_alias_multi_module() {
 // Additional symbol kinds from rules
 // ---------------------------------------------------------------------------
 
-/// defexception — rules say Struct; extractor does not handle it — TODO.
-// TODO: defexception is not handled by the extractor; no Struct symbol emitted.
+/// `defexception` inside a module emits a `Struct` symbol whose name is the enclosing
+/// module name (the exception type IS the module in Elixir).
+#[test]
+fn symbol_defexception() {
+    let r = extract("defmodule MyApp.NotFoundError do\n  defexception [:message]\nend");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct),
+        "expected Struct symbol from defexception; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// defprotocol inner def — protocol callback method should produce a Method symbol.
 #[test]

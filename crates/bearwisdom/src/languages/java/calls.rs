@@ -162,6 +162,37 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
             // `condition ? trueExpr : falseExpr` — ternary/conditional expression.
             // Both branches may contain method calls or stream chains.
+            // `super(args)` / `this(args)` — explicit constructor invocation.
+            // Emits a Calls edge for "super" or "this".
+            "explicit_constructor_invocation" => {
+                let target = {
+                    let mut ic = child.walk();
+                    let mut found = String::new();
+                    for c in child.children(&mut ic) {
+                        if c.kind() == "super" || c.kind() == "this" {
+                            found = node_text(c, src);
+                            break;
+                        }
+                    }
+                    found
+                };
+                if !target.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: target,
+                        kind: EdgeKind::Calls,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+                if let Some(syms) = symbols.as_deref_mut() {
+                    extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
+                } else {
+                    extract_calls_from_body(&child, src, source_symbol_index, refs);
+                }
+            }
+
             "conditional_expression" => {
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));

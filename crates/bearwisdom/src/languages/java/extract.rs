@@ -191,6 +191,12 @@ pub(super) fn extract_node(
                 }
             }
 
+            // `String value() default "";` inside `@interface` bodies.
+            "annotation_type_element_declaration" => {
+                symbols::push_annotation_element_decl(&child, src, scope_tree, package, symbols, parent_index);
+            }
+
+
             // Java 16+ `record Foo(String name, int age) implements Bar { ... }`
             // Treated as Class — emit symbol + record components as Property symbols.
             "record_declaration" => {
@@ -239,6 +245,18 @@ pub(super) fn extract_node(
                     }
                 }
             }
+
+            // Java 16+ compact constructor: `RecordName { ... }` inside record bodies.
+            "compact_constructor_declaration" => {
+                let idx = symbols::push_compact_constructor_decl(&child, src, scope_tree, package, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    decorators::extract_decorators(&child, src, sym_idx, refs);
+                    if let Some(body) = child.child_by_field_name("body") {
+                        calls::extract_calls_from_body_with_symbols(&body, src, sym_idx, refs, Some(symbols));
+                    }
+                }
+            }
+
 
             "field_declaration" | "constant_declaration" => {
                 let field_start_idx = symbols.len();

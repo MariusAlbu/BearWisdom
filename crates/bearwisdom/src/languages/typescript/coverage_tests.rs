@@ -1323,30 +1323,25 @@ fn debug_measure_coverage_calcom() {
 
 #[test]
 fn coverage_function_expression_symbol() {
-    // `const f = function() {}` — function_expression initializer.
-    // The TS extractor's push_variable_decl always emits Variable for simple identifiers
-    // regardless of the initializer kind (unlike the JS extractor which inspects the
-    // initializer). So the symbol kind is Variable, not Function.
-    // TODO: TS extractor does not promote arrow_function/function_expression initializers
-    // to Function kind; push_variable_decl unconditionally emits Variable.
+    // `const f = function() {}` -- function_expression initializer.
+    // push_variable_decl promotes to Function kind when the initializer is a
+    // function_expression or arrow_function.
     let r = extract::extract("const format = function(x: string): string { return x; };", false);
     assert!(
-        r.symbols.iter().any(|s| s.name == "format"),
-        "function_expression in variable_declarator should produce a symbol named 'format'; got: {:?}",
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "format"),
+        "function_expression in variable_declarator should produce a Function symbol named 'format'; got: {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
 
 #[test]
 fn coverage_arrow_function_symbol() {
-    // `const fn = (x: T) => x` — arrow_function in variable_declarator.
-    // The TS extractor produces Variable (not Function) because push_variable_decl does not
-    // inspect the initializer kind. The JS extractor does promote these to Function.
-    // TODO: TS push_variable_decl does not differentiate arrow_function initializers.
+    // `const fn = (x: T) => x` -- arrow_function in variable_declarator.
+    // push_variable_decl promotes to Function kind when the initializer is an arrow_function.
     let r = extract::extract("const transform = (x: number): number => x * 2;", false);
     assert!(
-        r.symbols.iter().any(|s| s.name == "transform"),
-        "arrow_function in variable_declarator should produce a symbol named 'transform'; got: {:?}",
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "transform"),
+        "arrow_function in variable_declarator should produce a Function symbol named 'transform'; got: {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
@@ -1407,14 +1402,15 @@ fn coverage_ambient_declaration() {
 
 #[test]
 fn coverage_function_signature() {
-    // `function overloaded(x: string): string;` — function overload / ambient signature.
-    // The extractor does not have a dedicated `function_signature` arm; it falls through
-    // the `_` arm which recurses.
-    // TODO: extractor does not handle function_signature as a standalone symbol yet.
-    // Verify parsing does not panic and document current behaviour.
+    // `function name(params): ReturnType;` -- ambient / overload function signature.
+    // function_signature has no body but is otherwise structurally identical to
+    // function_declaration; the dedicated arm in extract_node handles it via push_function.
     let r = extract::extract("function parse(input: string): AST;\nfunction parse(input: Buffer): AST;", false);
-    let _found = r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "parse");
-    // No hard assertion — this is a documentation test until function_signature support lands.
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "parse"),
+        "function_signature should produce at least one Function symbol named 'parse'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -1431,11 +1427,16 @@ fn coverage_import_default() {
 
 #[test]
 fn coverage_namespace_import() {
-    // `import * as ns from 'module'` — namespace_import.
-    // TODO: extractor does not emit a TypeRef for the namespace alias yet (falls through _ arm).
-    // Document current behaviour without hard-failing.
+    // `import * as ns from 'module'` -- namespace_import.
+    // push_import now handles namespace_import inside import_clause and emits a TypeRef
+    // for the local alias with the module path set.
     let r = extract::extract(r#"import * as path from 'path';"#, false);
-    let _found = r.refs.iter().any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "path");
+    assert!(
+        r.refs.iter().any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "path"
+            && r.module.as_deref() == Some("path")),
+        "namespace import should produce TypeRef with target_name='path' and module='path'; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+    );
 }
 
 #[test]
@@ -1463,15 +1464,12 @@ fn coverage_type_assertion() {
 
 #[test]
 fn coverage_interface_extends_type_clause() {
-    // `interface B extends A` — tree-sitter uses `extends_type_clause` (not `extends_clause`)
-    // for interface inheritance. extract_heritage only handles `class_heritage` → `extends_clause`
-    // and direct `extends_clause` children. The `extends_type_clause` node falls through to the
-    // `_` arm and only scan_all_type_identifiers picks up the base name as a TypeRef.
-    // TODO: extractor does not emit Inherits for interface extends_type_clause yet.
+    // `interface B extends A` -- tree-sitter uses `extends_type_clause` for interface
+    // inheritance. extract_heritage now handles it and emits an Inherits edge.
     let r = extract::extract("interface Serializable extends Printable {}", false);
     assert!(
-        r.refs.iter().any(|r| r.target_name == "Printable"),
-        "interface extends should produce at least a TypeRef for the base interface; got: {:?}",
+        r.refs.iter().any(|r| r.kind == EdgeKind::Inherits && r.target_name == "Printable"),
+        "interface extends_type_clause should produce Inherits ref for 'Printable'; got: {:?}",
         r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
     );
 }
@@ -1490,10 +1488,16 @@ fn coverage_method_call_member_expression() {
 
 #[test]
 fn coverage_import_require_clause() {
-    // `import x = require("mod")` — CommonJS-style TypeScript import_require_clause.
-    // TODO: extractor does not have a dedicated arm for import_require_clause yet.
+    // `import x = require("mod")` -- CommonJS-style TypeScript import_require_clause.
+    // push_import now handles the import_require_clause child of import_statement and
+    // emits an Imports ref with the local alias as target_name and the module path set.
     let r = extract::extract(r#"import path = require("path");"#, false);
-    let _found = r.refs.iter().any(|r| r.kind == EdgeKind::Imports);
+    assert!(
+        r.refs.iter().any(|r| r.kind == EdgeKind::Imports && r.target_name == "path"
+            && r.module.as_deref() == Some("path")),
+        "import_require_clause should produce Imports ref with target_name='path' and module='path'; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+    );
 }
 
 #[test]

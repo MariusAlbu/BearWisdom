@@ -719,8 +719,16 @@ pub(super) fn extract_enum(
         parent_index,
     });
 
-    if let Some(impls) = node.child_by_field_name("class_implements") {
-        extract_interface_list(&impls, src, refs, idx, EdgeKind::Implements);
+    // PHP grammar: class_interface_clause is an unnamed child of enum_declaration,
+    // not a named field — child_by_field_name("class_implements") always returns None.
+    {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "class_interface_clause" {
+                extract_interface_list(&child, src, refs, idx, EdgeKind::Implements);
+                break;
+            }
+        }
     }
 
     let mut cursor = node.walk();

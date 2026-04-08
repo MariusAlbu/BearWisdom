@@ -155,20 +155,15 @@ fn ref_nested_qualified_call() {
 // Additional symbol_node_kinds
 // ---------------------------------------------------------------------------
 
-/// type_definition synonym (type alias) → TypeAlias
-/// The extractor uses the `synonym` field on `type_binding` to distinguish
-/// aliases from other types, but for `type name = string`, tree-sitter-ocaml
-/// does not set the `synonym` field — the body is absent too — so the
-/// extractor falls back to Struct. The grammar encodes simple aliases without
-/// a dedicated field, so TypeAlias extraction requires inspecting the body node.
-// TODO: detect type aliases by inspecting body kind (type_constructor_path etc.)
+/// `type name = string` — type alias via the `equation` field on `type_binding`.
+/// tree-sitter-ocaml encodes simple aliases using the `equation` named field
+/// (not `body` or `synonym`).  The extractor checks `equation` to emit TypeAlias.
 #[test]
-fn symbol_type_definition_alias_does_not_crash() {
+fn symbol_type_definition_alias_emits_type_alias() {
     let r = extract("type name = string", "test.ml");
-    // Symbol is extracted (as Struct fallback); TypeAlias kind is a TODO
     assert!(
-        r.symbols.iter().any(|s| s.name == "name"),
-        "expected symbol 'name' from type synonym; got {:?}",
+        r.symbols.iter().any(|s| s.name == "name" && s.kind == SymbolKind::TypeAlias),
+        "expected TypeAlias 'name' from type equation; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

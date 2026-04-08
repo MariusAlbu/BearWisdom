@@ -192,6 +192,15 @@ fn extract_from(
             module: Some(img.clone()),
             chain: None,
         });
+        // Inherits edge: each stage inherits its base image
+        refs.push(ExtractedRef {
+            source_symbol_index: idx,
+            target_name: img.clone(),
+            kind: EdgeKind::Inherits,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
     }
 
     idx

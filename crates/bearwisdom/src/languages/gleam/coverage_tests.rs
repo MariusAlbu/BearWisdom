@@ -107,13 +107,27 @@ fn cov_external_function_produces_function_symbol() {
     );
 }
 
-/// data_constructor — constructor variant inside type_definition.
-/// Extractor does not handle data_constructor — TODO.
-// TODO: data_constructor (EnumMember) is not extracted by the current extractor.
+/// data_constructor — constructor variant inside type_definition → EnumMember.
+#[test]
+fn cov_data_constructor_produces_enum_member() {
+    let r = extract::extract("pub type Color {\n  Red\n  Green\n  Blue\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::EnumMember && s.name == "Red"),
+        "data_constructor should produce EnumMember symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
-/// external_type — opaque FFI type binding.
-/// Extractor does not handle external_type — TODO.
-// TODO: external_type (TypeAlias) is not extracted by the current extractor.
+/// external_type — opaque FFI type binding → TypeAlias.
+#[test]
+fn cov_external_type_produces_type_alias() {
+    let r = extract::extract("@external(erlang, \"erlang\", \"pid\")\npub type Pid");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::TypeAlias && s.name == "Pid"),
+        "external_type should produce TypeAlias symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// Private type_definition — no `pub` → still emits Enum symbol (private visibility).
 #[test]

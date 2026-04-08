@@ -541,6 +541,28 @@ fn extract_function_call(
                         chain: None,
                     });
                 }
+            } else if name == "setmetatable" {
+                // `setmetatable(Child, {__index = Parent})` — Lua prototype inheritance.
+                // Emit Calls for setmetatable itself, then Inherits for the parent if
+                // the second arg has `__index = <name>`.
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name: name,
+                    kind: EdgeKind::Calls,
+                    line,
+                    module: None,
+                    chain: None,
+                });
+                if let Some(parent) = extract_setmetatable_parent(node, src) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: parent,
+                        kind: EdgeKind::Inherits,
+                        line,
+                        module: None,
+                        chain: None,
+                    });
+                }
             } else if !name.is_empty() {
                 refs.push(ExtractedRef {
                     source_symbol_index: source_idx,
@@ -676,6 +698,47 @@ fn extract_require_arg(call_node: &Node, src: &[u8]) -> Option<String> {
             let stripped = raw.trim_matches(|c| c == '"' || c == '\'');
             if !stripped.is_empty() {
                 return Some(stripped.to_string());
+            }
+        }
+    }
+    None
+}
+
+/// Extract the parent class name from `setmetatable(Child, {__index = Parent})`.
+/// Returns `Some("Parent")` if the second argument is a table literal with a
+/// field named `__index` whose value is an identifier.
+fn extract_setmetatable_parent(call_node: &Node, src: &[u8]) -> Option<String> {
+    let args = call_node.child_by_field_name("arguments")?;
+    // Collect all non-punctuation children of the argument list.
+    let mut cursor = args.walk();
+    let arg_nodes: Vec<_> = args
+        .children(&mut cursor)
+        .filter(|c| {
+            c.kind() != ","
+                && c.kind() != "("
+                && c.kind() != ")"
+                && !c.is_extra()
+        })
+        .collect();
+    // We need at least 2 args: the object, and the metatable table.
+    let second_arg = arg_nodes.get(1)?;
+    if second_arg.kind() != "table_constructor" {
+        return None;
+    }
+    // Walk the table_constructor looking for `__index = <identifier>`.
+    let mut tc_cursor = second_arg.walk();
+    for field in second_arg.children(&mut tc_cursor) {
+        if field.kind() != "field" {
+            continue;
+        }
+        let key = field
+            .child_by_field_name("name")
+            .map(|n| node_text(n, src))
+            .unwrap_or_default();
+        if key == "__index" {
+            let value = field.child_by_field_name("value")?;
+            if value.kind() == "identifier" {
+                return Some(node_text(value, src));
             }
         }
     }

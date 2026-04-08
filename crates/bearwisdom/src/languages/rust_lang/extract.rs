@@ -192,6 +192,8 @@ fn extract_from_node(
                     let new_prefix = helpers::qualify(&sym.name, qualified_prefix);
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
+                    // Supertrait bounds: `trait Foo: Bar + Baz` -> Inherits edges.
+                    patterns::extract_supertrait_bounds(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         // Extract associated types declared in the trait body.
                         symbols::extract_trait_associated_types(&body, source, idx, &new_prefix, symbols, refs);
@@ -299,6 +301,35 @@ fn extract_from_node(
                     let idx = symbols.len();
                     symbols.push(sym);
                 }
+            }
+
+            // Module-level macro invocations: `lazy_static! { ... }`, `global_allocator!(...)`.
+            // Emit a Calls edge for the macro name (same as body-level macros).
+            "macro_invocation" => {
+                let source_idx = parent_index.unwrap_or(0);
+                // Emit Calls ref for the macro name itself.
+                if let Some(macro_node) = child.child_by_field_name("macro") {
+                    let name = helpers::node_text(&macro_node, source);
+                    let name = name.trim_end_matches('!');
+                    if !name.is_empty() {
+                        refs.push(crate::types::ExtractedRef {
+                            source_symbol_index: source_idx,
+                            target_name: name.to_string(),
+                            kind: crate::types::EdgeKind::Calls,
+                            line: macro_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                // Recurse into token-tree arguments for nested calls.
+                calls::extract_calls_from_body_with_symbols(
+                    &child,
+                    source,
+                    source_idx,
+                    refs,
+                    Some(symbols),
+                );
             }
 
             "ERROR" | "MISSING" => {}

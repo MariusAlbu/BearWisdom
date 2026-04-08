@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 // rust_lang/coverage_tests.rs  —  Per-node-kind coverage for the Rust extractor
 //
 // For every kind listed in RustLangPlugin::symbol_node_kinds() and
@@ -817,24 +817,21 @@ fn debug_measure_rust_coverage() {
 // Additional coverage — node types not yet exercised above
 // ---------------------------------------------------------------------------
 
-// ---- trait_item: supertrait bounds (rules say Inherits, extractor emits TypeRef) --
+// ---- trait_item: supertrait bounds -> Inherits edges --
 
 #[test]
-fn coverage_trait_item_supertrait_bounds_emits_type_ref() {
-    // `trait Foo: Bar + Baz` — the rules spec says `Inherits` edge for
-    // supertrait bounds; the current extractor emits TypeRef via the second
-    // full-tree scan.  Assert TypeRefs to both bound traits are present.
-    // TODO: upgrade to EdgeKind::Inherits once the extractor is updated.
+fn coverage_trait_item_supertrait_bounds_emits_inherits() {
+    // `trait Foo: Bar + Baz` -- supertrait bounds emit Inherits edges.
     let src = "trait Foo: Bar + Baz {}";
     let r = extract::extract(src);
-    let type_refs: Vec<&str> = r
+    let inherits: Vec<&str> = r
         .refs
         .iter()
-        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .filter(|r| r.kind == EdgeKind::Inherits)
         .map(|r| r.target_name.as_str())
         .collect();
-    assert!(type_refs.contains(&"Bar"), "expected TypeRef to Bar from supertrait bound; refs: {type_refs:?}");
-    assert!(type_refs.contains(&"Baz"), "expected TypeRef to Baz from supertrait bound; refs: {type_refs:?}");
+    assert!(inherits.contains(&"Bar"), "expected Inherits to Bar from supertrait bound; refs: {inherits:?}");
+    assert!(inherits.contains(&"Baz"), "expected Inherits to Baz from supertrait bound; refs: {inherits:?}");
 }
 
 // ---- extern_crate_declaration → Imports edge --------------------------------
@@ -1121,11 +1118,13 @@ fn coverage_closure_expression_param_emits_variable_symbol() {
     // No hard assertion — just confirms no panic.
 }
 
-// TODO: extractor does not handle module-level macro_invocation yet
-// (only processes macros inside function bodies)
 #[test]
 fn coverage_macro_invocation_at_module_level_no_panic() {
     let src = "lazy_static! { static ref POOL: Vec<u8> = vec![]; }";
     let r = extract::extract(src);
-    let _ = r; // no-panic smoke test
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "lazy_static" && rf.kind == EdgeKind::Calls),
+        "module-level macro_invocation should emit Calls(lazy_static); got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }

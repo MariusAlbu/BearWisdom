@@ -223,16 +223,20 @@ fn cov_from_instruction_test_stage_emits_test() {
 // ---------------------------------------------------------------------------
 
 /// from_instruction → EdgeKind::Inherits from stage to base image
-/// The extractor emits Imports but not Inherits for FROM instructions.
-// TODO: extractor emits Imports but not Inherits; add when rules diverge from implementation.
 #[test]
 fn ref_from_instruction_inherits_edge() {
     let src = "FROM ubuntu:22.04 AS base\n";
     let r = extract::extract(src);
-    // No Inherits edge is emitted by the current extractor (only Imports).
-    // This test documents the gap.
-    let _ = r;
-    // TODO: assert Inherits edge from "base" to "ubuntu:22.04" once implemented.
+    let inherits: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Inherits)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        inherits.iter().any(|n| n.contains("ubuntu")),
+        "expected Inherits ref to base image 'ubuntu:22.04'; got: {inherits:?}"
+    );
 }
 
 // ---------------------------------------------------------------------------

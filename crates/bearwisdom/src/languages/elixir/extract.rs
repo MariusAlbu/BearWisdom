@@ -133,6 +133,7 @@ fn dispatch_call(
         "def" | "defp" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, false),
         "defmacro" | "defmacrop" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, true),
         "defstruct" => extract_struct(node, src, symbols, parent_index, qualified_prefix),
+        "defexception" => extract_exception(node, src, symbols, parent_index, qualified_prefix),
         "defprotocol" => extract_protocol(node, src, symbols, refs, parent_index, qualified_prefix),
         "defimpl" => extract_implementation(node, src, symbols, refs, parent_index, qualified_prefix),
         "defguard" | "defguardp" => extract_function(node, src, symbols, refs, parent_index, qualified_prefix, false),
@@ -297,6 +298,48 @@ fn extract_struct(
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
         signature: Some(format!("defstruct {struct_name}")),
+        doc_comment: None,
+        scope_path: scope_from_prefix(qualified_prefix),
+        parent_index,
+    });
+}
+
+// ---------------------------------------------------------------------------
+// Exception (defexception → Struct)
+// ---------------------------------------------------------------------------
+
+/// `defexception [:message, ...]` — emits a `Struct` symbol using the enclosing module name.
+///
+/// In Elixir, `defexception` is always called inside a module.  The exception type IS the
+/// module itself, so we reuse the `qualified_prefix` tail as the symbol name — exactly the
+/// same pattern as `defstruct`.
+fn extract_exception(
+    node: &Node,
+    _src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+    qualified_prefix: &str,
+) {
+    let exception_name = qualified_prefix
+        .rsplit('.')
+        .next()
+        .unwrap_or(qualified_prefix)
+        .to_string();
+    if exception_name.is_empty() {
+        return;
+    }
+    let qualified_name = qualify(&exception_name, qualified_prefix);
+
+    symbols.push(ExtractedSymbol {
+        name: exception_name.clone(),
+        qualified_name,
+        kind: SymbolKind::Struct,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("defexception {exception_name}")),
         doc_comment: None,
         scope_path: scope_from_prefix(qualified_prefix),
         parent_index,
@@ -648,7 +691,7 @@ fn extract_calls_recursive(
         match child.kind() {
             "call" => {
                 if let Some(callee) = call_identifier(&child, src) {
-                    if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "defprotocol" | "defimpl" | "defguard" | "defguardp" | "alias" | "import" | "use" | "require") {
+                    if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "defexception" | "defprotocol" | "defimpl" | "defguard" | "defguardp" | "alias" | "import" | "use" | "require") {
                         let simple = callee.rsplit('.').next().unwrap_or(&callee).to_string();
                         refs.push(ExtractedRef {
                             source_symbol_index,

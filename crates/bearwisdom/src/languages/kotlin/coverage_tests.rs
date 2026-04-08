@@ -405,11 +405,18 @@ fn symbol_property_in_function_body() {
 // Additional symbol coverage
 // ---------------------------------------------------------------------------
 
-// TODO: extractor does not correctly classify Kotlin interfaces as Interface kind.
-// In tree-sitter-kotlin-ng, `interface Foo {}` produces a `class_declaration` node,
-// but classify_class() does not check for the `interface` keyword — it returns Class.
-// #[test]
-// fn symbol_interface_declaration_kind() { ... }
+/// tree-sitter-kotlin-ng parses interface Foo {} as a class_declaration node whose
+/// text starts with the interface keyword. classify_class() detects this and returns
+/// Interface kind.
+#[test]
+fn symbol_interface_declaration_kind() {
+    let r = extract("interface Runnable {}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Runnable" && s.kind == SymbolKind::Interface),
+        "expected Interface Runnable; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 #[test]
 fn symbol_enum_entry_kind() {

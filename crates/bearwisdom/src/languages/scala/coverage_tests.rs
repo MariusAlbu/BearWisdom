@@ -572,12 +572,14 @@ fn ref_type_definition_rhs_type_ref() {
 #[test]
 fn ref_generic_function_type_ref() {
     // generic_function call — `identity[String](...)`. The call_expression wrapping a
-    // generic_function node. The extractor reaches the call via call_expression dispatch
-    // but resolves `function` to the generic_function child whose name extraction
-    // currently yields the type arg rather than the function name.
-    // TODO: assert Calls edge to `identity` once generic_function name extraction is fixed.
-    // For now verify the type arg TypeRef is emitted, showing the node is reached.
+    // generic_function node. `call_target_name` recurses into the `function` field to
+    // extract the base function identifier, emitting a Calls edge to `identity`.
     let r = extract("object M {\n  def f() = identity[String](\"hello\")\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "identity" && rf.kind == EdgeKind::Calls),
+        "expected Calls edge to 'identity' from generic_function; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "String" && rf.kind == EdgeKind::TypeRef),
         "expected TypeRef String from generic_function type arg; got {:?}",

@@ -66,10 +66,14 @@ fn visit_top_level(
                 extract_external_function(&child, src, symbols, parent_index);
             }
             "type_definition" => {
-                extract_type_def(&child, src, symbols, parent_index);
+                let type_idx = extract_type_def(&child, src, symbols, parent_index);
+                extract_data_constructors(&child, src, symbols, type_idx.or(parent_index));
             }
             "type_alias" => {
                 extract_type_alias(&child, src, symbols, parent_index);
+            }
+            "external_type" => {
+                extract_external_type(&child, src, symbols, parent_index);
             }
             "constant" => {
                 extract_constant(&child, src, symbols, parent_index);
@@ -189,6 +193,78 @@ fn extract_type_alias(
     parent_index: Option<usize>,
 ) -> Option<usize> {
     // type_alias uses `type_name` child (not `name` field)
+    let name = get_type_name(node, src)?;
+    if name.is_empty() {
+        return None;
+    }
+    let vis = if node_has_pub(node) { Visibility::Public } else { Visibility::Private };
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name,
+        kind: SymbolKind::TypeAlias,
+        visibility: Some(vis),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
+    });
+    Some(idx)
+}
+
+/// Extract `data_constructor` children of a `type_definition` as `EnumMember` symbols.
+///
+/// Grammar: type_definition → data_constructors → data_constructor*
+fn extract_data_constructors(
+    type_node: &Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let vis = if node_has_pub(type_node) { Visibility::Public } else { Visibility::Private };
+    let mut outer_cursor = type_node.walk();
+    for child in type_node.children(&mut outer_cursor) {
+        if child.kind() == "data_constructors" {
+            let mut inner_cursor = child.walk();
+            for ctor in child.children(&mut inner_cursor) {
+                if ctor.kind() == "data_constructor" {
+                    let name = ctor.child_by_field_name("name")
+                        .map(|n| node_text(n, src))
+                        .unwrap_or_default();
+                    if name.is_empty() {
+                        continue;
+                    }
+                    symbols.push(ExtractedSymbol {
+                        name: name.clone(),
+                        qualified_name: name,
+                        kind: SymbolKind::EnumMember,
+                        visibility: Some(vis),
+                        start_line: ctor.start_position().row as u32,
+                        end_line: ctor.end_position().row as u32,
+                        start_col: ctor.start_position().column as u32,
+                        end_col: ctor.end_position().column as u32,
+                        signature: None,
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index,
+                    });
+                }
+            }
+        }
+    }
+}
+
+/// Extract `external_type` as a `TypeAlias` symbol.
+fn extract_external_type(
+    node: &Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
     let name = get_type_name(node, src)?;
     if name.is_empty() {
         return None;

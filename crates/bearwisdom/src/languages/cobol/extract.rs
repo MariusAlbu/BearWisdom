@@ -7,6 +7,7 @@
 // What we extract
 // ---------------
 // SYMBOLS:
+//   Namespace — PROGRAM-ID. <name> in IDENTIFICATION DIVISION
 //   Function  — section headings (e.g. "PARAGRAPH-NAME.")
 //               and paragraph names in PROCEDURE DIVISION
 //   Variable  — data descriptions (01/02/03/77/88 level items in DATA DIVISION)
@@ -14,6 +15,7 @@
 //
 // REFERENCES:
 //   Calls     — PERFORM <paragraph-name>
+//   Calls     — GO TO <paragraph-name>
 //   Calls+Imports — CALL '<program>'
 //   Imports   — COPY <copybook>
 //
@@ -116,6 +118,21 @@ pub fn extract(source: &str) -> ExtractionResult {
                 // Section detection within DATA DIVISION.
                 if full_stmt.ends_with("SECTION.") || full_stmt.ends_with("SECTION") {
                     _data_section = detect_data_section(&full_stmt);
+                    continue;
+                }
+
+                // COPY inside DATA DIVISION → Imports ref
+                let stmt_upper_data = line.trim().to_uppercase();
+                if let Some(copybook) = parse_copy(&stmt_upper_data) {
+                    let source_idx = current_para.unwrap_or(0);
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: copybook.clone(),
+                        kind: EdgeKind::Imports,
+                        line: row,
+                        module: Some(copybook),
+                        chain: None,
+                    });
                     continue;
                 }
 
@@ -230,10 +247,39 @@ pub fn extract(source: &str) -> ExtractionResult {
                         chain: None,
                     });
                 }
+
+                // GO TO <para-name>
+                if let Some(target) = parse_goto(&stmt_upper) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: target,
+                        kind: EdgeKind::Calls,
+                        line: row,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+
+            Division::Identification => {
+                // PROGRAM-ID. <name>. → Namespace symbol
+                let stmt_upper_id = line.trim().to_uppercase();
+                if let Some(prog_name) = parse_program_id(&stmt_upper_id) {
+                    let idx = symbols.len();
+                    symbols.push(make_symbol(
+                        prog_name.clone(),
+                        prog_name,
+                        SymbolKind::Namespace,
+                        row,
+                        None,
+                        None,
+                    ));
+                    current_para = Some(idx);
+                }
             }
 
             _ => {
-                // COPY in non-procedure divisions (DATA, ENVIRONMENT, etc.)
+                // COPY in non-procedure divisions (ENVIRONMENT, etc.)
                 let stmt_upper = line.trim().to_uppercase();
                 let source_idx = current_para.unwrap_or(0);
                 if let Some(copybook) = parse_copy(&stmt_upper) {
@@ -414,6 +460,46 @@ fn parse_call(stmt: &str) -> Option<String> {
         return None;
     }
     Some(name)
+}
+
+/// Parse "PROGRAM-ID. <name>." in IDENTIFICATION DIVISION.
+fn parse_program_id(stmt: &str) -> Option<String> {
+    let upper = stmt.trim();
+    if !upper.starts_with("PROGRAM-ID") {
+        return None;
+    }
+    let rest = upper["PROGRAM-ID".len()..].trim_start_matches('.').trim();
+    let name = rest
+        .split_whitespace()
+        .next()?
+        .trim_end_matches('.')
+        .to_string();
+    if name.is_empty() {
+        return None;
+    }
+    Some(name)
+}
+
+/// Parse "GO TO <para-name>" and return the target paragraph name.
+fn parse_goto(stmt: &str) -> Option<String> {
+    let upper = stmt.trim();
+    let rest = if upper.starts_with("GO TO ") {
+        &upper["GO TO".len()..]
+    } else if upper.starts_with("GOTO ") {
+        &upper["GOTO".len()..]
+    } else {
+        return None;
+    };
+    let target = rest
+        .trim()
+        .split_whitespace()
+        .next()?
+        .trim_end_matches('.')
+        .to_string();
+    if target.is_empty() || is_cobol_keyword(&target) {
+        return None;
+    }
+    Some(target)
 }
 
 /// Parse "COPY <copybook>" or "COPY <copybook> [IN/OF <library>]".

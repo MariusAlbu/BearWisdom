@@ -35,6 +35,13 @@ pub(super) fn call_target_name(node: &Node, src: &[u8]) -> String {
                 .map(|n| node_text(n, src))
                 .unwrap_or_default()
         }
+        // `identity[String](...)` — generic_function wraps an identifier and type args.
+        // The `function` field holds the base function name.
+        "generic_function" => {
+            node.child_by_field_name("function")
+                .map(|n| call_target_name(&n, src))
+                .unwrap_or_default()
+        }
         _ => String::new(),
     }
 }

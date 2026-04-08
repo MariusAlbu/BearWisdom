@@ -403,23 +403,27 @@ fn cov_interface_extends_produces_inherits_ref() {
 /// kind `class_interface_clause` as a direct child rather than a named field.
 /// The Implements edge is not emitted for enum declarations in the current
 /// extractor version.
-// TODO: extractor does not emit Implements for enum_declaration with class_interface_clause
 #[test]
 fn cov_enum_with_implements_produces_implements_ref() {
     let src = "<?php enum Suit: string implements HasLabel { case Hearts = 'H'; }\n";
     let r = extract::extract(src);
-    // No assertion — just verify no panic.
-    let _ = r;
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "HasLabel"),
+        "enum with implements should emit Implements(HasLabel); got refs: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
 }
 
 /// "instanceof" binary expression → not currently extracted as TypeRef
 /// The rules specify emitting TypeRef for `instanceof`, but the extractor does
 /// not handle binary_expression instanceof arms.
-// TODO: extractor does not emit TypeRef for `instanceof` expressions
 #[test]
 fn cov_instanceof_expression_no_panic() {
     let src = "<?php class Guard { public function check(object $val): bool { return $val instanceof User; } }\n";
     let r = extract::extract(src);
-    // No assertion on TypeRef — just verify no panic.
-    let _ = r;
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "User"),
+        "instanceof expression should emit TypeRef(User); got refs: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
 }

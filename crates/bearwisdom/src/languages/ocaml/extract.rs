@@ -267,8 +267,8 @@ fn extract_type_def(
                     _ => SymbolKind::TypeAlias,
                 },
                 None => {
-                    // synonym field = type alias
-                    if child.child_by_field_name("synonym").is_some() {
+                    // `equation` field = type alias (`type name = OtherType`)
+                    if child.child_by_field_name("equation").is_some() {
                         SymbolKind::TypeAlias
                     } else {
                         SymbolKind::Struct

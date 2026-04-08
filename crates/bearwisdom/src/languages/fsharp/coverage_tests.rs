@@ -166,15 +166,25 @@ fn ref_import_decl() {
 // ---------------------------------------------------------------------------
 
 /// symbol_node_kind: `type_definition` → Class (anon_type_defn)
-/// NOTE: When `type_definition` appears inside a `named_module` (file-level
-/// `module A.B`), there is a traversal gap — `extract_type_def` is not
-/// reached from the `extract_namespace` → `visit` path for this grammar form.
-// TODO: fix traversal so type_definition inside named_module is extracted
+/// Probe test: does the traversal gap actually affect extraction?
 #[test]
 fn symbol_type_definition_class_does_not_crash() {
     let r = extract("module MyModule\nlet foo x = x + 1\ntype MyClass() =\n    member this.Value = 42");
-    // No panic is the contract; Class extraction from named_module context is a TODO
     let _ = r;
+    // eprintln to see actual symbols — uncomment to debug:
+    // eprintln!("symbols: {:?}", r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+}
+
+/// `type MyClass()` inside a `named_module` → Class symbol extracted.
+/// Use the type as the FIRST declaration so it is not swallowed by a `let` continuation.
+#[test]
+fn symbol_type_definition_class_in_named_module() {
+    let r = extract("module MyModule\ntype MyClass() =\n    member this.Value = 42\nlet foo x = x + 1");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "MyClass" && s.kind == SymbolKind::Class),
+        "expected Class 'MyClass' inside named_module; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `type_definition` → Interface (interface_type_defn)
@@ -191,17 +201,17 @@ fn symbol_type_definition_interface() {
 }
 
 /// symbol_node_kind: `type_definition` → TypeAlias (type_abbrev_defn)
-/// NOTE: The grammar parses `type Name = string` as `union_type_defn` (treating
-/// `string` as a single union case without a `|` prefix). Type abbreviations
-/// require a fully-qualified or parenthesized RHS (e.g. `type Name = System.String`)
-/// to parse unambiguously as `type_abbrev_defn`. Additionally, extraction of
-/// type_definition from `named_module` context has a traversal gap.
-// TODO: test with `module_defn` (nested `module =`) context once traversal gap is fixed
+/// `type Name = string` parses ambiguously (treated as union_type_defn in tree-sitter-fsharp).
+/// A qualified RHS forces `type_abbrev_defn`: `type Name = System.String`.
+/// The type MUST appear before any `let` binding to avoid being swallowed as its continuation.
 #[test]
-fn symbol_type_definition_type_alias_does_not_crash() {
-    let r = extract("module MyModule\nlet foo x = x + 1\ntype Name = string");
-    // No panic is the contract
-    let _ = r;
+fn symbol_type_definition_type_alias_emits_type_alias() {
+    let r = extract("module MyModule\ntype Name = System.String\nlet foo x = x + 1");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Name" && s.kind == SymbolKind::TypeAlias),
+        "expected TypeAlias 'Name' from type_abbrev_defn; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `union_type_case` → SymbolKind::EnumMember

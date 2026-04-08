@@ -63,7 +63,16 @@ pub fn extract(source: &str) -> ExtractionResult {
                 i += 1;
                 continue;
             };
-            if let Some(name) = parse_fn_name(fn_line) {
+            // Strip `@test ` (or `@test\t`) prefix so that single-line
+            // `@test fn name()` is handled by parse_fn_name.
+            let fn_part = if fn_line.starts_with("@test") {
+                // Skip past "@test" and any whitespace to reach "fn ..."
+                let after = fn_line["@test".len()..].trim_start();
+                after
+            } else {
+                fn_line
+            };
+            if let Some(name) = parse_fn_name(fn_part) {
                 let start = i as u32;
                 let end = find_brace_end(&lines, i);
                 let mut sym = make_sym(name, SymbolKind::Test, Visibility::Private, start, end);

@@ -931,15 +931,42 @@ pub(super) fn push_using_directive(
     current_symbol_count: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // Skip `using Alias = ...` — these are type aliases, not namespace imports.
+    // For `using Alias = Full.Name;` — emit an Imports edge for the RHS namespace.
+    // tree-sitter-c-sharp: using_directive has a `name` field for the alias and
+    // the RHS is a `qualified_name` or `identifier` sibling after `=`.
     if node.child_by_field_name("name").is_some() {
+        // Walk children looking for the RHS (qualified_name or identifier after `=`).
+        let mut past_eq = false;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "=" {
+                past_eq = true;
+                continue;
+            }
+            if past_eq {
+                match child.kind() {
+                    "identifier" | "qualified_name" => {
+                        let full = node_text(child, src);
+                        refs.push(ExtractedRef {
+                            source_symbol_index: current_symbol_count,
+                            target_name: full.clone(),
+                            kind: EdgeKind::Imports,
+                            line: child.start_position().row as u32,
+                            module: Some(full),
+                            chain: None,
+                        });
+                        return;
+                    }
+                    ";" => return,
+                    _ => {}
+                }
+            }
+        }
         return;
     }
 
-    // Extract the full namespace path from the using directive and emit a
-    // single Imports edge whose `module` IS the full namespace.
-    // e.g. `using FamilyBudget.Api.Entities;` →
-    //   target_name: "FamilyBudget.Api.Entities", module: Some("FamilyBudget.Api.Entities")
+    // Normal using directive: `using System.Linq;`
+    // Extract the full namespace path and emit a single Imports edge.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {

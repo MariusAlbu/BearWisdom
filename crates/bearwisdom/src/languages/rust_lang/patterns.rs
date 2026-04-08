@@ -447,3 +447,93 @@ fn make_variable(name: String, node: &Node, parent_index: usize) -> ExtractedSym
     }
 }
 
+
+// ---------------------------------------------------------------------------
+// Trait supertrait bounds  →  Inherits edges
+// ---------------------------------------------------------------------------
+
+/// Extract `Inherits` edges for supertrait bounds on a `trait_item` node.
+///
+/// `trait Foo: Bar + Baz` — the `bounds` field on `trait_item` contains the
+/// supertrait constraints. These are semantic parent traits, so we emit
+/// `EdgeKind::Inherits` rather than `TypeRef`.
+///
+/// The rules spec says:
+///   trait_item → bounds field → trait_bounds → type_identifier → Inherits
+pub(super) fn extract_supertrait_bounds(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // The `bounds` field contains a `trait_bounds` node.
+    if let Some(bounds) = node.child_by_field_name("bounds") {
+        emit_inherits_from_trait_bounds(&bounds, source, source_symbol_index, refs);
+    }
+}
+
+/// Walk a `trait_bounds` node and emit `Inherits` for each bound trait.
+fn emit_inherits_from_trait_bounds(
+    node: &Node,
+    source: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "identifier" => {
+                let name = node_text(&child, source);
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::Inherits,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "scoped_type_identifier" | "scoped_identifier" => {
+                let name = child
+                    .child_by_field_name("name")
+                    .map(|n| node_text(&n, source))
+                    .unwrap_or_else(|| {
+                        let text = node_text(&child, source);
+                        text.rsplit("::").next().unwrap_or(&text).to_string()
+                    });
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index,
+                        target_name: name,
+                        kind: EdgeKind::Inherits,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            "generic_type" => {
+                if let Some(base) = child.child_by_field_name("type") {
+                    let name = node_text(&base, source);
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::Inherits,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+            "higher_ranked_trait_bound" => {
+                emit_inherits_from_trait_bounds(&child, source, source_symbol_index, refs);
+            }
+            // Skip `Sized`, `?Sized`, lifetime bounds (`'a`), and `+` separators
+            _ => {}
+        }
+    }
+}

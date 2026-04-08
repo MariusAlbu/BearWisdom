@@ -12,19 +12,37 @@ pub(super) fn node_text(node: Node, src: &[u8]) -> String {
         .to_string()
 }
 
-/// Determine the `SymbolKind` for a `class_declaration` by inspecting modifiers.
+/// Determine the `SymbolKind` for a `class_declaration` by inspecting modifiers and
+/// the declaration keyword.
+///
+/// tree-sitter-kotlin-ng parses `interface Foo {}` as a `class_declaration` node whose
+/// text starts with the `interface` keyword (possibly after annotations/modifiers).
+/// Similarly, `enum class Color` has a `modifiers` child containing "enum".
 pub(super) fn classify_class(node: &Node, src: &[u8]) -> SymbolKind {
+    // Walk direct children to detect modifier keywords and standalone keyword tokens.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "modifiers" {
-            let text = node_text(child, src);
-            if text.contains("enum") {
-                return SymbolKind::Enum;
+        match child.kind() {
+            "modifiers" => {
+                let text = node_text(child, src);
+                if text.contains("enum") {
+                    return SymbolKind::Enum;
+                }
             }
+            // tree-sitter-kotlin-ng emits a standalone `interface` keyword child inside
+            // the `class_declaration` node when the source is an interface declaration.
+            "interface" => return SymbolKind::Interface,
+            _ => {}
         }
     }
+    // Fallback: inspect the raw text for leading keyword. This handles grammars that do
+    // not emit a dedicated keyword child but the text starts with `interface`.
     let full_text = node_text(*node, src);
-    if full_text.trim_start().starts_with("enum") {
+    let trimmed = full_text.trim_start();
+    if trimmed.starts_with("interface ") || trimmed.starts_with("interface\t") || trimmed == "interface{}" {
+        return SymbolKind::Interface;
+    }
+    if trimmed.starts_with("enum") {
         return SymbolKind::Enum;
     }
     SymbolKind::Class

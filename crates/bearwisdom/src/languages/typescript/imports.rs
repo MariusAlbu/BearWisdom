@@ -58,8 +58,60 @@ pub(super) fn push_import(
                                 }
                             }
                         }
+                        // `import * as ns from './bar'` -- namespace import.
+                        // The local alias `ns` is the identifier child of namespace_import.
+                        "namespace_import" => {
+                            let mut ni = item.walk();
+                            for ns_child in item.children(&mut ni) {
+                                if ns_child.kind() == "identifier" {
+                                    refs.push(ExtractedRef {
+                                        source_symbol_index: current_symbol_count,
+                                        target_name: node_text(ns_child, src),
+                                        kind: EdgeKind::TypeRef,
+                                        line: ns_child.start_position().row as u32,
+                                        module: module_path.clone(),
+                                        chain: None,
+                                    });
+                                    break;
+                                }
+                            }
+                        }
                         _ => {}
                     }
+                }
+            }
+            // `import path = require("mod")` -- CommonJS-style TypeScript import.
+            // import_require_clause children: identifier (local name), `=`, `require`,
+            // `(`, string (module path), `)`.
+            "import_require_clause" => {
+                // Walk the clause children once, collecting both the local name and
+                // the module string. Explicit loops avoid borrow conflicts from
+                // iterator adapters that hold a reference to the walker.
+                let mut local_name = String::new();
+                let mut require_module: Option<String> = None;
+                let mut rc = child.walk();
+                for rc_child in child.children(&mut rc) {
+                    match rc_child.kind() {
+                        "identifier" if local_name.is_empty() => {
+                            local_name = node_text(rc_child, src);
+                        }
+                        "string" => {
+                            let raw = node_text(rc_child, src);
+                            require_module =
+                                Some(raw.trim_matches('"').trim_matches('\'').to_string());
+                        }
+                        _ => {}
+                    }
+                }
+                if !local_name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: current_symbol_count,
+                        target_name: local_name,
+                        kind: EdgeKind::Imports,
+                        line: child.start_position().row as u32,
+                        module: require_module,
+                        chain: None,
+                    });
                 }
             }
             _ => {}
@@ -127,6 +179,23 @@ pub(super) fn extract_heritage(
                 let mut ec = child.walk();
                 for type_node in child.children(&mut ec) {
                     if type_node.kind() == "identifier" || type_node.kind() == "type_identifier" {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: source_idx,
+                            target_name: node_text(type_node, src),
+                            kind: EdgeKind::Inherits,
+                            line: type_node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+            // `extends_type_clause` is the TS grammar node for interface inheritance:
+            // `interface B extends A, C` -- distinct from `extends_clause` used for classes.
+            "extends_type_clause" => {
+                let mut ec = child.walk();
+                for type_node in child.children(&mut ec) {
+                    if type_node.kind() == "type_identifier" || type_node.kind() == "identifier" {
                         refs.push(ExtractedRef {
                             source_symbol_index: source_idx,
                             target_name: node_text(type_node, src),

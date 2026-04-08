@@ -614,6 +614,16 @@ fn extract_node(
                 // type_identifier is a leaf — no children to recurse into.
             }
 
+            // `function name(params): ReturnType;` -- ambient / overload function signature.
+            // Has a `name` field but no `body` field (unlike function_declaration).
+            // Treat identically to function_declaration but skip body extraction.
+            "function_signature" => {
+                let idx = symbols::push_function(&child, src, scope_tree, symbols, parent_index);
+                if let Some(sym_idx) = idx {
+                    types::extract_param_and_return_types(&child, src, sym_idx, refs);
+                }
+            }
+
             _ => {
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }

@@ -219,6 +219,104 @@ pub(super) fn push_method_decl(
     Some(idx)
 }
 
+
+/// Push a Method symbol for `annotation_type_element_declaration` inside an `@interface` body.
+pub(super) fn push_annotation_element_decl(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    package: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let name = if let Some(name_node) = node.child_by_field_name("name") {
+        node_text(name_node, src)
+    } else {
+        let mut cursor = node.walk();
+        let mut found = String::new();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "identifier" {
+                found = node_text(child, src);
+                break;
+            }
+        }
+        if found.is_empty() { return None; }
+        found
+    };
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = qualify_with_package(&name, parent_scope, package);
+    let scope_path = scope_path_with_package(parent_scope, package);
+    let ret_type = node.child_by_field_name("type").map(|t| node_text(t, src)).unwrap_or_default();
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Method,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("{ret_type} {name}()")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
+/// Push a Constructor symbol for `compact_constructor_declaration` (Java 16+ records).
+pub(super) fn push_compact_constructor_decl(
+    node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    package: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) -> Option<usize> {
+    let name = if let Some(name_node) = node.child_by_field_name("name") {
+        node_text(name_node, src)
+    } else {
+        let mut cursor = node.walk();
+        let mut found = String::new();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "identifier" {
+                found = node_text(child, src);
+                break;
+            }
+        }
+        if found.is_empty() { return None; }
+        found
+    };
+    let parent_scope = if node.start_byte() > 0 {
+        scope_tree::find_scope_at(scope_tree, node.start_byte() - 1)
+    } else {
+        None
+    };
+    let qualified_name = qualify_with_package(&name, parent_scope, package);
+    let scope_path = scope_path_with_package(parent_scope, package);
+    let idx = symbols.len();
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::Constructor,
+        visibility: detect_visibility(node, src),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("{name}()")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
+    Some(idx)
+}
+
 pub(super) fn push_constructor_decl(
     node: &Node,
     src: &[u8],

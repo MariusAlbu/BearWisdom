@@ -487,26 +487,51 @@ class C {
     );
 }
 
+
 // ---------------------------------------------------------------------------
 // Additional symbol and edge coverage
 // ---------------------------------------------------------------------------
 
-// TODO: extractor does not handle annotation_type_element_declaration as Method symbols yet.
-// The annotation_type_declaration body recurses via extract_node but has no handler for
-// annotation_type_element_declaration — those nodes fall through the `_` case without emission.
-// #[test]
-// fn coverage_annotation_type_element_method() { ... }
+#[test]
+fn coverage_annotation_type_element_method() {
+    // annotation_type_element_declaration inside @interface body → Method symbol.
+    let src = "public @interface Config { String value() default \"\"; int timeout() default 30; }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "value" && s.kind == SymbolKind::Method),
+        "expected Method 'value' from annotation_type_element_declaration; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        s.iter().any(|s| s.name == "timeout" && s.kind == SymbolKind::Method),
+        "expected Method 'timeout' from annotation_type_element_declaration; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
-// TODO: extractor does not handle compact_constructor_declaration yet.
-// record bodies are walked via extract_node but compact_constructor_declaration has no handler.
-// #[test]
-// fn coverage_compact_constructor_as_constructor() { ... }
+#[test]
+fn coverage_compact_constructor_as_constructor() {
+    // compact_constructor_declaration inside record body → Constructor symbol.
+    let src = "public record Point(int x, int y) { Point { if (x < 0) throw new IllegalArgumentException(); } }";
+    let s = sym(src);
+    assert!(
+        s.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Constructor),
+        "expected Constructor 'Point' from compact_constructor_declaration; got: {:?}",
+        s.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
-// TODO: extractor does not handle explicit_constructor_invocation yet.
-// super(42) / this(42) inside constructor bodies falls through the `_` recursion
-// without emitting a Calls edge.
-// #[test]
-// fn coverage_explicit_constructor_invocation_super() { ... }
+#[test]
+fn coverage_explicit_constructor_invocation_super() {
+    // super(args) inside constructor body → Calls edge for "super".
+    let src = "class Child extends Parent { Child(int x) { super(x); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "super" && r.kind == EdgeKind::Calls),
+        "expected Calls edge for 'super' from explicit_constructor_invocation; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
 
 #[test]
 fn coverage_array_creation_expression() {

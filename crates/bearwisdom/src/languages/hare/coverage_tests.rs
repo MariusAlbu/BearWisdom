@@ -100,14 +100,9 @@ fn cov_global_let_declaration_produces_variable() {
     );
 }
 
-/// @test fn on separate lines → Test kind.
-/// The extractor's @test handler passes the whole `@test fn name()` line to
-/// `parse_fn_name`, which strips `fn ` prefix.  When `@test` and `fn` are on
-/// the same line the line starts with `@test`, so `strip_prefix("fn ")`
-/// returns None and the symbol is dropped.  The extractor works correctly when
-/// the attribute sits on its own line (idiomatic Hare style).
-// TODO: the single-line `@test fn name()` form is not recognised; the
-//       fix would be to strip the `@test ` prefix before calling parse_fn_name.
+/// `@test fn name()` on a single line — the extractor strips the `@test ` prefix
+/// before calling `parse_fn_name`, so both the idiomatic two-line form and the
+/// compact single-line form produce a Test symbol.
 #[test]
 fn cov_test_fn_separate_lines_produces_test() {
     let src = "@test\nfn test_addition() void = {\n\tassert(1 + 1 == 2);\n};";
@@ -115,6 +110,18 @@ fn cov_test_fn_separate_lines_produces_test() {
     assert!(
         r.symbols.iter().any(|s| s.kind == SymbolKind::Test && s.name == "test_addition"),
         "@test fn (attribute on its own line) should produce Test symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `@test fn name()` on a single line — compact form.
+#[test]
+fn cov_test_fn_single_line_produces_test() {
+    let src = "@test fn test_multiply() void = {\n\tassert(2 * 3 == 6);\n};";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Test && s.name == "test_multiply"),
+        "@test fn (single line) should produce Test symbol; got: {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

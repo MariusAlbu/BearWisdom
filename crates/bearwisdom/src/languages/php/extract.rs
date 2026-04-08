@@ -326,6 +326,57 @@ fn scan_type_refs_inner(
                 });
             }
         }
+        // `instanceof` binary expression — the RHS is a `class_name` node
+        // (not `named_type`) in the PHP grammar. Emit TypeRef for the class.
+        "binary_expression" => {
+            // Check if any direct child is the `instanceof` keyword.
+            let mut has_instanceof = false;
+            let mut rhs_node: Option<tree_sitter::Node> = None;
+            let mut cursor = node.walk();
+            let children: Vec<_> = node.children(&mut cursor).collect();
+            for (i, child) in children.iter().enumerate() {
+                if child.kind() == "instanceof" || super::helpers::node_text(child, src) == "instanceof" {
+                    has_instanceof = true;
+                    // RHS is the next sibling
+                    if let Some(rhs) = children.get(i + 1) {
+                        rhs_node = Some(*rhs);
+                    }
+                    break;
+                }
+            }
+            if has_instanceof {
+                if let Some(rhs) = rhs_node {
+                    // RHS may be class_name, named_type, qualified_name, or identifier
+                    let raw = super::helpers::node_text(&rhs, src);
+                    let name = raw
+                        .trim_start_matches('\\')
+                        .rsplit('\\')
+                        .next()
+                        .unwrap_or(&raw)
+                        .to_string();
+                    if !name.is_empty() && !is_php_primitive(&name) {
+                        refs.push(crate::types::ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: crate::types::EdgeKind::TypeRef,
+                            line: rhs.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                // Also recurse into the LHS (before instanceof) in case it has nested exprs
+                if let Some(lhs) = children.first() {
+                    scan_type_refs_inner(*lhs, src, source_symbol_index, refs);
+                }
+            } else {
+                // Not an instanceof — recurse normally
+                let mut cursor2 = node.walk();
+                for child in node.children(&mut cursor2) {
+                    scan_type_refs_inner(child, src, source_symbol_index, refs);
+                }
+            }
+        }
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {

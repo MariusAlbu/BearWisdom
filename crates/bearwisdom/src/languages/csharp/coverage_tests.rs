@@ -472,10 +472,17 @@ fn coverage_using_directive_static() {
     );
 }
 
-// TODO: extractor does not handle aliased using_directive (using Alias = Full.Name) yet.
-// The push_using_directive function only processes the `name` child, not the alias form.
-// #[test]
-// fn coverage_using_directive_alias() { ... }
+#[test]
+fn coverage_using_directive_alias() {
+    // `using Linq = System.Linq;` — aliased using_directive should emit Imports edge.
+    let src = "using Linq = System.Linq;\nclass C {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.kind == EdgeKind::Imports),
+        "expected Imports edge from aliased using_directive; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
 
 #[test]
 fn coverage_interface_inherits_interface() {
@@ -501,10 +508,17 @@ fn coverage_struct_implements_interface() {
     );
 }
 
-// TODO: extractor does not handle default_expression yet — default(SomeType) does not
-// emit a TypeRef. The scan_all_type_positions walker skips this node kind.
-// #[test]
-// fn coverage_default_expression() { ... }
+#[test]
+fn coverage_default_expression() {
+    // `default(Admin)` — should emit TypeRef for the type argument.
+    let src = "class C { void M() { var x = default(Admin); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef from default_expression for Admin; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
 
 #[test]
 fn coverage_foreach_statement_type_ref() {
@@ -542,11 +556,17 @@ fn coverage_declaration_pattern_type_ref() {
     );
 }
 
-// TODO: extractor does not handle nameof_expression correctly — in tree-sitter-c-sharp
-// the argument inside nameof() is not a plain `identifier` node but an `identifier_name`
-// or wrapped expression. The refs vec comes back empty for nameof(SomeClass).
-// #[test]
-// fn coverage_nameof_expression() { ... }
+#[test]
+fn coverage_nameof_expression() {
+    // `nameof(Admin)` — should emit TypeRef for the identifier argument.
+    let src = "class C { void M() { var s = nameof(Admin); } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef from nameof_expression for Admin; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
 
 // ---- attribute on property_declaration → TypeRef ---------------------------
 

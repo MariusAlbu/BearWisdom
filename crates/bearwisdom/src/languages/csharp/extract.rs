@@ -626,6 +626,54 @@ fn scan_all_type_positions(
                 scan_all_type_positions(child, src, sym_idx, refs);
             }
 
+            // `default(SomeType)` — emit TypeRef for the type argument.
+            // Works like typeof: skip `default`, `(`, `)` tokens and scan the type child.
+            "default_expression" => {
+                let mut tc = child.walk();
+                for c in child.children(&mut tc) {
+                    if !matches!(c.kind(), "default" | "(" | ")") {
+                        super::types::extract_type_refs_from_type_node(c, src, sym_idx, refs);
+                        break;
+                    }
+                }
+            }
+
+            // `nameof(SomeClass)` — emit TypeRef for the identifier argument.
+            // tree-sitter-c-sharp parses nameof() as an invocation_expression whose
+            // callee is an identifier "nameof". Detect that case here and emit TypeRef
+            // for the first argument identifier instead of a Calls edge.
+            "invocation_expression" => {
+                let is_nameof = child
+                    .child_by_field_name("function")
+                    .map(|f| {
+                        f.kind() == "identifier"
+                            && super::helpers::node_text(f, src) == "nameof"
+                    })
+                    .unwrap_or(false);
+                if is_nameof {
+                    // Walk into argument_list → argument → (identifier | member_access)
+                    if let Some(arg_list) = child.child_by_field_name("arguments") {
+                        let mut alc = arg_list.walk();
+                        for arg in arg_list.children(&mut alc) {
+                            if arg.kind() == "argument" {
+                                let mut ac = arg.walk();
+                                for val in arg.children(&mut ac) {
+                                    if val.kind() == "identifier" || val.kind() == "member_access_expression" {
+                                        emit_csharp_type_ref(val, src, sym_idx, refs);
+                                        break;
+                                    }
+                                }
+                                break;
+                            }
+                        }
+                    }
+                    // Don't recurse further — nameof args are not code positions.
+                } else {
+                    scan_all_type_positions(child, src, sym_idx, refs);
+                }
+            }
+
+
             _ => {
                 scan_all_type_positions(child, src, sym_idx, refs);
             }

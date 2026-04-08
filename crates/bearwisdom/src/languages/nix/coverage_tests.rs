@@ -170,20 +170,18 @@ fn cov_inherit_from_produces_variables() {
     );
 }
 
-/// `inherit (src) name` inside a let expression → Imports ref to the source
-// TODO: extractor does not emit Imports ref from inherit_from when the source
-// expression's parenthesized_expression node kind doesn't match the grammar
-// version in use. Re-enable once grammar compatibility is confirmed.
-// #[test]
-// fn cov_inherit_from_produces_imports_ref() {
-//     let src = "let x = { inherit (pkgs) hello; }; in x";
-//     let r = extract::extract(src, lang());
-//     assert!(
-//         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "pkgs"),
-//         "inherit_from should emit Imports(pkgs); got: {:?}",
-//         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
-//     );
-// }
+/// `inherit (src) name` inside a let expression → Imports ref to the source.
+/// The `expression` field on `inherit_from` (tree-sitter-nix 0.3) names the source attrset.
+#[test]
+fn cov_inherit_from_produces_imports_ref() {
+    let src = "let x = { inherit (pkgs) hello; }; in x";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "pkgs"),
+        "inherit_from should emit Imports(pkgs); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
 
 /// Dotted attrpath binding `a.b = value` → Variable with qualified name "a.b"
 #[test]

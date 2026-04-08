@@ -74,6 +74,10 @@ fn visit_node(
             let sym_idx = symbols.len();
             handle_forward(node, src, refs, symbols, sym_idx);
         }
+        "use_statement" => {
+            let sym_idx = symbols.len();
+            handle_use(node, src, refs, symbols, sym_idx);
+        }
         "keyframes_statement" => {
             handle_keyframes(node, src, symbols, refs);
         }
@@ -251,6 +255,32 @@ fn handle_import(
 // ---------------------------------------------------------------------------
 
 fn handle_forward(
+    node: &Node,
+    src: &str,
+    refs: &mut Vec<ExtractedRef>,
+    symbols: &mut Vec<ExtractedSymbol>,
+    source_symbol_index: usize,
+) {
+    let module = find_string_value(node, src);
+    if !module.is_empty() {
+        let target = path_to_target(&module);
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: target,
+            kind: EdgeKind::Imports,
+            line: node.start_position().row as u32,
+            module: Some(module),
+            chain: None,
+        });
+    }
+    visit_children(node, src, symbols, refs, Some(source_symbol_index));
+}
+
+// ---------------------------------------------------------------------------
+// @use 'path'  =>  Imports ref
+// ---------------------------------------------------------------------------
+
+fn handle_use(
     node: &Node,
     src: &str,
     refs: &mut Vec<ExtractedRef>,

@@ -114,17 +114,16 @@ fn ref_groovy_import() {
 // package name format
 // ---------------------------------------------------------------------------
 
-/// `declaration` inside a class body → Field symbol
-// TODO: extractor does not extract `declaration` nodes as Field symbols.
-// #[test]
-// fn symbol_field_declaration() {
-//     let r = extract("class Foo {\n    String name = \"hello\"\n}");
-//     assert!(
-//         r.symbols.iter().any(|s| s.name == "name" && s.kind == SymbolKind::Field),
-//         "expected Field name; got {:?}",
-//         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
-//     );
-// }
+/// `field_declaration` inside a class body → Field symbol
+#[test]
+fn symbol_field_declaration() {
+    let r = extract("class Foo {\n    String name = \"hello\"\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "name" && s.kind == SymbolKind::Field),
+        "expected Field name; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// `package_declaration` → Namespace with fully qualified dotted name
 #[test]
@@ -199,28 +198,26 @@ fn ref_multiple_calls_in_method() {
 }
 
 /// `class extends Super` → Inherits ref
-// TODO: extractor does not emit Inherits edges from class_declaration.
-// #[test]
-// fn ref_class_extends_produces_inherits() {
-//     let r = extract("class Dog extends Animal {}");
-//     assert!(
-//         r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
-//         "expected Inherits(Animal) from extends clause; got {:?}",
-//         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
-//     );
-// }
+#[test]
+fn ref_class_extends_produces_inherits() {
+    let r = extract("class Dog extends Animal {}");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "Animal"),
+        "expected Inherits(Animal) from extends clause; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// `class implements Interface` → Implements ref
-// TODO: extractor does not emit Implements edges from class_declaration.
-// #[test]
-// fn ref_class_implements_produces_implements() {
-//     let r = extract("class Foo implements IBar {}");
-//     assert!(
-//         r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "IBar"),
-//         "expected Implements(IBar) from implements clause; got {:?}",
-//         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
-//     );
-// }
+#[test]
+fn ref_class_implements_produces_implements() {
+    let r = extract("class Foo implements IBar {}");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name == "IBar"),
+        "expected Implements(IBar) from implements clause; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// Method with typed return type → Method symbol still emitted
 #[test]

@@ -157,12 +157,10 @@ fn symbol_assignment_indexed_lhs() {
     );
 }
 
-/// methods block inside classdef — extractor does not have an explicit arm for `methods`.
-/// TODO: emit Method symbols from `methods` block contents.
-/// For now, document that no panic occurs and the class is still extracted.
+/// methods block inside classdef — `methods` arm extracts function_definition nodes
+/// as Method symbols.
 #[test]
-fn symbol_methods_block_no_crash() {
-    // TODO: extractor should emit Method symbols for methods block members
+fn symbol_methods_block_extracts_methods() {
     let src = concat!(
         "classdef Dog\n",
         "  methods\n",
@@ -178,10 +176,9 @@ fn symbol_methods_block_no_crash() {
         "expected Class Dog; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
-    // The nested function inside methods is currently extracted as a Function.
-    // This assertion documents current behaviour (not a requirement for Method kind).
     assert!(
-        !r.symbols.is_empty(),
-        "expected at least one symbol from classdef with methods block"
+        r.symbols.iter().any(|s| s.name == "bark" && s.kind == SymbolKind::Method),
+        "expected Method bark from methods block; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

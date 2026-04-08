@@ -209,7 +209,6 @@ fn cov_assignment_dot_index_function_emits_method() {
 /// `setmetatable(Child, {__index = Parent})` — Lua prototype inheritance.
 /// The current extractor does not emit Inherits for this pattern.
 /// Test verifies at minimum no panic and `setmetatable` is emitted as a Calls ref.
-// TODO: emit Inherits when setmetatable pattern is detected
 #[test]
 fn cov_setmetatable_emits_calls() {
     let r = extract::extract(
@@ -219,6 +218,12 @@ fn cov_setmetatable_emits_calls() {
     assert!(
         r.refs.iter().any(|rf| rf.target_name == "setmetatable" && rf.kind == EdgeKind::Calls),
         "expected Calls ref to 'setmetatable'; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    // setmetatable with __index should also emit an Inherits ref for the parent.
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Parent" && rf.kind == EdgeKind::Inherits),
+        "expected Inherits ref to 'Parent' from setmetatable __index; got refs: {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
