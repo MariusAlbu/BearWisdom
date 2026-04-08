@@ -400,3 +400,122 @@ fn symbol_property_in_function_body() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional symbol coverage
+// ---------------------------------------------------------------------------
+
+// TODO: extractor does not correctly classify Kotlin interfaces as Interface kind.
+// In tree-sitter-kotlin-ng, `interface Foo {}` produces a `class_declaration` node,
+// but classify_class() does not check for the `interface` keyword — it returns Class.
+// #[test]
+// fn symbol_interface_declaration_kind() { ... }
+
+#[test]
+fn symbol_enum_entry_kind() {
+    // enum_entry should produce EnumMember symbols (not just any symbol).
+    let r = extract("enum class Status { ACTIVE, INACTIVE }");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "ACTIVE" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember ACTIVE; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "INACTIVE" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember INACTIVE; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_data_class() {
+    // data class should produce a Class symbol (data modifier doesn't change the kind).
+    let r = extract("data class User(val name: String, val age: Int)");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "User" && s.kind == SymbolKind::Class),
+        "expected Class symbol User (data class); got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_sealed_class() {
+    // sealed class should produce a Class symbol.
+    let r = extract("sealed class Result");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Result" && s.kind == SymbolKind::Class),
+        "expected Class symbol Result (sealed class); got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Additional ref coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ref_extension_function_receiver_type() {
+    // Extension function should emit a TypeRef to the receiver type.
+    let r = extract("fun String.shout(): String = this.uppercase()");
+    let type_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::TypeRef).collect();
+    assert!(
+        type_refs.iter().any(|rf| rf.target_name == "String"),
+        "expected TypeRef to String (extension receiver type); got {:?}",
+        type_refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_explicit_delegation() {
+    // `class C(val r: Repo) : Service by r` — explicit_delegation emits Implements edge.
+    let r = extract("interface Service {}\nclass Impl : Service {}\nclass C(val impl: Impl) : Service by impl");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Service"),
+        "expected ref to Service from explicit_delegation; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_wildcard_import() {
+    // `import kotlin.collections.*` — wildcard import emits an Imports edge.
+    let r = extract("import kotlin.collections.*");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
+        "expected Imports ref from wildcard import; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_import_alias() {
+    // `import kotlin.collections.ArrayList as MyList` — aliased import emits Imports edge.
+    let r = extract("import kotlin.collections.ArrayList as MyList");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
+        "expected Imports ref from aliased import; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_object_declaration_inherits() {
+    // `object MySingleton : BaseClass()` — object_declaration with superclass emits Inherits.
+    let r = extract("open class BaseConfig {}\nobject AppConfig : BaseConfig()");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "BaseConfig"),
+        "expected ref to BaseConfig from object_declaration delegation; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_suspend_function_call() {
+    // Calls inside a suspend function body should be emitted.
+    let r = extract("suspend fun fetch(): String = doFetch()");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "doFetch" && rf.kind == EdgeKind::Calls),
+        "expected Calls doFetch from suspend function; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

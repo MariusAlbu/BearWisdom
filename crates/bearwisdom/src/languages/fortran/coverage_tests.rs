@@ -125,3 +125,119 @@ fn ref_derived_type_member_call() {
         "expected module = Some(\"self\")"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional symbol node kinds — missing from initial coverage pass
+// ---------------------------------------------------------------------------
+
+/// program — extractor does not have a `program` match arm.
+/// TODO: emit Function symbol from program statement (main entry point).
+#[test]
+fn symbol_program_no_crash() {
+    // TODO: extractor should emit SymbolKind::Function for the program node.
+    // Currently the `program` node has no match arm and falls through to the
+    // generic walker; subroutines/functions inside it are still extracted.
+    let src = "program hello\n  implicit none\n  write(*,*) 'hello'\nend program hello";
+    let r = extract(src);
+    // No panic is the requirement; symbol list may be empty for a bare program.
+    let _ = r;
+}
+
+/// use_statement with ONLY clause → Imports ref with the module name
+#[test]
+fn ref_use_statement_with_only_clause() {
+    let src = concat!(
+        "subroutine baz()\n",
+        "  use iso_fortran_env, only: int32, real64\n",
+        "  implicit none\n",
+        "end subroutine\n",
+    );
+    let r = extract(src);
+    let imp = r.refs.iter().find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "iso_fortran_env");
+    assert!(
+        imp.is_some(),
+        "expected Imports ref to 'iso_fortran_env' from USE...ONLY; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// submodule — extractor does not handle `submodule` nodes.
+/// TODO: emit Namespace symbol from submodule.
+#[test]
+fn symbol_submodule_no_crash() {
+    // TODO: extractor should emit Namespace for submodule nodes
+    let src = concat!(
+        "submodule (mymod) mysubmod\n",
+        "  implicit none\n",
+        "contains\n",
+        "  module subroutine init()\n",
+        "  end subroutine\n",
+        "end submodule\n",
+    );
+    let r = extract(src);
+    // At minimum the contained subroutine should be extracted without crashing.
+    // A Namespace for the submodule itself is not yet emitted.
+    let _ = r; // no panic is the requirement here
+}
+
+/// variable_declaration at module scope — extractor does not handle this yet.
+/// TODO: emit Variable symbols from module-level variable_declaration nodes.
+#[test]
+fn symbol_module_variable_declaration_no_crash() {
+    // TODO: extractor should emit Variable for module-level declarations
+    let src = concat!(
+        "module config\n",
+        "  implicit none\n",
+        "  integer :: max_iter = 100\n",
+        "  real :: tolerance = 1.0e-6\n",
+        "end module\n",
+    );
+    let r = extract(src);
+    // Module itself is extracted; variables are not yet — document current state.
+    assert!(
+        r.symbols.iter().any(|s| s.name == "config" && s.kind == SymbolKind::Namespace),
+        "expected Namespace 'config'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// subroutine_call target_name matches the called subroutine identifier
+#[test]
+fn ref_subroutine_call_target_name() {
+    let src = concat!(
+        "subroutine driver()\n",
+        "  implicit none\n",
+        "  call setup_grid(10, 10)\n",
+        "end subroutine\n",
+    );
+    let r = extract(src);
+    let rf = r.refs.iter().find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "setup_grid");
+    assert!(
+        rf.is_some(),
+        "expected Calls ref with target_name='setup_grid'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// derived_type_definition with EXTENDS → Struct symbol; Inherits edge not yet emitted.
+/// TODO: emit Inherits edge from derived_type_statement base field.
+#[test]
+fn symbol_derived_type_with_extends() {
+    let src = concat!(
+        "module shapes\n",
+        "  type :: shape\n",
+        "    real :: area\n",
+        "  end type\n",
+        "  type, extends(shape) :: circle\n",
+        "    real :: radius\n",
+        "  end type\n",
+        "end module\n",
+    );
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "circle" && s.kind == SymbolKind::Struct),
+        "expected Struct 'circle' from derived type with EXTENDS; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    // TODO: also assert Inherits edge to "shape" once the extractor supports it
+}

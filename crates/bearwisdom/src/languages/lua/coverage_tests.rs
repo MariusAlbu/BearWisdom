@@ -125,3 +125,100 @@ fn cov_method_index_expression_emits_calls() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// local_function  →  Function (private)
+// ---------------------------------------------------------------------------
+
+/// `local function name(...)` → SymbolKind::Function
+#[test]
+fn cov_local_function_emits_function() {
+    let r = extract::extract("local function helper() end");
+    let sym = r.symbols.iter().find(|s| s.name == "helper");
+    assert!(sym.is_some(), "expected Function 'helper' from local_function; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+}
+
+// ---------------------------------------------------------------------------
+// dot_index_expression method declaration  →  Method
+// ---------------------------------------------------------------------------
+
+/// `function Table.name(...)` → SymbolKind::Method with name = 'name'
+#[test]
+fn cov_function_declaration_dot_index_emits_method() {
+    let r = extract::extract("function M.setup() end");
+    let sym = r.symbols.iter().find(|s| s.name == "setup");
+    assert!(sym.is_some(), "expected Method 'setup' from dot_index function_declaration; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Method);
+}
+
+/// `function Table:name(...)` (method_index_expression) → SymbolKind::Method
+#[test]
+fn cov_function_declaration_method_index_emits_method() {
+    let r = extract::extract("function Animal:speak() end");
+    let sym = r.symbols.iter().find(|s| s.name == "speak");
+    assert!(sym.is_some(), "expected Method 'speak' from method_index function_declaration; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Method);
+}
+
+// ---------------------------------------------------------------------------
+// assignment_statement table RHS  →  Class
+// ---------------------------------------------------------------------------
+
+/// `Name = {}` (global assignment to table) → SymbolKind::Class
+#[test]
+fn cov_assignment_statement_table_emits_class() {
+    let r = extract::extract("Animal = {}");
+    let sym = r.symbols.iter().find(|s| s.name == "Animal");
+    assert!(sym.is_some(), "expected Class 'Animal' from global table assignment; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Class);
+}
+
+// ---------------------------------------------------------------------------
+// dot_index_expression call  →  Calls
+// ---------------------------------------------------------------------------
+
+/// `Table.method(...)` call → EdgeKind::Calls with target = 'method'
+#[test]
+fn cov_dot_index_call_emits_calls() {
+    let r = extract::extract("function run() M.save() end");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "save" && rf.kind == EdgeKind::Calls),
+        "expected Calls ref to 'save' from dot_index call; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// assignment_statement with dot_index LHS + function_definition RHS  →  Method
+// ---------------------------------------------------------------------------
+
+/// `Table.name = function(...) ... end` → SymbolKind::Method
+#[test]
+fn cov_assignment_dot_index_function_emits_method() {
+    let r = extract::extract("M.render = function(ctx) end");
+    let sym = r.symbols.iter().find(|s| s.name == "render");
+    assert!(sym.is_some(), "expected Method 'render' from assignment dot_index; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Method);
+}
+
+// ---------------------------------------------------------------------------
+// setmetatable (Inherits pattern) — extractor limitation
+// ---------------------------------------------------------------------------
+
+/// `setmetatable(Child, {__index = Parent})` — Lua prototype inheritance.
+/// The current extractor does not emit Inherits for this pattern.
+/// Test verifies at minimum no panic and `setmetatable` is emitted as a Calls ref.
+// TODO: emit Inherits when setmetatable pattern is detected
+#[test]
+fn cov_setmetatable_emits_calls() {
+    let r = extract::extract(
+        "Child = {}\nsetmetatable(Child, {__index = Parent})\n"
+    );
+    // setmetatable must produce a Calls ref (the function is called)
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "setmetatable" && rf.kind == EdgeKind::Calls),
+        "expected Calls ref to 'setmetatable'; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

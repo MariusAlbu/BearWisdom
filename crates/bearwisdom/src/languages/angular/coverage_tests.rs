@@ -14,6 +14,158 @@ use crate::types::EdgeKind;
 //                call_expression / interpolation / property_binding / event_binding
 // ---------------------------------------------------------------------------
 
+// ---------------------------------------------------------------------------
+// pipe_call — interpolation {{ value | pipeName }} → Calls(<Name>Pipe)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_pipe_call_in_interpolation_produces_calls() {
+    // pipe_call: `value | date` in {{ }} expression → Calls(DatePipe)
+    let r = extract::extract(
+        "<p>{{ createdAt | date }}</p>",
+        "item.component.html",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DatePipe"),
+        "pipe in interpolation should produce Calls(DatePipe); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_pipe_call_with_arguments_produces_calls() {
+    // pipe_call with colon-separated args: `value | date:'short'` → Calls(DatePipe)
+    let r = extract::extract(
+        "<span>{{ ts | date:'short' }}</span>",
+        "ts.component.html",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "DatePipe"),
+        "pipe with args should produce Calls(DatePipe); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_pipe_call_chained_produces_multiple_calls() {
+    // pipe_sequence: `value | uppercase | async` → Calls(UppercasePipe) + Calls(AsyncPipe)
+    let r = extract::extract(
+        "<p>{{ name | uppercase | async }}</p>",
+        "name.component.html",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "UppercasePipe"),
+        "chained pipe should produce Calls(UppercasePipe); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "AsyncPipe"),
+        "chained pipe should produce Calls(AsyncPipe); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_pipe_call_in_property_binding_produces_calls() {
+    // pipe in attribute value: [title]="value | translate" → Calls(TranslatePipe)
+    let r = extract::extract(
+        r#"<img [title]="label | translate" />"#,
+        "img.component.html",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "TranslatePipe"),
+        "pipe in property binding should produce Calls(TranslatePipe); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// structural_directive — *ngFor → NgForDirective Calls edge
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_structural_directive_ngfor_produces_calls() {
+    // *ngFor → NgForDirective Calls edge
+    let r = extract::extract(
+        r#"<li *ngFor="let item of items">{{ item }}</li>"#,
+        "list.component.html",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgFor")),
+        "*ngFor should produce Calls with NgFor in name; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_structural_directive_ngswitch_produces_calls() {
+    // *ngSwitch → NgSwitchDirective Calls edge
+    let r = extract::extract(
+        r#"<div [ngSwitch]="view"><span *ngSwitchCase="'a'">A</span></div>"#,
+        "switch.component.html",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name.contains("NgSwitch")),
+        "*ngSwitchCase should produce Calls with NgSwitch; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// event_binding — on- prefix variant
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_event_binding_on_prefix_produces_calls() {
+    // Angular long-form event binding: on-click="handler()" → Calls(handler)
+    let r = extract::extract(
+        r#"<button on-click="save()">Save</button>"#,
+        "form.component.html",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "save"),
+        "on- prefix event binding should produce Calls(save); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// template sentinel symbol — Class symbol created from file stem
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_template_sentinel_symbol_uses_file_stem() {
+    // The template file itself should emit a Class symbol named from the stem
+    let r = extract::extract("<div>Hello</div>", "user-profile.component.html");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "UserProfile"),
+        "template sentinel should be named UserProfile from stem; got: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// standard HTML — no spurious Calls edges for lowercase tags
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_lowercase_html_tags_do_not_produce_calls() {
+    // Plain HTML elements must not produce Calls edges
+    let r = extract::extract(
+        "<div><p><span><a href=\"#\">link</a></span></p></div>",
+        "plain.component.html",
+    );
+    let html_calls: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .filter(|rf| matches!(rf.target_name.as_str(), "Div" | "P" | "Span" | "A" | "div" | "p" | "span" | "a"))
+        .collect();
+    assert!(
+        html_calls.is_empty(),
+        "standard HTML tags must not produce Calls; got: {:?}",
+        html_calls.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
 #[test]
 fn cov_element_kebab_component_produces_calls() {
     // "element" with a hyphenated tag → Angular component selector → Calls

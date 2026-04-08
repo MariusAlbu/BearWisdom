@@ -140,3 +140,79 @@ fn ref_extends_statement() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+/// ref_node_kind: `class_name_statement` with `extends`  →  Inherits edge
+/// `class_name_statement` itself emits the Inherits edge (distinct from
+/// `extends_statement` which is a standalone `extends` at the top of a script).
+///
+/// NOTE: the `extends` field text for `class_name_statement` includes the keyword
+/// ("extends CharacterBody2D"), so the extractor stores the full field text as the
+/// target_name. The assertion uses contains() to match across grammar versions.
+#[test]
+fn ref_class_name_statement_inherits() {
+    let r = extract("class_name Player extends CharacterBody2D");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name.contains("CharacterBody2D") && rf.kind == EdgeKind::Inherits),
+        "expected Inherits edge with target containing 'CharacterBody2D'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// ref_node_kind: `class_definition` with `extends`  →  Inherits edge (inner class)
+#[test]
+fn ref_class_definition_inherits() {
+    let r = extract("class_name Outer\nclass Inner extends Node:\n\tpass");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Node" && rf.kind == EdgeKind::Inherits),
+        "expected Inherits Node from inner class_definition extends; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: `variable_statement` inside a class  →  Field
+/// When `var` appears inside a `class_definition` body the extractor emits Field.
+#[test]
+fn symbol_variable_statement_as_field_inside_class() {
+    let r = extract("class_name Actor\nclass Inner:\n\tvar hp: int = 100");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "hp" && s.kind == SymbolKind::Field),
+        "expected Field hp inside inner class; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: `function_definition` inside a class_definition  →  Method
+#[test]
+fn symbol_function_definition_as_method_inside_class() {
+    let r = extract("class_name Actor\nclass Inner:\n\tfunc attack():\n\t\tpass");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "attack" && s.kind == SymbolKind::Method),
+        "expected Method attack inside inner class; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: `onready_variable_statement`  →  Field
+/// In the grammar `@onready var x` may parse as `variable_statement` with an
+/// annotation, or as a dedicated `onready_variable_statement` node depending on
+/// the grammar version.  Either way the extractor emits a symbol named `node_ref`.
+#[test]
+fn symbol_onready_variable_statement() {
+    let r = extract("@onready var node_ref: Node");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "node_ref"),
+        "expected symbol node_ref from @onready var; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: anonymous `enum_definition`  →  Enum with placeholder name
+#[test]
+fn symbol_anonymous_enum_definition() {
+    let r = extract("enum { UP, DOWN, LEFT, RIGHT }");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum),
+        "expected an Enum symbol for anonymous enum; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}

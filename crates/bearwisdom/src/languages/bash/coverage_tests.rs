@@ -208,3 +208,79 @@ export GITEA_TEST_E2E_URL
     assert!(domain.is_some(), "expected Variable 'GITEA_TEST_E2E_DOMAIN' from bare export; got: {:?}", r.symbols);
     assert_eq!(domain.unwrap().kind, SymbolKind::Variable);
 }
+
+// ---------------------------------------------------------------------------
+// Imports: source / dot-import
+// ---------------------------------------------------------------------------
+
+/// command `source ./lib.sh` → EdgeKind::Imports
+#[test]
+fn cov_source_command_emits_imports() {
+    let r = extract::extract("source ./lib.sh\n");
+    let imports: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !imports.is_empty(),
+        "expected Imports ref from 'source ./lib.sh'; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// command `. ./utils.sh` (dot-form source) → EdgeKind::Imports
+#[test]
+fn cov_dot_source_command_emits_imports() {
+    let r = extract::extract(". ./utils.sh\n");
+    let imports: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !imports.is_empty(),
+        "expected Imports ref from '. ./utils.sh'; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// source inside a function body → EdgeKind::Imports attributed to that function
+#[test]
+fn cov_source_inside_function_emits_imports() {
+    let r = extract::extract("init() {\n    source ./config.sh\n}\n");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
+        "expected Imports ref from 'source ./config.sh' inside function; got refs: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// declare -a (indexed array) → SymbolKind::Variable
+#[test]
+fn cov_declaration_command_declare_array_emits_variable() {
+    let r = extract::extract("declare -a ITEMS=()\n");
+    let sym = r.symbols.iter().find(|s| s.name == "ITEMS");
+    assert!(sym.is_some(), "expected Variable 'ITEMS' from declare -a; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
+}
+
+/// typeset (ksh-style) → SymbolKind::Variable
+#[test]
+fn cov_declaration_command_typeset_emits_variable() {
+    let r = extract::extract("typeset -i COUNTER=0\n");
+    let sym = r.symbols.iter().find(|s| s.name == "COUNTER");
+    assert!(sym.is_some(), "expected Variable 'COUNTER' from typeset; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
+}
+
+/// readonly declaration → SymbolKind::Variable
+#[test]
+fn cov_declaration_command_readonly_emits_variable() {
+    let r = extract::extract("readonly VERSION=2.0\n");
+    let sym = r.symbols.iter().find(|s| s.name == "VERSION");
+    assert!(sym.is_some(), "expected Variable 'VERSION' from readonly; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
+}

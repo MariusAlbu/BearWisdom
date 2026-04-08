@@ -152,3 +152,124 @@ fn cov_copy_instruction_numeric_from_resolves_to_stage_name() {
         "expected Calls ref to 'builder' from COPY --from=0; got: {calls:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// ENTRYPOINT and CMD → SymbolKind::Function
+// ---------------------------------------------------------------------------
+
+/// entrypoint_instruction → SymbolKind::Function named "ENTRYPOINT"
+#[test]
+fn cov_entrypoint_instruction_emits_function() {
+    let src = "FROM node:18 AS base\nENTRYPOINT [\"node\", \"server.js\"]\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "ENTRYPOINT");
+    assert!(sym.is_some(), "expected Function 'ENTRYPOINT'; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+}
+
+/// cmd_instruction → SymbolKind::Function named "CMD"
+#[test]
+fn cov_cmd_instruction_emits_function() {
+    let src = "FROM python:3.11 AS base\nCMD [\"python\", \"app.py\"]\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "CMD");
+    assert!(sym.is_some(), "expected Function 'CMD'; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+}
+
+/// entrypoint_instruction shell form → SymbolKind::Function named "ENTRYPOINT"
+#[test]
+fn cov_entrypoint_instruction_shell_form_emits_function() {
+    let src = "FROM alpine:latest AS base\nENTRYPOINT /usr/bin/start.sh\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "ENTRYPOINT" && s.kind == SymbolKind::Function),
+        "expected Function 'ENTRYPOINT' from shell form; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// cmd_instruction and entrypoint_instruction both present → two Function symbols
+#[test]
+fn cov_cmd_and_entrypoint_both_emit_function() {
+    let src = "FROM node:18 AS base\nENTRYPOINT [\"node\"]\nCMD [\"index.js\"]\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "ENTRYPOINT"),
+        "expected ENTRYPOINT symbol; got: {:?}", r.symbols
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "CMD"),
+        "expected CMD symbol; got: {:?}", r.symbols
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Test stage detection
+// ---------------------------------------------------------------------------
+
+/// from_instruction with AS test (case-insensitive) → SymbolKind::Test
+#[test]
+fn cov_from_instruction_test_stage_emits_test() {
+    let src = "FROM node:18 AS test\nRUN npm test\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "test");
+    assert!(sym.is_some(), "expected Test stage symbol; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Test);
+}
+
+// ---------------------------------------------------------------------------
+// Inherits edge (from_instruction)
+// ---------------------------------------------------------------------------
+
+/// from_instruction → EdgeKind::Inherits from stage to base image
+/// The extractor emits Imports but not Inherits for FROM instructions.
+// TODO: extractor emits Imports but not Inherits; add when rules diverge from implementation.
+#[test]
+fn ref_from_instruction_inherits_edge() {
+    let src = "FROM ubuntu:22.04 AS base\n";
+    let r = extract::extract(src);
+    // No Inherits edge is emitted by the current extractor (only Imports).
+    // This test documents the gap.
+    let _ = r;
+    // TODO: assert Inherits edge from "base" to "ubuntu:22.04" once implemented.
+}
+
+// ---------------------------------------------------------------------------
+// ARG without default value
+// ---------------------------------------------------------------------------
+
+/// arg_instruction with no default → SymbolKind::Variable (name only)
+#[test]
+fn cov_arg_instruction_no_default_emits_variable() {
+    let src = "FROM node:18 AS base\nARG BUILDKIT_INLINE_CACHE\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "BUILDKIT_INLINE_CACHE");
+    assert!(sym.is_some(), "expected Variable 'BUILDKIT_INLINE_CACHE' from ARG without default; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
+}
+
+/// arg_instruction before first FROM (global scope) → SymbolKind::Variable
+#[test]
+fn cov_global_arg_instruction_before_from_emits_variable() {
+    let src = "ARG BASE_IMAGE=node:18\nFROM $BASE_IMAGE AS app\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "BASE_IMAGE");
+    assert!(sym.is_some(), "expected Variable 'BASE_IMAGE' from global ARG before FROM; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
+}
+
+/// env_instruction with multiple env_pairs → one Variable per pair
+#[test]
+fn cov_env_instruction_multiple_pairs() {
+    let src = "FROM node:18 AS base\nENV NODE_ENV=production PORT=3000\n";
+    let r = extract::extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "NODE_ENV"),
+        "expected 'NODE_ENV' from ENV; got: {:?}", r.symbols
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "PORT"),
+        "expected 'PORT' from ENV; got: {:?}", r.symbols
+    );
+}

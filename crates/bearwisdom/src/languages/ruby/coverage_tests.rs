@@ -236,3 +236,164 @@ fn cov_constant_in_body_produces_type_ref() {
         "expected TypeRef for 'JSONAdapter' constant in body, got: {type_refs:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// initialize → Constructor
+// ---------------------------------------------------------------------------
+
+/// `initialize` method inside class → SymbolKind::Constructor
+#[test]
+fn cov_initialize_produces_constructor_symbol() {
+    let src = "class Person\n  def initialize(name)\n    @name = name\n  end\nend\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "initialize");
+    assert!(sym.is_some(), "expected Constructor symbol 'initialize', got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Constructor);
+}
+
+// ---------------------------------------------------------------------------
+// attr_reader / attr_writer / attr_accessor → Property
+// ---------------------------------------------------------------------------
+
+/// `attr_reader :foo` inside class → SymbolKind::Property named 'foo'
+#[test]
+fn cov_attr_reader_produces_property_symbol() {
+    let src = "class User\n  attr_reader :name\nend\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "name" && s.kind == SymbolKind::Property);
+    assert!(
+        sym.is_some(),
+        "expected Property symbol 'name' from attr_reader, got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `attr_accessor :email` inside class → SymbolKind::Property named 'email'
+#[test]
+fn cov_attr_accessor_produces_property_symbol() {
+    let src = "class Account\n  attr_accessor :email\nend\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "email" && s.kind == SymbolKind::Property);
+    assert!(
+        sym.is_some(),
+        "expected Property symbol 'email' from attr_accessor, got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `attr_writer :token` inside class → SymbolKind::Property named 'token'
+#[test]
+fn cov_attr_writer_produces_property_symbol() {
+    let src = "class Session\n  attr_writer :token\nend\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "token" && s.kind == SymbolKind::Property);
+    assert!(
+        sym.is_some(),
+        "expected Property symbol 'token' from attr_writer, got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// include / extend / prepend → Implements
+// ---------------------------------------------------------------------------
+
+/// `include Serializable` inside class → EdgeKind::Implements
+#[test]
+fn cov_include_produces_implements_ref() {
+    let src = "class Report\n  include Serializable\nend\n";
+    let r = extract::extract(src);
+    let impls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Implements)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        impls.contains(&"Serializable"),
+        "expected Implements ref for 'Serializable' from include, got: {impls:?}"
+    );
+}
+
+/// `extend ClassMethods` → EdgeKind::Implements
+#[test]
+fn cov_extend_produces_implements_ref() {
+    let src = "class Widget\n  extend ClassMethods\nend\n";
+    let r = extract::extract(src);
+    let impls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Implements)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        impls.contains(&"ClassMethods"),
+        "expected Implements ref for 'ClassMethods' from extend, got: {impls:?}"
+    );
+}
+
+/// `prepend Auditable` → EdgeKind::Implements
+#[test]
+fn cov_prepend_produces_implements_ref() {
+    let src = "class Order\n  prepend Auditable\nend\n";
+    let r = extract::extract(src);
+    let impls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Implements)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        impls.contains(&"Auditable"),
+        "expected Implements ref for 'Auditable' from prepend, got: {impls:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// require / require_relative → Imports
+// ---------------------------------------------------------------------------
+
+/// `require 'json'` → EdgeKind::Imports
+#[test]
+fn cov_require_produces_imports_ref() {
+    let src = "require 'json'\n";
+    let r = extract::extract(src);
+    let imports: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !imports.is_empty(),
+        "expected Imports ref from require 'json', got: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `require_relative 'base'` → EdgeKind::Imports
+#[test]
+fn cov_require_relative_produces_imports_ref() {
+    let src = "require_relative 'base'\n";
+    let r = extract::extract(src);
+    let imports: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !imports.is_empty(),
+        "expected Imports ref from require_relative 'base', got: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ClassName.new → Instantiates
+// ---------------------------------------------------------------------------
+
+/// `Foo.new(...)` → EdgeKind::Instantiates with target 'Foo'
+#[test]
+fn cov_new_call_produces_instantiates_ref() {
+    let src = "class Builder\n  def run\n    obj = Payload.new(1, 2)\n  end\nend\n";
+    let r = extract::extract(src);
+    let insts: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Instantiates)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        insts.contains(&"Payload"),
+        "expected Instantiates ref for 'Payload' from .new, got: {insts:?}"
+    );
+}

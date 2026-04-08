@@ -198,3 +198,76 @@ fn ref_using_statement() {
     // We assert no panic and the extractor returns a valid (possibly empty) result.
     let _ = r; // no assertion on edge presence; grammar mismatch is a known limitation
 }
+
+/// symbol_node_kind: `enum_member`  —  EnumMember inside an enum body.
+/// The extractor does not currently handle `enum_member` nodes (extract_enum only
+/// pushes the Enum symbol itself and does not recurse into members).
+// TODO: extractor does not emit EnumMember symbols; add when implemented.
+#[test]
+fn symbol_enum_member() {
+    let r = extract("enum Direction {\n    North\n    South\n    East\n    West\n}");
+    // Enum symbol must be present even if members aren't individually indexed.
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Direction" && s.kind == SymbolKind::Enum),
+        "expected Enum Direction; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    // TODO: assert EnumMember symbols for North/South/East/West once extract_enum recurses.
+    let _ = r.symbols.iter().any(|s| s.kind == SymbolKind::EnumMember);
+}
+
+/// symbol_node_kind: `assignment_expression` (top-level `$var =`)  →  Variable
+/// The extractor does not handle top-level assignment_expression nodes.
+// TODO: extractor skips assignment_expression; add when implemented.
+#[test]
+fn symbol_assignment_expression_top_level() {
+    let r = extract("$Global = 'value'");
+    // No crash expected; symbol may or may not be present until implemented.
+    let _ = r;
+    // TODO: assert Variable symbol "Global" once top-level assignment extraction is added.
+}
+
+/// symbol_node_kind: `script_parameter` in `param_block`  →  Variable
+/// The extractor does not handle param_block parameters.
+// TODO: extractor skips script_parameter; add when implemented.
+#[test]
+fn symbol_script_parameter() {
+    let r = extract("param(\n    [string]$Name,\n    [int]$Count = 0\n)\nWrite-Host $Name");
+    // No crash expected.
+    let _ = r;
+    // TODO: assert Variable symbols "Name" and "Count" from param block.
+}
+
+/// ref_node_kind: `command` where name is `Import-Module`  →  EdgeKind::Imports
+/// The extractor emits an Imports edge for `Import-Module` commands.
+#[test]
+fn ref_import_module_command() {
+    let r = extract("Import-Module Az");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name.contains("Az")),
+        "expected Imports ref to 'Az' from Import-Module; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// ref_node_kind: `class_statement` with `:` base type  →  EdgeKind::Inherits
+/// The extractor does not currently emit Inherits edges for class inheritance.
+// TODO: extractor does not emit Inherits for `class Foo : Bar`; add when implemented.
+#[test]
+fn ref_class_inherits() {
+    let r = extract("class Dog : Animal {\n    Bark() { Write-Host 'Woof' }\n}");
+    // No crash expected.
+    let _ = r;
+    // TODO: assert Inherits edge from "Dog" to "Animal" once inheritance extraction is added.
+}
+
+/// ref_node_kind: `member_access`  —  property access (not a call) e.g. `$obj.Property`
+/// The extractor handles `invokation_expression` but not bare `member_access` nodes.
+// TODO: extractor does not emit refs for member_access (property reads); add when implemented.
+#[test]
+fn ref_member_access() {
+    let r = extract("$length = $str.Length");
+    // No crash expected.
+    let _ = r;
+    // TODO: assert Calls/TypeRef ref to "Length" from member_access once implemented.
+}

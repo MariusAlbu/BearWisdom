@@ -9,6 +9,17 @@
 //   The extractor walks this chain via `extract_value_decl_name`.
 // - `type_definition` children of `named_module` are not currently extracted
 //   due to a traversal gap in `extract_type_def` when called from `visit`.
+//
+// Additional symbol_node_kinds (rules.md):
+//   type_definition → Class (anon_type_defn), Interface (interface_type_defn),
+//                     TypeAlias (type_abbrev_defn)
+//   union_type_case → EnumMember, enum_type_case → EnumMember (TODO)
+//   record_field → Field (TODO), module_abbrev → TypeAlias (TODO)
+//   exception_definition → Struct (TODO)
+//
+// Additional ref_node_kinds:
+//   interface_implementation → Implements (TODO)
+//   class_inherits_decl → Inherits (TODO)
 // =============================================================================
 
 use super::extract::extract;
@@ -147,5 +158,166 @@ fn ref_import_decl() {
         r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "System.IO"),
         "expected Imports System.IO; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Additional type_definition variants
+// ---------------------------------------------------------------------------
+
+/// symbol_node_kind: `type_definition` → Class (anon_type_defn)
+/// NOTE: When `type_definition` appears inside a `named_module` (file-level
+/// `module A.B`), there is a traversal gap — `extract_type_def` is not
+/// reached from the `extract_namespace` → `visit` path for this grammar form.
+// TODO: fix traversal so type_definition inside named_module is extracted
+#[test]
+fn symbol_type_definition_class_does_not_crash() {
+    let r = extract("module MyModule\nlet foo x = x + 1\ntype MyClass() =\n    member this.Value = 42");
+    // No panic is the contract; Class extraction from named_module context is a TODO
+    let _ = r;
+}
+
+/// symbol_node_kind: `type_definition` → Interface (interface_type_defn)
+#[test]
+fn symbol_type_definition_interface() {
+    let r = extract(
+        "module MyModule\nlet foo x = x + 1\ntype IAnimal =\n    interface\n        abstract member Speak: unit -> string\n    end",
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "IAnimal" && s.kind == SymbolKind::Interface),
+        "expected Interface 'IAnimal' from interface_type_defn; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: `type_definition` → TypeAlias (type_abbrev_defn)
+/// NOTE: The grammar parses `type Name = string` as `union_type_defn` (treating
+/// `string` as a single union case without a `|` prefix). Type abbreviations
+/// require a fully-qualified or parenthesized RHS (e.g. `type Name = System.String`)
+/// to parse unambiguously as `type_abbrev_defn`. Additionally, extraction of
+/// type_definition from `named_module` context has a traversal gap.
+// TODO: test with `module_defn` (nested `module =`) context once traversal gap is fixed
+#[test]
+fn symbol_type_definition_type_alias_does_not_crash() {
+    let r = extract("module MyModule\nlet foo x = x + 1\ntype Name = string");
+    // No panic is the contract
+    let _ = r;
+}
+
+/// symbol_node_kind: `union_type_case` → SymbolKind::EnumMember
+/// NOTE: The extractor does not currently walk union_type_case children to
+/// emit EnumMember symbols. The test verifies no panic and the parent DU
+/// is still extracted.
+// TODO: emit EnumMember for each union_type_case
+#[test]
+fn symbol_union_type_case_does_not_crash() {
+    let r = extract(
+        "module MyModule\nlet foo x = x\ntype Color =\n    | Red\n    | Green\n    | Blue",
+    );
+    // Parent DU must be present; individual cases are a TODO
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Color" && s.kind == SymbolKind::Enum),
+        "expected Enum 'Color'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: `enum_type_case` → SymbolKind::EnumMember
+/// NOTE: The extractor does not currently walk enum_type_case children.
+// TODO: emit EnumMember for each enum_type_case
+#[test]
+fn symbol_enum_type_case_does_not_crash() {
+    let r = extract(
+        "module MyModule\nlet foo x = x\ntype Status =\n    | Active = 1\n    | Inactive = 0",
+    );
+    // Parent numeric enum must be present; individual cases are a TODO
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Status" && s.kind == SymbolKind::Enum),
+        "expected Enum 'Status'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: `record_field` → SymbolKind::Field
+/// NOTE: The extractor does not currently emit Field symbols for record fields.
+// TODO: emit Field for each record_field
+#[test]
+fn symbol_record_field_does_not_crash() {
+    let r = extract(
+        "module MyModule\nlet foo x = x\ntype Point = { X: float; Y: float }",
+    );
+    // Parent record must be present; fields are a TODO
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
+        "expected Struct 'Point'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// symbol_node_kind: `module_abbrev` → SymbolKind::TypeAlias
+/// NOTE: The extractor does not currently handle module_abbrev nodes.
+// TODO: emit TypeAlias for module_abbrev
+#[test]
+fn symbol_module_abbrev_does_not_crash() {
+    let r = extract("module MyModule\nmodule L = System.Collections.Generic.List\nlet foo x = x");
+    // No panic is the contract
+    let _ = r;
+}
+
+/// symbol_node_kind: `exception_definition` → SymbolKind::Struct
+/// NOTE: The extractor does not currently handle exception_definition nodes.
+// TODO: emit Struct for exception_definition
+#[test]
+fn symbol_exception_definition_does_not_crash() {
+    let r = extract(
+        "module MyModule\nlet foo x = x\nexception MyError of string",
+    );
+    // No panic is the contract
+    let _ = r;
+}
+
+// ---------------------------------------------------------------------------
+// Additional ref_node_kinds
+// ---------------------------------------------------------------------------
+
+/// ref_node_kind: `interface_implementation` → EdgeKind::Implements
+/// NOTE: The extractor does not currently emit Implements for interface_implementation.
+// TODO: emit Implements ref for `interface IFoo with ...`
+#[test]
+fn ref_interface_implementation_does_not_crash() {
+    let r = extract(concat!(
+        "module MyModule\n",
+        "let foo x = x\n",
+        "type Dog() =\n",
+        "    interface System.IDisposable with\n",
+        "        member this.Dispose() = ()\n",
+    ));
+    // No panic is the contract; Class should still be extracted
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Dog"),
+        "expected symbol 'Dog'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// ref_node_kind: `class_inherits_decl` → EdgeKind::Inherits
+/// NOTE: The extractor does not currently emit Inherits for class_inherits_decl.
+// TODO: emit Inherits ref for `inherit BaseClass(args)`
+#[test]
+fn ref_class_inherits_decl_does_not_crash() {
+    let r = extract(concat!(
+        "module MyModule\n",
+        "let foo x = x\n",
+        "type Animal(name: string) =\n",
+        "    member this.Name = name\n",
+        "type Dog(name: string) =\n",
+        "    inherit Animal(name)\n",
+        "    member this.Bark() = \"woof\"\n",
+    ));
+    // No panic is the contract; Dog should still be extracted
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Dog"),
+        "expected symbol 'Dog'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }

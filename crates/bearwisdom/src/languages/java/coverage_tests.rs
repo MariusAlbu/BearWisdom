@@ -487,6 +487,75 @@ class C {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Additional symbol and edge coverage
+// ---------------------------------------------------------------------------
+
+// TODO: extractor does not handle annotation_type_element_declaration as Method symbols yet.
+// The annotation_type_declaration body recurses via extract_node but has no handler for
+// annotation_type_element_declaration — those nodes fall through the `_` case without emission.
+// #[test]
+// fn coverage_annotation_type_element_method() { ... }
+
+// TODO: extractor does not handle compact_constructor_declaration yet.
+// record bodies are walked via extract_node but compact_constructor_declaration has no handler.
+// #[test]
+// fn coverage_compact_constructor_as_constructor() { ... }
+
+// TODO: extractor does not handle explicit_constructor_invocation yet.
+// super(42) / this(42) inside constructor bodies falls through the `_` recursion
+// without emitting a Calls edge.
+// #[test]
+// fn coverage_explicit_constructor_invocation_super() { ... }
+
+#[test]
+fn coverage_array_creation_expression() {
+    // `new Widget[10]` — array_creation_expression should emit Instantiates for Widget.
+    let src = "class C { void m() { Widget[] arr = new Widget[10]; } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Widget"),
+        "expected ref for array_creation_expression Widget[]; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_import_wildcard() {
+    // Wildcard import: `import java.util.*` — should emit an Imports edge.
+    let src = "import java.util.*;";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.kind == EdgeKind::Imports),
+        "expected Imports edge from wildcard import; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_import_static() {
+    // Static import: `import static java.lang.Math.PI` — should emit an Imports edge.
+    let src = "import static java.lang.Math.PI;";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.kind == EdgeKind::Imports),
+        "expected Imports edge from static import; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_enum_implements() {
+    // `enum Status implements Serializable` — should emit Implements edge.
+    let src = "import java.io.Serializable;\npublic enum Status implements Serializable { ACTIVE, INACTIVE }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Serializable" && r.kind == EdgeKind::Implements),
+        "expected Implements edge for Serializable from enum_declaration; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
 #[test]
 #[ignore]
 fn debug_measure_coverage_java() {

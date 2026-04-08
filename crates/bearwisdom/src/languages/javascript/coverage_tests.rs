@@ -195,3 +195,132 @@ fn coverage_jsx_self_closing_element() {
         r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// New coverage — node types from rules not yet exercised above
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_arrow_function_symbol() {
+    // `const fn = (x) => x` — arrow_function initializer → Function symbol from variable name.
+    let r = extract::extract("const double = (x) => x * 2;");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "double"),
+        "arrow_function in variable_declarator should produce Function symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_generator_function_expression() {
+    // `const gen = function* () {}` — generator_function expression initializer → Function.
+    let r = extract::extract("const counter = function* () { yield 1; };");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Function && s.name == "counter"),
+        "generator_function expression in variable_declarator should produce Function symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_constructor_method() {
+    // method_definition named "constructor" should produce Constructor kind.
+    let r = extract::extract("class Queue { constructor(size) { this.size = size; } }");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Constructor && s.name == "constructor"),
+        "method_definition 'constructor' should produce Constructor symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_method_call_member_expression() {
+    // `obj.method()` — call_expression whose function is a member_expression → Calls ref.
+    let r = extract::extract("function run() { console.log('hello'); }");
+    assert!(
+        r.refs.iter().any(|r| r.kind == EdgeKind::Calls && r.target_name.contains("log")),
+        "member_expression method call should produce Calls ref; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_require_call_imports() {
+    // `const x = require('mod')` — top-level CommonJS require → Imports edge.
+    let r = extract::extract(r#"const fs = require('fs');"#);
+    assert!(
+        r.refs.iter().any(|r| r.kind == EdgeKind::Imports
+            && (r.target_name == "fs" || r.module.as_deref() == Some("fs"))),
+        "require() call should produce Imports ref; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_dynamic_import() {
+    // `import('module')` — dynamic import → Imports edge.
+    let r = extract::extract(r#"async function load() { const m = await import('./module'); }"#);
+    assert!(
+        r.refs.iter().any(|r| r.kind == EdgeKind::Imports
+            && (r.target_name == "./module" || r.module.as_deref() == Some("./module"))),
+        "dynamic import() should produce Imports ref; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_export_reexport_with_source() {
+    // `export { Foo } from './foo'` — named re-export → Imports ref with module set.
+    let r = extract::extract(r#"export { handler } from './handler';"#);
+    assert!(
+        r.refs.iter().any(|r| r.kind == EdgeKind::Imports && r.target_name == "handler"
+            && r.module.as_deref() == Some("./handler")),
+        "re-export with source should produce Imports ref with module; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_object_destructuring_variable() {
+    // `const { a, b } = obj` — object destructuring → one Variable symbol per binding.
+    let r = extract::extract("const { name, age } = person;");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "name"),
+        "object destructuring should produce Variable symbol for 'name'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "age"),
+        "object destructuring should produce Variable symbol for 'age'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_array_destructuring_variable() {
+    // `const [first, second] = arr` — array destructuring → one Variable symbol per element.
+    let r = extract::extract("const [head, tail] = list;");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "head"),
+        "array destructuring should produce Variable symbol for 'head'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "tail"),
+        "array destructuring should produce Variable symbol for 'tail'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_namespace_import() {
+    // `import * as ns from 'module'` — namespace import.
+    // JS extractor records this as TypeRef for the local alias.
+    let r = extract::extract(r#"import * as utils from './utils';"#);
+    assert!(
+        r.refs.iter().any(|r| r.kind == EdgeKind::TypeRef && r.target_name == "utils"
+            && r.module.as_deref() == Some("./utils")),
+        "namespace_import should produce TypeRef for alias with module; got: {:?}",
+        r.refs.iter().map(|r| (r.kind, &r.target_name, &r.module)).collect::<Vec<_>>()
+    );
+}

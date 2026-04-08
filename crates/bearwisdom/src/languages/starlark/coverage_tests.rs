@@ -70,3 +70,105 @@ fn cov_function_call_produces_calls() {
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional symbol_node_kinds — provider, struct, aspect, repository_rule,
+// decorated_definition, test rule assignment
+// ---------------------------------------------------------------------------
+
+/// `name = provider(...)` → Struct symbol
+#[test]
+fn cov_provider_assignment_produces_struct() {
+    let r = extract::extract("MyInfo = provider(\n    fields = [\"value\"],\n)\n");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "MyInfo" && s.kind == SymbolKind::Struct),
+        "provider assignment should produce Struct(MyInfo); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `name = struct(...)` → Struct symbol
+#[test]
+fn cov_struct_assignment_produces_struct() {
+    let r = extract::extract("MY_STRUCT = struct(field_a = 1, field_b = 2)\n");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "MY_STRUCT" && s.kind == SymbolKind::Struct),
+        "struct assignment should produce Struct(MY_STRUCT); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `name = aspect(...)` → Function symbol (rule-like)
+#[test]
+fn cov_aspect_assignment_produces_function() {
+    let r = extract::extract("my_aspect = aspect(\n    implementation = _impl,\n    attr_aspects = [\"deps\"],\n)\n");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "my_aspect" && s.kind == SymbolKind::Function),
+        "aspect assignment should produce Function(my_aspect); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `name = repository_rule(...)` → Function symbol (rule-like)
+#[test]
+fn cov_repository_rule_assignment_produces_function() {
+    let r = extract::extract("my_repo_rule = repository_rule(\n    implementation = _impl,\n)\n");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "my_repo_rule" && s.kind == SymbolKind::Function),
+        "repository_rule assignment should produce Function(my_repo_rule); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `name = some_test_rule(...)` where callee ends in `_test` → Test symbol
+#[test]
+fn cov_test_rule_assignment_produces_test() {
+    let r = extract::extract("my_test = cc_test(\n    name = \"my_test\",\n)\n");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "my_test" && s.kind == SymbolKind::Test),
+        "cc_test assignment should produce Test(my_test); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Additional ref_node_kinds — load with alias, attribute call
+// ---------------------------------------------------------------------------
+
+/// `load(...)` with keyword alias argument → Imports ref for the aliased symbol
+#[test]
+fn cov_load_with_alias_produces_imports() {
+    let r = extract::extract("load(\"//tools:defs.bzl\", my_cc = \"cc_binary\")\n");
+    // Should produce at least the module-level Imports ref.
+    let imports: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Imports).collect();
+    assert!(
+        !imports.is_empty(),
+        "load() with alias arg should produce Imports ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+/// `load(...)` with multiple positional symbol names → one Imports ref per symbol
+#[test]
+fn cov_load_multiple_symbols_produces_multiple_imports() {
+    let r = extract::extract("load(\"//lib:foo.bzl\", \"bar\", \"baz\")\n");
+    let imports: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Imports).collect();
+    // Expect at least 3: module label + "bar" + "baz"
+    assert!(
+        imports.len() >= 3,
+        "load() with 2 symbol args should produce >= 3 Imports refs; got {} refs: {:?}",
+        imports.len(),
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+/// `native.cc_library(...)` call — attribute-style callee → Calls ref
+#[test]
+fn cov_native_attribute_call_produces_calls() {
+    let r = extract::extract("def build():\n    native.cc_library(name = \"lib\", srcs = [\"a.cc\"])\n");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
+        "native.cc_library(...) should produce a Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}

@@ -531,3 +531,177 @@ fn coverage_type_declaration_in_function_body_emits_struct_and_fields() {
         r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---- type_spec (defined type, non-struct/interface) → TypeAlias symbol ------
+
+#[test]
+fn coverage_type_spec_defined_type_emits_type_alias_symbol() {
+    // `type Duration int64` — type_spec whose type child is neither struct_type nor
+    // interface_type → SymbolKind::TypeAlias.
+    let src = "package main\ntype Duration int64";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "Duration");
+    assert!(
+        sym.is_some(),
+        "expected TypeAlias symbol 'Duration'; symbols: {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        sym.unwrap().kind,
+        SymbolKind::TypeAlias,
+        "expected TypeAlias kind for defined type, got: {:?}",
+        sym.unwrap().kind
+    );
+}
+
+// ---- field_declaration: embedded (bare type_identifier) → Inherits edge ----
+
+#[test]
+fn coverage_field_declaration_embedded_bare_type_emits_inherits_edge() {
+    // `type Child struct { Base }` — anonymous (embedded) field with a bare
+    // type_identifier should emit an Inherits edge from Child to Base.
+    let src = "package main\ntype Child struct { Base }";
+    let r = extract::extract(src);
+    let inherits: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Inherits).collect();
+    assert!(
+        inherits.iter().any(|r| r.target_name == "Base"),
+        "expected Inherits edge to Base from embedded field; refs: {:?}",
+        inherits.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- field_declaration: embedded pointer type → Inherits edge ---------------
+
+#[test]
+fn coverage_field_declaration_embedded_pointer_emits_inherits_edge() {
+    // `type Wrapper struct { *Base }` — pointer embedding should also produce
+    // an Inherits edge (pointer is stripped to get the base type name).
+    let src = "package main\ntype Wrapper struct { *Base }";
+    let r = extract::extract(src);
+    let inherits: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Inherits).collect();
+    assert!(
+        inherits.iter().any(|r| r.target_name == "Base"),
+        "expected Inherits edge to Base from *Base embedded field; refs: {:?}",
+        inherits.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- go_statement (goroutine) → Calls edge ----------------------------------
+
+#[test]
+fn coverage_go_statement_extracts_calls_from_goroutine() {
+    // `go launch()` — the call_expression inside a go_statement must emit
+    // a Calls edge just like a regular function call.
+    let src = "package main\nfunc f() { go launch() }";
+    let r = extract::extract(src);
+    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    assert!(
+        calls.iter().any(|r| r.target_name == "launch"),
+        "expected Calls edge to launch from go_statement; calls: {:?}",
+        calls.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- defer_statement → Calls edge -------------------------------------------
+
+#[test]
+fn coverage_defer_statement_extracts_calls_from_defer() {
+    // `defer cleanup()` — the call_expression inside a defer_statement must
+    // emit a Calls edge.
+    let src = "package main\nfunc f() { defer cleanup() }";
+    let r = extract::extract(src);
+    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    assert!(
+        calls.iter().any(|r| r.target_name == "cleanup"),
+        "expected Calls edge to cleanup from defer_statement; calls: {:?}",
+        calls.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- import_spec with alias → Imports edge ----------------------------------
+
+#[test]
+fn coverage_import_spec_with_alias_emits_imports_edge() {
+    // `import f "fmt"` — aliased import; the import path should still produce
+    // an Imports edge with target_name "fmt".
+    let src = "package main\nimport f \"fmt\"";
+    let r = extract::extract(src);
+    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    assert!(
+        imports.iter().any(|r| r.target_name == "fmt"),
+        "expected Imports edge to fmt from aliased import_spec; refs: {:?}",
+        imports.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- import_spec with blank identifier → Imports edge -----------------------
+
+#[test]
+fn coverage_import_spec_blank_import_emits_imports_edge() {
+    // `import _ "database/sql"` — blank (side-effect) import should still
+    // emit an Imports edge so the dependency is tracked.
+    let src = "package main\nimport _ \"database/sql\"";
+    let r = extract::extract(src);
+    let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+    assert!(
+        imports.iter().any(|r| r.target_name == "sql"),
+        "expected Imports edge to sql from blank import_spec; refs: {:?}",
+        imports.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- method_declaration with pointer receiver → Method symbol ---------------
+
+#[test]
+fn coverage_method_declaration_pointer_receiver_emits_method_symbol() {
+    // `func (s *Server) Start() {}` — pointer receiver; the method must still
+    // be associated with the base type "Server" in qualified_name.
+    let src = "package main\ntype Server struct{}\nfunc (s *Server) Start() {}";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "Start" && s.kind == SymbolKind::Method);
+    assert!(
+        sym.is_some(),
+        "expected Method symbol 'Start'; symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, &s.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        sym.unwrap().qualified_name,
+        "main.Server.Start",
+        "expected pointer receiver method to qualify under base type"
+    );
+}
+
+// ---- func_literal (anonymous function) → Calls edge -------------------------
+
+#[test]
+fn coverage_func_literal_body_extracts_calls() {
+    // `func() { inner() }()` — calls inside a func_literal (anonymous function)
+    // must be captured.
+    let src = "package main\nfunc f() { fn := func() { inner() }\nfn() }";
+    let r = extract::extract(src);
+    let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+    assert!(
+        calls.iter().any(|r| r.target_name == "inner"),
+        "expected Calls edge to inner from func_literal body; calls: {:?}",
+        calls.iter().map(|r| &r.target_name).collect::<Vec<_>>()
+    );
+}
+
+// ---- const_spec with iota → Variable symbol ---------------------------------
+
+#[test]
+fn coverage_const_spec_iota_emits_variable_symbols() {
+    // `const (A = iota; B; C)` — each const_spec with iota must produce a
+    // Variable symbol.
+    let src = "package main\nconst (\n\tA = iota\n\tB\n\tC\n)";
+    let r = extract::extract(src);
+    let names: Vec<&str> = r
+        .symbols
+        .iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(names.contains(&"A"), "missing Variable 'A' from iota block; symbols: {names:?}");
+    assert!(names.contains(&"B"), "missing Variable 'B' from iota block; symbols: {names:?}");
+    assert!(names.contains(&"C"), "missing Variable 'C' from iota block; symbols: {names:?}");
+}

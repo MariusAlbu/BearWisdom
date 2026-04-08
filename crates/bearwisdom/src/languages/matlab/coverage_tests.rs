@@ -116,3 +116,72 @@ fn ref_postfix_operator() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional symbol node kinds — missing from initial coverage pass
+// ---------------------------------------------------------------------------
+
+/// assignment with field_expression LHS (obj.field = val) → Variable (field name)
+#[test]
+fn symbol_assignment_field_lhs() {
+    let r = extract("obj.value = 99;");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "value" && s.kind == SymbolKind::Variable),
+        "expected Variable 'value' from field-expression assignment; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// assignment with multioutput_variable LHS ([a, b] = func()) → Variables for each element
+#[test]
+fn symbol_assignment_multioutput_lhs() {
+    let r = extract("[rows, cols] = size(A);");
+    let has_rows = r.symbols.iter().any(|s| s.name == "rows" && s.kind == SymbolKind::Variable);
+    let has_cols = r.symbols.iter().any(|s| s.name == "cols" && s.kind == SymbolKind::Variable);
+    assert!(
+        has_rows && has_cols,
+        "expected Variable 'rows' and Variable 'cols' from multioutput assignment; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// assignment with function_call LHS (indexed assignment arr(i) = val) → Variable (array name)
+#[test]
+fn symbol_assignment_indexed_lhs() {
+    let r = extract("function fill(arr, n)\narr(1) = n;\nend");
+    // The LHS function_call's name field gives the array variable "arr"
+    assert!(
+        r.symbols.iter().any(|s| s.name == "arr" && s.kind == SymbolKind::Variable),
+        "expected Variable 'arr' from indexed assignment; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// methods block inside classdef — extractor does not have an explicit arm for `methods`.
+/// TODO: emit Method symbols from `methods` block contents.
+/// For now, document that no panic occurs and the class is still extracted.
+#[test]
+fn symbol_methods_block_no_crash() {
+    // TODO: extractor should emit Method symbols for methods block members
+    let src = concat!(
+        "classdef Dog\n",
+        "  methods\n",
+        "    function bark(obj)\n",
+        "      disp('woof');\n",
+        "    end\n",
+        "  end\n",
+        "end",
+    );
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Dog" && s.kind == SymbolKind::Class),
+        "expected Class Dog; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    // The nested function inside methods is currently extracted as a Function.
+    // This assertion documents current behaviour (not a requirement for Method kind).
+    assert!(
+        !r.symbols.is_empty(),
+        "expected at least one symbol from classdef with methods block"
+    );
+}

@@ -11,6 +11,7 @@
 use super::extract;
 use crate::types::{EdgeKind, SymbolKind};
 
+
 // ---------------------------------------------------------------------------
 // symbol_node_kinds
 // ---------------------------------------------------------------------------
@@ -172,5 +173,129 @@ fn assert_coverage_above_95_pct() {
         cov.ref_coverage.percent >= 95.0,
         "ref coverage {:.1}% < 95%",
         cov.ref_coverage.percent
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Additional symbol coverage — types and containers
+// ---------------------------------------------------------------------------
+
+/// variable_declaration where value is enum_declaration → Enum
+#[test]
+fn cov_enum_declaration_produces_enum() {
+    let r = extract::extract("const Dir = enum {\n    north,\n    south,\n    east,\n    west,\n};");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "Dir"),
+        "const enum should produce Enum(Dir); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// variable_declaration where value is union_declaration → Struct (tagged union)
+#[test]
+fn cov_union_declaration_produces_struct() {
+    let r = extract::extract("const Value = union(enum) {\n    int_val: i64,\n    float_val: f64,\n};");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Struct && s.name == "Value"),
+        "const union should produce Struct(Value); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// variable_declaration where value is error_set_declaration → Enum
+#[test]
+fn cov_error_set_declaration_produces_enum() {
+    let r = extract::extract("const IoError = error {\n    NotFound,\n    PermissionDenied,\n};");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Enum && s.name == "IoError"),
+        "const error set should produce Enum(IoError); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Plain variable_declaration (non-container const) → Variable
+#[test]
+fn cov_plain_const_produces_variable() {
+    let r = extract::extract("const max_size: usize = 1024;");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "max_size"),
+        "plain const should produce Variable(max_size); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Plain var declaration → Variable
+#[test]
+fn cov_var_declaration_produces_variable() {
+    let r = extract::extract("var counter: u32 = 0;");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "counter"),
+        "var declaration should produce Variable(counter); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// container_field inside struct → Field
+#[test]
+fn cov_struct_field_produces_field() {
+    let r = extract::extract("const Vec2 = struct {\n    x: f32,\n    y: f32,\n};");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Field && s.name == "x"),
+        "struct field should produce Field(x); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// container_field inside enum → EnumMember
+#[test]
+fn cov_enum_member_produces_enum_member() {
+    let r = extract::extract("const Status = enum {\n    ok,\n    err,\n};");
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::EnumMember && s.name == "ok"),
+        "enum member should produce EnumMember(ok); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// function_declaration inside struct body → Method
+#[test]
+fn cov_method_inside_struct_produces_method() {
+    let r = extract::extract(
+        "const Counter = struct {\n    count: u32,\n    pub fn increment(self: *Counter) void {\n        self.count += 1;\n    }\n};",
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Method && s.name == "increment"),
+        "fn inside struct should produce Method(increment); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Additional ref coverage — calls and field TypeRef
+// ---------------------------------------------------------------------------
+
+/// call_expression in function body (regular identifier call) → Calls
+#[test]
+fn cov_regular_call_in_body_produces_calls() {
+    let r = extract::extract(
+        "pub fn run() void {\n    setup();\n    process();\n}",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "setup"),
+        "identifier call in body should produce Calls(setup); got: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// struct field with non-primitive type → TypeRef
+#[test]
+fn cov_struct_field_non_primitive_type_produces_typeref() {
+    let r = extract::extract(
+        "const Node = struct {\n    next: Node,\n    value: u32,\n};",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Node"),
+        "non-primitive field type should produce TypeRef(Node); got: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }

@@ -210,3 +210,63 @@ fn cov_scss_variable_declaration() {
     let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Variable && s.name == "primary-color");
     assert!(sym.is_some(), "expected Variable 'primary-color'; got: {:?}", r.symbols);
 }
+
+// ---------------------------------------------------------------------------
+// ref_node_kinds: use_statement
+// TODO: extract.rs has no use_statement handler — @use produces no Imports refs.
+// The grammar parses @use as a use_statement but the extractor falls through
+// to the default branch which only recurses children without emitting Imports.
+// Add a handle_use() in extract.rs mirroring handle_forward() to enable these.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// symbol_node_kinds: variable_name — signature includes declaration line
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_scss_variable_signature() {
+    let r = extract::extract("$spacing-unit: 8px;", "");
+    let sym = r.symbols.iter().find(|s| s.name == "spacing-unit");
+    assert!(sym.is_some(), "expected Variable 'spacing-unit'");
+    let sig = sym.unwrap().signature.as_deref().unwrap_or("");
+    assert!(sig.contains("spacing-unit"), "expected signature to contain variable name; got: {:?}", sig);
+}
+
+// ---------------------------------------------------------------------------
+// symbol_node_kinds: rule_set — nested rule inherits parent
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_rule_set_nested_class() {
+    // Nested rule sets — each rule set emits a Class symbol
+    let r = extract::extract(".card { .title { color: blue; } }", "");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "card"),
+        "expected Class 'card'; got: {:?}", r.symbols
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ref_node_kinds: call_expression — namespace-qualified call strips namespace
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_call_expression_namespace_qualified() {
+    // After @use "sass:math" as math, calls look like math.ceil(...)
+    // The extractor strips the namespace prefix and uses the last component.
+    let r = extract::extract(".x { width: math.ceil(1.5px); }", "");
+    let call = r.refs.iter().find(|e| e.kind == EdgeKind::Calls && e.target_name == "ceil");
+    assert!(call.is_some(), "expected Calls ref to 'ceil' from math.ceil(); got: {:?}", r.refs);
+}
+
+// ---------------------------------------------------------------------------
+// ref_node_kinds: include_statement — emits Calls, not Imports
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_include_statement_edge_kind_is_calls() {
+    let r = extract::extract(".x { @include theme; }", "");
+    let call = r.refs.iter().find(|e| e.target_name == "theme");
+    assert!(call.is_some(), "expected ref to 'theme'");
+    assert_eq!(call.unwrap().kind, EdgeKind::Calls, "@include should produce Calls, not {:?}", call.unwrap().kind);
+}

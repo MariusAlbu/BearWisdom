@@ -375,6 +375,157 @@ fn ref_uiviewcontroller_not_in_refs() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Additional symbol kinds from the rules not yet covered above
+// ---------------------------------------------------------------------------
+
+#[test]
+fn symbol_struct_declaration() {
+    // class_declaration with declaration_kind=struct → SymbolKind::Struct
+    let r = extract("struct Point {\n    var x: Int\n    var y: Int\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Point" && s.kind == SymbolKind::Struct),
+        "expected Struct Point; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_actor_declaration() {
+    // class_declaration with declaration_kind=actor → SymbolKind::Class
+    let r = extract("actor BankAccount {\n    var balance: Int = 0\n}");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "BankAccount" && s.kind == SymbolKind::Class),
+        "expected Class BankAccount (actor); got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn symbol_macro_declaration() {
+    // macro_declaration — just verify no crash; grammar support varies.
+    // TODO: assert symbol when grammar emits macro_declaration nodes.
+    let r = extract("@freestanding(expression)\nmacro stringify<T>(_ value: T) -> (T, String) = #externalMacro(module: \"Macros\", type: \"StringifyMacro\")");
+    let _ = r; // no crash required
+}
+
+// ---------------------------------------------------------------------------
+// Additional ref kinds from the rules not yet covered above
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ref_navigation_expression_dot_call() {
+    // call_expression with navigation_expression — `receiver.method()` emits Calls to method.
+    let r = extract("class C {\n    func f(items: [Int]) {\n        items.count\n        items.sorted()\n    }\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls),
+        "expected at least one Calls ref from dot-call; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_protocol_inheritance_implements() {
+    // protocol_declaration inheriting another protocol → Implements edge.
+    let r = extract("protocol Shape: Equatable {}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Equatable"),
+        "expected ref to Equatable from protocol inheritance; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_extension_protocol_conformance() {
+    // extension_declaration with protocol conformance → ref to the protocol.
+    let r = extract("class Foo {}\nextension Foo: Equatable {\n    static func ==(lhs: Foo, rhs: Foo) -> Bool { return true }\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Equatable"),
+        "expected ref to Equatable from extension conformance; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_optional_type_wrapping() {
+    // optional_type wrapping a named type — extract inner TypeRef.
+    let r = extract("class C {\n    var delegate: MyDelegate?\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "MyDelegate"),
+        "expected TypeRef MyDelegate from optional_type; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_generic_type_constraint_where() {
+    // where T: Foo constraint → TypeRef to Foo.
+    // Use a non-builtin protocol so the ref is not filtered out.
+    let r = extract("func process<T>(item: T) where T: Persistable {}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Persistable"),
+        "expected TypeRef Persistable from where constraint; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_inherits_vs_implements_class() {
+    // First parent in inheritance clause → Inherits; protocols → Implements.
+    let r = extract("class Poodle: Dog, Trainable {}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Dog" && rf.kind == EdgeKind::Inherits),
+        "expected Inherits Dog; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Trainable" && rf.kind == EdgeKind::Implements),
+        "expected Implements Trainable; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_struct_all_implements() {
+    // struct conformances are all Implements (no Inherits for structs).
+    let r = extract("struct Rect: Drawable, Hashable {}");
+    let non_implements = r.refs.iter()
+        .filter(|rf| (rf.target_name == "Drawable" || rf.target_name == "Hashable") && rf.kind == EdgeKind::Inherits)
+        .count();
+    assert!(
+        non_implements == 0,
+        "struct conformances must be Implements, not Inherits; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "Drawable"),
+        "expected ref to Drawable from struct conformance; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_dictionary_type_inner_types() {
+    // dictionary_type — both key and value types should produce TypeRef.
+    let r = extract("class C {\n    var cache: [String: UserModel]\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "UserModel"),
+        "expected TypeRef UserModel from dictionary_type value; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_function_type_parameter() {
+    // function_type in a parameter (e.g. `(String) -> Void`) — extract inner types.
+    let r = extract("class C {\n    func apply(handler: (UserInput) -> Void) {}\n}");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "UserInput"),
+        "expected TypeRef UserInput from function_type parameter; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
 #[test]
 #[ignore]
 fn debug_measure_swift_coverage() {

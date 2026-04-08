@@ -121,3 +121,75 @@ fn ref_behaviour_attribute() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional symbol node kinds from rules (not yet handled by extractor)
+// ---------------------------------------------------------------------------
+
+/// symbol_node_kind: `type_alias`  →  TypeAlias
+/// Extractor does not handle `-type` declarations — TODO.
+// TODO: type_alias is not extracted; no TypeAlias symbol emitted.
+
+/// symbol_node_kind: `opaque`  →  TypeAlias (opaque variant)
+/// Extractor does not handle `-opaque` declarations — TODO.
+// TODO: opaque is not extracted; no TypeAlias symbol emitted.
+
+/// symbol_node_kind: `callback`  →  Method
+/// Extractor does not handle `-callback` declarations — TODO.
+// TODO: callback is not extracted; no Method symbol emitted.
+
+/// symbol_node_kind: `wild_attribute`  →  Variable (custom attribute metadata)
+/// Extractor does not handle generic wild attributes — TODO.
+// TODO: wild_attribute is not extracted; no Variable symbol emitted.
+
+// ---------------------------------------------------------------------------
+// Additional ref node kinds from rules (not yet handled by extractor)
+// ---------------------------------------------------------------------------
+
+/// ref_node_kind: `call` with `remote` expr  →  Calls edge (qualified call)
+#[test]
+fn ref_call_remote() {
+    let src = "-module(mymod).\n-export([foo/0]).\nfoo() -> lists:map(fun(X) -> X end, []).";
+    let r = extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
+        "expected Calls map from remote call lists:map/2; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// ref_node_kind: `internal_fun`  →  Calls edge (`fun foo/2` reference)
+/// Extractor does not handle internal_fun — TODO.
+// TODO: internal_fun (fun foo/2) is not extracted as a Calls edge.
+
+/// ref_node_kind: `external_fun`  →  Calls edge (`fun mod:foo/2` reference)
+/// Extractor does not handle external_fun — TODO.
+// TODO: external_fun (fun mod:foo/2) is not extracted as a Calls edge.
+
+/// ref_node_kind: `record_expr`  →  Instantiates edge (`#record_name{...}`)
+/// Extractor does not handle record_expr — TODO.
+// TODO: record_expr (#name{...}) is not extracted as an Instantiates edge.
+
+/// Private function: fun_decl not in export list → Visibility::Private
+#[test]
+fn symbol_fun_decl_private() {
+    let src = "-module(mymod).\nbar(X) -> X.";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "bar/1" && s.kind == SymbolKind::Function),
+        "expected Function bar/1; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Zero-arity function — arity should be 0.
+#[test]
+fn symbol_fun_decl_zero_arity() {
+    let src = "-module(mymod).\n-export([start/0]).\nstart() -> ok.";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "start/0" && s.kind == SymbolKind::Function),
+        "expected Function start/0; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}

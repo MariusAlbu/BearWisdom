@@ -151,3 +151,123 @@ fn ref_namespace_operator_triple_colon() {
         calls[0].module
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional symbol node kinds — missing from initial coverage pass
+// ---------------------------------------------------------------------------
+
+/// call (setGeneric) → SymbolKind::Method
+#[test]
+fn cov_call_set_generic_emits_method() {
+    let src = "setGeneric(\"myGeneric\", function(x, ...) standardGeneric(\"myGeneric\"))\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Method);
+    assert!(sym.is_some(), "expected Method symbol from setGeneric(); got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().name, "myGeneric");
+}
+
+/// call (setValidity) → SymbolKind::Method
+#[test]
+fn cov_call_set_validity_emits_method() {
+    let src = "setValidity(\"MyClass\", function(object) TRUE)\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Method);
+    assert!(sym.is_some(), "expected Method symbol from setValidity(); got: {:?}", r.symbols);
+}
+
+/// call (setRefClass) → SymbolKind::Class
+#[test]
+fn cov_call_set_ref_class_emits_class() {
+    let src = "Counter <- setRefClass(\"Counter\", fields = list(count = \"numeric\"))\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
+    assert!(sym.is_some(), "expected Class symbol from setRefClass(); got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().name, "Counter");
+}
+
+/// call (setClass) → SymbolKind::Class  (S4 class definition via LHS assignment)
+/// setClass only produces a Class symbol when it is the RHS of a `<-` assignment;
+/// standalone setClass(...) falls through to a generic Calls ref in the extractor.
+#[test]
+fn cov_call_set_class_s4_emits_class() {
+    // setClass must be on the RHS of an assignment for the Class symbol to be emitted.
+    let src = "Person <- setClass(\"Person\", representation(name = \"character\", age = \"numeric\"))\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Class);
+    assert!(sym.is_some(), "expected Class symbol from setClass(); got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().name, "Person");
+}
+
+/// call (test_that) → SymbolKind::Test
+#[test]
+fn cov_call_test_that_emits_test() {
+    let src = "test_that(\"adds correctly\", { expect_equal(1 + 1, 2) })\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Test);
+    assert!(sym.is_some(), "expected Test symbol from test_that(); got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().name, "adds correctly");
+}
+
+/// call (require) → EdgeKind::Imports
+#[test]
+fn cov_call_require_emits_imports() {
+    let r = extract::extract("require(\"data.table\")\n");
+    let imp = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "data.table");
+    assert!(imp.is_some(), "expected Imports ref from require(); got: {:?}", r.refs);
+}
+
+/// call (requireNamespace) → EdgeKind::Imports
+#[test]
+fn cov_call_require_namespace_emits_imports() {
+    let r = extract::extract("requireNamespace(\"purrr\")\n");
+    let imp = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "purrr");
+    assert!(imp.is_some(), "expected Imports ref from requireNamespace(); got: {:?}", r.refs);
+}
+
+/// binary_operator (->) right-assignment → SymbolKind::Variable
+#[test]
+fn cov_binary_operator_right_assign_emits_variable() {
+    // `42 -> y` is right-assignment; the name bound is `y`
+    let r = extract::extract("42 -> y\n");
+    let sym = r.symbols.iter().find(|s| s.name == "y");
+    assert!(sym.is_some(), "expected Variable 'y' from right-assignment; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Variable);
+}
+
+/// binary_operator (<<-) superassignment with function RHS → SymbolKind::Function
+#[test]
+fn cov_binary_operator_superassign_function() {
+    // `<<-` is the superassignment operator; semantically the same extraction path
+    let r = extract::extract("counter <<- function() count + 1\n");
+    let sym = r.symbols.iter().find(|s| s.name == "counter");
+    assert!(sym.is_some(), "expected Function 'counter' from <<- assignment; got: {:?}", r.symbols);
+    assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+}
+
+/// S3 method naming convention: `print.foo <- function(x, ...) {}` → Function named "print.foo"
+#[test]
+fn cov_binary_operator_s3_method_naming() {
+    let r = extract::extract("print.myclass <- function(x, ...) cat(\"myclass\", \"\\n\")\n");
+    let sym = r.symbols.iter().find(|s| s.name == "print.myclass");
+    assert!(
+        sym.is_some(),
+        "expected Function 'print.myclass' (S3 method); got: {:?}",
+        r.symbols
+    );
+    assert_eq!(sym.unwrap().kind, SymbolKind::Function);
+}
+
+/// call (it) test framework variant → SymbolKind::Test
+#[test]
+fn cov_call_it_emits_test() {
+    let src = "it(\"behaves correctly\", { expect_true(TRUE) })\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Test);
+    assert!(sym.is_some(), "expected Test symbol from it(); got: {:?}", r.symbols);
+}

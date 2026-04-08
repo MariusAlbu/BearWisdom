@@ -73,3 +73,118 @@ fn cov_library_setting_produces_imports() {
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// ref_node_kinds: setting_statement — Resource and Variables imports
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_resource_setting_produces_imports() {
+    let src = "*** Settings ***\nResource    common.robot\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "common.robot"),
+        "Resource setting should produce Imports(common.robot); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_variables_setting_produces_imports() {
+    let src = "*** Settings ***\nVariables    my_vars.py\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "my_vars.py"),
+        "Variables setting should produce Imports(my_vars.py); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// symbol_node_kinds: variable_definition — name stripping
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_scalar_variable_strips_delimiters() {
+    let src = "*** Variables ***\n${HOST}    localhost\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Variable && s.name == "HOST");
+    assert!(
+        sym.is_some(),
+        "scalar variable should strip ${{}} delimiters to produce name 'HOST'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_list_variable_strips_delimiters() {
+    // @{LIST} → name should be "LIST"
+    let src = "*** Variables ***\n@{ITEMS}    one    two    three\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Variable && s.name == "ITEMS");
+    assert!(
+        sym.is_some(),
+        "list variable should strip @{{}} delimiters to produce name 'ITEMS'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_dict_variable_strips_delimiters() {
+    // &{DICT} → name should be "DICT"
+    let src = "*** Variables ***\n&{CONFIG}    key=value\n";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.kind == SymbolKind::Variable && s.name == "CONFIG");
+    assert!(
+        sym.is_some(),
+        "dict variable should strip &{{}} delimiters to produce name 'CONFIG'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// ref_node_kinds: keyword_invocation — in keyword body
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_keyword_invocation_in_keyword_body_produces_calls() {
+    let src = "*** Keywords ***\nSetup Database\n    Connect To DB    myhost\n    Log    Connected\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Connect To DB"),
+        "keyword invocation in keyword body should produce Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_keyword_invocation_assignment_pattern_produces_calls() {
+    // ${result} =    Get Title  — keyword is the second cell
+    let src = "*** Test Cases ***\nCheck Title\n    ${title} =    Get Title\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "Get Title"),
+        "assignment-pattern keyword invocation should produce Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// symbol_node_kinds: multiple test cases and keywords in one file
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_multiple_test_cases() {
+    let src = "*** Test Cases ***\nFirst Test\n    Log    one\nSecond Test\n    Log    two\n";
+    let r = extract::extract(src);
+    let tests: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Test).collect();
+    assert_eq!(tests.len(), 2, "expected 2 Test symbols; got: {:?}", tests);
+}
+
+#[test]
+fn cov_multiple_keywords() {
+    let src = "*** Keywords ***\nKeyword One\n    Log    one\nKeyword Two\n    Log    two\n";
+    let r = extract::extract(src);
+    let kws: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Function).collect();
+    assert_eq!(kws.len(), 2, "expected 2 Function symbols; got: {:?}", kws);
+}

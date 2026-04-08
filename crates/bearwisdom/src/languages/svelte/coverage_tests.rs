@@ -62,3 +62,83 @@ fn cov_kebab_element_produces_calls() {
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// attribute (on:event) — Svelte event directive → Calls(handler)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_on_event_attribute_quoted_produces_calls() {
+    // on:click="handler" with quoted string value → Calls(handler)
+    let r = extract::extract(
+        r#"<button on:click="handleClick">Click</button>"#,
+        "Button.svelte",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
+        "on:click with quoted handler should produce Calls(handleClick); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_on_event_attribute_curly_produces_calls() {
+    // on:click="{handler}" with curly brace value → Calls(handler)
+    let r = extract::extract(
+        r#"<button on:click="{handleClick}">Click</button>"#,
+        "Button.svelte",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "handleClick"),
+        "on:click with curly handler should produce Calls(handleClick); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_on_submit_event_produces_calls() {
+    // on:submit="onSubmit" on a form element → Calls(onSubmit)
+    let r = extract::extract(
+        r#"<form on:submit="onSubmit"><input /></form>"#,
+        "Form.svelte",
+    );
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "onSubmit"),
+        "on:submit directive should produce Calls(onSubmit); got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// {#each} / {#if} / {#await} block — leading identifier extraction
+//
+// TODO: The HTML grammar (tree-sitter-html) does not produce `raw_text` nodes
+// for Svelte control-flow block syntax at template level. The
+// `extract_svelte_blocks` scanner in extract.rs only fires on `raw_text`
+// children, which appear inside <script>/<style> elements in the HTML grammar.
+// Template-level `{#each}`, `{#if}`, `{#await}` blocks are tokenised as
+// `text` nodes and are currently not traversed. These would require
+// tree-sitter-svelte to handle correctly.
+// ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// standard HTML — no spurious Calls for native tags
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_lowercase_html_tags_do_not_produce_calls() {
+    // Native HTML tags must not produce Calls edges
+    let r = extract::extract(
+        "<div><p><span>text</span></p></div>",
+        "Layout.svelte",
+    );
+    let html_calls: Vec<_> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .filter(|rf| matches!(rf.target_name.as_str(), "div" | "Div" | "p" | "P" | "span" | "Span"))
+        .collect();
+    assert!(
+        html_calls.is_empty(),
+        "standard HTML tags must not produce Calls; got: {:?}",
+        html_calls.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}

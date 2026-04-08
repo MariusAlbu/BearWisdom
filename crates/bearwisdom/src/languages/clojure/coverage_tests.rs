@@ -161,3 +161,150 @@ fn ref_unqualified_symbol_no_module() {
         inc_refs[0].module
     );
 }
+
+// ---------------------------------------------------------------------------
+// Additional symbol_node_kinds — uncovered forms
+// ---------------------------------------------------------------------------
+
+/// list_lit matched as `defonce` → Variable symbol (initialize-once)
+#[test]
+fn symbol_list_lit_defonce() {
+    let r = extract("(defonce conn (atom nil))");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "conn" && s.kind == SymbolKind::Variable),
+        "expected Variable conn from defonce; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// list_lit matched as `deftype` → Struct symbol
+#[test]
+fn symbol_list_lit_deftype() {
+    let r = extract("(deftype MyType [a b] Object)");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "MyType" && s.kind == SymbolKind::Struct),
+        "expected Struct MyType from deftype; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// list_lit matched as `definterface` → Interface symbol
+#[test]
+fn symbol_list_lit_definterface() {
+    let r = extract("(definterface ICounter (increment [this]) (value [this]))");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "ICounter" && s.kind == SymbolKind::Interface),
+        "expected Interface ICounter from definterface; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// list_lit matched as `defmulti` → Function symbol (dispatch definition)
+#[test]
+fn symbol_list_lit_defmulti() {
+    let r = extract("(defmulti dispatch-fn :type)");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "dispatch-fn" && s.kind == SymbolKind::Function),
+        "expected Function dispatch-fn from defmulti; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// list_lit matched as `defmethod` → Function symbol (multimethod implementation)
+#[test]
+fn symbol_list_lit_defmethod() {
+    let r = extract("(defmethod dispatch-fn :circle [shape] (* Math/PI (:radius shape)))");
+    assert!(
+        r.symbols.iter().any(|s| s.name == "dispatch-fn" && s.kind == SymbolKind::Function),
+        "expected Function dispatch-fn from defmethod; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Additional ref_node_kinds — uncovered import forms
+// ---------------------------------------------------------------------------
+
+/// ns form with `:use` clause → Imports ref
+#[test]
+fn ref_ns_use_clause_imports() {
+    let r = extract("(ns myapp.core (:use [clojure.set]))");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
+        "expected Imports ref from :use clause; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// ns form with `:import` clause → Imports ref
+#[test]
+fn ref_ns_import_clause_imports() {
+    let r = extract("(ns myapp.core (:import [java.util HashMap]))");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports),
+        "expected Imports ref from :import clause; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// :require with :refer vector → Imports ref to namespace
+#[test]
+fn ref_ns_require_with_refer() {
+    let r = extract("(ns myapp.core (:require [clojure.set :refer [union difference]]))");
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "clojure.set"),
+        "expected Imports(clojure.set) from :require :refer; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// :require with :as alias → Imports ref to namespace
+#[test]
+fn ref_ns_require_with_as_alias() {
+    let r = extract("(ns myapp.core (:require [clojure.string :as str]))");
+    let imp: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "clojure.string")
+        .collect();
+    assert!(
+        !imp.is_empty(),
+        "expected Imports(clojure.string) from :require :as; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Calls ref emitted for the head verb of every declaration form
+/// (verifies sym_lit coverage for the defn head itself)
+#[test]
+fn ref_declaration_head_emitted_as_calls() {
+    let r = extract("(defn my-fn [x] x)");
+    // The `defn` sym_lit head is always emitted as a Calls ref.
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "defn"),
+        "expected Calls ref with target_name='defn'; got: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `extend-protocol` form → Implements-style Calls refs to protocol name
+#[test]
+fn ref_extend_protocol_emits_refs() {
+    let r = extract("(extend-protocol IFoo MyRecord (do-thing [this] nil))");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "IFoo" || rf.target_name == "extend-protocol"),
+        "expected ref to IFoo or extend-protocol; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `extend-type` form → refs to type and protocol names
+#[test]
+fn ref_extend_type_emits_refs() {
+    let r = extract("(extend-type String IShow (show [this] (str \"<\" this \">\")))");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "extend-type" || rf.target_name == "String"),
+        "expected ref to extend-type or String; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}

@@ -437,6 +437,117 @@ fn coverage_generic_name() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// Additional edge/ref coverage
+// ---------------------------------------------------------------------------
+
+#[test]
+fn coverage_array_creation_expression() {
+    // `new Foo[n]` — the extractor emits a TypeRef for the element type (not Instantiates)
+    // because array_creation_expression is handled by scan_all_type_positions, which
+    // walks array_type children and emits TypeRef.
+    let src = "class C { void M() { var a = new Widget[10]; } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Widget"),
+        "expected ref edge for array_creation_expression Widget[]; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+// TODO: extractor does not emit Calls for constructor_initializer base() — it
+// emits Inherits for the base type instead. Skipped until extractor is extended.
+// #[test]
+// fn coverage_constructor_initializer_base_call() { ... }
+
+#[test]
+fn coverage_using_directive_static() {
+    // `using static System.Math` — static import should emit Imports edge.
+    let src = "using static System.Math;\nclass C {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.kind == EdgeKind::Imports),
+        "expected Imports edge from static using_directive; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+// TODO: extractor does not handle aliased using_directive (using Alias = Full.Name) yet.
+// The push_using_directive function only processes the `name` child, not the alias form.
+// #[test]
+// fn coverage_using_directive_alias() { ... }
+
+#[test]
+fn coverage_interface_inherits_interface() {
+    // `interface IExtended : IBase` — interface extending interface emits Inherits or Implements.
+    let src = "interface IBase {}\ninterface IExtended : IBase {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "IBase" && (r.kind == EdgeKind::Inherits || r.kind == EdgeKind::Implements)),
+        "expected Inherits/Implements edge from interface extending interface; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_struct_implements_interface() {
+    // `struct Foo : IBar` — struct can only implement interfaces, emits Implements.
+    let src = "interface IBar {}\nstruct Foo : IBar {}";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "IBar" && r.kind == EdgeKind::Implements),
+        "expected Implements edge from struct implementing interface; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+// TODO: extractor does not handle default_expression yet — default(SomeType) does not
+// emit a TypeRef. The scan_all_type_positions walker skips this node kind.
+// #[test]
+// fn coverage_default_expression() { ... }
+
+#[test]
+fn coverage_foreach_statement_type_ref() {
+    // `foreach (Widget item in list)` — explicit type in foreach emits TypeRef.
+    let src = "class C { void M(System.Collections.Generic.IEnumerable<object> list) { foreach (Widget item in list) {} } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Widget" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef edge from foreach_statement type for Widget; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_catch_declaration_type_ref() {
+    // `catch (NetworkException e)` — catch_declaration type emits TypeRef.
+    let src = "class C { void M() { try {} catch (NetworkException e) {} } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "NetworkException" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef edge from catch_declaration type for NetworkException; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_declaration_pattern_type_ref() {
+    // `if (o is Admin a)` — declaration_pattern inside is_pattern_expression emits TypeRef.
+    let src = "class C { void M(object o) { if (o is Admin a) {} } }";
+    let r = refs(src);
+    assert!(
+        r.iter().any(|r| r.target_name == "Admin" && r.kind == EdgeKind::TypeRef),
+        "expected TypeRef edge from declaration_pattern for Admin; refs: {:?}",
+        r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+}
+
+// TODO: extractor does not handle nameof_expression correctly — in tree-sitter-c-sharp
+// the argument inside nameof() is not a plain `identifier` node but an `identifier_name`
+// or wrapped expression. The refs vec comes back empty for nameof(SomeClass).
+// #[test]
+// fn coverage_nameof_expression() { ... }
+
 // ---- attribute on property_declaration → TypeRef ---------------------------
 
 #[test]

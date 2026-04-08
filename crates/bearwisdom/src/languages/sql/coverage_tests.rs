@@ -126,3 +126,35 @@ fn cov_type_name_custom_column_does_not_crash() {
     let r = extract::extract(src);
     let _ = r;
 }
+
+/// create_function → SymbolKind::Function
+#[test]
+fn cov_create_function_emits_function() {
+    let src = "CREATE FUNCTION get_count() RETURNS INTEGER AS $$ SELECT 1 $$ LANGUAGE sql;";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "get_count" && s.kind == SymbolKind::Function);
+    assert!(sym.is_some(), "expected Function 'get_count' from CREATE FUNCTION; got: {:?}", r.symbols);
+}
+
+/// create_table with IF NOT EXISTS — name still extracted correctly
+#[test]
+fn cov_create_table_if_not_exists_emits_struct() {
+    let src = "CREATE TABLE IF NOT EXISTS sessions (token TEXT);";
+    let r = extract::extract(src);
+    let sym = r.symbols.iter().find(|s| s.name == "sessions" && s.kind == SymbolKind::Struct);
+    assert!(sym.is_some(), "expected Struct 'sessions' with IF NOT EXISTS; got: {:?}", r.symbols);
+}
+
+/// Multiple columns in a table — all emitted as Field
+#[test]
+fn cov_multiple_columns_all_emitted_as_field() {
+    let src = "CREATE TABLE products (id INT, name TEXT, price DECIMAL, active BOOLEAN);";
+    let r = extract::extract(src);
+    let fields: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Field)
+        .map(|s| s.name.as_str())
+        .collect();
+    for expected in &["id", "name", "price", "active"] {
+        assert!(fields.contains(expected), "expected Field '{expected}'; got: {fields:?}");
+    }
+}
