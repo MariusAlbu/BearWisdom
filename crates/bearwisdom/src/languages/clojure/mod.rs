@@ -10,6 +10,7 @@
 //! - `defmacro` → Function (macro)
 
 mod builtins;
+pub(crate) mod externals;
 pub(crate) mod resolve;
 pub mod primitives;
 pub mod extract;
@@ -63,6 +64,10 @@ impl LanguagePlugin for ClojurePlugin {
             "Object", "Class", "Symbol", "Keyword",
             "List", "Vector", "Map", "Set", "Seq", "Fn",
         ]
+    }
+
+    fn externals(&self) -> &'static [&'static str] {
+        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

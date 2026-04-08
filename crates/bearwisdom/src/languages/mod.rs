@@ -76,6 +76,18 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// keywords, wrapper types, and generic type parameter names.
     fn primitives(&self) -> &'static [&'static str] { &[] }
 
+    /// Runtime/library globals that are always external for this language,
+    /// regardless of project dependencies. Examples: `console`, `window` for
+    /// JS/TS; `Logger` for JVM languages. NOT primitives (type names) — these
+    /// are identifiers that appear in code but are never project-defined.
+    fn externals(&self) -> &'static [&'static str] { &[] }
+
+    /// Dependency-gated framework globals. Given the project's declared
+    /// dependencies, returns names injected by frameworks/libraries that should
+    /// be classified as external. Examples: Spring annotations when
+    /// `org.springframework` is a dep, Jest globals when `jest` is a dep.
+    fn framework_globals(&self, _dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> { vec![] }
+
     /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
     /// be counted in the coverage denominator when it appears as a direct child of
     /// the given parent kind.

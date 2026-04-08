@@ -86,6 +86,7 @@ fn resolve_and_write_inner(
     // Pre-build heuristic lookup structures (needed for fallback).
     let name_to_ids = heuristic::build_name_index(symbol_id_map, parsed);
     let qname_to_id = heuristic::build_qname_index(symbol_id_map);
+    let module_to_files = heuristic::build_module_to_files(parsed);
     let import_map = heuristic::build_import_map(parsed);
     let file_namespace_map = heuristic::build_file_namespace_map(parsed);
 
@@ -188,11 +189,35 @@ fn resolve_and_write_inner(
             // language primitives (string, int, bool) without any chain or module.
             let inferred_ns = inferred_ns.or_else(|| {
                 if index.is_external_name(&r.target_name, &pf.language) {
-                    Some(if crate::indexer::test_frameworks::is_test_file(&pf.path) {
+                    Some(if crate::indexer::framework_globals::is_test_file(&pf.path) {
                         "test_framework".to_string()
                     } else {
                         "primitive".to_string()
                     })
+                } else {
+                    None
+                }
+            });
+
+            // Module-qualified external check: if the ref has module="X" and
+            // "X" is not a local file/namespace, classify as external.
+            // e.g., R `dplyr::mutate` → dplyr not local → external.
+            //       Erlang `lists:map` → lists not local → external.
+            //       Haskell `Map.lookup` → Map not local → external.
+            let inferred_ns = inferred_ns.or_else(|| {
+                if let Some(module) = &r.module {
+                    let mod_lower = module.to_lowercase();
+                    let last_seg = module.rsplit('.').next().unwrap_or(module);
+                    let last_lower = last_seg.to_lowercase();
+                    let is_local = module_to_files.contains_key(module.as_str())
+                        || module_to_files.contains_key(&mod_lower)
+                        || module_to_files.contains_key(last_seg)
+                        || module_to_files.contains_key(&last_lower);
+                    if !is_local {
+                        Some(format!("ext:{module}"))
+                    } else {
+                        None
+                    }
                 } else {
                     None
                 }
@@ -244,6 +269,7 @@ fn resolve_and_write_inner(
                 ref_module,
                 &name_to_ids,
                 &qname_to_id,
+                &module_to_files,
                 symbol_id_map,
                 parsed,
             );

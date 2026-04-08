@@ -59,6 +59,49 @@ fn ref_function_call() {
     );
 }
 
+/// ref_node_kind: `field_expression` (callee)  —  obj.method() call.
+/// target_name should be the method; module should be Some(object).
+#[test]
+fn ref_field_expression_method_call() {
+    let r = extract("model.predict(X)");
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.target_name == "predict" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls predict; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("model"),
+        "expected module=Some(\"model\"); got {:?}",
+        rf.unwrap().module
+    );
+}
+
+/// ref_node_kind: `field_expression` (callee) with package prefix  —  pkg.fn() call.
+#[test]
+fn ref_field_expression_pkg_call() {
+    let r = extract("pkg.helper(a, b)");
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.target_name == "helper" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls helper; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("pkg"),
+        "expected module=Some(\"pkg\"); got {:?}",
+        rf.unwrap().module
+    );
+}
+
 /// ref_node_kind: `postfix_operator`  —  matrix transpose and similar postfix ops.
 /// The extractor lists this as a ref_node_kind but the walk does not have an
 /// explicit match arm for it (the `_` fallback recurses). No ref is emitted.

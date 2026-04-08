@@ -1,0 +1,70 @@
+use std::collections::HashSet;
+
+/// Runtime globals always external for PowerShell.
+///
+/// These are .NET instance/static method names commonly called on objects in
+/// PowerShell scripts (e.g., `$list.Add(...)`, `[string]::IsNullOrEmpty(...)`).
+/// They are never defined in project code and are not cmdlets (those are in
+/// primitives.rs) — they come from the .NET BCL at runtime.
+pub(crate) const EXTERNALS: &[&str] = &[
+    // System.Object / common .NET instance methods
+    "ToString", "GetType", "GetHashCode", "Equals", "Dispose",
+    // System.Collections (IList, IDictionary, ISet, …)
+    "Add", "Remove", "Contains", "ContainsKey", "ContainsValue",
+    "Clear", "Count", "Keys", "Values", "Item",
+    "Insert", "RemoveAt", "IndexOf", "TrimExcess",
+    // System.String static / instance
+    "IsNullOrEmpty", "IsNullOrWhiteSpace", "Join", "Split", "Replace",
+    "Trim", "TrimStart", "TrimEnd", "ToUpper", "ToLower",
+    "StartsWith", "EndsWith", "Substring", "IndexOf", "LastIndexOf",
+    "PadLeft", "PadRight", "Format", "Concat",
+    // System.Collections.Generic.List<T>
+    "AddRange", "Sort", "Reverse", "Find", "FindAll", "ForEach",
+    "ToArray", "AsReadOnly",
+    // System.IO.Path static
+    "Combine", "GetFileName", "GetFileNameWithoutExtension",
+    "GetExtension", "GetDirectoryName", "GetFullPath",
+    // Hashtable / PSCustomObject
+    "Clone", "CopyTo",
+    // Runspace / PowerShell automation
+    "Invoke", "BeginInvoke", "EndInvoke", "Stop",
+    "SetVariable", "GetVariable", "AddScript", "AddCommand",
+    "AddParameter", "AddArgument",
+    // Exception / error record
+    "ThrowTerminatingError", "WriteError", "WriteObject",
+    "WriteVerbose", "WriteWarning", "WriteDebug", "WriteProgress",
+    "ShouldProcess", "ShouldContinue",
+    // WinForms / WPF event glue
+    "Add_Click", "Add_Load", "Add_Shown", "Add_Closing", "Add_Closed",
+    "Add_TextChanged", "Add_SelectedIndexChanged", "Add_KeyDown",
+    // Misc .NET patterns
+    "new", "GetValue", "SetValue", "GetFields", "GetProperties",
+    "GetMethods", "InvokeMember",
+];
+
+/// Dependency-gated framework globals for PowerShell.
+pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
+    let mut globals = Vec::new();
+
+    if deps.contains("Pester") || deps.contains("pester") {
+        globals.extend(PESTER_GLOBALS);
+    }
+    if deps.contains("PSScriptAnalyzer") {
+        globals.extend(&["Measure-ScriptDefinition", "Invoke-ScriptAnalyzer"]);
+    }
+
+    globals
+}
+
+const PESTER_GLOBALS: &[&str] = &[
+    "Describe", "Context", "It",
+    "BeforeAll", "AfterAll", "BeforeEach", "AfterEach", "BeforeDiscovery",
+    "Should", "Mock", "Assert-MockCalled", "Assert-VerifiableMock",
+    "InModuleScope", "New-MockObject", "Set-ItResult",
+    // Should operators (used as -Be, -BeTrue, etc.)
+    "-Be", "-BeExactly", "-BeGreaterThan", "-BeLessThan",
+    "-BeIn", "-BeOfType", "-BeTrue", "-BeFalse", "-BeNullOrEmpty",
+    "-Contain", "-Exist", "-FileContentMatch",
+    "-HaveCount", "-HaveParameter",
+    "-Match", "-MatchExactly", "-Throw", "-Not", "-BeNull",
+];

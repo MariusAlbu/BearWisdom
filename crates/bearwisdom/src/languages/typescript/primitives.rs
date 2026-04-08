@@ -65,6 +65,30 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "E.Either", "O.Option", "TE.TaskEither", "T.Task", "IO.IO",
     "Either", "TaskEither", "Option", "Task", "IO",
     "pipe", "flow",
+    // React — additional common types
+    "React", "React.Ref", "React.DragEvent", "React.KeyboardEvent",
+    "React.FocusEvent", "React.PointerEvent", "React.TouchEvent",
+    "React.ClipboardEvent", "React.SyntheticEvent", "React.UIEvent",
+    "React.WheelEvent", "React.AnimationEvent", "React.TransitionEvent",
+    "React.ComponentType", "React.PropsWithChildren", "React.PropsWithRef",
+    "React.ForwardRefExoticComponent", "React.ElementRef",
+    "React.ComponentPropsWithoutRef", "React.ComponentPropsWithRef",
+    "ComponentProps", "ComponentPropsWithoutRef",
+    // Next.js types
+    "NextPage", "GetServerSideProps", "GetStaticProps", "GetStaticPaths",
+    "NextRequest", "NextResponse", "NextApiRequest", "NextApiResponse",
+    "Metadata",
+    // UI primitive libraries (Radix, Ark UI, headless)
+    "ComboboxPrimitive", "MenuPrimitive", "SelectPrimitive",
+    "DialogPrimitive", "PopoverPrimitive", "TooltipPrimitive",
+    "AccordionPrimitive", "TabsPrimitive", "SwitchPrimitive",
+    "CheckboxPrimitive", "RadioGroupPrimitive", "SliderPrimitive",
+    "ContextMenuPrimitive", "DropdownMenuPrimitive", "AlertDialogPrimitive",
+    "NavigationMenuPrimitive", "ScrollAreaPrimitive", "SheetPrimitive",
+    "AutocompletePrimitive", "HoverCardPrimitive", "CollapsiblePrimitive",
+    // Tanstack / React Query
+    "QueryClient", "QueryClientProvider", "UseQueryResult",
+    "UseMutationResult", "InfiniteData",
     // Generic type parameters
     "T", "U", "K", "V", "P", "R", "S", "E", "A", "B", "O",
 ];

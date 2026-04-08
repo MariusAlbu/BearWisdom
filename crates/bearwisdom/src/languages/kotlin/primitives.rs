@@ -35,8 +35,15 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "Context", "Intent", "Bundle", "View", "Activity", "Fragment",
     "ViewModel", "LiveData", "MutableLiveData",
     "Modifier", "Color", "Dp",
-    // Annotations
+    // Annotations (Kotlin + JVM)
     "Serializable", "Parcelable", "Parcelize",
+    "Suppress", "OptIn", "Deprecated", "JvmStatic", "JvmOverloads",
+    "JvmField", "JvmName", "Throws", "Volatile", "Transient",
+    "Test", "BeforeEach", "AfterEach", "BeforeAll", "AfterAll",
+    // Coroutine builders/scopes
+    "GlobalScope", "MainScope", "CoroutineStart",
+    "launch", "async", "runBlocking", "withContext", "delay",
+    "Dispatchers",
     // Generic type parameters
     "T", "U", "K", "V", "E", "R", "S",
 ];

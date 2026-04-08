@@ -49,11 +49,7 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
 
     visit_root(tree.root_node(), source, &mut symbols, &mut refs);
 
-    // Second pass: emit a TypeRef for every object_reference node in the tree
-    // so coverage can match all ref_node_kinds occurrences.
-    collect_all_object_references(tree.root_node(), source, symbols.len().saturating_sub(1), &mut refs);
-
-    // Third pass: collect all column_definition nodes via full tree walk
+    // Second pass: collect all column_definition nodes via full tree walk
     // to ensure coverage matches. Deduplicates by line number.
     let col_lines: HashSet<u32> = symbols.iter().map(|s| s.start_line).collect();
     collect_all_column_definitions(tree.root_node(), source, &col_lines, &mut symbols);
@@ -475,33 +471,6 @@ fn collect_all_column_definitions(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_all_column_definitions(child, src, existing_lines, symbols);
-    }
-}
-
-/// Walk the entire tree and emit a TypeRef for every `object_reference` node.
-/// This is a second pass after symbol extraction to ensure coverage correlation
-/// finds a matching ref for every object_reference occurrence.
-fn collect_all_object_references(
-    node: Node,
-    src: &str,
-    source_symbol_index: usize,
-    refs: &mut Vec<ExtractedRef>,
-) {
-    if node.kind() == "object_reference" {
-        if let Some(name) = object_reference_name(&node, src) {
-            refs.push(ExtractedRef {
-                source_symbol_index,
-                target_name: name,
-                kind: EdgeKind::TypeRef,
-                line: node.start_position().row as u32,
-                module: None,
-                chain: None,
-            });
-        }
-    }
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_all_object_references(child, src, source_symbol_index, refs);
     }
 }
 

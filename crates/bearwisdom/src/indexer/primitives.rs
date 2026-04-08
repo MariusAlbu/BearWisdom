@@ -1,83 +1,34 @@
 // =============================================================================
-// indexer/primitives.rs — Language primitive type sets
+// indexer/primitives.rs — Language primitive + external type sets
 //
-// Delegates to per-language primitives files in languages/<lang>/primitives.rs.
-// This module provides the language-ID routing (including aliases like tsx → TS)
-// while each language owns its own primitive list.
+// Delegates to the LanguagePlugin trait via the plugin registry.
+// Each plugin owns its own primitives, externals, and framework globals.
+// This module provides the combined set used by the resolution engine.
 // =============================================================================
 
-/// Return the slice of primitive/built-in type names for the given language
-/// identifier. Returns an empty slice for unrecognised languages.
+/// Return the slice of primitive/built-in type names for a language.
+/// Dispatches through the plugin registry — no hardcoded match arms.
 pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
-    match lang {
-        "typescript" | "tsx" => crate::languages::typescript::primitives::PRIMITIVES,
-        "javascript" | "jsx" => crate::languages::javascript::primitives::PRIMITIVES,
-        "svelte" => crate::languages::typescript::primitives::PRIMITIVES,
-        "astro" => crate::languages::typescript::primitives::PRIMITIVES,
-        "vue" => crate::languages::typescript::primitives::PRIMITIVES,
-        "angular" => crate::languages::typescript::primitives::PRIMITIVES,
-        "java" => crate::languages::java::primitives::PRIMITIVES,
-        "kotlin" => crate::languages::kotlin::primitives::PRIMITIVES,
-        "scala" => crate::languages::scala::primitives::PRIMITIVES,
-        "groovy" => crate::languages::groovy::primitives::PRIMITIVES,
-        "csharp" => crate::languages::csharp::primitives::PRIMITIVES,
-        "fsharp" => crate::languages::fsharp::primitives::PRIMITIVES,
-        "vbnet" => crate::languages::vbnet::primitives::PRIMITIVES,
-        "rust" => crate::languages::rust_lang::primitives::PRIMITIVES,
-        "python" => crate::languages::python::primitives::PRIMITIVES,
-        "go" => crate::languages::go::primitives::PRIMITIVES,
-        "swift" => crate::languages::swift::primitives::PRIMITIVES,
-        "dart" => crate::languages::dart::primitives::PRIMITIVES,
-        "php" => crate::languages::php::primitives::PRIMITIVES,
-        "ruby" => crate::languages::ruby::primitives::PRIMITIVES,
-        "elixir" => crate::languages::elixir::primitives::PRIMITIVES,
-        "sql" => crate::languages::sql::primitives::PRIMITIVES,
-        // Languages added in builtins blitz
-        "nix" => crate::languages::nix::primitives::PRIMITIVES,
-        "hcl" | "terraform" | "bicep" => crate::languages::hcl::primitives::PRIMITIVES,
-        "matlab" | "octave" => crate::languages::matlab::primitives::PRIMITIVES,
-        "haskell" => crate::languages::haskell::primitives::PRIMITIVES,
-        "clojure" | "clojurescript" => crate::languages::clojure::primitives::PRIMITIVES,
-        "erlang" => crate::languages::erlang::primitives::PRIMITIVES,
-        "nim" => crate::languages::nim::primitives::PRIMITIVES,
-        "ocaml" | "reason" => crate::languages::ocaml::primitives::PRIMITIVES,
-        "pascal" | "delphi" | "objectpascal" => crate::languages::pascal::primitives::PRIMITIVES,
-        "perl" => crate::languages::perl::primitives::PRIMITIVES,
-        "fortran" => crate::languages::fortran::primitives::PRIMITIVES,
-        "powershell" => crate::languages::powershell::primitives::PRIMITIVES,
-        "r" => crate::languages::r_lang::primitives::PRIMITIVES,
-        "bash" | "shell" | "sh" | "zsh" => crate::languages::bash::primitives::PRIMITIVES,
-        "lua" => crate::languages::lua::primitives::PRIMITIVES,
-        "gdscript" => crate::languages::gdscript::primitives::PRIMITIVES,
-        "odin" => crate::languages::odin::primitives::PRIMITIVES,
-        "puppet" => crate::languages::puppet::primitives::PRIMITIVES,
-        "robot" => crate::languages::robot::primitives::PRIMITIVES,
-        "dockerfile" => crate::languages::dockerfile::primitives::PRIMITIVES,
-        "cmake" => crate::languages::cmake::primitives::PRIMITIVES,
-        "make" | "makefile" => crate::languages::make::primitives::PRIMITIVES,
-        "starlark" | "bzl" => crate::languages::starlark::primitives::PRIMITIVES,
-        "cobol" => crate::languages::cobol::primitives::PRIMITIVES,
-        "ada" => crate::languages::ada::primitives::PRIMITIVES,
-        "zig" => crate::languages::zig::primitives::PRIMITIVES,
-        "proto" | "protobuf" => crate::languages::proto::primitives::PRIMITIVES,
-        "graphql" => crate::languages::graphql::primitives::PRIMITIVES,
-        "scss" | "sass" | "css" => crate::languages::scss::primitives::PRIMITIVES,
-        "c" => crate::languages::c_lang::primitives::PRIMITIVES,
-        "cpp" | "c++" => crate::languages::c_lang::primitives::PRIMITIVES,
-        _ => &[],
-    }
+    crate::languages::default_registry().get(lang).primitives()
 }
 
-/// Build a `HashSet<&'static str>` from BOTH handcrafted primitives AND
-/// build-time query-extracted builtins for a given language.
+/// Build a `HashSet<&'static str>` of ALL names that should be classified as
+/// external for a given language. Combines three sources:
 ///
-/// The two sources are complementary:
-///   - Handcrafted: domain-specific (framework types, test globals, operators)
-///   - Query-extracted: language keywords and stdlib builtins from tree-sitter
-///     highlights.scm/locals.scm (auto-maintained by grammar community)
+///   1. **Primitives** — language keyword types (from `LanguagePlugin::primitives()`)
+///   2. **Externals** — always-external runtime globals (from `LanguagePlugin::externals()`)
+///   3. **Query builtins** — keywords extracted from tree-sitter highlights.scm at build time
+///
+/// Dependency-gated framework globals are added separately by the resolution
+/// engine via `LanguagePlugin::framework_globals()`.
 pub fn primitives_set_for_language(lang: &str) -> std::collections::HashSet<&'static str> {
+    let plugin = crate::languages::default_registry().get(lang);
     let mut set: std::collections::HashSet<&'static str> =
-        primitives_for_language(lang).iter().copied().collect();
+        plugin.primitives().iter().copied().collect();
+    // Merge in always-external runtime globals.
+    for name in plugin.externals() {
+        set.insert(name);
+    }
     // Merge in query-extracted builtins from tree-sitter .scm files.
     for name in super::query_builtins::query_builtins_for_language(lang) {
         set.insert(name);

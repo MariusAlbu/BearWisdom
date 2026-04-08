@@ -58,6 +58,7 @@ pub fn resolve_and_write(
     // name_to_ids: simple_name → [(file, qname, kind, id)]
     let name_to_ids = build_name_index(symbol_id_map, parsed);
     let qname_to_id = build_qname_index(symbol_id_map);
+    let module_to_files = build_module_to_files(parsed);
 
     // Build a per-file import map: file_path → Vec<(imported_name, module_path)>
     let import_map = build_import_map(parsed);
@@ -121,6 +122,7 @@ pub fn resolve_and_write(
                 ref_module,
                 &name_to_ids,
                 &qname_to_id,
+                &module_to_files,
                 symbol_id_map,
                 parsed,
             );
@@ -186,15 +188,18 @@ pub(super) fn resolve_ref(
     ref_module: Option<&str>,
     name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>, // name → [(file, qname, kind, id)]
     qname_to_id: &FxHashMap<String, i64>,
+    module_to_files: &FxHashMap<String, Vec<String>>,
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
 ) -> Option<(i64, f64)> {
     // --- Priority 0: Direct module match (0.95) ---
-    // The extractor set `module` on this ref (e.g., `Person.read()` with
-    // module="posthog.models" from `from posthog.models import Person`).
-    // Find the target symbol in files that match the module path.
+    // The extractor set `module` on this ref (e.g., Erlang `lists:map()`,
+    // OCaml `List.map`, R `dplyr::mutate`).
+    // Use the module-to-files index for precise matching.
     if let Some(module) = ref_module {
-        if let Some(id) = resolve_via_ref_module(target_name, module, name_to_ids, parsed) {
+        if let Some(id) =
+            resolve_via_ref_module(target_name, module, name_to_ids, module_to_files, qname_to_id)
+        {
             return Some((id, 0.95));
         }
     }
@@ -295,19 +300,81 @@ pub(super) fn resolve_ref(
 
 /// Priority 0: Direct module match.
 ///
-/// The extractor set `module` on this call ref (e.g., `Person.read()` where
-/// `from posthog.models import Person` gives module="posthog.models").
-/// Find candidates named `target_name` in files whose path contains the module.
+/// The extractor set `module` on this ref — e.g. Erlang `lists:map()` has
+/// module="lists", OCaml `List.map` has module="List", R `dplyr::mutate`
+/// has module="dplyr".
+///
+/// Resolution strategy (from most to least precise):
+///   1. Module name → namespace symbol → find target in that file
+///   2. Module name → file stem match → find target in that file
+///   3. Qualified name lookup: "{module}.{target}" in qname index
+///   4. Fallback: file path contains module (loose, legacy)
 fn resolve_via_ref_module(
     target_name: &str,
     module: &str,
     name_to_ids: &FxHashMap<String, Vec<(String, String, String, i64)>>,
-    parsed: &[ParsedFile],
+    module_to_files: &FxHashMap<String, Vec<String>>,
+    qname_to_id: &FxHashMap<String, i64>,
 ) -> Option<i64> {
     let candidates = name_to_ids.get(target_name)?;
 
-    // Normalize the module path for file matching: "posthog.models" → "posthog/models",
-    // "crate::db" → "db", "./user.service" → "user.service"
+    // --- Strategy 1+2: Module name → files via namespace symbols + file stems ---
+    // Look up the module name directly (e.g., "lists" → ["src/lists.erl"])
+    // and case-insensitively (e.g., "List" → ["lib/list.ml"]).
+    let module_files = module_to_files.get(module);
+    let module_lower = module.to_lowercase();
+    let module_files_ci = if module_files.is_none() {
+        module_to_files.get(&module_lower)
+    } else {
+        None
+    };
+
+    // For dotted modules like "Data.Map", also try the last segment
+    let last_segment = module.rsplit('.').next().unwrap_or(module);
+    let last_lower = last_segment.to_lowercase();
+    let last_segment_files = if last_segment != module {
+        module_to_files
+            .get(last_segment)
+            .or_else(|| module_to_files.get(&last_lower))
+    } else {
+        None
+    };
+
+    // Collect all file paths associated with this module name
+    let all_module_files: Vec<&str> = module_files
+        .into_iter()
+        .chain(module_files_ci)
+        .chain(last_segment_files)
+        .flat_map(|v| v.iter().map(|s| s.as_str()))
+        .collect();
+
+    if !all_module_files.is_empty() {
+        // Find candidates in the module's files
+        for (file, _qname, _kind, id) in candidates {
+            if all_module_files.contains(&file.as_str()) {
+                return Some(*id);
+            }
+        }
+    }
+
+    // --- Strategy 3: Qualified name lookup ---
+    // Try "{module}.{target}" as a qualified name (handles "List.map", "SysUtils.FreeAndNil")
+    let qname_dotted = format!("{module}.{target_name}");
+    if let Some(&id) = qname_to_id.get(&qname_dotted) {
+        return Some(id);
+    }
+    // Also try with :: separator (Rust, R)
+    let qname_colon = format!("{module}::{target_name}");
+    if let Some(&id) = qname_to_id.get(&qname_colon) {
+        return Some(id);
+    }
+    // Clojure: "ns/fn" qualified names
+    let qname_slash = format!("{module}/{target_name}");
+    if let Some(&id) = qname_to_id.get(&qname_slash) {
+        return Some(id);
+    }
+
+    // --- Strategy 4: File path contains module (legacy fallback) ---
     let normalized = module
         .replace("::", "/")
         .replace('.', "/")
@@ -316,45 +383,26 @@ fn resolve_via_ref_module(
         .trim_start_matches("../")
         .to_string();
 
-    // Try qualified name match first: "{module}.{target}" or "{last_segment}.{target}"
-    // This handles patterns like Rust's "db::DbPool" or Python's "models.Person"
-    let last_segment = normalized.rsplit('/').next().unwrap_or(&normalized);
+    let norm_last = normalized.rsplit('/').next().unwrap_or(&normalized);
 
-    // Score candidates: prefer those in files whose path matches the module
-    let mut best: Option<(i64, bool)> = None; // (id, is_file_match)
+    // Score candidates: qname match > file match
+    let mut best: Option<(i64, bool)> = None;
     for (file, qname, _kind, id) in candidates {
-        // Check if the qualified name matches "{module_segment}.{target}"
-        let qname_match = qname.ends_with(&format!("{last_segment}.{target_name}"))
-            || qname.ends_with(&format!("{}.{}", normalized.replace('/', "."), target_name));
-
-        // Check if the file path contains the module path segments
-        let norm_file = file.replace('\\', "/");
-        let file_match = norm_file.contains(&normalized)
-            || norm_file.contains(last_segment);
-
+        let qname_match = qname.ends_with(&format!("{norm_last}.{target_name}"))
+            || qname.ends_with(&format!(
+                "{}.{}",
+                normalized.replace('/', "."),
+                target_name
+            ));
         if qname_match {
-            return Some(*id); // Exact qualified name match — best possible
+            return Some(*id);
         }
+
+        let norm_file = file.replace('\\', "/");
+        let file_match =
+            norm_file.contains(&normalized) || norm_file.contains(norm_last);
         if file_match && best.map_or(true, |(_, was_file)| !was_file) {
             best = Some((*id, true));
-        }
-    }
-
-    // Also check parsed files for symbols in the matching module
-    if best.is_none() {
-        for pf in parsed {
-            let norm_path = pf.path.replace('\\', "/");
-            if !norm_path.contains(&normalized) && !norm_path.contains(last_segment) {
-                continue;
-            }
-            for sym in &pf.symbols {
-                if sym.name == target_name {
-                    // Find this symbol's ID in the index
-                    for (_, _, _, id) in candidates {
-                        return Some(*id);
-                    }
-                }
-            }
         }
     }
 
@@ -736,6 +784,73 @@ pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> FxHashMap<Strin
         }
     }
     map
+}
+
+/// Build a reverse index: module/namespace name → file paths.
+///
+/// Two sources:
+///   1. Namespace symbols: Erlang `-module(lists)`, Pascal `unit SysUtils`,
+///      Clojure `(ns my.ns)` — explicit declarations.
+///   2. File stems: `list.ml` → "list" and "List" (OCaml convention:
+///      file modules are capitalized).
+///
+/// This enables precise module-qualified resolution: given `module="List"`
+/// and `target_name="map"`, look up "List" → ["lib/list.ml"] → find "map"
+/// among candidates in that file.
+pub(super) fn build_module_to_files(parsed: &[ParsedFile]) -> FxHashMap<String, Vec<String>> {
+    let mut map: FxHashMap<String, Vec<String>> = FxHashMap::default();
+
+    for pf in parsed {
+        // 1. Namespace symbols → module name (exact, authoritative)
+        for sym in &pf.symbols {
+            if sym.kind == SymbolKind::Namespace {
+                let entry = map.entry(sym.name.clone()).or_default();
+                if !entry.contains(&pf.path) {
+                    entry.push(pf.path.clone());
+                }
+            }
+        }
+
+        // 2. File stem → module name
+        let norm = pf.path.replace('\\', "/");
+        if let Some(basename) = norm.rsplit('/').next() {
+            if let Some(stem) = basename.rsplit_once('.').map(|(s, _)| s) {
+                if !stem.is_empty() {
+                    // Original case (e.g., "list" from "list.ml")
+                    let entry = map.entry(stem.to_string()).or_default();
+                    if !entry.contains(&pf.path) {
+                        entry.push(pf.path.clone());
+                    }
+                    // Capitalized (OCaml/Haskell convention: file → Module)
+                    let capitalized = capitalize_first(stem);
+                    if capitalized != stem {
+                        let entry = map.entry(capitalized).or_default();
+                        if !entry.contains(&pf.path) {
+                            entry.push(pf.path.clone());
+                        }
+                    }
+                    // Lowercase for case-insensitive lookup
+                    let lower = stem.to_lowercase();
+                    if lower != stem {
+                        let entry = map.entry(lower).or_default();
+                        if !entry.contains(&pf.path) {
+                            entry.push(pf.path.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Capitalize the first character of a string (for OCaml/Haskell module convention).
+fn capitalize_first(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().to_string() + chars.as_str(),
+    }
 }
 
 /// Build a per-file import map from the parsed extraction results.

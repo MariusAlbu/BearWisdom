@@ -121,6 +121,72 @@ fn ref_invokation_inside_scriptblock_arg() {
     );
 }
 
+/// ref_node_kind: `invokation_expression` static .NET call — [Math]::Round
+/// target_name = "Round", module = Some("Math")
+#[test]
+fn ref_static_dotnet_method_call() {
+    let r = extract("[Math]::Round(3.14)");
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.target_name == "Round" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls Round; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("Math"),
+        "expected module=Some(\"Math\"); got {:?}",
+        rf.unwrap().module
+    );
+}
+
+/// ref_node_kind: `invokation_expression` static .NET call — dotted type [System.IO.File]::ReadAllText
+/// module should be the full dotted type name "System.IO.File"
+#[test]
+fn ref_static_dotnet_method_call_dotted_type() {
+    let r = extract("[System.IO.File]::ReadAllText($path)");
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.target_name == "ReadAllText" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls ReadAllText; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("System.IO.File"),
+        "expected module=Some(\"System.IO.File\"); got {:?}",
+        rf.unwrap().module
+    );
+}
+
+/// ref_node_kind: `invokation_expression` member method call — $obj.Method()
+/// target_name = "Method", module = Some("obj")
+#[test]
+fn ref_member_method_call() {
+    let r = extract("$obj.Method()");
+    let rf = r
+        .refs
+        .iter()
+        .find(|rf| rf.target_name == "Method" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls Method; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("obj"),
+        "expected module=Some(\"obj\"); got {:?}",
+        rf.unwrap().module
+    );
+}
+
 /// ref_node_kind: `using_statement`  —  the tree-sitter-powershell grammar currently
 /// parses `using namespace …` as a `command` node rather than `using_statement`.
 /// The extractor's extract_using handler is therefore unreachable from the current

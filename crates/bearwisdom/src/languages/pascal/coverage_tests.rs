@@ -141,3 +141,43 @@ fn ref_typeref() {
         "expected at least one symbol when typeref nodes are present; got none"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Qualified name splitting
+// ---------------------------------------------------------------------------
+
+/// Qualified call: SysUtils.FreeAndNil(Obj) → target_name = "FreeAndNil", module = Some("SysUtils")
+#[test]
+fn ref_qualified_unit_call() {
+    let src = "program P; begin SysUtils.FreeAndNil(Obj); end.";
+    let r = extract(src);
+    let rf = r.refs.iter().find(|rf| rf.target_name == "FreeAndNil");
+    assert!(
+        rf.is_some(),
+        "expected Calls ref with target_name=\"FreeAndNil\"; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, &rf.module)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("SysUtils"),
+        "expected module = Some(\"SysUtils\")"
+    );
+}
+
+/// Qualified type ref: SysUtils.TStringList → target_name = "TStringList", module = Some("SysUtils")
+#[test]
+fn ref_qualified_type_ref() {
+    let src = "unit U; interface var x: SysUtils.TStringList; implementation end.";
+    let r = extract(src);
+    let rf = r.refs.iter().find(|rf| rf.target_name == "TStringList");
+    assert!(
+        rf.is_some(),
+        "expected Calls ref with target_name=\"TStringList\"; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, &rf.module)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("SysUtils"),
+        "expected module = Some(\"SysUtils\")"
+    );
+}

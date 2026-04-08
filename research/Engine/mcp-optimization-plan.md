@@ -51,6 +51,18 @@ GetItemById|F1:60|method|public
 
 ---
 
+## Implementation Status
+
+| Phase | Status | Notes |
+|-------|--------|-------|
+| Phase 1: Compact Text Format | **Done** | `compact.rs` in bearwisdom-mcp, `format: "compact"` param on all 16 tools |
+| Phase 2: Per-Tool Formatters | **Done** | All 16 tools have compact formatters |
+| Phase 3: File Registry | **Done** | `CompactFormatter` with `fref()` deduplication |
+| Phase 4: Skeletal Mode | Not started | |
+| Phase 5: Response Budget | Not started | |
+
+---
+
 ## Implementation Plan
 
 ### Phase 1: Compact Text Format (`bw_compact`)

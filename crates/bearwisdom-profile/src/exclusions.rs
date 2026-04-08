@@ -12,11 +12,19 @@ pub static COMMON_EXCLUDE_DIRS: &[&str] = &[
     ".vscode",
     ".DS_Store",
     "__MACOSX",
-    "node_modules", // also in TS/JS descriptors, but critical enough to be here too
+    "node_modules",
+    "bower_components",
     ".cache",
     ".tmp",
     "tmp",
     "temp",
+];
+
+/// File extensions that are always skipped (minified/bundled artifacts and source maps).
+static SKIP_EXTENSIONS: &[&str] = &[
+    ".min.js", ".min.css", ".min.mjs",
+    ".bundle.js", ".bundle.css",
+    ".chunk.js", ".chunk.css",
 ];
 
 /// Returns the deduplicated, sorted union of `COMMON_EXCLUDE_DIRS` and all
@@ -56,10 +64,37 @@ pub fn should_exclude(name: &str) -> bool {
     false
 }
 
+/// Returns true if the file name ends with a skippable extension (e.g. `.min.js`).
+pub fn should_skip_file(name: &str) -> bool {
+    SKIP_EXTENSIONS.iter().any(|ext| name.ends_with(ext))
+}
+
+/// Vendor library directories that should be excluded when nested under a
+/// web-root directory (e.g. `wwwroot/lib/`, `public/vendor/`).
+/// Checked via [`is_vendor_lib_dir`].
+pub static WEB_ROOT_DIRS: &[&str] = &["wwwroot", "public"];
+pub static VENDOR_CHILD_DIRS: &[&str] = &["lib", "vendor", "libs", "third_party", "third-party"];
+
+/// Returns true if `path` looks like a vendored JS/CSS library directory
+/// (e.g. `wwwroot/lib`, `public/vendor`).
+fn is_vendor_lib_dir(path: &Path) -> bool {
+    let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+    if !VENDOR_CHILD_DIRS.contains(&name) {
+        return false;
+    }
+    // Check if parent is a web-root directory.
+    path.parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .map(|parent| WEB_ROOT_DIRS.contains(&parent))
+        .unwrap_or(false)
+}
+
 /// Build an [`ignore::Walk`]-backed walker rooted at `root`.
 ///
 /// - Respects `.gitignore` files (default `ignore` crate behaviour).
-/// - Skips all canonical exclude dirs.
+/// - Skips all canonical exclude dirs and vendor library dirs.
+/// - Skips minified files (`.min.js`, `.min.css`, `.bundle.js`).
 /// - Does not follow symlinks.
 pub fn build_walker(root: &Path) -> WalkBuilder {
     let mut builder = WalkBuilder::new(root);
@@ -67,12 +102,19 @@ pub fn build_walker(root: &Path) -> WalkBuilder {
         .follow_links(false)
         .standard_filters(true)
         .filter_entry(|entry| {
-            // entry.file_name() is the bare name component.
             let name = entry.file_name().to_string_lossy();
             if entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                return !should_exclude(&name);
+                if should_exclude(&name) {
+                    return false;
+                }
+                // Exclude vendor library dirs (wwwroot/lib, public/vendor, etc.)
+                if is_vendor_lib_dir(entry.path()) {
+                    return false;
+                }
+                return true;
             }
-            true
+            // Skip minified/bundled files.
+            !should_skip_file(&name)
         });
     builder
 }

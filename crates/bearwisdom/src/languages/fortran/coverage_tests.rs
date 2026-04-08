@@ -99,3 +99,29 @@ fn ref_call_expression() {
         "expected at least one symbol; got none"
     );
 }
+
+/// derived type member call: self%compute(x) → target_name = "compute", module = Some("self")
+#[test]
+fn ref_derived_type_member_call() {
+    let src = concat!(
+        "subroutine run(self, x)\n",
+        "  implicit none\n",
+        "  class(MyType), intent(inout) :: self\n",
+        "  integer, intent(in) :: x\n",
+        "  integer :: y\n",
+        "  y = self%compute(x)\n",
+        "end subroutine\n",
+    );
+    let r = extract(src);
+    let rf = r.refs.iter().find(|rf| rf.target_name == "compute");
+    assert!(
+        rf.is_some(),
+        "expected Calls ref with target_name=\"compute\"; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, &rf.module)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("self"),
+        "expected module = Some(\"self\")"
+    );
+}

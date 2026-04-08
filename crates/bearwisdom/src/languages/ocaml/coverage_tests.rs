@@ -114,3 +114,33 @@ fn ref_application_expression_call() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+/// Qualified call: Module.function → target_name = function, module = Some(Module)
+#[test]
+fn ref_qualified_call() {
+    let r = extract("let main () = List.map (fun x -> x) [1;2;3]", "test.ml");
+    let rf = r.refs.iter().find(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls ref to 'map'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("List"),
+        "expected module=Some(\"List\") for qualified call List.map"
+    );
+}
+
+/// Nested qualified call: Stdlib.List.map → module = "Stdlib.List", target = "map"
+#[test]
+fn ref_nested_qualified_call() {
+    let r = extract("let main () = Stdlib.List.map (fun x -> x) [1;2;3]", "test.ml");
+    let rf = r.refs.iter().find(|rf| rf.target_name == "map");
+    assert!(rf.is_some(), "expected ref to 'map'");
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("Stdlib.List"),
+        "expected module=Some(\"Stdlib.List\") for nested qualified call Stdlib.List.map"
+    );
+}

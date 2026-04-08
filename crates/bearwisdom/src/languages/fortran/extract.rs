@@ -132,31 +132,59 @@ fn walk_node(
             // call_expression = _expression REPEAT1(argument_list)
             // The grammar has no named field; the callee is the first child.
             if let Some(callee) = node.child(0) {
-                let name = match callee.kind() {
-                    "identifier" => text(callee, src),
-                    // derived_type_member_expression: obj%method — take the last segment
-                    "derived_type_member_expression" => {
-                        // last named child is the method name
-                        let count = callee.named_child_count();
-                        if count > 0 {
-                            callee.named_child(count - 1)
-                                .map(|n| text(n, src))
-                                .unwrap_or_default()
-                        } else {
-                            text(callee, src)
+                match callee.kind() {
+                    "identifier" => {
+                        let name = text(callee, src);
+                        if !name.is_empty() {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: name,
+                                kind: EdgeKind::Calls,
+                                line: node.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
                         }
                     }
-                    _ => String::new(),
-                };
-                if !name.is_empty() {
-                    refs.push(ExtractedRef {
-                        source_symbol_index: sym_idx,
-                        target_name: name,
-                        kind: EdgeKind::Calls,
-                        line: node.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                    });
+                    // derived_type_member_expression: obj%method
+                    // named children: [0] = object, [last] = method name
+                    "derived_type_member_expression" => {
+                        let count = callee.named_child_count();
+                        if count >= 2 {
+                            let obj_text = callee.named_child(0)
+                                .map(|n| text(n, src))
+                                .unwrap_or_default();
+                            let method_text = callee.named_child(count - 1)
+                                .map(|n| text(n, src))
+                                .unwrap_or_default();
+                            if !method_text.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: sym_idx,
+                                    target_name: method_text,
+                                    kind: EdgeKind::Calls,
+                                    line: node.start_position().row as u32,
+                                    module: if obj_text.is_empty() { None } else { Some(obj_text) },
+                                    chain: None,
+                                });
+                            }
+                        } else if count == 1 {
+                            // Single named child — use as target_name, no module
+                            let name = callee.named_child(0)
+                                .map(|n| text(n, src))
+                                .unwrap_or_default();
+                            if !name.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: sym_idx,
+                                    target_name: name,
+                                    kind: EdgeKind::Calls,
+                                    line: node.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                        }
+                    }
+                    _ => {}
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);

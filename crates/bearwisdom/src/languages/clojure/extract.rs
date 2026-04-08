@@ -76,12 +76,13 @@ fn walk_node(
         // The child-iteration path below handles nested sym_lits inside other parents.
         let name = sym_lit_name(node, src);
         if !name.is_empty() && !name.starts_with(':') {
+            let ns = sym_lit_ns(node, src);
             refs.push(ExtractedRef {
                 source_symbol_index: parent_idx.unwrap_or(0),
                 target_name: name,
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
-                module: None,
+                module: ns,
                 chain: None,
             });
         }
@@ -94,12 +95,13 @@ fn walk_node(
             let name = sym_lit_name(child, src);
             // Emit a ref for every sym_lit so sym_name coverage engine nodes are satisfied.
             if !name.is_empty() && !name.starts_with(':') {
+                let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
-                    module: None,
+                    module: ns,
                     chain: None,
                 });
             }
@@ -127,7 +129,7 @@ fn process_list(
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
 ) {
-    let (head, head_line) = list_head_with_line(node, src);
+    let (head, head_ns, head_line) = list_head_with_line(node, src);
     if head.is_empty() {
         // No sym_lit head — classify by first named child and walk children.
         let first_named_kind: Option<String> = {
@@ -159,13 +161,14 @@ fn process_list(
     // Always emit a ref for the head sym_lit (the declaration keyword or call verb).
     // Use the head node's actual line (not the list's start) so the coverage engine
     // correctly correlates this ref to the sym_name child of the head sym_lit.
+    // For namespace-qualified heads like `str/join`, set module = Some("str").
     if !head.starts_with(':') && !head.starts_with('"') {
         refs.push(ExtractedRef {
             source_symbol_index: parent_idx.unwrap_or(0),
             target_name: head.clone(),
             kind: EdgeKind::Calls,
             line: head_line,
-            module: None,
+            module: head_ns,
             chain: None,
         });
     }
@@ -294,18 +297,19 @@ fn process_list(
     }
 }
 
-/// Extract the head verb and its start line from a `list_lit`.
-/// Returns `(name, line)` for the first `sym_lit` child, or `("", node_line)` if none.
-fn list_head_with_line(node: Node, src: &[u8]) -> (String, u32) {
+/// Extract the head verb, its namespace qualifier, and its start line from a `list_lit`.
+/// Returns `(name, ns, line)` for the first `sym_lit` child, or `("", None, node_line)` if none.
+fn list_head_with_line(node: Node, src: &[u8]) -> (String, Option<String>, u32) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "sym_lit" {
             let name = sym_lit_name(child, src);
+            let ns = sym_lit_ns(child, src);
             let line = child.start_position().row as u32;
-            return (name, line);
+            return (name, ns, line);
         }
     }
-    (String::new(), node.start_position().row as u32)
+    (String::new(), None, node.start_position().row as u32)
 }
 
 /// Extract the defined name and its `sym_name` leaf line from the second
@@ -360,8 +364,40 @@ fn sym_lit_name(node: Node, src: &[u8]) -> String {
             }
         }
     }
-    // Fallback: full sym_lit text (no metadata child present)
-    node.utf8_text(src).unwrap_or("").trim().to_string()
+    // Fallback: full sym_lit text (no metadata child present).
+    // If the fallback text contains a `/` namespace separator, return only
+    // the part after `/` to stay consistent with the sym_name child path.
+    let full = node.utf8_text(src).unwrap_or("").trim().to_string();
+    if let Some(pos) = full.find('/') {
+        full[pos + 1..].to_string()
+    } else {
+        full
+    }
+}
+
+/// Extract the namespace qualifier from a `sym_lit` node, if present.
+///
+/// Returns `Some("clojure.string")` for `clojure.string/join`, `None` otherwise.
+fn sym_lit_ns(node: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_ns" {
+            let t = child.utf8_text(src).unwrap_or("").trim().to_string();
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+    }
+    // Fallback: if there is no sym_ns child but the full text has a `/`,
+    // treat the part before `/` as the namespace.
+    let full = node.utf8_text(src).unwrap_or("").trim();
+    if let Some(pos) = full.find('/') {
+        let ns = full[..pos].trim();
+        if !ns.is_empty() {
+            return Some(ns.to_string());
+        }
+    }
+    None
 }
 
 /// Walk children of a declaration form, starting after the head and name.
@@ -403,12 +439,13 @@ fn walk_call_args(
             let name = sym_lit_name(child, src);
             // Emit refs for all sym_lits in argument positions.
             if !name.is_empty() && !name.starts_with(':') {
+                let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index: parent_idx.unwrap_or(0),
                     target_name: name,
                     kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
-                    module: None,
+                    module: ns,
                     chain: None,
                 });
             }

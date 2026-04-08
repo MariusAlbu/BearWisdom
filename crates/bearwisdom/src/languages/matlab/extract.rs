@@ -127,21 +127,52 @@ fn walk_node(
             // Always recurse into children so function_call nodes on the RHS are visited.
             walk_children(node, src, symbols, refs, parent_idx);
         }
+        "field_expression" => {
+            // obj.method(args) — the grammar represents this as:
+            //   field_expression
+            //     object: identifier("obj")
+            //     field:  function_call(name: identifier("method"), ...)
+            // We want: target_name = "method", module = Some("obj").
+            // Handle this here so we can emit module; then skip recursing into
+            // children to avoid the nested function_call arm firing again.
+            let sym_idx = parent_idx.unwrap_or(0);
+            let object_node = node.child_by_field_name("object");
+            let field_node = node.child_by_field_name("field");
+
+            match (object_node, field_node) {
+                (Some(obj), Some(field)) if field.kind() == "function_call" => {
+                    let module_text = text(obj, src);
+                    let method_text = field
+                        .child_by_field_name("name")
+                        .map(|n| text(n, src))
+                        .unwrap_or_default();
+                    if !method_text.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name: method_text,
+                            kind: EdgeKind::Calls,
+                            line: node.start_position().row as u32,
+                            module: if module_text.is_empty() { None } else { Some(module_text) },
+                            chain: None,
+                        });
+                    }
+                    // Recurse into the function_call's arguments but not into the
+                    // call node itself (to avoid duplicate emission).
+                    walk_children(field, src, symbols, refs, parent_idx);
+                }
+                _ => {
+                    // Plain field access (not a call) — just recurse.
+                    walk_children(node, src, symbols, refs, parent_idx);
+                }
+            }
+        }
         "function_call" => {
             let sym_idx = parent_idx.unwrap_or(0);
-            // The called function may be a simple identifier or a field expression (obj.method)
+            // Simple function call (not a field_expression callee — those are
+            // handled by the field_expression arm above).
             let target = node
                 .child_by_field_name("name")
-                .map(|n| {
-                    // field_expression: pick the last segment
-                    if n.kind() == "field_expression" {
-                        n.child_by_field_name("field")
-                            .map(|f| text(f, src))
-                            .unwrap_or_else(|| text(n, src))
-                    } else {
-                        text(n, src)
-                    }
-                })
+                .map(|n| text(n, src))
                 .unwrap_or_default();
 
             if !target.is_empty() {

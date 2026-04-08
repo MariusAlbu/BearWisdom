@@ -86,18 +86,68 @@ fn cov_call_generic_emits_calls_ref() {
     assert!(calls.contains(&"plot"), "expected Calls ref to 'plot'; got: {calls:?}");
 }
 
-/// namespace_operator (pkg::fn) → EdgeKind::Imports  (package reference)
+/// namespace_operator (pkg::fn) → EdgeKind::Calls, target_name = function, module = package
 #[test]
-fn cov_namespace_operator_emits_imports_ref() {
+fn cov_namespace_operator_emits_calls_ref() {
     let r = extract::extract("x <- dplyr::filter(df, col > 0)\n");
-    let imports: Vec<&str> = r
+    let calls: Vec<_> = r
         .refs
         .iter()
-        .filter(|r| r.kind == EdgeKind::Imports)
-        .map(|r| r.target_name.as_str())
+        .filter(|r| r.kind == EdgeKind::Calls && r.target_name == "filter")
         .collect();
     assert!(
-        imports.contains(&"dplyr"),
-        "expected Imports ref to 'dplyr' from namespace_operator; got: {imports:?}"
+        !calls.is_empty(),
+        "expected Calls ref with target_name='filter' from namespace_operator; got: {:?}",
+        r.refs.iter().map(|r| (&r.target_name, r.kind, &r.module)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        calls[0].module.as_deref(),
+        Some("dplyr"),
+        "expected module=Some(\"dplyr\"); got: {:?}",
+        calls[0].module
+    );
+}
+
+/// namespace_operator (::) — target_name is the function (rhs), module is the package (lhs)
+#[test]
+fn ref_namespace_operator_qualified() {
+    let r = extract::extract("result <- dplyr::mutate(df, x = 1)\n");
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls && r.target_name == "mutate")
+        .collect();
+    assert!(
+        !calls.is_empty(),
+        "expected Calls ref with target_name='mutate'; got: {:?}",
+        r.refs.iter().map(|r| (&r.target_name, r.kind, &r.module)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        calls[0].module.as_deref(),
+        Some("dplyr"),
+        "expected module=Some(\"dplyr\"); got: {:?}",
+        calls[0].module
+    );
+}
+
+/// namespace_operator (:::) — internal package functions use the same lhs/rhs split
+#[test]
+fn ref_namespace_operator_triple_colon() {
+    let r = extract::extract("rlang:::abort(\"msg\")\n");
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls && r.target_name == "abort")
+        .collect();
+    assert!(
+        !calls.is_empty(),
+        "expected Calls ref with target_name='abort' from ::: operator; got: {:?}",
+        r.refs.iter().map(|r| (&r.target_name, r.kind, &r.module)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        calls[0].module.as_deref(),
+        Some("rlang"),
+        "expected module=Some(\"rlang\"); got: {:?}",
+        calls[0].module
     );
 }

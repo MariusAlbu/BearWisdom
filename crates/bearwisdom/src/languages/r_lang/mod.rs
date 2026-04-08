@@ -7,6 +7,7 @@ pub mod primitives;
 pub mod extract;
 
 mod builtins;
+pub(crate) mod externals;
 pub(crate) mod resolve;
 
 use crate::languages::LanguagePlugin;
@@ -62,6 +63,18 @@ impl LanguagePlugin for RLangPlugin {
             "logical", "list", "vector", "matrix", "data.frame",
             "factor", "NULL", "NA", "TRUE", "FALSE", "Inf", "NaN",
         ]
+    }
+
+    fn primitives(&self) -> &'static [&'static str] {
+        primitives::PRIMITIVES
+    }
+
+    fn externals(&self) -> &'static [&'static str] {
+        externals::EXTERNALS
+    }
+
+    fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
+        externals::framework_globals(dependencies)
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

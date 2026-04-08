@@ -88,12 +88,13 @@ fn visit(
                             .unwrap_or_default()
                     });
                 if !name.is_empty() {
+                    let module = invokation_module(&child, src);
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
                         target_name: name,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
-                        module: None,
+                        module,
                         chain: None,
                     });
                 }
@@ -454,12 +455,13 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
                         .unwrap_or_default()
                 });
             if !name.is_empty() {
+                let module = invokation_module(&child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index: source_idx,
                     target_name: name,
                     kind: EdgeKind::Calls,
                     line: child.start_position().row as u32,
-                    module: None,
+                    module,
                     chain: None,
                 });
             }
@@ -486,6 +488,58 @@ fn find_child_text(node: &Node, kind: &str, src: &str) -> Option<String> {
         }
     }
     None
+}
+
+/// Extract the qualifier (module) from an `invokation_expression` node.
+///
+/// Two patterns:
+/// - `[Type]::Method()` — first named child is `type_literal`; collect dotted
+///   type name from nested `type_identifier` leaves (e.g. `System.IO.File`).
+/// - `$obj.Method()`    — first named child is `variable`; strip leading `$`.
+fn invokation_module(node: &Node, src: &str) -> Option<String> {
+    // Find the first named child by index to avoid borrowing cursor across the match.
+    let first_named_idx = (0..node.child_count()).find(|&i| {
+        node.child(i).map_or(false, |c| c.is_named())
+    })?;
+    let first = node.child(first_named_idx)?;
+
+    match first.kind() {
+        "type_literal" => {
+            // Collect all type_identifier leaves in document order, join with "."
+            let mut parts: Vec<String> = Vec::new();
+            collect_type_identifiers(first, src, &mut parts);
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join("."))
+            }
+        }
+        "variable" => {
+            let raw = node_text(&first, src);
+            let stripped = raw.trim_start_matches('$');
+            if stripped.is_empty() {
+                None
+            } else {
+                Some(stripped.to_string())
+            }
+        }
+        _ => None,
+    }
+}
+
+/// Recursively collect all `type_identifier` leaf texts under `node`.
+fn collect_type_identifiers(node: tree_sitter::Node, src: &str, out: &mut Vec<String>) {
+    if node.kind() == "type_identifier" && node.child_count() == 0 {
+        let t = node_text(&node, src).to_string();
+        if !t.is_empty() {
+            out.push(t);
+        }
+        return;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_type_identifiers(child, src, out);
+    }
 }
 
 /// First `simple_name` child (used for class/enum names)

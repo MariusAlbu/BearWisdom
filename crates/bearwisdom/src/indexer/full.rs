@@ -415,7 +415,7 @@ fn filter_local_refs(
     }
 
     // Filter out refs whose source position falls on a locally-resolved identifier.
-    // We match by line number since ExtractedRef stores line (1-based) not byte offset.
+    // We match by (line, name) since ExtractedRef stores a 0-based line number.
     // Build a set of (line, name) pairs that are locally resolved.
     let local_names_by_line = {
         let mut set = rustc_hash::FxHashSet::default();
@@ -426,8 +426,13 @@ fn filter_local_refs(
             .collect();
 
         for &byte_offset in &resolution.locally_resolved {
-            // Convert byte offset to 1-based line number.
-            let line = line_offsets.partition_point(|&off| off <= byte_offset) as u32;
+            if byte_offset >= source.len() {
+                continue;
+            }
+            // Convert byte offset to 0-based line number.
+            // partition_point returns count of line starts <= byte_offset (1-indexed);
+            // saturating_sub to get 0-based line matching ExtractedRef.line.
+            let line = (line_offsets.partition_point(|&off| off <= byte_offset) as u32).saturating_sub(1);
             // Extract the identifier name at this offset.
             let end = source[byte_offset..]
                 .find(|c: char| !c.is_alphanumeric() && c != '_')

@@ -12,7 +12,7 @@
 // =============================================================================
 
 use crate::detect::detect_language;
-use crate::exclusions::{canonical_exclude_dirs, should_exclude};
+use crate::exclusions::{canonical_exclude_dirs, should_exclude, should_skip_file};
 use crate::types::ScannedFile;
 use ignore::WalkBuilder;
 use std::path::Path;
@@ -94,15 +94,33 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
 
         // Belt-and-suspenders: check path components against should_exclude
         // even though the OverrideBuilder rules should have caught most cases.
+        // Also checks for vendor library directories (wwwroot/lib, public/vendor).
         let should_skip = {
             let rel = abs_path.strip_prefix(&root_normalized).unwrap_or(&abs_path);
-            rel.components().any(|c| {
+            let components: Vec<_> = rel.components().collect();
+            components.iter().any(|c| {
                 c.as_os_str()
                     .to_str()
                     .is_some_and(should_exclude)
-            })
+            }) || {
+                // Check for vendor lib dirs: parent in WEB_ROOT + child in VENDOR_CHILD
+                components.windows(2).any(|pair| {
+                    let parent = pair[0].as_os_str().to_str().unwrap_or("");
+                    let child = pair[1].as_os_str().to_str().unwrap_or("");
+                    super::exclusions::WEB_ROOT_DIRS.contains(&parent)
+                        && super::exclusions::VENDOR_CHILD_DIRS.contains(&child)
+                })
+            }
         };
         if should_skip {
+            continue;
+        }
+
+        // Skip minified/bundled files (.min.js, .min.css, .bundle.js).
+        if abs_path.file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(should_skip_file)
+        {
             continue;
         }
 

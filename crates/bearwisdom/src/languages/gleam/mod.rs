@@ -13,6 +13,7 @@
 //! - `value |> func(...)` pipelines → Calls edges
 
 pub mod extract;
+pub mod resolve;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -74,5 +75,9 @@ impl LanguagePlugin for GleamPlugin {
             "List", "Result", "Option", "Nil",
             "Dynamic", "UtfCodepoint",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::GleamResolver))
     }
 }

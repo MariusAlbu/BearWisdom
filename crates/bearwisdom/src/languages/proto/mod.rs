@@ -2,6 +2,7 @@
 
 pub mod primitives;
 pub mod extract;
+pub mod resolve;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -67,5 +68,9 @@ impl LanguagePlugin for ProtoPlugin {
             "sint32", "sint64", "fixed32", "fixed64", "sfixed32", "sfixed64",
             "bool", "string", "bytes",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::ProtoResolver))
     }
 }

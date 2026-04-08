@@ -2,6 +2,7 @@
 
 pub mod primitives;
 pub mod extract;
+pub mod resolve;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -59,5 +60,9 @@ impl LanguagePlugin for DockerfilePlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::DockerfileResolver))
     }
 }

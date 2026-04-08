@@ -165,3 +165,39 @@ fn cov_infix_does_not_crash() {
     let r = extract::extract(src);
     let _ = r;
 }
+
+/// Qualified call: Map.lookup → target_name = "lookup", module = Some("Map")
+#[test]
+fn ref_qualified_call() {
+    let src = "module M where\nimport qualified Data.Map as Map\nf x = Map.lookup x Map.empty\n";
+    let r = extract::extract(src);
+    let rf = r.refs.iter().find(|rf| rf.target_name == "lookup" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls ref to 'lookup'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("Map"),
+        "expected module=Some(\"Map\") for qualified call Map.lookup"
+    );
+}
+
+/// Nested qualified call: Data.Map.lookup → module = "Data.Map", target = "lookup"
+#[test]
+fn ref_nested_qualified_call() {
+    let src = "module M where\nf x = Data.Map.lookup x Data.Map.empty\n";
+    let r = extract::extract(src);
+    let rf = r.refs.iter().find(|rf| rf.target_name == "lookup" && rf.kind == EdgeKind::Calls);
+    assert!(
+        rf.is_some(),
+        "expected Calls ref to 'lookup'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        rf.unwrap().module.as_deref(),
+        Some("Data.Map"),
+        "expected module=Some(\"Data.Map\") for nested qualified call Data.Map.lookup"
+    );
+}

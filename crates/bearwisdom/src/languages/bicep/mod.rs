@@ -1,6 +1,7 @@
 //! Bicep (Azure IaC) language plugin.
 
 pub mod extract;
+pub mod resolve;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -75,5 +76,9 @@ impl LanguagePlugin for BicepPlugin {
             // ARM common types (frequently referenced)
             "resource",
         ]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::BicepResolver))
     }
 }

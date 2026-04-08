@@ -103,14 +103,18 @@ fn walk_node(
             let sym_idx = parent_idx.unwrap_or(0);
             // `function` field is the callee
             if let Some(fn_node) = node.child_by_field_name("function") {
-                let name = text(fn_node, src);
-                if !name.is_empty() && !name.contains('\n') {
+                let (target_name, module) = if fn_node.kind() == "value_path" {
+                    split_value_path(fn_node, src)
+                } else {
+                    (text(fn_node, src), None)
+                };
+                if !target_name.is_empty() && !target_name.contains('\n') {
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
-                        target_name: name,
+                        target_name,
                         kind: EdgeKind::Calls,
                         line: node.start_position().row as u32,
-                        module: None,
+                        module,
                         chain: None,
                     });
                 }
@@ -277,6 +281,41 @@ fn walk_children(
     for child in node.children(&mut cursor) {
         walk_node(child, src, symbols, refs, parent_idx);
     }
+}
+
+/// Split a `value_path` node into `(function_name, module_qualifier)`.
+///
+/// A `value_path` in tree-sitter-ocaml 0.24 has positional children:
+///   - zero or more `module_path` / `module_name` components (the qualifier)
+///   - a final `value_name` (the function name)
+///
+/// The raw text of the `module_path` child already encodes the full dotted
+/// qualifier (e.g. `"Stdlib.List"`), so we can read it directly.
+fn split_value_path(node: Node, src: &[u8]) -> (String, Option<String>) {
+    let count = node.named_child_count();
+    if count == 0 {
+        return (text(node, src), None);
+    }
+    // Last named child is the value_name (or parenthesized_operator).
+    // Everything before it forms the module qualifier.
+    let last = match node.named_child(count - 1) {
+        Some(n) => n,
+        None => return (text(node, src), None),
+    };
+    let fn_name = text(last, src);
+    if count == 1 {
+        // No qualifier — plain value_name.
+        return (fn_name, None);
+    }
+    // Collect all children except the last to form the qualifier string.
+    // For `Data.Map.find`: children are [module_path("Data.Map"), value_name("find")]
+    // so the module_path raw text is "Data.Map" directly.
+    let module_parts: Vec<String> = (0..count - 1)
+        .filter_map(|i| node.named_child(i))
+        .map(|n| text(n, src))
+        .collect();
+    let module = module_parts.join(".");
+    (fn_name, if module.is_empty() { None } else { Some(module) })
 }
 
 fn text(node: Node, src: &[u8]) -> String {

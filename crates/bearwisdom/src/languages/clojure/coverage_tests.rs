@@ -117,3 +117,47 @@ fn ref_sym_lit_imports() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+/// Namespace-qualified call head: (str/join ...) → target_name="join", module=Some("str")
+#[test]
+fn ref_namespace_qualified_symbol() {
+    let r = extract("(defn fmt [items] (str/join \",\" items))");
+    let calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "join")
+        .collect();
+    assert!(
+        !calls.is_empty(),
+        "expected Calls ref with target_name='join' from str/join; got: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind, &rf.module)).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        calls[0].module.as_deref(),
+        Some("str"),
+        "expected module=Some(\"str\"); got: {:?}",
+        calls[0].module
+    );
+}
+
+/// Unqualified symbol: no slash → module stays None
+#[test]
+fn ref_unqualified_symbol_no_module() {
+    let r = extract("(defn foo [x] (inc x))");
+    let inc_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.target_name == "inc")
+        .collect();
+    assert!(
+        !inc_refs.is_empty(),
+        "expected ref to 'inc'; got: {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+    assert_eq!(
+        inc_refs[0].module,
+        None,
+        "expected module=None for unqualified 'inc'; got: {:?}",
+        inc_refs[0].module
+    );
+}

@@ -692,11 +692,17 @@ fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
 pub(super) fn is_rust_primitive(name: &str) -> bool {
     matches!(
         name,
+        // Primitive types
         "bool" | "char" | "str" | "String"
         | "i8" | "i16" | "i32" | "i64" | "i128" | "isize"
         | "u8" | "u16" | "u32" | "u64" | "u128" | "usize"
         | "f32" | "f64"
         | "Self" | "self" | "()" | "!" | "never"
+        // Wildcard type placeholder
+        | "_"
+        // Attribute keywords (language built-ins, not crate names)
+        | "cfg_attr" | "cfg" | "derive" | "allow" | "warn" | "deny" | "forbid"
+        | "deprecated" | "must_use" | "inline" | "repr" | "doc" | "test"
     )
 }
 

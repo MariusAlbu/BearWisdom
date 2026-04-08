@@ -1,21 +1,24 @@
 // =============================================================================
-// indexer/test_frameworks.rs — Test framework global injection detection
+// indexer/framework_globals.rs — Dependency-gated framework global detection
 //
 // Given a project's dependency names, returns the set of globally-injected
-// names that test frameworks provide (e.g., `expect`, `describe`, `it` from
-// Jest/Vitest). These names never resolve to project symbols and should be
-// classified as external rather than left unresolved.
+// names that frameworks provide (test globals, ORM DSLs, UI frameworks).
+// These names never resolve to project symbols and should be classified
+// as external rather than left unresolved.
+//
+// NOTE: This file is being migrated to per-language externals.rs files via
+// the LanguagePlugin::framework_globals() trait method. New framework globals
+// should be added to the language plugin, not here.
 // =============================================================================
 
 use std::collections::HashSet;
 
 /// Given a set of dependency names (from the manifest), return the set of
-/// global names injected by test frameworks and UI frameworks.
+/// global names injected by frameworks (test, ORM, UI).
 ///
-/// This covers both test globals (Jest `expect`, pytest `fixture`) and
-/// framework-injected globals (Svelte runes, SvelteKit types) that are
-/// compiler-provided and never appear as project symbols.
-pub fn test_framework_globals(dependencies: &HashSet<String>) -> HashSet<String> {
+/// This is the centralized dispatch — gradually being replaced by
+/// `LanguagePlugin::framework_globals()` on each language plugin.
+pub fn framework_globals(dependencies: &HashSet<String>) -> HashSet<String> {
     let mut globals = HashSet::new();
 
     // Svelte / SvelteKit — compiler-injected globals and virtual module types
@@ -190,6 +193,39 @@ pub fn test_framework_globals(dependencies: &HashSet<String>) -> HashSet<String>
         }
     }
 
+    // -----------------------------------------------------------------------
+    // Spring Test / MockMvc (Java & Kotlin)
+    // -----------------------------------------------------------------------
+    for dep in [
+        "org.springframework.boot:spring-boot-starter-test",
+        "org.springframework.boot",
+        "spring-boot-starter-test",
+        "org.springframework",
+    ] {
+        if dependencies.contains(dep) {
+            globals.extend(SPRING_CORE_GLOBALS.iter().map(|s| s.to_string()));
+            globals.extend(SPRING_TEST_GLOBALS.iter().map(|s| s.to_string()));
+            break;
+        }
+    }
+
+    // JOOQ (Kotlin/Java SQL DSL)
+    for dep in ["org.jooq", "jooq", "org.jooq:jooq"] {
+        if dependencies.contains(dep) {
+            globals.extend(JOOQ_GLOBALS.iter().map(|s| s.to_string()));
+            break;
+        }
+    }
+
+    // Diesel (Rust ORM DSL)
+    if dependencies.contains("diesel") {
+        globals.extend(DIESEL_GLOBALS.iter().map(|s| s.to_string()));
+    }
+
+    // jQuery / Angular.js (legacy JS frameworks — injected globals)
+    if dependencies.contains("jquery") || dependencies.contains("angular") {
+        globals.extend(JQUERY_ANGULAR_GLOBALS.iter().map(|s| s.to_string()));
+    }
     globals
 }
 
@@ -233,6 +269,113 @@ const SVELTEKIT_GLOBALS: &[&str] = &[
     "env",
 ];
 
+// ---------------------------------------------------------------------------
+// Spring Test / MockMvc globals
+// ---------------------------------------------------------------------------
+
+const SPRING_CORE_GLOBALS: &[&str] = &[
+    // Core annotations
+    "RestController", "Controller", "Service", "Component", "Repository",
+    "Configuration", "Bean", "Autowired", "Value", "Qualifier", "Primary",
+    "Transactional", "Scheduled", "EventListener", "Async",
+    // Request mapping
+    "RequestMapping", "GetMapping", "PostMapping", "PutMapping", "DeleteMapping",
+    "PatchMapping",
+    "PathVariable", "RequestBody", "RequestParam", "RequestHeader",
+    // Response types
+    "ResponseEntity", "HttpStatus", "MediaType",
+    // Data
+    "PageRequest", "Pageable", "Page", "Sort", "Specification",
+];
+
+const SPRING_TEST_GLOBALS: &[&str] = &[
+    // MockMvc result matchers
+    "status", "content", "jsonPath", "xpath", "header", "cookie", "flash",
+    "model", "view", "forwardedUrl", "redirectedUrl", "redirectedUrlPattern",
+    // Status matchers
+    "isOk", "isCreated", "isAccepted", "isNoContent",
+    "isBadRequest", "isUnauthorized", "isForbidden", "isNotFound",
+    "isConflict", "isInternalServerError",
+    // Content matchers
+    "contentType", "contentTypeCompatibleWith",
+    // MockMvc request builders
+    "get", "post", "put", "patch", "delete", "options", "head",
+    "accept", "param", "params", "multipart",
+    // MockMvc perform chain
+    "perform", "andExpect", "andReturn", "andDo",
+    // Spring test annotations
+    "MockBean", "SpyBean", "WebMvcTest", "SpringBootTest",
+    "DataJpaTest", "AutoConfigureMockMvc",
+    // AssertJ (common in Spring projects)
+    "assertThat", "isEqualTo", "isNotNull", "isNull", "isTrue", "isFalse",
+    "hasSize", "contains", "containsExactly", "isEmpty", "isNotEmpty",
+    "isInstanceOf", "extracting", "satisfies",
+];
+
+// ---------------------------------------------------------------------------
+// JOOQ SQL DSL globals
+// ---------------------------------------------------------------------------
+
+const JOOQ_GLOBALS: &[&str] = &[
+    // Query building
+    "select", "selectFrom", "selectCount", "selectDistinct",
+    "insertInto", "update", "deleteFrom", "mergeInto",
+    "from", "join", "leftJoin", "rightJoin", "crossJoin", "fullOuterJoin",
+    "on", "and", "or", "not",
+    "where", "having", "groupBy", "orderBy",
+    "limit", "offset", "fetch", "fetchOne", "fetchAny", "fetchInto",
+    "exists", "notExists", "in_", "notIn",
+    "set", "values", "returning", "execute",
+    // DSL functions
+    "val", "field", "table", "name", "condition",
+    "count", "sum", "avg", "min", "max",
+    "coalesce", "nvl", "iif", "decode",
+    "upper", "lower", "trim", "concat", "length", "substring",
+    "cast", "coerce",
+    "row", "asterisk",
+    "dsl", "DSL",
+];
+
+// ---------------------------------------------------------------------------
+// Diesel ORM DSL globals (Rust)
+// ---------------------------------------------------------------------------
+
+const DIESEL_GLOBALS: &[&str] = &[
+    // Query building
+    "insert_into", "update", "delete", "replace_into",
+    "select", "filter", "find", "first", "load", "get_result", "get_results",
+    "execute", "returning", "on_conflict",
+    "eq", "ne", "gt", "lt", "ge", "le",
+    "and", "or", "not", "is_null", "is_not_null",
+    "order", "order_by", "then_order_by", "desc", "asc",
+    "limit", "offset", "group_by", "having",
+    "inner_join", "left_join", "left_outer_join",
+    "values", "set", "default_values",
+    "as_select", "into_boxed", "distinct",
+    // Diesel macros / DSL types
+    "table", "joinable", "allow_tables_to_appear_in_same_query",
+    "diesel", "with_lemmy_type", "auto_type", "derive_new",
+    // Common chain methods
+    "nullable", "is_contained_by", "contains",
+];
+
+// ---------------------------------------------------------------------------
+// jQuery / Angular.js globals
+// ---------------------------------------------------------------------------
+
+const JQUERY_ANGULAR_GLOBALS: &[&str] = &[
+    // jQuery
+    "$", "jQuery",
+    // Angular.js 1.x
+    "angular", "angular.module", "angular.element", "angular.isObject",
+    "angular.isArray", "angular.isString", "angular.isFunction",
+    "angular.forEach", "angular.copy", "angular.extend",
+    // Common Angular.js services
+    "$scope", "$rootScope", "$http", "$state", "$stateParams",
+    "$q", "$timeout", "$interval", "$window", "$document",
+    "$compile", "$filter", "$location", "$log",
+];
+
 /// Check if a file path looks like a test file.
 pub fn is_test_file(path: &str) -> bool {
     let p = path.replace('\\', "/");
@@ -267,7 +410,7 @@ mod tests {
     #[test]
     fn jest_globals_injected() {
         let deps: HashSet<String> = ["jest"].iter().map(|s| s.to_string()).collect();
-        let globals = test_framework_globals(&deps);
+        let globals = framework_globals(&deps);
         assert!(globals.contains("expect"));
         assert!(globals.contains("describe"));
         assert!(globals.contains("it"));
@@ -277,7 +420,7 @@ mod tests {
     #[test]
     fn vitest_globals_injected() {
         let deps: HashSet<String> = ["vitest"].iter().map(|s| s.to_string()).collect();
-        let globals = test_framework_globals(&deps);
+        let globals = framework_globals(&deps);
         assert!(globals.contains("expect"));
         assert!(globals.contains("vi"));
     }
@@ -285,7 +428,7 @@ mod tests {
     #[test]
     fn playwright_adds_page_browser() {
         let deps: HashSet<String> = ["@playwright/test"].iter().map(|s| s.to_string()).collect();
-        let globals = test_framework_globals(&deps);
+        let globals = framework_globals(&deps);
         assert!(globals.contains("expect"));
         assert!(globals.contains("page"));
         assert!(globals.contains("browser"));
@@ -294,14 +437,14 @@ mod tests {
     #[test]
     fn cypress_adds_cy() {
         let deps: HashSet<String> = ["cypress"].iter().map(|s| s.to_string()).collect();
-        let globals = test_framework_globals(&deps);
+        let globals = framework_globals(&deps);
         assert!(globals.contains("cy"));
     }
 
     #[test]
     fn no_test_framework_no_globals() {
         let deps: HashSet<String> = ["react", "axios"].iter().map(|s| s.to_string()).collect();
-        let globals = test_framework_globals(&deps);
+        let globals = framework_globals(&deps);
         assert!(globals.is_empty());
     }
 

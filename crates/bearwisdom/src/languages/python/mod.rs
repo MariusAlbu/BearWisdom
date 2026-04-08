@@ -2,6 +2,7 @@
 
 mod calls;
 pub(crate) mod decorators;
+pub(crate) mod externals;
 mod helpers;
 pub(crate) mod primitives;
 mod symbols;
@@ -78,6 +79,14 @@ impl LanguagePlugin for PythonPlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
+    }
+
+    fn externals(&self) -> &'static [&'static str] {
+        externals::EXTERNALS
+    }
+
+    fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
+        externals::framework_globals(dependencies)
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

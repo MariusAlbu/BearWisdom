@@ -12,7 +12,7 @@
 //
 // REFERENCES:
 //   Imports   — call where function = "library" / "require" / "requireNamespace"
-//   Imports   — namespace_operator (pkg::fn) → package name
+//   Calls     — namespace_operator (pkg::fn / pkg:::fn) → function name + module=package
 //   Calls     — all other call nodes → function name
 // =============================================================================
 
@@ -316,7 +316,7 @@ fn extract_call(
 }
 
 // ---------------------------------------------------------------------------
-// namespace_operator  →  Imports edge (pkg::fn)
+// namespace_operator  →  Calls edge with module qualifier (pkg::fn / pkg:::fn)
 // ---------------------------------------------------------------------------
 
 fn extract_namespace_operator(
@@ -327,19 +327,22 @@ fn extract_namespace_operator(
     parent_index: Option<usize>,
 ) {
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
-    // lhs is package name, rhs is symbol name
-    let lhs = node.child_by_field_name("lhs")
+    // lhs is the package name, rhs is the exported/internal function name.
+    let pkg = node.child_by_field_name("lhs")
         .map(|n| node_text(n, src))
         .unwrap_or_default();
-    if lhs.is_empty() {
+    let func = node.child_by_field_name("rhs")
+        .map(|n| node_text(n, src))
+        .unwrap_or_default();
+    if pkg.is_empty() || func.is_empty() {
         return;
     }
     refs.push(ExtractedRef {
         source_symbol_index: source_idx,
-        target_name: lhs.clone(),
-        kind: EdgeKind::Imports,
+        target_name: func,
+        kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
-        module: Some(lhs),
+        module: Some(pkg),
         chain: None,
     });
 }

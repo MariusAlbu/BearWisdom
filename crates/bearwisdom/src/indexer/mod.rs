@@ -10,5 +10,5 @@ pub mod project_context;
 pub mod ref_cache;
 pub mod resolve;
 pub mod scip;
-pub mod test_frameworks;
+pub mod framework_globals;
 pub mod write;

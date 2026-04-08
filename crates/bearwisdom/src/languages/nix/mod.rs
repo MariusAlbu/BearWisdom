@@ -2,6 +2,7 @@
 
 pub mod primitives;
 pub mod extract;
+pub mod resolve;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -65,5 +66,9 @@ impl LanguagePlugin for NixPlugin {
     /// in the coverage denominator.
     fn nested_ref_skip_pairs(&self) -> &[(&'static str, &'static str)] {
         &[("apply_expression", "apply_expression")]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::NixResolver))
     }
 }

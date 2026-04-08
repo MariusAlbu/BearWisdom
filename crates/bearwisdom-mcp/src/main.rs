@@ -1,5 +1,6 @@
 extern crate sqlite_vec;
 
+mod compact;
 mod register;
 mod server;
 

@@ -2,6 +2,7 @@
 
 pub mod primitives;
 pub mod extract;
+pub mod resolve;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -59,5 +60,9 @@ impl LanguagePlugin for CMakePlugin {
     fn builtin_type_names(&self) -> &[&str] {
         // CMake has no type system; no builtins to exclude.
         &[]
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::CMakeResolver))
     }
 }

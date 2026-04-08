@@ -73,4 +73,16 @@ impl LanguagePlugin for JavascriptPlugin {
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
+
+    fn externals(&self) -> &'static [&'static str] {
+        crate::languages::typescript::externals::EXTERNALS
+    }
+
+    fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
+        crate::languages::typescript::externals::framework_globals(dependencies)
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
+    }
 }

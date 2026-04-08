@@ -4,7 +4,9 @@
 //! compiled from MSVC-compatible pre-expanded C source.
 
 pub mod primitives;
+pub(crate) mod externals;
 pub mod extract;
+pub mod resolve;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -62,5 +64,13 @@ impl LanguagePlugin for ScssPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn externals(&self) -> &'static [&'static str] {
+        externals::EXTERNALS
+    }
+
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::ScssResolver))
     }
 }

@@ -136,6 +136,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
     // should yield (42, 0.92).
     let name_to_ids = build_name_index(&symbol_id_map, &parsed);
     let source_file = "a.cs";
+    let module_to_files = build_module_to_files(&parsed);
     let resolution = resolve_ref(
         "Foo",
         EdgeKind::TypeRef,
@@ -146,6 +147,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         None,
         &name_to_ids,
         &qname_to_id2,
+        &module_to_files,
         &symbol_id_map,
         &parsed,
     );
@@ -179,6 +181,7 @@ fn p4_kind_matching_prefers_method_for_calls() {
     let qname_to_id = build_qname_index(&symbol_id_map);
 
     // A Calls ref should pick the method (id=20) over the class (id=10).
+    let module_to_files = build_module_to_files(&parsed);
     let resolution = resolve_ref(
         "Foo",
         EdgeKind::Calls,
@@ -189,6 +192,7 @@ fn p4_kind_matching_prefers_method_for_calls() {
         None,
         &name_to_ids,
         &qname_to_id,
+        &module_to_files,
         &symbol_id_map,
         &parsed,
     );

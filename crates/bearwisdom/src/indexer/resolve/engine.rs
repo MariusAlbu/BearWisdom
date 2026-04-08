@@ -508,7 +508,14 @@ impl SymbolIndex {
             all_deps.extend(ctx.php_packages.iter().cloned());
             // Also include the NuGet / Maven package names stored in external_prefixes.
             all_deps.extend(ctx.external_prefixes.iter().cloned());
-            crate::indexer::test_frameworks::test_framework_globals(&all_deps)
+            let mut globals = crate::indexer::framework_globals::framework_globals(&all_deps);
+            // Also collect framework globals from each language plugin.
+            for plugin in crate::languages::default_registry().all() {
+                for name in plugin.framework_globals(&all_deps) {
+                    globals.insert(name.to_string());
+                }
+            }
+            globals
         } else {
             HashSet::new()
         };

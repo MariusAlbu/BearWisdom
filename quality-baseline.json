@@ -1,16 +1,16 @@
 {
   "version": "0.2.0-dev",
-  "captured_at": "2026-04-01T21:30:00Z",
+  "captured_at": "2026-04-08T17:15:00Z",
   "projects": [
     {
       "project": "SimplCommerce",
       "path": "F:/Work/Projects/TestProjects/SimplCommerce",
-      "files": 1477,
-      "symbols": 30692,
-      "edges": 19539,
+      "files": 1268,
+      "symbols": 15653,
+      "edges": 10589,
       "routes": 688,
       "flow_edges": 180,
-      "unresolved_refs": 28150,
+      "unresolved_refs": 4323,
       "code_chunks": 127566,
       "languages": {
         "csharp": 811,
@@ -103,11 +103,11 @@
       "project": "angular-coreui",
       "path": "F:/Work/Projects/TestProjects/angular-coreui",
       "files": 213,
-      "symbols": 608,
-      "edges": 410,
+      "symbols": 746,
+      "edges": 474,
       "routes": 0,
       "flow_edges": 0,
-      "unresolved_refs": 50,
+      "unresolved_refs": 70,
       "code_chunks": 1667,
       "languages": {
         "typescript": 127,
@@ -123,12 +123,12 @@
     {
       "project": "angular-ngx-admin",
       "path": "F:/Work/Projects/TestProjects/angular-ngx-admin",
-      "files": 445,
-      "symbols": 1551,
-      "edges": 1154,
+      "files": 441,
+      "symbols": 2300,
+      "edges": 1586,
       "routes": 0,
       "flow_edges": 24,
-      "unresolved_refs": 154,
+      "unresolved_refs": 333,
       "code_chunks": 4130,
       "languages": {
         "typescript": 242,
@@ -152,11 +152,11 @@
       "project": "dotnet-CleanArchitecture",
       "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
       "files": 196,
-      "symbols": 1176,
-      "edges": 947,
+      "symbols": 1437,
+      "edges": 1173,
       "routes": 12,
       "flow_edges": 11,
-      "unresolved_refs": 184,
+      "unresolved_refs": 420,
       "code_chunks": 1789,
       "languages": {
         "csharp": 110,
@@ -179,12 +179,12 @@
     {
       "project": "dotnet-EquinoxProject",
       "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
-      "files": 123,
-      "symbols": 1033,
-      "edges": 453,
+      "files": 116,
+      "symbols": 946,
+      "edges": 624,
       "routes": 40,
       "flow_edges": 8,
-      "unresolved_refs": 142,
+      "unresolved_refs": 3,
       "code_chunks": 2421,
       "languages": {
         "csharp": 90,
@@ -208,12 +208,12 @@
     {
       "project": "dotnet-practical-aspnetcore",
       "path": "F:/Work/Projects/TestProjects/dotnet-practical-aspnetcore",
-      "files": 1551,
-      "symbols": 3782,
-      "edges": 1424,
+      "files": 1588,
+      "symbols": 23134,
+      "edges": 12927,
       "routes": 246,
       "flow_edges": 7,
-      "unresolved_refs": 42,
+      "unresolved_refs": 42468,
       "code_chunks": 25602,
       "languages": {
         "csharp": 794,
@@ -239,12 +239,12 @@
     {
       "project": "eShop",
       "path": "F:/Work/Projects/TestProjects/eShop",
-      "files": 675,
-      "symbols": 4926,
-      "edges": 3437,
+      "files": 676,
+      "symbols": 6237,
+      "edges": 4169,
       "routes": 87,
       "flow_edges": 120,
-      "unresolved_refs": 27,
+      "unresolved_refs": 32,
       "code_chunks": 11041,
       "languages": {
         "csharp": 527,
@@ -274,11 +274,11 @@
       "project": "full-stack-fastapi-template",
       "path": "F:/Work/Projects/TestProjects/full-stack-fastapi-template",
       "files": 180,
-      "symbols": 1338,
-      "edges": 1005,
+      "symbols": 2083,
+      "edges": 2352,
       "routes": 18,
       "flow_edges": 20,
-      "unresolved_refs": 407,
+      "unresolved_refs": 447,
       "code_chunks": 2089,
       "languages": {
         "typescript": 95,
@@ -394,12 +394,12 @@
     {
       "project": "go-pocketbase",
       "path": "F:/Work/Projects/TestProjects/go-pocketbase",
-      "files": 577,
-      "symbols": 30238,
-      "edges": 42145,
+      "files": 704,
+      "symbols": 29862,
+      "edges": 36092,
       "routes": 97,
       "flow_edges": 0,
-      "unresolved_refs": 17346,
+      "unresolved_refs": 5632,
       "code_chunks": 904454,
       "languages": {
         "go": 442,
@@ -453,11 +453,11 @@
       "project": "java-petclinic-reactjs",
       "path": "F:/Work/Projects/TestProjects/java-petclinic-reactjs",
       "files": 162,
-      "symbols": 1405,
-      "edges": 1605,
+      "symbols": 1567,
+      "edges": 1766,
       "routes": 1,
       "flow_edges": 0,
-      "unresolved_refs": 830,
+      "unresolved_refs": 339,
       "code_chunks": 2562,
       "languages": {
         "java": 102,
@@ -480,11 +480,11 @@
       "project": "java-petclinic-rest",
       "path": "F:/Work/Projects/TestProjects/java-petclinic-rest",
       "files": 124,
-      "symbols": 1109,
-      "edges": 1451,
+      "symbols": 1280,
+      "edges": 1334,
       "routes": 1,
-      "flow_edges": 2,
-      "unresolved_refs": 725,
+      "flow_edges": 0,
+      "unresolved_refs": 214,
       "code_chunks": 1934,
       "languages": {
         "java": 106,
@@ -495,24 +495,20 @@
         "yaml": 2,
         "shell": 1
       },
-      "flow_edge_types": {
-        "di_binding": 2
-      },
+      "flow_edge_types": {},
       "assertions": {
-        "min_routes": 1,
-        "min_flow_edges": 2,
-        "min_di_binding_edges": 2
+        "min_routes": 1
       }
     },
     {
       "project": "java-spring-petclinic",
       "path": "F:/Work/Projects/TestProjects/java-spring-petclinic",
-      "files": 81,
-      "symbols": 420,
-      "edges": 452,
+      "files": 83,
+      "symbols": 598,
+      "edges": 489,
       "routes": 16,
       "flow_edges": 0,
-      "unresolved_refs": 215,
+      "unresolved_refs": 115,
       "code_chunks": 2226,
       "languages": {
         "java": 47,
@@ -533,11 +529,11 @@
       "project": "php-monica",
       "path": "F:/Work/Projects/TestProjects/php-monica",
       "files": 1749,
-      "symbols": 8401,
-      "edges": 18185,
+      "symbols": 8554,
+      "edges": 10986,
       "routes": 306,
       "flow_edges": 0,
-      "unresolved_refs": 1720,
+      "unresolved_refs": 1604,
       "code_chunks": 28538,
       "languages": {
         "php": 1649,
@@ -559,11 +555,11 @@
       "project": "python-cookiecutter-django",
       "path": "F:/Work/Projects/TestProjects/python-cookiecutter-django",
       "files": 138,
-      "symbols": 690,
-      "edges": 259,
+      "symbols": 1067,
+      "edges": 372,
       "routes": 24,
       "flow_edges": 14,
-      "unresolved_refs": 167,
+      "unresolved_refs": 314,
       "code_chunks": 4666,
       "languages": {
         "python": 72,
@@ -590,12 +586,12 @@
     {
       "project": "python-paperless-ngx",
       "path": "F:/Work/Projects/TestProjects/python-paperless-ngx",
-      "files": 961,
-      "symbols": 16300,
-      "edges": 20348,
+      "files": 960,
+      "symbols": 27110,
+      "edges": 18204,
       "routes": 34,
       "flow_edges": 74,
-      "unresolved_refs": 5762,
+      "unresolved_refs": 9110,
       "code_chunks": 34854,
       "languages": {
         "typescript": 412,
@@ -730,12 +726,12 @@
     {
       "project": "react-tanstack-query",
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
-      "files": 1137,
-      "symbols": 1205,
-      "edges": 488,
-      "routes": 0,
-      "flow_edges": 0,
-      "unresolved_refs": 152,
+      "files": 1969,
+      "symbols": 18161,
+      "edges": 24574,
+      "routes": 1,
+      "flow_edges": 36,
+      "unresolved_refs": 10982,
       "code_chunks": 13453,
       "languages": {
         "markdown": 497,
@@ -747,8 +743,14 @@
         "xml": 19,
         "yaml": 3
       },
-      "flow_edge_types": {},
-      "assertions": {}
+      "flow_edge_types": {
+        "http_call": 36
+      },
+      "assertions": {
+        "min_routes": 1,
+        "min_flow_edges": 36,
+        "min_http_call_edges": 36
+      }
     },
     {
       "project": "ruby-discourse",
@@ -786,11 +788,11 @@
       "project": "rust-lemmy",
       "path": "F:/Work/Projects/TestProjects/rust-lemmy",
       "files": 1406,
-      "symbols": 11939,
-      "edges": 22196,
+      "symbols": 18464,
+      "edges": 16345,
       "routes": 0,
       "flow_edges": 0,
-      "unresolved_refs": 3339,
+      "unresolved_refs": 2902,
       "code_chunks": 16662,
       "languages": {
         "sql": 666,
@@ -810,12 +812,12 @@
     {
       "project": "ts-immich",
       "path": "F:/Work/Projects/TestProjects/ts-immich",
-      "files": 1467,
-      "symbols": 22777,
-      "edges": 29706,
+      "files": 3320,
+      "symbols": 74705,
+      "edges": 118663,
       "routes": 18,
-      "flow_edges": 0,
-      "unresolved_refs": 3138,
+      "flow_edges": 3,
+      "unresolved_refs": 28362,
       "code_chunks": 44600,
       "languages": {
         "typescript": 941,
@@ -838,20 +840,24 @@
         "html": 1,
         "java": 1
       },
-      "flow_edge_types": {},
+      "flow_edge_types": {
+        "http_call": 3
+      },
       "assertions": {
-        "min_routes": 18
+        "min_routes": 18,
+        "min_flow_edges": 3,
+        "min_http_call_edges": 3
       }
     },
     {
       "project": "ts-nestjs-realworld",
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "files": 43,
-      "symbols": 252,
-      "edges": 231,
+      "symbols": 344,
+      "edges": 382,
       "routes": 21,
       "flow_edges": 0,
-      "unresolved_refs": 41,
+      "unresolved_refs": 40,
       "code_chunks": 608,
       "languages": {
         "typescript": 35,
@@ -868,11 +874,11 @@
       "project": "vue-element-admin",
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "files": 151,
-      "symbols": 415,
-      "edges": 118,
+      "symbols": 708,
+      "edges": 239,
       "routes": 0,
       "flow_edges": 0,
-      "unresolved_refs": 245,
+      "unresolved_refs": 973,
       "code_chunks": 1159,
       "languages": {
         "javascript": 85,
@@ -890,12 +896,12 @@
     {
       "project": "vue-vben-admin",
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
-      "files": 515,
-      "symbols": 1289,
-      "edges": 1015,
+      "files": 990,
+      "symbols": 5860,
+      "edges": 4318,
       "routes": 0,
       "flow_edges": 0,
-      "unresolved_refs": 352,
+      "unresolved_refs": 731,
       "code_chunks": 9154,
       "languages": {
         "typescript": 297,
@@ -916,11 +922,11 @@
       "project": "vue-vuestic-admin",
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
       "files": 99,
-      "symbols": 147,
-      "edges": 75,
+      "symbols": 414,
+      "edges": 361,
       "routes": 0,
       "flow_edges": 0,
-      "unresolved_refs": 44,
+      "unresolved_refs": 52,
       "code_chunks": 1175,
       "languages": {
         "typescript": 66,

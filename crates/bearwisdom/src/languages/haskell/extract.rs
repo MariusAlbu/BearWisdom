@@ -469,11 +469,11 @@ fn extract_apply(
 ) {
     let source_idx = parent_index.unwrap_or_else(|| symbols.len().saturating_sub(1));
     // `function` field is optional in tree-sitter-haskell; fall back to first named child.
-    let fname = if let Some(func_node) = node.child_by_field_name("function") {
+    let (fname, fmodule) = if let Some(func_node) = node.child_by_field_name("function") {
         extract_apply_target(func_node, src)
     } else {
         // Walk children to find the function expression
-        let mut result = String::new();
+        let mut result = (String::new(), None);
         for i in 0..node.child_count() {
             if let Some(child) = node.child(i) {
                 if !child.is_named() {
@@ -482,8 +482,9 @@ fn extract_apply(
                 match child.kind() {
                     "variable" | "name" | "constructor" | "qualified" | "prefix_id"
                     | "operator" | "operator_name" | "apply" | "parenthesized_expression" => {
-                        result = extract_apply_target(child, src);
-                        if !result.is_empty() {
+                        let (t, m) = extract_apply_target(child, src);
+                        if !t.is_empty() {
+                            result = (t, m);
                             break;
                         }
                     }
@@ -492,15 +493,15 @@ fn extract_apply(
                         for j in 0..child.child_count() {
                             if let Some(gc) = child.child(j) {
                                 if gc.is_named() {
-                                    let t = extract_apply_target(gc, src);
+                                    let (t, m) = extract_apply_target(gc, src);
                                     if !t.is_empty() {
-                                        result = t;
+                                        result = (t, m);
                                         break;
                                     }
                                 }
                             }
                         }
-                        if !result.is_empty() {
+                        if !result.0.is_empty() {
                             break;
                         }
                     }
@@ -518,22 +519,28 @@ fn extract_apply(
         target_name: fname,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
-        module: None,
+        module: fmodule,
         chain: None,
     });
 }
 
-fn extract_apply_target(node: Node, src: &[u8]) -> String {
+/// Returns `(function_name, module_qualifier)` for the given callee node.
+fn extract_apply_target(node: Node, src: &[u8]) -> (String, Option<String>) {
     match node.kind() {
         "variable" | "name" | "constructor" | "operator" | "operator_name" | "prefix_id" => {
-            node_text(node, src).trim_matches(|c: char| c == '(' || c == ')' || c == '`').to_string()
+            let name = node_text(node, src)
+                .trim_matches(|c: char| c == '(' || c == ')' || c == '`')
+                .to_string();
+            (name, None)
         }
         "qualified" => {
-            // module.id — use the final identifier
-            node.child_by_field_name("id")
+            // tree-sitter-haskell `qualified` has named fields `module` and `id`.
+            // `module` contains a `module` node whose text is the full qualifier
+            // (e.g. "Data.Map" for `Data.Map.lookup`).
+            // `id` is the final function name.
+            let id = node.child_by_field_name("id")
                 .map(|n| node_text(n, src))
                 .unwrap_or_else(|| {
-                    // Fallback: last named child
                     let count = node.named_child_count();
                     if count > 0 {
                         node.named_child(count - 1)
@@ -542,7 +549,13 @@ fn extract_apply_target(node: Node, src: &[u8]) -> String {
                     } else {
                         String::new()
                     }
-                })
+                });
+            // The `module` field node spans the qualifier including the trailing
+            // `.` separator (e.g. "Map." or "Data.Map."). Strip the trailing dot.
+            let module = node.child_by_field_name("module")
+                .map(|n| node_text(n, src).trim_end_matches('.').to_string())
+                .filter(|s| !s.is_empty());
+            (id, module)
         }
         "apply" => {
             // Nested apply (curried) — recurse to find the base function
@@ -556,7 +569,7 @@ fn extract_apply_target(node: Node, src: &[u8]) -> String {
                 .map(|n| extract_apply_target(n, src))
                 .unwrap_or_default()
         }
-        _ => String::new(),
+        _ => (String::new(), None),
     }
 }
 

@@ -638,7 +638,7 @@ fn collect_test_file_ids(
         .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
         .context("test_file_ids: query")?;
     for row in rows.flatten() {
-        if crate::indexer::test_frameworks::is_test_file(&row.1) {
+        if crate::indexer::framework_globals::is_test_file(&row.1) {
             ids.insert(row.0);
         }
     }
