@@ -49,26 +49,26 @@ fn symbol_def_proc() {
     );
 }
 
-/// declClass → Class symbol
+/// declClass → Class symbol with correct name
 #[test]
 fn symbol_decl_class() {
     let src = "unit U;\ninterface\ntype\n  TAnimal = class\n    procedure Speak;\n  end;\nimplementation\nprocedure TAnimal.Speak; begin end;\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class),
-        "expected Class from declClass; got {:?}",
+        r.symbols.iter().any(|s| s.name == "TAnimal" && s.kind == SymbolKind::Class),
+        "expected Class 'TAnimal' from declClass; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
 
-/// declIntf → Interface symbol
+/// declIntf → Interface symbol with correct name
 #[test]
 fn symbol_decl_intf() {
     let src = "unit U;\ninterface\ntype\n  IRunnable = interface\n    procedure Run;\n  end;\nimplementation\nend.";
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Interface),
-        "expected Interface from declIntf; got {:?}",
+        r.symbols.iter().any(|s| s.name == "IRunnable" && s.kind == SymbolKind::Interface),
+        "expected Interface 'IRunnable' from declIntf; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
@@ -210,12 +210,9 @@ fn symbol_library_emits_namespace() {
     );
 }
 
-/// declEnum → Enum symbol  (extractor routes through declSection → Struct; TODO for true Enum kind)
-/// TODO: emit SymbolKind::Enum for declType wrapping declEnum.
+/// declEnum → Enum symbol with correct name
 #[test]
-fn symbol_decl_enum_no_crash() {
-    // TODO: extractor should emit SymbolKind::Enum for enumeration types.
-    // Current behaviour: falls through to Struct via declSection, or is skipped.
+fn symbol_decl_enum_emits_enum() {
     let src = concat!(
         "unit U;\n",
         "interface\n",
@@ -225,19 +222,16 @@ fn symbol_decl_enum_no_crash() {
         "end.\n",
     );
     let r = extract(src);
-    // At minimum, the unit is extracted without crashing.
     assert!(
-        r.symbols.iter().any(|s| s.name == "U" && s.kind == SymbolKind::Namespace),
-        "expected Namespace 'U'; got {:?}",
+        r.symbols.iter().any(|s| s.name == "TColor" && s.kind == SymbolKind::Enum),
+        "expected Enum 'TColor'; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
 
-/// declVar (module-level var section) — extractor does not emit Variable for these yet.
-/// TODO: emit Variable symbols from declVar nodes.
+/// declVar (module-level var section) → Variable symbols with correct names
 #[test]
-fn symbol_decl_var_no_crash() {
-    // TODO: extractor should emit SymbolKind::Variable for declVar nodes.
+fn symbol_decl_var_emits_variables() {
     let src = concat!(
         "unit U;\n",
         "interface\n",
@@ -249,17 +243,20 @@ fn symbol_decl_var_no_crash() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Namespace),
-        "expected at least one Namespace from unit with var section; got {:?}",
+        r.symbols.iter().any(|s| s.name == "GlobalCount" && s.kind == SymbolKind::Variable),
+        "expected Variable 'GlobalCount'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "GlobalName" && s.kind == SymbolKind::Variable),
+        "expected Variable 'GlobalName'; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
 
-/// declConst (constant section) — extractor does not emit Variable for these yet.
-/// TODO: emit Variable symbols from declConst nodes.
+/// declConst (constant section) → Variable symbol with correct name
 #[test]
-fn symbol_decl_const_no_crash() {
-    // TODO: extractor should emit SymbolKind::Variable for declConst nodes.
+fn symbol_decl_const_emits_variable() {
     let src = concat!(
         "unit U;\n",
         "interface\n",
@@ -270,8 +267,9 @@ fn symbol_decl_const_no_crash() {
     );
     let r = extract(src);
     assert!(
-        !r.symbols.is_empty(),
-        "expected at least one symbol from unit with const section"
+        r.symbols.iter().any(|s| s.name == "MaxSize" && s.kind == SymbolKind::Variable),
+        "expected Variable 'MaxSize'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
 
@@ -301,11 +299,9 @@ fn symbol_decl_constructor_emits_function() {
     );
 }
 
-/// declField (class field declaration) — extractor does not emit Field symbols yet.
-/// TODO: emit SymbolKind::Field for declField nodes inside class bodies.
+/// declField (class field declaration) → Field symbols with correct names
 #[test]
-fn symbol_decl_field_no_crash() {
-    // TODO: extractor should emit SymbolKind::Field for class field declarations.
+fn symbol_decl_field_emits_fields() {
     let src = concat!(
         "unit U;\n",
         "interface\n",
@@ -320,17 +316,20 @@ fn symbol_decl_field_no_crash() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class),
-        "expected Class from class with field declarations; got {:?}",
+        r.symbols.iter().any(|s| s.name == "FX" && s.kind == SymbolKind::Field),
+        "expected Field 'FX'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "FY" && s.kind == SymbolKind::Field),
+        "expected Field 'FY'; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
 
-/// declProp (property declaration) — extractor does not emit Property symbols yet.
-/// TODO: emit SymbolKind::Property for declProp nodes.
+/// declProp (property declaration) → Property symbol with correct name
 #[test]
-fn symbol_decl_prop_no_crash() {
-    // TODO: extractor should emit SymbolKind::Property for property declarations.
+fn symbol_decl_prop_emits_property() {
     let src = concat!(
         "unit U;\n",
         "interface\n",
@@ -346,8 +345,8 @@ fn symbol_decl_prop_no_crash() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class),
-        "expected Class from class with property; got {:?}",
+        r.symbols.iter().any(|s| s.name == "Value" && s.kind == SymbolKind::Property),
+        "expected Property 'Value'; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
@@ -384,11 +383,9 @@ fn ref_inherited_call_emits_calls() {
     );
 }
 
-/// declClass with parent → Inherits edge not yet emitted by extractor.
-/// TODO: emit Inherits edge from declClass parent field.
+/// declClass with parent → Inherits edge emitted with correct target
 #[test]
-fn ref_decl_class_inherits_no_crash() {
-    // TODO: extractor should emit Inherits edge for class parent declarations.
+fn ref_decl_class_inherits_emits_edge() {
     let src = concat!(
         "unit U;\n",
         "interface\n",
@@ -402,11 +399,15 @@ fn ref_decl_class_inherits_no_crash() {
     );
     let r = extract(src);
     assert!(
-        r.symbols.iter().any(|s| s.kind == SymbolKind::Class),
-        "expected Class from TDog declaration; got {:?}",
+        r.symbols.iter().any(|s| s.name == "TDog" && s.kind == SymbolKind::Class),
+        "expected Class 'TDog'; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
-    // TODO: assert r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "TAnimal")
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "TAnimal"),
+        "expected Inherits ref to 'TAnimal'; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// Multiple modules in a single uses clause → one Imports ref per module

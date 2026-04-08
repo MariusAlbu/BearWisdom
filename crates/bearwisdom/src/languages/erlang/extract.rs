@@ -7,11 +7,17 @@
 //   Namespace  — `module_attribute` (-module(name).)
 //   Function   — `fun_decl` (name/arity, public if exported)
 //   Struct     — `record_decl` (-record(name, {...}).)
+//   TypeAlias  — `type_alias` (-type name() :: ...) and `opaque` (-opaque ...)
+//   Method     — `callback` (-callback name(args) -> RetType.)
+//   Variable   — `wild_attribute` (custom -name(value). attributes as metadata)
 //
 // REFERENCES:
 //   Implements — `behaviour_attribute` (-behaviour(gen_server).)
 //   Imports    — `import_attribute`, `pp_include`, `pp_include_lib`
 //   Calls      — `call` nodes (local and remote)
+//   Calls      — `internal_fun` (fun foo/2 references)
+//   Calls      — `external_fun` (fun mod:foo/2 references)
+//   Instantiates — `record_expr` (#record_name{...} constructions)
 //
 // Pass 1: collect exported function names from `export_attribute` nodes.
 // Pass 2: extract symbols and refs; use export set for visibility.
@@ -60,6 +66,15 @@ pub fn extract(source: &str) -> ExtractionResult {
             }
             "pp_include" | "pp_include_lib" => {
                 extract_include(&child, source, symbols.len().saturating_sub(1), &mut refs);
+            }
+            "type_alias" | "opaque" => {
+                extract_type_alias(&child, source, &mut symbols);
+            }
+            "callback" => {
+                extract_callback(&child, source, &mut symbols);
+            }
+            "wild_attribute" => {
+                extract_wild_attr(&child, source, &mut symbols);
             }
             // Type specs (-spec, -type) and other attributes may contain `call`
             // nodes (type applications like `list(integer())` in type specs).
@@ -344,73 +359,240 @@ fn extract_include(
 }
 
 // ---------------------------------------------------------------------------
+// Type alias (-type / -opaque)
+// ---------------------------------------------------------------------------
+
+fn extract_type_alias(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
+    // type_alias / opaque both have a `name` field → type_name → name field (atom)
+    if let Some(type_name_node) = node.child_by_field_name("name") {
+        let name = if let Some(inner) = type_name_node.child_by_field_name("name") {
+            node_text(&inner, src).to_string()
+        } else {
+            node_text(&type_name_node, src).to_string()
+        };
+        if name.is_empty() {
+            return;
+        }
+        let line = node.start_position().row as u32;
+        let prefix = if node.kind() == "opaque" { "-opaque" } else { "-type" };
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name.clone(),
+            kind: SymbolKind::TypeAlias,
+            visibility: None,
+            start_line: line,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: 0,
+            signature: Some(format!("{}({}).", prefix, name)),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Callback (-callback)
+// ---------------------------------------------------------------------------
+
+fn extract_callback(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
+    // callback has a `fun` field → _name (atom text)
+    if let Some(fun_node) = node.child_by_field_name("fun") {
+        let name = node_text(&fun_node, src).to_string();
+        if name.is_empty() {
+            return;
+        }
+        let line = node.start_position().row as u32;
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name.clone(),
+            kind: SymbolKind::Method,
+            visibility: Some(Visibility::Public),
+            start_line: line,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: 0,
+            signature: Some(format!("-callback {}(...).", name)),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Wild attribute (-name(value).) → Variable
+// ---------------------------------------------------------------------------
+
+fn extract_wild_attr(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>) {
+    // wild_attribute has a `name` field → attr_name → name field (atom)
+    // Skip well-known directives that are already handled by other arms or
+    // that do not represent meaningful module-level metadata.
+    if let Some(attr_name_node) = node.child_by_field_name("name") {
+        let name = if let Some(inner) = attr_name_node.child_by_field_name("name") {
+            node_text(&inner, src).to_string()
+        } else {
+            node_text(&attr_name_node, src).to_string()
+        };
+        // Skip known directives; only emit Variable for genuine custom attributes.
+        const SKIP: &[&str] = &[
+            "module", "export", "export_type", "import", "behaviour", "behavior",
+            "record", "type", "opaque", "spec", "callback", "define",
+            "include", "include_lib", "compile", "file", "on_load",
+            "doc", "moduledoc", "deprecated", "feature", "vsn", "author",
+        ];
+        if name.is_empty() || SKIP.contains(&name.as_str()) {
+            return;
+        }
+        let line = node.start_position().row as u32;
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name.clone(),
+            kind: SymbolKind::Variable,
+            visibility: None,
+            start_line: line,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: 0,
+            signature: Some(format!("-{}(...).", name)),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Collect call edges from a subtree
 // ---------------------------------------------------------------------------
 
 fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "call" {
-            // call.expr is the function expression
-            // Always emit at least one ref per `call` node so the coverage
-            // budget is satisfied. Prefer a structured name (atom/remote) when
-            // available, fall back to the raw expression text for other callable
-            // forms (variable calls, fun expressions, etc.).
-            let call_line = child.start_position().row as u32;
-            let target = if let Some(expr) = child.child_by_field_name("expr") {
-                match expr.kind() {
-                    "atom" => node_text(&expr, src).to_string(),
-                    "remote" => {
-                        // Module:function call — prefer the function name field.
-                        if let Some(fun_node) = expr.child_by_field_name("fun") {
-                            let fun_name = node_text(&fun_node, src).to_string();
-                            let module = expr.child_by_field_name("module")
-                                .map(|n| node_text(&n, src).to_string());
-                            // Emit the remote call
-                            if !fun_name.is_empty() {
-                                refs.push(ExtractedRef {
-                                    source_symbol_index: source_idx,
-                                    target_name: fun_name,
-                                    kind: EdgeKind::Calls,
-                                    line: call_line,
-                                    module,
-                                    chain: None,
-                                });
+        match child.kind() {
+            "call" => {
+                // call.expr is the function expression
+                // Always emit at least one ref per `call` node so the coverage
+                // budget is satisfied. Prefer a structured name (atom/remote) when
+                // available, fall back to the raw expression text for other callable
+                // forms (variable calls, fun expressions, etc.).
+                let call_line = child.start_position().row as u32;
+                let target = if let Some(expr) = child.child_by_field_name("expr") {
+                    match expr.kind() {
+                        "atom" => node_text(&expr, src).to_string(),
+                        "remote" => {
+                            // Module:function call — prefer the function name field.
+                            if let Some(fun_node) = expr.child_by_field_name("fun") {
+                                let fun_name = node_text(&fun_node, src).to_string();
+                                let module = expr.child_by_field_name("module")
+                                    .map(|n| node_text(&n, src).to_string());
+                                // Emit the remote call
+                                if !fun_name.is_empty() {
+                                    refs.push(ExtractedRef {
+                                        source_symbol_index: source_idx,
+                                        target_name: fun_name,
+                                        kind: EdgeKind::Calls,
+                                        line: call_line,
+                                        module,
+                                        chain: None,
+                                    });
+                                }
+                                // Skip the fallback push below
+                                String::new()
+                            } else {
+                                node_text(&expr, src).to_string()
                             }
-                            // Skip the fallback push below
-                            String::new()
-                        } else {
-                            node_text(&expr, src).to_string()
+                        }
+                        _ => node_text(&expr, src).to_string(),
+                    }
+                } else {
+                    // No `expr` field — use first named child as fallback
+                    let mut fallback = String::new();
+                    for ci in 0..child.child_count() {
+                        if let Some(c) = child.child(ci) {
+                            if c.is_named() {
+                                fallback = node_text(&c, src).to_string();
+                                break;
+                            }
                         }
                     }
-                    _ => node_text(&expr, src).to_string(),
+                    fallback
+                };
+                if !target.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: target,
+                        kind: EdgeKind::Calls,
+                        line: call_line,
+                        module: None,
+                        chain: None,
+                    });
                 }
-            } else {
-                // No `expr` field — use first named child as fallback
-                let mut fallback = String::new();
-                for ci in 0..child.child_count() {
-                    if let Some(c) = child.child(ci) {
-                        if c.is_named() {
-                            fallback = node_text(&c, src).to_string();
-                            break;
-                        }
-                    }
-                }
-                fallback
-            };
-            if !target.is_empty() {
-                refs.push(ExtractedRef {
-                    source_symbol_index: source_idx,
-                    target_name: target,
-                    kind: EdgeKind::Calls,
-                    line: call_line,
-                    module: None,
-                    chain: None,
-                });
+                collect_calls(&child, src, source_idx, refs);
             }
-            collect_calls(&child, src, source_idx, refs);
-        } else {
-            collect_calls(&child, src, source_idx, refs);
+            "internal_fun" => {
+                // fun foo/2 — function reference; `fun` field holds the name
+                let line = child.start_position().row as u32;
+                if let Some(fun_node) = child.child_by_field_name("fun") {
+                    let name = node_text(&fun_node, src).to_string();
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: source_idx,
+                            target_name: name,
+                            kind: EdgeKind::Calls,
+                            line,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+            "external_fun" => {
+                // fun mod:foo/2 — remote function reference
+                let line = child.start_position().row as u32;
+                if let Some(fun_node) = child.child_by_field_name("fun") {
+                    let fun_name = node_text(&fun_node, src).to_string();
+                    let module = child.child_by_field_name("module")
+                        .map(|n| node_text(&n, src).to_string());
+                    if !fun_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: source_idx,
+                            target_name: fun_name,
+                            kind: EdgeKind::Calls,
+                            line,
+                            module,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+            "record_expr" => {
+                // #record_name{...} — record construction
+                let line = child.start_position().row as u32;
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    // record_name has a `name` field itself
+                    let record_name = if let Some(inner) = name_node.child_by_field_name("name") {
+                        node_text(&inner, src).to_string()
+                    } else {
+                        node_text(&name_node, src).to_string()
+                    };
+                    if !record_name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: source_idx,
+                            target_name: record_name,
+                            kind: EdgeKind::Instantiates,
+                            line,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+                collect_calls(&child, src, source_idx, refs);
+            }
+            _ => {
+                collect_calls(&child, src, source_idx, refs);
+            }
         }
     }
 }

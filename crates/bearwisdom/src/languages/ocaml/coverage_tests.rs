@@ -174,46 +174,55 @@ fn symbol_type_definition_alias_does_not_crash() {
 }
 
 /// exception_definition → SymbolKind::Struct
-/// NOTE: The extractor does not currently handle exception_definition nodes.
-// TODO: emit Struct for exception_definition
 #[test]
-fn symbol_exception_definition_does_not_crash() {
+fn symbol_exception_definition() {
     let r = extract("exception Not_found\nexception Invalid_arg of string", "test.ml");
-    // No panic is the contract; symbol extraction is a TODO
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Not_found" && s.kind == SymbolKind::Struct),
+        "expected Struct 'Not_found' from exception_definition; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Invalid_arg" && s.kind == SymbolKind::Struct),
+        "expected Struct 'Invalid_arg' from exception_definition; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// module_type_definition → SymbolKind::Interface
-/// NOTE: The extractor does not currently handle module_type_definition nodes.
-// TODO: emit Interface for module_type_definition
 #[test]
-fn symbol_module_type_definition_does_not_crash() {
+fn symbol_module_type_definition() {
     let r = extract("module type S = sig\n  val foo : int -> int\nend", "test.ml");
-    // No panic is the contract; Interface extraction is a TODO
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "S" && s.kind == SymbolKind::Interface),
+        "expected Interface 'S' from module_type_definition; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// class_definition → SymbolKind::Class
-/// NOTE: The extractor does not currently handle class_definition nodes.
-// TODO: emit Class for class_definition
 #[test]
-fn symbol_class_definition_does_not_crash() {
+fn symbol_class_definition() {
     let r = extract(
         "class point x0 y0 = object\n  val mutable x = x0\n  method get_x = x\nend",
         "test.ml",
     );
-    // No panic is the contract; Class extraction is a TODO
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "point" && s.kind == SymbolKind::Class),
+        "expected Class 'point' from class_definition; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// external → SymbolKind::Function
-/// NOTE: The extractor does not currently handle external declarations.
-// TODO: emit Function for external
 #[test]
-fn symbol_external_does_not_crash() {
+fn symbol_external() {
     let r = extract("external string_length : string -> int = \"caml_string_length\"", "test.ml");
-    // No panic is the contract; Function extraction is a TODO
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "string_length" && s.kind == SymbolKind::Function),
+        "expected Function 'string_length' from external; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -221,40 +230,40 @@ fn symbol_external_does_not_crash() {
 // ---------------------------------------------------------------------------
 
 /// inheritance_definition → EdgeKind::Inherits
-/// NOTE: The extractor does not currently handle inheritance_definition nodes.
-// TODO: emit Inherits for `inherit BaseClass` inside class body
 #[test]
-fn ref_inheritance_definition_does_not_crash() {
+fn ref_inheritance_definition() {
     let r = extract(
         "class child x = object\n  inherit point x 0\nend",
         "test.ml",
     );
-    // No panic is the contract
-    let _ = r;
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Inherits && rf.target_name == "point"),
+        "expected Inherits->point from inheritance_definition; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// new_expression → EdgeKind::Instantiates
-/// NOTE: The extractor does not currently emit Instantiates for new_expression.
-// TODO: emit Instantiates ref for `new ClassName args`
 #[test]
-fn ref_new_expression_does_not_crash() {
+fn ref_new_expression() {
     let r = extract(
         "class counter = object\n  val mutable n = 0\n  method incr = n <- n + 1\nend\nlet c = new counter",
         "test.ml",
     );
-    // No panic is the contract
-    let _ = r;
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Instantiates && rf.target_name == "counter"),
+        "expected Instantiates->counter from new_expression; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// .mli interface file — value_specification → Function
-/// NOTE: The OCaml interface grammar (tree-sitter-ocaml-interface) uses
-/// `value_specification` nodes instead of `value_definition`. The extractor
-/// does not currently handle `value_specification`, so .mli files yield
-/// no function symbols.
-// TODO: handle value_specification for .mli files
 #[test]
-fn symbol_value_specification_in_mli_does_not_crash() {
+fn symbol_value_specification_in_mli() {
     let r = extract("val foo : int -> int\nval bar : string", "test.mli");
-    // No panic is the contract; Function extraction from .mli is a TODO
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "foo" && s.kind == SymbolKind::Function),
+        "expected Function 'foo' from value_specification in .mli; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }

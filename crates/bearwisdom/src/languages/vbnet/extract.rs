@@ -73,6 +73,46 @@ fn walk_node(
             let idx = push_named(node, src, SymbolKind::Enum, symbols, parent_idx);
             walk_children(node, src, symbols, refs, Some(idx));
         }
+        "enum_member" => {
+            // Direct child of enum_block; has a `name` field.
+            push_named(node, src, SymbolKind::EnumMember, symbols, parent_idx);
+            // No children of interest inside an enum_member.
+        }
+        "constructor_declaration" => {
+            // `Sub New` — no `name` field in the grammar; name is always "New".
+            let vis = visibility_from_modifiers(node, src);
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                qualified_name: "New".to_string(),
+                name: "New".to_string(),
+                kind: SymbolKind::Constructor,
+                visibility: Some(vis),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: parent_idx,
+            });
+            walk_children(node, src, symbols, refs, Some(idx));
+        }
+        "const_declaration" => {
+            // `Const MAX_RETRY As Integer = 3` — has a `name` field.
+            let idx = push_named(node, src, SymbolKind::Variable, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, Some(idx));
+        }
+        "delegate_declaration" => {
+            // `Delegate Function Transformer(x As Integer) As Integer` — has `name` field.
+            let idx = push_named(node, src, SymbolKind::Delegate, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, Some(idx));
+        }
+        "event_declaration" => {
+            // `Event Clicked As EventHandler` — has `name` field.
+            let idx = push_named(node, src, SymbolKind::Event, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, Some(idx));
+        }
         "method_declaration" => {
             let idx = push_named(node, src, SymbolKind::Method, symbols, parent_idx);
             walk_children(node, src, symbols, refs, Some(idx));
@@ -179,7 +219,8 @@ fn walk_node(
         }
         // The grammar parses `Inherits BaseClass` inside a class body as a
         // field_declaration with declarator name "Inherits" and an ERROR node
-        // holding the actual base type. Detect this pattern here.
+        // holding the actual base type. Detect this pattern here; otherwise
+        // extract as a Field symbol.
         "field_declaration" => {
             let sym_idx = parent_idx.unwrap_or(0);
             if let Some(base) = inherits_base_from_field_decl(node, src) {
@@ -192,6 +233,26 @@ fn walk_node(
                     chain: None,
                 });
             } else {
+                // Ordinary field: `Private _timeout As Integer`
+                // Name lives in the child variable_declarator's `name` field.
+                let name = field_name_from_declarator(node, src);
+                if !name.is_empty() {
+                    let vis = visibility_from_modifiers(node, src);
+                    symbols.push(ExtractedSymbol {
+                        qualified_name: name.clone(),
+                        name,
+                        kind: SymbolKind::Field,
+                        visibility: Some(vis),
+                        start_line: node.start_position().row as u32,
+                        end_line: node.end_position().row as u32,
+                        start_col: 0,
+                        end_col: 0,
+                        signature: None,
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index: parent_idx,
+                    });
+                }
                 walk_children(node, src, symbols, refs, parent_idx);
             }
         }
@@ -279,6 +340,25 @@ fn leaf_name(node: Node, src: &[u8]) -> String {
         }
     }
     last
+}
+
+/// Extract the field name from a `field_declaration`'s `variable_declarator` child.
+///
+/// Grammar: `field_declaration > variable_declarator [name = identifier]`
+fn field_name_from_declarator(node: Node, src: &[u8]) -> String {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "variable_declarator" {
+            if let Some(name_node) = child.child_by_field_name("name") {
+                let name = text(name_node, src);
+                // Exclude the Inherits/Implements pseudo-fields
+                if name != "Inherits" && name != "Implements" {
+                    return name;
+                }
+            }
+        }
+    }
+    String::new()
 }
 
 /// Detect the grammar's encoding of `Inherits BaseClass` / `Implements IFoo`.

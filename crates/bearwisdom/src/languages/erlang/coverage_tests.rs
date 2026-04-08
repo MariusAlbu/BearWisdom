@@ -123,24 +123,56 @@ fn ref_behaviour_attribute() {
 }
 
 // ---------------------------------------------------------------------------
-// Additional symbol node kinds from rules (not yet handled by extractor)
+// Additional symbol node kinds from rules
 // ---------------------------------------------------------------------------
 
 /// symbol_node_kind: `type_alias`  →  TypeAlias
-/// Extractor does not handle `-type` declarations — TODO.
-// TODO: type_alias is not extracted; no TypeAlias symbol emitted.
+#[test]
+fn symbol_type_alias() {
+    let src = "-module(m).\n-type mytype() :: integer() | atom().\n";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "mytype" && s.kind == SymbolKind::TypeAlias),
+        "expected TypeAlias mytype; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// symbol_node_kind: `opaque`  →  TypeAlias (opaque variant)
-/// Extractor does not handle `-opaque` declarations — TODO.
-// TODO: opaque is not extracted; no TypeAlias symbol emitted.
+#[test]
+fn symbol_opaque() {
+    let src = "-module(m).\n-opaque handle() :: {pid(), reference()}.\n";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "handle" && s.kind == SymbolKind::TypeAlias),
+        "expected TypeAlias handle from opaque; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// symbol_node_kind: `callback`  →  Method
-/// Extractor does not handle `-callback` declarations — TODO.
-// TODO: callback is not extracted; no Method symbol emitted.
+#[test]
+fn symbol_callback() {
+    let src = "-module(m).\n-callback init(Args :: term()) -> {ok, State :: term()}.\n";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "init" && s.kind == SymbolKind::Method),
+        "expected Method init from callback; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// symbol_node_kind: `wild_attribute`  →  Variable (custom attribute metadata)
-/// Extractor does not handle generic wild attributes — TODO.
-// TODO: wild_attribute is not extracted; no Variable symbol emitted.
+#[test]
+fn symbol_wild_attribute() {
+    let src = "-module(m).\n-custom_tag(some_value).\n";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "custom_tag" && s.kind == SymbolKind::Variable),
+        "expected Variable custom_tag from wild_attribute; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
 
 // ---------------------------------------------------------------------------
 // Additional ref node kinds from rules (not yet handled by extractor)
@@ -159,16 +191,40 @@ fn ref_call_remote() {
 }
 
 /// ref_node_kind: `internal_fun`  →  Calls edge (`fun foo/2` reference)
-/// Extractor does not handle internal_fun — TODO.
-// TODO: internal_fun (fun foo/2) is not extracted as a Calls edge.
+#[test]
+fn ref_internal_fun() {
+    let src = "-module(m).\nfoo() -> fun bar/2.\n";
+    let r = extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "bar" && rf.kind == EdgeKind::Calls),
+        "expected Calls bar from internal_fun; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// ref_node_kind: `external_fun`  →  Calls edge (`fun mod:foo/2` reference)
-/// Extractor does not handle external_fun — TODO.
-// TODO: external_fun (fun mod:foo/2) is not extracted as a Calls edge.
+#[test]
+fn ref_external_fun() {
+    let src = "-module(m).\nfoo() -> fun lists:map/2.\n";
+    let r = extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "map" && rf.kind == EdgeKind::Calls),
+        "expected Calls map from external_fun; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// ref_node_kind: `record_expr`  →  Instantiates edge (`#record_name{...}`)
-/// Extractor does not handle record_expr — TODO.
-// TODO: record_expr (#name{...}) is not extracted as an Instantiates edge.
+#[test]
+fn ref_record_expr() {
+    let src = "-module(m).\n-record(person, {name, age}).\nfoo() -> #person{name = \"bob\", age = 42}.\n";
+    let r = extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "person" && rf.kind == EdgeKind::Instantiates),
+        "expected Instantiates person from record_expr; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
 
 /// Private function: fun_decl not in export list → Visibility::Private
 #[test]

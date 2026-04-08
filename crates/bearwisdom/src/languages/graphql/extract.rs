@@ -71,7 +71,18 @@ fn visit_document(
         match child.kind() {
             // Wrapper nodes that the grammar inserts between source_file and the
             // actual type definitions: document → definition → type_system_definition
-            "document" | "definition" | "type_definition" | "type_system_definition" => {
+            // Recurse through all grammar wrapper nodes between source_file and the
+            // actual definitions. SDL path: document→definition→type_system_definition→
+            // type_definition→<definition>. Executable path: document→definition→
+            // executable_definition→<operation|fragment>. Extension path: document→
+            // definition→type_system_extension→type_extension→<*_extension>.
+            "document"
+            | "definition"
+            | "type_definition"
+            | "type_system_definition"
+            | "executable_definition"
+            | "type_system_extension"
+            | "type_extension" => {
                 visit_document(child, src, symbols, refs);
             }
             "object_type_definition" => extract_object_type(&child, src, symbols, refs),
@@ -308,21 +319,37 @@ fn collect_union_members(node: &Node, src: &str) -> Vec<String> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "union_member_types" {
-            let mut cc = child.walk();
-            for named_type in child.children(&mut cc) {
-                if named_type.kind() == "named_type" {
-                    if let Some(name) = first_child_of_kind(&named_type, "name")
-                        .map(|n| node_text(n, src))
-                    {
-                        if !name.is_empty() {
-                            members.push(name);
-                        }
-                    }
-                }
-            }
+            collect_union_member_types(&child, src, &mut members);
         }
     }
     members
+}
+
+/// Recursively collect all `named_type` members from a left-recursive
+/// `union_member_types` subtree.
+///
+/// Grammar (left-recursive):
+///   union_member_types = union_member_types | named_type
+///                      | =? named_type
+fn collect_union_member_types(node: &Node, src: &str, members: &mut Vec<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "union_member_types" => {
+                collect_union_member_types(&child, src, members);
+            }
+            "named_type" => {
+                if let Some(name) = first_child_of_kind(&child, "name")
+                    .map(|n| node_text(n, src))
+                {
+                    if !name.is_empty() {
+                        members.push(name);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -563,14 +590,17 @@ fn extract_fragment_def(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    let name = if let Some(fn_node) = node.child_by_field_name("fragment_name") {
-        first_child_of_kind(&fn_node, "name")
-            .map(|n| node_text(n, src))
-            .filter(|s| !s.is_empty())
-            .or_else(|| child_name_text(node, src))
-    } else {
-        child_name_text(node, src)
-    };
+    // `fragment_name` is a named child *node* (not a declared field) whose own
+    // child is the `name` node. Try by field first, fall back to kind search.
+    let name = node
+        .child_by_field_name("fragment_name")
+        .or_else(|| first_child_of_kind(node, "fragment_name"))
+        .and_then(|fn_node| {
+            first_child_of_kind(&fn_node, "name")
+                .map(|n| node_text(n, src))
+                .filter(|s| !s.is_empty())
+        })
+        .or_else(|| child_name_text(node, src));
 
     let name = match name {
         Some(n) => n,
@@ -722,25 +752,54 @@ fn extract_implements(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "implements_interfaces" {
-            let mut cc = child.walk();
-            for named_type in child.children(&mut cc) {
-                if named_type.kind() == "named_type" {
-                    if let Some(name) =
-                        first_child_of_kind(&named_type, "name").map(|n| node_text(n, src))
-                    {
-                        if !name.is_empty() {
-                            refs.push(ExtractedRef {
-                                source_symbol_index,
-                                target_name: name,
-                                kind: EdgeKind::Implements,
-                                line: named_type.start_position().row as u32,
-                                module: None,
-                                chain: None,
-                            });
-                        }
+            collect_implements_interfaces(&child, src, source_symbol_index, refs);
+        }
+    }
+}
+
+/// Recursively collect all `named_type` → Implements edges from a left-recursive
+/// `implements_interfaces` subtree.
+///
+/// Grammar (left-recursive):
+///   implements_interfaces = implements_interfaces & named_type
+///                         | implements named_type
+/// So a multi-interface node looks like:
+///   implements_interfaces
+///     implements_interfaces        ← recurse to get "Animal"
+///       (implements)
+///       named_type → "Animal"
+///     (&)
+///     named_type → "Pet"           ← direct named_type at this level
+fn collect_implements_interfaces(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "implements_interfaces" => {
+                // Recurse into the nested node (earlier interfaces in the chain)
+                collect_implements_interfaces(&child, src, source_symbol_index, refs);
+            }
+            "named_type" => {
+                if let Some(name) =
+                    first_child_of_kind(&child, "name").map(|n| node_text(n, src))
+                {
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index,
+                            target_name: name,
+                            kind: EdgeKind::Implements,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
                     }
                 }
             }
+            _ => {}
         }
     }
 }
@@ -749,11 +808,27 @@ fn extract_implements(
 // Type resolution helpers
 // ---------------------------------------------------------------------------
 
-/// Get the innermost `named_type` → `name` text from a `type` child node.
+/// Get the innermost `named_type` → `name` text from the `type` child of a definition node.
 /// Handles `non_null_type` and `list_type` wrappers.
+///
+/// The tree-sitter-graphql grammar does not declare `type` as a *named field* on
+/// `field_definition` or `input_value_definition`, so `child_by_field_name("type")`
+/// always returns `None`. We search by node kind instead.
 fn extract_named_type_from_type_child(node: &Node, src: &str) -> Option<String> {
-    let type_node = node.child_by_field_name("type")?;
-    resolve_named_type_in_subtree(&type_node, src)
+    // Prefer the named field if the grammar declares it (future-proof).
+    if let Some(type_node) = node.child_by_field_name("type") {
+        return resolve_named_type_in_subtree(&type_node, src);
+    }
+    // Fallback: find the first child whose kind is "type", "named_type",
+    // "non_null_type", or "list_type" — these are the possible type nodes.
+    let type_kinds: &[&str] = &["type", "named_type", "non_null_type", "list_type"];
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if type_kinds.contains(&child.kind()) {
+            return resolve_named_type_in_subtree(&child, src);
+        }
+    }
+    None
 }
 
 /// Recursively unwrap `non_null_type` / `list_type` to reach `named_type`.

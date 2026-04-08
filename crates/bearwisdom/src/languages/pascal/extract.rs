@@ -5,14 +5,19 @@
 // ---------------
 // SYMBOLS:
 //   Function  — declProc / defProc (procedure_declaration / function_declaration)
-//   Class     — declClass (class_type)
-//   Interface — declIntf (interface_type)
+//   Class     — declType wrapping declClass
+//   Interface — declType wrapping declIntf
+//   Enum      — declType wrapping declEnum
 //   Struct    — declSection with record keyword (record_type)
+//   Field     — declField inside declSection
+//   Property  — declProp inside declSection
+//   Variable  — declVar (module-level var section) / declConst
 //   Namespace — unit (unit declaration)
 //
 // REFERENCES:
 //   Imports   — declUses (uses clause)
 //   Calls     — exprCall (function/method calls)
+//   Inherits  — declClass parent typeref
 //   TypeRef   — typeref nodes (type references in signatures)
 //
 // Grammar: tree-sitter-pascal 0.10.2 (tree-sitter-language ABI, LANGUAGE constant).
@@ -74,10 +79,23 @@ fn dispatch(
         "unit" => extract_unit(node, src, symbols, refs),
         "program" | "library" => extract_program(node, src, symbols, refs),
         "declProc" | "defProc" => extract_proc(node, src, symbols, refs, parent_index),
-        "declClass" => extract_class(node, src, symbols, refs, parent_index),
-        "declIntf" => extract_intf(node, src, symbols, refs, parent_index),
+        // declType is the wrapper that carries the name for class/intf/enum/record bodies.
+        "declType" => extract_decl_type(node, src, symbols, refs, parent_index),
+        // declClass / declIntf dispatched directly (e.g. inside a unit body without declType)
+        // are handled with name fallback via find_decl_type_name.
+        "declClass" => extract_class(node, src, symbols, refs, parent_index, None),
+        "declIntf" => extract_intf(node, src, symbols, refs, parent_index, None),
         "declSection" => extract_section(node, src, symbols, refs, parent_index),
         "declUses" => extract_uses(node, src, symbols, refs, parent_index),
+        // declVars / declConsts — container nodes; dispatch each declVar / declConst child.
+        "declVars" | "declConsts" => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                dispatch(child, src, symbols, refs, parent_index);
+            }
+        }
+        "declVar" => extract_var(node, src, symbols, refs, parent_index),
+        "declConst" => extract_const(node, src, symbols, refs, parent_index),
         "exprCall" => {
             extract_call(node, src, refs, parent_index);
             // Recurse into arguments and nested sub-expressions so that
@@ -208,6 +226,81 @@ fn find_proc_name(node: Node, src: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// declType: type <Name> = <body>;
+//
+// The name is the first `identifier` child of `declType`.  The body is one of:
+//   declClass, declIntf, declEnum — dispatched with the resolved name.
+//   Other bodies (type alias, set, etc.) are recursed generically.
+// ---------------------------------------------------------------------------
+
+fn extract_decl_type(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // The name sits on the `identifier` child of `declType`, before `=`.
+    let name = find_identifier_child(node, src);
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "declClass" => {
+                extract_class(child, src, symbols, refs, parent_index, name.clone());
+            }
+            "declIntf" => {
+                extract_intf(child, src, symbols, refs, parent_index, name.clone());
+            }
+            "type" => {
+                // The `type` child wraps the body expression (declEnum, typeref, etc.)
+                extract_decl_type_body(child, src, symbols, refs, parent_index, name.clone(), &node);
+            }
+            _ => {
+                dispatch(child, src, symbols, refs, parent_index);
+            }
+        }
+    }
+}
+
+/// Dispatch the body of a `type` wrapper node inside `declType`.
+fn extract_decl_type_body(
+    type_node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+    name: Option<String>,
+    decl_node: &Node,
+) {
+    let mut cursor = type_node.walk();
+    for child in type_node.children(&mut cursor) {
+        match child.kind() {
+            "declEnum" => {
+                let n = name.clone().unwrap_or_else(|| "unknown".to_string());
+                let idx = symbols.len();
+                symbols.push(make_symbol(
+                    n.clone(),
+                    n,
+                    SymbolKind::Enum,
+                    decl_node,
+                    Some(first_line_of(*decl_node, src)),
+                    parent_index,
+                ));
+                // Recurse into enum for enum members if needed.
+                let mut cur2 = child.walk();
+                for ec in child.children(&mut cur2) {
+                    dispatch(ec, src, symbols, refs, Some(idx));
+                }
+            }
+            _ => {
+                dispatch(child, src, symbols, refs, parent_index);
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // class type declarations  →  Class
 // ---------------------------------------------------------------------------
 
@@ -217,8 +310,10 @@ fn extract_class(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
+    name_override: Option<String>,
 ) {
-    let name = find_decl_type_name(node, src)
+    let name = name_override
+        .or_else(|| find_decl_type_name(node, src))
         .unwrap_or_else(|| "unknown".to_string());
 
     let sig = first_line_of(node, src);
@@ -231,6 +326,52 @@ fn extract_class(
         Some(sig),
         parent_index,
     ));
+
+    // Emit Inherits edge for parent class — the first `typeref` child directly
+    // inside `declClass` (before any `declSection`) is the parent class.
+    {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "typeref" {
+                // This is the parent class typeref: class(ParentName)
+                let mut tcur = child.walk();
+                for tc in child.children(&mut tcur) {
+                    match tc.kind() {
+                        "identifier" => {
+                            let parent_name = node_text(tc, src);
+                            if !parent_name.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: idx,
+                                    target_name: parent_name,
+                                    kind: EdgeKind::Inherits,
+                                    line: child.start_position().row as u32,
+                                    module: None,
+                                    chain: None,
+                                });
+                            }
+                            break;
+                        }
+                        "typerefDot" => {
+                            let (member, qualifier) = split_dot_node(tc, src);
+                            if !member.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: idx,
+                                    target_name: member,
+                                    kind: EdgeKind::Inherits,
+                                    line: child.start_position().row as u32,
+                                    module: qualifier,
+                                    chain: None,
+                                });
+                            }
+                            break;
+                        }
+                        _ => {}
+                    }
+                }
+                break; // only first typeref is the parent
+            }
+        }
+    }
 
     // Recurse for nested members.
     let mut cursor = node.walk();
@@ -249,8 +390,10 @@ fn extract_intf(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
+    name_override: Option<String>,
 ) {
-    let name = find_decl_type_name(node, src)
+    let name = name_override
+        .or_else(|| find_decl_type_name(node, src))
         .unwrap_or_else(|| "unknown".to_string());
 
     let sig = first_line_of(node, src);
@@ -272,8 +415,8 @@ fn extract_intf(
 
 // ---------------------------------------------------------------------------
 // declSection: visibility/type/var/const sections inside a class or interface.
-// Every declSection emits a lightweight Section symbol so coverage counts it.
-// Record sections additionally set the kind to Struct.
+// Record sections emit a Struct symbol.  Other sections recurse their children,
+// dispatching declField → Field and declProp → Property directly.
 // ---------------------------------------------------------------------------
 
 fn extract_section(
@@ -283,45 +426,99 @@ fn extract_section(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    // Determine the section kind.  If it contains a kRecord keyword it is a
-    // record type block; otherwise it is a visibility/grouping section.
     let has_record = has_keyword_child(node, "kRecord");
 
-    let (kind, name) = if has_record {
-        let n = find_decl_type_name(node, src)
+    if has_record {
+        // Record type block: emit a Struct symbol for the record itself.
+        let name = find_decl_type_name(node, src)
             .unwrap_or_else(|| "record".to_string());
-        (SymbolKind::Struct, n)
+        let sig = first_line_of(node, src);
+        let idx = symbols.len();
+        symbols.push(make_symbol(
+            name.clone(),
+            name,
+            SymbolKind::Struct,
+            &node,
+            Some(sig),
+            parent_index,
+        ));
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            dispatch(child, src, symbols, refs, Some(idx));
+        }
     } else {
-        // Use the visibility keyword text (public/private/protected/published)
-        // or "section" as a fallback name so the symbol is non-empty.
-        let vis_keyword = ["kPublic", "kPrivate", "kProtected", "kPublished"]
-            .iter()
-            .find_map(|k| {
-                if has_keyword_child(node, k) {
-                    Some(k[1..].to_lowercase()) // strip leading 'k'
-                } else {
-                    None
-                }
-            })
-            .unwrap_or_else(|| "section".to_string());
-        (SymbolKind::Struct, vis_keyword)
-    };
+        // Visibility section (private/public/protected/published) — no symbol emitted.
+        // Recurse children, routing declField and declProp to dedicated extractors.
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                "declField" => extract_field(child, src, symbols, refs, parent_index),
+                "declProp" => extract_prop(child, src, symbols, refs, parent_index),
+                _ => dispatch(child, src, symbols, refs, parent_index),
+            }
+        }
+    }
+}
 
+// ---------------------------------------------------------------------------
+// declField  →  Field
+// ---------------------------------------------------------------------------
+
+fn extract_field(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    _refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let name = find_identifier_child(node, src)
+        .unwrap_or_else(|| "unknown".to_string());
     let sig = first_line_of(node, src);
-    let idx = symbols.len();
     symbols.push(make_symbol(
         name.clone(),
         name,
-        kind,
+        SymbolKind::Field,
         &node,
         Some(sig),
         parent_index,
     ));
+}
 
+// ---------------------------------------------------------------------------
+// declProp  →  Property
+// ---------------------------------------------------------------------------
+
+fn extract_prop(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    _refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    // declProp layout: kProperty identifier : type [read Getter] [write Setter] ;
+    // The name is the identifier after kProperty.
     let mut cursor = node.walk();
+    let mut saw_keyword = false;
+    let mut name = None;
     for child in node.children(&mut cursor) {
-        dispatch(child, src, symbols, refs, Some(idx));
+        match child.kind() {
+            "kProperty" => { saw_keyword = true; }
+            "identifier" if saw_keyword && name.is_none() => {
+                name = Some(node_text(child, src));
+            }
+            _ => {}
+        }
     }
+    let name = name.unwrap_or_else(|| "unknown".to_string());
+    let sig = first_line_of(node, src);
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Property,
+        &node,
+        Some(sig),
+        parent_index,
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +563,68 @@ fn extract_uses(
             }
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// declVar  →  Variable
+// Grammar: declVar has identifier child(ren) + type child.
+// ---------------------------------------------------------------------------
+
+fn extract_var(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let name = find_identifier_child(node, src)
+        .unwrap_or_else(|| "unknown".to_string());
+    if name == "unknown" {
+        return;
+    }
+    let sig = first_line_of(node, src);
+    let idx = symbols.len();
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Variable,
+        &node,
+        Some(sig),
+        parent_index,
+    ));
+    // Recurse to pick up typeref children (type references in the variable's type annotation).
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        dispatch(child, src, symbols, refs, Some(idx));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// declConst  →  Variable (constants treated as variables for indexing purposes)
+// Grammar: declConst has identifier + defaultValue children.
+// ---------------------------------------------------------------------------
+
+fn extract_const(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    _refs: &mut Vec<ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let name = find_identifier_child(node, src)
+        .unwrap_or_else(|| "unknown".to_string());
+    if name == "unknown" {
+        return;
+    }
+    let sig = first_line_of(node, src);
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Variable,
+        &node,
+        Some(sig),
+        parent_index,
+    ));
 }
 
 // ---------------------------------------------------------------------------

@@ -4,15 +4,22 @@
 // SYMBOLS:
 //   Function  — `value_definition` whose `let_binding.pattern` is a `value_name`
 //               and whose body contains a `fun_expression` or has parameters
+//             — `value_specification` (in .mli / sig bodies)
+//             — `external` (C FFI binding)
 //   Variable  — `value_definition` (simple binding without params)
 //   TypeAlias — `type_definition` where `type_binding.synonym` is set
 //   Enum      — `type_definition` with variant constructors (variant_declaration)
 //   Struct    — `type_definition` with record (record_declaration)
+//             — `exception_definition`
 //   Namespace — `module_definition`
+//   Interface — `module_type_definition`
+//   Class     — `class_definition`
 //
 // REFERENCES:
-//   Imports   — `open_module` → module field
-//   Calls     — `application_expression` → function field
+//   Imports      — `open_module` → module field
+//   Calls        — `application_expression` → function field
+//   Inherits     — `inheritance_definition` → class field
+//   Instantiates — `new_expression` → class_path
 // =============================================================================
 
 use crate::types::{
@@ -117,6 +124,65 @@ fn walk_node(
                         module,
                         chain: None,
                     });
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx);
+        }
+        "exception_definition" => {
+            let idx = extract_exception_def(node, src, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+        }
+        "module_type_definition" => {
+            let idx = extract_module_type_def(node, src, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+        }
+        "class_definition" => {
+            let idx = extract_class_def(node, src, symbols, parent_idx);
+            walk_children(node, src, symbols, refs, idx.or(parent_idx));
+        }
+        "external" => {
+            extract_external(node, src, symbols, parent_idx);
+            // No children to recurse into for external declarations
+        }
+        "value_specification" => {
+            extract_value_specification(node, src, symbols, parent_idx);
+        }
+        "inheritance_definition" => {
+            let sym_idx = parent_idx.unwrap_or(0);
+            // `class` field is the parent class expression
+            if let Some(cls_node) = node.child_by_field_name("class") {
+                let name = first_identifier_in_subtree(cls_node, src);
+                if !name.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::Inherits,
+                        line: node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx);
+        }
+        "new_expression" => {
+            let sym_idx = parent_idx.unwrap_or(0);
+            // `class_path` child contains the class name
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() == "class_path" {
+                    let name = first_identifier_in_subtree(child, src);
+                    if !name.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name: name,
+                            kind: EdgeKind::Instantiates,
+                            line: node.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                    break;
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -268,6 +334,223 @@ fn extract_module_def(
         }
     }
     None
+}
+
+/// `exception Not_found` / `exception Invalid_arg of string` → Struct symbol.
+/// Grammar: `exception optional(_attribute) constructor_declaration repeat(item_attribute)`
+/// The constructor name is in `constructor_declaration`.
+fn extract_exception_def(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+) -> Option<usize> {
+    // Find the constructor_declaration child and get its constructor_name
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "constructor_declaration" {
+            let name = extract_constructor_name(child, src);
+            if name.is_empty() { continue; }
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                qualified_name: name.clone(),
+                name,
+                kind: SymbolKind::Struct,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: parent_idx,
+            });
+            return Some(idx);
+        }
+    }
+    None
+}
+
+/// `module type S = sig ... end` → Interface symbol.
+/// Grammar: `module_type_definition ... _module_type_name ...`
+/// The name node kind is `module_type_name`.
+fn extract_module_type_def(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+) -> Option<usize> {
+    // Walk children to find module_type_name
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "module_type_name" {
+            let name = text(child, src);
+            if name.is_empty() { continue; }
+            let idx = symbols.len();
+            symbols.push(ExtractedSymbol {
+                qualified_name: name.clone(),
+                name,
+                kind: SymbolKind::Interface,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: parent_idx,
+            });
+            return Some(idx);
+        }
+    }
+    None
+}
+
+/// `class point x0 y0 = object ... end` → Class symbol.
+/// Grammar: `class_definition ... sep1('and', class_binding)`
+/// The class name is `class_name` inside `class_binding`.
+fn extract_class_def(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+) -> Option<usize> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "class_binding" {
+            // class_binding has a class_name child
+            let mut c2 = child.walk();
+            for gc in child.children(&mut c2) {
+                if gc.kind() == "class_name" {
+                    let name = text(gc, src);
+                    if name.is_empty() { continue; }
+                    let idx = symbols.len();
+                    symbols.push(ExtractedSymbol {
+                        qualified_name: name.clone(),
+                        name,
+                        kind: SymbolKind::Class,
+                        visibility: Some(Visibility::Public),
+                        start_line: node.start_position().row as u32,
+                        end_line: node.end_position().row as u32,
+                        start_col: 0,
+                        end_col: 0,
+                        signature: None,
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index: parent_idx,
+                    });
+                    return Some(idx);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// `external string_length : string -> int = "caml_string_length"` → Function symbol.
+/// Grammar: `external optional(_attribute) _value_name _polymorphic_typed = repeat1(string)`
+/// The function name is in `_value_name` which aliases to `value_name`.
+fn extract_external(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "value_name" {
+            let name = text(child, src);
+            if name.is_empty() { return; }
+            symbols.push(ExtractedSymbol {
+                qualified_name: name.clone(),
+                name,
+                kind: SymbolKind::Function,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: parent_idx,
+            });
+            return;
+        }
+    }
+}
+
+/// `val foo : int -> int` in .mli / sig body → Function symbol.
+/// Grammar: `value_specification 'val' optional(_attribute) _value_name _polymorphic_typed`
+fn extract_value_specification(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "value_name" {
+            let name = text(child, src);
+            if name.is_empty() { return; }
+            // value_specifications are always function-typed (val f : a -> b)
+            // but we use Function kind since that's what the spec says.
+            symbols.push(ExtractedSymbol {
+                qualified_name: name.clone(),
+                name,
+                kind: SymbolKind::Function,
+                visibility: Some(Visibility::Public),
+                start_line: node.start_position().row as u32,
+                end_line: node.end_position().row as u32,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: parent_idx,
+            });
+            return;
+        }
+    }
+}
+
+/// Extract the constructor name from a `constructor_declaration` node.
+/// Grammar: constructor_declaration = choice(_constructor_name, alias(...), ...)
+/// The `_constructor_name` aliases to `constructor_name`.
+fn extract_constructor_name(node: Node, src: &[u8]) -> String {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "constructor_name" {
+            return text(child, src);
+        }
+    }
+    // Fallback: first identifier-like child
+    text(node, src)
+        .split_whitespace()
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
+/// Find the first identifier (`value_name`, `class_name`, `constructor_name`,
+/// or plain `identifier`) in the subtree rooted at `node`.
+fn first_identifier_in_subtree(node: Node, src: &[u8]) -> String {
+    match node.kind() {
+        "value_name" | "class_name" | "constructor_name" | "module_name"
+        | "module_type_name" => {
+            let t = text(node, src);
+            if !t.is_empty() { return t; }
+        }
+        _ => {}
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let t = first_identifier_in_subtree(child, src);
+        if !t.is_empty() { return t; }
+    }
+    String::new()
 }
 
 fn walk_children(

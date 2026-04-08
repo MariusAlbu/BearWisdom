@@ -10,12 +10,19 @@
 //   Class      — `type_definition` with `anon_type_defn`
 //   Struct     — `type_definition` with `record_type_defn`
 //   Enum       — `type_definition` with `union_type_defn` or `enum_type_defn`
+//   EnumMember — `union_type_case` (inside union_type_defn)
+//              — `enum_type_case` (inside enum_type_defn)
+//   Field      — `record_field` (inside record_type_defn)
 //   Interface  — `type_definition` with `interface_type_defn`
 //   TypeAlias  — `type_definition` with `type_abbrev_defn`
+//              — `module_abbrev` (module alias)
+//   Struct     — `exception_definition`
 //
 // REFERENCES:
 //   Imports    — `import_decl` (`open` declarations)
 //   Calls      — `application_expression` (function application)
+//   Implements — `interface_implementation` (`interface IFoo with ...`)
+//   Inherits   — `class_inherits_decl` (`inherit BaseClass(args)`)
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
@@ -69,6 +76,19 @@ fn visit(
             }
             "type_definition" => {
                 extract_type_def(&child, src, symbols, refs, parent_index);
+            }
+            "module_abbrev" => {
+                extract_module_abbrev(&child, src, symbols, parent_index);
+            }
+            "exception_definition" => {
+                extract_exception_def(&child, src, symbols, parent_index);
+            }
+            "interface_implementation" => {
+                extract_interface_implementation(&child, src, parent_index, refs);
+                visit(child, src, symbols, refs, parent_index);
+            }
+            "class_inherits_decl" => {
+                extract_class_inherits(&child, src, parent_index, refs);
             }
             // Collect application_expression and dot_expression refs from
             // method_or_prop_defn bodies (class/type member implementations).
@@ -136,20 +156,26 @@ fn extract_module_defn(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
-    // module_defn: `[access] module identifier = ...`
+    // module_defn: `[access] module identifier = <body>`
+    // module_abbrev (when grammar produces module_defn for abbreviations):
+    //   `module L = Some.Long.Path` — the block contains only a long_identifier
+    //   → emit TypeAlias instead of Namespace.
     let name = first_identifier_text(node, src);
     if name.is_empty() {
         visit(*node, src, symbols, refs, parent_index);
         return;
     }
 
+    // Check if the block is a pure long_identifier (module alias) or real body.
+    let is_alias = is_module_alias(node, src);
+    let kind = if is_alias { SymbolKind::TypeAlias } else { SymbolKind::Namespace };
     let line = node.start_position().row as u32;
     let idx = symbols.len();
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
         qualified_name: name.clone(),
-        kind: SymbolKind::Namespace,
+        kind,
         visibility: Some(Visibility::Public),
         start_line: line,
         end_line: node.end_position().row as u32,
@@ -161,7 +187,44 @@ fn extract_module_defn(
         parent_index,
     });
 
-    visit(*node, src, symbols, refs, Some(idx));
+    if !is_alias {
+        visit(*node, src, symbols, refs, Some(idx));
+    }
+}
+
+/// Return true if a `module_defn` node is actually a module abbreviation:
+/// `module L = Some.Long.Name` — the `block` field contains only a
+/// `long_identifier` or `long_identifier_or_op` with no sub-declarations.
+fn is_module_alias(node: &Node, src: &str) -> bool {
+    // Look for the `block` field (produced by scoped()).
+    if let Some(block) = node.child_by_field_name("block") {
+        let k = block.kind();
+        // Pure long identifier — alias
+        if k == "long_identifier" || k == "long_identifier_or_op" {
+            return true;
+        }
+        // block with a single long_identifier child
+        if block.named_child_count() == 1 {
+            if let Some(inner) = block.named_child(0) {
+                let ik = inner.kind();
+                if ik == "long_identifier" || ik == "long_identifier_or_op" {
+                    return true;
+                }
+            }
+        }
+        // expression that is purely a dotted identifier (contains dots — no declarations)
+        if k == "long_identifier" {
+            return true;
+        }
+        // Heuristic: if the block text contains no newlines and looks like a dotted path
+        let block_text = node_text(&block, src);
+        if !block_text.contains('\n') && block_text.split('.').all(|seg| {
+            !seg.is_empty() && seg.chars().all(|c| c.is_alphanumeric() || c == '_')
+        }) {
+            return true;
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -355,9 +418,143 @@ fn extract_type_def(
             parent_index,
         });
 
-        // Walk members
+        // Walk members — emit child symbols for compound types and scan for refs
+        match child.kind() {
+            "union_type_defn" => {
+                extract_union_cases(&child, src, symbols, Some(idx));
+            }
+            "enum_type_defn" => {
+                extract_enum_cases(&child, src, symbols, Some(idx));
+            }
+            "record_type_defn" => {
+                extract_record_fields(&child, src, symbols, Some(idx));
+            }
+            "anon_type_defn" => {
+                // Scan the entire subtree for interface_implementation and
+                // class_inherits_decl nodes, which may be deeply nested under
+                // transparent supertype wrappers that are invisible to visit().
+                collect_named_descendants(&child, "interface_implementation", |iface| {
+                    extract_interface_implementation(iface, src, Some(idx), refs);
+                });
+                collect_named_descendants(&child, "class_inherits_decl", |inh| {
+                    extract_class_inherits(inh, src, Some(idx), refs);
+                });
+            }
+            _ => {}
+        }
         visit(child, src, symbols, refs, Some(idx));
         break; // Only one body per type_definition
+    }
+}
+
+/// Emit EnumMember symbols for each `union_type_case` descending from a node.
+/// Grammar: `union_type_defn` → `union_type_cases` → `union_type_case`
+fn extract_union_cases(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    collect_named_descendants(node, "union_type_case", |child| {
+        // union_type_case: `| <identifier> [of <type>]`
+        let name = first_identifier_text(child, src);
+        if name.is_empty() { return; }
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind: SymbolKind::EnumMember,
+            visibility: Some(Visibility::Public),
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index,
+        });
+    });
+}
+
+/// Emit EnumMember symbols for each `enum_type_case` descending from a node.
+/// Grammar: `enum_type_defn` → `enum_type_cases` → `enum_type_case`
+fn extract_enum_cases(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    collect_named_descendants(node, "enum_type_case", |child| {
+        // enum_type_case: `| <identifier> = <int>`
+        let name = first_identifier_text(child, src);
+        if name.is_empty() { return; }
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind: SymbolKind::EnumMember,
+            visibility: Some(Visibility::Public),
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index,
+        });
+    });
+}
+
+/// Emit Field symbols for each `record_field` descending from a node.
+/// Grammar: `record_type_defn` → `record_fields` → `record_field`
+fn extract_record_fields(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    collect_named_descendants(node, "record_field", |child| {
+        // record_field: `[mutable] <identifier> : <type>`
+        let name = first_identifier_text(child, src);
+        if name.is_empty() { return; }
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind: SymbolKind::Field,
+            visibility: Some(Visibility::Public),
+            start_line: child.start_position().row as u32,
+            end_line: child.end_position().row as u32,
+            start_col: child.start_position().column as u32,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index,
+        });
+    });
+}
+
+/// Walk the subtree of `node` and call `f` for every child whose kind matches `target_kind`.
+/// Does not recurse into matched children (stops at the first match per branch).
+fn collect_named_descendants<F>(node: &Node, target_kind: &str, mut f: F)
+where
+    F: FnMut(&Node),
+{
+    collect_named_descendants_inner(node, target_kind, &mut f);
+}
+
+fn collect_named_descendants_inner<F>(node: &Node, target_kind: &str, f: &mut F)
+where
+    F: FnMut(&Node),
+{
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == target_kind {
+            f(&child);
+            // Don't recurse into the matched node — its children are sub-fields, not siblings
+        } else {
+            collect_named_descendants_inner(&child, target_kind, f);
+        }
     }
 }
 
@@ -381,6 +578,141 @@ fn extract_type_name(node: &Node, src: &str) -> String {
     }
     // Fallback: direct identifier under the defn node
     first_identifier_text(node, src)
+}
+
+// ---------------------------------------------------------------------------
+// module_abbrev, exception_definition, interface_implementation, class_inherits
+// ---------------------------------------------------------------------------
+
+/// `module L = Some.Long.Name` → TypeAlias symbol named `L`.
+fn extract_module_abbrev(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    // module_abbrev: `module <identifier> = <long_identifier_or_op>`
+    // First identifier child is the alias name.
+    let name = first_identifier_text(node, src);
+    if name.is_empty() { return; }
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name.clone(),
+        kind: SymbolKind::TypeAlias,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: 0,
+        signature: Some(format!("module {}", name)),
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
+    });
+}
+
+/// `exception MyError of string` → Struct symbol named `MyError`.
+fn extract_exception_def(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    // exception_definition: `exception <exception_name> [of <type>]`
+    // The name node kind may be `exception_name` or a plain `identifier`.
+    let name = node
+        .child_by_field_name("exception_name")
+        .map(|n| node_text(&n, src).to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| first_identifier_text(node, src));
+    if name.is_empty() { return; }
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name: name.clone(),
+        kind: SymbolKind::Struct,
+        visibility: Some(Visibility::Public),
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: 0,
+        signature: Some(format!("exception {}", name)),
+        doc_comment: None,
+        scope_path: None,
+        parent_index,
+    });
+}
+
+/// `interface IFoo with ...` → Implements edge targeting the interface name.
+fn extract_interface_implementation(
+    node: &Node,
+    src: &str,
+    parent_index: Option<usize>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // interface_implementation: `interface <_type> with <member_defns>`
+    // Grammar: interface keyword, then a `_type` child (simple_type, named_type,
+    // long_identifier_or_op, generic_type, etc.), then optional `with` body.
+    // We want the last identifier in the type chain (the simple unqualified name)
+    // or the full text if it's a simple type.
+    let source_idx = parent_index.unwrap_or(0);
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let t = node_text(&child, src);
+        // Skip the `interface` keyword and empty nodes
+        if t == "interface" || t.is_empty() { continue; }
+        // The `with` keyword marks end of the type section
+        if t == "with" { break; }
+        // Skip other keyword tokens (unlikely but defensive)
+        if child.child_count() == 0 && is_keyword(t) { continue; }
+        // This is the type node — extract the last identifier as the interface name.
+        // For `simple_type → long_identifier → "System" "." "IDisposable"` we want "IDisposable".
+        // For a bare `identifier` node we just use its text.
+        let iface_name = last_identifier_text(child, src);
+        if !iface_name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: iface_name,
+                kind: EdgeKind::Implements,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
+        break;
+    }
+}
+
+/// `inherit Animal(name)` → Inherits edge targeting `Animal`.
+fn extract_class_inherits(
+    node: &Node,
+    src: &str,
+    parent_index: Option<usize>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // class_inherits_decl: `inherit <_type> [<args>]`
+    // Grammar: `inherit scoped(seq(_type, optional(_expression)), indent, dedent)`
+    // The type child (simple_type, long_identifier_or_op, etc.) holds the base class name.
+    let source_idx = parent_index.unwrap_or(0);
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        let t = node_text(&child, src);
+        if t == "inherit" || t.is_empty() { continue; }
+        // Skip pure keyword tokens
+        if child.child_count() == 0 && is_keyword(t) { continue; }
+        // The type node — extract first identifier as base class name.
+        let base_name = first_identifier_from_type(child, src);
+        if !base_name.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: source_idx,
+                target_name: base_name,
+                kind: EdgeKind::Inherits,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+            break;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -520,6 +852,57 @@ fn first_identifier_text(node: &Node, src: &str) -> String {
                 return t;
             }
         }
+    }
+    String::new()
+}
+
+/// Find the LAST identifier in the direct children of `node`.
+/// Useful for `simple_type → long_identifier → "System" "." "IDisposable"`
+/// where we want "IDisposable" (the last segment).
+fn last_identifier_text(node: Node, src: &str) -> String {
+    // If the node itself has identifier children, get the last one.
+    let mut last = String::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "identifier" => {
+                let t = node_text(&child, src).to_string();
+                if !t.is_empty() { last = t; }
+            }
+            // Recurse one level into wrapper types (simple_type, long_identifier, etc.)
+            k if !k.starts_with('"') => {
+                let inner = last_identifier_text(child, src);
+                if !inner.is_empty() { last = inner; }
+            }
+            _ => {}
+        }
+    }
+    if last.is_empty() {
+        // No identifier children — maybe the node IS an identifier
+        if node.kind() == "identifier" {
+            let t = node_text(&node, src).to_string();
+            if !t.is_empty() { return t; }
+        }
+    }
+    last
+}
+
+/// Find the FIRST identifier in a type node (for base class names in `inherit`).
+/// Handles `simple_type`, `long_identifier_or_op`, `named_type`, bare `identifier`.
+fn first_identifier_from_type(node: Node, src: &str) -> String {
+    // If the node is directly an identifier, return its text.
+    if node.kind() == "identifier" {
+        return node_text(&node, src).to_string();
+    }
+    // Recurse into children until we find the first identifier.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "identifier" {
+            let t = node_text(&child, src).to_string();
+            if !t.is_empty() { return t; }
+        }
+        let inner = first_identifier_from_type(child, src);
+        if !inner.is_empty() { return inner; }
     }
     String::new()
 }

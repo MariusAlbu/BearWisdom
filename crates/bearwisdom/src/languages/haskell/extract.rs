@@ -139,6 +139,8 @@ fn visit(
                 );
                 // Extract deriving → Implements
                 extract_deriving(&child, src, idx, refs);
+                // Extract data_constructor children → EnumMember symbols
+                extract_data_constructors(&child, src, idx, symbols);
                 visit(child, src, scope_tree, symbols, refs, idx.or(parent_index), false);
             }
             "newtype" => {
@@ -404,25 +406,114 @@ fn extract_deriving(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "deriving" {
-            // deriving contains class names
-            let mut dcursor = child.walk();
-            for dc in child.children(&mut dcursor) {
-                if dc.kind() == "name" || dc.kind() == "constructor" {
-                    let name = node_text(dc, src);
-                    if !name.is_empty() && !BUILTIN_TYPES.contains(&name.as_str()) {
-                        refs.push(ExtractedRef {
-                            source_symbol_index: source_idx,
-                            target_name: name,
-                            kind: EdgeKind::Implements,
-                            line: child.start_position().row as u32,
-                            module: None,
-                            chain: None,
-                        });
-                    }
+            // Collect all class names from the deriving clause.
+            // tree-sitter-haskell grammar (v0.25+) wraps the list in a `tuple`
+            // node (for `deriving (Show, Eq)`) or emits a single `name`/`constructor`
+            // directly (for `deriving Show`).
+            collect_deriving_names(&child, src, source_idx, refs);
+        }
+    }
+}
+
+/// Recursively collect `name`/`constructor`/`class` tokens from a `deriving` node
+/// or any of its container wrappers (`tuple`, `list`, `class`, etc.).
+fn collect_deriving_names(
+    node: &Node,
+    src: &[u8],
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "name" | "constructor" => {
+                let name = node_text(child, src);
+                if !name.is_empty() && name != "deriving" {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: name,
+                        kind: EdgeKind::Implements,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
                 }
+            }
+            "deriving" | "tuple" | "list" | "class" | "qualified" => {
+                // Recurse into wrapper nodes
+                collect_deriving_names(&child, src, source_idx, refs);
+            }
+            _ => {}
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// data_constructor children  →  EnumMember symbols
+// ---------------------------------------------------------------------------
+
+fn extract_data_constructors(
+    data_node: &Node,
+    src: &[u8],
+    parent_idx: Option<usize>,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    // Walk all descendants looking for `data_constructor` or `gadt_constructor` nodes.
+    collect_constructors(data_node, src, parent_idx, symbols);
+}
+
+fn collect_constructors(
+    node: &Node,
+    src: &[u8],
+    parent_idx: Option<usize>,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "data_constructor" | "gadt_constructor" => {
+                // The constructor name is inside a `prefix` child (or a direct
+                // `constructor`/`name` child in some grammar versions).
+                // Use a depth-first search limited to 3 levels to find the first
+                // `constructor` node.
+                if let Some(name) = find_constructor_name(&child, src, 3) {
+                    symbols.push(make_symbol(
+                        name.clone(),
+                        name,
+                        SymbolKind::EnumMember,
+                        &child,
+                        None,
+                        parent_idx,
+                    ));
+                }
+            }
+            _ => {
+                collect_constructors(&child, src, parent_idx, symbols);
             }
         }
     }
+}
+
+/// Depth-limited search for a `constructor` or `name` node inside a data/gadt
+/// constructor node. Returns the text of the first match found.
+fn find_constructor_name(node: &Node, src: &[u8], depth: usize) -> Option<String> {
+    if depth == 0 {
+        return None;
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "constructor" {
+            let name = node_text(child, src);
+            if !name.is_empty() {
+                return Some(name);
+            }
+        }
+        // Recurse into wrapper nodes like `prefix`, `infix_constructor`
+        if let Some(name) = find_constructor_name(&child, src, depth - 1) {
+            return Some(name);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

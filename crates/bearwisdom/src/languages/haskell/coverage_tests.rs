@@ -229,24 +229,29 @@ fn cov_type_family_emits_type_alias() {
 }
 
 /// data_constructor → SymbolKind::EnumMember
-/// NOTE: The extractor does not currently walk data_constructor children to
-/// emit EnumMember symbols. The test verifies the data_type itself still
-/// extracts and the extractor does not panic.
-// TODO: emit EnumMember for each data_constructor (e.g. Circle, Square)
 #[test]
-fn cov_data_constructor_does_not_crash() {
+fn cov_data_constructor_emits_enum_member() {
     let src = "data Shape = Circle Float | Square Float\n";
     let r = extract::extract(src);
-    // data_type is present; constructors may or may not be extracted
+    // data_type itself
     let sym = r.symbols.iter().find(|s| s.name == "Shape");
     assert!(sym.is_some(), "expected Struct 'Shape'; got: {:?}", r.symbols);
+    // constructors
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Circle" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember 'Circle'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Square" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember 'Square'; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// gadt_constructor → SymbolKind::EnumMember
-/// NOTE: The extractor does not currently handle gadt_constructor nodes.
-// TODO: emit EnumMember for each gadt_constructor
 #[test]
-fn cov_gadt_constructor_does_not_crash() {
+fn cov_gadt_constructor_emits_enum_member() {
     let src = concat!(
         "{-# LANGUAGE GADTs #-}\n",
         "data Expr a where\n",
@@ -254,8 +259,13 @@ fn cov_gadt_constructor_does_not_crash() {
         "  Add :: Expr Int -> Expr Int -> Expr Int\n",
     );
     let r = extract::extract(src);
-    // Verify no panic; Expr may be extracted as Struct
-    let _ = r;
+    // Verify no panic and constructors are extracted
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Lit" && s.kind == SymbolKind::EnumMember)
+        || r.symbols.iter().any(|s| s.name == "Add" && s.kind == SymbolKind::EnumMember),
+        "expected at least one gadt_constructor EnumMember (Lit or Add); got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -280,17 +290,16 @@ fn ref_instance_emits_implements() {
 }
 
 /// deriving → EdgeKind::Implements
-/// The extractor scans direct children of the `deriving` node for `name` /
-/// `constructor` tokens, but tree-sitter-haskell wraps each derived class in
-/// a `class` child rather than exposing a bare token, so the current
-/// implementation does not emit Implements for this form.
-// TODO: recurse into deriving class children to capture derived type class names
 #[test]
-fn ref_deriving_does_not_crash() {
+fn ref_deriving_emits_implements() {
     let src = "data Foo = Foo deriving (Show, Eq)\n";
     let r = extract::extract(src);
-    // No panic is the contract; Implements edges from deriving are a TODO
-    let _ = r;
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name.contains("Show"))
+        || r.refs.iter().any(|rf| rf.kind == EdgeKind::Implements && rf.target_name.contains("Eq")),
+        "expected Implements ref to 'Show' or 'Eq' from deriving; got: {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// class body function → SymbolKind::Method
@@ -337,4 +346,44 @@ fn ref_infix_emits_calls() {
         "expected Calls ref to 'elem' from infix; got: {:?}",
         calls
     );
+}
+
+#[test]
+#[ignore]
+fn debug_probe_haskell_data_type_grammar() {
+    let src = "data Shape = Circle Float | Square Float\n";
+    let lang: tree_sitter::Language = tree_sitter_haskell::LANGUAGE.into();
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&lang).unwrap();
+    let tree = parser.parse(src, None).unwrap();
+    fn pt(node: tree_sitter::Node, src: &str, depth: usize) {
+        let indent = "  ".repeat(depth);
+        let text = if node.child_count() == 0 {
+            format!(" = {:?}", &src[node.start_byte()..node.end_byte()])
+        } else { String::new() };
+        eprintln!("{}[{}]{}", indent, node.kind(), text);
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) { pt(child, src, depth + 1); }
+    }
+    pt(tree.root_node(), src, 0);
+}
+
+#[test]
+#[ignore]
+fn debug_probe_haskell_deriving_grammar() {
+    let src = "data Foo = Foo deriving (Show, Eq)\n";
+    let lang: tree_sitter::Language = tree_sitter_haskell::LANGUAGE.into();
+    let mut parser = tree_sitter::Parser::new();
+    parser.set_language(&lang).unwrap();
+    let tree = parser.parse(src, None).unwrap();
+    fn pt(node: tree_sitter::Node, src: &str, depth: usize) {
+        let indent = "  ".repeat(depth);
+        let text = if node.child_count() == 0 {
+            format!(" = {:?}", &src[node.start_byte()..node.end_byte()])
+        } else { String::new() };
+        eprintln!("{}[{}]{}", indent, node.kind(), text);
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) { pt(child, src, depth + 1); }
+    }
+    pt(tree.root_node(), src, 0);
 }

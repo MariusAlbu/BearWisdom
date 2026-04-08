@@ -7,13 +7,17 @@
 //   Function   — `function_statement`
 //   Class      — `class_statement`
 //   Enum       — `enum_statement`
+//   EnumMember — `enum_member` (child of enum_statement)
 //   Method     — `class_method_definition` (child of class_statement)
 //   Property   — `class_property_definition` (child of class_statement)
+//   Variable   — `script_parameter` in `param_block`; top-level `assignment_expression`
 //
 // REFERENCES:
 //   Imports    — `using_statement` (using namespace / using module)
 //   Calls      — `command` nodes (every cmdlet/function invocation)
-//   TypeRef    — type literals in casts, parameter types, property types
+//   Calls      — `invokation_expression` (method calls)
+//   TypeRef    — `member_access` (property/field reads)
+//   Inherits   — `class_statement` with `:` base type
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
@@ -68,6 +72,19 @@ fn visit(
             "using_statement" => {
                 extract_using(&child, src, symbols.len().saturating_sub(1), refs);
             }
+            "param_block" => {
+                extract_param_block(&child, src, symbols, parent_index);
+            }
+            "assignment_expression" => {
+                // Only extract top-level (script-scope) assignments, not those
+                // buried inside function/class bodies (parent_index would be Some
+                // for those). The visit caller sets parent_index = None at the
+                // program root, so this correctly limits to script scope.
+                if parent_index.is_none() {
+                    extract_top_level_assignment(&child, src, symbols);
+                }
+                visit(child, src, symbols, refs, parent_index, class_prefix);
+            }
             "command" => {
                 extract_command(&child, src, parent_index.unwrap_or(0), refs);
                 // Recurse into command children so that script-block arguments
@@ -98,6 +115,10 @@ fn visit(
                         chain: None,
                     });
                 }
+                visit(child, src, symbols, refs, parent_index, class_prefix);
+            }
+            "member_access" => {
+                extract_member_access(&child, src, parent_index.unwrap_or(0), refs);
                 visit(child, src, symbols, refs, parent_index, class_prefix);
             }
             _ => {
@@ -216,6 +237,36 @@ fn extract_class(
         parent_index,
     });
 
+    // Detect inheritance: `class Foo : Bar` — the grammar emits two `simple_name`
+    // children separated by `:`. The first is the class name (already captured),
+    // the second (if a `:` sibling precedes it) is the base class name.
+    {
+        let mut saw_colon = false;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            match child.kind() {
+                ":" => {
+                    saw_colon = true;
+                }
+                "simple_name" if saw_colon => {
+                    let base = node_text(&child, src).to_string();
+                    if !base.is_empty() {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: class_idx,
+                            target_name: base,
+                            kind: EdgeKind::Inherits,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                    saw_colon = false; // only emit once per `:` separator
+                }
+                _ => {}
+            }
+        }
+    }
+
     // Extract methods and properties inside class body
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -316,6 +367,7 @@ fn extract_enum(
     };
 
     let line = node.start_position().row as u32;
+    let enum_idx = symbols.len();
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -331,6 +383,32 @@ fn extract_enum(
         scope_path: None,
         parent_index,
     });
+
+    // Extract individual enum members
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "enum_member" {
+            if let Some(member_name) = find_child_text(&child, "simple_name", src) {
+                if !member_name.is_empty() {
+                    let qualified = format!("{}.{}", name, member_name);
+                    symbols.push(ExtractedSymbol {
+                        name: member_name.clone(),
+                        qualified_name: qualified,
+                        kind: SymbolKind::EnumMember,
+                        visibility: Some(Visibility::Public),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        end_col: 0,
+                        signature: Some(member_name),
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index: Some(enum_idx),
+                    });
+                }
+            }
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -391,7 +469,10 @@ fn extract_command(
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
             let text = node_text(&child, src);
-            if child.kind() == "command_elements" || child.kind() == "string_literal" || child.kind() == "bare_string_literal" {
+            if child.kind() == "command_elements"
+                || child.kind() == "string_literal"
+                || child.kind() == "bare_string_literal"
+            {
                 let module = text.trim_matches(|c| c == '"' || c == '\'').to_string();
                 if !module.is_empty() && module != cmd_name {
                     refs.push(ExtractedRef {
@@ -469,6 +550,153 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
         } else {
             visit_for_calls(&child, src, source_idx, refs);
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Script parameter block — `param([type]$Name, ...)`
+// ---------------------------------------------------------------------------
+
+fn extract_param_block(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    // param_block → parameter_list → script_parameter
+    // Walk descendants recursively to handle the nesting.
+    extract_script_parameters_recursive(node, src, symbols, parent_index);
+}
+
+fn extract_script_parameters_recursive(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "script_parameter" {
+            if let Some(raw) = find_child_text(&child, "variable", src) {
+                let param_name = raw.trim_start_matches('$').to_string();
+                if !param_name.is_empty() {
+                    symbols.push(ExtractedSymbol {
+                        name: param_name.clone(),
+                        qualified_name: param_name.clone(),
+                        kind: SymbolKind::Variable,
+                        visibility: Some(Visibility::Public),
+                        start_line: child.start_position().row as u32,
+                        end_line: child.end_position().row as u32,
+                        start_col: child.start_position().column as u32,
+                        end_col: 0,
+                        signature: Some(format!("${}", param_name)),
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index,
+                    });
+                }
+            }
+        } else {
+            // Recurse to handle parameter_list and other wrapper nodes
+            extract_script_parameters_recursive(&child, src, symbols, parent_index);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Top-level assignment `$Var = <expr>`  →  Variable symbol
+// ---------------------------------------------------------------------------
+
+/// Walk the `left_assignment_expression` subtree to find the deepest variable node.
+fn find_variable_in_subtree(node: &Node, src: &str) -> Option<String> {
+    if node.kind() == "variable" {
+        let raw = node_text(node, src);
+        let name = raw.trim_start_matches('$');
+        if !name.is_empty() {
+            return Some(name.to_string());
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(name) = find_variable_in_subtree(&child, src) {
+            return Some(name);
+        }
+    }
+    None
+}
+
+fn extract_top_level_assignment(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    // assignment_expression children: left_assignment_expression, assignement_operator, pipeline
+    let lhs = match (0..node.child_count())
+        .filter_map(|i| node.child(i))
+        .find(|c| c.kind() == "left_assignment_expression")
+    {
+        Some(n) => n,
+        None => return,
+    };
+
+    if let Some(var_name) = find_variable_in_subtree(&lhs, src) {
+        // Strip scope qualifiers: $global:Name → Name, $script:Name → Name
+        let clean = if let Some(pos) = var_name.find(':') {
+            var_name[pos + 1..].to_string()
+        } else {
+            var_name
+        };
+        if clean.is_empty() {
+            return;
+        }
+        symbols.push(ExtractedSymbol {
+            name: clean.clone(),
+            qualified_name: clean.clone(),
+            kind: SymbolKind::Variable,
+            visibility: Some(Visibility::Public),
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: 0,
+            signature: Some(format!("${}", clean)),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Member access `$obj.Property`  →  TypeRef edge
+// ---------------------------------------------------------------------------
+
+fn extract_member_access(
+    node: &Node,
+    src: &str,
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // member_access: variable  .  member_name(simple_name)
+    let member = find_child_text(node, "member_name", src)
+        .or_else(|| find_child_text(node, "simple_name", src));
+
+    if let Some(name) = member {
+        if name.is_empty() {
+            return;
+        }
+        // Qualifier: strip `$` from the variable child
+        let module = find_child_text(node, "variable", src)
+            .map(|v| v.trim_start_matches('$').to_string())
+            .filter(|v| !v.is_empty());
+
+        refs.push(ExtractedRef {
+            source_symbol_index,
+            target_name: name,
+            kind: EdgeKind::TypeRef,
+            line: node.start_position().row as u32,
+            module,
+            chain: None,
+        });
     }
 }
 

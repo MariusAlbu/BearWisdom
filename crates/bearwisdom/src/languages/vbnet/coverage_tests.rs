@@ -180,74 +180,84 @@ fn ref_implements_clause() {
 // ---------------------------------------------------------------------------
 
 /// symbol_node_kind: `enum_member`  →  EnumMember
-/// Rules specify EnumMember for enum value entries; the extractor does not
-/// currently descend into enum_block to extract individual members.
-// TODO: extractor does not emit EnumMember for VB.NET enum_block children
+/// symbol_node_kind: `enum_member`  →  EnumMember
 #[test]
 fn symbol_enum_member() {
     let r = extract("Public Enum Status\n  Active\n  Inactive\nEnd Enum");
-    // Best-effort: at minimum the enum itself is extracted.
     assert!(
         r.symbols.iter().any(|s| s.name == "Status" && s.kind == SymbolKind::Enum),
-        "expected Enum Status as prerequisite; got {:?}",
+        "expected Enum Status; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
-    // TODO: assert EnumMember "Active" once extractor handles enum_block children.
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Active" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember Active; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Inactive" && s.kind == SymbolKind::EnumMember),
+        "expected EnumMember Inactive; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `constructor_declaration`  →  Constructor
-/// VB.NET `Sub New` is the constructor. The grammar emits a `constructor_declaration`
-/// node, but the extractor only matches `method_declaration` and does not have a
-/// dedicated `constructor_declaration` arm — so `Sub New` is not extracted at all.
-// TODO: extractor does not match constructor_declaration — Sub New produces no symbol
 #[test]
 fn symbol_constructor_declaration() {
     let r = extract("Public Class Widget\n  Public Sub New()\n  End Sub\nEnd Class");
-    // No assertion — just verify no panic.
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "New" && s.kind == SymbolKind::Constructor),
+        "expected Constructor New; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `field_declaration`  →  Field
-/// The extractor only uses field_declaration to detect Inherits/Implements patterns.
-/// Ordinary field declarations are not extracted as Field symbols.
-// TODO: extractor does not emit Field for field_declaration
 #[test]
 fn symbol_field_declaration() {
     let r = extract(
         "Public Class Config\n  Private _timeout As Integer\nEnd Class",
     );
-    // No assertion on Field — just verify no panic.
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "_timeout" && s.kind == SymbolKind::Field),
+        "expected Field _timeout; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `const_declaration`  →  Variable
-/// The extractor has no arm for const_declaration; it falls through to walk_children.
-// TODO: extractor does not emit Variable for const_declaration
 #[test]
 fn symbol_const_declaration() {
     let r = extract(
         "Module M\n  Const MAX_RETRY As Integer = 3\nEnd Module",
     );
-    // No assertion — just verify no panic.
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "MAX_RETRY" && s.kind == SymbolKind::Variable),
+        "expected Variable MAX_RETRY; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `delegate_declaration`  →  Delegate
-/// No arm for delegate_declaration in the extractor.
-// TODO: extractor does not emit Delegate for delegate_declaration
 #[test]
 fn symbol_delegate_declaration() {
     let r = extract("Delegate Function Transformer(x As Integer) As Integer");
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Transformer" && s.kind == SymbolKind::Delegate),
+        "expected Delegate Transformer; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
 
 /// symbol_node_kind: `event_declaration`  →  Event
-/// No arm for event_declaration in the extractor.
-// TODO: extractor does not emit Event for event_declaration
 #[test]
 fn symbol_event_declaration() {
     let r = extract(
         "Public Class Button\n  Public Event Clicked As EventHandler\nEnd Class",
     );
-    let _ = r;
+    assert!(
+        r.symbols.iter().any(|s| s.name == "Clicked" && s.kind == SymbolKind::Event),
+        "expected Event Clicked; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
 }
