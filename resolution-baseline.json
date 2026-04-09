@@ -484,5 +484,77 @@
     "external": 34041,
     "unresolved": 1185,
     "resolution_rate": 97.2
+  },
+  "bicep-aks-baseline": {
+    "language": "markdown",
+    "files": 50,
+    "symbols": 272,
+    "edges": 0,
+    "external": 486,
+    "unresolved": 151,
+    "resolution_rate": 76.3
+  },
+  "cobol-course": {
+    "language": "markdown",
+    "files": 51,
+    "symbols": 224,
+    "edges": 44,
+    "external": 3,
+    "unresolved": 3,
+    "resolution_rate": 94.0
+  },
+  "pascal-heidisql": {
+    "language": "pascal",
+    "files": 177,
+    "symbols": 28051,
+    "edges": 13861,
+    "external": 25663,
+    "unresolved": 17482,
+    "resolution_rate": 69.3
+  },
+  "php-monica": {
+    "language": "php",
+    "files": 1749,
+    "symbols": 8554,
+    "edges": 10989,
+    "external": 65320,
+    "unresolved": 1287,
+    "resolution_rate": 98.3
+  },
+  "powershell-winutil": {
+    "language": "markdown",
+    "files": 218,
+    "symbols": 540,
+    "edges": 639,
+    "external": 4479,
+    "unresolved": 1084,
+    "resolution_rate": 82.5
+  },
+  "proto-protovalidate": {
+    "language": "proto",
+    "files": 280,
+    "symbols": 19990,
+    "edges": 42104,
+    "external": 95207,
+    "unresolved": 4356,
+    "resolution_rate": 96.9
+  },
+  "scss-bootstrap": {
+    "language": "markdown",
+    "files": 524,
+    "symbols": 5395,
+    "edges": 2155,
+    "external": 7026,
+    "unresolved": 6302,
+    "resolution_rate": 59.3
+  },
+  "vba-stdvba": {
+    "language": "vba",
+    "files": 163,
+    "symbols": 14509,
+    "edges": 13086,
+    "external": 493,
+    "unresolved": 14989,
+    "resolution_rate": 47.5
   }
 }
