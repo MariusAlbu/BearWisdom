@@ -105,6 +105,16 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// This ties plugin and resolver together — no separate registration list.
     /// The engine collects resolvers by calling this on every registered plugin.
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> { None }
+
+    /// Return language-specific connectors provided by this plugin.
+    ///
+    /// Each connector implements the full `Connector` trait (detect/extract/match).
+    /// The registry collects these from all plugins alongside any remaining
+    /// cross-cutting connectors.
+    ///
+    /// This is the primary mechanism for adding connector support to a language —
+    /// all detection, extraction, and matching logic lives in the plugin directory.
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> { vec![] }
 }
 
 // ---------------------------------------------------------------------------
@@ -266,6 +276,19 @@ pub fn default_resolvers() -> Vec<Arc<dyn LanguageResolver>> {
         .all()
         .iter()
         .filter_map(|plugin| plugin.resolver())
+        .collect()
+}
+
+/// Collect language-specific connectors from all registered plugins.
+///
+/// Derived from `LanguagePlugin::connectors()` — no separate list to maintain.
+/// The registry calls this to discover plugin-provided connectors alongside
+/// any remaining cross-cutting connectors.
+pub fn collect_plugin_connectors() -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+    default_registry()
+        .all()
+        .iter()
+        .flat_map(|plugin| plugin.connectors())
         .collect()
 }
 

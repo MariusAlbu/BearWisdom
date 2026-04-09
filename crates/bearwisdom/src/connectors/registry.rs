@@ -162,8 +162,19 @@ impl Default for ConnectorRegistry {
 }
 
 /// Build a registry pre-loaded with all built-in connectors.
+///
+/// Sources (registered in this order, so plugin connectors get priority):
+///   1. Language plugin connectors — from `LanguagePlugin::connectors()`
+///   2. Cross-cutting connectors — shared across languages (being migrated)
 pub fn build_default_registry() -> ConnectorRegistry {
     let mut reg = ConnectorRegistry::new();
+
+    // 1. Language-plugin-provided connectors (take priority for custom_match).
+    for connector in crate::languages::collect_plugin_connectors() {
+        reg.register(connector);
+    }
+
+    // 2. Cross-cutting connectors (will shrink as they migrate to plugins).
     reg.register(Box::new(super::rest_connector::RestConnector));
     reg.register(Box::new(super::grpc_connector::GrpcConnector));
     reg.register(Box::new(super::mq_connector::MessageQueueConnector));
@@ -171,7 +182,7 @@ pub fn build_default_registry() -> ConnectorRegistry {
     reg.register(Box::new(super::event_connector::EventBusConnector));
     reg.register(Box::new(super::ipc_connector::TauriIpcConnector));
     reg.register(Box::new(super::ipc_connector::ElectronIpcConnector));
-    // Framework-specific route producers
+    // Framework-specific route producers (migrating to language plugins)
     reg.register(Box::new(super::route_connectors::SpringRouteConnector));
     reg.register(Box::new(super::route_connectors::DjangoRouteConnector));
     reg.register(Box::new(super::route_connectors::FastApiRouteConnector));
@@ -180,7 +191,7 @@ pub fn build_default_registry() -> ConnectorRegistry {
     reg.register(Box::new(super::route_connectors::LaravelRouteConnector));
     reg.register(Box::new(super::route_connectors::NestjsRouteConnector));
     reg.register(Box::new(super::route_connectors::NextjsRouteConnector));
-    // DI connectors
+    // DI connectors (migrating to language plugins)
     reg.register(Box::new(super::di_connector::DotnetDiConnector));
     reg.register(Box::new(super::di_connector::AngularDiConnector));
     reg.register(Box::new(super::di_connector::SpringDiConnector));
