@@ -26,7 +26,7 @@ pub fn is_bare_specifier(s: &str) -> bool {
 /// Matches the object prefix for dotted names like `document.querySelector`,
 /// `JSON.stringify`, `console.error`, `Promise.all`, etc.
 /// Also matches standalone globals like `setTimeout`, `encodeURIComponent`.
-pub(super) fn is_js_runtime_global(target: &str) -> bool {
+pub(crate) fn is_js_runtime_global(target: &str) -> bool {
     // Extract the object (first segment) for dotted names.
     let obj = target.split('.').next().unwrap_or(target);
     matches!(
@@ -162,7 +162,7 @@ pub(super) fn is_common_builtin_method(name: &str) -> bool {
 ///
 /// TypeScript is structurally typed and more permissive than C# — we allow
 /// more combinations here.
-pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+pub(crate) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     match edge_kind {
         EdgeKind::Calls => matches!(
             sym_kind,

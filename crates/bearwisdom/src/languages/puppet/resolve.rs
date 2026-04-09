@@ -18,6 +18,7 @@
 //   4. Built-in Puppet resource types are external.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -60,11 +61,11 @@ impl LanguageResolver for PuppetResolver {
         }
 
         // Built-in Puppet resource types never live in the project index.
-        if is_puppet_builtin(target) {
+        if builtins::is_puppet_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("puppet", file_ctx, ref_ctx, lookup, puppet_kind_compatible)
+        engine::resolve_common("puppet", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -73,56 +74,9 @@ impl LanguageResolver for PuppetResolver {
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        // Combine both builtin predicates into one for the common helper.
-        engine::infer_external_common(file_ctx, ref_ctx, |name| {
-            is_puppet_builtin(name) || is_puppet_builtin_function(name)
-        })
-        .map(|_| "puppet".to_string())
+        // Combine resource types and built-in functions for the common helper.
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_puppet_builtin)
+            .map(|_| "puppet".to_string())
     }
 }
 
-/// Puppet built-in resource types (core resource types provided by Puppet itself).
-fn is_puppet_builtin(name: &str) -> bool {
-    matches!(
-        name.to_ascii_lowercase().as_str(),
-        // Core resource types
-        "file" | "package" | "service" | "exec" | "user" | "group"
-            | "host" | "cron" | "mount" | "notify" | "resources"
-            | "augeas" | "computer" | "filebucket" | "interface"
-            | "k5login" | "macauthorization" | "mailalias" | "maillist"
-            | "mcx" | "nagios_command" | "nagios_contact" | "nagios_contactgroup"
-            | "nagios_host" | "nagios_hostdependency" | "nagios_hostescalation"
-            | "nagios_hostextinfo" | "nagios_hostgroup" | "nagios_service"
-            | "nagios_servicedependency" | "nagios_serviceescalation"
-            | "nagios_serviceextinfo" | "nagios_servicegroup" | "nagios_timeperiod"
-            | "router" | "schedule" | "scheduled_task" | "selboolean"
-            | "selmodule" | "ssh_authorized_key" | "sshkey" | "stage"
-            | "tidy" | "vlan" | "whit" | "yumrepo" | "zfs" | "zone" | "zpool"
-    )
-}
-
-/// Edge-kind / symbol-kind compatibility for Puppet.
-fn puppet_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
-    match edge_kind {
-        EdgeKind::Calls => matches!(sym_kind, "method" | "function" | "class"),
-        EdgeKind::TypeRef | EdgeKind::Instantiates => matches!(sym_kind, "class" | "struct"),
-        EdgeKind::Inherits => matches!(sym_kind, "class"),
-        _ => true,
-    }
-}
-
-/// Puppet built-in functions.
-fn is_puppet_builtin_function(name: &str) -> bool {
-    matches!(
-        name,
-        "alert" | "assert_type" | "contain" | "create_resources" | "debug"
-            | "defined" | "digest" | "each" | "emerg" | "err" | "fail"
-            | "file" | "filter" | "fqdn_rand" | "generate" | "hiera"
-            | "hiera_array" | "hiera_hash" | "hiera_include" | "include"
-            | "info" | "inline_epp" | "inline_template" | "lookup"
-            | "map" | "md5" | "notice" | "realize" | "reduce"
-            | "regsubst" | "require" | "sha1" | "slice" | "sprintf"
-            | "split" | "strftime" | "tag" | "tagged" | "template"
-            | "versioncmp" | "warning" | "with"
-    )
-}

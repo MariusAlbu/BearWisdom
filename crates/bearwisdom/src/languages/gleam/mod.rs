@@ -14,6 +14,8 @@
 
 pub mod extract;
 pub mod resolve;
+mod builtins;
+pub(crate) mod externals;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -75,6 +77,10 @@ impl LanguagePlugin for GleamPlugin {
             "List", "Result", "Option", "Nil",
             "Dynamic", "UtfCodepoint",
         ]
+    }
+
+    fn externals(&self) -> &'static [&'static str] {
+        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

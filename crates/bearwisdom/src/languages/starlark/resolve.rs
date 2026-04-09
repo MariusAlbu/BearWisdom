@@ -18,6 +18,7 @@
 // External namespace: `"bazel"` for native Bazel rules and built-in functions.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -75,7 +76,7 @@ impl LanguageResolver for StarlarkResolver {
         }
 
         // Bazel native rules and Starlark built-ins are external.
-        if is_bazel_builtin(target) {
+        if builtins::is_starlark_builtin(target) {
             return None;
         }
 
@@ -151,7 +152,7 @@ impl LanguageResolver for StarlarkResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        if is_bazel_builtin(target) {
+        if builtins::is_starlark_builtin(target) {
             return Some("bazel".to_string());
         }
 
@@ -174,41 +175,4 @@ fn bazel_label_to_path(label: &str) -> String {
     let label = label.trim_start_matches("//");
     // Replace ":" with "/" to convert package:target to a path.
     label.replacen(':', "/", 1)
-}
-
-/// Bazel native rules and Starlark built-in functions.
-fn is_bazel_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        // Native Bazel rules
-        "cc_binary" | "cc_library" | "cc_test" | "cc_import"
-            | "cc_proto_library" | "cc_shared_library"
-            | "java_binary" | "java_library" | "java_test" | "java_import"
-            | "java_proto_library"
-            | "py_binary" | "py_library" | "py_test" | "py_runtime"
-            | "go_binary" | "go_library" | "go_test"
-            | "rust_binary" | "rust_library" | "rust_test" | "rust_proc_macro"
-            | "sh_binary" | "sh_library" | "sh_test"
-            | "genrule" | "filegroup" | "exports_files" | "glob"
-            | "config_setting" | "constraint_setting" | "constraint_value"
-            | "platform" | "toolchain" | "toolchain_type"
-            | "proto_library" | "proto_lang_toolchain"
-            | "test_suite" | "alias" | "package_group"
-            | "package" | "licenses" | "distribs"
-            // Native namespace functions
-            | "native"
-            // Starlark built-in functions
-            | "print" | "fail" | "type" | "str" | "int" | "float" | "bool"
-            | "list" | "tuple" | "dict" | "set" | "len" | "range"
-            | "enumerate" | "zip" | "reversed" | "sorted"
-            | "hasattr" | "getattr" | "setattr" | "delattr"
-            | "dir" | "hash" | "id" | "repr"
-            | "any" | "all" | "min" | "max" | "sum"
-            | "depset" | "select" | "workspace" | "bind"
-            | "register_toolchains" | "register_execution_platforms"
-            | "load"
-            // attr / rule / provider / aspect
-            | "attr" | "rule" | "provider" | "aspect" | "repository_rule"
-            | "module_extension" | "tag_class" | "use_extension" | "use_repo"
-    )
 }

@@ -3,6 +3,7 @@
 //! Uses the dedicated SCSS tree-sitter grammar (tree-sitter-scss-local),
 //! compiled from MSVC-compatible pre-expanded C source.
 
+pub(crate) mod builtins;
 pub mod primitives;
 pub(crate) mod externals;
 pub mod extract;
@@ -68,6 +69,10 @@ impl LanguagePlugin for ScssPlugin {
 
     fn externals(&self) -> &'static [&'static str] {
         externals::EXTERNALS
+    }
+
+    fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
+        externals::framework_globals(dependencies)
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

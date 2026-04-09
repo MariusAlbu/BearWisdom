@@ -19,6 +19,7 @@
 //   4. CSS built-in functions (color(), rgba(), etc.) are external.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -77,11 +78,11 @@ impl LanguageResolver for ScssResolver {
         }
 
         // Skip CSS built-in functions.
-        if is_css_builtin(target) {
+        if builtins::is_scss_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("scss", file_ctx, ref_ctx, lookup, scss_kind_compatible)
+        engine::resolve_common("scss", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -90,57 +91,6 @@ impl LanguageResolver for ScssResolver {
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, is_css_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_scss_builtin)
     }
-}
-
-/// Edge-kind / symbol-kind compatibility for SCSS.
-/// SCSS has mixins (function), placeholders/extends (class), and variables (variable).
-fn scss_kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
-    match edge_kind {
-        EdgeKind::Calls => matches!(sym_kind, "function" | "method"),
-        EdgeKind::Inherits => matches!(sym_kind, "class"),
-        _ => true,
-    }
-}
-
-/// CSS / SCSS built-in function names that appear as call targets.
-/// These are provided by the browser / Sass runtime — not project symbols.
-fn is_css_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        // Sass color functions
-        "rgb" | "rgba" | "hsl" | "hsla" | "color" | "lighten" | "darken"
-            | "saturate" | "desaturate" | "mix" | "opacify" | "transparentize"
-            | "fade-in" | "fade-out" | "invert" | "complement" | "adjust-color"
-            | "scale-color" | "change-color" | "ie-hex-str" | "adjust-hue"
-            | "grayscale" | "alpha" | "opacity" | "red" | "green" | "blue"
-            | "hue" | "saturation" | "lightness" | "whiteness" | "blackness"
-            // Sass math/string/list/map/selector/meta functions
-            | "abs" | "ceil" | "floor" | "round" | "max" | "min" | "random"
-            | "percentage" | "unit" | "unitless" | "comparable" | "sqrt"
-            | "pow" | "log" | "cos" | "sin" | "tan" | "acos" | "asin" | "atan"
-            | "atan2" | "hypot" | "clamp"
-            | "quote" | "unquote" | "str-length" | "str-insert" | "str-index"
-            | "str-slice" | "to-upper-case" | "to-lower-case" | "unique-id"
-            | "length" | "nth" | "set-nth" | "join" | "append" | "zip" | "index"
-            | "is-bracketed" | "list-separator"
-            | "map-get" | "map-merge" | "map-remove" | "map-keys" | "map-values"
-            | "map-has-key" | "keywords"
-            | "type-of" | "inspect" | "variable-exists" | "global-variable-exists"
-            | "function-exists" | "mixin-exists" | "content-exists"
-            | "get-function" | "call" | "if"
-            // CSS native functions
-            | "var" | "calc" | "env" | "url" | "attr" | "counter" | "counters"
-            | "format" | "local" | "linear-gradient" | "radial-gradient"
-            | "repeating-linear-gradient" | "repeating-radial-gradient"
-            | "conic-gradient" | "image-set" | "cross-fade"
-            | "translate" | "translateX" | "translateY" | "translateZ"
-            | "translate3d" | "scale" | "scaleX" | "scaleY" | "rotate"
-            | "rotateX" | "rotateY" | "rotateZ" | "skew" | "skewX" | "skewY"
-            | "perspective" | "matrix" | "matrix3d"
-            | "blur" | "brightness" | "contrast" | "drop-shadow"
-            | "grayscale-filter" | "hue-rotate" | "invert-filter" | "opacity-filter"
-            | "saturate-filter" | "sepia"
-    )
 }

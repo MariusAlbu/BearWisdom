@@ -18,6 +18,7 @@
 //   3. Name-only fallback: global by_name lookup with lower confidence.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -140,6 +141,11 @@ impl LanguageResolver for GleamResolver {
 
         if is_gleam_operator(target) {
             return Some("builtin".to_string());
+        }
+
+        // Stdlib function names (unqualified) are external.
+        if builtins::is_gleam_stdlib_function(target) {
+            return Some("gleam".to_string());
         }
 
         engine::infer_external_common(file_ctx, ref_ctx, |_| false)

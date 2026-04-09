@@ -22,6 +22,7 @@
 //   - Bicep built-in functions are classified as `"bicep"`.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -82,7 +83,7 @@ impl LanguageResolver for BicepResolver {
             return None;
         }
 
-        engine::resolve_common("bicep", file_ctx, ref_ctx, lookup, bicep_kind_compatible)
+        engine::resolve_common("bicep", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -98,21 +99,7 @@ impl LanguageResolver for BicepResolver {
             return Some("azure".to_string());
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, is_bicep_builtin)
-    }
-}
-
-/// Edge kind / symbol kind compatibility for Bicep.
-fn bicep_kind_compatible(edge_kind: crate::types::EdgeKind, sym_kind: &str) -> bool {
-    use crate::types::EdgeKind;
-    match edge_kind {
-        EdgeKind::Calls => matches!(sym_kind, "method" | "function" | "constructor"),
-        EdgeKind::TypeRef => matches!(
-            sym_kind,
-            "class" | "interface" | "enum" | "type_alias" | "variable" | "function"
-        ),
-        EdgeKind::Instantiates => matches!(sym_kind, "class" | "function"),
-        _ => true,
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_bicep_builtin)
     }
 }
 
@@ -132,33 +119,3 @@ fn is_azure_resource_type(name: &str) -> bool {
         || lower.starts_with("br/")
 }
 
-/// Bicep built-in functions that are never in the project symbol index.
-fn is_bicep_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        // Resource functions
-        "resourceId" | "subscriptionResourceId" | "tenantResourceId"
-            | "extensionResourceId" | "resourceGroup" | "subscription"
-            | "tenant" | "managementGroup" | "deployment"
-            // String functions
-            | "concat" | "format" | "base64" | "base64ToString" | "uriComponent"
-            | "uri" | "toLower" | "toUpper" | "trim" | "split" | "join"
-            | "replace" | "startsWith" | "endsWith" | "contains" | "length"
-            | "substring" | "indexOf" | "lastIndexOf" | "empty" | "string"
-            | "int" | "bool" | "json" | "null"
-            // Array / object functions
-            | "array" | "createArray" | "union" | "intersection" | "first"
-            | "last" | "min" | "max" | "range" | "flatten" | "filter"
-            | "map" | "sort" | "reduce" | "toObject" | "items"
-            | "objectKeys" | "values"
-            // Numeric
-            | "add" | "sub" | "mul" | "div" | "mod"
-            // Type check
-            | "getType" | "isObject" | "isArray" | "isString" | "isInt" | "isBool"
-            // Other
-            | "newGuid" | "utcNow" | "dateTimeAdd" | "dateTimeToEpoch"
-            | "environment" | "loadTextContent" | "loadJsonContent"
-            | "loadYamlContent" | "loadFileAsBase64" | "readEnvironmentVariable"
-            | "sys" | "az" | "any"
-    )
-}

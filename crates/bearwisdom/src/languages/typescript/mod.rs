@@ -20,7 +20,7 @@ mod types;
 pub mod extract;
 
 // Resolution sub-modules
-mod builtins;
+pub(crate) mod builtins;
 mod chain;
 pub mod resolve;
 

@@ -1,6 +1,8 @@
 //! javascript language plugin.
 
 mod helpers;
+pub(crate) mod builtins;
+pub(crate) mod externals;
 pub(crate) mod primitives;
 pub mod extract;
 
@@ -75,11 +77,11 @@ impl LanguagePlugin for JavascriptPlugin {
     }
 
     fn externals(&self) -> &'static [&'static str] {
-        crate::languages::typescript::externals::EXTERNALS
+        externals::EXTERNALS
     }
 
     fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
-        crate::languages::typescript::externals::framework_globals(dependencies)
+        externals::framework_globals(dependencies)
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

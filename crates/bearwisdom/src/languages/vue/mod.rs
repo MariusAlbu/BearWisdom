@@ -13,6 +13,8 @@
 //! The <script> block's JS/TS symbols are handled by the JS/TS extractor when
 //! the indexer processes the embedded text as a separate extraction target.
 
+pub(crate) mod builtins;
+pub(crate) mod externals;
 pub mod connectors;
 pub mod extract;
 
@@ -72,11 +74,11 @@ impl LanguagePlugin for VuePlugin {
     }
 
     fn externals(&self) -> &'static [&'static str] {
-        crate::languages::typescript::externals::EXTERNALS
+        externals::EXTERNALS
     }
 
     fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
-        crate::languages::typescript::externals::framework_globals(dependencies)
+        externals::framework_globals(dependencies)
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
