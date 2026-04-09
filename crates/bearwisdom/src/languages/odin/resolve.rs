@@ -19,6 +19,7 @@
 //   3. Scope chain walk for methods.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -85,11 +86,11 @@ impl LanguageResolver for OdinResolver {
         }
 
         // Skip Odin built-in types.
-        if is_odin_builtin(target) {
+        if builtins::is_odin_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("odin", file_ctx, ref_ctx, lookup, |_, _| true)
+        engine::resolve_common("odin", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -107,31 +108,6 @@ impl LanguageResolver for OdinResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, is_odin_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_odin_builtin)
     }
-}
-
-/// Odin built-in type names that should not resolve to project symbols.
-fn is_odin_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "bool" | "b8" | "b16" | "b32" | "b64"
-            | "int" | "i8" | "i16" | "i32" | "i64" | "i128"
-            | "uint" | "u8" | "u16" | "u32" | "u64" | "u128"
-            | "uintptr" | "rawptr"
-            | "f16" | "f32" | "f64"
-            | "complex32" | "complex64" | "complex128"
-            | "quaternion64" | "quaternion128" | "quaternion256"
-            | "string" | "cstring" | "rune" | "byte"
-            | "typeid" | "any" | "void"
-            // Built-in procedures
-            | "len" | "cap" | "size_of" | "align_of" | "offset_of"
-            | "type_of" | "make" | "new" | "delete" | "free"
-            | "append" | "inject_at" | "remove" | "clear" | "resize"
-            | "copy" | "unordered_remove" | "ordered_remove"
-            | "pop" | "push" | "peek" | "incl" | "excl"
-            | "min" | "max" | "abs" | "clamp"
-            | "assert" | "panic" | "unimplemented" | "unreachable"
-            | "print" | "println" | "printf" | "eprint" | "eprintln" | "eprintf"
-    )
 }

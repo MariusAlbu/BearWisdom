@@ -21,6 +21,7 @@
 //   3. Provider resource types and built-in functions are external.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -65,7 +66,7 @@ impl LanguageResolver for HclResolver {
         }
 
         // Built-in Terraform/HCL functions are never in the project index.
-        if is_hcl_builtin(target) {
+        if builtins::is_hcl_builtin(target) {
             return None;
         }
 
@@ -95,7 +96,7 @@ impl LanguageResolver for HclResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        if is_hcl_builtin(target) {
+        if builtins::is_hcl_builtin(target) {
             return Some("hcl".to_string());
         }
 
@@ -113,7 +114,7 @@ impl LanguageResolver for HclResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, is_hcl_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_hcl_builtin)
     }
 }
 
@@ -150,47 +151,3 @@ fn is_provider_resource_type(name: &str) -> bool {
             || name.starts_with("nomad_"))
 }
 
-/// Terraform / HCL built-in functions.
-fn is_hcl_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        // Numeric
-        "abs" | "ceil" | "floor" | "log" | "max" | "min" | "parseint" | "pow" | "signum"
-            // String
-            | "chomp" | "endswith" | "format" | "formatlist" | "indent" | "join"
-            | "lower" | "ltrim" | "regex" | "regexall" | "replace" | "rtrim"
-            | "split" | "startswith" | "strcontains" | "strrev" | "substr"
-            | "templatestring" | "title" | "trim" | "trimprefix" | "trimsuffix"
-            | "trimspace" | "upper"
-            // Collection
-            | "alltrue" | "anytrue" | "chunklist" | "coalesce" | "coalescelist"
-            | "compact" | "concat" | "contains" | "distinct" | "element" | "flatten"
-            | "index" | "keys" | "length" | "list" | "lookup" | "map" | "matchkeys"
-            | "merge" | "one" | "range" | "reverse" | "setintersection" | "setproduct"
-            | "setsubtract" | "setunion" | "slice" | "sort" | "sum" | "tolist"
-            | "tomap" | "toset" | "transpose" | "values" | "zipmap"
-            // Encoding
-            | "base64decode" | "base64encode" | "base64gzip" | "csvdecode" | "jsondecode"
-            | "jsonencode" | "textdecodebase64" | "textencodebase64" | "urlencode"
-            | "yamldecode" | "yamlencode"
-            // Filesystem
-            | "abspath" | "dirname" | "pathexpand" | "basename" | "file"
-            | "fileexists" | "fileset" | "filebase64" | "filebase64sha256"
-            | "filebase64sha512" | "filemd5" | "filesha1" | "filesha256" | "filesha512"
-            | "templatefile"
-            // Date/time
-            | "formatdate" | "plantimestamp" | "timeadd" | "timecmp" | "timestamp"
-            // Hash / crypto
-            | "base64sha256" | "base64sha512" | "bcrypt" | "md5" | "rsadecrypt"
-            | "sha1" | "sha256" | "sha512" | "uuid" | "uuidv5"
-            // IP / networking
-            | "cidrhost" | "cidrnetmask" | "cidrsubnet" | "cidrsubnets"
-            // Type conversion
-            | "can" | "issensitive" | "nonsensitive" | "sensitive" | "tobool"
-            | "tonumber" | "tostring" | "try" | "type"
-            // Object
-            | "object" | "tuple"
-            // HCL meta-functions
-            | "each" | "count" | "path" | "self" | "terraform"
-    )
-}

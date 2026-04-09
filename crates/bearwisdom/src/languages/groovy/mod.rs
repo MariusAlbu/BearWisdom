@@ -13,6 +13,9 @@
 pub(crate) mod primitives;
 pub mod extract;
 
+mod builtins;
+pub(crate) mod externals;
+
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
@@ -66,6 +69,10 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
+    }
+
+    fn externals(&self) -> &'static [&'static str] {
+        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

@@ -19,6 +19,7 @@
 //   4. Nix built-ins (builtins.*, lib.*): mark external.
 // =============================================================================
 
+use super::builtins;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -76,7 +77,7 @@ impl LanguageResolver for NixResolver {
         }
 
         // Skip Nix built-in attribute paths.
-        if is_nix_builtin(target) {
+        if builtins::is_nix_builtin(target) {
             return None;
         }
 
@@ -126,32 +127,6 @@ impl LanguageResolver for NixResolver {
             return None;
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, is_nix_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_nix_builtin)
     }
-}
-
-/// Nix built-in functions and common stdlib attribute paths.
-fn is_nix_builtin(name: &str) -> bool {
-    // Direct builtins.* calls
-    if name.starts_with("builtins.") || name.starts_with("lib.") || name.starts_with("pkgs.lib.") {
-        return true;
-    }
-    matches!(
-        name,
-        // Nix language built-ins
-        "import" | "builtins" | "derivation" | "abort" | "throw"
-            | "toString" | "toJSON" | "fromJSON" | "toPath" | "isNull"
-            | "isAttrs" | "isList" | "isString" | "isInt" | "isFloat"
-            | "isBool" | "isFunction" | "isPath"
-            | "map" | "filter" | "foldl'" | "foldl" | "foldr" | "head" | "tail"
-            | "length" | "elem" | "elemAt" | "concatLists" | "concatMap"
-            | "listToAttrs" | "attrNames" | "attrValues" | "hasAttr"
-            | "getAttr" | "removeAttrs" | "mapAttrs" | "intersectAttrs"
-            | "functionArgs" | "readFile" | "readDir" | "pathExists"
-            | "fetchurl" | "fetchTarball" | "fetchGit" | "fetchFromGitHub"
-            | "nixPath" | "storeDir" | "nixVersion"
-            // Nixpkgs helpers
-            | "callPackage" | "mkDerivation" | "stdenv" | "pkgs" | "lib"
-            | "self" | "super" | "prev" | "final"
-    )
 }

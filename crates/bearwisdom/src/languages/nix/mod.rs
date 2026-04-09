@@ -3,6 +3,8 @@
 pub mod primitives;
 pub mod extract;
 pub mod resolve;
+pub(crate) mod builtins;
+pub(crate) mod externals;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -58,6 +60,10 @@ impl LanguagePlugin for NixPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
+    }
+
+    fn externals(&self) -> &'static [&'static str] {
+        externals::EXTERNALS
     }
 
     /// In Nix, curried application (`f a b`) parses as two nested
