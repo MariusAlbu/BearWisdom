@@ -169,16 +169,11 @@ impl Default for ConnectorRegistry {
 pub fn build_default_registry() -> ConnectorRegistry {
     let mut reg = ConnectorRegistry::new();
 
-    // 1. Language-plugin-provided connectors (take priority for custom_match).
+    // All connectors are now provided by language plugins.
     for connector in crate::languages::collect_plugin_connectors() {
         reg.register(connector);
     }
 
-    // 2. Cross-cutting connectors — gRPC, MQ, and GraphQL have migrated to
-    //    per-language plugins (languages/*/connectors.rs).
-    //    REST fallback remains here for languages without a dedicated connector.
-    //    IPC connectors remain as cross-cutting until fully migrated.
-    reg.register(Box::new(super::rest_connector::RestConnector));
     reg
 }
 
