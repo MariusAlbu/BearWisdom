@@ -94,6 +94,7 @@ impl LanguagePlugin for RubyPlugin {
         vec![
             Box::new(connectors::RailsRouteConnector),
             Box::new(connectors::RubyRestConnector),
+            Box::new(connectors::RubyGraphQlConnector),
         ]
     }
 }

@@ -14,6 +14,7 @@
 
 pub(crate) mod primitives;
 mod builtins;
+pub(crate) mod connectors;
 pub(crate) mod externals;
 pub(crate) mod resolve;
 pub mod extract;
@@ -88,5 +89,11 @@ impl LanguagePlugin for FSharpPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::FSharpResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::FSharpDiConnector),
+        ]
     }
 }

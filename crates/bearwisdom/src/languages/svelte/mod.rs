@@ -16,6 +16,7 @@
 //! The `<script>` block's JS/TS symbols are handled by the JS/TS extractor when
 //! the indexer processes the embedded text as a separate extraction target.
 
+pub mod connectors;
 pub mod extract;
 
 #[cfg(test)]
@@ -80,5 +81,11 @@ impl LanguagePlugin for SveltePlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::SvelteGraphQlConnector),
+        ]
     }
 }

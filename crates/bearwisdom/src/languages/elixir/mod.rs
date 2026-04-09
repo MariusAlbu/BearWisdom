@@ -1,6 +1,7 @@
 //! elixir language plugin.
 
 mod helpers;
+pub(crate) mod connectors;
 pub(crate) mod primitives;
 pub mod extract;
 
@@ -76,5 +77,11 @@ impl LanguagePlugin for ElixirPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::ElixirResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::PhoenixRouteConnector),
+        ]
     }
 }

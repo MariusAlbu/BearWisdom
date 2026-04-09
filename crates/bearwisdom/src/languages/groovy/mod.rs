@@ -10,6 +10,7 @@
 //! - `import_declaration` → Imports
 //! - `method_invocation` → Calls
 
+pub(crate) mod connectors;
 pub(crate) mod primitives;
 pub mod extract;
 
@@ -77,5 +78,11 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(crate::languages::java::resolve::JavaResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::GroovySpringRouteConnector),
+        ]
     }
 }

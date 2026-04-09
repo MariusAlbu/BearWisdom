@@ -13,6 +13,7 @@
 //! - `imports_statement` → Imports edge
 //! - `inherits_clause` → Inherits edge
 
+pub(crate) mod connectors;
 pub(crate) mod primitives;
 pub mod extract;
 
@@ -86,5 +87,11 @@ impl LanguagePlugin for VbNetPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(crate::languages::csharp::resolve::CSharpResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::VbNetDiConnector),
+        ]
     }
 }
