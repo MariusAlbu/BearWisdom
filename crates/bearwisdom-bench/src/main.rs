@@ -54,7 +54,6 @@
 extern crate sqlite_vec;
 
 use bearwisdom::{
-    connectors::http_api,
     languages::csharp::connectors as csharp_connectors,
     full_index,
     db::Database,
@@ -511,7 +510,7 @@ fn cmd_routes(db_path: &Path) -> Result<()> {
     let db = Database::open(db_path)
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
-    let routes = http_api::list_routes(&db)?;
+    let routes = bearwisdom::query::stats::list_routes(&db)?;
     println!("=== HTTP Routes ({}) ===", routes.len());
     for r in &routes {
         let handler = r.handler_name.as_deref().unwrap_or("(unknown)");

@@ -10,7 +10,6 @@
 // requiring the same framework discriminator.
 // =============================================================================
 
-use super::http_api::{normalise_route, routes_match};
 use super::types::{ConnectionPoint, FlowDirection, Protocol, ResolvedFlow};
 
 pub struct ProtocolMatcher;
@@ -175,4 +174,53 @@ fn make_flow(
         confidence,
         edge_type: edge_type.to_string(),
     }
+}
+
+// ---------------------------------------------------------------------------
+// Route normalisation (inlined from http_api.rs)
+// ---------------------------------------------------------------------------
+
+/// Normalise a URL or route template for comparison.
+///
+/// Examples:
+///   "/api/catalog/items/{id:int}"  → "catalog/items/{*}"
+///   "/api/v1/orders/{orderId}"     → "orders/{*}"
+///   "http://localhost:8080/api/foo" → "foo"
+pub fn normalise_route(template: &str) -> String {
+    let t = if let Some(idx) = template.find("://") {
+        template[idx + 3..]
+            .find('/')
+            .map(|i| &template[idx + 3 + i..])
+            .unwrap_or("")
+    } else {
+        template
+    };
+
+    let t = t.trim_start_matches('/');
+    let t = t
+        .trim_start_matches("api/")
+        .trim_start_matches("API/");
+    let t = if t.len() >= 3
+        && t.starts_with('v')
+        && t.as_bytes().get(1).map_or(false, |b| b.is_ascii_digit())
+        && t.as_bytes().get(2) == Some(&b'/')
+    {
+        &t[3..]
+    } else {
+        t
+    };
+
+    t.split('/')
+        .filter(|s| !s.is_empty())
+        .map(|seg| {
+            if seg.starts_with('{') && seg.ends_with('}') {
+                "{*}".to_string()
+            } else if seg.starts_with("${") || seg.starts_with(':') {
+                "{*}".to_string()
+            } else {
+                seg.to_lowercase()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("/")
 }

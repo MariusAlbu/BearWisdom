@@ -244,3 +244,32 @@ pub fn flow_edges_data(db: &Database, limit: usize) -> QueryResult<FlowEdgesData
 
     Ok(FlowEdgesData { edges, total, by_edge_type, by_language_pair })
 }
+
+/// List all HTTP routes from the index.
+pub fn list_routes(db: &Database) -> QueryResult<Vec<crate::types::RouteInfo>> {
+    let conn = db.conn();
+    let mut stmt = conn.prepare(
+        "SELECT r.id, f.path, r.http_method, r.route_template, r.resolved_route,
+                r.line, s.name
+         FROM routes r
+         JOIN files f ON r.file_id = f.id
+         LEFT JOIN symbols s ON r.symbol_id = s.id
+         ORDER BY r.http_method, r.route_template",
+    )?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(crate::types::RouteInfo {
+                id: row.get(0)?,
+                file_path: row.get(1)?,
+                http_method: row.get(2)?,
+                route_template: row.get(3)?,
+                resolved_route: row.get(4)?,
+                line: row.get::<_, Option<u32>>(5)?.unwrap_or(0),
+                handler_name: row.get(6)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(rows)
+}
