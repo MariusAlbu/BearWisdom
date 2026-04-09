@@ -70,10 +70,39 @@ impl LanguageResolver for HclResolver {
             return None;
         }
 
-        // Language-specific: strip common prefixes ("var.", "local.", "module.",
-        // "data.") and try the bare name against same-file symbols first.
+        // Terraform meta-references — no project symbol.
+        if is_terraform_meta_ref(target) {
+            return None;
+        }
+
+        // ----------------------------------------------------------------
+        // Step 1: direct qualified-name lookup.
+        //
+        // module.*, data.*.*, and resource_type.* refs are emitted with a
+        // target_name that exactly matches the symbol's qualified_name in
+        // the index.  Try this first before any prefix-stripping.
+        // Terraform merges all .tf files in a directory, so check the
+        // whole project index (not just the same file) at full confidence.
+        // ----------------------------------------------------------------
+        if let Some(sym) = lookup.by_qualified_name(target) {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 1.0,
+                strategy: "hcl_qname_direct",
+            });
+        }
+
+        // ----------------------------------------------------------------
+        // Step 2: prefix-stripped Variable lookup for var.* and local.*.
+        //
+        // "var.region" → strip "var." → look for Variable named "region"
+        // "local.env"  → strip "local." → look for Variable named "env"
+        // Terraform modules share scope across all .tf in a directory, so
+        // check same-file first (highest confidence), then project-wide.
+        // ----------------------------------------------------------------
         let bare = strip_hcl_prefix(target);
         if bare != target.as_str() {
+            // Same-file match first.
             for sym in lookup.in_file(&file_ctx.file_path) {
                 if sym.name == bare {
                     return Some(Resolution {
@@ -82,6 +111,14 @@ impl LanguageResolver for HclResolver {
                         strategy: "hcl_same_file_bare",
                     });
                 }
+            }
+            // Cross-file match (Terraform directory scope).
+            for sym in lookup.by_name(bare) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.9,
+                    strategy: "hcl_cross_file_bare",
+                });
             }
         }
 
@@ -100,16 +137,30 @@ impl LanguageResolver for HclResolver {
             return Some("hcl".to_string());
         }
 
-        // Provider resource type references and module source registry references
-        // are external.
+        // Import edges (module source attribute) are always external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             return Some("terraform".to_string());
         }
 
-        // References starting with "data." that refer to provider data sources.
+        // Terraform meta-references (each.*, count.*, self.*, path.*, terraform.*).
+        if is_terraform_meta_ref(target) {
+            return Some("terraform".to_string());
+        }
+
+        // data.* that refer to provider data sources (not locally-defined data blocks).
         if target.starts_with("data.") {
             let parts: Vec<&str> = target.splitn(3, '.').collect();
             if parts.len() >= 2 && is_provider_resource_type(parts[1]) {
+                return Some("terraform".to_string());
+            }
+        }
+
+        // Resource-type references where the prefix is a known provider type
+        // (e.g. "aws_instance.web" — provider already handled the symbol, but if
+        // the resource wasn't indexed this classifies the ref as external).
+        if let Some(dot) = target.find('.') {
+            let prefix = &target[..dot];
+            if is_provider_resource_type(prefix) {
                 return Some("terraform".to_string());
             }
         }
@@ -118,17 +169,28 @@ impl LanguageResolver for HclResolver {
     }
 }
 
-/// Strip common HCL reference prefixes to get the bare name.
+/// Strip the `var.` or `local.` prefix to get the bare Variable name.
+///
+/// Only applies to the two prefixes whose symbols are stored without prefix
+/// in the index (`variable "region"` → symbol name `"region"`).
+/// `module.*` and `data.*` refs already match qualified_name directly.
 fn strip_hcl_prefix(name: &str) -> &str {
-    // "var.foo" → "foo", "local.foo" → "foo", "module.foo" → "foo"
-    // "data.type.foo" → handled separately, just strip "data."
-    for prefix in ["var.", "local.", "module.", "data."] {
+    for prefix in ["var.", "local."] {
         if let Some(rest) = name.strip_prefix(prefix) {
-            // For "data.type.name", return the next segment.
+            // Strip any trailing attribute access (e.g. "var.obj.field" → "obj").
             return rest.splitn(2, '.').next().unwrap_or(rest);
         }
     }
     name
+}
+
+/// Returns true for Terraform meta-references that never resolve to a project
+/// symbol: `each.*`, `count.*`, `self.*`, `path.*`, `terraform.*`.
+fn is_terraform_meta_ref(name: &str) -> bool {
+    matches!(
+        name.splitn(2, '.').next().unwrap_or(name),
+        "each" | "count" | "self" | "path" | "terraform"
+    )
 }
 
 /// Check if a name looks like a Terraform provider resource type.

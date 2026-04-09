@@ -14,6 +14,12 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 
 /// Bazel native rules, Starlark built-in functions, and `native.*` helpers.
 pub(super) fn is_starlark_builtin(name: &str) -> bool {
+    // All `native.*` attribute calls (native.cc_library, native.glob, etc.)
+    // are Bazel built-ins regardless of the specific method name.
+    if name == "native" || name.starts_with("native.") {
+        return true;
+    }
+
     matches!(
         name,
         // -----------------------------------------------------------------------
@@ -113,16 +119,5 @@ pub(super) fn is_starlark_builtin(name: &str) -> bool {
             | "proto_library"
             | "proto_lang_toolchain"
             | "distribs"
-            // -----------------------------------------------------------------------
-            // native.* namespace (referenced without the "native." prefix after
-            // the extractor strips it, but also matched with prefix for safety)
-            // -----------------------------------------------------------------------
-            | "native"
-            | "native.cc_library"
-            | "native.java_library"
-            | "native.glob"
-            | "native.existing_rules"
-            | "native.package_name"
-            | "native.repository_name"
     )
 }

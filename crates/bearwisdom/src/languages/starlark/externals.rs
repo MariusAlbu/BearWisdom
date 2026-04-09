@@ -33,13 +33,28 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "proto_library", "proto_lang_toolchain",
     "distribs",
     // -------------------------------------------------------------------------
-    // native.* namespace helpers
+    // native.* namespace — common entries for the static bare-name fallback.
+    // The resolver's infer_external_namespace handles the full `native.*`
+    // prefix at runtime, so this list is supplementary coverage only.
     // -------------------------------------------------------------------------
     "native",
+    "native.cc_binary",
     "native.cc_library",
+    "native.cc_test",
+    "native.java_binary",
     "native.java_library",
+    "native.java_test",
+    "native.py_binary",
+    "native.py_library",
+    "native.py_test",
+    "native.genrule",
+    "native.filegroup",
     "native.glob",
     "native.existing_rules",
     "native.package_name",
     "native.repository_name",
+    "native.exports_files",
+    "native.alias",
+    "native.config_setting",
+    "native.test_suite",
 ];

@@ -205,7 +205,7 @@ fn extract_keyword_invocation(
     }
     // Handle `${var} =    Keyword` assignment pattern
     let keyword_name = if kw.contains('{') {
-        // `${var} =` assignment — keyword is the second cell
+        // `${var} =` or `${var}=` assignment — keyword is the second cell
         cells.get(1).map(|s| s.trim()).unwrap_or("")
     } else {
         kw
@@ -214,12 +214,32 @@ fn extract_keyword_invocation(
         return;
     }
 
+    // Split `Library.Keyword Name` into module + keyword.
+    // The first `.` separates the library name from the keyword name.
+    // Only treat as qualified if the prefix looks like a library name
+    // (no spaces, no variable sigils).
+    let (module, target_name) = if let Some(dot) = keyword_name.find('.') {
+        let prefix = &keyword_name[..dot];
+        let suffix = keyword_name[dot + 1..].trim();
+        if !prefix.is_empty()
+            && !prefix.contains(' ')
+            && !prefix.contains('{')
+            && !suffix.is_empty()
+        {
+            (Some(prefix.to_string()), suffix.to_string())
+        } else {
+            (None, keyword_name.to_string())
+        }
+    } else {
+        (None, keyword_name.to_string())
+    };
+
     refs.push(ExtractedRef {
         source_symbol_index: source_idx,
-        target_name: keyword_name.to_string(),
+        target_name,
         kind: EdgeKind::Calls,
         line: lineno,
-        module: None,
+        module,
         chain: None,
     });
 }

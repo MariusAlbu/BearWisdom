@@ -8,7 +8,7 @@
 // ref_node_kinds:    call
 // =============================================================================
 
-use super::extract;
+use super::{builtins, extract};
 use crate::types::{EdgeKind, SymbolKind};
 
 // ---------------------------------------------------------------------------
@@ -172,3 +172,96 @@ fn cov_native_attribute_call_produces_calls() {
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Builtin classification — is_starlark_builtin
+// ---------------------------------------------------------------------------
+
+/// `native.*` prefix always matches regardless of the specific method name.
+#[test]
+fn builtin_native_prefix_matches_any_method() {
+    assert!(builtins::is_starlark_builtin("native.cc_binary"));
+    assert!(builtins::is_starlark_builtin("native.cc_library"));
+    assert!(builtins::is_starlark_builtin("native.cc_test"));
+    assert!(builtins::is_starlark_builtin("native.py_library"));
+    assert!(builtins::is_starlark_builtin("native.java_test"));
+    assert!(builtins::is_starlark_builtin("native.genrule"));
+    assert!(builtins::is_starlark_builtin("native.some_future_rule"));
+    assert!(builtins::is_starlark_builtin("native"));
+}
+
+/// Bazel built-in `select(...)` is recognised.
+#[test]
+fn builtin_select_is_external() {
+    assert!(builtins::is_starlark_builtin("select"));
+}
+
+/// `Label(...)` constructor is recognised.
+#[test]
+fn builtin_label_is_external() {
+    assert!(builtins::is_starlark_builtin("Label"));
+}
+
+/// Project-defined names are not falsely classified as builtins.
+#[test]
+fn builtin_user_function_is_not_external() {
+    assert!(!builtins::is_starlark_builtin("my_custom_rule"));
+    assert!(!builtins::is_starlark_builtin("_impl"));
+    assert!(!builtins::is_starlark_builtin("build_target"));
+}
+
+// ---------------------------------------------------------------------------
+// load() ref shapes — verify target_name and module are set correctly
+// ---------------------------------------------------------------------------
+
+/// load() from external repo emits module starting with '@'.
+#[test]
+fn load_external_repo_module_starts_with_at() {
+    let r = extract::extract(
+        "load(\"@bazel_skylib//lib:paths.bzl\", \"paths\")\n",
+    );
+    let import_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Imports).collect();
+    assert!(!import_refs.is_empty(), "should produce Imports refs");
+    assert!(
+        import_refs.iter().any(|rf| rf.module.as_deref().unwrap_or("").starts_with('@')),
+        "external load() module should start with '@'; got: {:?}",
+        import_refs.iter().map(|rf| &rf.module).collect::<Vec<_>>()
+    );
+}
+
+/// load() from internal workspace emits module starting with '//'.
+#[test]
+fn load_internal_module_starts_with_double_slash() {
+    let r = extract::extract(
+        "load(\"//tools/build_defs:foo.bzl\", \"my_rule\")\n",
+    );
+    let import_refs: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Imports).collect();
+    assert!(!import_refs.is_empty());
+    assert!(
+        import_refs.iter().any(|rf| rf.module.as_deref().unwrap_or("").starts_with("//")),
+        "internal load() module should start with '//'; got: {:?}",
+        import_refs.iter().map(|rf| &rf.module).collect::<Vec<_>>()
+    );
+}
+
+/// String label arguments to rules (e.g. `deps = ["//path:target"]`) are NOT
+/// extracted as code refs — they are data strings, not symbol references.
+#[test]
+fn string_label_deps_not_extracted_as_refs() {
+    let r = extract::extract(
+        "cc_library(\n    name = \"mylib\",\n    deps = [\"//other:lib\", \"@external//pkg:dep\"],\n)\n",
+    );
+    let call_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .collect();
+    for rf in &call_refs {
+        assert!(
+            !rf.target_name.contains("//") && !rf.target_name.starts_with('@'),
+            "string label '{}' should not be extracted as a code ref",
+            rf.target_name
+        );
+    }
+}
+

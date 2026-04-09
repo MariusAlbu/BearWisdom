@@ -10,26 +10,96 @@
 //   Log  Hello World                → Calls, target_name = "Log"
 //   Should Be Equal  ${a}  ${b}     → Calls, target_name = "Should Be Equal"
 //   My Custom Keyword               → Calls, target_name = "My Custom Keyword"
+//   SeleniumLibrary.Click Element   → Calls, target_name = "SeleniumLibrary.Click Element"
+//                                              (qualified — library-scoped)
+//   ${MY_VAR}                       → Calls, target_name = "${MY_VAR}" (variable ref)
 //
 // Robot keyword names are case-insensitive and spaces are treated as
 // underscores/normalized when matching.
 //
 // Resolution strategy:
-//   1. Same-file: keywords defined in the same `.robot` file.
-//   2. Imported resource keywords: for each Resource import, look in that file.
-//   3. Global name lookup (case-insensitive normalized name match).
-//   4. Library keywords and BuiltIn are external.
+//   1. Qualified `Library.Keyword` → external (library name as namespace).
+//   2. Variable reference `${name}` / `@{name}` / `&{name}` → same-file/suite variable symbol.
+//   3. Same-file: keywords defined in the same `.robot` file.
+//   4. Imported resource file keywords: for each Resource import, look in that file
+//      by normalized name (case-insensitive, spaces == underscores).
+//   5. Global name lookup via resolve_common (handles remaining cross-file cases).
+//   6. Library keywords and BuiltIn are external.
 // =============================================================================
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
-    SymbolLookup,
+    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
-use crate::types::{EdgeKind, ParsedFile};
+use crate::types::{EdgeKind, ParsedFile, SymbolKind};
 
 pub struct RobotResolver;
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+/// Return true if `name` is a Robot variable reference: starts with `${`, `@{`, or `&{`.
+fn is_variable_ref(name: &str) -> bool {
+    (name.starts_with("${") || name.starts_with("@{") || name.starts_with("&{"))
+        && name.ends_with('}')
+}
+
+/// Strip `${…}` / `@{…}` / `&{…}` delimiters → inner name, normalised.
+/// `${MY_VAR}` → `"my_var"`, `@{LIST}` → `"list"`.
+fn variable_inner_normalized(name: &str) -> Option<String> {
+    if name.len() < 4 {
+        return None;
+    }
+    // First char is `$`, `@`, or `&`; second is `{`; last is `}`.
+    let inner = &name[2..name.len() - 1];
+    if inner.is_empty() {
+        return None;
+    }
+    Some(builtins::normalize_robot_name(inner))
+}
+
+/// Extract the library prefix from a qualified `Library.Keyword Name` target.
+/// Returns `Some(library_name)` if the target is qualified.
+fn qualified_library_prefix(target: &str) -> Option<&str> {
+    // Robot qualified syntax: `LibraryName.Keyword Name`
+    // The library name is the part before the first `.`.
+    let dot = target.find('.')?;
+    let prefix = &target[..dot];
+    // Sanity: prefix must be a non-empty identifier (no spaces, no `${`).
+    if prefix.is_empty() || prefix.contains(' ') || prefix.contains('{') {
+        return None;
+    }
+    Some(prefix)
+}
+
+/// Check if `library_name` is imported as a Library (not a Resource) in this file.
+fn is_library_import(file_ctx: &FileContext, library_name: &str) -> bool {
+    let norm_lib = builtins::normalize_robot_name(library_name);
+    file_ctx.imports.iter().any(|imp| {
+        // Library imports have is_wildcard=false (set below) but we identify them
+        // by the fact that their module_path does NOT end with .robot/.resource/.yaml/.py.
+        // We also match directly on the imported_name (the library name).
+        let norm_imp = builtins::normalize_robot_name(&imp.imported_name);
+        norm_imp == norm_lib
+            && imp.module_path.as_deref().map_or(true, |p| {
+                !p.ends_with(".robot") && !p.ends_with(".resource")
+            })
+    })
+}
+
+/// Find a Variable symbol matching the inner name of a variable ref.
+fn resolve_variable<'a>(
+    normalized_inner: &str,
+    symbols: &'a [SymbolInfo],
+) -> Option<&'a SymbolInfo> {
+    symbols.iter().find(|s| {
+        s.kind == SymbolKind::Variable.as_str()
+            && builtins::normalize_robot_name(&s.name) == normalized_inner
+    })
+}
 
 impl LanguageResolver for RobotResolver {
     fn language_ids(&self) -> &[&str] {
@@ -47,12 +117,17 @@ impl LanguageResolver for RobotResolver {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
+            let path = r.module.as_deref().unwrap_or(&r.target_name);
+            // Resource / Variables imports are file-based — follow them for wildcard lookup.
+            // Library imports are external packages — mark is_wildcard=false so resolve_common
+            // step 2 doesn't incorrectly try to find library keywords in project files.
+            let is_file_import =
+                path.ends_with(".robot") || path.ends_with(".resource");
             imports.push(ImportEntry {
                 imported_name: r.target_name.clone(),
                 module_path: r.module.clone().or_else(|| Some(r.target_name.clone())),
                 alias: None,
-                // Library imports bring all keywords into scope — treat as wildcard.
-                is_wildcard: true,
+                is_wildcard: is_file_import,
             });
         }
 
@@ -78,17 +153,61 @@ impl LanguageResolver for RobotResolver {
             return None;
         }
 
-        // Robot BuiltIn library keywords are external.
-        if builtins::is_robot_builtin(target) {
+        // Step 1: Qualified `Library.Keyword` calls are external — never resolve against
+        // the project index. Two forms:
+        //   a) `module` field set by extractor: `SeleniumLibrary` + target `Click Element`
+        //   b) Legacy dotted target (no module split): `SeleniumLibrary.Click Element`
+        let library_module: Option<&str> = ref_ctx
+            .extracted_ref
+            .module
+            .as_deref()
+            .filter(|m| !m.ends_with(".robot") && !m.ends_with(".resource"))
+            .or_else(|| qualified_library_prefix(target));
+        if let Some(lib) = library_module {
+            if is_library_import(file_ctx, lib) || builtins::is_robot_builtin_library(lib) {
+                return None;
+            }
+        }
+
+        // Step 2: Variable references — `${VAR}`, `@{LIST}`, `&{DICT}`.
+        if is_variable_ref(target) {
+            if let Some(norm_inner) = variable_inner_normalized(target) {
+                // Same-file variable.
+                if let Some(sym) = resolve_variable(&norm_inner, lookup.in_file(&file_ctx.file_path)) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "robot_variable_same_file",
+                    });
+                }
+                // Resource-imported file variables.
+                for import in &file_ctx.imports {
+                    let Some(path) = &import.module_path else { continue };
+                    if !path.ends_with(".robot") && !path.ends_with(".resource") {
+                        continue;
+                    }
+                    if let Some(sym) = resolve_variable(&norm_inner, lookup.in_file(path)) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.95,
+                            strategy: "robot_variable_resource",
+                        });
+                    }
+                }
+            }
+            // Variable not found in project — let it be classified external.
             return None;
         }
 
         // Robot keyword names are compared normalized (lowercase, spaces → underscores).
         let normalized_target = builtins::normalize_robot_name(target);
 
-        // Step 1: Same-file keyword resolution.
+        // Step 3: Same-file keyword resolution.
+        // Checked BEFORE the builtin guard — project keywords shadow library keywords.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if builtins::normalize_robot_name(&sym.name) == normalized_target {
+            if sym.kind == SymbolKind::Function.as_str()
+                && builtins::normalize_robot_name(&sym.name) == normalized_target
+            {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
@@ -97,17 +216,19 @@ impl LanguageResolver for RobotResolver {
             }
         }
 
-        // Step 2: Imported resource file keywords.
+        // Step 4: Imported resource file keywords — normalized name match.
         for import in &file_ctx.imports {
             let Some(path) = &import.module_path else {
                 continue;
             };
-            // Skip library imports (they're external) — only follow .robot/.resource files.
+            // Only follow .robot/.resource imports — skip Library and Variables imports.
             if !path.ends_with(".robot") && !path.ends_with(".resource") {
                 continue;
             }
             for sym in lookup.in_file(path) {
-                if builtins::normalize_robot_name(&sym.name) == normalized_target {
+                if sym.kind == SymbolKind::Function.as_str()
+                    && builtins::normalize_robot_name(&sym.name) == normalized_target
+                {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -117,10 +238,45 @@ impl LanguageResolver for RobotResolver {
             }
         }
 
-        // Step 3: Common resolution (handles import-based, scope chain, qualified names).
-        // Robot has no scope chain, but resolve_common covers cross-file imports and
-        // qualified lookups without adding a raw by_name fallback.
-        engine::resolve_common("robot", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        // Robot BuiltIn / SeleniumLibrary keywords that were not shadowed by project code
+        // are external — return None here so infer_external_namespace classifies them.
+        if builtins::is_robot_builtin(target) {
+            return None;
+        }
+
+        // Step 5: Global cross-file normalized lookup.
+        // Scan all files for a keyword whose normalized name matches.
+        // Only emit at slightly reduced confidence since it's not import-scoped.
+        let by_name = lookup.by_name(target);
+        for sym in by_name {
+            if sym.kind == SymbolKind::Function.as_str()
+                && builtins::normalize_robot_name(&sym.name) == normalized_target
+            {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.90,
+                    strategy: "robot_global_name",
+                });
+            }
+        }
+        // Also try normalized form lookup — handles `click_element` matching `Click Element`.
+        let normalized_snake = normalized_target.replace('_', " ");
+        if normalized_snake != target.to_ascii_lowercase() {
+            let by_snake = lookup.by_name(&normalized_snake);
+            for sym in by_snake {
+                if sym.kind == SymbolKind::Function.as_str()
+                    && builtins::normalize_robot_name(&sym.name) == normalized_target
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.85,
+                        strategy: "robot_global_normalized",
+                    });
+                }
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
@@ -134,13 +290,38 @@ impl LanguageResolver for RobotResolver {
         // Library imports: non-file-path imports are external Robot libraries.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            if !path.contains('/') && !path.contains('\\') && !path.ends_with(".robot") {
+            if !path.contains('/') && !path.contains('\\') && !path.ends_with(".robot")
+                && !path.ends_with(".resource")
+            {
                 return Some("robot".to_string());
             }
             return None;
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_robot_builtin)
-            .map(|_| "robot".to_string())
+        // Qualified `Library.Keyword` call: namespace is the library name.
+        // Check both the module field (set by extractor) and legacy dotted target.
+        let library_module: Option<&str> = ref_ctx
+            .extracted_ref
+            .module
+            .as_deref()
+            .filter(|m| !m.ends_with(".robot") && !m.ends_with(".resource"))
+            .or_else(|| qualified_library_prefix(target));
+        if let Some(lib) = library_module {
+            if is_library_import(file_ctx, lib) || builtins::is_robot_builtin_library(lib) {
+                return Some(lib.to_string());
+            }
+        }
+
+        // Variable references that weren't resolved are external (env vars, CLI vars, etc.).
+        if is_variable_ref(target) {
+            return Some("robot".to_string());
+        }
+
+        // Known BuiltIn keywords.
+        if builtins::is_robot_builtin(target) {
+            return Some("robot".to_string());
+        }
+
+        None
     }
 }

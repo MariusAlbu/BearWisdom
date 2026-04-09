@@ -215,6 +215,169 @@ fn cov_get_attr_produces_typeref() {
 }
 
 // ---------------------------------------------------------------------------
+// Resolution: extractor emits compound ref targets for Terraform patterns
+// ---------------------------------------------------------------------------
+
+#[test]
+fn res_var_ref_emits_prefixed_target() {
+    // var.instance_type → single ref with target "var.instance_type"
+    let src = r#"output "t" { value = var.instance_type }"#;
+    let r = extract::extract(src, lang());
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"var.instance_type"),
+        "var.instance_type should emit single target 'var.instance_type'; got: {:?}",
+        type_refs
+    );
+    // Must NOT emit the fragments "var" or "instance_type" separately
+    assert!(
+        !type_refs.contains(&"var"),
+        "fragmented 'var' ref must not be emitted; got: {:?}",
+        type_refs
+    );
+}
+
+#[test]
+fn res_local_ref_emits_prefixed_target() {
+    let src = r#"output "e" { value = local.env }"#;
+    let r = extract::extract(src, lang());
+    let targets: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        targets.contains(&"local.env"),
+        "local.env should emit 'local.env'; got: {:?}",
+        targets
+    );
+}
+
+#[test]
+fn res_module_ref_emits_module_name() {
+    // module.vpc.vpc_id → emit "module.vpc" (the Namespace symbol qname)
+    let src = r#"output "v" { value = module.vpc.vpc_id }"#;
+    let r = extract::extract(src, lang());
+    let targets: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        targets.contains(&"module.vpc"),
+        "module.vpc.vpc_id should emit 'module.vpc'; got: {:?}",
+        targets
+    );
+}
+
+#[test]
+fn res_data_ref_emits_data_qname() {
+    // data.aws_ami.ubuntu.id → emit "data.aws_ami.ubuntu" (the Class symbol qname)
+    let src = r#"resource "r" "n" { ami = data.aws_ami.ubuntu.id }"#;
+    let r = extract::extract(src, lang());
+    let targets: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        targets.contains(&"data.aws_ami.ubuntu"),
+        "data.aws_ami.ubuntu.id should emit 'data.aws_ami.ubuntu'; got: {:?}",
+        targets
+    );
+    // Must not emit the fragments "data", "aws_ami", "ubuntu", "id"
+    for frag in &["data", "aws_ami", "ubuntu", "id"] {
+        assert!(
+            !targets.contains(frag),
+            "fragment {:?} must not appear as a standalone ref; got: {:?}",
+            frag,
+            targets
+        );
+    }
+}
+
+#[test]
+fn res_resource_cross_ref_emits_type_name() {
+    // aws_instance.web.public_ip → emit "aws_instance.web"
+    let src = r#"output "ip" { value = aws_instance.web.public_ip }"#;
+    let r = extract::extract(src, lang());
+    let targets: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        targets.contains(&"aws_instance.web"),
+        "aws_instance.web.public_ip should emit 'aws_instance.web'; got: {:?}",
+        targets
+    );
+}
+
+#[test]
+fn res_each_and_count_refs_not_emitted() {
+    // each.value / count.index are meta — no TypeRef should be emitted for them
+    let src = r#"resource "aws_subnet" "s" {
+  for_each   = var.azs
+  cidr_block = each.value
+  index      = count.index
+}"#;
+    let r = extract::extract(src, lang());
+    let targets: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    for meta in &["each", "count", "each.value", "count.index"] {
+        assert!(
+            !targets.contains(meta),
+            "meta-ref {:?} must not be emitted as TypeRef; got: {:?}",
+            meta,
+            targets
+        );
+    }
+    // var.azs should still be emitted
+    assert!(
+        targets.contains(&"var.azs"),
+        "var.azs should still be emitted; got: {:?}",
+        targets
+    );
+}
+
+#[test]
+fn res_function_call_still_emits_calls() {
+    // function calls inside expressions must still produce Calls refs
+    let src = r#"locals { out = tostring(var.count) }"#;
+    let r = extract::extract(src, lang());
+    assert!(
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "tostring"),
+        "tostring() should still emit Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
+    );
+    // var.count should also be emitted
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::TypeRef)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        type_refs.contains(&"var.count"),
+        "var.count inside function arg should still emit TypeRef; got: {:?}",
+        type_refs
+    );
+}
+
+// ---------------------------------------------------------------------------
 // symbol_node_kinds: attribute — top-level attribute emits Variable
 // ---------------------------------------------------------------------------
 

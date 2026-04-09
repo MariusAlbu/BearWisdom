@@ -9,17 +9,26 @@
 //   3. By-name lookup: for loaded packages, symbols may be defined elsewhere.
 //
 // R import model:
-//   `library(pkg)`       → target_name = "pkg"
-//   `require(pkg)`       → target_name = "pkg"
-//   `source("file.R")`   → target_name = "file.R"
+//   `library(pkg)`       → target_name = "pkg", EdgeKind::Imports (wildcard)
+//   `require(pkg)`       → target_name = "pkg", EdgeKind::Imports (wildcard)
+//   `source("file.R")`   → target_name = "file.R", EdgeKind::Imports
+//   `pkg::fn`            → target_name = "fn", module = "pkg", EdgeKind::Calls
 //
-// The extractor emits EdgeKind::Imports with target_name = the package name
-// or sourced file path.
+// Notes on non-standard evaluation (NSE):
+//   Calls like `mutate(df, new_col = old_col + 1)` operate in a data-frame
+//   context where `new_col` and `old_col` are column names, not variable refs.
+//   The extractor emits a single Calls edge for `mutate` itself; the arguments
+//   are not separately resolved.
+//
+// Formula operators (`~`):
+//   `y ~ x + z` uses `~` as a language primitive. The extractor emits a Calls
+//   ref with target_name = "~", which is classified as builtin here.
 // =============================================================================
 
 use super::builtins;
 use crate::indexer::resolve::engine::{
-    self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -43,11 +52,15 @@ impl LanguageResolver for RResolver {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
+            // `library(pkg)` / `require(pkg)` are wildcard imports — every
+            // exported symbol from the package is brought into scope.
+            // `source("file.R")` is also treated as wildcard (all top-level
+            // symbols from the sourced file become visible).
             imports.push(ImportEntry {
                 imported_name: r.target_name.clone(),
                 module_path: Some(r.target_name.clone()),
                 alias: None,
-                is_wildcard: false,
+                is_wildcard: true,
             });
         }
 
@@ -69,12 +82,22 @@ impl LanguageResolver for RResolver {
             return None;
         }
 
-        // R builtins are never in the index.
-        if builtins::is_r_builtin(&ref_ctx.extracted_ref.target_name) {
+        let target = &ref_ctx.extracted_ref.target_name;
+
+        // R builtins (including formula operator `~`) are never in the index.
+        if builtins::is_r_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("r", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        // Namespace-qualified call to a known external package (e.g. dplyr::filter).
+        // Skip index lookup — the function is defined in the package, not the project.
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if builtins::is_r_package(module) {
+                return None;
+            }
+        }
+
+        resolve_r("r", file_ctx, ref_ctx, lookup)
     }
 
     fn infer_external_namespace(
@@ -83,6 +106,41 @@ impl LanguageResolver for RResolver {
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_r_builtin)
+        let target = &ref_ctx.extracted_ref.target_name;
+
+        // Import refs: the package name IS the external namespace.
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            return Some(target.clone());
+        }
+
+        // Namespace-qualified ref to a known R package (pkg::fn).
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if builtins::is_r_package(module) {
+                return Some(module.clone());
+            }
+        }
+
+        infer_r_external(file_ctx, ref_ctx)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers — thin wrappers around the engine so we can add R-specific
+// logic without duplicating the whole resolve_common call graph.
+// ---------------------------------------------------------------------------
+
+fn resolve_r(
+    lang_prefix: &'static str,
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    engine::resolve_common(lang_prefix, file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+}
+
+fn infer_r_external(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+) -> Option<String> {
+    engine::infer_external_common(file_ctx, ref_ctx, builtins::is_r_builtin)
 }

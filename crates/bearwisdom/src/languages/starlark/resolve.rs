@@ -152,11 +152,20 @@ impl LanguageResolver for StarlarkResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
+        // `native.*` attribute calls are always Bazel built-ins, regardless of
+        // whether the specific method appears in the static enumeration.
+        // Covers: native.cc_binary, native.cc_test, native.py_library, etc.
+        if target == "native" || target.starts_with("native.") {
+            return Some("bazel_native".to_string());
+        }
+
         if builtins::is_starlark_builtin(target) {
             return Some("bazel".to_string());
         }
 
         // load() from external repositories (@bazel_skylib, @rules_*) are external.
+        // This applies to both the module-label ref and each loaded symbol ref,
+        // since extract_load_refs propagates the module path to all.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or("");
             if module.starts_with('@') {

@@ -14,6 +14,10 @@ pub(crate) mod externals;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+#[cfg(test)]
+#[path = "resolve_tests.rs"]
+mod resolve_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::ExtractionResult;

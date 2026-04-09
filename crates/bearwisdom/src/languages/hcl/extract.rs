@@ -386,7 +386,17 @@ fn extract_block_refs(
 }
 
 /// Recursively scan a subtree for reference-producing nodes.
-/// Emits refs for every variable_expr, get_attr, and function_call encountered.
+///
+/// When an `expression` node is encountered it is handed off to
+/// `extract_reference_chain`, which builds a single compound target like
+/// `"var.region"`, `"data.aws_ami.ubuntu"`, or `"aws_instance.web"`.  That
+/// function consumes the expression entirely, so we do not recurse further
+/// into its children (avoids the old fragmented emission of `"var"` and
+/// `"region"` as separate refs).
+///
+/// `function_call` nodes emit a `Calls` edge and their argument subtrees are
+/// still scanned for nested refs.  All other node kinds are traversed
+/// transparently.
 fn extract_refs_in_subtree(
     node: &Node,
     src: &str,
@@ -394,33 +404,15 @@ fn extract_refs_in_subtree(
     refs: &mut Vec<ExtractedRef>,
 ) {
     match node.kind() {
-        "variable_expr" => {
-            let name = node_text(*node, src);
-            if !matches!(name.as_str(), "path" | "terraform" | "self" | "each" | "count") {
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: name,
-                    kind: EdgeKind::TypeRef,
-                    line: node.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
-            }
-        }
-        "get_attr" => {
-            if let Some(ident) = first_identifier_text(node, src) {
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: ident,
-                    kind: EdgeKind::TypeRef,
-                    line: node.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
-            }
+        "expression" => {
+            // Intercept here: build one compound ref for the whole chain and
+            // do not recurse into children (the chain builder reads them).
+            extract_reference_chain(node, src, source_symbol_index, refs);
+            return;
         }
         "function_call" => {
             extract_function_call_ref(node, src, source_symbol_index, refs);
+            // Fall through to recurse into arguments — they may contain refs.
         }
         _ => {}
     }
@@ -432,8 +424,29 @@ fn extract_refs_in_subtree(
 }
 
 /// Extract a Terraform reference chain from an `expression` node.
-/// Pattern: variable_expr (root name) + zero or more get_attr (`.attr`) nodes.
-/// Builds a TypeRef target like "var.instance_type" or "aws_instance.web".
+///
+/// The grammar represents `var.region`, `data.aws_ami.ubuntu.id`, and
+/// `aws_instance.web.public_ip` as:
+///
+/// ```text
+/// expression
+///   variable_expr { identifier: "var" }
+///   get_attr { identifier: "region" }
+/// ```
+///
+/// We build a single `target_name` that matches how the extractor names the
+/// corresponding symbol, so the resolver can do a direct lookup:
+///
+/// | Expression          | target_name emitted     | Symbol qname          |
+/// |---------------------|-------------------------|-----------------------|
+/// | `var.region`        | `"var.region"`          | `"region"` (Variable) |
+/// | `local.env`         | `"local.env"`           | `"env"` (Variable)    |
+/// | `module.vpc.vpc_id` | `"module.vpc"`          | `"module.vpc"` (NS)   |
+/// | `data.aws_ami.u.id` | `"data.aws_ami.ubuntu"` | `"data.aws_ami.ubuntu"` (Class) |
+/// | `aws_instance.web`  | `"aws_instance.web"`    | `"aws_instance.web"` (Class) |
+///
+/// Terraform meta-roots (`each`, `count`, `self`, `path`, `terraform`) are
+/// silently dropped — the resolver classifies them as external.
 fn extract_reference_chain(
     node: &Node,
     src: &str,
@@ -450,9 +463,24 @@ fn extract_reference_chain(
                 root = Some(node_text(child, src));
             }
             "get_attr" => {
-                // get_attr: `.attr` — child identifier is the attribute name
                 if let Some(ident) = first_identifier_text(&child, src) {
                     attrs.push(ident);
+                }
+            }
+            "function_call" => {
+                // A function call inside an expression (e.g. `tostring(var.x)`)
+                // — emit a Calls ref for the function name, then recurse into
+                // the argument subtrees so nested refs (like `var.x`) are also
+                // captured.  We use extract_refs_in_subtree here because the
+                // arguments may themselves contain expressions that need chain
+                // extraction.
+                extract_function_call_ref(&child, src, source_symbol_index, refs);
+                // Recurse into function arguments only
+                let mut fc_cursor = child.walk();
+                for fc_child in child.children(&mut fc_cursor) {
+                    if fc_child.kind() == "function_arguments" {
+                        extract_refs_in_subtree(&fc_child, src, source_symbol_index, refs);
+                    }
                 }
             }
             _ => {}
@@ -464,32 +492,41 @@ fn extract_reference_chain(
         None => return,
     };
 
-    // Skip special Terraform built-in roots that don't resolve to symbols
-    if matches!(root.as_str(), "path" | "terraform" | "self" | "each" | "count") {
+    // Terraform meta-references — no project symbol to resolve against.
+    if matches!(root.as_str(), "each" | "count" | "self" | "path" | "terraform") {
         return;
     }
 
-    // Build the qualified reference target
-    // var.name → "variable.<name>"
-    // local.name → "locals.<name>"
-    // module.name → "module.<name>"
-    // data.type.name → "data.<type>.<name>"
-    // resource_type.name → "<type>.<name>"
+    // Build the canonical target_name that matches the index symbol's
+    // qualified_name so the resolver can look it up directly.
     let target = match root.as_str() {
-        "var" => attrs.first().map(|a| a.clone()).unwrap_or_default(),
-        "local" => attrs.first().map(|a| a.clone()).unwrap_or_default(),
-        "module" => attrs
-            .first()
-            .map(|a| format!("module.{}", a))
-            .unwrap_or_default(),
-        _ => {
-            // Treat as resource reference: root = resource_type, attrs[0] = name
-            if let Some(name) = attrs.first() {
-                format!("{}.{}", root, name)
-            } else {
-                root.clone()
-            }
-        }
+        // var.name → "var.name"  (resolver strips "var." → looks for Variable "name")
+        "var" => match attrs.first() {
+            Some(a) => format!("var.{}", a),
+            None => return,
+        },
+        // local.name → "local.name"  (resolver strips "local." → Variable "name")
+        "local" => match attrs.first() {
+            Some(a) => format!("local.{}", a),
+            None => return,
+        },
+        // module.name[.output] → "module.name"  (Namespace symbol qname)
+        "module" => match attrs.first() {
+            Some(a) => format!("module.{}", a),
+            None => return,
+        },
+        // data.type.name[.attr] → "data.type.name"  (Class symbol qname)
+        "data" => match (attrs.first(), attrs.get(1)) {
+            (Some(t), Some(n)) => format!("data.{}.{}", t, n),
+            (Some(t), None) => format!("data.{}", t),
+            _ => return,
+        },
+        // resource_type.name[.attr] → "resource_type.name"  (Class symbol qname)
+        _ => match attrs.first() {
+            Some(a) => format!("{}.{}", root, a),
+            // Bare identifier — emit as-is (e.g. a local variable in a for expr)
+            None => root.clone(),
+        },
     };
 
     if target.is_empty() {

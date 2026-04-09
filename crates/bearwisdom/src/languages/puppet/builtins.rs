@@ -171,3 +171,48 @@ pub(super) fn is_puppet_builtin_fn(name: &str) -> bool {
 pub(super) fn is_puppet_builtin(name: &str) -> bool {
     is_puppet_resource_type(name) || is_puppet_builtin_fn(name)
 }
+
+/// Well-known Puppet Forge module prefixes. When a qualified class name such as
+/// `stdlib::validate_integer` or `apache::vhost` begins with one of these
+/// prefixes, the reference points to a forge dependency, not a project symbol.
+pub(super) fn is_forge_module(prefix: &str) -> bool {
+    matches!(
+        prefix,
+        // puppetlabs modules (stdlib, apache, mysql, etc.)
+        "stdlib"
+            | "apache"
+            | "mysql"
+            | "postgresql"
+            | "concat"
+            | "apt"
+            | "firewall"
+            | "vcsrepo"
+            | "java"
+            | "tomcat"
+            | "nginx"
+            | "haproxy"
+            | "ntp"
+            | "sshd"
+            | "sudo"
+            | "motd"
+            | "limits"
+            | "sysctl"
+            | "timezone"
+            | "accounts"
+            | "archive"
+            | "augeas"
+            | "cron"
+            | "docker"
+            | "git"
+            | "inifile"
+            | "java_ks"
+            | "lvm"
+            | "mongodb"
+            | "rabbitmq"
+            | "redis"
+            | "rsync"
+            | "stdlib"
+            | "swap_file"
+            | "xinetd"
+    )
+}

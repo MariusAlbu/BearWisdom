@@ -13,6 +13,17 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
+/// Sass built-in module names used with `@use 'sass:math'` etc.
+/// These are never project-defined — they come from the Sass runtime.
+pub(crate) fn is_sass_builtin_module(path: &str) -> bool {
+    // Match both "sass:math" and bare "math" for the module name segment.
+    let stem = path.strip_prefix("sass:").unwrap_or(path);
+    matches!(
+        stem,
+        "math" | "string" | "color" | "list" | "map" | "selector" | "meta"
+    )
+}
+
 /// SCSS / Sass built-in function names — provided by the Sass runtime or the
 /// browser's CSS engine, not defined in the project.
 ///
