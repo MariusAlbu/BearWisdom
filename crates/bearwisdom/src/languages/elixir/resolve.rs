@@ -226,6 +226,22 @@ impl LanguageResolver for ElixirResolver {
             return Some("Kernel".to_string());
         }
 
+        // Check the ref's own module field (e.g., module="Ecto.Changeset"
+        // on a type_ref to "Changeset" — the module IS the external package).
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            let root = module.split('.').next().unwrap_or(module);
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                    if is_mix_dep_match(root, &manifest.dependencies) {
+                        return Some(root.to_string());
+                    }
+                }
+            }
+            if builtins::is_external_elixir_module(module) {
+                return Some(root.to_string());
+            }
+        }
+
         // Check whether the target matches a known-external alias in this file.
         for import in &file_ctx.imports {
             if import.imported_name != *target {

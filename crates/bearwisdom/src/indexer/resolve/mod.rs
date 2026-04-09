@@ -156,6 +156,44 @@ fn resolve_and_write_inner(
                 continue;
             }
 
+            // Build scope context once for remaining classification steps.
+            let source_sym = &pf.symbols[r.source_symbol_index];
+            let scope_chain = build_scope_chain(source_sym.scope_path.as_deref());
+
+            // ---------------------------------------------------------------
+            // Tier 1.1: Generic type parameter resolution.
+            // If this is a TypeRef and the target matches a generic param
+            // declared on an enclosing type (e.g., `T` in `class Repo<T>`),
+            // it's a type parameter — not a missing symbol.
+            // ---------------------------------------------------------------
+            if r.kind == EdgeKind::TypeRef {
+                let is_generic_param = scope_chain.iter().any(|scope| {
+                    index
+                        .generic_params(scope)
+                        .map_or(false, |params| params.iter().any(|p| p == &r.target_name))
+                });
+                if is_generic_param {
+                    tx.prepare_cached(
+                        "INSERT INTO external_refs
+                           (source_id, target_name, kind, source_line, namespace)
+                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.execute(rusqlite::params![
+                            source_id,
+                            r.target_name,
+                            r.kind.as_str(),
+                            r.line,
+                            "generic_param",
+                        ])
+                    })
+                    .ok();
+                    stats.external += 1;
+                    continue;
+                }
+            }
+
+            // ---------------------------------------------------------------
             // Tier 1.5: External classification — BEFORE heuristic.
             //
             // Language resolvers and chain inference can identify refs that
@@ -163,9 +201,7 @@ fn resolve_and_write_inner(
             // Check this FIRST so the heuristic doesn't create false
             // low-confidence edges for things like `map`, `iter`, `get`
             // that match internal method names by coincidence.
-            let source_sym = &pf.symbols[r.source_symbol_index];
-            let scope_chain = build_scope_chain(source_sym.scope_path.as_deref());
-
+            // ---------------------------------------------------------------
             let inferred_ns = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
                 let ref_ctx = RefContext {
                     extracted_ref: r,
@@ -185,18 +221,12 @@ fn resolve_and_write_inner(
                 })
             });
 
-            // Bare-name external check: test globals (expect, describe, it) and
-            // language primitives (string, int, bool) without any chain or module.
+            // Bare-name external check: test globals, language primitives,
+            // and runtime builtins — classified with specific namespaces.
             let inferred_ns = inferred_ns.or_else(|| {
-                if index.is_external_name(&r.target_name, &pf.language) {
-                    Some(if crate::indexer::framework_globals::is_test_file(&pf.path) {
-                        "test_framework".to_string()
-                    } else {
-                        "primitive".to_string()
-                    })
-                } else {
-                    None
-                }
+                index
+                    .classify_external_name(&r.target_name, &pf.language)
+                    .map(|ns| ns.to_string())
             });
 
             // Module-qualified external check: if the ref has module="X" and
@@ -207,12 +237,21 @@ fn resolve_and_write_inner(
             let inferred_ns = inferred_ns.or_else(|| {
                 if let Some(module) = &r.module {
                     let mod_lower = module.to_lowercase();
-                    let last_seg = module.rsplit('.').next().unwrap_or(module);
-                    let last_lower = last_seg.to_lowercase();
-                    let is_local = module_to_files.contains_key(module.as_str())
-                        || module_to_files.contains_key(&mod_lower)
-                        || module_to_files.contains_key(last_seg)
-                        || module_to_files.contains_key(&last_lower);
+                    // Full-path match: "Ecto.Changeset" or "dplyr" as-is.
+                    let mut is_local = module_to_files.contains_key(module.as_str())
+                        || module_to_files.contains_key(&mod_lower);
+
+                    // Last-segment match ONLY for single-segment modules.
+                    // Multi-segment modules like "Ecto.Changeset" should NOT
+                    // be classified as local just because a file named
+                    // "changeset.ex" exists — that's a coincidental stem match.
+                    if !is_local && !module.contains('.') {
+                        let last_seg = module.rsplit('.').next().unwrap_or(module);
+                        let last_lower = last_seg.to_lowercase();
+                        is_local = module_to_files.contains_key(last_seg)
+                            || module_to_files.contains_key(&last_lower);
+                    }
+
                     if !is_local {
                         Some(format!("ext:{module}"))
                     } else {

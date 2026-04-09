@@ -333,7 +333,8 @@ impl SymbolIndex {
             }
 
             // Build generic_params: for class/interface/struct symbols that have
-            // type_parameters in their signature (e.g., `interface Repository<T>`).
+            // type_parameters in their signature (e.g., `interface Repository<T>`,
+            // `def process[F[_]]`, `fn compute<T: Clone>`).
             // We detect this by looking at the symbol's signature text.
             for sym in &pf.symbols {
                 if !matches!(
@@ -342,33 +343,53 @@ impl SymbolIndex {
                         | SymbolKind::Interface
                         | SymbolKind::Struct
                         | SymbolKind::TypeAlias
+                        | SymbolKind::Function
+                        | SymbolKind::Method
                 ) {
                     continue;
                 }
                 if let Some(sig) = &sym.signature {
-                    // Parse generic params from signature: "interface Repository<T>" → ["T"]
-                    // "class Map<K, V>" → ["K", "V"]
-                    // Use depth-counted bracket matching so nested generics like
-                    // "class Map<K, List<V>>" find the correct closing bracket.
-                    if let Some(start) = sig.find('<') {
-                        if let Some(relative_end) = find_matching_bracket(&sig[start..], '<', '>') {
-                            let end = start + relative_end;
-                            let params_str = &sig[start + 1..end];
-                            let params: Vec<String> = params_str
-                                .split(',')
-                                .map(|s| {
-                                    s.trim()
-                                        .split_whitespace()
-                                        .next()
-                                        .unwrap_or("")
-                                        .to_string()
-                                })
-                                .filter(|s| !s.is_empty())
-                                .collect();
-                            if !params.is_empty() {
-                                generic_params.insert(sym.name.clone(), params.clone());
-                                generic_params
-                                    .insert(sym.qualified_name.clone(), params);
+                    // Parse generic params from signature:
+                    //   "interface Repository<T>"      → ["T"]      (Java, C#, TS, Kotlin)
+                    //   "class Map<K, V>"              → ["K", "V"]
+                    //   "trait SnapshotReader[F[_]]"   → ["F"]      (Scala)
+                    //   "struct Vec<T>"                → ["T"]      (Rust)
+                    //   "class FSM[F[_], S, I, O]"    → ["F", "S", "I", "O"]
+                    //
+                    // Tries `<>` first (most languages), then `[]` (Scala).
+                    // Uses depth-counted bracket matching for nested generics.
+                    let bracket_pairs: &[(char, char)] = &[('<', '>'), ('[', ']')];
+                    for &(open, close) in bracket_pairs {
+                        if let Some(start) = sig.find(open) {
+                            if let Some(relative_end) =
+                                find_matching_bracket(&sig[start..], open, close)
+                            {
+                                let end = start + relative_end;
+                                let params_str = &sig[start + 1..end];
+                                let params: Vec<String> = params_str
+                                    .split(',')
+                                    .map(|s| {
+                                        let trimmed = s.trim();
+                                        // Strip higher-kinded markers: "F[_]" → "F"
+                                        let name = trimmed
+                                            .split(|c: char| c == '[' || c == '<' || c == ':')
+                                            .next()
+                                            .unwrap_or("")
+                                            .split_whitespace()
+                                            .next()
+                                            .unwrap_or("")
+                                            .to_string();
+                                        name
+                                    })
+                                    .filter(|s| !s.is_empty())
+                                    .collect();
+                                if !params.is_empty() {
+                                    generic_params
+                                        .insert(sym.name.clone(), params.clone());
+                                    generic_params
+                                        .insert(sym.qualified_name.clone(), params);
+                                    break; // found params, don't try next bracket pair
+                                }
                             }
                         }
                     }
@@ -850,6 +871,38 @@ impl SymbolLookup for SymbolIndex {
         // We intentionally do NOT call by_name here — that is used by the resolution
         // path. This method only covers the three positive-match cases above.
         false
+    }
+}
+
+impl SymbolIndex {
+    /// Classify an external name with its specific namespace category.
+    ///
+    /// Returns:
+    ///   - `Some("primitive")` for language keyword types (int, string, bool)
+    ///   - `Some("builtin")` for runtime globals (console, print, len, Array)
+    ///   - `Some("test_framework")` for test globals (describe, it, expect)
+    ///   - `None` if the name is not classified as external
+    pub fn classify_external_name(&self, name: &str, language: &str) -> Option<&'static str> {
+        // Test globals first — most specific classification.
+        if self.test_globals.contains(name) {
+            return Some("test_framework");
+        }
+
+        // Check the merged external set (primitives + externals + query builtins).
+        if let Some(all_externals) = self.primitives_by_language.get(language) {
+            if all_externals.contains(name) {
+                // Distinguish: plugin.primitives() are "primitive", everything
+                // else (externals + query builtins) is "builtin".
+                let plugin_primitives =
+                    crate::indexer::primitives::primitives_for_language(language);
+                if plugin_primitives.contains(&name) {
+                    return Some("primitive");
+                }
+                return Some("builtin");
+            }
+        }
+
+        None
     }
 }
 
