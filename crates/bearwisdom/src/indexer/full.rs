@@ -174,7 +174,7 @@ pub fn full_index(
 
         // Mark packages that contain a Dockerfile as deployable services.
         let dockerfile_pairs =
-            crate::connectors::dockerfile::detect_dockerfiles(db.conn(), project_root);
+            crate::languages::dockerfile::connectors::detect_dockerfiles(db.conn(), project_root);
         if !dockerfile_pairs.is_empty() {
             mark_service_packages(db.conn(), &dockerfile_pairs);
             info!(
@@ -749,7 +749,7 @@ fn manifest_to_kind(filename: &str) -> &str {
 /// Set `is_service = 1` on packages whose path matches a detected Dockerfile.
 ///
 /// `pairs` is `(package_relative_path, dockerfile_relative_path)` as returned
-/// by `crate::connectors::dockerfile::detect_dockerfiles`.
+/// by `crate::languages::dockerfile::connectors::detect_dockerfiles`.
 fn mark_service_packages(conn: &rusqlite::Connection, pairs: &[(String, String)]) {
     for (pkg_path, dockerfile_path) in pairs {
         match conn.execute(

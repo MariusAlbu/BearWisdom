@@ -42,12 +42,10 @@ impl Connector for TauriIpcConnector {
         conn: &Connection,
         project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
-        use crate::connectors::tauri_ipc;
-
         let mut points = Vec::new();
 
         // #[tauri::command] attributed functions → Stop points
-        let commands = tauri_ipc::find_tauri_commands(conn, project_root)
+        let commands = rust_find_tauri_commands(conn, project_root)
             .context("Tauri command detection failed")?;
 
         for cmd in &commands {
@@ -68,6 +66,95 @@ impl Connector for TauriIpcConnector {
         extract_tauri_emit_events(conn, project_root, &mut points)?;
 
         Ok(points)
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tauri IPC Rust-side helpers (inlined from connectors/tauri_ipc.rs)
+// ---------------------------------------------------------------------------
+
+struct RustTauriCommand {
+    symbol_id: Option<i64>,
+    command_name: String,
+    file_id: i64,
+    line: u32,
+}
+
+fn rust_find_tauri_commands(
+    conn: &Connection,
+    project_root: &Path,
+) -> Result<Vec<RustTauriCommand>> {
+    let re_attr = regex::Regex::new(r"#\[(?:tauri::)?command\]")
+        .expect("command attr regex is valid");
+    let re_fn = regex::Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*[(<]")
+        .expect("fn decl regex is valid");
+
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'rust'")
+        .context("Failed to prepare Rust files query")?;
+
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query Rust files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect Rust file rows")?;
+
+    let mut commands = Vec::new();
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(e) => {
+                tracing::debug!(path = %abs_path.display(), err = %e, "Skipping unreadable Rust file");
+                continue;
+            }
+        };
+        rust_extract_commands_from_source(conn, &source, file_id, &rel_path, &re_attr, &re_fn, &mut commands);
+    }
+    tracing::debug!(count = commands.len(), "Tauri commands found");
+    Ok(commands)
+}
+
+fn rust_extract_commands_from_source(
+    conn: &Connection,
+    source: &str,
+    file_id: i64,
+    rel_path: &str,
+    re_attr: &regex::Regex,
+    re_fn: &regex::Regex,
+    out: &mut Vec<RustTauriCommand>,
+) {
+    let mut next_line_is_command = false;
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        if re_attr.is_match(line_text) {
+            next_line_is_command = true;
+            continue;
+        }
+
+        if next_line_is_command {
+            next_line_is_command = false;
+
+            if let Some(cap) = re_fn.captures(line_text) {
+                let command_name = cap[1].to_string();
+
+                let symbol_id: Option<i64> = conn
+                    .query_row(
+                        "SELECT s.id FROM symbols s
+                         JOIN files f ON f.id = s.file_id
+                         WHERE s.name = ?1 AND f.path = ?2
+                           AND s.kind IN ('function', 'method')
+                         LIMIT 1",
+                        rusqlite::params![command_name, rel_path],
+                        |r| r.get(0),
+                    )
+                    .ok();
+
+                out.push(RustTauriCommand { symbol_id, command_name, file_id, line: line_no });
+            }
+        }
     }
 }
 
@@ -619,5 +706,71 @@ impl Connector for RustMqConnector {
         }
 
         Ok(points)
+    }
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+mod tauri_ipc_tests {
+    use super::*;
+    use crate::db::Database;
+    use std::io::Write;
+    use tempfile::NamedTempFile;
+
+    fn make_rs_file(content: &str) -> NamedTempFile {
+        let mut f = NamedTempFile::new().unwrap();
+        write!(f, "{}", content).unwrap();
+        f
+    }
+
+    #[test]
+    fn command_attr_regex_matches_full_path() {
+        let re = regex::Regex::new(r"#\[(?:tauri::)?command\]").unwrap();
+        assert!(re.is_match("#[tauri::command]"));
+    }
+
+    #[test]
+    fn command_attr_regex_matches_short_form() {
+        let re = regex::Regex::new(r"#\[(?:tauri::)?command\]").unwrap();
+        assert!(re.is_match("#[command]"));
+    }
+
+    #[test]
+    fn fn_decl_regex_extracts_name() {
+        let re = regex::Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*[(<]").unwrap();
+        let caps = re.captures("pub async fn read_file(path: String) -> String {").unwrap();
+        assert_eq!(&caps[1], "read_file");
+    }
+
+    #[test]
+    fn fn_decl_regex_extracts_simple_fn() {
+        let re = regex::Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*[(<]").unwrap();
+        let caps = re.captures("fn close_splashscreen(window: Window) {").unwrap();
+        assert_eq!(&caps[1], "close_splashscreen");
+    }
+
+    #[test]
+    fn find_commands_detects_attribute() {
+        let db = Database::open_in_memory().unwrap();
+        let conn = db.conn();
+
+        let rs_file = make_rs_file(
+            "#[tauri::command]\npub async fn greet(name: String) -> String {\n    format!(\"Hello {}!\", name)\n}\n",
+        );
+        let root = rs_file.path().parent().unwrap();
+        let file_name = rs_file.path().file_name().unwrap().to_str().unwrap();
+
+        conn.execute(
+            "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'rust', 0)",
+            [file_name],
+        ).unwrap();
+
+        let commands = rust_find_tauri_commands(conn, root).unwrap();
+        assert_eq!(commands.len(), 1);
+        assert_eq!(commands[0].command_name, "greet");
+        assert_eq!(commands[0].line, 2, "fn is on line 2");
     }
 }

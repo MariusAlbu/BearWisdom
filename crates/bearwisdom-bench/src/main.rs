@@ -54,7 +54,8 @@
 extern crate sqlite_vec;
 
 use bearwisdom::{
-    connectors::{ef_core, http_api},
+    connectors::http_api,
+    languages::csharp::connectors as csharp_connectors,
     full_index,
     db::Database,
     query::{
@@ -524,7 +525,7 @@ fn cmd_db_mappings(db_path: &Path) -> Result<()> {
     let db = Database::open(db_path)
         .with_context(|| format!("Failed to open {}", db_path.display()))?;
 
-    let mappings = ef_core::list_mappings(&db)?;
+    let mappings = csharp_connectors::list_db_mappings(&db)?;
     println!("=== EF Core DB Mappings ({}) ===", mappings.len());
     for m in &mappings {
         println!("  {}  ->  table={}  [{}]  ({})",

@@ -1,7 +1,7 @@
 //! csharp language plugin.
 
 mod calls;
-pub(crate) mod connectors;
+pub mod connectors;
 pub(crate) mod decorators;
 pub(crate) mod externals;
 mod helpers;
