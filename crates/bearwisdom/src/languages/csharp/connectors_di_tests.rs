@@ -78,7 +78,6 @@ fn detects_one_type_form() {
 
 #[test]
 fn two_type_takes_priority_over_one_type() {
-    // The two-type regex matches first; the line should not produce two entries.
     let re_two = build_two_type_regex();
     let re_one = build_one_type_regex();
     let mut out = Vec::new();
@@ -141,7 +140,6 @@ fn link_creates_implements_edge() {
     let db = Database::open_in_memory().unwrap();
     let (_, impl_id) = seed_symbols(&db);
 
-    // Get the file_id from the impl symbol.
     let file_id: i64 = db
         .conn()
         .query_row(
@@ -202,7 +200,6 @@ fn missing_symbols_skipped_without_error() {
         implementation_type: "AlsoNonExistent".to_string(),
     }];
 
-    // Should not panic or return Err.
     let created = link_di_registrations(db.conn(), &registrations).unwrap();
     assert_eq!(created, 0);
 }

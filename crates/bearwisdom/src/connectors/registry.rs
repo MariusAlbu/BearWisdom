@@ -179,22 +179,8 @@ pub fn build_default_registry() -> ConnectorRegistry {
     reg.register(Box::new(super::grpc_connector::GrpcConnector));
     reg.register(Box::new(super::mq_connector::MessageQueueConnector));
     reg.register(Box::new(super::graphql_connector::GraphQlConnector));
-    reg.register(Box::new(super::event_connector::EventBusConnector));
     reg.register(Box::new(super::ipc_connector::TauriIpcConnector));
     reg.register(Box::new(super::ipc_connector::ElectronIpcConnector));
-    // Framework-specific route producers (migrating to language plugins)
-    reg.register(Box::new(super::route_connectors::SpringRouteConnector));
-    reg.register(Box::new(super::route_connectors::DjangoRouteConnector));
-    reg.register(Box::new(super::route_connectors::FastApiRouteConnector));
-    reg.register(Box::new(super::route_connectors::GoRouteConnector));
-    reg.register(Box::new(super::route_connectors::RailsRouteConnector));
-    reg.register(Box::new(super::route_connectors::LaravelRouteConnector));
-    reg.register(Box::new(super::route_connectors::NestjsRouteConnector));
-    reg.register(Box::new(super::route_connectors::NextjsRouteConnector));
-    // DI connectors (migrating to language plugins)
-    reg.register(Box::new(super::di_connector::DotnetDiConnector));
-    reg.register(Box::new(super::di_connector::AngularDiConnector));
-    reg.register(Box::new(super::di_connector::SpringDiConnector));
     reg
 }
 

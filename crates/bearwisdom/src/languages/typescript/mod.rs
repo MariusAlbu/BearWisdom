@@ -6,6 +6,7 @@
 
 // Extraction sub-modules
 pub(crate) mod externals;
+pub mod connectors;
 mod calls;
 pub(crate) mod decorators;
 mod helpers;
@@ -123,5 +124,12 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::TypeScriptResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::NestjsRouteConnector),
+            Box::new(connectors::NextjsRouteConnector),
+        ]
     }
 }

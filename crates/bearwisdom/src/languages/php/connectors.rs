@@ -1,5 +1,5 @@
 // =============================================================================
-// connectors/laravel_routes.rs  —  Laravel route connector
+// languages/php/connectors.rs  —  Laravel route connector
 //
 // Detects HTTP route definitions in PHP Laravel route files and inserts rows
 // into the `routes` table.
@@ -44,6 +44,54 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use rusqlite::Connection;
 use tracing::{debug, info};
+
+use crate::connectors::traits::{Connector, ConnectorDescriptor};
+use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::project_context::ProjectContext;
+
+// ===========================================================================
+// LaravelRouteConnector — LanguagePlugin entry point
+// ===========================================================================
+
+pub struct LaravelRouteConnector;
+
+impl Connector for LaravelRouteConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "laravel_routes",
+            protocols: &[Protocol::Rest],
+            languages: &["php"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        ctx.php_packages.iter().any(|p| p.contains("laravel"))
+    }
+
+    fn extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+    ) -> Result<Vec<ConnectionPoint>> {
+        let routes = extract_laravel_routes_pub(conn, project_root)
+            .context("Laravel route detection failed")?;
+
+        Ok(routes
+            .into_iter()
+            .map(|r| ConnectionPoint {
+                file_id: r.file_id,
+                symbol_id: r.symbol_id,
+                line: r.line,
+                protocol: Protocol::Rest,
+                direction: FlowDirection::Stop,
+                key: r.resolved_route,
+                method: r.http_method,
+                framework: "laravel".to_string(),
+                metadata: None,
+            })
+            .collect())
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Regex builders
@@ -412,20 +460,20 @@ fn scan_file(
 }
 
 // ---------------------------------------------------------------------------
-// Public entry point
+// Public entry points
 // ---------------------------------------------------------------------------
 
 /// A route extracted from a Laravel file, ready for conversion to ConnectionPoint.
-pub(super) struct LaravelRoute {
-    pub(super) file_id: i64,
-    pub(super) symbol_id: Option<i64>,
-    pub(super) http_method: String,
-    pub(super) resolved_route: String,
-    pub(super) line: u32,
+pub(crate) struct LaravelRoute {
+    pub(crate) file_id: i64,
+    pub(crate) symbol_id: Option<i64>,
+    pub(crate) http_method: String,
+    pub(crate) resolved_route: String,
+    pub(crate) line: u32,
 }
 
 /// Extract Laravel routes without writing to the DB — for use by `LaravelRouteConnector`.
-pub(super) fn extract_laravel_routes_pub(
+pub(crate) fn extract_laravel_routes_pub(
     conn: &Connection,
     project_root: &Path,
 ) -> Result<Vec<LaravelRoute>> {
@@ -628,5 +676,5 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "laravel_routes_tests.rs"]
+#[path = "connectors_tests.rs"]
 mod tests;

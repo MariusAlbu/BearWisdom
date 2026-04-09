@@ -1,0 +1,698 @@
+// =============================================================================
+// languages/csharp/connectors.rs — C#-specific flow connectors
+//
+// Owns both the .NET DI connector and the integration event bus connector.
+// All detection helpers (regex scanning, DB queries) live here alongside the
+// connector implementations so the language plugin is fully self-contained.
+// =============================================================================
+
+use std::path::Path;
+
+use anyhow::{Context, Result};
+use regex::Regex;
+use rusqlite::Connection;
+use tracing::{debug, info};
+
+use crate::connectors::traits::{Connector, ConnectorDescriptor};
+use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::project_context::ProjectContext;
+
+// ===========================================================================
+// DotnetDiConnector
+// ===========================================================================
+
+pub struct DotnetDiConnector;
+
+impl Connector for DotnetDiConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "dotnet_di",
+            protocols: &[Protocol::Di],
+            languages: &["csharp"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        !ctx.external_prefixes.is_empty()
+    }
+
+    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        let registrations = detect_di_registrations(conn, project_root)
+            .context(".NET DI registration detection failed")?;
+
+        let mut points = Vec::new();
+
+        for reg in &registrations {
+            // Skip self-registrations — no interface/impl distinction.
+            if reg.interface_type == reg.implementation_type {
+                continue;
+            }
+
+            let metadata = serde_json::json!({
+                "lifetime": reg.lifetime,
+                "implementation": reg.implementation_type,
+            })
+            .to_string();
+
+            // Resolve interface → its definition site in the symbols table.
+            let iface_def = resolve_symbol_def(conn, &reg.interface_type);
+            // Resolve concrete impl → its definition site.
+            let impl_def = resolve_symbol_def(conn, &reg.implementation_type);
+
+            // Start: the interface definition (the dependency being requested).
+            // Fall back to registration site if the interface isn't in the symbol table.
+            let (iface_file, iface_sym, iface_line) =
+                iface_def.unwrap_or((reg.file_id, None, reg.line));
+
+            points.push(ConnectionPoint {
+                file_id: iface_file,
+                symbol_id: iface_sym,
+                line: iface_line,
+                protocol: Protocol::Di,
+                direction: FlowDirection::Start,
+                key: reg.interface_type.clone(),
+                method: String::new(),
+                framework: "dotnet".to_string(),
+                metadata: Some(metadata.clone()),
+            });
+
+            // Stop: the implementation definition (the type that fulfills the binding).
+            let (impl_file, impl_sym, impl_line) =
+                impl_def.unwrap_or((reg.file_id, None, reg.line));
+
+            points.push(ConnectionPoint {
+                file_id: impl_file,
+                symbol_id: impl_sym,
+                line: impl_line,
+                protocol: Protocol::Di,
+                direction: FlowDirection::Stop,
+                key: reg.interface_type.clone(),
+                method: String::new(),
+                framework: "dotnet".to_string(),
+                metadata: Some(metadata),
+            });
+        }
+
+        Ok(points)
+    }
+}
+
+// ===========================================================================
+// EventBusConnector
+// ===========================================================================
+
+pub struct EventBusConnector;
+
+impl Connector for EventBusConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "event_bus",
+            protocols: &[Protocol::EventBus],
+            languages: &["csharp"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        // Only run if this looks like a .NET project.
+        !ctx.external_prefixes.is_empty()
+    }
+
+    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        let mut points = Vec::new();
+
+        // Start points: integration event classes.
+        let events =
+            find_integration_events(conn).context("Integration event detection failed")?;
+
+        for event in &events {
+            let file_id = resolve_file_id(conn, &event.file_path);
+            if let Some(file_id) = file_id {
+                let line = resolve_symbol_line(conn, event.symbol_id);
+                points.push(ConnectionPoint {
+                    file_id,
+                    symbol_id: Some(event.symbol_id),
+                    line,
+                    protocol: Protocol::EventBus,
+                    direction: FlowDirection::Start,
+                    key: event.name.clone(),
+                    method: String::new(),
+                    framework: String::new(),
+                    metadata: None,
+                });
+            }
+        }
+
+        // Stop points: event handler classes.
+        let handlers =
+            find_event_handlers(conn, project_root).context("Event handler detection failed")?;
+
+        for handler in &handlers {
+            let file_id = resolve_file_id(conn, &handler.file_path);
+            if let Some(file_id) = file_id {
+                let line = resolve_symbol_line(conn, handler.symbol_id);
+                points.push(ConnectionPoint {
+                    file_id,
+                    symbol_id: Some(handler.symbol_id),
+                    line,
+                    protocol: Protocol::EventBus,
+                    direction: FlowDirection::Stop,
+                    key: handler.event_type.clone(),
+                    method: String::new(),
+                    framework: String::new(),
+                    metadata: Some(
+                        serde_json::json!({
+                            "handler": handler.name,
+                        })
+                        .to_string(),
+                    ),
+                });
+            }
+        }
+
+        Ok(points)
+    }
+}
+
+// ===========================================================================
+// DI helpers (from connectors/dotnet_di.rs)
+// ===========================================================================
+
+/// A single DI registration detected in a C# file.
+#[derive(Debug, Clone)]
+pub struct DiRegistration {
+    /// `files.id` of the file containing the registration call.
+    pub file_id: i64,
+    /// 1-based line number of the call.
+    pub line: u32,
+    /// Lifetime of the registration.
+    pub lifetime: String,
+    /// The interface type — for the single-type form this equals `implementation_type`.
+    pub interface_type: String,
+    /// The concrete implementation type.
+    pub implementation_type: String,
+}
+
+/// Scan all indexed C# files for DI registrations.
+///
+/// Returns detected registrations with file_id and line metadata.
+/// Files are read from disk via `project_root`.
+pub fn detect_di_registrations(
+    conn: &Connection,
+    project_root: &Path,
+) -> Result<Vec<DiRegistration>> {
+    let re_two = build_two_type_regex();
+    let re_one = build_one_type_regex();
+
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
+        .context("Failed to prepare C# files query")?;
+
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query C# files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect C# file rows")?;
+
+    let mut registrations: Vec<DiRegistration> = Vec::new();
+
+    for (file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(e) => {
+                debug!(path = %abs_path.display(), err = %e, "Skipping unreadable C# file");
+                continue;
+            }
+        };
+
+        detect_in_source(&source, file_id, &re_two, &re_one, &mut registrations);
+    }
+
+    debug!(count = registrations.len(), "DI registrations detected");
+    Ok(registrations)
+}
+
+/// Link detected DI registrations to the symbol graph.
+///
+/// For two-type registrations: creates an `implements` edge from the
+/// implementation class to the interface.  For single-type registrations
+/// (self-registration) no edge is created.
+///
+/// Returns the number of edges inserted.
+pub fn link_di_registrations(
+    conn: &Connection,
+    registrations: &[DiRegistration],
+) -> Result<u32> {
+    let mut created: u32 = 0;
+
+    for reg in registrations {
+        if reg.interface_type == reg.implementation_type {
+            continue;
+        }
+
+        let iface_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM symbols WHERE name = ?1 AND kind = 'interface' LIMIT 1",
+                [&reg.interface_type],
+                |r| r.get(0),
+            )
+            .optional();
+
+        let impl_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM symbols WHERE name = ?1 AND kind = 'class' LIMIT 1",
+                [&reg.implementation_type],
+                |r| r.get(0),
+            )
+            .optional();
+
+        let (iface_id, impl_id) = match (iface_id, impl_id) {
+            (Some(i), Some(c)) => (i, c),
+            _ => {
+                debug!(
+                    interface = %reg.interface_type,
+                    implementation = %reg.implementation_type,
+                    "Skipping DI registration — symbol(s) not found"
+                );
+                continue;
+            }
+        };
+
+        let metadata = serde_json::json!({
+            "lifetime": reg.lifetime,
+            "source": "di_registration",
+        })
+        .to_string();
+
+        let result = conn.execute(
+            "INSERT OR IGNORE INTO edges
+                (source_id, target_id, kind, source_line, confidence)
+             VALUES (?1, ?2, 'implements', ?3, 0.90)",
+            rusqlite::params![impl_id, iface_id, reg.line],
+        );
+
+        match result {
+            Ok(n) if n > 0 => {
+                created += 1;
+                let _ = conn.execute(
+                    "INSERT OR IGNORE INTO flow_edges (
+                        source_file_id, source_line, source_symbol, source_language,
+                        target_file_id, target_line, target_symbol, target_language,
+                        edge_type, confidence, metadata
+                     ) SELECT
+                        si.file_id, ?3, ?4, 'csharp',
+                        sf.file_id, NULL, ?5, 'csharp',
+                        'di_binding', 0.90, ?6
+                     FROM symbols si, symbols sf
+                     WHERE si.id = ?1 AND sf.id = ?2",
+                    rusqlite::params![
+                        impl_id,
+                        iface_id,
+                        reg.line,
+                        reg.implementation_type,
+                        reg.interface_type,
+                        metadata
+                    ],
+                );
+            }
+            Ok(_) => {}
+            Err(e) => {
+                debug!(err = %e, "Failed to insert implements edge for DI registration");
+            }
+        }
+    }
+
+    info!(created, "DI connector: linked registrations to symbol graph");
+    Ok(created)
+}
+
+/// Regex for the two-type form: `Add{Lifetime}<Interface, Implementation>`.
+fn build_two_type_regex() -> Regex {
+    Regex::new(r"Add(Scoped|Transient|Singleton)\s*<\s*(\w+)\s*,\s*(\w+)\s*>")
+        .expect("two-type DI regex is valid")
+}
+
+/// Regex for the one-type form: `Add{Lifetime}<Implementation>`.
+fn build_one_type_regex() -> Regex {
+    Regex::new(r"Add(Scoped|Transient|Singleton)\s*<\s*(\w+)\s*>")
+        .expect("one-type DI regex is valid")
+}
+
+fn detect_in_source(
+    source: &str,
+    file_id: i64,
+    re_two: &Regex,
+    re_one: &Regex,
+    out: &mut Vec<DiRegistration>,
+) {
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        if let Some(cap) = re_two.captures(line_text) {
+            out.push(DiRegistration {
+                file_id,
+                line: line_no,
+                lifetime: cap[1].to_lowercase(),
+                interface_type: cap[2].to_string(),
+                implementation_type: cap[3].to_string(),
+            });
+            continue;
+        }
+
+        if let Some(cap) = re_one.captures(line_text) {
+            let type_name = cap[2].to_string();
+            out.push(DiRegistration {
+                file_id,
+                line: line_no,
+                lifetime: cap[1].to_lowercase(),
+                interface_type: type_name.clone(),
+                implementation_type: type_name,
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// Event bus helpers (from connectors/dotnet_events.rs)
+// ===========================================================================
+
+/// A class that inherits from `IntegrationEvent`.
+#[derive(Debug, Clone)]
+pub struct IntegrationEvent {
+    pub symbol_id: i64,
+    pub name: String,
+    pub file_path: String,
+}
+
+/// A class that implements `IIntegrationEventHandler<T>`.
+#[derive(Debug, Clone)]
+pub struct EventHandler {
+    pub symbol_id: i64,
+    pub name: String,
+    /// The `T` in `IIntegrationEventHandler<T>`.
+    pub event_type: String,
+    pub file_path: String,
+}
+
+/// Find all symbols that have an `inherits` edge pointing to `IntegrationEvent`.
+pub fn find_integration_events(conn: &Connection) -> Result<Vec<IntegrationEvent>> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.name, f.path
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             WHERE s.kind = 'class'
+               AND EXISTS (
+                   SELECT 1 FROM edges e
+                   JOIN symbols tgt ON e.target_id = tgt.id
+                   WHERE e.source_id = s.id
+                     AND e.kind = 'inherits'
+                     AND (tgt.name = 'IntegrationEvent'
+                          OR tgt.qualified_name LIKE '%IntegrationEvent')
+               )",
+        )
+        .context("Failed to prepare integration events query")?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(IntegrationEvent {
+                symbol_id: row.get(0)?,
+                name: row.get(1)?,
+                file_path: row.get(2)?,
+            })
+        })
+        .context("Failed to execute integration events query")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect integration event rows")?;
+
+    debug!(count = rows.len(), "Integration events found via edges");
+    Ok(rows)
+}
+
+/// Find all classes that implement `IIntegrationEventHandler<T>` in C# files.
+pub fn find_event_handlers(conn: &Connection, project_root: &Path) -> Result<Vec<EventHandler>> {
+    let re_handler = build_handler_regex();
+
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
+        .context("Failed to prepare C# files query")?;
+
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query C# files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect C# file rows")?;
+
+    let mut handlers: Vec<EventHandler> = Vec::new();
+
+    for (_file_id, rel_path) in files {
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(e) => {
+                debug!(path = %abs_path.display(), err = %e, "Skipping unreadable C# file");
+                continue;
+            }
+        };
+
+        extract_handlers_from_source(conn, &source, &rel_path, &re_handler, &mut handlers);
+    }
+
+    debug!(count = handlers.len(), "Event handlers found");
+    Ok(handlers)
+}
+
+/// Match events to their handlers and create flow_edges.
+///
+/// Returns the number of flow_edges inserted.
+pub fn link_events_to_handlers(
+    conn: &Connection,
+    events: &[IntegrationEvent],
+    handlers: &[EventHandler],
+) -> Result<u32> {
+    if events.is_empty() || handlers.is_empty() {
+        return Ok(0);
+    }
+
+    let mut created: u32 = 0;
+
+    for handler in handlers {
+        let event = match events.iter().find(|e| e.name == handler.event_type) {
+            Some(e) => e,
+            None => {
+                debug!(
+                    handler = %handler.name,
+                    event_type = %handler.event_type,
+                    "No matching integration event found for handler"
+                );
+                continue;
+            }
+        };
+
+        let event_file_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = ?1",
+                [&event.file_path],
+                |r| r.get(0),
+            )
+            .optional();
+
+        let handler_file_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM files WHERE path = ?1",
+                [&handler.file_path],
+                |r| r.get(0),
+            )
+            .optional();
+
+        let (event_file_id, handler_file_id) = match (event_file_id, handler_file_id) {
+            (Some(e), Some(h)) => (e, h),
+            _ => {
+                debug!(
+                    event = %event.name,
+                    handler = %handler.name,
+                    "Could not resolve file IDs for event/handler pair"
+                );
+                continue;
+            }
+        };
+
+        let metadata = serde_json::json!({
+            "event": event.name,
+            "handler": handler.name,
+        })
+        .to_string();
+
+        let result = conn.execute(
+            "INSERT OR IGNORE INTO flow_edges (
+                source_file_id, source_line, source_symbol, source_language,
+                target_file_id, target_line, target_symbol, target_language,
+                edge_type, confidence, metadata
+             ) VALUES (
+                ?1, NULL, ?2, 'csharp',
+                ?3, NULL, ?4, 'csharp',
+                'event_handler', 0.90, ?5
+             )",
+            rusqlite::params![
+                event_file_id,
+                event.name,
+                handler_file_id,
+                handler.name,
+                metadata,
+            ],
+        );
+
+        match result {
+            Ok(n) if n > 0 => created += 1,
+            Ok(_) => {}
+            Err(e) => {
+                debug!(err = %e, "Failed to insert event_handler flow_edge");
+            }
+        }
+    }
+
+    info!(created, "Events connector: linked events to handlers");
+    Ok(created)
+}
+
+fn build_handler_regex() -> Regex {
+    Regex::new(r"IIntegrationEventHandler\s*<\s*(\w+)\s*>").expect("handler regex is valid")
+}
+
+fn extract_handlers_from_source(
+    conn: &Connection,
+    source: &str,
+    rel_path: &str,
+    re_handler: &Regex,
+    out: &mut Vec<EventHandler>,
+) {
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        for cap in re_handler.captures_iter(line_text) {
+            let event_type = cap[1].to_string();
+
+            let class_name = extract_class_name_from_line(line_text);
+
+            let symbol_id: Option<i64> = class_name.as_deref().and_then(|cn| {
+                conn.query_row(
+                    "SELECT s.id FROM symbols s
+                     JOIN files f ON f.id = s.file_id
+                     WHERE s.name = ?1 AND f.path = ?2 AND s.kind = 'class'
+                     LIMIT 1",
+                    rusqlite::params![cn, rel_path],
+                    |r| r.get(0),
+                )
+                .optional()
+            });
+
+            let (name, symbol_id) =
+                if let (Some(cn), Some(sid)) = (class_name.clone(), symbol_id) {
+                    (cn, sid)
+                } else {
+                    let nearby: Option<(String, i64)> = conn
+                        .query_row(
+                            "SELECT s.name, s.id FROM symbols s
+                             JOIN files f ON f.id = s.file_id
+                             WHERE f.path = ?1 AND s.kind = 'class'
+                               AND s.line BETWEEN ?2 AND ?3
+                             ORDER BY ABS(s.line - ?4) LIMIT 1",
+                            rusqlite::params![
+                                rel_path,
+                                line_no.saturating_sub(5),
+                                line_no + 5,
+                                line_no
+                            ],
+                            |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)),
+                        )
+                        .optional();
+
+                    match nearby {
+                        Some((n, sid)) => (n, sid),
+                        None => continue,
+                    }
+                };
+
+            out.push(EventHandler {
+                symbol_id,
+                name,
+                event_type,
+                file_path: rel_path.to_string(),
+            });
+        }
+    }
+}
+
+fn extract_class_name_from_line(line: &str) -> Option<String> {
+    let re = Regex::new(r"\bclass\s+(\w+)").expect("class name regex is valid");
+    re.captures(line).map(|c| c[1].to_string())
+}
+
+// ===========================================================================
+// Shared private helpers
+// ===========================================================================
+
+fn resolve_symbol_def(conn: &Connection, type_name: &str) -> Option<(i64, Option<i64>, u32)> {
+    conn.query_row(
+        "SELECT id, file_id, line FROM symbols
+         WHERE name = ?1
+         ORDER BY CASE kind
+             WHEN 'interface' THEN 0
+             WHEN 'class' THEN 1
+             WHEN 'struct' THEN 2
+             ELSE 3 END,
+             id ASC
+         LIMIT 1",
+        [type_name],
+        |row| {
+            Ok((
+                row.get::<_, i64>(1)?, // file_id
+                Some(row.get::<_, i64>(0)?), // symbol_id
+                row.get::<_, u32>(2)?, // line
+            ))
+        },
+    )
+    .ok()
+}
+
+fn resolve_file_id(conn: &Connection, rel_path: &str) -> Option<i64> {
+    conn.query_row("SELECT id FROM files WHERE path = ?1", [rel_path], |r| {
+        r.get(0)
+    })
+    .ok()
+}
+
+fn resolve_symbol_line(conn: &Connection, symbol_id: i64) -> u32 {
+    conn.query_row(
+        "SELECT line FROM symbols WHERE id = ?1",
+        [symbol_id],
+        |r| r.get::<_, u32>(0),
+    )
+    .unwrap_or(0)
+}
+
+trait OptionalExt<T> {
+    fn optional(self) -> Option<T>;
+}
+
+impl<T> OptionalExt<T> for rusqlite::Result<T> {
+    fn optional(self) -> Option<T> {
+        match self {
+            Ok(v) => Some(v),
+            Err(rusqlite::Error::QueryReturnedNoRows) => None,
+            Err(_) => None,
+        }
+    }
+}
+
+// ===========================================================================
+// Tests
+// ===========================================================================
+
+#[cfg(test)]
+#[path = "connectors_di_tests.rs"]
+mod di_tests;
+
+#[cfg(test)]
+#[path = "connectors_events_tests.rs"]
+mod events_tests;

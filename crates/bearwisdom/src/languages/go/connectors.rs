@@ -1,5 +1,5 @@
 // =============================================================================
-// connectors/go_routes.rs  —  Go HTTP route connector
+// languages/go/connectors.rs  —  Go HTTP route connector
 //
 // Detects HTTP route registrations in Go source files and inserts them into
 // the `routes` table.  Handles the following patterns:
@@ -30,6 +30,54 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use rusqlite::Connection;
 use tracing::{debug, info};
+
+use crate::connectors::traits::{Connector, ConnectorDescriptor};
+use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::project_context::ProjectContext;
+
+// ===========================================================================
+// GoRouteConnector — LanguagePlugin entry point
+// ===========================================================================
+
+pub struct GoRouteConnector;
+
+impl Connector for GoRouteConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "go_routes",
+            protocols: &[Protocol::Rest],
+            languages: &["go"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        ctx.go_module_path.is_some()
+    }
+
+    fn extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+    ) -> Result<Vec<ConnectionPoint>> {
+        let routes = extract_go_routes_pub(conn, project_root)
+            .context("Go route detection failed")?;
+
+        Ok(routes
+            .into_iter()
+            .map(|r| ConnectionPoint {
+                file_id: r.file_id,
+                symbol_id: r.symbol_id,
+                line: r.line,
+                protocol: Protocol::Rest,
+                direction: FlowDirection::Stop,
+                key: r.resolved_route,
+                method: r.http_method,
+                framework: "go".to_string(),
+                metadata: None,
+            })
+            .collect())
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Regex builders
@@ -153,14 +201,14 @@ fn join_paths(prefix: &str, segment: &str) -> String {
 // ---------------------------------------------------------------------------
 
 #[derive(Debug)]
-pub(super) struct GoRoute {
-    pub(super) file_id: i64,
-    pub(super) symbol_id: Option<i64>,
-    pub(super) http_method: String,
-    pub(super) route_template: String,
-    pub(super) resolved_route: String,
-    pub(super) handler_name: String,
-    pub(super) line: u32,
+pub(crate) struct GoRoute {
+    pub(crate) file_id: i64,
+    pub(crate) symbol_id: Option<i64>,
+    pub(crate) http_method: String,
+    pub(crate) route_template: String,
+    pub(crate) resolved_route: String,
+    pub(crate) handler_name: String,
+    pub(crate) line: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -380,11 +428,11 @@ fn write_routes(conn: &Connection, routes: &[GoRoute]) -> Result<u32> {
 }
 
 // ---------------------------------------------------------------------------
-// Public entry point
+// Public entry points
 // ---------------------------------------------------------------------------
 
 /// Extract Go routes without writing to the DB — for use by `GoRouteConnector`.
-pub(super) fn extract_go_routes_pub(
+pub(crate) fn extract_go_routes_pub(
     conn: &Connection,
     project_root: &Path,
 ) -> Result<Vec<GoRoute>> {
@@ -470,5 +518,5 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "go_routes_tests.rs"]
+#[path = "connectors_tests.rs"]
 mod tests;

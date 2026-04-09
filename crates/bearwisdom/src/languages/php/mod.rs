@@ -9,6 +9,7 @@ pub mod extract;
 
 mod builtins;
 mod chain;
+pub mod connectors;
 pub mod resolve;
 
 #[cfg(test)]
@@ -93,5 +94,9 @@ impl LanguagePlugin for PhpPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::PhpResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![Box::new(connectors::LaravelRouteConnector)]
     }
 }

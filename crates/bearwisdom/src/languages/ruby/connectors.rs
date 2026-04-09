@@ -1,5 +1,5 @@
 // =============================================================================
-// connectors/rails_routes.rs  —  Rails routes connector
+// languages/ruby/connectors.rs  —  Rails routes connector
 //
 // Detects HTTP route definitions in Ruby on Rails `routes.rb` files and
 // inserts them into the `routes` table.
@@ -24,6 +24,78 @@ use anyhow::{Context, Result};
 use regex::Regex;
 use rusqlite::Connection;
 use tracing::{debug, info};
+
+use crate::connectors::traits::{Connector, ConnectorDescriptor};
+use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::project_context::ProjectContext;
+
+// ===========================================================================
+// RailsRouteConnector — LanguagePlugin entry point
+// ===========================================================================
+
+pub struct RailsRouteConnector;
+
+impl Connector for RailsRouteConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "rails_routes",
+            protocols: &[Protocol::Rest],
+            languages: &["ruby"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        ctx.ruby_gems.contains("rails") || ctx.ruby_gems.contains("railties")
+    }
+
+    fn extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+    ) -> Result<Vec<ConnectionPoint>> {
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, path FROM files
+                 WHERE language = 'ruby'
+                   AND (path LIKE '%routes.rb' OR path LIKE '%/routes/%')",
+            )
+            .context("Failed to prepare Rails route file query")?;
+
+        let files: Vec<(i64, String)> = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+            .context("Failed to query Ruby route files")?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect Ruby route file rows")?;
+
+        let mut points = Vec::new();
+
+        for (file_id, rel_path) in files {
+            let abs_path = project_root.join(&rel_path);
+            let source = match std::fs::read_to_string(&abs_path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let entries = parse_routes_source(&source);
+
+            for entry in entries {
+                points.push(ConnectionPoint {
+                    file_id,
+                    symbol_id: None,
+                    line: entry.line,
+                    protocol: Protocol::Rest,
+                    direction: FlowDirection::Stop,
+                    key: entry.route_template,
+                    method: entry.http_method.to_string(),
+                    framework: "rails".to_string(),
+                    metadata: None,
+                });
+            }
+        }
+
+        Ok(points)
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Route record — intermediate representation before DB insert
@@ -378,5 +450,5 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-#[path = "rails_routes_tests.rs"]
+#[path = "connectors_tests.rs"]
 mod tests;

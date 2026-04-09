@@ -109,15 +109,6 @@ fn join_prefix(prefix: &str, path: &str) -> String {
 // Pass 1: collect router prefixes for all Python files
 // ---------------------------------------------------------------------------
 
-/// Public alias for use by `FastApiRouteConnector`.
-pub(super) fn collect_prefixes_pub(
-    source: &str,
-    re_apirouter: &regex::Regex,
-    re_include: &regex::Regex,
-) -> std::collections::HashMap<String, String> {
-    collect_prefixes(source, re_apirouter, re_include)
-}
-
 /// Build a map of `variable_name → effective_prefix` for a single file's
 /// source text.
 ///

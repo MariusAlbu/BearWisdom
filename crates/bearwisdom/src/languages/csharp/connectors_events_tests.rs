@@ -41,7 +41,6 @@ fn extract_class_name_returns_none_for_no_class() {
 fn seed_event_and_handler(db: &Database) -> (i64, i64) {
     let conn = db.conn();
 
-    // Event file.
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
          VALUES ('Events/OrderCreatedEvent.cs', 'h1', 'csharp', 0)",
@@ -50,7 +49,6 @@ fn seed_event_and_handler(db: &Database) -> (i64, i64) {
     .unwrap();
     let event_file_id: i64 = conn.last_insert_rowid();
 
-    // IntegrationEvent base class.
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
          VALUES (?1, 'IntegrationEvent', 'eShop.IntegrationEvent', 'class', 1, 0)",
@@ -59,7 +57,6 @@ fn seed_event_and_handler(db: &Database) -> (i64, i64) {
     .unwrap();
     let base_id: i64 = conn.last_insert_rowid();
 
-    // The event class.
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
          VALUES (?1, 'OrderCreatedIntegrationEvent', 'eShop.OrderCreatedIntegrationEvent', 'class', 5, 0)",
@@ -68,7 +65,6 @@ fn seed_event_and_handler(db: &Database) -> (i64, i64) {
     .unwrap();
     let event_sym_id: i64 = conn.last_insert_rowid();
 
-    // inherits edge: OrderCreatedIntegrationEvent → IntegrationEvent.
     conn.execute(
         "INSERT INTO edges (source_id, target_id, kind, confidence)
          VALUES (?1, ?2, 'inherits', 1.0)",
@@ -76,7 +72,6 @@ fn seed_event_and_handler(db: &Database) -> (i64, i64) {
     )
     .unwrap();
 
-    // Handler file.
     conn.execute(
         "INSERT INTO files (path, hash, language, last_indexed)
          VALUES ('Handlers/OrderCreatedHandler.cs', 'h2', 'csharp', 0)",
@@ -85,7 +80,6 @@ fn seed_event_and_handler(db: &Database) -> (i64, i64) {
     .unwrap();
     let handler_file_id: i64 = conn.last_insert_rowid();
 
-    // Handler class symbol.
     conn.execute(
         "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
          VALUES (?1, 'OrderCreatedHandler', 'eShop.OrderCreatedHandler', 'class', 3, 0)",

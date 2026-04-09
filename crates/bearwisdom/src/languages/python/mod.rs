@@ -1,6 +1,7 @@
 //! python language plugin.
 
 mod calls;
+pub(crate) mod connectors;
 pub(crate) mod decorators;
 pub(crate) mod externals;
 mod helpers;
@@ -91,5 +92,12 @@ impl LanguagePlugin for PythonPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::PythonResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::DjangoRouteConnector),
+            Box::new(connectors::FastApiRouteConnector),
+        ]
     }
 }

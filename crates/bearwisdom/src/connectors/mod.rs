@@ -5,36 +5,25 @@ pub mod traits;
 pub mod types;
 
 // --- New-architecture connector implementations ---
-pub mod event_connector;
 pub mod graphql_connector;
 pub mod grpc_connector;
 pub mod ipc_connector;
 pub mod mq_connector;
 pub mod rest_connector;
-pub mod route_connectors;
 pub mod di_connector;
 
-pub mod angular_di;
 pub mod django;
 pub mod docker_compose;
 pub mod dockerfile;
 pub mod kubernetes;
-pub mod dotnet_di;
-pub mod dotnet_events;
 pub mod dotnet_http_client;
 pub mod ef_core;
 pub mod electron_ipc;
 pub mod fastapi_routes;
 pub mod frontend_http;
-pub mod go_routes;
 pub mod graphql;
 pub mod grpc;
 pub mod http_api;
-pub mod laravel_routes;
 pub mod message_queue;
-pub mod nestjs_routes;
-pub mod rails_routes;
 pub mod react_patterns;
-pub mod spring;
-pub mod spring_di;
 pub mod tauri_ipc;

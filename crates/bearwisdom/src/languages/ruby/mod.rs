@@ -9,6 +9,7 @@ pub mod extract;
 
 mod builtins;
 mod chain;
+pub mod connectors;
 pub(crate) mod externals;
 pub mod resolve;
 
@@ -87,5 +88,9 @@ impl LanguagePlugin for RubyPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::RubyResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![Box::new(connectors::RailsRouteConnector)]
     }
 }
