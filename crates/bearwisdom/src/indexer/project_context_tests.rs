@@ -81,21 +81,21 @@ fn test_implicit_usings_web_sdk() {
 
 #[test]
 fn test_is_external_namespace() {
+    use super::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.external_prefixes.insert("System".to_string());
-    ctx.external_prefixes.insert("Newtonsoft.Json".to_string());
-    ctx.external_prefixes.insert("MediatR".to_string());
+    let mut nuget = ManifestData::default();
+    nuget.dependencies.insert("Newtonsoft.Json".to_string());
+    nuget.dependencies.insert("MediatR".to_string());
+    ctx.manifests.insert(ManifestKind::NuGet, nuget);
 
-    assert!(ctx.is_external_namespace("System"));
-    assert!(ctx.is_external_namespace("System.Linq"));
-    assert!(ctx.is_external_namespace("System.Collections.Generic"));
-    assert!(ctx.is_external_namespace("Newtonsoft.Json"));
-    assert!(ctx.is_external_namespace("Newtonsoft.Json.Linq"));
-    assert!(ctx.is_external_namespace("MediatR"));
-    assert!(!ctx.is_external_namespace("App.Models"));
-    assert!(!ctx.is_external_namespace("eShop.Catalog"));
-    // "Systemx" should not match prefix "System"
-    assert!(!ctx.is_external_namespace("Systemx"));
+    let nuget = ctx.manifest(ManifestKind::NuGet).unwrap();
+    assert!(nuget.dependencies.contains("Newtonsoft.Json"));
+    assert!(nuget.dependencies.contains("MediatR"));
+    assert!(!nuget.dependencies.contains("App.Models"));
+    assert!(!nuget.dependencies.contains("eShop.Catalog"));
+    // System/Microsoft are base prefixes — never need to be in the manifest.
+    assert!(!nuget.dependencies.contains("System"));
+    assert!(!nuget.dependencies.contains("Microsoft"));
 }
 
 #[test]

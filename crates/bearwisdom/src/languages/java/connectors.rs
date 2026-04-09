@@ -22,6 +22,7 @@ use tracing::{debug, info};
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -963,13 +964,16 @@ impl Connector for JavaMqConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        let deps = &ctx.external_prefixes;
-        deps.contains("org.springframework.kafka")
-            || deps.contains("org.springframework.amqp")
-            || deps.contains("org.apache.kafka")
-            || deps.contains("software.amazon.awssdk")
-            || deps.contains("com.amazonaws")
-            || deps.contains("org")  // broad Spring org
+        ctx.has_dependency(ManifestKind::Maven, "org.springframework.kafka")
+            || ctx.has_dependency(ManifestKind::Gradle, "org.springframework.kafka")
+            || ctx.has_dependency(ManifestKind::Maven, "org.springframework.amqp")
+            || ctx.has_dependency(ManifestKind::Gradle, "org.springframework.amqp")
+            || ctx.has_dependency(ManifestKind::Maven, "org.apache.kafka")
+            || ctx.has_dependency(ManifestKind::Gradle, "org.apache.kafka")
+            || ctx.has_dependency(ManifestKind::Maven, "software.amazon.awssdk")
+            || ctx.has_dependency(ManifestKind::Gradle, "software.amazon.awssdk")
+            || ctx.has_dependency(ManifestKind::Maven, "com.amazonaws")
+            || ctx.has_dependency(ManifestKind::Gradle, "com.amazonaws")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

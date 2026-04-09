@@ -94,7 +94,9 @@ fn collect_csproj(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
                 continue;
             }
             collect_csproj(&path, out, depth + 1);
-        } else if path.extension().is_some_and(|e| e == "csproj") {
+        } else if path.extension().is_some_and(|e| {
+            e == "csproj" || e == "fsproj" || e == "vbproj"
+        }) {
             out.push(path);
         }
     }

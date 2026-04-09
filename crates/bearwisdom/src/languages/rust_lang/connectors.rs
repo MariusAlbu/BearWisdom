@@ -16,6 +16,7 @@ use rusqlite::Connection;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -34,7 +35,7 @@ impl Connector for TauriIpcConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.rust_crates.contains("tauri")
+        ctx.has_dependency(ManifestKind::Cargo, "tauri")
     }
 
     fn extract(
@@ -441,9 +442,9 @@ impl Connector for RustGrpcConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.rust_crates.contains("tonic")
-            || ctx.rust_crates.contains("grpcio")
-            || ctx.rust_crates.contains("prost")
+        ctx.has_dependency(ManifestKind::Cargo, "tonic")
+            || ctx.has_dependency(ManifestKind::Cargo, "grpcio")
+            || ctx.has_dependency(ManifestKind::Cargo, "prost")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -551,11 +552,11 @@ impl Connector for RustMqConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.rust_crates.contains("rdkafka")
-            || ctx.rust_crates.contains("kafka")
-            || ctx.rust_crates.contains("lapin")
-            || ctx.rust_crates.contains("async-nats")
-            || ctx.rust_crates.contains("nats")
+        ctx.has_dependency(ManifestKind::Cargo, "rdkafka")
+            || ctx.has_dependency(ManifestKind::Cargo, "kafka")
+            || ctx.has_dependency(ManifestKind::Cargo, "lapin")
+            || ctx.has_dependency(ManifestKind::Cargo, "async-nats")
+            || ctx.has_dependency(ManifestKind::Cargo, "nats")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

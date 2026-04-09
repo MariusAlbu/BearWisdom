@@ -21,6 +21,7 @@ mod extract_tests;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+use crate::indexer::manifest::ManifestKind;
 use crate::languages::LanguagePlugin;
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::ScopeKind;
@@ -111,7 +112,7 @@ impl LanguagePlugin for PythonPlugin {
         project_root: &std::path::Path,
         ctx: &crate::indexer::project_context::ProjectContext,
     ) {
-        if ctx.python_packages.contains("django") {
+        if ctx.has_dependency(ManifestKind::PyProject, "django") {
             connectors::run_django_concepts(db, project_root);
         }
     }

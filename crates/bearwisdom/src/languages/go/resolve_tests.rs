@@ -199,20 +199,23 @@ go 1.21
 
 #[test]
 fn test_is_external_go_import_with_module_path() {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.go_module_path = Some("code.gitea.io/gitea".to_string());
+    let mut go_mod = ManifestData::default();
+    go_mod.module_path = Some("code.gitea.io/gitea".to_string());
+    ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     // Internal: exact match
-    assert!(!ctx.is_external_go_import("code.gitea.io/gitea"));
+    assert!(!super::resolve::is_manifest_go_external(&ctx,"code.gitea.io/gitea"));
     // Internal: sub-package
-    assert!(!ctx.is_external_go_import("code.gitea.io/gitea/modules/log"));
-    assert!(!ctx.is_external_go_import("code.gitea.io/gitea/services/auth"));
+    assert!(!super::resolve::is_manifest_go_external(&ctx,"code.gitea.io/gitea/modules/log"));
+    assert!(!super::resolve::is_manifest_go_external(&ctx,"code.gitea.io/gitea/services/auth"));
     // External: different host
-    assert!(ctx.is_external_go_import("github.com/gin-gonic/gin"));
-    assert!(ctx.is_external_go_import("golang.org/x/crypto"));
+    assert!(super::resolve::is_manifest_go_external(&ctx,"github.com/gin-gonic/gin"));
+    assert!(super::resolve::is_manifest_go_external(&ctx,"golang.org/x/crypto"));
     // External: standard library is internal by our heuristic but shouldn't matter —
     // stdlib won't be in the index anyway
-    assert!(ctx.is_external_go_import("fmt")); // no dot → external per module-path logic
+    assert!(super::resolve::is_manifest_go_external(&ctx,"fmt")); // no dot → external per module-path logic
 }
 
 #[test]
@@ -220,23 +223,26 @@ fn test_is_external_go_import_no_module_path_fallback() {
     let ctx = ProjectContext::default(); // no go_module_path
 
     // Heuristic: dot in first segment → external
-    assert!(ctx.is_external_go_import("github.com/gin-gonic/gin"));
-    assert!(ctx.is_external_go_import("golang.org/x/net"));
+    assert!(super::resolve::is_manifest_go_external(&ctx,"github.com/gin-gonic/gin"));
+    assert!(super::resolve::is_manifest_go_external(&ctx,"golang.org/x/net"));
     // Standard library: no dot → not external
-    assert!(!ctx.is_external_go_import("fmt"));
-    assert!(!ctx.is_external_go_import("net/http"));
-    assert!(!ctx.is_external_go_import("encoding/json"));
+    assert!(!super::resolve::is_manifest_go_external(&ctx,"fmt"));
+    assert!(!super::resolve::is_manifest_go_external(&ctx,"net/http"));
+    assert!(!super::resolve::is_manifest_go_external(&ctx,"encoding/json"));
 }
 
 #[test]
 fn test_is_external_go_import_prefix_boundary() {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.go_module_path = Some("github.com/myorg/myrepo".to_string());
+    let mut go_mod = ManifestData::default();
+    go_mod.module_path = Some("github.com/myorg/myrepo".to_string());
+    ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     // "github.com/myorg/myrepox" must NOT be treated as internal
-    assert!(ctx.is_external_go_import("github.com/myorg/myrepox"));
+    assert!(super::resolve::is_manifest_go_external(&ctx,"github.com/myorg/myrepox"));
     // Sub-packages are internal
-    assert!(!ctx.is_external_go_import("github.com/myorg/myrepo/pkg/api"));
+    assert!(!super::resolve::is_manifest_go_external(&ctx,"github.com/myorg/myrepo/pkg/api"));
 }
 
 // ---------------------------------------------------------------------------
@@ -759,8 +765,11 @@ fn test_falls_back_for_unknown() {
 
 #[test]
 fn test_infer_external_namespace_exported_symbol() {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.go_module_path = Some("code.gitea.io/gitea".to_string());
+    let mut go_mod = ManifestData::default();
+    go_mod.module_path = Some("code.gitea.io/gitea".to_string());
+    ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     let file = make_file(
         "modules/log/log.go",
@@ -793,8 +802,11 @@ fn test_infer_external_namespace_exported_symbol() {
 #[test]
 fn test_infer_external_namespace_unexported_returns_none() {
     // Unexported names can't come from external packages.
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.go_module_path = Some("example.com/app".to_string());
+    let mut go_mod = ManifestData::default();
+    go_mod.module_path = Some("example.com/app".to_string());
+    ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     let file = make_file(
         "cmd/main.go",
@@ -828,10 +840,13 @@ fn test_infer_external_namespace_unexported_returns_none() {
 
 #[test]
 fn test_infer_external_namespace_internal_import_not_returned() {
-    // An import that is internal (starts with go_module_path) should not be
+    // An import that is internal (starts with the project module path) should not be
     // returned as external namespace.
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.go_module_path = Some("code.gitea.io/gitea".to_string());
+    let mut go_mod = ManifestData::default();
+    go_mod.module_path = Some("code.gitea.io/gitea".to_string());
+    ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     let file = make_file(
         "routers/web/web.go",
@@ -892,8 +907,11 @@ fn test_infer_no_imports_returns_none() {
 
 #[test]
 fn test_infer_external_namespace_import_ref_skipped() {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.go_module_path = Some("example.com/app".to_string());
+    let mut go_mod = ManifestData::default();
+    go_mod.module_path = Some("example.com/app".to_string());
+    ctx.manifests.insert(ManifestKind::GoMod, go_mod);
 
     let file = make_file(
         "main/main.go",

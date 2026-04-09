@@ -17,6 +17,7 @@ use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -35,8 +36,8 @@ impl Connector for FSharpDiConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        // Only run when at least one .NET external prefix is known.
-        !ctx.external_prefixes.is_empty()
+        // Only run if this looks like a .NET project.
+        ctx.manifests.contains_key(&ManifestKind::NuGet)
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

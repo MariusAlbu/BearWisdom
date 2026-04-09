@@ -18,6 +18,7 @@ use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -36,7 +37,8 @@ impl Connector for NestjsRouteConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("@nestjs/core") || ctx.ts_packages.contains("@nestjs/common")
+        ctx.has_dependency(ManifestKind::Npm, "@nestjs/core")
+            || ctx.has_dependency(ManifestKind::Npm, "@nestjs/common")
     }
 
     fn extract(
@@ -80,7 +82,7 @@ impl Connector for NextjsRouteConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("next")
+        ctx.has_dependency(ManifestKind::Npm, "next")
     }
 
     fn extract(
@@ -480,7 +482,7 @@ impl Connector for TauriIpcTsConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.rust_crates.contains("tauri")
+        ctx.has_dependency(ManifestKind::Cargo, "tauri")
     }
 
     fn extract(
@@ -607,7 +609,7 @@ impl Connector for ElectronIpcConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("electron")
+        ctx.has_dependency(ManifestKind::Npm, "electron")
     }
 
     fn extract(
@@ -1638,13 +1640,13 @@ impl Connector for TypeScriptMqConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("kafkajs")
-            || ctx.ts_packages.contains("kafka-node")
-            || ctx.ts_packages.contains("amqplib")
-            || ctx.ts_packages.contains("amqp-connection-manager")
-            || ctx.ts_packages.contains("bullmq")
-            || ctx.ts_packages.contains("bull")
-            || ctx.ts_packages.contains("@nestjs/microservices")
+        ctx.has_dependency(ManifestKind::Npm, "kafkajs")
+            || ctx.has_dependency(ManifestKind::Npm, "kafka-node")
+            || ctx.has_dependency(ManifestKind::Npm, "amqplib")
+            || ctx.has_dependency(ManifestKind::Npm, "amqp-connection-manager")
+            || ctx.has_dependency(ManifestKind::Npm, "bullmq")
+            || ctx.has_dependency(ManifestKind::Npm, "bull")
+            || ctx.has_dependency(ManifestKind::Npm, "@nestjs/microservices")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -1829,14 +1831,14 @@ impl Connector for TypeScriptGraphQlConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("graphql")
-            || ctx.ts_packages.contains("@apollo/server")
-            || ctx.ts_packages.contains("apollo-server")
-            || ctx.ts_packages.contains("@apollo/client")
-            || ctx.ts_packages.contains("mercurius")
-            || ctx.ts_packages.contains("graphql-yoga")
-            || ctx.ts_packages.contains("type-graphql")
-            || ctx.ts_packages.contains("nexus")
+        ctx.has_dependency(ManifestKind::Npm, "graphql")
+            || ctx.has_dependency(ManifestKind::Npm, "@apollo/server")
+            || ctx.has_dependency(ManifestKind::Npm, "apollo-server")
+            || ctx.has_dependency(ManifestKind::Npm, "@apollo/client")
+            || ctx.has_dependency(ManifestKind::Npm, "mercurius")
+            || ctx.has_dependency(ManifestKind::Npm, "graphql-yoga")
+            || ctx.has_dependency(ManifestKind::Npm, "type-graphql")
+            || ctx.has_dependency(ManifestKind::Npm, "nexus")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

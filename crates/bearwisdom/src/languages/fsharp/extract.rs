@@ -738,14 +738,25 @@ fn extract_application_callee(node: &Node, src: &str) -> String {
                     // e.g. `obj.Method arg` — the callee is the dot member
                     return extract_dot_member(&first, src).unwrap_or_default();
                 }
-                "paren_expression" => {
-                    // e.g. `(fun x -> x) arg` — anonymous function application
+                "paren_expression" | "begin_end_expression" => {
+                    // e.g. `(fun x -> x) arg` — anonymous application
+                    return String::new();
+                }
+                "infix_expression" | "ce_expression" => {
+                    // e.g. `route >=> text` or `async { ... }` — compound expression,
+                    // not a simple callee. The individual function refs inside will be
+                    // collected by collect_applications recursing into children.
                     return String::new();
                 }
                 _ => {
-                    // Try to get identifier text from whatever it is
-                    let t = node_text(&first, src).to_string();
-                    return t;
+                    // Only return text for leaf nodes (operators, keywords).
+                    // Complex nodes (with children) are expressions that shouldn't
+                    // be flattened into a single function name.
+                    if first.child_count() == 0 {
+                        let t = node_text(&first, src).to_string();
+                        return t;
+                    }
+                    return String::new();
                 }
             }
         } else {
@@ -774,16 +785,6 @@ fn collect_applications(
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
                         target_name: name,
-                        kind: EdgeKind::Calls,
-                        line: child.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                    });
-                } else {
-                    // Still emit a ref so the coverage budget for this node is consumed.
-                    refs.push(ExtractedRef {
-                        source_symbol_index: source_idx,
-                        target_name: String::from("__app__"),
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
                         module: None,

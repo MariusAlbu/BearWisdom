@@ -16,6 +16,7 @@ use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -34,7 +35,7 @@ impl Connector for VbNetDiConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        !ctx.external_prefixes.is_empty()
+        ctx.manifests.contains_key(&ManifestKind::NuGet)
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

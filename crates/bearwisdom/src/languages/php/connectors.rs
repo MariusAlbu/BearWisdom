@@ -47,6 +47,7 @@ use tracing::{debug, info};
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -65,7 +66,7 @@ impl Connector for LaravelRouteConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.php_packages.iter().any(|p| p.contains("laravel"))
+        ctx.manifest(ManifestKind::Composer).map_or(false, |m| m.dependencies.iter().any(|p| p.contains("laravel")))
     }
 
     fn extract(

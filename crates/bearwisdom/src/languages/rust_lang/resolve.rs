@@ -457,7 +457,7 @@ impl LanguageResolver for RustResolver {
                         }
                     }
                     let is_ext = match project_ctx {
-                        Some(ctx) => ctx.is_external_rust_crate(name),
+                        Some(ctx) => is_manifest_rust_crate(ctx, name),
                         None => true, // conservative: treat as external
                     };
                     if is_ext {
@@ -501,7 +501,7 @@ impl LanguageResolver for RustResolver {
                         }
                     }
                     let is_ext = match project_ctx {
-                        Some(ctx) => ctx.is_external_rust_crate(name),
+                        Some(ctx) => is_manifest_rust_crate(ctx, name),
                         None => true,
                     };
                     if is_ext {
@@ -526,7 +526,7 @@ impl LanguageResolver for RustResolver {
                             "crate" | "self" | "super" => false,
                             "std" | "core" | "alloc" => true,
                             name => match project_ctx {
-                                Some(ctx) => ctx.is_external_rust_crate(name),
+                                Some(ctx) => is_manifest_rust_crate(ctx, name),
                                 None => true,
                             },
                         };
@@ -564,4 +564,15 @@ impl LanguageResolver for RustResolver {
             _ => true, // public
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a Rust crate name is an external dependency using the Cargo manifest.
+fn is_manifest_rust_crate(ctx: &ProjectContext, name: &str) -> bool {
+    matches!(name, "std" | "core" | "alloc")
+        || ctx.has_dependency(ManifestKind::Cargo, name)
+        || ctx.has_dependency(ManifestKind::Cargo, &name.replace('_', "-"))
 }

@@ -333,7 +333,7 @@ impl LanguageResolver for TypeScriptResolver {
                     }
                 }
                 let is_external = match project_ctx {
-                    Some(ctx) => ctx.is_external_ts_package(module),
+                    Some(ctx) => is_manifest_ts_package(ctx, module),
                     // Without ProjectContext, treat all bare specifiers as external.
                     None => true,
                 };
@@ -366,7 +366,7 @@ impl LanguageResolver for TypeScriptResolver {
                 }
             }
             let is_external = match project_ctx {
-                Some(ctx) => ctx.is_external_ts_package(module_path),
+                Some(ctx) => is_manifest_ts_package(ctx, module_path),
                 None => true,
             };
             if is_external {
@@ -387,7 +387,7 @@ impl LanguageResolver for TypeScriptResolver {
                     if let Some(module_path) = &import.module_path {
                         if builtins::is_bare_specifier(module_path) {
                             let is_external = match project_ctx {
-                                Some(ctx) => ctx.is_external_ts_package(module_path),
+                                Some(ctx) => is_manifest_ts_package(ctx, module_path),
                                 None => true,
                             };
                             if is_external {
@@ -519,6 +519,29 @@ fn follow_reexports(
     }
 
     None
+}
+
+/// Check whether a bare module specifier is an external npm package or Node.js built-in,
+/// using the project manifest (package.json) directly.
+pub(crate) fn is_manifest_ts_package(ctx: &ProjectContext, specifier: &str) -> bool {
+    if specifier.starts_with("node:") {
+        return true;
+    }
+    if let Some(m) = ctx.manifest(ManifestKind::Npm) {
+        let deps = &m.dependencies;
+        if deps.contains(specifier) {
+            return true;
+        }
+        let mut path = specifier;
+        while let Some(slash) = path.rfind('/') {
+            path = &path[..slash];
+            if deps.contains(path) {
+                return true;
+            }
+        }
+        return false;
+    }
+    false
 }
 
 /// Check whether a bare module specifier matches any npm package in the manifest.

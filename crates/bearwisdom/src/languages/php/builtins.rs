@@ -2,6 +2,7 @@
 // php/builtins.rs — PHP builtin and helper predicates
 // =============================================================================
 
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::EdgeKind;
 
@@ -56,14 +57,40 @@ pub(super) fn is_external_php_namespace(
         }
     }
 
-    // Check ProjectContext (from composer.json).
+    // Check Composer manifest directly.
     if let Some(ctx) = project_ctx {
-        // composer.json package names like "laravel/framework" are stored
-        // in external_prefixes. PHP package names often map to namespace roots
-        // (e.g., "laravel/framework" → "Illuminate").
-        return ctx.is_external_namespace(ns);
+        return is_manifest_php_external(ctx, ns);
     }
 
+    false
+}
+
+/// Check whether a PHP namespace is external using the Composer manifest directly.
+pub(super) fn is_manifest_php_external(ctx: &ProjectContext, ns: &str) -> bool {
+    let root = ns.split('.').next().unwrap_or(ns);
+    // Always-external check.
+    for prefix in ALWAYS_EXTERNAL {
+        if ns == *prefix || ns.starts_with(&format!("{prefix}.")) {
+            return true;
+        }
+    }
+    if let Some(m) = ctx.manifest(ManifestKind::Composer) {
+        if m.dependencies.contains(ns) {
+            return true;
+        }
+        for dep in &m.dependencies {
+            // Composer package names use "vendor/package" form; namespace roots are
+            // the second segment (e.g., "laravel/framework" → namespace root "Illuminate").
+            // We match against the namespace root segment.
+            let dep_ns_root = dep.split('/').nth(1).unwrap_or(dep.as_str());
+            if root == dep_ns_root {
+                return true;
+            }
+            if ns.starts_with(dep.as_str()) {
+                return true;
+            }
+        }
+    }
     false
 }
 

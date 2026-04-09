@@ -137,6 +137,20 @@ pub(super) fn is_fsharp_builtin(name: &str) -> bool {
     )
 }
 
+/// Fallback external namespace check when no ProjectContext is available.
+/// Matches common .NET namespace roots (System, Microsoft, etc.).
+pub(super) fn is_external_namespace_fallback(ns: &str) -> bool {
+    let root = ns.split('.').next().unwrap_or(ns);
+    matches!(
+        root,
+        "System" | "Microsoft" | "Newtonsoft" | "Serilog" | "NLog"
+            | "AutoMapper" | "FluentValidation" | "MediatR" | "Polly"
+            | "NSubstitute" | "Moq" | "FakeItEasy" | "Xunit" | "NUnit"
+            | "Giraffe" | "Saturn" | "Suave" | "Fable" | "Elmish"
+            | "FSharp" | "FsToolkit" | "Thoth" | "Fantomas"
+    )
+}
+
 /// Qualified F# stdlib calls (e.g. `Seq.map`, `List.filter`, `Map.empty`).
 fn is_fsharp_qualified_builtin(name: &str) -> bool {
     matches!(

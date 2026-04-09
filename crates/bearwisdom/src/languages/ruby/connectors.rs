@@ -27,6 +27,7 @@ use tracing::{debug, info};
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -45,7 +46,8 @@ impl Connector for RailsRouteConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ruby_gems.contains("rails") || ctx.ruby_gems.contains("railties")
+        ctx.has_dependency(ManifestKind::Gemfile, "rails")
+            || ctx.has_dependency(ManifestKind::Gemfile, "railties")
     }
 
     fn extract(
@@ -621,7 +623,7 @@ impl Connector for RubyGraphQlConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ruby_gems.contains("graphql")
+        ctx.has_dependency(ManifestKind::Gemfile, "graphql")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

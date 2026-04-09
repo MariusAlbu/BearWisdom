@@ -18,6 +18,7 @@
 
 
 use super::{builtins, chain};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -48,10 +49,14 @@ impl LanguageResolver for CSharpResolver {
             }
         }
 
-        // Inject global usings from ProjectContext (SDK implicit + GlobalUsings.cs).
+        // Inject global usings from the NuGet manifest (SDK implicit + GlobalUsings.cs).
         // These go first so per-file usings can override.
         if let Some(ctx) = project_ctx {
-            for ns in &ctx.global_usings {
+            let global_usings: &[String] = ctx
+                .manifest(ManifestKind::NuGet)
+                .map(|m| m.global_usings.as_slice())
+                .unwrap_or(&[]);
+            for ns in global_usings {
                 imports.push(ImportEntry {
                     imported_name: ns.clone(),
                     module_path: Some(ns.clone()),
@@ -244,7 +249,7 @@ impl LanguageResolver for CSharpResolver {
         // itself as external if the namespace is known-external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let external = match project_ctx {
-                Some(ctx) => ctx.is_external_namespace(target),
+                Some(ctx) => is_manifest_external_namespace(ctx, target),
                 None => builtins::is_external_namespace_fallback(target),
             };
             if external {
@@ -267,7 +272,7 @@ impl LanguageResolver for CSharpResolver {
             }
 
             let external = match project_ctx {
-                Some(ctx) => ctx.is_external_namespace(ns),
+                Some(ctx) => is_manifest_external_namespace(ctx, ns),
                 None => builtins::is_external_namespace_fallback(ns),
             };
 
@@ -319,6 +324,42 @@ impl LanguageResolver for CSharpResolver {
             _ => true,
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a .NET namespace is external, using the NuGet manifest directly.
+///
+/// Always-external base prefixes (`System`, `Microsoft`) are checked first.
+/// NuGet package names are then checked as namespace prefixes and via root-segment
+/// matching (e.g., a "Newtonsoft.Json" dep makes any "Newtonsoft.*" namespace external).
+fn is_manifest_external_namespace(ctx: &ProjectContext, ns: &str) -> bool {
+    let root = ns.split('.').next().unwrap_or(ns);
+    if matches!(root, "System" | "Microsoft") {
+        return true;
+    }
+    if let Some(m) = ctx.manifest(ManifestKind::NuGet) {
+        if m.dependencies.contains(ns) {
+            return true;
+        }
+        for dep in &m.dependencies {
+            if ns.starts_with(dep.as_str())
+                && ns.len() > dep.len()
+                && ns.as_bytes()[dep.len()] == b'.'
+            {
+                return true;
+            }
+            if let Some(dep_root) = dep.split('.').next() {
+                if root == dep_root {
+                    return true;
+                }
+            }
+        }
+        return false;
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------

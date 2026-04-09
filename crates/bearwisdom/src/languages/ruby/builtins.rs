@@ -2,6 +2,7 @@
 // ruby/builtins.rs — Ruby builtin and helper predicates
 // =============================================================================
 
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::EdgeKind;
 
@@ -62,10 +63,12 @@ pub(super) fn is_external_ruby_require(
     if RUBY_STDLIB.contains(&require_path) {
         return true;
     }
-    // Check gem names from ruby_gems (back-filled from Gemfile in build_project_context).
+    // Check gem names from Gemfile manifest.
     if let Some(ctx) = project_ctx {
         let gem_root = require_path.split('/').next().unwrap_or(require_path);
-        if ctx.ruby_gems.contains(gem_root) || ctx.ruby_gems.contains(require_path) {
+        if ctx.has_dependency(ManifestKind::Gemfile, gem_root)
+            || ctx.has_dependency(ManifestKind::Gemfile, require_path)
+        {
             return true;
         }
     }

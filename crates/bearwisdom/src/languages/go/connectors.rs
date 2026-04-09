@@ -33,6 +33,7 @@ use tracing::{debug, info};
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -51,7 +52,7 @@ impl Connector for GoRouteConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.go_module_path.is_some()
+        ctx.manifest(ManifestKind::GoMod).and_then(|m| m.module_path.as_ref()).is_some()
     }
 
     fn extract(
@@ -692,8 +693,8 @@ impl Connector for GoGrpcConnector {
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
         // google.golang.org/grpc is the standard Go gRPC module.
-        ctx.external_prefixes.contains("google.golang.org/grpc")
-            || ctx.external_prefixes.contains("google.golang.org")
+        ctx.has_dependency(ManifestKind::GoMod, "google.golang.org/grpc")
+            || ctx.has_dependency(ManifestKind::GoMod, "google.golang.org")
     }
 
     fn extract(&self, conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -819,13 +820,12 @@ impl Connector for GoMqConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        let deps = &ctx.external_prefixes;
-        deps.contains("github.com/Shopify/sarama")
-            || deps.contains("github.com/IBM/sarama")
-            || deps.contains("github.com/confluentinc/confluent-kafka-go")
-            || deps.contains("github.com/rabbitmq/amqp091-go")
-            || deps.contains("github.com/streadway/amqp")
-            || deps.contains("github.com/nats-io/nats.go")
+        ctx.has_dependency(ManifestKind::GoMod, "github.com/Shopify/sarama")
+            || ctx.has_dependency(ManifestKind::GoMod, "github.com/IBM/sarama")
+            || ctx.has_dependency(ManifestKind::GoMod, "github.com/confluentinc/confluent-kafka-go")
+            || ctx.has_dependency(ManifestKind::GoMod, "github.com/rabbitmq/amqp091-go")
+            || ctx.has_dependency(ManifestKind::GoMod, "github.com/streadway/amqp")
+            || ctx.has_dependency(ManifestKind::GoMod, "github.com/nats-io/nats.go")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

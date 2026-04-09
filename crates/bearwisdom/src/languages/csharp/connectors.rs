@@ -15,6 +15,7 @@ use tracing::{debug, info};
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -33,7 +34,7 @@ impl Connector for DotnetDiConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        !ctx.external_prefixes.is_empty()
+        ctx.manifests.contains_key(&ManifestKind::NuGet)
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -114,7 +115,7 @@ impl Connector for EventBusConnector {
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
         // Only run if this looks like a .NET project.
-        !ctx.external_prefixes.is_empty()
+        ctx.manifests.contains_key(&ManifestKind::NuGet)
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -847,13 +848,12 @@ impl Connector for CSharpMqConnector {
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
         // Detect known .NET MQ packages.
-        let deps = &ctx.external_prefixes;
-        deps.contains("MassTransit")
-            || deps.contains("NServiceBus")
-            || deps.contains("Azure.Messaging.ServiceBus")
-            || deps.contains("RabbitMQ")
-            || deps.contains("Confluent")
-            || deps.contains("Confluent.Kafka")
+        ctx.has_dependency(ManifestKind::NuGet, "MassTransit")
+            || ctx.has_dependency(ManifestKind::NuGet, "NServiceBus")
+            || ctx.has_dependency(ManifestKind::NuGet, "Azure.Messaging.ServiceBus")
+            || ctx.has_dependency(ManifestKind::NuGet, "RabbitMQ")
+            || ctx.has_dependency(ManifestKind::NuGet, "Confluent")
+            || ctx.has_dependency(ManifestKind::NuGet, "Confluent.Kafka")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -1067,10 +1067,9 @@ impl Connector for CSharpGraphQlConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        let deps = &ctx.external_prefixes;
-        deps.contains("HotChocolate")
-            || deps.contains("StrawberryShake")
-            || deps.contains("GraphQL")
+        ctx.has_dependency(ManifestKind::NuGet, "HotChocolate")
+            || ctx.has_dependency(ManifestKind::NuGet, "StrawberryShake")
+            || ctx.has_dependency(ManifestKind::NuGet, "GraphQL")
     }
 
     fn extract(&self, conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {

@@ -18,6 +18,7 @@ use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -36,7 +37,7 @@ impl Connector for AngularDiConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("@angular/core")
+        ctx.has_dependency(ManifestKind::Npm, "@angular/core")
     }
 
     fn extract(
@@ -256,7 +257,10 @@ export class DashboardComponent {
 
         assert!(!c.detect(&ctx), "should not detect without @angular/core");
 
-        ctx.ts_packages.insert("@angular/core".to_string());
+        use crate::indexer::manifest::{ManifestData, ManifestKind};
+        let mut npm = ManifestData::default();
+        npm.dependencies.insert("@angular/core".to_string());
+        ctx.manifests.insert(ManifestKind::Npm, npm);
         assert!(c.detect(&ctx), "should detect with @angular/core");
     }
 
@@ -290,7 +294,10 @@ export class DashboardComponent {
 
         let connector = AngularDiConnector;
         let mut ctx = ProjectContext::default();
-        ctx.ts_packages.insert("@angular/core".to_string());
+        use crate::indexer::manifest::{ManifestData, ManifestKind};
+        let mut npm = ManifestData::default();
+        npm.dependencies.insert("@angular/core".to_string());
+        ctx.manifests.insert(ManifestKind::Npm, npm);
 
         assert!(connector.detect(&ctx));
 
@@ -325,7 +332,7 @@ impl Connector for AngularRestConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("@angular/core")
+        ctx.has_dependency(ManifestKind::Npm, "@angular/core")
     }
 
     fn extract(

@@ -330,21 +330,7 @@ impl LanguageResolver for GoResolver {
             // is_external_go_import already uses go_module_path from the manifest,
             // so this explicit check adds direct manifest validation as the first pass.
             let external = if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::GoMod) {
-                    // Check if import_path starts with any known external module path.
-                    let is_known_ext = manifest.dependencies.iter().any(|dep| {
-                        full_path == dep
-                            || full_path.starts_with(dep.as_str())
-                                && full_path.as_bytes().get(dep.len()) == Some(&b'/')
-                    });
-                    if is_known_ext {
-                        true
-                    } else {
-                        ctx.is_external_go_import(full_path)
-                    }
-                } else {
-                    ctx.is_external_go_import(full_path)
-                }
+                is_manifest_go_external(ctx, full_path)
             } else {
                 builtins::is_external_go_import_fallback(full_path)
             };
@@ -477,6 +463,37 @@ fn extract_package_name(file: &ParsedFile) -> Option<String> {
         }
     }
     None
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a Go import path is external to the project, using the go.mod manifest.
+///
+/// Returns `false` when the path matches (or is a sub-package of) the project's own
+/// module path. Falls back to the dot-in-host heuristic when no GoMod manifest is
+/// available.
+pub(crate) fn is_manifest_go_external(ctx: &ProjectContext, import_path: &str) -> bool {
+    let module_path: Option<&str> = ctx
+        .manifest(ManifestKind::GoMod)
+        .and_then(|m| m.module_path.as_deref());
+
+    if let Some(module_path) = module_path {
+        if import_path == module_path {
+            return false;
+        }
+        if import_path.starts_with(module_path)
+            && import_path.len() > module_path.len()
+            && import_path.as_bytes()[module_path.len()] == b'/'
+        {
+            return false;
+        }
+        return true;
+    }
+    // No module path available — heuristic: dot in first segment = third-party host.
+    let first_segment = import_path.split('/').next().unwrap_or(import_path);
+    first_segment.contains('.')
 }
 
 // ---------------------------------------------------------------------------

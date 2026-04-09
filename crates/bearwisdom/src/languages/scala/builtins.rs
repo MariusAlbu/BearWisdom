@@ -2,6 +2,7 @@
 // scala/builtins.rs — Scala builtin and helper predicates
 // =============================================================================
 
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::EdgeKind;
 
@@ -58,9 +59,30 @@ pub(super) fn is_external_scala_namespace(
     }
 
     if let Some(ctx) = project_ctx {
-        return ctx.is_external_namespace(ns);
+        return is_manifest_jvm_external(ctx, ns);
     }
 
+    false
+}
+
+/// Check whether a Scala/JVM namespace is external using Maven/Gradle manifests directly.
+pub(super) fn is_manifest_jvm_external(ctx: &ProjectContext, ns: &str) -> bool {
+    let root = ns.split('.').next().unwrap_or(ns);
+    if matches!(root, "java" | "javax" | "jakarta" | "sun" | "org") {
+        return true;
+    }
+    for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+        if let Some(m) = ctx.manifest(kind) {
+            if m.dependencies.contains(ns) {
+                return true;
+            }
+            for dep in &m.dependencies {
+                if ns.starts_with(dep.as_str()) {
+                    return true;
+                }
+            }
+        }
+    }
     false
 }
 

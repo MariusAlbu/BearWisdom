@@ -478,7 +478,9 @@ impl SymbolIndex {
         // Build module-to-file mapping using ecosystem-specific ModuleResolvers.
         // For each import ref that carries a module specifier, resolve it to an
         // actual indexed file path and cache the result.
-        let go_module_path = project_ctx.and_then(|ctx| ctx.go_module_path.as_deref());
+        let go_module_path = project_ctx
+            .and_then(|ctx| ctx.manifest(crate::indexer::manifest::ManifestKind::GoMod))
+            .and_then(|m| m.module_path.as_deref());
         let resolvers =
             crate::indexer::module_resolution::all_resolvers_with_go_module(go_module_path);
         let file_paths: Vec<&str> = parsed.iter().map(|pf| pf.path.as_str()).collect();
@@ -521,14 +523,7 @@ impl SymbolIndex {
         // are fully materialised in the `packages` table.
         let test_globals: HashSet<String> = if let Some(ctx) = project_ctx {
             // Collect all known dependency names across ecosystems.
-            let mut all_deps: HashSet<String> = HashSet::new();
-            all_deps.extend(ctx.ts_packages.iter().cloned());
-            all_deps.extend(ctx.rust_crates.iter().cloned());
-            all_deps.extend(ctx.python_packages.iter().cloned());
-            all_deps.extend(ctx.ruby_gems.iter().cloned());
-            all_deps.extend(ctx.php_packages.iter().cloned());
-            // Also include the NuGet / Maven package names stored in external_prefixes.
-            all_deps.extend(ctx.external_prefixes.iter().cloned());
+            let all_deps = ctx.all_dependency_names();
             let mut globals = crate::indexer::framework_globals::framework_globals(&all_deps);
             // Also collect framework globals from each language plugin.
             for plugin in crate::languages::default_registry().all() {

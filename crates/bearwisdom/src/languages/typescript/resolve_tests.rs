@@ -107,18 +107,21 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
 
 /// Build a minimal ProjectContext with react and @tanstack/react-query as packages.
 fn make_ts_project_ctx() -> ProjectContext {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
-    ctx.ts_packages.insert("react".to_string());
-    ctx.ts_packages.insert("react-dom".to_string());
-    ctx.ts_packages.insert("@tanstack/react-query".to_string());
-    ctx.ts_packages.insert("@tanstack".to_string());
-    ctx.ts_packages.insert("express".to_string());
-    ctx.ts_packages.insert("lodash".to_string());
+    let mut npm = ManifestData::default();
+    npm.dependencies.insert("react".to_string());
+    npm.dependencies.insert("react-dom".to_string());
+    npm.dependencies.insert("@tanstack/react-query".to_string());
+    npm.dependencies.insert("@tanstack".to_string());
+    npm.dependencies.insert("express".to_string());
+    npm.dependencies.insert("lodash".to_string());
     // Node.js built-ins (subset)
     for builtin in &["fs", "path", "http", "https", "crypto", "os", "events", "stream"] {
-        ctx.ts_packages.insert(builtin.to_string());
+        npm.dependencies.insert(builtin.to_string());
     }
-    ctx.ts_packages.insert("node".to_string());
+    npm.dependencies.insert("node".to_string());
+    ctx.manifests.insert(ManifestKind::Npm, npm);
     ctx
 }
 
@@ -723,16 +726,16 @@ fn test_parse_package_json_deps() {
 fn test_project_context_external_package_lookup() {
     let ctx = make_ts_project_ctx();
 
-    assert!(ctx.is_external_ts_package("react"));
-    assert!(ctx.is_external_ts_package("@tanstack/react-query"));
-    assert!(ctx.is_external_ts_package("@tanstack"));
-    assert!(ctx.is_external_ts_package("fs"));
-    assert!(ctx.is_external_ts_package("path"));
-    assert!(ctx.is_external_ts_package("node:fs")); // node: protocol always external
+    assert!(super::resolve::is_manifest_ts_package(&ctx,"react"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx,"@tanstack/react-query"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx,"@tanstack"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx,"fs"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx,"path"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx,"node:fs")); // node: protocol always external
 
-    assert!(!ctx.is_external_ts_package("./utils"));
-    assert!(!ctx.is_external_ts_package("../shared"));
-    assert!(!ctx.is_external_ts_package("MyInternalService"));
+    assert!(!super::resolve::is_manifest_ts_package(&ctx,"./utils"));
+    assert!(!super::resolve::is_manifest_ts_package(&ctx,"../shared"));
+    assert!(!super::resolve::is_manifest_ts_package(&ctx,"MyInternalService"));
 }
 
 #[test]

@@ -436,18 +436,15 @@ fn test_falls_back_for_unknown() {
 
 /// Build a ProjectContext simulating a Web SDK project with some packages.
 fn make_web_project_ctx() -> ProjectContext {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
     use crate::indexer::project_context::DotnetSdkType;
     let mut ctx = ProjectContext::default();
-    // SDK base prefixes
-    ctx.external_prefixes.insert("System".to_string());
-    ctx.external_prefixes.insert("Microsoft".to_string());
-    // Some NuGet packages
-    ctx.external_prefixes.insert("Newtonsoft".to_string());
-    ctx.external_prefixes.insert("Newtonsoft.Json".to_string());
-    // Web SDK implicit usings
+    let mut nuget = ManifestData::default();
+    nuget.dependencies.insert("Newtonsoft.Json".to_string());
     for ns in crate::indexer::project_context::implicit_usings_for_sdk(DotnetSdkType::Web) {
-        ctx.global_usings.push(ns.to_string());
+        nuget.global_usings.push(ns.to_string());
     }
+    ctx.manifests.insert(ManifestKind::NuGet, nuget);
     ctx
 }
 

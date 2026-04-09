@@ -402,7 +402,7 @@ impl LanguageResolver for PythonResolver {
                 }
             }
             let is_ext = match project_ctx {
-                Some(ctx) => ctx.is_external_python_package(root),
+                Some(ctx) => is_manifest_python_package(ctx, root),
                 None => true,
             };
             if is_ext {
@@ -443,7 +443,7 @@ impl LanguageResolver for PythonResolver {
                 }
             }
             let is_ext = match project_ctx {
-                Some(ctx) => ctx.is_external_python_package(root),
+                Some(ctx) => is_manifest_python_package(ctx, root),
                 None => true,
             };
             if is_ext {
@@ -456,6 +456,16 @@ impl LanguageResolver for PythonResolver {
 
     // is_visible: default (always true). Python has no enforced access control
     // at runtime — `_private` is convention only and we don't track it.
+}
+
+// ---------------------------------------------------------------------------
+// Private helpers
+// ---------------------------------------------------------------------------
+
+/// Check whether a Python package root is an external dependency using the project manifest.
+fn is_manifest_python_package(ctx: &ProjectContext, name: &str) -> bool {
+    ctx.has_dependency(ManifestKind::PyProject, name)
+        || ctx.has_dependency(ManifestKind::PyProject, &name.replace('_', "-"))
 }
 
 // =============================================================================

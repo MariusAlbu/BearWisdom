@@ -14,6 +14,7 @@ use rusqlite::Connection;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -32,7 +33,7 @@ impl Connector for DjangoRouteConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.python_packages.contains("django")
+        ctx.has_dependency(ManifestKind::PyProject, "django")
     }
 
     fn extract(
@@ -158,7 +159,8 @@ impl Connector for FastApiRouteConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.python_packages.contains("fastapi") || ctx.python_packages.contains("starlette")
+        ctx.has_dependency(ManifestKind::PyProject, "fastapi")
+            || ctx.has_dependency(ManifestKind::PyProject, "starlette")
     }
 
     fn extract(
@@ -627,9 +629,9 @@ impl Connector for PythonGrpcConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.python_packages.contains("grpcio")
-            || ctx.python_packages.contains("grpc")
-            || ctx.python_packages.contains("grpcio-tools")
+        ctx.has_dependency(ManifestKind::PyProject, "grpcio")
+            || ctx.has_dependency(ManifestKind::PyProject, "grpc")
+            || ctx.has_dependency(ManifestKind::PyProject, "grpcio-tools")
     }
 
     fn extract(&self, conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -751,12 +753,12 @@ impl Connector for PythonMqConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.python_packages.contains("celery")
-            || ctx.python_packages.contains("kafka-python")
-            || ctx.python_packages.contains("confluent-kafka")
-            || ctx.python_packages.contains("pika")
-            || ctx.python_packages.contains("aio-pika")
-            || ctx.python_packages.contains("kombu")
+        ctx.has_dependency(ManifestKind::PyProject, "celery")
+            || ctx.has_dependency(ManifestKind::PyProject, "kafka-python")
+            || ctx.has_dependency(ManifestKind::PyProject, "confluent-kafka")
+            || ctx.has_dependency(ManifestKind::PyProject, "pika")
+            || ctx.has_dependency(ManifestKind::PyProject, "aio-pika")
+            || ctx.has_dependency(ManifestKind::PyProject, "kombu")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
@@ -908,10 +910,10 @@ impl Connector for PythonGraphQlConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.python_packages.contains("strawberry-graphql")
-            || ctx.python_packages.contains("ariadne")
-            || ctx.python_packages.contains("graphene")
-            || ctx.python_packages.contains("graphql-core")
+        ctx.has_dependency(ManifestKind::PyProject, "strawberry-graphql")
+            || ctx.has_dependency(ManifestKind::PyProject, "ariadne")
+            || ctx.has_dependency(ManifestKind::PyProject, "graphene")
+            || ctx.has_dependency(ManifestKind::PyProject, "graphql-core")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {

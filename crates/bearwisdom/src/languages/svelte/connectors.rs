@@ -20,6 +20,7 @@ use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -38,11 +39,11 @@ impl Connector for SvelteGraphQlConnector {
     }
 
     fn detect(&self, ctx: &ProjectContext) -> bool {
-        ctx.ts_packages.contains("graphql")
-            || ctx.ts_packages.contains("@apollo/client")
-            || ctx.ts_packages.contains("apollo-client")
-            || ctx.ts_packages.contains("urql")
-            || ctx.ts_packages.contains("@urql/svelte")
+        ctx.has_dependency(ManifestKind::Npm, "graphql")
+            || ctx.has_dependency(ManifestKind::Npm, "@apollo/client")
+            || ctx.has_dependency(ManifestKind::Npm, "apollo-client")
+            || ctx.has_dependency(ManifestKind::Npm, "urql")
+            || ctx.has_dependency(ManifestKind::Npm, "@urql/svelte")
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
