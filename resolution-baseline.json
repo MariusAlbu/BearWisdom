@@ -1,0 +1,299 @@
+{
+  "eShop": {
+    "language": "csharp",
+    "files": 676,
+    "symbols": 6237,
+    "edges": 4183,
+    "external": 14576,
+    "unresolved": 10,
+    "resolution_rate": 99.9
+  },
+  "dotnet-CleanArchitecture": {
+    "language": "csharp",
+    "files": 196,
+    "symbols": 1437,
+    "edges": 1158,
+    "external": 3187,
+    "unresolved": 384,
+    "resolution_rate": 91.9
+  },
+  "ts-nestjs-realworld": {
+    "language": "typescript",
+    "files": 43,
+    "symbols": 344,
+    "edges": 376,
+    "external": 1058,
+    "unresolved": 18,
+    "resolution_rate": 98.8
+  },
+  "ts-rallly": {
+    "language": "typescript",
+    "files": 1167,
+    "symbols": 7218,
+    "edges": 5977,
+    "external": 22068,
+    "unresolved": 1930,
+    "resolution_rate": 93.6
+  },
+  "javascript-preact": {
+    "language": "javascript",
+    "files": 278,
+    "symbols": 8612,
+    "edges": 9294,
+    "external": 14577,
+    "unresolved": 8256,
+    "resolution_rate": 74.3
+  },
+  "vue-vuestic-admin": {
+    "language": "typescript",
+    "files": 99,
+    "symbols": 414,
+    "edges": 353,
+    "external": 748,
+    "unresolved": 15,
+    "resolution_rate": 98.7
+  },
+  "angular-coreui": {
+    "language": "typescript",
+    "files": 213,
+    "symbols": 746,
+    "edges": 411,
+    "external": 3386,
+    "unresolved": 68,
+    "resolution_rate": 98.2
+  },
+  "goxygen": {
+    "language": "go",
+    "files": 84,
+    "symbols": 314,
+    "edges": 257,
+    "external": 1442,
+    "unresolved": 36,
+    "resolution_rate": 97.9
+  },
+  "python-cookiecutter-django": {
+    "language": "python",
+    "files": 138,
+    "symbols": 1067,
+    "edges": 357,
+    "external": 1605,
+    "unresolved": 221,
+    "resolution_rate": 89.9
+  },
+  "full-stack-fastapi-template": {
+    "language": "typescript",
+    "files": 180,
+    "symbols": 2083,
+    "edges": 1875,
+    "external": 5995,
+    "unresolved": 382,
+    "resolution_rate": 95.4
+  },
+  "java-petclinic-rest": {
+    "language": "java",
+    "files": 124,
+    "symbols": 1283,
+    "edges": 1334,
+    "external": 5732,
+    "unresolved": 166,
+    "resolution_rate": 97.7
+  },
+  "java-spring-petclinic": {
+    "language": "java",
+    "files": 83,
+    "symbols": 598,
+    "edges": 489,
+    "external": 2110,
+    "unresolved": 115,
+    "resolution_rate": 95.8
+  },
+  "rust-ast-grep": {
+    "language": "rust",
+    "files": 248,
+    "symbols": 10391,
+    "edges": 13749,
+    "external": 24351,
+    "unresolved": 3326,
+    "resolution_rate": 92.0
+  },
+  "kotlin-notykt": {
+    "language": "kotlin",
+    "files": 331,
+    "symbols": 1780,
+    "edges": 2937,
+    "external": 12867,
+    "unresolved": 3657,
+    "resolution_rate": 81.2
+  },
+  "kotlin-android-showcase": {
+    "language": "kotlin",
+    "files": 194,
+    "symbols": 719,
+    "edges": 1270,
+    "external": 4307,
+    "unresolved": 2089,
+    "resolution_rate": 72.7
+  },
+  "swift-icecubes": {
+    "language": "swift",
+    "files": 550,
+    "symbols": 7200,
+    "edges": 18246,
+    "external": 212891,
+    "unresolved": 1613,
+    "resolution_rate": 99.3
+  },
+  "scala-trading": {
+    "language": "scala",
+    "files": 183,
+    "symbols": 2883,
+    "edges": 5392,
+    "external": 14278,
+    "unresolved": 4437,
+    "resolution_rate": 81.6
+  },
+  "elixir-changelog": {
+    "language": "elixir",
+    "files": 885,
+    "symbols": 7891,
+    "edges": 20553,
+    "external": 29284,
+    "unresolved": 21235,
+    "resolution_rate": 70.1
+  },
+  "ruby-sidekiq": {
+    "language": "ruby",
+    "files": 256,
+    "symbols": 2871,
+    "edges": 3894,
+    "external": 7677,
+    "unresolved": 4495,
+    "resolution_rate": 72.0
+  },
+  "ruby-huginn": {
+    "language": "ruby",
+    "files": 553,
+    "symbols": 3799,
+    "edges": 2689,
+    "external": 8868,
+    "unresolved": 4279,
+    "resolution_rate": 73.0
+  },
+  "c-tig": {
+    "language": "c",
+    "files": 111,
+    "symbols": 6905,
+    "edges": 7325,
+    "external": 1997,
+    "unresolved": 1197,
+    "resolution_rate": 88.6
+  },
+  "cpp-libhv": {
+    "language": "c",
+    "files": 348,
+    "symbols": 15974,
+    "edges": 25981,
+    "external": 12712,
+    "unresolved": 11697,
+    "resolution_rate": 76.8
+  },
+  "cpp-clay": {
+    "language": "c",
+    "files": 88,
+    "symbols": 5752,
+    "edges": 8961,
+    "external": 968,
+    "unresolved": 3781,
+    "resolution_rate": 72.4
+  },
+  "bash-ohmybash": {
+    "language": "shell",
+    "files": 292,
+    "symbols": 6626,
+    "edges": 2576,
+    "external": 3096,
+    "unresolved": 466,
+    "resolution_rate": 92.4
+  },
+  "zig-clap": {
+    "language": "zig",
+    "files": 15,
+    "symbols": 214,
+    "edges": 217,
+    "external": 85,
+    "unresolved": 213,
+    "resolution_rate": 58.6
+  },
+  "lua-lazy-nvim": {
+    "language": "lua",
+    "files": 72,
+    "symbols": 9151,
+    "edges": 1725,
+    "external": 1315,
+    "unresolved": 1238,
+    "resolution_rate": 71.1
+  },
+  "haskell-hadolint": {
+    "language": "haskell",
+    "files": 185,
+    "symbols": 1670,
+    "edges": 2136,
+    "external": 4222,
+    "unresolved": 2277,
+    "resolution_rate": 73.6
+  },
+  "perl-dancer2": {
+    "language": "perl",
+    "files": 163,
+    "symbols": 742,
+    "edges": 0,
+    "external": 501,
+    "unresolved": 1,
+    "resolution_rate": 99.8
+  },
+  "ocaml-mirage": {
+    "language": "ocaml",
+    "files": 167,
+    "symbols": 3759,
+    "edges": 2529,
+    "external": 1269,
+    "unresolved": 576,
+    "resolution_rate": 86.8
+  },
+  "r-dplyr": {
+    "language": "r",
+    "files": 310,
+    "symbols": 12072,
+    "edges": 9716,
+    "external": 9438,
+    "unresolved": 5889,
+    "resolution_rate": 76.5
+  },
+  "sql-pgmq": {
+    "language": "sql",
+    "files": 141,
+    "symbols": 2632,
+    "edges": 1326,
+    "external": 4030,
+    "unresolved": 383,
+    "resolution_rate": 93.3
+  },
+  "nix-disko": {
+    "language": "nix",
+    "files": 135,
+    "symbols": 4558,
+    "edges": 736,
+    "external": 3583,
+    "unresolved": 115,
+    "resolution_rate": 97.4
+  },
+  "hcl-aws-vpc": {
+    "language": "hcl",
+    "files": 101,
+    "symbols": 6969,
+    "edges": 2250,
+    "external": 1134,
+    "unresolved": 85,
+    "resolution_rate": 97.5
+  }
+}
