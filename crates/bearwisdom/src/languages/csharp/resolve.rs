@@ -98,6 +98,11 @@ impl LanguageResolver for CSharpResolver {
             return None;
         }
 
+        // C# / .NET built-ins are never in our index — skip resolution entirely.
+        if builtins::is_csharp_builtin(target) {
+            return None;
+        }
+
         // Chain-aware resolution: if we have a structured MemberChain, walk it
         // step-by-step following field types.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
@@ -273,7 +278,19 @@ impl LanguageResolver for CSharpResolver {
             }
         }
 
-        best.map(|s| s.to_string())
+        if best.is_some() {
+            return best.map(|s| s.to_string());
+        }
+
+        // No external using found. Last resort: if the target is a well-known .NET
+        // built-in, classify it as external without needing a ProjectContext or
+        // any using directive.  This handles unit-test and partial-indexing
+        // scenarios where no SDK context is injected.
+        if builtins::is_csharp_builtin(target) {
+            return Some("dotnet_builtins".to_string());
+        }
+
+        None
     }
 
     fn is_visible(
