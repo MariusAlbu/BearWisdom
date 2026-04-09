@@ -1,5 +1,6 @@
 //! Protocol Buffers language plugin.
 
+pub mod connectors;
 pub mod primitives;
 pub mod extract;
 pub mod resolve;
@@ -72,5 +73,9 @@ impl LanguagePlugin for ProtoPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::ProtoResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![Box::new(connectors::ProtoGrpcConnector)]
     }
 }

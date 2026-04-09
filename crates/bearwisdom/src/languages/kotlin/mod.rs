@@ -1,6 +1,7 @@
 //! kotlin language plugin.
 
 mod calls;
+pub mod connectors;
 pub(crate) mod decorators;
 pub(crate) mod externals;
 mod helpers;
@@ -97,5 +98,13 @@ impl LanguagePlugin for KotlinPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::KotlinResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![
+            Box::new(connectors::KotlinGrpcConnector),
+            Box::new(connectors::KotlinMqConnector),
+            Box::new(connectors::KotlinRestConnector),
+        ]
     }
 }

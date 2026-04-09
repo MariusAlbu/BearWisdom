@@ -91,6 +91,11 @@ impl LanguagePlugin for GoPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![Box::new(connectors::GoRouteConnector)]
+        vec![
+            Box::new(connectors::GoRouteConnector),
+            Box::new(connectors::GoRestConnector),
+            Box::new(connectors::GoGrpcConnector),
+            Box::new(connectors::GoMqConnector),
+        ]
     }
 }

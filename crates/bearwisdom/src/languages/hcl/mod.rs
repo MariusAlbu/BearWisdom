@@ -1,5 +1,6 @@
 //! HCL / Terraform language plugin.
 
+pub mod connectors;
 pub mod primitives;
 pub mod extract;
 pub mod resolve;
@@ -67,5 +68,14 @@ impl LanguagePlugin for HclPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::HclResolver))
+    }
+
+    fn post_index(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        _ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        connectors::run_kubernetes(db, project_root);
     }
 }

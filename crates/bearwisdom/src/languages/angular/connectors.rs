@@ -308,3 +308,169 @@ export class DashboardComponent {
         let _ = std::fs::remove_dir_all(&tmp);
     }
 }
+
+// ===========================================================================
+// AngularRestConnector — HTTP client call starts + route stops for Angular
+// ===========================================================================
+
+pub struct AngularRestConnector;
+
+impl Connector for AngularRestConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "angular_rest",
+            protocols: &[Protocol::Rest],
+            languages: &["typescript", "tsx"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        ctx.ts_packages.contains("@angular/core")
+    }
+
+    fn extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+    ) -> Result<Vec<ConnectionPoint>> {
+        let mut points = Vec::new();
+        extract_angular_rest_stops(conn, &mut points)?;
+        extract_angular_rest_starts(conn, project_root, &mut points)?;
+        Ok(points)
+    }
+}
+
+fn extract_angular_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> Result<()> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.file_id, r.symbol_id, r.line, r.http_method,
+                    COALESCE(r.resolved_route, r.route_template)
+             FROM routes r
+             JOIN files f ON f.id = r.file_id
+             WHERE f.language IN ('typescript', 'tsx')
+               AND r.http_method != '' AND r.route_template != ''",
+        )
+        .context("Failed to prepare Angular REST stops query")?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .context("Failed to query Angular routes")?;
+
+    for row in rows {
+        let (file_id, symbol_id, line, method, route) =
+            row.context("Failed to read Angular route row")?;
+        out.push(ConnectionPoint {
+            file_id,
+            symbol_id,
+            line: line.unwrap_or(0),
+            protocol: Protocol::Rest,
+            direction: FlowDirection::Stop,
+            key: route,
+            method: method.to_uppercase(),
+            framework: String::new(),
+            metadata: None,
+        });
+    }
+    Ok(())
+}
+
+fn extract_angular_rest_starts(
+    conn: &Connection,
+    project_root: &Path,
+    out: &mut Vec<ConnectionPoint>,
+) -> Result<()> {
+    // Angular HttpClient: $http.get('url'), this.http.get('url'), httpClient.get<T>('url'), etc.
+    let re = Regex::new(
+        r#"(?:\$http|(?:this\.)?_?(?:http|httpClient))\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*(?:<[^>]*>)?\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    ).expect("angular http regex");
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, path FROM files WHERE language IN ('typescript', 'tsx')",
+        )
+        .context("Failed to prepare Angular TS files query")?;
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query Angular files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect Angular file rows")?;
+
+    for (file_id, rel_path) in files {
+        if angular_rest_is_test_file(&rel_path) {
+            continue;
+        }
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for (line_idx, line_text) in source.lines().enumerate() {
+            let line_no = (line_idx + 1) as u32;
+            for cap in re.captures_iter(line_text) {
+                // Skip string concatenation patterns
+                let match_end = cap.get(0).map_or(0, |m| m.end());
+                if line_text[match_end..].trim_start().starts_with('+') {
+                    continue;
+                }
+                let raw_url = cap
+                    .name("url1")
+                    .or_else(|| cap.name("url2"))
+                    .or_else(|| cap.name("url3"))
+                    .map(|m| m.as_str().to_string());
+                let Some(raw_url) = raw_url else { continue };
+                if !angular_rest_looks_like_api_url(&raw_url) {
+                    continue;
+                }
+                let method = cap
+                    .name("method")
+                    .map(|m| m.as_str().to_uppercase())
+                    .unwrap_or_else(|| "GET".to_string());
+                let url_pattern = angular_rest_normalise_url(&raw_url);
+                out.push(ConnectionPoint {
+                    file_id,
+                    symbol_id: None,
+                    line: line_no,
+                    protocol: Protocol::Rest,
+                    direction: FlowDirection::Start,
+                    key: url_pattern,
+                    method,
+                    framework: "angular".to_string(),
+                    metadata: None,
+                });
+            }
+        }
+    }
+    Ok(())
+}
+
+fn angular_rest_is_test_file(rel_path: &str) -> bool {
+    let lower = rel_path.to_lowercase();
+    lower.contains(".spec.") || lower.contains(".test.") || lower.contains("__tests__")
+}
+
+fn angular_rest_looks_like_api_url(s: &str) -> bool {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        return false;
+    }
+    s.starts_with('/')
+        || s.contains("/api/")
+        || s.contains("/v1/")
+        || s.contains("/v2/")
+        || s.starts_with("api/")
+        || s.contains("/${")
+        || s.contains("/{")
+}
+
+fn angular_rest_normalise_url(raw: &str) -> String {
+    let without_query = raw.split('?').next().unwrap_or(raw);
+    let re_tmpl = Regex::new(r"\$\{[^}]+\}").expect("template regex");
+    re_tmpl.replace_all(without_query, "{param}").into_owned()
+}

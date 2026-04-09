@@ -91,6 +91,9 @@ impl LanguagePlugin for RubyPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![Box::new(connectors::RailsRouteConnector)]
+        vec![
+            Box::new(connectors::RailsRouteConnector),
+            Box::new(connectors::RubyRestConnector),
+        ]
     }
 }

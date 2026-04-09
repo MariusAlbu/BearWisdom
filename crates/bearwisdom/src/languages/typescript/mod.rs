@@ -130,6 +130,20 @@ impl LanguagePlugin for TypeScriptPlugin {
         vec![
             Box::new(connectors::NestjsRouteConnector),
             Box::new(connectors::NextjsRouteConnector),
+            Box::new(connectors::TauriIpcTsConnector),
+            Box::new(connectors::ElectronIpcConnector),
+            Box::new(connectors::TypeScriptRestConnector),
+            Box::new(connectors::TypeScriptMqConnector),
+            Box::new(connectors::TypeScriptGraphQlConnector),
         ]
+    }
+
+    fn post_index(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        _ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        connectors::run_react_patterns(db.conn(), project_root);
     }
 }

@@ -120,6 +120,21 @@ impl LanguagePlugin for CSharpPlugin {
         vec![
             Box::new(connectors::DotnetDiConnector),
             Box::new(connectors::EventBusConnector),
+            Box::new(connectors::CSharpGrpcConnector),
+            Box::new(connectors::CSharpMqConnector),
+            Box::new(connectors::CSharpGraphQlConnector),
+            Box::new(connectors::CsharpRestConnector),
         ]
+    }
+
+    fn post_index(
+        &self,
+        db: &crate::db::Database,
+        _project_root: &std::path::Path,
+        _ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        if let Err(e) = connectors::run_ef_core(db) {
+            tracing::warn!("EF Core post-index hook: {e}");
+        }
     }
 }

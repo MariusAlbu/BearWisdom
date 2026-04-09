@@ -7,10 +7,11 @@ pub mod types;
 // --- New-architecture connector implementations ---
 pub mod graphql_connector;
 pub mod grpc_connector;
-pub mod ipc_connector;
 pub mod mq_connector;
 pub mod rest_connector;
 pub mod di_connector;
+// ipc_connector removed — TauriIpcConnector → languages/rust_lang/connectors.rs
+//                         TauriIpcTsConnector + ElectronIpcConnector → languages/typescript/connectors.rs
 
 pub mod django;
 pub mod docker_compose;

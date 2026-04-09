@@ -513,6 +513,450 @@ pub fn connect(conn: &Connection, project_root: &Path) -> Result<u32> {
     Ok(inserted)
 }
 
+// ===========================================================================
+// GoRestConnector — HTTP client call starts + route stops for Go
+// ===========================================================================
+
+pub struct GoRestConnector;
+
+impl Connector for GoRestConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "go_rest",
+            protocols: &[Protocol::Rest],
+            languages: &["go"],
+        }
+    }
+
+    fn detect(&self, _ctx: &ProjectContext) -> bool {
+        true
+    }
+
+    fn extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+    ) -> Result<Vec<ConnectionPoint>> {
+        let mut points = Vec::new();
+        extract_go_rest_stops(conn, &mut points)?;
+        extract_go_rest_starts(conn, project_root, &mut points)?;
+        Ok(points)
+    }
+}
+
+fn extract_go_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> Result<()> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.file_id, r.symbol_id, r.line, r.http_method,
+                    COALESCE(r.resolved_route, r.route_template)
+             FROM routes r
+             JOIN files f ON f.id = r.file_id
+             WHERE f.language = 'go'
+               AND r.http_method != '' AND r.route_template != ''",
+        )
+        .context("Failed to prepare Go REST stops query")?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .context("Failed to query Go routes")?;
+
+    for row in rows {
+        let (file_id, symbol_id, line, method, route) =
+            row.context("Failed to read Go route row")?;
+        out.push(ConnectionPoint {
+            file_id,
+            symbol_id,
+            line: line.unwrap_or(0),
+            protocol: Protocol::Rest,
+            direction: FlowDirection::Stop,
+            key: route,
+            method: method.to_uppercase(),
+            framework: String::new(),
+            metadata: None,
+        });
+    }
+    Ok(())
+}
+
+fn extract_go_rest_starts(
+    conn: &Connection,
+    project_root: &Path,
+    out: &mut Vec<ConnectionPoint>,
+) -> Result<()> {
+    // http.Get("url"), http.Post("url", ...)
+    let re_simple = regex::Regex::new(
+        r#"http\s*\.\s*(?P<method>Get|Post)\s*\(\s*"(?P<url>[^"]+)""#,
+    ).expect("go http.Get/Post regex");
+    // http.NewRequest("METHOD", "url", ...)
+    let re_new_request = regex::Regex::new(
+        r#"http\s*\.\s*NewRequest\s*\(\s*"(?P<method>[^"]+)"\s*,\s*"(?P<url>[^"]+)""#,
+    ).expect("go http.NewRequest regex");
+
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'go'")
+        .context("Failed to prepare Go files query")?;
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query Go files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect Go file rows")?;
+
+    for (file_id, rel_path) in files {
+        if go_rest_is_test_file(&rel_path) {
+            continue;
+        }
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+        for (line_idx, line_text) in source.lines().enumerate() {
+            let line_no = (line_idx + 1) as u32;
+            for re in &[&re_simple, &re_new_request] {
+                for cap in re.captures_iter(line_text) {
+                    let Some(raw_url) = cap.name("url").map(|m| m.as_str().to_string()) else { continue };
+                    if !go_rest_looks_like_api_url(&raw_url) {
+                        continue;
+                    }
+                    let method = cap.name("method")
+                        .map(|m| m.as_str().to_uppercase())
+                        .unwrap_or_else(|| "GET".to_string());
+                    let url_pattern = rest_normalise_url_pattern(&raw_url);
+                    out.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::Rest,
+                        direction: FlowDirection::Start,
+                        key: url_pattern,
+                        method,
+                        framework: String::new(),
+                        metadata: None,
+                    });
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn go_rest_is_test_file(rel_path: &str) -> bool {
+    let lower = rel_path.to_lowercase();
+    lower.ends_with("_test.go") || lower.contains("/testdata/")
+}
+
+fn go_rest_looks_like_api_url(s: &str) -> bool {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        let after = s.find("://").map(|i| &s[i + 3..]).unwrap_or(s);
+        let path = after.find('/').map(|i| &after[i..]).unwrap_or("");
+        if path.is_empty() { return false; }
+        return go_rest_looks_like_api_url(path);
+    }
+    s.starts_with('/') || s.contains("/api/") || s.contains("/v1/") || s.contains("/v2/") || s.contains("/v3/") || s.contains("/{")
+}
+
+fn rest_normalise_url_pattern(raw: &str) -> String {
+    let without_query = raw.split('?').next().unwrap_or(raw);
+    let re_tmpl = regex::Regex::new(r"\$\{[^}]+\}").expect("template regex");
+    re_tmpl.replace_all(without_query, "{param}").into_owned()
+}
+
+// ===========================================================================
+// GoGrpcConnector — gRPC service implementation stops
+// ===========================================================================
+
+/// Detects Go gRPC service implementations.
+///
+/// Go gRPC stubs generate an interface `{ServiceName}Server` and a registration
+/// function `Register{ServiceName}Server`.  Concrete implementations satisfy
+/// the interface.  We find structs that have methods registered via the generated
+/// `Register*Server` pattern by looking at edges.
+pub struct GoGrpcConnector;
+
+impl Connector for GoGrpcConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "go_grpc_stops",
+            protocols: &[Protocol::Grpc],
+            languages: &["go"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        // google.golang.org/grpc is the standard Go gRPC module.
+        ctx.external_prefixes.contains("google.golang.org/grpc")
+            || ctx.external_prefixes.contains("google.golang.org")
+    }
+
+    fn extract(&self, conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Find structs that implement an interface named *Server (gRPC convention).
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.name, s.file_id
+                 FROM symbols s
+                 JOIN files f ON f.id = s.file_id
+                 WHERE f.language = 'go'
+                   AND s.kind = 'struct'
+                   AND EXISTS (
+                       SELECT 1 FROM edges e
+                       JOIN symbols tgt ON tgt.id = e.target_id
+                       WHERE e.source_id = s.id
+                         AND e.kind = 'implements'
+                         AND tgt.name LIKE '%Server'
+                   )",
+            )
+            .context("Failed to prepare Go gRPC struct query")?;
+
+        let structs: Vec<(String, i64)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+            })
+            .context("Failed to query Go gRPC structs")?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect Go gRPC struct rows")?;
+
+        let mut points = Vec::new();
+
+        for (_struct_name, file_id) in &structs {
+            let parent_name: Option<String> = conn
+                .query_row(
+                    "SELECT tgt.name FROM edges e
+                     JOIN symbols src ON src.id = e.source_id
+                     JOIN symbols tgt ON tgt.id = e.target_id
+                     WHERE src.file_id = ?1
+                       AND e.kind = 'implements'
+                       AND tgt.name LIKE '%Server'
+                     LIMIT 1",
+                    rusqlite::params![file_id],
+                    |row| row.get::<_, String>(0),
+                )
+                .ok();
+
+            // service_name = strip "Server" suffix → service name
+            let service_name = parent_name
+                .as_deref()
+                .and_then(|n| n.strip_suffix("Server"))
+                .unwrap_or("")
+                .to_string();
+
+            if service_name.is_empty() {
+                continue;
+            }
+
+            // Emit stops for all methods in the same file.
+            let mut method_stmt = conn
+                .prepare(
+                    "SELECT s.id, s.name, s.line
+                     FROM symbols s
+                     WHERE s.file_id = ?1 AND s.kind = 'method'",
+                )
+                .context("Failed to prepare Go gRPC method query")?;
+
+            let methods: Vec<(i64, String, u32)> = method_stmt
+                .query_map(rusqlite::params![file_id], |row| {
+                    Ok((
+                        row.get::<_, i64>(0)?,
+                        row.get::<_, String>(1)?,
+                        row.get::<_, u32>(2)?,
+                    ))
+                })
+                .context("Failed to query Go gRPC methods")?
+                .collect::<rusqlite::Result<Vec<_>>>()
+                .context("Failed to collect Go gRPC method rows")?;
+
+            for (sym_id, method_name, line) in methods {
+                // Skip mustEmbedUnimplementedXxxServer — generated boilerplate.
+                if method_name.starts_with("mustEmbed") || method_name.starts_with("Unimplemented") {
+                    continue;
+                }
+                let key = format!("{service_name}.{method_name}");
+                points.push(ConnectionPoint {
+                    file_id: *file_id,
+                    symbol_id: Some(sym_id),
+                    line,
+                    protocol: Protocol::Grpc,
+                    direction: FlowDirection::Stop,
+                    key,
+                    method: String::new(),
+                    framework: "grpc_go".to_string(),
+                    metadata: None,
+                });
+            }
+        }
+
+        Ok(points)
+    }
+}
+
+// ===========================================================================
+// GoMqConnector — Message queue producer/consumer connection points
+// ===========================================================================
+
+/// Detects Go message queue patterns:
+///   - sarama / confluent-kafka-go: `producer.SendMessage(...)` (producer)
+///                                   `consumer.Messages()` (consumer)
+///   - amqp091-go (RabbitMQ): `ch.Publish(exchange, routingKey, ...)` (producer)
+///                              `ch.Consume(queue, ...)` (consumer)
+///   - nats.go: `nc.Subscribe("subject", ...)` (consumer)
+///              `nc.Publish("subject", ...)` (producer)
+pub struct GoMqConnector;
+
+impl Connector for GoMqConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "go_mq",
+            protocols: &[Protocol::MessageQueue],
+            languages: &["go"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        let deps = &ctx.external_prefixes;
+        deps.contains("github.com/Shopify/sarama")
+            || deps.contains("github.com/IBM/sarama")
+            || deps.contains("github.com/confluentinc/confluent-kafka-go")
+            || deps.contains("github.com/rabbitmq/amqp091-go")
+            || deps.contains("github.com/streadway/amqp")
+            || deps.contains("github.com/nats-io/nats.go")
+    }
+
+    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // sarama: producer.SendMessage(&sarama.ProducerMessage{Topic: "name", ...})
+        let re_sarama_send = regex::Regex::new(
+            r#"Topic\s*:\s*['"`]([^'"`]+)['"`]"#,
+        )
+        .expect("go sarama topic regex");
+
+        // amqp091: ch.Publish("exchange", "routingKey", ...)
+        let re_amqp_publish = regex::Regex::new(
+            r#"\.Publish\s*\(\s*(?:ctx,\s*)?['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
+        )
+        .expect("go amqp publish regex");
+
+        // amqp091: ch.Consume("queue", ...)
+        let re_amqp_consume = regex::Regex::new(
+            r#"\.Consume\s*\(\s*['"`]([^'"`]+)['"`]"#,
+        )
+        .expect("go amqp consume regex");
+
+        // nats: nc.Subscribe("subject", ...) / nc.Publish("subject", ...)
+        let re_nats_subscribe = regex::Regex::new(
+            r#"nc\.Subscribe\s*\(\s*['"`]([^'"`]+)['"`]"#,
+        )
+        .expect("go nats subscribe regex");
+
+        let re_nats_publish = regex::Regex::new(
+            r#"nc\.Publish\s*\(\s*['"`]([^'"`]+)['"`]"#,
+        )
+        .expect("go nats publish regex");
+
+        let mut stmt = conn
+            .prepare("SELECT id, path FROM files WHERE language = 'go'")
+            .context("Failed to prepare Go files query")?;
+
+        let files: Vec<(i64, String)> = stmt
+            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+            .context("Failed to query Go files")?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect Go file rows")?;
+
+        let mut points = Vec::new();
+
+        for (file_id, rel_path) in files {
+            let abs_path = project_root.join(&rel_path);
+            let source = match std::fs::read_to_string(&abs_path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            for (line_idx, line_text) in source.lines().enumerate() {
+                let line_no = (line_idx + 1) as u32;
+
+                for cap in re_sarama_send.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Start,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "kafka".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                for cap in re_amqp_publish.captures_iter(line_text) {
+                    // Use routing key as topic key.
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Start,
+                        key: cap[2].to_string(),
+                        method: String::new(),
+                        framework: "rabbitmq".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                for cap in re_amqp_consume.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Stop,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "rabbitmq".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                for cap in re_nats_subscribe.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Stop,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "nats".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                for cap in re_nats_publish.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Start,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "nats".to_string(),
+                        metadata: None,
+                    });
+                }
+            }
+        }
+
+        Ok(points)
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

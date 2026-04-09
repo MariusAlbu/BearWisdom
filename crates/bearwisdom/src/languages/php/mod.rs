@@ -97,6 +97,9 @@ impl LanguagePlugin for PhpPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![Box::new(connectors::LaravelRouteConnector)]
+        vec![
+            Box::new(connectors::LaravelRouteConnector),
+            Box::new(connectors::PhpRestConnector),
+        ]
     }
 }

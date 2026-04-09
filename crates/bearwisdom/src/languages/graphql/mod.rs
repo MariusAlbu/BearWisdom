@@ -1,5 +1,6 @@
 //! GraphQL language plugin.
 
+pub mod connectors;
 pub mod primitives;
 pub mod extract;
 pub mod resolve;
@@ -73,5 +74,9 @@ impl LanguagePlugin for GraphQlPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::GraphQlResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![Box::new(connectors::GraphQlSchemaConnector)]
     }
 }

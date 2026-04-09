@@ -1,6 +1,7 @@
 //! swift language plugin.
 
 mod calls;
+pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod helpers;
 pub(crate) mod primitives;
@@ -112,5 +113,9 @@ impl LanguagePlugin for SwiftPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::SwiftResolver))
+    }
+
+    fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
+        vec![Box::new(connectors::SwiftRestConnector)]
     }
 }

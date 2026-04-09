@@ -248,27 +248,13 @@ pub fn full_index(
 
     // --- Step 7b: Non-flow post-index hooks ---
     //
-    // These write to tables other than flow_edges (db_mappings, concepts) so
-    // they don't fit the ConnectionPoint → flow_edge pipeline.  Called directly.
-    if let Err(e) = crate::connectors::ef_core::connect(db) {
-        warn!("EF Core connector: {e}");
+    // Each language plugin can implement `post_index()` for enrichment that
+    // writes to tables other than flow_edges (e.g. db_mappings, concepts).
+    // The default implementation is a no-op, so this is safe to call on all
+    // registered plugins.
+    for plugin in registry.all() {
+        plugin.post_index(db, project_root, &project_ctx);
     }
-    match crate::connectors::docker_compose::connect(db, project_root) {
-        Ok(n) if n > 0 => info!("Docker Compose: {n} service dependency edges"),
-        Err(e) => warn!("Docker Compose connector: {e}"),
-        _ => {}
-    }
-    match crate::connectors::kubernetes::connect(db, project_root) {
-        Ok(n) if n > 0 => info!("Kubernetes: {n} service reference edges"),
-        Err(e) => warn!("Kubernetes connector: {e}"),
-        _ => {}
-    }
-    if project_ctx.python_packages.contains("django") {
-        if let Err(e) = crate::connectors::django::connect(db, project_root) {
-            warn!("Django connector: {e}");
-        }
-    }
-    run_react_patterns(db.conn(), project_root);
 
     emit("connectors", 1.0, None);
 
@@ -482,26 +468,6 @@ fn filter_local_refs(
             remaining = refs.len(),
             "Filtered locally-resolved refs via locals.scm"
         );
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Non-flow connector helpers
-// ---------------------------------------------------------------------------
-
-fn run_react_patterns(conn: &rusqlite::Connection, project_root: &Path) {
-    match crate::connectors::react_patterns::find_zustand_stores(conn, project_root) {
-        Ok(stores) => {
-            match crate::connectors::react_patterns::find_story_mappings(conn, project_root) {
-                Ok(stories) if !stores.is_empty() || !stories.is_empty() => {
-                    let _ = crate::connectors::react_patterns::create_react_concepts(conn, &stores, &stories)
-                        .map_err(|e| warn!("React concept creation: {e}"));
-                }
-                Err(e) => warn!("Story mapping: {e}"),
-                _ => {}
-            }
-        }
-        Err(e) => warn!("Zustand store detection: {e}"),
     }
 }
 

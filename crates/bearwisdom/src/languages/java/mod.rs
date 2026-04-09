@@ -111,6 +111,9 @@ impl LanguagePlugin for JavaPlugin {
         vec![
             Box::new(connectors::SpringRouteConnector),
             Box::new(connectors::SpringDiConnector),
+            Box::new(connectors::JavaRestConnector),
+            Box::new(connectors::JavaGrpcConnector),
+            Box::new(connectors::JavaMqConnector),
         ]
     }
 }

@@ -1,5 +1,6 @@
 //! Dockerfile language plugin.
 
+pub mod connectors;
 pub mod primitives;
 pub mod extract;
 pub mod resolve;
@@ -64,5 +65,14 @@ impl LanguagePlugin for DockerfilePlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::DockerfileResolver))
+    }
+
+    fn post_index(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        _ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        connectors::run_docker_compose(db, project_root);
     }
 }

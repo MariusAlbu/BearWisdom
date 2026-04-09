@@ -686,6 +686,655 @@ impl<T> OptionalExt<T> for rusqlite::Result<T> {
 }
 
 // ===========================================================================
+// CSharpGrpcConnector — gRPC service implementation stops
+// ===========================================================================
+
+/// Emits gRPC Stop connection points for C# service implementations.
+///
+/// Looks for methods in classes named `{ServiceName}Base` or `{ServiceName}`
+/// that match RPC names extracted from .proto files (Start points come from
+/// the proto language plugin via ProtoGrpcConnector).
+///
+/// The matching key is "ServiceName.RpcName", consistent with the proto side.
+pub struct CSharpGrpcConnector;
+
+impl Connector for CSharpGrpcConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "csharp_grpc_stops",
+            protocols: &[Protocol::Grpc],
+            languages: &["csharp"],
+        }
+    }
+
+    fn detect(&self, _ctx: &ProjectContext) -> bool {
+        // Detect if there are any proto files or gRPC NuGet deps.
+        // We run cheaply; the extract step returns nothing when there are no
+        // proto services in the index, so false positives are fine.
+        true
+    }
+
+    fn extract(&self, conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        let mut points = Vec::new();
+
+        // Find all (service_name, rpc_name) pairs from proto services in the DB
+        // by querying symbols of kind 'method' under files whose language is 'protobuf'.
+        // We don't re-parse proto files here; instead we look for C# classes
+        // matching the known pattern and query their methods.
+        //
+        // Strategy: find classes named *Base or *Service in C# files, then find
+        // their methods. The ProtocolMatcher will key-match to proto start points.
+        let services = grpc_find_csharp_service_classes(conn)?;
+
+        for (class_name, cs_file_id) in &services {
+            // Strip the conventional "Base" suffix to get the proto service name.
+            let service_name = class_name
+                .strip_suffix("Base")
+                .unwrap_or(class_name.as_str());
+
+            grpc_emit_csharp_rpc_stops(conn, service_name, *cs_file_id, &mut points)?;
+        }
+
+        Ok(points)
+    }
+}
+
+/// Find C# classes that look like gRPC service implementations.
+///
+/// Matches classes whose name ends with "Base" or "GrpcService" (Grpc.AspNetCore pattern).
+/// Returns (class_name, file_id) pairs.
+fn grpc_find_csharp_service_classes(
+    conn: &Connection,
+) -> Result<Vec<(String, i64)>> {
+    // Look for classes that appear to inherit from a gRPC generated base.
+    // We check the proto services registered in the DB and look for matching C# classes.
+    let mut stmt = conn
+        .prepare(
+            "SELECT DISTINCT s.name, s.file_id
+             FROM symbols s
+             JOIN files f ON f.id = s.file_id
+             WHERE f.language = 'csharp'
+               AND s.kind = 'class'
+               AND (s.name LIKE '%Base' OR s.name LIKE '%GrpcService'
+                    OR EXISTS (
+                        SELECT 1 FROM edges e
+                        JOIN symbols tgt ON tgt.id = e.target_id
+                        WHERE e.source_id = s.id
+                          AND e.kind = 'inherits'
+                          AND tgt.name LIKE '%Base'
+                    ))",
+        )
+        .context("Failed to prepare gRPC service class query")?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
+        })
+        .context("Failed to execute gRPC service class query")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect gRPC service class rows")?;
+
+    Ok(rows)
+}
+
+/// Emit a Stop connection point for each method in a C# gRPC service class.
+fn grpc_emit_csharp_rpc_stops(
+    conn: &Connection,
+    service_name: &str,
+    cs_file_id: i64,
+    out: &mut Vec<ConnectionPoint>,
+) -> Result<()> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.name, s.line
+             FROM symbols s
+             WHERE s.file_id = ?1 AND s.kind = 'method'",
+        )
+        .context("Failed to prepare C# RPC method query")?;
+
+    let methods: Vec<(i64, String, u32)> = stmt
+        .query_map(rusqlite::params![cs_file_id], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, u32>(2)?,
+            ))
+        })
+        .context("Failed to query C# RPC methods")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect C# RPC method rows")?;
+
+    for (sym_id, method_name, line) in methods {
+        // Skip constructors, Dispose, and other non-RPC methods heuristically.
+        if method_name.starts_with('.') || method_name == "Dispose" || method_name == "ToString" {
+            continue;
+        }
+
+        let key = format!("{service_name}.{method_name}");
+        out.push(ConnectionPoint {
+            file_id: cs_file_id,
+            symbol_id: Some(sym_id),
+            line,
+            protocol: Protocol::Grpc,
+            direction: FlowDirection::Stop,
+            key,
+            method: String::new(),
+            framework: "grpc_aspnetcore".to_string(),
+            metadata: None,
+        });
+    }
+
+    Ok(())
+}
+
+// ===========================================================================
+// CSharpMqConnector — Message queue producer/consumer stops
+// ===========================================================================
+
+/// Detects C# message queue producers and consumers using common .NET MQ
+/// library patterns: MassTransit, NServiceBus, Azure Service Bus, RabbitMQ.Client,
+/// Confluent.Kafka.
+pub struct CSharpMqConnector;
+
+impl Connector for CSharpMqConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "csharp_mq",
+            protocols: &[Protocol::MessageQueue],
+            languages: &["csharp"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        // Detect known .NET MQ packages.
+        let deps = &ctx.external_prefixes;
+        deps.contains("MassTransit")
+            || deps.contains("NServiceBus")
+            || deps.contains("Azure.Messaging.ServiceBus")
+            || deps.contains("RabbitMQ")
+            || deps.contains("Confluent")
+            || deps.contains("Confluent.Kafka")
+    }
+
+    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Producer patterns:
+        //   await publishEndpoint.Publish<T>(...)  or  await bus.Publish<T>(...)  — MassTransit
+        //   context.Send(new QueueAddress("..."))
+        //   serviceBusSender.SendMessageAsync(...)
+        //   channel.BasicPublish(exchange: "name", routingKey: "key", ...)
+        //   producer.ProduceAsync("topic", ...)   — Confluent.Kafka
+        //
+        // Consumer patterns (class-level attributes or interface implementation):
+        //   : IConsumer<T>           — MassTransit consumer
+        //   : IHandleMessages<T>     — NServiceBus
+        //   [ServiceBusTrigger("queue")] — Azure Functions
+        //   channel.BasicConsume("queue-name", ...)
+
+        let re_publish = regex::Regex::new(
+            r#"(?:publishEndpoint|bus|_bus|endpoint|sender|_sender)\.(?:Publish|Send)\s*[<(]"#,
+        )
+        .expect("csharp mq publish regex");
+
+        let re_service_bus_send = regex::Regex::new(
+            r#"\.SendMessageAsync\s*\(|\.SendAsync\s*\("#,
+        )
+        .expect("csharp service bus send regex");
+
+        let re_rabbit_publish = regex::Regex::new(
+            r#"\.BasicPublish\s*\([^)]*(?:exchange|routingKey)\s*[=:]\s*['"]([^'"]+)['"]"#,
+        )
+        .expect("csharp rabbit publish regex");
+
+        let re_kafka_produce = regex::Regex::new(
+            r#"\.ProduceAsync\s*\(\s*['"]([^'"]+)['"]"#,
+        )
+        .expect("csharp kafka produce regex");
+
+        let re_iconsumer = regex::Regex::new(
+            r#":\s*IConsumer\s*<\s*(\w+)\s*>"#,
+        )
+        .expect("csharp iconsumer regex");
+
+        let re_service_bus_trigger = regex::Regex::new(
+            r#"\[ServiceBusTrigger\s*\(\s*['"]([^'"]+)['"]"#,
+        )
+        .expect("csharp service bus trigger regex");
+
+        let re_rabbit_consume = regex::Regex::new(
+            r#"\.BasicConsume\s*\(\s*['"]([^'"]+)['"]"#,
+        )
+        .expect("csharp rabbit consume regex");
+
+        let re_kafka_subscribe = regex::Regex::new(
+            r#"\.Subscribe\s*\(\s*(?:new\s*\[\s*\]\s*\{)?\s*['"]([^'"]+)['"]"#,
+        )
+        .expect("csharp kafka subscribe regex");
+
+        let mut stmt = conn
+            .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
+            .context("Failed to prepare C# files query")?;
+
+        let files: Vec<(i64, String)> = stmt
+            .query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .context("Failed to query C# files")?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect C# file rows")?;
+
+        let mut points = Vec::new();
+
+        for (file_id, rel_path) in files {
+            let abs_path = project_root.join(&rel_path);
+            let source = match std::fs::read_to_string(&abs_path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            for (line_idx, line_text) in source.lines().enumerate() {
+                let line_no = (line_idx + 1) as u32;
+
+                // Generic publish/send (MassTransit, NServiceBus)
+                if re_publish.is_match(line_text) || re_service_bus_send.is_match(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Start,
+                        key: "message".to_string(),
+                        method: String::new(),
+                        framework: "dotnet_mq".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                // RabbitMQ BasicPublish
+                for cap in re_rabbit_publish.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Start,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "rabbitmq".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                // Confluent.Kafka ProduceAsync
+                for cap in re_kafka_produce.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Start,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "kafka".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                // MassTransit IConsumer<T>
+                for cap in re_iconsumer.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Stop,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "dotnet_mq".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                // Azure Service Bus trigger
+                for cap in re_service_bus_trigger.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Stop,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "azure_service_bus".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                // RabbitMQ BasicConsume
+                for cap in re_rabbit_consume.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Stop,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "rabbitmq".to_string(),
+                        metadata: None,
+                    });
+                }
+
+                // Confluent.Kafka Subscribe
+                for cap in re_kafka_subscribe.captures_iter(line_text) {
+                    points.push(ConnectionPoint {
+                        file_id,
+                        symbol_id: None,
+                        line: line_no,
+                        protocol: Protocol::MessageQueue,
+                        direction: FlowDirection::Stop,
+                        key: cap[1].to_string(),
+                        method: String::new(),
+                        framework: "kafka".to_string(),
+                        metadata: None,
+                    });
+                }
+            }
+        }
+
+        Ok(points)
+    }
+}
+
+// ===========================================================================
+// CSharpGraphQlConnector — GraphQL resolver stops
+// ===========================================================================
+
+/// Detects C# Hot Chocolate / Strawberry Shake GraphQL resolvers.
+///
+/// Start points come from the GraphQL schema connector (graphql language plugin).
+/// This connector emits Stop points: methods decorated with [GraphQLQuery],
+/// [GraphQLMutation], [QueryType], [MutationType], or belonging to a type
+/// registered via `descriptor.AddQueryType<T>()`.
+pub struct CSharpGraphQlConnector;
+
+impl Connector for CSharpGraphQlConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "csharp_graphql_resolvers",
+            protocols: &[Protocol::GraphQl],
+            languages: &["csharp"],
+        }
+    }
+
+    fn detect(&self, ctx: &ProjectContext) -> bool {
+        let deps = &ctx.external_prefixes;
+        deps.contains("HotChocolate")
+            || deps.contains("StrawberryShake")
+            || deps.contains("GraphQL")
+    }
+
+    fn extract(&self, conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Find methods in classes that are marked as GraphQL types.
+        // Hot Chocolate: [QueryType] / [MutationType] on class,
+        // methods become resolvers by convention (name = field name).
+        let mut stmt = conn
+            .prepare(
+                "SELECT s.id, s.name, s.file_id, s.line
+                 FROM symbols s
+                 JOIN files f ON f.id = s.file_id
+                 WHERE f.language = 'csharp'
+                   AND s.kind = 'method'
+                   AND EXISTS (
+                       SELECT 1 FROM symbols p
+                       WHERE p.file_id = s.file_id
+                         AND p.kind = 'class'
+                         AND p.name LIKE '%Query%' OR p.name LIKE '%Mutation%'
+                         OR p.name LIKE '%Subscription%'
+                   )",
+            )
+            .context("Failed to prepare C# GraphQL resolver query")?;
+
+        let rows: Vec<(i64, String, i64, u32)> = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, i64>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, i64>(2)?,
+                    row.get::<_, u32>(3)?,
+                ))
+            })
+            .context("Failed to query C# GraphQL resolvers")?
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .context("Failed to collect C# GraphQL resolver rows")?;
+
+        let points = rows
+            .into_iter()
+            .map(|(sym_id, name, file_id, line)| ConnectionPoint {
+                file_id,
+                symbol_id: Some(sym_id),
+                line,
+                protocol: Protocol::GraphQl,
+                direction: FlowDirection::Stop,
+                key: name,
+                method: String::new(),
+                framework: "hotchocolate".to_string(),
+                metadata: None,
+            })
+            .collect();
+
+        Ok(points)
+    }
+}
+
+// ===========================================================================
+// CsharpRestConnector — HTTP client call starts + route stops for C#
+// ===========================================================================
+
+pub struct CsharpRestConnector;
+
+impl Connector for CsharpRestConnector {
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor {
+            name: "csharp_rest",
+            protocols: &[Protocol::Rest],
+            languages: &["csharp"],
+        }
+    }
+
+    fn detect(&self, _ctx: &ProjectContext) -> bool {
+        true
+    }
+
+    fn extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+    ) -> Result<Vec<ConnectionPoint>> {
+        let mut points = Vec::new();
+        extract_csharp_rest_stops(conn, &mut points)?;
+        extract_csharp_rest_starts(conn, project_root, &mut points)?;
+        Ok(points)
+    }
+}
+
+fn extract_csharp_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> Result<()> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT r.file_id, r.symbol_id, r.line, r.http_method,
+                    COALESCE(r.resolved_route, r.route_template)
+             FROM routes r
+             JOIN files f ON f.id = r.file_id
+             WHERE f.language = 'csharp'
+               AND r.http_method != '' AND r.route_template != ''",
+        )
+        .context("Failed to prepare C# REST stops query")?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<i64>>(1)?,
+                row.get::<_, Option<u32>>(2)?,
+                row.get::<_, String>(3)?,
+                row.get::<_, String>(4)?,
+            ))
+        })
+        .context("Failed to query C# routes")?;
+
+    for row in rows {
+        let (file_id, symbol_id, line, method, route) =
+            row.context("Failed to read C# route row")?;
+        out.push(ConnectionPoint {
+            file_id,
+            symbol_id,
+            line: line.unwrap_or(0),
+            protocol: Protocol::Rest,
+            direction: FlowDirection::Stop,
+            key: route,
+            method: method.to_uppercase(),
+            framework: String::new(),
+            metadata: None,
+        });
+    }
+    Ok(())
+}
+
+fn extract_csharp_rest_starts(
+    conn: &Connection,
+    project_root: &Path,
+    out: &mut Vec<ConnectionPoint>,
+) -> Result<()> {
+    // HttpClient.GetAsync("url"), PostAsync, PutAsync, DeleteAsync
+    let re_direct = Regex::new(
+        r#"HttpClient\s*\.\s*(?P<method>Get|Post|Put|Delete|Patch)Async\s*\(\s*(?:"(?P<url1>[^"]+)"|@?"(?P<url2>[^"]+)")"#,
+    ).expect("csharp httpclient regex");
+
+    // _provider.GetAsync<T>("url") or _provider.GetAsync<T>($"url")
+    let re_wrapper = Regex::new(
+        r#"(?:_\w+|this\.\w+)\s*\.\s*(?P<method>Get|Post|Put|Delete|Patch)Async\s*(?:<[^>]*>)?\s*\(\s*(?:(?:"(?P<url>[^"]+)")|(?:\$"(?P<interp>[^"]+)"))"#,
+    ).expect("csharp wrapper regex");
+
+    let mut stmt = conn
+        .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
+        .context("Failed to prepare C# files query")?;
+    let files: Vec<(i64, String)> = stmt
+        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
+        .context("Failed to query C# files")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("Failed to collect C# file rows")?;
+
+    for (file_id, rel_path) in files {
+        if csharp_rest_is_test_file(&rel_path) {
+            continue;
+        }
+        let abs_path = project_root.join(&rel_path);
+        let source = match std::fs::read_to_string(&abs_path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Collect API URL base constants from the file for interpolation.
+        let re_api_const = Regex::new(
+            r#"(?:const|static\s+readonly)\s+string\s+\w*(?:Api|Url|Base|Endpoint)\w*\s*=\s*"([^"]+)""#,
+        ).expect("api const regex");
+        let api_bases: Vec<String> = re_api_const
+            .captures_iter(&source)
+            .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
+            .collect();
+
+        for (line_idx, line_text) in source.lines().enumerate() {
+            let line_no = (line_idx + 1) as u32;
+
+            // HttpClient.XAsync("url")
+            if let Some(cap) = re_direct.captures(line_text) {
+                let method = cap.name("method").map(|m| m.as_str()).unwrap_or("GET");
+                let url = cap.name("url1").or_else(|| cap.name("url2")).map(|m| m.as_str());
+                if let Some(url) = url {
+                    if csharp_rest_looks_like_api_url(url) {
+                        let url_pattern = csharp_normalise_interp_url(url, &api_bases);
+                        out.push(ConnectionPoint {
+                            file_id,
+                            symbol_id: None,
+                            line: line_no,
+                            protocol: Protocol::Rest,
+                            direction: FlowDirection::Start,
+                            key: url_pattern,
+                            method: method.to_uppercase(),
+                            framework: "dotnet_http".to_string(),
+                            metadata: None,
+                        });
+                    }
+                }
+            }
+
+            // _wrapper.XAsync<T>("url") or _wrapper.XAsync<T>($"url")
+            if let Some(cap) = re_wrapper.captures(line_text) {
+                let method = cap.name("method").map(|m| m.as_str()).unwrap_or("GET");
+                let url = cap.name("url").or_else(|| cap.name("interp")).map(|m| m.as_str());
+                if let Some(url) = url {
+                    if csharp_rest_looks_like_api_url(url) {
+                        let url_pattern = csharp_normalise_interp_url(url, &api_bases);
+                        out.push(ConnectionPoint {
+                            file_id,
+                            symbol_id: None,
+                            line: line_no,
+                            protocol: Protocol::Rest,
+                            direction: FlowDirection::Start,
+                            key: url_pattern,
+                            method: method.to_uppercase(),
+                            framework: "dotnet_http".to_string(),
+                            metadata: None,
+                        });
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn csharp_rest_is_test_file(rel_path: &str) -> bool {
+    let lower = rel_path.to_lowercase();
+    lower.contains("test") || lower.contains("spec")
+}
+
+fn csharp_rest_looks_like_api_url(s: &str) -> bool {
+    if s.starts_with("http://") || s.starts_with("https://") {
+        let after = s.find("://").map(|i| &s[i + 3..]).unwrap_or(s);
+        let path = after.find('/').map(|i| &after[i..]).unwrap_or("");
+        if path.is_empty() { return false; }
+        return csharp_rest_looks_like_api_url(path);
+    }
+    s.starts_with('/') || s.contains("/api/") || s.contains("/v1/") || s.contains("/v2/") || s.contains("/{")
+}
+
+fn csharp_normalise_interp_url(url: &str, api_bases: &[String]) -> String {
+    let mut result = url.to_string();
+    for value in api_bases {
+        if !value.is_empty() {
+            result = result.replace("{ApiUrlBase}", value);
+            result = result.replace("{ApiUrl}", value);
+        }
+    }
+    let re_interp = Regex::new(r"\{[^}]+\}").expect("interp regex");
+    let result = re_interp.replace_all(&result, "{*}").to_string();
+    let result = result.split('?').next().unwrap_or(&result).to_string();
+    result.replace("//", "/")
+}
+
+// ===========================================================================
+// EF Core post-index hook
+// ===========================================================================
+
+/// Post-index enrichment for EF Core: apply convention pluralisation and
+/// create `db_entity` edges.
+///
+/// Called from `CSharpPlugin::post_index()` after all symbols have been written.
+pub fn run_ef_core(db: &crate::db::Database) -> anyhow::Result<()> {
+    crate::connectors::ef_core::connect(db)
+}
+
+// ===========================================================================
 // Tests
 // ===========================================================================
 

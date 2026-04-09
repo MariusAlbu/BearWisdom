@@ -115,6 +115,18 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// This is the primary mechanism for adding connector support to a language —
     /// all detection, extraction, and matching logic lives in the plugin directory.
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> { vec![] }
+
+    /// Post-index hook for language-specific enrichment that writes to tables
+    /// other than `flow_edges` (e.g. `db_mappings`, `concepts`).
+    ///
+    /// Called by `full_index` after all symbols, edges, and flow connectors have
+    /// been written.  The default implementation is a no-op.
+    fn post_index(
+        &self,
+        _db: &crate::db::Database,
+        _project_root: &std::path::Path,
+        _ctx: &crate::indexer::project_context::ProjectContext,
+    ) {}
 }
 
 // ---------------------------------------------------------------------------

@@ -98,6 +98,21 @@ impl LanguagePlugin for PythonPlugin {
         vec![
             Box::new(connectors::DjangoRouteConnector),
             Box::new(connectors::FastApiRouteConnector),
+            Box::new(connectors::PythonRestConnector),
+            Box::new(connectors::PythonGrpcConnector),
+            Box::new(connectors::PythonMqConnector),
+            Box::new(connectors::PythonGraphQlConnector),
         ]
+    }
+
+    fn post_index(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) {
+        if ctx.python_packages.contains("django") {
+            connectors::run_django_concepts(db, project_root);
+        }
     }
 }

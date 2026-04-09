@@ -94,6 +94,7 @@ impl LanguagePlugin for AngularPlugin {
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
         vec![
             Box::new(connectors::AngularDiConnector),
+            Box::new(connectors::AngularRestConnector),
         ]
     }
 }
