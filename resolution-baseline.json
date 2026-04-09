@@ -295,5 +295,194 @@
     "external": 1134,
     "unresolved": 85,
     "resolution_rate": 97.5
+  },
+  "ada-septum": {
+    "language": "ada",
+    "files": 42,
+    "symbols": 390,
+    "edges": 166,
+    "external": 424,
+    "unresolved": 579,
+    "resolution_rate": 50.5
+  },
+  "astro-paper": {
+    "language": "astro",
+    "files": 103,
+    "symbols": 134,
+    "edges": 98,
+    "external": 311,
+    "unresolved": 106,
+    "resolution_rate": 79.4
+  },
+  "clojure-ring": {
+    "language": "clojure",
+    "files": 92,
+    "symbols": 474,
+    "edges": 4266,
+    "external": 9805,
+    "unresolved": 6296,
+    "resolution_rate": 69.1
+  },
+  "cmake-cpm": {
+    "language": "cmake",
+    "files": 104,
+    "symbols": 1388,
+    "edges": 835,
+    "external": 1792,
+    "unresolved": 1125,
+    "resolution_rate": 70.0
+  },
+  "dart-frog": {
+    "language": "dart",
+    "files": 544,
+    "symbols": 4790,
+    "edges": 4367,
+    "external": 11720,
+    "unresolved": 928,
+    "resolution_rate": 94.5
+  },
+  "dockerfile-jessfraz": {
+    "language": "dockerfile",
+    "files": 246,
+    "symbols": 1978,
+    "edges": 81,
+    "external": 1289,
+    "unresolved": 262,
+    "resolution_rate": 83.9
+  },
+  "erlang-cowboy": {
+    "language": "erlang",
+    "files": 221,
+    "symbols": 4150,
+    "edges": 556,
+    "external": 8291,
+    "unresolved": 6107,
+    "resolution_rate": 59.2
+  },
+  "fortran-fpm": {
+    "language": "fortran",
+    "files": 340,
+    "symbols": 1487,
+    "edges": 2847,
+    "external": 5437,
+    "unresolved": 3800,
+    "resolution_rate": 68.6
+  },
+  "fsharp-giraffe": {
+    "language": "fsharp",
+    "files": 61,
+    "symbols": 2080,
+    "edges": 1344,
+    "external": 958,
+    "unresolved": 7504,
+    "resolution_rate": 23.5
+  },
+  "gdscript-beehave": {
+    "language": "gdscript",
+    "files": 414,
+    "symbols": 6955,
+    "edges": 3381,
+    "external": 1260,
+    "unresolved": 569,
+    "resolution_rate": 89.1
+  },
+  "gleam-wisp": {
+    "language": "gleam",
+    "files": 89,
+    "symbols": 290,
+    "edges": 483,
+    "external": 652,
+    "unresolved": 151,
+    "resolution_rate": 88.3
+  },
+  "groovy-codenarc": {
+    "language": "groovy",
+    "files": 1177,
+    "symbols": 10722,
+    "edges": 6535,
+    "external": 6744,
+    "unresolved": 4592,
+    "resolution_rate": 74.3
+  },
+  "matlab-prmlt": {
+    "language": "matlab",
+    "files": 182,
+    "symbols": 2923,
+    "edges": 541,
+    "external": 1513,
+    "unresolved": 914,
+    "resolution_rate": 69.2
+  },
+  "nim-nitter": {
+    "language": "nim",
+    "files": 119,
+    "symbols": 1381,
+    "edges": 144,
+    "external": 1149,
+    "unresolved": 328,
+    "resolution_rate": 79.8
+  },
+  "odin-ols": {
+    "language": "odin",
+    "files": 137,
+    "symbols": 3077,
+    "edges": 4888,
+    "external": 3693,
+    "unresolved": 1497,
+    "resolution_rate": 85.1
+  },
+  "puppet-apache": {
+    "language": "puppet",
+    "files": 281,
+    "symbols": 568,
+    "edges": 32,
+    "external": 2005,
+    "unresolved": 584,
+    "resolution_rate": 77.7
+  },
+  "robot-cookbook": {
+    "language": "robot",
+    "files": 39,
+    "symbols": 232,
+    "edges": 10,
+    "external": 188,
+    "unresolved": 315,
+    "resolution_rate": 38.6
+  },
+  "starlark-bazel-skylib": {
+    "language": "starlark",
+    "files": 187,
+    "symbols": 1296,
+    "edges": 402,
+    "external": 2487,
+    "unresolved": 2079,
+    "resolution_rate": 58.2
+  },
+  "svelte-realworld": {
+    "language": "svelte",
+    "files": 51,
+    "symbols": 99,
+    "edges": 35,
+    "external": 197,
+    "unresolved": 137,
+    "resolution_rate": 62.9
+  },
+  "vbnet-compactgui": {
+    "language": "vbnet",
+    "files": 87,
+    "symbols": 1457,
+    "edges": 238,
+    "external": 2477,
+    "unresolved": 23,
+    "resolution_rate": 99.2
+  },
+  "proto-onlineboutique": {
+    "language": "yaml",
+    "files": 263,
+    "symbols": 6976,
+    "edges": 6824,
+    "external": 34041,
+    "unresolved": 1185,
+    "resolution_rate": 97.2
   }
 }
