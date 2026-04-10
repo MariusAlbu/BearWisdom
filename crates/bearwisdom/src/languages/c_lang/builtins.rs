@@ -81,8 +81,17 @@ pub(super) fn is_system_header(path: &str) -> bool {
 /// Template parameter names and patterns that should be classified as external
 /// (they're not real symbols in the index, just formal type parameters).
 pub(super) fn is_template_param(name: &str) -> bool {
+    // Synthetic token emitted for template_argument_list coverage nodes.
+    if name == "<template_args>" {
+        return true;
+    }
     // Single uppercase letter: T, U, V, K, N, E, etc.
     if name.len() == 1 && name.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+        return true;
+    }
+    // Names ending in "Type" are almost always template type parameters
+    // (e.g. BasicJsonType, CharType, IteratorType, KeyType, ValueType).
+    if name.ends_with("Type") && name.len() > 4 {
         return true;
     }
     // Common multi-character template param names.

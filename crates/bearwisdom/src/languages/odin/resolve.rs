@@ -59,7 +59,10 @@ impl LanguageResolver for OdinResolver {
                 imported_name: pkg_name,
                 module_path: Some(import_path),
                 alias: None,
-                is_wildcard: false,
+                // Odin import brings all package exports into scope. The extractor
+                // strips package qualifiers (fmt.println → println), so bare names
+                // need the wildcard path to classify as external.
+                is_wildcard: true,
             });
         }
 
@@ -90,14 +93,38 @@ impl LanguageResolver for OdinResolver {
             return None;
         }
 
-        engine::resolve_common("odin", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        // Try resolve_common first (scope chain, same-file, import-based).
+        if let Some(res) = engine::resolve_common("odin", file_ctx, ref_ctx, lookup, builtins::kind_compatible) {
+            return Some(res);
+        }
+
+        // Odin-specific: same-package resolution.
+        // In Odin, all procedures/types in the same package (directory) are visible
+        // without import. Search by name and filter to files in the same directory.
+        let source_normalized = file_ctx.file_path.replace('\\', "/");
+        let source_dir = source_normalized.rsplit('/').nth(1).unwrap_or("");
+        if !source_dir.is_empty() {
+            for sym in lookup.by_name(target) {
+                let sym_normalized = sym.file_path.replace('\\', "/");
+                let sym_dir = sym_normalized.rsplit('/').nth(1).unwrap_or("");
+                if sym_dir == source_dir && builtins::kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: "odin_same_package",
+                    });
+                }
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -108,6 +135,6 @@ impl LanguageResolver for OdinResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_odin_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_odin_builtin)
     }
 }

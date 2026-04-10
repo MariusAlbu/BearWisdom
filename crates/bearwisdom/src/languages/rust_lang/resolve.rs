@@ -167,6 +167,15 @@ impl LanguageResolver for RustResolver {
             });
         }
 
+        // Generic type parameters: single uppercase letters in TypeRef position
+        // (e.g., `L`, `M`, `F`, `W`) are generic params, never indexable symbols.
+        if edge_kind == EdgeKind::TypeRef {
+            let bare = target.trim_start_matches("::");
+            if bare.len() == 1 && bare.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+                return None;
+            }
+        }
+
         // Rust stdlib builtins are never in our index — fast exit.
         if builtins::is_rust_builtin(target) {
             return None;

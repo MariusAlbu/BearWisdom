@@ -252,6 +252,11 @@ pub(super) fn extract_class_body(
                 // extract_dart_calls which handles type_identifier at every level.
                 let sym_idx = if symbols.len() > pre_len { pre_len } else { parent_index.unwrap_or(0) };
                 extract_dart_calls(&child, src, sym_idx, refs);
+                // Type inference from initializer: if no explicit type annotation,
+                // infer from constructor call. `final repo = Repository();` → TypeRef "Repository".
+                if !has_type_annotation(&child) {
+                    infer_type_from_dart_initializer(&child, src, sym_idx, refs);
+                }
             }
             "getter_signature" | "setter_signature" => {
                 extract_getter_setter(&child, src, symbols, refs, parent_index, qualified_prefix);
@@ -881,5 +886,85 @@ pub(super) fn extract_dart_heritage(
                 emit_mixin_refs(*mixins_node);
             }
         }
+    }
+}
+
+/// Check if a Dart field/variable node has an explicit type annotation.
+/// Returns true if a `type_identifier` (or similar type node) appears
+/// before the variable name.
+fn has_type_annotation(node: &Node) -> bool {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "type_identifier" | "generic_type" | "function_type" => return true,
+            "initialized_identifier_list" | "initialized_identifier" | "=" => break,
+            _ => {}
+        }
+    }
+    false
+}
+
+/// Infer the type of a Dart field from its initializer expression when no
+/// explicit type annotation is present. Emits a TypeRef that feeds `field_type_name`.
+///
+/// Handles:
+///   `final repo = Repository();` → TypeRef to "Repository"
+///   `var service = ServiceImpl(config);` → TypeRef to "ServiceImpl"
+fn infer_type_from_dart_initializer(
+    node: &Node,
+    src: &str,
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Find the initializer expression — typically after `=` inside
+    // initialized_variable_definition or directly as the value field.
+    let mut cursor = node.walk();
+    let mut found_eq = false;
+    for child in node.children(&mut cursor) {
+        if child.kind() == "=" {
+            found_eq = true;
+            continue;
+        }
+        if !found_eq || !child.is_named() {
+            continue;
+        }
+        // Look for constructor invocation patterns.
+        match child.kind() {
+            // `Repository()` or `SomeType.named()`
+            "identifier" => {
+                let name = node_text(child, src);
+                if name.starts_with(|c: char| c.is_uppercase()) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            _ => {
+                // Walk deeper for call expressions in the initializer.
+                let mut ic = child.walk();
+                for inner in child.children(&mut ic) {
+                    if inner.kind() == "identifier" {
+                        let name = node_text(inner, src);
+                        if name.starts_with(|c: char| c.is_uppercase()) {
+                            refs.push(ExtractedRef {
+                                source_symbol_index: sym_idx,
+                                target_name: name,
+                                kind: EdgeKind::TypeRef,
+                                line: inner.start_position().row as u32,
+                                module: None,
+                                chain: None,
+                            });
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+        break;
     }
 }

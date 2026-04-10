@@ -75,7 +75,8 @@ fn walk_node(
         // for body values like `db/tx0`), emit a ref for it here.
         // The child-iteration path below handles nested sym_lits inside other parents.
         let name = sym_lit_name(node, src);
-        if !name.is_empty() && !name.starts_with(':') {
+        // Skip keywords (:foo), anonymous fn args (%, %1, %2, %&), and gensyms.
+        if !name.is_empty() && !name.starts_with(':') && !name.starts_with('%') {
             let ns = sym_lit_ns(node, src);
             refs.push(ExtractedRef {
                 source_symbol_index: parent_idx.unwrap_or(0),
@@ -94,7 +95,8 @@ fn walk_node(
         if child.kind() == "sym_lit" {
             let name = sym_lit_name(child, src);
             // Emit a ref for every sym_lit so sym_name coverage engine nodes are satisfied.
-            if !name.is_empty() && !name.starts_with(':') {
+            // Skip keywords (:foo) and anonymous fn args (%, %1, %2, %&).
+            if !name.is_empty() && !name.starts_with(':') && !name.starts_with('%') {
                 let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index: parent_idx.unwrap_or(0),
@@ -162,7 +164,7 @@ fn process_list(
     // Use the head node's actual line (not the list's start) so the coverage engine
     // correctly correlates this ref to the sym_name child of the head sym_lit.
     // For namespace-qualified heads like `str/join`, set module = Some("str").
-    if !head.starts_with(':') && !head.starts_with('"') {
+    if !head.starts_with(':') && !head.starts_with('"') && !head.starts_with('%') {
         refs.push(ExtractedRef {
             source_symbol_index: parent_idx.unwrap_or(0),
             target_name: head.clone(),
@@ -438,7 +440,8 @@ fn walk_call_args(
         if child.kind() == "sym_lit" {
             let name = sym_lit_name(child, src);
             // Emit refs for all sym_lits in argument positions.
-            if !name.is_empty() && !name.starts_with(':') {
+            // Skip keywords (:foo) and anonymous fn args (%, %1, %2, %&).
+            if !name.is_empty() && !name.starts_with(':') && !name.starts_with('%') {
                 let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index: parent_idx.unwrap_or(0),

@@ -37,6 +37,15 @@ pub(crate) const EXTERNALS: &[&str] = &[
     // WinForms / WPF event glue
     "Add_Click", "Add_Load", "Add_Shown", "Add_Closing", "Add_Closed",
     "Add_TextChanged", "Add_SelectedIndexChanged", "Add_KeyDown",
+    // WPF dependency properties / common control members
+    "Visibility", "Visible", "Collapsed", "Hidden",
+    "Text", "Content", "IsEnabled", "IsChecked", "IsSelected",
+    "Foreground", "Background", "FontSize", "FontWeight",
+    "Width", "Height", "Margin", "Padding",
+    "HorizontalAlignment", "VerticalAlignment",
+    "Dispatcher",
+    // Common dialog results
+    "OK", "Cancel",
     // Misc .NET patterns
     "new", "GetValue", "SetValue", "GetFields", "GetProperties",
     "GetMethods", "InvokeMember",

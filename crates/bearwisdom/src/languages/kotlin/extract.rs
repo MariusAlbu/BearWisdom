@@ -175,6 +175,14 @@ pub(super) fn extract_node<'a>(
                 // pick up all type refs, including in the initializer expression.
                 calls::extract_calls_from_body(&child, src, sym_idx, refs);
 
+                // Type inference from initializer: if no explicit type annotation,
+                // infer the type from a constructor call in the initializer.
+                // `val repo = Repository()` → TypeRef from property to "Repository".
+                // This feeds field_type_name in the chain walker.
+                if child.child_by_field_name("type").is_none() {
+                    infer_type_from_initializer(&child, src, sym_idx, refs);
+                }
+
                 // Extract getter and setter accessors as Method symbols.
                 let mut pc = child.walk();
                 for inner in child.children(&mut pc) {
@@ -524,6 +532,93 @@ fn extract_function_param_types(
             }
             _ => {}
         }
+    }
+}
+
+/// Infer the type of a property from its initializer expression when no
+/// explicit type annotation is present. Emits a TypeRef edge that the
+/// engine uses to populate `field_type_name` for chain resolution.
+///
+/// Handles:
+///   `val repo = Repository()` → TypeRef to "Repository"
+///   `val service = ServiceImpl.create()` → TypeRef to "ServiceImpl"
+///   `val list = mutableListOf()` → skipped (lowercase = not a type constructor)
+fn infer_type_from_initializer(
+    property_node: &Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // Find the initializer: CST children after `=` include the expression.
+    let mut cursor = property_node.walk();
+    let mut found_eq = false;
+    for child in property_node.children(&mut cursor) {
+        if child.kind() == "=" {
+            found_eq = true;
+            continue;
+        }
+        if !found_eq {
+            continue;
+        }
+        // The first named node after `=` is the initializer expression.
+        if !child.is_named() {
+            continue;
+        }
+        match child.kind() {
+            "call_expression" => {
+                // `Repository()` or `SomeClass.create()`
+                if let Some(callee) = child.named_child(0) {
+                    let type_name = match callee.kind() {
+                        "simple_identifier" | "identifier" => {
+                            let name = node_text(callee, src);
+                            // Kotlin convention: constructors start with uppercase.
+                            if name.starts_with(|c: char| c.is_uppercase()) {
+                                Some(name)
+                            } else {
+                                None
+                            }
+                        }
+                        // `Foo.Bar()` navigation expression — use the last segment
+                        // if it starts with uppercase.
+                        "navigation_expression" => {
+                            let chain = calls::build_chain(&callee, src);
+                            chain.and_then(|c| {
+                                c.segments.last()
+                                    .filter(|s| s.name.starts_with(|c: char| c.is_uppercase()))
+                                    .map(|s| s.name.clone())
+                            })
+                        }
+                        _ => None,
+                    };
+                    if let Some(name) = type_name {
+                        refs.push(ExtractedRef {
+                            source_symbol_index: sym_idx,
+                            target_name: name,
+                            kind: EdgeKind::TypeRef,
+                            line: child.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                        });
+                    }
+                }
+            }
+            // `val x = SomeObject` — direct reference to a singleton/companion.
+            "simple_identifier" | "identifier" => {
+                let name = node_text(child, src);
+                if name.starts_with(|c: char| c.is_uppercase()) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+            _ => {}
+        }
+        break; // Only process the first expression after `=`.
     }
 }
 

@@ -104,7 +104,7 @@ impl LanguageResolver for RResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -120,7 +120,7 @@ impl LanguageResolver for RResolver {
             }
         }
 
-        infer_r_external(file_ctx, ref_ctx)
+        infer_r_external(file_ctx, ref_ctx, project_ctx)
     }
 }
 
@@ -141,6 +141,7 @@ fn resolve_r(
 fn infer_r_external(
     file_ctx: &FileContext,
     ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
 ) -> Option<String> {
-    engine::infer_external_common(file_ctx, ref_ctx, builtins::is_r_builtin)
+    engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_r_builtin)
 }

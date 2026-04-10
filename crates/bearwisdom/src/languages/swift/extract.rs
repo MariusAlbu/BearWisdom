@@ -230,11 +230,19 @@ pub(super) fn extract_node<'a>(
                 // in annotation nodes not covered by extract_function_type_refs.
                 calls::extract_all_type_identifiers_from_node(&child, src, sym_idx, refs);
                 // Extract calls from the property initializer value or computed body.
-                let body = child.child_by_field_name("value")
+                let value_node = child.child_by_field_name("value");
+                let body = value_node
                     .or_else(|| find_child_by_kind(&child, "computed_property"))
                     .or_else(|| find_child_by_kind(&child, "code_block"));
                 if let Some(b) = body {
                     calls::extract_calls_from_body(&b, src, sym_idx, refs);
+                }
+                // Type inference from initializer: if no explicit type annotation,
+                // infer from constructor call. `let repo = Repository()` → TypeRef "Repository".
+                if child.child_by_field_name("type").is_none() {
+                    if let Some(val) = value_node {
+                        infer_type_from_value(&val, src, sym_idx, refs);
+                    }
                 }
             }
 
@@ -486,6 +494,72 @@ fn extract_param_type_refs(
             }
             _ => {}
         }
+    }
+}
+
+/// Infer the type of a let/var from its initializer expression when no explicit
+/// type annotation is present. Emits a TypeRef that feeds `field_type_name`.
+///
+/// Handles:
+///   `let repo = Repository()` → TypeRef to "Repository"
+///   `var service = ServiceImpl(config:)` → TypeRef to "ServiceImpl"
+fn infer_type_from_value(
+    value_node: &Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match value_node.kind() {
+        "call_expression" => {
+            // Swift call: `Foo()` or `Foo.bar()`
+            if let Some(func) = value_node.named_child(0) {
+                let type_name = match func.kind() {
+                    "simple_identifier" | "type_identifier" => {
+                        let name = helpers::node_text(func, src);
+                        if name.starts_with(|c: char| c.is_uppercase()) {
+                            Some(name)
+                        } else {
+                            None
+                        }
+                    }
+                    "navigation_expression" => {
+                        if let Some(chain) = calls::build_chain(func, src) {
+                            chain.segments.last()
+                                .filter(|s| s.name.starts_with(|c: char| c.is_uppercase()))
+                                .map(|s| s.name.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                if let Some(name) = type_name {
+                    refs.push(crate::types::ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: value_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+        // `let x = SomeType` — direct type reference.
+        "simple_identifier" | "type_identifier" => {
+            let name = helpers::node_text(*value_node, src);
+            if name.starts_with(|c: char| c.is_uppercase()) {
+                refs.push(crate::types::ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: crate::types::EdgeKind::TypeRef,
+                    line: value_node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        _ => {}
     }
 }
 

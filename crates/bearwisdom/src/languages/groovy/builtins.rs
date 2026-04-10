@@ -19,6 +19,16 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
+/// Groovy control flow keywords that the grammar may parse as method_invocation.
+pub(super) fn is_groovy_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "else" | "while" | "for" | "switch" | "case" | "do"
+            | "try" | "catch" | "finally" | "throw" | "return"
+            | "break" | "continue" | "assert"
+    )
+}
+
 /// Groovy built-in methods, GDK additions, Spock lifecycle, and Gradle DSL
 /// keywords that are never defined inside a project.
 pub(super) fn is_groovy_builtin(name: &str) -> bool {

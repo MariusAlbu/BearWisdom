@@ -122,7 +122,7 @@ impl LanguageResolver for PuppetResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -134,7 +134,7 @@ impl LanguageResolver for PuppetResolver {
         }
 
         // Built-in resource types and functions.
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_puppet_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_puppet_builtin)
             .map(|_| "puppet".to_string())
     }
 }

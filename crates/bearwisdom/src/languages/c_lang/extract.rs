@@ -398,7 +398,10 @@ fn sweep_typerefs<'a>(
         match child.kind() {
             "type_identifier" => {
                 let name = node_text(child, src);
-                if !name.is_empty() && !builtins::is_c_builtin(&name) {
+                if !name.is_empty()
+                    && !builtins::is_c_builtin(&name)
+                    && !builtins::is_template_param(&name)
+                {
                     refs.push(ExtractedRef {
                         source_symbol_index: default_sym_idx,
                         target_name: name,
@@ -411,17 +414,9 @@ fn sweep_typerefs<'a>(
                 // type_identifier is a leaf — no children to recurse into.
             }
             "template_argument_list" => {
-                // Emit a TypeRef for the template_argument_list node itself so the
-                // coverage engine can match it, then recurse into children for nested
-                // type_identifiers.
-                refs.push(ExtractedRef {
-                    source_symbol_index: default_sym_idx,
-                    target_name: "<template_args>".to_string(),
-                    kind: EdgeKind::TypeRef,
-                    line: child.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
+                // Recurse into children for nested type_identifiers, but do NOT
+                // emit a synthetic "<template_args>" ref — that token can never
+                // resolve and only inflates unresolved counts.
                 sweep_typerefs(child, src, default_sym_idx, language, refs);
             }
             "base_class_clause" if language != "c" => {

@@ -89,7 +89,7 @@ impl LanguageResolver for ZigResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -103,7 +103,7 @@ impl LanguageResolver for ZigResolver {
         }
 
         // Delegate builtin detection to the common helper.
-        if let Some(ns) = engine::infer_external_common(file_ctx, ref_ctx, builtins::is_zig_builtin) {
+        if let Some(ns) = engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_zig_builtin) {
             // Common returns "builtin"; remap to zig's "zig.builtin" label.
             return Some(if ns == "builtin" { "zig.builtin".to_string() } else { ns });
         }

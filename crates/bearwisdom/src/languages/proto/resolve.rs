@@ -130,7 +130,7 @@ impl LanguageResolver for ProtoResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -149,7 +149,7 @@ impl LanguageResolver for ProtoResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, is_proto_scalar)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_proto_scalar)
     }
 }
 

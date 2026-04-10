@@ -72,7 +72,7 @@ impl LanguageResolver for DockerfileResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         // Scratch is a special Docker pseudo-image — classify before common handler.
         if ref_ctx.extracted_ref.target_name.eq_ignore_ascii_case("scratch") {
@@ -82,7 +82,7 @@ impl LanguageResolver for DockerfileResolver {
         // Base image references in FROM (Imports) are always external; common
         // handler returns Some(ns) for Imports edges, using "builtin" fallback.
         // Override the namespace label to "docker" for all Dockerfile externals.
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_dockerfile_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_dockerfile_builtin)
             .map(|_| "docker".to_string())
     }
 }

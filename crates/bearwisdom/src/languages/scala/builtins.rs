@@ -59,7 +59,19 @@ pub(super) fn is_external_scala_namespace(
     }
 
     if let Some(ctx) = project_ctx {
-        return is_manifest_jvm_external(ctx, ns);
+        // If we have a JVM manifest, use it for precise classification.
+        let has_jvm_manifest = ctx.manifests.contains_key(&ManifestKind::Maven)
+            || ctx.manifests.contains_key(&ManifestKind::Gradle);
+        if has_jvm_manifest {
+            return is_manifest_jvm_external(ctx, ns);
+        }
+        // No JVM manifest (sbt projects without build.gradle/pom.xml):
+        // treat multi-segment namespaces as external since we can't
+        // distinguish project-local from third-party without a manifest.
+        // Single-segment or project-package-prefixed names fall through.
+        if ns.contains('.') {
+            return true;
+        }
     }
 
     false
@@ -162,10 +174,90 @@ pub(super) fn is_scala_builtin(name: &str) -> bool {
             | "apply"
             | "unapply"
             | "unapplySeq"
+            | "copy"
             | "empty"
             | "newBuilder"
             // pseudo-keywords used as refs
             | "this"
             | "super"
+            // Object identity / equality (java.lang.Object methods always in scope)
+            | "toString"
+            | "hashCode"
+            | "equals"
+            | "canEqual"
+            // Cats / FP symbolic operators (method dispatch, not imported names)
+            | "*>"
+            | "<*"
+            | "==="
+            | "=!="
+            | ">>"
+            | ">>="
+            | "<*>"
+            | "<$>"
+            | "|+|"
+            | ">>>"
+            | "<<<"
+            | "&>"
+            | "<&"
+            // Universal FP method names (stdlib + Cats + any typeclass)
+            | "flatMap"
+            | "map"
+            | "fold"
+            | "foldLeft"
+            | "foldRight"
+            | "traverse"
+            | "sequence"
+            | "pure"
+            | "flatten"
+            | "filter"
+            | "collect"
+            | "exists"
+            | "forall"
+            | "foreach"
+            | "groupBy"
+            | "toList"
+            | "toVector"
+            | "toSet"
+            | "toMap"
+            | "toOption"
+            | "getOrElse"
+            | "orElse"
+            | "contains"
+            | "mkString"
+            | "zip"
+            | "zipWithIndex"
+            | "take"
+            | "drop"
+            | "head"
+            | "tail"
+            | "last"
+            | "headOption"
+            | "lastOption"
+            | "isEmpty"
+            | "nonEmpty"
+            | "size"
+            | "length"
+            // Effect / stream methods (fs2, cats-effect, http4s)
+            | "unsafeRunSync"
+            | "use"
+            | "evalMap"
+            | "compile"
+            | "drain"
+            | "through"
+            | "attempt"
+            | "handleErrorWith"
+            | "recoverWith"
+            | "void"
+            | "as"
+            | "tupleLeft"
+            | "tupleRight"
+            | "product"
+            | "productL"
+            | "productR"
+            // ScalaCheck / property-based testing
+            | "Gen"
+            | "Arbitrary"
+            | "forAll"
+            | "property"
     )
 }

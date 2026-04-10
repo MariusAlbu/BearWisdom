@@ -175,7 +175,8 @@ fn walk_node(
                 match callee.kind() {
                     "identifier" => {
                         let name = text(callee, src);
-                        if !name.is_empty() {
+                        // Skip string literals misidentified as callees (e.g. "$fpm").
+                        if !name.is_empty() && !name.starts_with('"') && !name.starts_with('\'') {
                             refs.push(ExtractedRef {
                                 source_symbol_index: sym_idx,
                                 target_name: name,

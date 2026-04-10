@@ -22,6 +22,9 @@
 
 use super::builtins;
 use crate::indexer::manifest::ManifestKind;
+use crate::indexer::resolve::chain_walker::{
+    self, ChainConfig, NamespaceLookup, identity_normalize,
+};
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -81,6 +84,26 @@ impl LanguageResolver for SwiftResolver {
         // Swift builtins are never in the project index.
         if builtins::is_swift_builtin(target) {
             return None;
+        }
+
+        // Chain-aware resolution: walk MemberChain following field/return types.
+        // Swift has generics but no wildcard-import namespace lookup.
+        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
+            let config = ChainConfig {
+                strategy_prefix: "swift",
+                normalize_type: identity_normalize,
+                has_self_ref: true,
+                enclosing_type_kinds: &["class", "struct", "enum", "protocol"],
+                static_type_kinds: &["class", "struct", "enum", "protocol", "type_alias"],
+                use_generics: true,
+                namespace_lookup: NamespaceLookup::None,
+                kind_compatible: builtins::kind_compatible,
+            };
+            if let Some(res) = chain_walker::resolve_via_chain(
+                &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
+                return Some(res);
+            }
         }
 
         let effective_target = target

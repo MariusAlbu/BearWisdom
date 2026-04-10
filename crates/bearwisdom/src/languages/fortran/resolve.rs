@@ -106,8 +106,8 @@ impl LanguageResolver for FortranResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, is_fortran_builtin_ci)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_fortran_builtin_ci)
     }
 }

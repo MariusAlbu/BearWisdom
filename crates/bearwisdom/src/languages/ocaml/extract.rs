@@ -115,7 +115,12 @@ fn walk_node(
                 } else {
                     (text(fn_node, src), None)
                 };
-                if !target_name.is_empty() && !target_name.contains('\n') {
+                // Skip polymorphic variant constructors (`Ok, `Error, `P, etc.)
+                // and names with newlines (multi-line expressions, not real callees).
+                if !target_name.is_empty()
+                    && !target_name.starts_with('`')
+                    && !target_name.contains('\n')
+                {
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
                         target_name,

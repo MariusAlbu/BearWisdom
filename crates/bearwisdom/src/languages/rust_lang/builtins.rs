@@ -84,6 +84,12 @@ pub(super) fn is_rust_builtin(name: &str) -> bool {
     let name = name.trim_start_matches("::");
     // Also handle single-segment names in chains like "Some", "Ok"
     let simple = name.rsplit("::").next().unwrap_or(name);
+
+    // Single uppercase letters are generic type parameters (T, U, V, K, L, M, F, W, …).
+    // They are never real symbols in the index.
+    if simple.len() == 1 && simple.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+        return true;
+    }
     matches!(
         simple,
         // Prelude types / enums
@@ -352,5 +358,23 @@ pub(super) fn is_rust_builtin(name: &str) -> bool {
             | "Error"
             | "From"
             | "Into"
+            // wasm-bindgen ecosystem
+            | "wasm_bindgen"
+            | "wasm_bindgen_test"
+            | "JsValue"
+            | "JsError"
+            // napi-rs ecosystem
+            | "napi"
+            | "napi_derive"
+            | "Env"
+            | "Reference"
+            | "JsObject"
+            | "JsString"
+            | "JsNumber"
+            | "JsBoolean"
+            | "JsUndefined"
+            | "JsNull"
+            | "JsFunction"
+            | "JsBuffer"
     )
 }

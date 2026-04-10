@@ -24,6 +24,7 @@
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use super::builtins;
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -422,6 +423,11 @@ fn extract_call(
         Some(n) => n,
         None => return,
     };
+
+    // Skip control flow keywords that the grammar sometimes parses as method_invocation.
+    if builtins::is_groovy_keyword(&name) {
+        return;
+    }
 
     refs.push(ExtractedRef {
         source_symbol_index,

@@ -49,7 +49,10 @@ impl LanguageResolver for ErlangResolver {
                 imported_name: r.target_name.clone(),
                 module_path,
                 alias: None,
-                is_wildcard: false,
+                // Erlang imports bring module-level scope: `-import(lists, [map/2])` or
+                // remote calls `lists:map(...)` mean all exports are potentially available.
+                // Mark as wildcard so the import walk can classify bare unresolved names.
+                is_wildcard: true,
             });
         }
 
@@ -86,8 +89,8 @@ impl LanguageResolver for ErlangResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_erlang_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_erlang_builtin)
     }
 }

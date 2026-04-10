@@ -19,6 +19,9 @@
 
 use super::builtins;
 use crate::indexer::manifest::ManifestKind;
+use crate::indexer::resolve::chain_walker::{
+    self, ChainConfig, NamespaceLookup, identity_normalize,
+};
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -98,6 +101,26 @@ impl LanguageResolver for ScalaResolver {
         // Scala stdlib builtins are never in the index.
         if builtins::is_scala_builtin(target) {
             return None;
+        }
+
+        // Chain-aware resolution: walk MemberChain following field/return types.
+        // Scala is JVM-like with wildcard imports and companion objects.
+        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
+            let config = ChainConfig {
+                strategy_prefix: "scala",
+                normalize_type: identity_normalize,
+                has_self_ref: true,
+                enclosing_type_kinds: &["class", "trait", "object"],
+                static_type_kinds: &["class", "trait", "object", "enum", "type_alias"],
+                use_generics: true,
+                namespace_lookup: NamespaceLookup::WildcardOnly,
+                kind_compatible: builtins::kind_compatible,
+            };
+            if let Some(res) = chain_walker::resolve_via_chain(
+                &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
+                return Some(res);
+            }
         }
 
         let effective_target = target.strip_prefix("this.").unwrap_or(target);

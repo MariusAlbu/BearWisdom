@@ -294,6 +294,35 @@ impl LanguageResolver for ElixirResolver {
             }
         }
 
+        // Use-macro injection inference: if the file has `use ExternalModule`
+        // and that module is known to inject functions, any unresolved bare name
+        // that matches the injection set is external. This is type inference
+        // from the `use` statement — the `use` tells us what's available.
+        for import in &file_ctx.imports {
+            let module = import.module_path.as_deref().unwrap_or("");
+            if module.is_empty() {
+                continue;
+            }
+            // Only check modules confirmed as external dependencies.
+            let root = module.split('.').next().unwrap_or(module);
+            let is_external_module = if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                    is_mix_dep_match(root, &manifest.dependencies)
+                } else {
+                    builtins::is_external_elixir_module(module)
+                }
+            } else {
+                builtins::is_external_elixir_module(module)
+            };
+            if !is_external_module {
+                continue;
+            }
+            // Check if this external module injects the target name via `use`.
+            if builtins::is_use_injected(module, target) {
+                return Some(root.to_string());
+            }
+        }
+
         None
     }
 }

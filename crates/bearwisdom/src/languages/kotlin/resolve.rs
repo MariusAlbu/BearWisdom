@@ -19,6 +19,9 @@
 
 use super::builtins;
 use crate::indexer::manifest::ManifestKind;
+use crate::indexer::resolve::chain_walker::{
+    self, ChainConfig, NamespaceLookup, identity_normalize,
+};
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -97,6 +100,26 @@ impl LanguageResolver for KotlinResolver {
         // Kotlin builtins are never in the project index.
         if builtins::is_kotlin_builtin(target) {
             return None;
+        }
+
+        // Chain-aware resolution: walk MemberChain step-by-step following
+        // field types. Kotlin is JVM-like: wildcard imports provide namespace context.
+        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
+            let config = ChainConfig {
+                strategy_prefix: "kotlin",
+                normalize_type: identity_normalize,
+                has_self_ref: true,
+                enclosing_type_kinds: &["class", "interface", "object"],
+                static_type_kinds: &["class", "interface", "enum", "type_alias", "object"],
+                use_generics: true,
+                namespace_lookup: NamespaceLookup::WildcardOnly,
+                kind_compatible: builtins::kind_compatible,
+            };
+            if let Some(res) = chain_walker::resolve_via_chain(
+                &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
+                return Some(res);
+            }
         }
 
         let effective_target = target.strip_prefix("this.").unwrap_or(target);

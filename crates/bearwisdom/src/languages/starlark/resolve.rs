@@ -92,10 +92,21 @@ impl LanguageResolver for StarlarkResolver {
         }
 
         // Step 2: Import-based resolution.
-        // A loaded symbol `my_rule` from `//tools:foo.bzl` should resolve to
-        // the `my_rule` function defined in `foo.bzl`.
+        // Handles both direct names (`my_rule`) and qualified calls (`unittest.begin`).
+        //
+        // For `load("//lib:unittest.bzl", "unittest")`:
+        //   - Direct: target="unittest" → look up in loaded file
+        //   - Qualified: target="unittest.begin" → split on ".", match first
+        //     segment against imported_name, resolve "begin" in the loaded file
+        let (import_alias, member_name) = if target.contains('.') {
+            let dot = target.find('.').unwrap();
+            (&target[..dot], Some(&target[dot + 1..]))
+        } else {
+            (target.as_str(), None)
+        };
+
         for import in &file_ctx.imports {
-            if import.imported_name != *target {
+            if import.imported_name != import_alias {
                 continue;
             }
             let Some(mod_path) = &import.module_path else {
@@ -110,8 +121,12 @@ impl LanguageResolver for StarlarkResolver {
             // Convert Bazel label to relative path: "//tools/build_defs:foo.bzl"
             // → "tools/build_defs/foo.bzl"
             let file_path = bazel_label_to_path(mod_path);
+
+            // If it's a qualified call (unittest.begin), resolve the member
+            // within the loaded file.
+            let resolve_name = member_name.unwrap_or(target.as_str());
             for sym in lookup.in_file(&file_path) {
-                if sym.name == *target {
+                if sym.name == resolve_name {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -120,8 +135,8 @@ impl LanguageResolver for StarlarkResolver {
                 }
             }
 
-            // Try a global lookup for the loaded name.
-            for sym in lookup.by_name(target) {
+            // Try a global lookup for the resolved name.
+            for sym in lookup.by_name(resolve_name) {
                 if matches!(sym.kind.as_str(), "function" | "variable") {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -146,7 +161,7 @@ impl LanguageResolver for StarlarkResolver {
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
@@ -170,6 +185,21 @@ impl LanguageResolver for StarlarkResolver {
             let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or("");
             if module.starts_with('@') {
                 return Some("bazel".to_string());
+            }
+        }
+
+        // Import walk: if the target (or its first dotted segment) was loaded
+        // from an external @-repository, classify as external.
+        // e.g., `asserts.equals` where `asserts` was loaded from `@bazel_skylib//...`
+        let simple = target.split('.').next().unwrap_or(target);
+        for import in &file_ctx.imports {
+            if import.imported_name != simple {
+                continue;
+            }
+            if let Some(mod_path) = &import.module_path {
+                if mod_path.starts_with('@') {
+                    return Some("bazel".to_string());
+                }
             }
         }
 

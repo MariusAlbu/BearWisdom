@@ -82,9 +82,9 @@ impl LanguageResolver for CMakeResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, is_cmake_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_cmake_builtin)
     }
 }
 
@@ -135,9 +135,20 @@ fn is_cmake_builtin(name: &str) -> bool {
             | "install" | "export"
             // Testing
             | "enable_testing" | "ctest_configure" | "ctest_build"
+            | "ctest_test" | "set_tests_properties"
+            // String / list / misc
+            | "separate_arguments" | "include_guard"
             // Misc
             | "execute_process" | "try_compile" | "try_run"
             | "define_property" | "mark_as_advanced"
             | "source_group" | "aux_source_directory"
+            // FetchContent module
+            | "fetchcontent_declare"
+            | "fetchcontent_makeavailable"
+            | "fetchcontent_populate"
+            | "fetchcontent_getproperties"
+            // CPM.cmake
+            | "cpmaddpackage"
+            | "cpmfindpackage"
     )
 }

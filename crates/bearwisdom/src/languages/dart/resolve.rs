@@ -23,6 +23,9 @@
 
 use super::builtins;
 use crate::indexer::manifest::ManifestKind;
+use crate::indexer::resolve::chain_walker::{
+    self, ChainConfig, NamespaceLookup, identity_normalize,
+};
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -89,6 +92,26 @@ impl LanguageResolver for DartResolver {
         // Dart builtins are never in the index.
         if builtins::is_dart_builtin(target) {
             return None;
+        }
+
+        // Chain-aware resolution: walk MemberChain following field/return types.
+        // Dart has generics but no wildcard-import namespace lookup.
+        if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
+            let config = ChainConfig {
+                strategy_prefix: "dart",
+                normalize_type: identity_normalize,
+                has_self_ref: true,
+                enclosing_type_kinds: &["class", "enum", "mixin"],
+                static_type_kinds: &["class", "enum", "mixin", "type_alias", "extension"],
+                use_generics: true,
+                namespace_lookup: NamespaceLookup::None,
+                kind_compatible: builtins::kind_compatible,
+            };
+            if let Some(res) = chain_walker::resolve_via_chain(
+                &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
+                return Some(res);
+            }
         }
 
         let effective_target = target.strip_prefix("this.").unwrap_or(target);

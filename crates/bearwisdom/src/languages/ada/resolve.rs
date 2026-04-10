@@ -98,7 +98,7 @@ impl LanguageResolver for AdaResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -111,6 +111,6 @@ impl LanguageResolver for AdaResolver {
             // Non-stdlib imports: fall through to common handler.
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_ada_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_ada_builtin)
     }
 }

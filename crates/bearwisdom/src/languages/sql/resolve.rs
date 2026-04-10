@@ -82,9 +82,9 @@ impl LanguageResolver for SqlResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, is_sql_builtin_type)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_sql_builtin_type)
     }
 }
 

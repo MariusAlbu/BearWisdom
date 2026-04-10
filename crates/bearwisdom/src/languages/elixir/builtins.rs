@@ -338,3 +338,117 @@ pub(super) fn is_elixir_builtin(name: &str) -> bool {
             | "Logger"
     )
 }
+
+/// Check whether a bare function name is injected by a `use Module` macro.
+///
+/// When Elixir code does `use Phoenix.Controller`, the macro injects functions
+/// like `render`, `redirect`, `put_flash` into the calling module. This function
+/// maps known module → injected names, driven by the `use` statement found in
+/// the source file — not a global hardcoded list.
+///
+/// Only fires when the resolver confirms the `use`d module is external.
+pub(super) fn is_use_injected(module: &str, name: &str) -> bool {
+    // Match on the full module path or its last segment for common patterns.
+    match module {
+        // Phoenix.Controller — injects HTTP handler functions
+        "Phoenix.Controller" | "Phoenix.LiveView.Controller" => matches!(
+            name,
+            "render" | "redirect" | "put_flash" | "clear_flash"
+            | "put_status" | "put_layout" | "put_root_layout" | "put_view"
+            | "json" | "text" | "html" | "send_resp" | "send_download"
+            | "scrub_params" | "action_name" | "controller_module"
+            | "plug" | "action_fallback" | "get_format"
+        ),
+        // Phoenix.LiveView — injects live view lifecycle
+        "Phoenix.LiveView" => matches!(
+            name,
+            "assign" | "assign_new" | "assign_async" | "start_async"
+            | "push_event" | "push_navigate" | "push_patch" | "push_redirect"
+            | "connected?" | "get_connect_info" | "get_connect_params"
+            | "put_flash" | "clear_flash" | "redirect"
+            | "send_update" | "stream" | "stream_insert" | "stream_delete"
+            | "stream_configure" | "allow_upload" | "consume_uploaded_entries"
+            | "render_slot" | "attach_hook" | "on_mount"
+        ),
+        // Phoenix.Component — injects template/component helpers
+        "Phoenix.Component" | "Phoenix.LiveComponent" => matches!(
+            name,
+            "attr" | "slot" | "embed_templates" | "sigil_H" | "render_slot"
+            | "assign" | "assign_new" | "update" | "changed?"
+        ),
+        // Ecto.Schema — injects schema DSL
+        "Ecto.Schema" => matches!(
+            name,
+            "field" | "belongs_to" | "has_many" | "has_one" | "many_to_many"
+            | "embeds_one" | "embeds_many" | "timestamps" | "schema"
+        ),
+        // Ecto.Migration — injects migration DSL
+        "Ecto.Migration" => matches!(
+            name,
+            "add" | "remove" | "modify" | "rename" | "create" | "alter" | "drop"
+            | "table" | "index" | "unique_index" | "references" | "execute" | "flush"
+        ),
+        // Ecto.Changeset (commonly imported, not `use`d, but included for completeness)
+        "Ecto.Changeset" => matches!(
+            name,
+            "cast" | "validate_required" | "validate_format" | "validate_length"
+            | "validate_inclusion" | "validate_exclusion" | "validate_change"
+            | "validate_number" | "unique_constraint" | "foreign_key_constraint"
+            | "put_change" | "put_assoc" | "cast_assoc" | "cast_embed"
+            | "get_field" | "get_change" | "fetch_field" | "fetch_change"
+        ),
+        // Ecto.Query — injects query DSL
+        "Ecto.Query" => matches!(
+            name,
+            "from" | "where" | "select" | "join" | "preload" | "order_by"
+            | "group_by" | "having" | "limit" | "offset" | "distinct"
+            | "subquery" | "dynamic" | "first" | "last"
+        ),
+        // Phoenix.ConnTest — injects test helpers
+        "Phoenix.ConnTest" => matches!(
+            name,
+            "html_response" | "json_response" | "text_response" | "response"
+            | "redirected_to" | "get" | "post" | "put" | "patch" | "delete"
+            | "recycle" | "build_conn" | "assert_error_sent"
+        ),
+        // Phoenix.Router — injects route DSL
+        m if m == "Phoenix.Router" || m.ends_with("Router") => matches!(
+            name,
+            "get" | "post" | "put" | "patch" | "delete" | "head" | "options"
+            | "resources" | "scope" | "pipe_through" | "forward" | "live"
+            | "pipeline" | "plug" | "match" | "connect" | "trace"
+        ),
+        // Plug.Conn — injects connection helpers
+        "Plug.Conn" => matches!(
+            name,
+            "send_resp" | "put_resp_header" | "put_resp_content_type"
+            | "resp" | "halt" | "assign" | "fetch_query_params"
+            | "fetch_session" | "get_session" | "put_session" | "delete_session"
+        ),
+        // ExUnit.Case — test DSL (supplements is_elixir_builtin)
+        "ExUnit.Case" | "ExUnit.CaseTemplate" => matches!(
+            name,
+            "test" | "describe" | "setup" | "setup_all" | "on_exit"
+            | "start_supervised" | "start_supervised!" | "stop_supervised"
+        ),
+        // Mox — test mock DSL
+        "Mox" => matches!(
+            name,
+            "expect" | "stub" | "verify!" | "verify_on_exit!"
+            | "set_mox_global" | "set_mox_private"
+        ),
+        // GenServer — OTP behaviour
+        "GenServer" => matches!(
+            name,
+            "start_link" | "init" | "handle_call" | "handle_cast" | "handle_info"
+            | "handle_continue" | "terminate" | "code_change" | "format_status"
+            | "call" | "cast" | "reply"
+        ),
+        // Supervisor — OTP behaviour
+        "Supervisor" => matches!(
+            name,
+            "init" | "child_spec" | "start_link" | "which_children" | "count_children"
+        ),
+        _ => false,
+    }
+}

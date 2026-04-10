@@ -45,7 +45,10 @@ impl LanguageResolver for LuaResolver {
                 imported_name: r.target_name.clone(),
                 module_path: Some(r.target_name.clone()),
                 alias: None,
-                is_wildcard: false,
+                // Lua require("module") returns a table; subsequent calls like
+                // `module.func()` use the module as a prefix. Mark as wildcard
+                // so the import walk classifies unresolved bare names from modules.
+                is_wildcard: true,
             });
         }
 
@@ -82,8 +85,8 @@ impl LanguageResolver for LuaResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_lua_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_lua_builtin)
     }
 }

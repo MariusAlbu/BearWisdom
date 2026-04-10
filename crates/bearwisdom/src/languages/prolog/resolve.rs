@@ -118,8 +118,8 @@ impl LanguageResolver for PrologResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, builtins::is_prolog_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_prolog_builtin)
     }
 }

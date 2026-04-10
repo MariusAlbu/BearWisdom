@@ -3,8 +3,8 @@
     "language": "csharp",
     "files": 676,
     "symbols": 6237,
-    "edges": 4183,
-    "external": 14576,
+    "edges": 4413,
+    "external": 14346,
     "unresolved": 10,
     "resolution_rate": 99.9
   },
@@ -12,10 +12,10 @@
     "language": "csharp",
     "files": 196,
     "symbols": 1437,
-    "edges": 1158,
-    "external": 3187,
-    "unresolved": 384,
-    "resolution_rate": 91.9
+    "edges": 1271,
+    "external": 3080,
+    "unresolved": 378,
+    "resolution_rate": 92.0
   },
   "ts-nestjs-realworld": {
     "language": "typescript",
@@ -39,8 +39,8 @@
     "language": "javascript",
     "files": 278,
     "symbols": 8612,
-    "edges": 9294,
-    "external": 14577,
+    "edges": 9289,
+    "external": 14582,
     "unresolved": 8256,
     "resolution_rate": 74.3
   },
@@ -67,9 +67,9 @@
     "files": 84,
     "symbols": 314,
     "edges": 257,
-    "external": 1442,
-    "unresolved": 36,
-    "resolution_rate": 97.9
+    "external": 1443,
+    "unresolved": 35,
+    "resolution_rate": 98.0
   },
   "python-cookiecutter-django": {
     "language": "python",
@@ -77,16 +77,16 @@
     "symbols": 1067,
     "edges": 357,
     "external": 1605,
-    "unresolved": 221,
-    "resolution_rate": 89.9
+    "unresolved": 219,
+    "resolution_rate": 90.0
   },
   "full-stack-fastapi-template": {
     "language": "typescript",
     "files": 180,
     "symbols": 2083,
     "edges": 1875,
-    "external": 5995,
-    "unresolved": 382,
+    "external": 5996,
+    "unresolved": 381,
     "resolution_rate": 95.4
   },
   "java-petclinic-rest": {
@@ -94,9 +94,9 @@
     "files": 124,
     "symbols": 1283,
     "edges": 1334,
-    "external": 5732,
-    "unresolved": 166,
-    "resolution_rate": 97.7
+    "external": 5595,
+    "unresolved": 303,
+    "resolution_rate": 95.8
   },
   "java-spring-petclinic": {
     "language": "java",
@@ -111,28 +111,28 @@
     "language": "rust",
     "files": 248,
     "symbols": 10391,
-    "edges": 13749,
-    "external": 24351,
-    "unresolved": 3326,
-    "resolution_rate": 92.0
+    "edges": 13653,
+    "external": 25485,
+    "unresolved": 2291,
+    "resolution_rate": 94.5
   },
   "kotlin-notykt": {
     "language": "kotlin",
     "files": 331,
     "symbols": 1780,
-    "edges": 2937,
-    "external": 12867,
-    "unresolved": 3657,
-    "resolution_rate": 81.2
+    "edges": 2930,
+    "external": 12957,
+    "unresolved": 3585,
+    "resolution_rate": 81.6
   },
   "kotlin-android-showcase": {
     "language": "kotlin",
     "files": 194,
     "symbols": 719,
     "edges": 1270,
-    "external": 4307,
-    "unresolved": 2089,
-    "resolution_rate": 72.7
+    "external": 4485,
+    "unresolved": 1911,
+    "resolution_rate": 75.1
   },
   "swift-icecubes": {
     "language": "swift",
@@ -147,100 +147,100 @@
     "language": "scala",
     "files": 183,
     "symbols": 2883,
-    "edges": 5392,
-    "external": 14278,
-    "unresolved": 4437,
-    "resolution_rate": 81.6
+    "edges": 5374,
+    "external": 15414,
+    "unresolved": 3248,
+    "resolution_rate": 86.5
   },
   "elixir-changelog": {
     "language": "elixir",
     "files": 885,
     "symbols": 7891,
-    "edges": 20553,
-    "external": 29284,
-    "unresolved": 21235,
-    "resolution_rate": 70.1
+    "edges": 20312,
+    "external": 34310,
+    "unresolved": 16492,
+    "resolution_rate": 76.8
   },
   "ruby-sidekiq": {
     "language": "ruby",
     "files": 256,
     "symbols": 2871,
-    "edges": 3894,
-    "external": 7677,
-    "unresolved": 4495,
-    "resolution_rate": 72.0
+    "edges": 3893,
+    "external": 8980,
+    "unresolved": 3193,
+    "resolution_rate": 80.1
   },
   "ruby-huginn": {
     "language": "ruby",
     "files": 553,
     "symbols": 3799,
-    "edges": 2689,
-    "external": 8868,
-    "unresolved": 4279,
-    "resolution_rate": 73.0
+    "edges": 2683,
+    "external": 9145,
+    "unresolved": 4008,
+    "resolution_rate": 74.7
   },
   "c-tig": {
     "language": "c",
     "files": 111,
     "symbols": 6905,
     "edges": 7325,
-    "external": 1997,
-    "unresolved": 1197,
-    "resolution_rate": 88.6
+    "external": 2037,
+    "unresolved": 1157,
+    "resolution_rate": 89.0
   },
   "cpp-libhv": {
     "language": "c",
     "files": 348,
     "symbols": 15974,
-    "edges": 25981,
-    "external": 12712,
-    "unresolved": 11697,
-    "resolution_rate": 76.8
+    "edges": 25820,
+    "external": 13354,
+    "unresolved": 7052,
+    "resolution_rate": 84.7
   },
   "cpp-clay": {
     "language": "c",
     "files": 88,
     "symbols": 5752,
-    "edges": 8961,
-    "external": 968,
-    "unresolved": 3781,
-    "resolution_rate": 72.4
+    "edges": 8871,
+    "external": 1121,
+    "unresolved": 3694,
+    "resolution_rate": 73.0
   },
   "bash-ohmybash": {
     "language": "shell",
     "files": 292,
     "symbols": 6626,
     "edges": 2576,
-    "external": 3096,
-    "unresolved": 466,
-    "resolution_rate": 92.4
+    "external": 3105,
+    "unresolved": 457,
+    "resolution_rate": 92.6
   },
   "zig-clap": {
     "language": "zig",
     "files": 15,
     "symbols": 214,
     "edges": 217,
-    "external": 85,
-    "unresolved": 213,
-    "resolution_rate": 58.6
+    "external": 100,
+    "unresolved": 198,
+    "resolution_rate": 61.6
   },
   "lua-lazy-nvim": {
     "language": "lua",
     "files": 72,
     "symbols": 9151,
-    "edges": 1725,
-    "external": 1315,
-    "unresolved": 1238,
-    "resolution_rate": 71.1
+    "edges": 1498,
+    "external": 2635,
+    "unresolved": 163,
+    "resolution_rate": 96.2
   },
   "haskell-hadolint": {
     "language": "haskell",
     "files": 185,
     "symbols": 1670,
-    "edges": 2136,
-    "external": 4222,
-    "unresolved": 2277,
-    "resolution_rate": 73.6
+    "edges": 1884,
+    "external": 6851,
+    "unresolved": 4,
+    "resolution_rate": 100.0
   },
   "perl-dancer2": {
     "language": "perl",
@@ -255,19 +255,19 @@
     "language": "ocaml",
     "files": 167,
     "symbols": 3759,
-    "edges": 2529,
-    "external": 1269,
-    "unresolved": 576,
-    "resolution_rate": 86.8
+    "edges": 2239,
+    "external": 1976,
+    "unresolved": 88,
+    "resolution_rate": 98.0
   },
   "r-dplyr": {
     "language": "r",
     "files": 310,
     "symbols": 12072,
     "edges": 9716,
-    "external": 9438,
-    "unresolved": 5889,
-    "resolution_rate": 76.5
+    "external": 9440,
+    "unresolved": 5866,
+    "resolution_rate": 76.6
   },
   "sql-pgmq": {
     "language": "sql",
@@ -283,9 +283,9 @@
     "files": 135,
     "symbols": 4558,
     "edges": 736,
-    "external": 3583,
-    "unresolved": 115,
-    "resolution_rate": 97.4
+    "external": 3594,
+    "unresolved": 104,
+    "resolution_rate": 97.7
   },
   "hcl-aws-vpc": {
     "language": "hcl",
@@ -300,10 +300,10 @@
     "language": "ada",
     "files": 42,
     "symbols": 390,
-    "edges": 166,
-    "external": 424,
-    "unresolved": 579,
-    "resolution_rate": 50.5
+    "edges": 135,
+    "external": 1025,
+    "unresolved": 9,
+    "resolution_rate": 99.2
   },
   "astro-paper": {
     "language": "astro",
@@ -318,27 +318,27 @@
     "language": "clojure",
     "files": 92,
     "symbols": 474,
-    "edges": 4266,
-    "external": 9805,
-    "unresolved": 6296,
-    "resolution_rate": 69.1
+    "edges": 2358,
+    "external": 18261,
+    "unresolved": 106,
+    "resolution_rate": 99.5
   },
   "cmake-cpm": {
     "language": "cmake",
     "files": 104,
-    "symbols": 1388,
-    "edges": 835,
-    "external": 1792,
-    "unresolved": 1125,
-    "resolution_rate": 70.0
+    "symbols": 1382,
+    "edges": 782,
+    "external": 1909,
+    "unresolved": 1038,
+    "resolution_rate": 72.2
   },
   "dart-frog": {
     "language": "dart",
     "files": 544,
     "symbols": 4790,
     "edges": 4367,
-    "external": 11720,
-    "unresolved": 928,
+    "external": 11709,
+    "unresolved": 939,
     "resolution_rate": 94.5
   },
   "dockerfile-jessfraz": {
@@ -346,36 +346,36 @@
     "files": 246,
     "symbols": 1978,
     "edges": 81,
-    "external": 1289,
-    "unresolved": 262,
-    "resolution_rate": 83.9
+    "external": 1294,
+    "unresolved": 257,
+    "resolution_rate": 84.3
   },
   "erlang-cowboy": {
     "language": "erlang",
     "files": 221,
     "symbols": 4150,
-    "edges": 556,
-    "external": 8291,
-    "unresolved": 6107,
-    "resolution_rate": 59.2
+    "edges": 401,
+    "external": 11984,
+    "unresolved": 1341,
+    "resolution_rate": 90.2
   },
   "fortran-fpm": {
     "language": "fortran",
     "files": 340,
     "symbols": 1487,
-    "edges": 2847,
-    "external": 5437,
-    "unresolved": 3800,
-    "resolution_rate": 68.6
+    "edges": 1724,
+    "external": 10233,
+    "unresolved": 193,
+    "resolution_rate": 98.4
   },
   "fsharp-giraffe": {
     "language": "fsharp",
     "files": 61,
     "symbols": 2080,
-    "edges": 1344,
-    "external": 958,
-    "unresolved": 7504,
-    "resolution_rate": 23.5
+    "edges": 308,
+    "external": 7855,
+    "unresolved": 25,
+    "resolution_rate": 99.7
   },
   "gdscript-beehave": {
     "language": "gdscript",
@@ -390,37 +390,37 @@
     "language": "gleam",
     "files": 89,
     "symbols": 290,
-    "edges": 483,
-    "external": 652,
-    "unresolved": 151,
-    "resolution_rate": 88.3
+    "edges": 490,
+    "external": 794,
+    "unresolved": 2,
+    "resolution_rate": 99.8
   },
   "groovy-codenarc": {
     "language": "groovy",
     "files": 1177,
     "symbols": 10722,
-    "edges": 6535,
-    "external": 6744,
-    "unresolved": 4592,
-    "resolution_rate": 74.3
+    "edges": 5122,
+    "external": 10036,
+    "unresolved": 2620,
+    "resolution_rate": 85.3
   },
   "matlab-prmlt": {
     "language": "matlab",
     "files": 182,
     "symbols": 2923,
     "edges": 541,
-    "external": 1513,
-    "unresolved": 914,
-    "resolution_rate": 69.2
+    "external": 1520,
+    "unresolved": 907,
+    "resolution_rate": 69.4
   },
   "nim-nitter": {
     "language": "nim",
     "files": 119,
     "symbols": 1381,
     "edges": 144,
-    "external": 1149,
-    "unresolved": 328,
-    "resolution_rate": 79.8
+    "external": 1154,
+    "unresolved": 323,
+    "resolution_rate": 80.1
   },
   "odin-ols": {
     "language": "odin",
@@ -436,27 +436,27 @@
     "files": 281,
     "symbols": 568,
     "edges": 32,
-    "external": 2005,
-    "unresolved": 584,
-    "resolution_rate": 77.7
+    "external": 2194,
+    "unresolved": 395,
+    "resolution_rate": 84.9
   },
   "robot-cookbook": {
     "language": "robot",
     "files": 39,
     "symbols": 232,
     "edges": 10,
-    "external": 188,
-    "unresolved": 315,
-    "resolution_rate": 38.6
+    "external": 212,
+    "unresolved": 291,
+    "resolution_rate": 43.3
   },
   "starlark-bazel-skylib": {
     "language": "starlark",
     "files": 187,
     "symbols": 1296,
-    "edges": 402,
-    "external": 2487,
-    "unresolved": 2079,
-    "resolution_rate": 58.2
+    "edges": 394,
+    "external": 3784,
+    "unresolved": 788,
+    "resolution_rate": 84.1
   },
   "svelte-realworld": {
     "language": "svelte",
@@ -472,17 +472,17 @@
     "files": 87,
     "symbols": 1457,
     "edges": 238,
-    "external": 2477,
-    "unresolved": 23,
-    "resolution_rate": 99.2
+    "external": 2487,
+    "unresolved": 13,
+    "resolution_rate": 99.5
   },
   "proto-onlineboutique": {
     "language": "yaml",
     "files": 263,
     "symbols": 6976,
     "edges": 6824,
-    "external": 34041,
-    "unresolved": 1185,
+    "external": 34036,
+    "unresolved": 1190,
     "resolution_rate": 97.2
   },
   "bicep-aks-baseline": {
@@ -499,18 +499,18 @@
     "files": 51,
     "symbols": 224,
     "edges": 44,
-    "external": 3,
-    "unresolved": 3,
-    "resolution_rate": 94.0
+    "external": 6,
+    "unresolved": 0,
+    "resolution_rate": 100.0
   },
   "pascal-heidisql": {
     "language": "pascal",
     "files": 177,
     "symbols": 28051,
-    "edges": 13861,
-    "external": 25663,
-    "unresolved": 17482,
-    "resolution_rate": 69.3
+    "edges": 9576,
+    "external": 47398,
+    "unresolved": 68,
+    "resolution_rate": 99.9
   },
   "php-monica": {
     "language": "php",
@@ -525,10 +525,10 @@
     "language": "markdown",
     "files": 218,
     "symbols": 540,
-    "edges": 639,
-    "external": 4479,
-    "unresolved": 1084,
-    "resolution_rate": 82.5
+    "edges": 633,
+    "external": 4767,
+    "unresolved": 802,
+    "resolution_rate": 87.1
   },
   "proto-protovalidate": {
     "language": "proto",
@@ -552,9 +552,9 @@
     "language": "vba",
     "files": 163,
     "symbols": 14509,
-    "edges": 13086,
-    "external": 493,
-    "unresolved": 14989,
+    "edges": 13082,
+    "external": 499,
+    "unresolved": 14987,
     "resolution_rate": 47.5
   }
 }

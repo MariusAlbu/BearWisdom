@@ -467,6 +467,14 @@ fn extract_wild_attr(node: &Node, src: &str, symbols: &mut Vec<ExtractedSymbol>)
 // Collect call edges from a subtree
 // ---------------------------------------------------------------------------
 
+/// Attribute names that look like calls but are module-level directives.
+/// `-doc "..."`, `-moduledoc "..."`, etc. (OTP 27+) get parsed such that the
+/// atom `doc` / `moduledoc` can appear as a call target.  Skip them.
+const ATTR_CALL_SKIP: &[&str] = &[
+    "doc", "moduledoc", "feature", "deprecated", "dialyzer",
+    "nifs", "on_load", "compile", "vsn", "author",
+];
+
 fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -519,7 +527,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                     }
                     fallback
                 };
-                if !target.is_empty() {
+                if !target.is_empty() && !ATTR_CALL_SKIP.contains(&target.as_str()) {
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
                         target_name: target,

@@ -184,6 +184,13 @@ pub(super) fn extract_node<'a>(
                         extract_calls_from_body(&value_node, src, sym_idx, refs);
                         extract_node(value_node, src, scope_tree, symbols, refs, Some(sym_idx));
                     }
+                    // Type inference from initializer: if no explicit type annotation,
+                    // infer from constructor call. `val repo = Repository()` → TypeRef "Repository".
+                    if child.child_by_field_name("type").is_none() {
+                        if let Some(value_node) = child.child_by_field_name("value") {
+                            infer_type_from_value(&value_node, src, sym_idx, refs);
+                        }
+                    }
                 }
             }
 
@@ -541,6 +548,90 @@ fn scan_type_refs_inner(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         scan_type_refs_inner(child, src, source_symbol_index, refs);
+    }
+}
+
+/// Infer the type of a val/var from its initializer expression when no explicit
+/// type annotation is present. Emits a TypeRef that feeds `field_type_name`.
+///
+/// Handles:
+///   `val repo = Repository()` → TypeRef to "Repository"
+///   `val svc = ServiceImpl(config)` → TypeRef to "ServiceImpl"
+///   `val x = foo()` → skipped (lowercase = not a type constructor)
+fn infer_type_from_value(
+    value_node: &Node,
+    src: &[u8],
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    match value_node.kind() {
+        "call_expression" => {
+            if let Some(func) = value_node.child_by_field_name("function") {
+                let type_name = match func.kind() {
+                    "identifier" => {
+                        let name = helpers::node_text(func, src);
+                        if name.starts_with(|c: char| c.is_uppercase()) {
+                            Some(name)
+                        } else {
+                            None
+                        }
+                    }
+                    // `Foo.apply()` or `Foo.Bar()`
+                    "field_expression" => {
+                        if let Some(chain) = calls::build_chain(&func, src) {
+                            chain.segments.last()
+                                .filter(|s| s.name.starts_with(|c: char| c.is_uppercase()))
+                                .map(|s| s.name.clone())
+                        } else {
+                            None
+                        }
+                    }
+                    _ => None,
+                };
+                if let Some(name) = type_name {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: value_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+        // `val x = SomeObject` — direct reference to a singleton/companion.
+        "identifier" => {
+            let name = helpers::node_text(*value_node, src);
+            if name.starts_with(|c: char| c.is_uppercase()) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: crate::types::EdgeKind::TypeRef,
+                    line: value_node.start_position().row as u32,
+                    module: None,
+                    chain: None,
+                });
+            }
+        }
+        // `new Repository()` — explicit instantiation (Scala 2 style).
+        "instance_expression" => {
+            // First named child is typically the type name.
+            if let Some(type_node) = value_node.named_child(0) {
+                let name = helpers::node_text(type_node, src);
+                if name.starts_with(|c: char| c.is_uppercase()) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: crate::types::EdgeKind::TypeRef,
+                        line: value_node.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+        }
+        _ => {}
     }
 }
 

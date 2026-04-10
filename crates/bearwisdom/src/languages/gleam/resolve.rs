@@ -49,7 +49,10 @@ impl LanguageResolver for GleamResolver {
                 imported_name: r.target_name.clone(),
                 module_path: Some(module_path),
                 alias: None,
-                is_wildcard: false,
+                // Gleam module imports bring qualified access into scope.
+                // Mark as wildcard so the import walk can classify unresolved
+                // bare names from external modules.
+                is_wildcard: true,
             });
         }
 
@@ -122,7 +125,7 @@ impl LanguageResolver for GleamResolver {
         &self,
         file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -148,7 +151,7 @@ impl LanguageResolver for GleamResolver {
             return Some("gleam".to_string());
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, |_| false)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, |_| false)
     }
 }
 
