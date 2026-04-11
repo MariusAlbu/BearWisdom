@@ -129,11 +129,11 @@ pub fn get_overview_with_limits(
 
     // --- 1. Totals ---
     let total_files: u32 =
-        conn.query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+        conn.query_row("SELECT COUNT(*) FROM files WHERE origin = 'internal'", [], |r| r.get(0))
             .context("Failed to count files")?;
 
     let total_symbols: u32 =
-        conn.query_row("SELECT COUNT(*) FROM symbols", [], |r| r.get(0))
+        conn.query_row("SELECT COUNT(*) FROM symbols WHERE origin = 'internal'", [], |r| r.get(0))
             .context("Failed to count symbols")?;
 
     let total_edges: u32 =
@@ -148,7 +148,8 @@ pub fn get_overview_with_limits(
                     COUNT(DISTINCT f.id)  AS file_count,
                     COUNT(s.id)           AS symbol_count
              FROM files f
-             LEFT JOIN symbols s ON s.file_id = f.id
+             LEFT JOIN symbols s ON s.file_id = f.id AND s.origin = 'internal'
+             WHERE f.origin = 'internal'
              GROUP BY f.language
              ORDER BY file_count DESC",
         ).context("Failed to prepare language stats query")?;
@@ -177,6 +178,7 @@ pub fn get_overview_with_limits(
              FROM routes r
              JOIN files f ON f.id = r.file_id
              LEFT JOIN symbols s ON s.id = r.symbol_id
+             WHERE f.origin = 'internal'
              ORDER BY r.http_method, r.route_template",
         ).context("Failed to prepare routes query")?;
 
@@ -206,6 +208,7 @@ pub fn get_overview_with_limits(
              FROM symbols s
              JOIN files f   ON f.id = s.file_id
              JOIN edges e   ON e.target_id = s.id
+             WHERE s.origin = 'internal'
              GROUP BY s.id
              ORDER BY incoming_refs DESC
              LIMIT ?1",
@@ -235,6 +238,7 @@ pub fn get_overview_with_limits(
              JOIN files f ON f.id = s.file_id
              WHERE s.visibility = 'public'
                AND s.kind IN ('class', 'interface', 'function', 'struct')
+               AND s.origin = 'internal'
              ORDER BY f.path, s.line
              LIMIT ?1",
         ).context("Failed to prepare entry points query")?;

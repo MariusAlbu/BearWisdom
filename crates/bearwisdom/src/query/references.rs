@@ -39,7 +39,7 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
         if target_name.contains('.') {
             // Qualified name — exact match.
             let mut stmt = conn.prepare(
-                "SELECT id FROM symbols WHERE qualified_name = ?1"
+                "SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'"
             ).context("Failed to prepare qualified target lookup")?;
             let rows = stmt.query_map([target_name], |r| r.get(0))
                 .context("Failed to query qualified target")?;
@@ -47,7 +47,7 @@ pub fn find_references(db: &Database, target_name: &str, limit: usize) -> QueryR
         } else {
             // Simple name — all symbols with that name.
             let mut stmt = conn.prepare(
-                "SELECT id FROM symbols WHERE name = ?1"
+                "SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'"
             ).context("Failed to prepare simple target lookup")?;
             let rows = stmt.query_map([target_name], |r| r.get(0))
                 .context("Failed to query simple target")?;

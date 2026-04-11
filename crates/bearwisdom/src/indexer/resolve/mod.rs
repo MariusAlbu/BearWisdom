@@ -92,6 +92,13 @@ fn resolve_and_write_inner(
     let file_namespace_map = heuristic::build_file_namespace_map(parsed);
 
     for pf in parsed {
+        // Externals are indexed for lookup only — we don't chase their internal
+        // refs, otherwise a handful of third-party packages explode the edge
+        // table with intra-library calls the user doesn't care about.
+        if pf.path.starts_with("ext:") {
+            continue;
+        }
+
         let file_symbol_ids: Vec<Option<i64>> = pf
             .symbols
             .iter()
@@ -228,6 +235,41 @@ fn resolve_and_write_inner(
                 index
                     .classify_external_name(&r.target_name, &pf.language)
                     .map(|ns| ns.to_string())
+            });
+
+            // Import-based external for bare usages: if the ref's name (or its
+            // leading segment, for qualified targets like `Stripe.Event`) matches
+            // an entry in this file's import list whose source module has zero
+            // local symbols in the project index, classify as external.
+            //
+            // Catches transitive-dep imports that language-specific manifest
+            // checks miss — e.g. Java `import tools.jackson.databind.ObjectMapper`
+            // (Jackson 3.x, pulled in via spring-boot-starter, not declared in
+            // pom.xml) or Python `from sqlalchemy import Engine` (transitive of
+            // sqlmodel). Language-agnostic: relies only on the project's own
+            // symbol index, not on manifest lockfiles or hardcoded root lists.
+            let inferred_ns = inferred_ns.or_else(|| {
+                if r.module.is_some() {
+                    return None;
+                }
+                let target = r.target_name.as_str();
+                let first_segment = target.split('.').next().unwrap_or(target);
+                for (imported_name, module_path_opt) in file_imports.iter() {
+                    if imported_name != target && imported_name != first_segment {
+                        continue;
+                    }
+                    let Some(module_path) = module_path_opt.as_deref() else {
+                        continue;
+                    };
+                    if is_local_module_specifier(module_path) {
+                        continue;
+                    }
+                    if is_module_in_project(module_path, &module_to_files, &index) {
+                        continue;
+                    }
+                    return Some(format!("ext:{module_path}"));
+                }
+                None
             });
 
             // Module-qualified external check: if the ref has module="X" and
@@ -393,4 +435,56 @@ fn resolve_and_write_inner(
     }
 
     Ok(stats)
+}
+
+/// A module specifier that points to project-local code rather than an
+/// external package. Covers relative paths (`./foo`, `../foo`), rooted paths
+/// (`/foo`), common monorepo aliases (`@/foo`, `~/foo`), Windows absolute
+/// paths (`C:/foo`), and the most common tsconfig-style path aliases —
+/// slash-containing specifiers that are not scoped npm packages.
+fn is_local_module_specifier(module_path: &str) -> bool {
+    if module_path.is_empty() {
+        return true;
+    }
+    if module_path.starts_with('.')
+        || module_path.starts_with('/')
+        || module_path.starts_with("@/")
+        || module_path.starts_with("~/")
+    {
+        return true;
+    }
+    // Windows absolute path: single letter drive + ':'
+    let bytes = module_path.as_bytes();
+    if bytes.len() >= 2 && bytes[1] == b':' {
+        return true;
+    }
+    // Slash-containing specifier that is NOT a scoped npm package
+    // (`@scope/pkg`) — likely a tsconfig `paths` alias or similar.
+    // Scoped npm is still allowed as external (`@tanstack/react-query`).
+    if module_path.contains('/') && !module_path.starts_with('@') {
+        return true;
+    }
+    false
+}
+
+/// Does the project's symbol index cover this import module?
+///
+/// Returns true if the module appears as a local namespace (any symbol has
+/// that prefix) or maps to a local file via the heuristic module-to-file map.
+/// A module that walks through multiple segments (`a.b.c`) is local when any
+/// of those segments is covered — this prevents a false "external" classification
+/// for package-qualified imports like Python `from app.core.db import engine`.
+fn is_module_in_project(
+    module_path: &str,
+    module_to_files: &rustc_hash::FxHashMap<String, Vec<String>>,
+    index: &engine::SymbolIndex,
+) -> bool {
+    if module_to_files.contains_key(module_path) {
+        return true;
+    }
+    let lower = module_path.to_lowercase();
+    if lower != module_path && module_to_files.contains_key(&lower) {
+        return true;
+    }
+    index.has_in_namespace(module_path)
 }

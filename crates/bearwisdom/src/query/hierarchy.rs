@@ -166,10 +166,10 @@ fn services_level(db: &Database, cap: usize) -> QueryResult<HierarchyResult> {
     // Nodes: service packages (or all packages when none are flagged).
     let sql = format!(
         "SELECT p.id, p.name, p.path, p.kind, p.is_service,
-                (SELECT COUNT(*) FROM files f WHERE f.package_id = p.id) AS file_count,
+                (SELECT COUNT(*) FROM files f WHERE f.package_id = p.id AND f.origin = 'internal') AS file_count,
                 (SELECT COUNT(*) FROM symbols s
                  JOIN files f ON s.file_id = f.id
-                 WHERE f.package_id = p.id) AS symbol_count
+                 WHERE f.package_id = p.id AND s.origin = 'internal') AS symbol_count
          FROM packages p
          {where_clause}
          ORDER BY symbol_count DESC
@@ -349,9 +349,10 @@ fn directories_level(db: &Database, cap: usize) -> QueryResult<HierarchyResult> 
     // Group files by top-level directory.
     let mut stmt = conn.prepare(
         "SELECT f.path,
-                (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS sym_count,
+                (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id AND s.origin = 'internal') AS sym_count,
                 f.language
-         FROM files f"
+         FROM files f
+         WHERE f.origin = 'internal'"
     ).context("Failed to prepare directory scan")?;
 
     let rows = stmt.query_map([], |r| {
@@ -615,24 +616,25 @@ fn files_level(db: &Database, scope: Option<&str>, cap: usize) -> QueryResult<Hi
     let node_sql = match &scope_kind {
         ScopeKind::Package(_) => format!(
             "SELECT f.id, f.path, f.language, f.package_id,
-                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
+                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id AND s.origin = 'internal') AS symbol_count
              FROM files f
-             WHERE f.package_id = ?1
+             WHERE f.package_id = ?1 AND f.origin = 'internal'
              ORDER BY symbol_count DESC
              LIMIT {cap}"
         ),
         ScopeKind::DirPrefix(_) => format!(
             "SELECT f.id, f.path, f.language, f.package_id,
-                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
+                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id AND s.origin = 'internal') AS symbol_count
              FROM files f
-             WHERE f.path LIKE (?1 || '%')
+             WHERE f.path LIKE (?1 || '%') AND f.origin = 'internal'
              ORDER BY symbol_count DESC
              LIMIT {cap}"
         ),
         ScopeKind::All => format!(
             "SELECT f.id, f.path, f.language, f.package_id,
-                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id) AS symbol_count
+                    (SELECT COUNT(*) FROM symbols s WHERE s.file_id = f.id AND s.origin = 'internal') AS symbol_count
              FROM files f
+             WHERE f.origin = 'internal'
              ORDER BY symbol_count DESC
              LIMIT {cap}"
         ),

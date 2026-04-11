@@ -105,6 +105,23 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE packages ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0"
         )?;
     }
+    // v0.5: Add origin to files and symbols to partition internal project code
+    // from externally-indexed dependency code (module cache, package sources).
+    // Values: 'internal' | 'external'. User-facing queries filter origin='internal'.
+    if !column_exists(conn, "files", "origin") {
+        conn.execute_batch(
+            "ALTER TABLE files ADD COLUMN origin TEXT NOT NULL DEFAULT 'internal'"
+        )?;
+    }
+    if !column_exists(conn, "symbols", "origin") {
+        conn.execute_batch(
+            "ALTER TABLE symbols ADD COLUMN origin TEXT NOT NULL DEFAULT 'internal'"
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_files_origin ON files(origin);
+         CREATE INDEX IF NOT EXISTS idx_symbols_origin ON symbols(origin);"
+    )?;
     Ok(())
 }
 
@@ -162,15 +179,16 @@ CREATE TABLE IF NOT EXISTS files (
     last_indexed INTEGER NOT NULL,  -- Unix timestamp (seconds since epoch)
     mtime        INTEGER,           -- file mtime (seconds since epoch), for fast change detection
     size         INTEGER,           -- file size in bytes, for fast change detection
-    package_id   INTEGER REFERENCES packages(id) ON DELETE SET NULL
+    package_id   INTEGER REFERENCES packages(id) ON DELETE SET NULL,
+    origin       TEXT    NOT NULL DEFAULT 'internal'  -- 'internal' | 'external' (e.g., $GOPATH/pkg/mod)
 );
 
 CREATE INDEX IF NOT EXISTS idx_files_language  ON files(language);
 -- Covers both hash-only lookups (incremental change detection) and
 -- path+hash scans — replaces the old idx_files_hash single-column index.
 CREATE INDEX IF NOT EXISTS idx_files_path_hash ON files(path, hash);
--- idx_files_package is created by migrate() to handle existing DBs
--- where the column is added via ALTER TABLE.
+-- idx_files_package + idx_files_origin are created by migrate() to handle
+-- existing DBs where the columns are added via ALTER TABLE.
 
 -- ============================================================
 -- CODE GRAPH: SYMBOLS
@@ -195,7 +213,8 @@ CREATE TABLE IF NOT EXISTS symbols (
     signature      TEXT,
     doc_comment    TEXT,   -- XML doc comment (C#) or JSDoc (TS), used by FTS5
     visibility     TEXT,
-    incoming_edge_count INTEGER NOT NULL DEFAULT 0  -- materialized centrality signal
+    incoming_edge_count INTEGER NOT NULL DEFAULT 0,  -- materialized centrality signal
+    origin         TEXT    NOT NULL DEFAULT 'internal'  -- 'internal' | 'external'; mirrors files.origin for fast filtering
 );
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);

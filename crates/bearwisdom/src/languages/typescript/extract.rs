@@ -69,6 +69,10 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
     // Pre-pass: build a local-alias → module-path map from all import statements.
     // This is used below to annotate call refs with their source module.
     let import_map = build_import_map(root, src_bytes);
+    // Also build an alias map that carries the ORIGINAL exported name when it
+    // differs from the local alias (`import { request as __request }`). Used
+    // to rewrite usage-site refs so the resolver can find the real export.
+    let alias_map = build_renamed_import_map(root, src_bytes);
 
     extract_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None);
 
@@ -83,6 +87,13 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
     // known import alias, set module so the resolver can trace it back.
     if !import_map.is_empty() {
         annotate_call_modules(&mut refs, &import_map);
+    }
+
+    // Rewrite aliased references: `import { request as __request }; __request(...)`
+    // emits a ref with target_name=`__request`, but the exported symbol is
+    // `request`. Substitute the original name + module so the resolver can find it.
+    if !alias_map.is_empty() {
+        rewrite_aliased_refs(&mut refs, &alias_map);
     }
 
     ExtractionResult::new(symbols, refs, has_errors)
@@ -614,6 +625,25 @@ fn extract_node(
                 // type_identifier is a leaf — no children to recurse into.
             }
 
+            // Qualified type like `React.ReactNode` or `Stripe.Event`. Emit the
+            // full dotted name as a single ref and do NOT recurse into children —
+            // the inner type_identifier leaf would otherwise be picked up by the
+            // `type_identifier` arm above as a spurious bare ref.
+            "nested_type_identifier" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                let name = helpers::node_text(child, src);
+                if !name.is_empty() && !is_ts_primitive(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
+
             // `function name(params): ReturnType;` -- ambient / overload function signature.
             // Has a `name` field but no `body` field (unlike function_declaration).
             // Treat identically to function_declaration but skip body extraction.
@@ -792,6 +822,101 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
     map
 }
 
+/// Build a map of `local_alias → (original_name, module_path)` for every
+/// import statement that uses `as` renaming. Unaliased imports are NOT in
+/// this map — for them, the local name and the exported name are identical
+/// and no rewrite is needed.
+///
+/// Example: `import { request as __request } from './core/request'`
+///   → `{"__request" → ("request", "./core/request")}`
+///
+/// Only captures named imports. `import * as ns` and default imports can't
+/// be renamed to a different exported name.
+fn build_renamed_import_map(root: Node, src: &[u8]) -> HashMap<String, (String, String)> {
+    let mut map = HashMap::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() != "import_statement" {
+            continue;
+        }
+        let Some(module_node) = child.child_by_field_name("source") else {
+            continue;
+        };
+        let module_path = helpers::node_text(module_node, src)
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
+        if module_path.is_empty() {
+            continue;
+        }
+
+        let mut ic = child.walk();
+        for clause in child.children(&mut ic) {
+            if clause.kind() != "import_clause" {
+                continue;
+            }
+            let mut cc = clause.walk();
+            for item in clause.children(&mut cc) {
+                if item.kind() != "named_imports" {
+                    continue;
+                }
+                let mut ni = item.walk();
+                for spec in item.children(&mut ni) {
+                    if spec.kind() != "import_specifier" {
+                        continue;
+                    }
+                    // Only record if the spec has BOTH `name` (exported) and
+                    // `alias` (local) fields — the `X as Y` form.
+                    let (Some(name_node), Some(alias_node)) = (
+                        spec.child_by_field_name("name"),
+                        spec.child_by_field_name("alias"),
+                    ) else {
+                        continue;
+                    };
+                    let original = helpers::node_text(name_node, src);
+                    let local = helpers::node_text(alias_node, src);
+                    if original.is_empty() || local.is_empty() || original == local {
+                        continue;
+                    }
+                    map.insert(local, (original, module_path.clone()));
+                }
+            }
+        }
+    }
+    map
+}
+
+/// Rewrite refs whose `target_name` matches a known local alias so they point
+/// at the ORIGINAL exported name, with `module` set to the export source.
+///
+/// This handles OpenAPI-generated SDKs, CommonJS interop shims, and any other
+/// pattern where code uses a locally-renamed import like `X as Y`. Without
+/// this pass, calls to `Y(...)` are unresolvable because the target file
+/// exports `X`, not `Y`.
+///
+/// Skips refs that already have a non-empty `module` — those have been
+/// resolved through another path (e.g. chain annotation) and rewriting would
+/// lose information.
+fn rewrite_aliased_refs(
+    refs: &mut Vec<ExtractedRef>,
+    alias_map: &HashMap<String, (String, String)>,
+) {
+    for r in refs.iter_mut() {
+        // Don't touch the TypeRef emitted by push_import itself — those were
+        // already pushed with target_name=original in imports.rs.
+        if r.kind == EdgeKind::Imports {
+            continue;
+        }
+        let Some((original, module_path)) = alias_map.get(&r.target_name) else {
+            continue;
+        };
+        r.target_name = original.clone();
+        if r.module.is_none() {
+            r.module = Some(module_path.clone());
+        }
+    }
+}
+
 /// For each `Calls` ref that has a chain with ≥2 segments, check whether the
 /// first chain segment matches a known import alias. If so, set `module` to the
 /// corresponding module path so the resolver can trace the call back to its
@@ -959,6 +1084,23 @@ fn scan_all_type_identifiers(
                 }
                 // type_identifier is a leaf — no children to recurse into.
             }
+            "nested_type_identifier" if child.is_named() => {
+                // Qualified type like `React.ReactNode` or `Stripe.Event` — emit
+                // the full dotted name as a single ref. Do NOT recurse into
+                // children; the tree has a leaf type_identifier inside that
+                // would otherwise be emitted as a duplicate bare ref.
+                let name = helpers::node_text(child, src);
+                if !name.is_empty() && !is_ts_primitive(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
+            }
             "generic_type" if child.is_named() => {
                 // Extract the base type name from the generic, e.g. `Promise<User>` → `Promise`.
                 // The first named child of generic_type is the base type_identifier.
@@ -1005,12 +1147,41 @@ fn scan_all_type_identifiers(
                     // Emit a ref for the annotation node itself (for type_annotation coverage).
                     let name = helpers::node_text(tn, src);
                     if !name.is_empty() {
-                        // Strip to first identifier-like segment for the target name.
-                        let target = name
-                            .split(|c: char| !c.is_alphanumeric() && c != '_')
-                            .find(|s| !s.is_empty())
-                            .unwrap_or("_")
-                            .to_string();
+                        // Decide the coverage-ref target based on the shape of the
+                        // inner type node:
+                        //   * qualified forms → emit the full dotted name so
+                        //     downstream classification (primitives list, React
+                        //     namespace check) can match.
+                        //   * simple / generic / array / union / tuple →
+                        //     first-segment split gives a meaningful root
+                        //     (`Array<T>` → `Array`, `Promise<X>` → `Promise`).
+                        //   * structured types (object_type, function_type,
+                        //     mapped_type, conditional_type, etc.) → use the
+                        //     `_primitive` sentinel. The first segment of these
+                        //     is a property / parameter name, NOT a type ref —
+                        //     emitting it leaks names like `children`, `id`,
+                        //     `className`, `params` into unresolved_refs.
+                        let target = match tn.kind() {
+                            "nested_type_identifier" | "member_expression" => name.clone(),
+                            "type_identifier"
+                            | "identifier"
+                            | "generic_type"
+                            | "array_type"
+                            | "tuple_type"
+                            | "union_type"
+                            | "intersection_type"
+                            | "parenthesized_type"
+                            | "type_query"
+                            | "readonly_type"
+                            | "literal_type" => name
+                                .split(|c: char| !c.is_alphanumeric() && c != '_')
+                                .find(|s| !s.is_empty())
+                                .unwrap_or("_")
+                                .to_string(),
+                            // Structured types — the first identifier in the text
+                            // is a property or parameter name, not a type reference.
+                            _ => "_primitive".to_string(),
+                        };
                         if !is_ts_primitive(&target) {
                             refs.push(ExtractedRef {
                                 source_symbol_index: sym_idx,
@@ -1036,7 +1207,15 @@ fn scan_all_type_identifiers(
                         }
                     }
                 }
-                scan_all_type_identifiers(child, src, sym_idx, refs);
+                // Recurse to catch nested annotations and other type_identifiers,
+                // but skip when the inner type is already a qualified form — the
+                // recursion would otherwise leak the bare last segment.
+                let skip_recurse = type_node.is_some_and(|tn| {
+                    matches!(tn.kind(), "nested_type_identifier" | "member_expression")
+                });
+                if !skip_recurse {
+                    scan_all_type_identifiers(child, src, sym_idx, refs);
+                }
             }
             // Emit a TypeRef for the line of every as_expression node found in the tree.
             "as_expression" if child.is_named() => {

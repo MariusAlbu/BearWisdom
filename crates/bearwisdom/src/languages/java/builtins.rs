@@ -105,8 +105,11 @@ pub(super) fn is_java_builtin(name: &str) -> bool {
     let root = name.split('.').next().unwrap_or(name);
     matches!(
         root,
-        // java.lang types always visible
-        "System"
+        // Contextual keyword (Java 10+): `var x = ...` — the extractor emits
+        // this as a type_identifier when used as a local var type inference.
+        "var"
+            // java.lang types always visible
+            | "System"
             | "String"
             | "Integer"
             | "Long"

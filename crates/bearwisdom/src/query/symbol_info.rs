@@ -82,6 +82,7 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
                  FROM symbols s
                  JOIN files f ON f.id = s.file_id
                  WHERE s.qualified_name = ?1
+                   AND s.origin = 'internal'
                  ORDER BY s.line",
                 query,
             )
@@ -93,6 +94,7 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
                  FROM symbols s
                  JOIN files f ON f.id = s.file_id
                  WHERE s.name = ?1
+                   AND s.origin = 'internal'
                  ORDER BY s.qualified_name",
                 query,
             )
@@ -150,6 +152,7 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
                  FROM symbols s
                  JOIN files f ON f.id = s.file_id
                  WHERE s.scope_path = ?1
+                   AND s.origin = 'internal'
                  ORDER BY s.line",
             ).context("Failed to prepare children query")?;
 
@@ -284,6 +287,7 @@ pub fn file_symbols(
                 s.signature, s.qualified_name, s.visibility, s.scope_path
          FROM symbols s JOIN files f ON s.file_id = f.id
          WHERE f.path = ?1
+           AND s.origin = 'internal'
          ORDER BY s.line",
     ).context("file_symbols: prepare")?;
 

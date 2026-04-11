@@ -1,4 +1,5 @@
 pub mod changeset;
+pub mod externals;
 pub mod full;
 pub mod incremental;
 pub mod manifest;

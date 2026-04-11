@@ -208,7 +208,8 @@ pub fn find_dead_code(
                 f.path, s.line, s.incoming_edge_count, f.id as file_id
          FROM symbols s
          JOIN files f ON f.id = s.file_id
-         WHERE s.incoming_edge_count = 0",
+         WHERE s.incoming_edge_count = 0
+           AND s.origin = 'internal'",
     );
 
     // Kind filter — use placeholders.
@@ -414,7 +415,8 @@ pub fn find_entry_points(db: &Database) -> QueryResult<EntryPointsReport> {
                  FROM symbols s
                  JOIN files f ON f.id = s.file_id
                  WHERE s.name IN ('main', 'Main', 'Program.Main')
-                   AND s.kind IN ('function', 'method')",
+                   AND s.kind IN ('function', 'method')
+                   AND s.origin = 'internal'",
             )
             .context("entry_points: prepare main query")?;
 
@@ -515,6 +517,7 @@ pub fn find_entry_points(db: &Database) -> QueryResult<EntryPointsReport> {
                  FROM symbols s
                  JOIN files f ON f.id = s.file_id
                  WHERE s.kind IN ('function', 'method', 'test')
+                   AND s.origin = 'internal'
                    AND (s.name LIKE 'test_%'
                      OR s.name LIKE 'Test%'
                      OR s.kind = 'test'
@@ -572,7 +575,8 @@ fn collect_entry_point_ids(
         .prepare(
             "SELECT id FROM symbols
              WHERE name IN ('main', 'Main', 'Program.Main')
-               AND kind IN ('function', 'method')",
+               AND kind IN ('function', 'method')
+               AND origin = 'internal'",
         )
         .context("entry_point_ids: main")?;
     for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
@@ -616,7 +620,8 @@ fn collect_entry_point_ids(
                  'initState', 'dispose', 'build',
                  'setup', 'created', 'mounted', 'unmounted', 'beforeDestroy'
              )
-             AND kind IN ('function', 'method')",
+             AND kind IN ('function', 'method')
+             AND origin = 'internal'",
         )
         .context("entry_point_ids: lifecycle")?;
     for row in stmt.query_map([], |r| r.get::<_, i64>(0))?.flatten() {
@@ -632,7 +637,7 @@ fn collect_test_file_ids(
 ) -> QueryResult<std::collections::HashSet<i64>> {
     let mut ids = std::collections::HashSet::new();
     let mut stmt = conn
-        .prepare("SELECT id, path FROM files")
+        .prepare("SELECT id, path FROM files WHERE origin = 'internal'")
         .context("test_file_ids: prepare")?;
     let rows = stmt
         .query_map([], |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))
@@ -660,6 +665,7 @@ fn find_low_confidence_only(
              FROM symbols s
              JOIN files f ON f.id = s.file_id
              WHERE s.incoming_edge_count > 0
+               AND s.origin = 'internal'
                AND s.kind IN ('function', 'method', 'class', 'struct', 'interface', 'enum')
                AND EXISTS (
                    SELECT 1 FROM edges e WHERE e.target_id = s.id

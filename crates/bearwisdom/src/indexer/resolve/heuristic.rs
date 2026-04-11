@@ -488,6 +488,9 @@ fn resolve_via_chain_prefix(
     // where the extractor stored "resolve" as the import name with module
     // "crate::indexer"), try matching via the ParsedFile paths.
     for pf in parsed {
+        if is_external_path(&pf.path) {
+            continue;
+        }
         let norm = pf.path.replace('\\', "/");
         // Check if this file is the module entry for the prefix
         if norm.ends_with(&format!("{prefix}/mod.rs"))
@@ -734,13 +737,27 @@ fn kind_matches_symbol_kind(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 ///
 /// The `kind` string comes from the parsed symbol data so that P4 can
 /// prefer kind-compatible candidates over incidental name collisions.
+/// True when a parsed file or symbol_id_map key is an external dependency
+/// source rather than a project file. Externals are identified by the
+/// synthetic `ext:` virtual path prefix used by `indexer::externals`.
+#[inline]
+fn is_external_path(path: &str) -> bool {
+    path.starts_with("ext:")
+}
+
 pub(super) fn build_name_index(
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
 ) -> FxHashMap<String, Vec<(String, String, String, i64)>> {
     // Build a secondary map from (file, qname) → kind string using parsed data.
+    // External files are skipped — they belong in SymbolIndex for Tier 1 lookup
+    // only, not in the heuristic fallback path (their symbols would pollute
+    // cross-language name lookups, e.g. Python `get` matching a TS `get` ref).
     let mut kind_map: FxHashMap<(&str, &str), &str> = FxHashMap::default();
     for pf in parsed {
+        if is_external_path(&pf.path) {
+            continue;
+        }
         for sym in &pf.symbols {
             kind_map.insert((pf.path.as_str(), sym.qualified_name.as_str()), sym.kind.as_str());
         }
@@ -748,6 +765,9 @@ pub(super) fn build_name_index(
 
     let mut map: FxHashMap<String, Vec<(String, String, String, i64)>> = FxHashMap::default();
     for ((file, qname), &id) in symbol_id_map {
+        if is_external_path(file) {
+            continue;
+        }
         // Extract the simple name (last segment of the qualified name).
         let simple = qname.rsplit('.').next().unwrap_or(qname.as_str()).to_string();
         let kind = kind_map
@@ -768,6 +788,7 @@ pub(super) fn build_qname_index(
 ) -> FxHashMap<String, i64> {
     symbol_id_map
         .iter()
+        .filter(|((file, _), _)| !is_external_path(file))
         .map(|((_, qname), &id)| (qname.clone(), id))
         .collect()
 }
@@ -779,6 +800,9 @@ pub(super) fn build_qname_index(
 pub(super) fn build_file_namespace_map(parsed: &[ParsedFile]) -> FxHashMap<String, String> {
     let mut map = FxHashMap::default();
     for pf in parsed {
+        if is_external_path(&pf.path) {
+            continue;
+        }
         if let Some(ns_sym) = pf.symbols.iter().find(|s| s.kind == SymbolKind::Namespace) {
             map.insert(pf.path.clone(), ns_sym.qualified_name.clone());
         }
@@ -801,6 +825,9 @@ pub(super) fn build_module_to_files(parsed: &[ParsedFile]) -> FxHashMap<String, 
     let mut map: FxHashMap<String, Vec<String>> = FxHashMap::default();
 
     for pf in parsed {
+        if is_external_path(&pf.path) {
+            continue;
+        }
         // 1. Namespace symbols → module name (exact, authoritative)
         for sym in &pf.symbols {
             if sym.kind == SymbolKind::Namespace {
@@ -866,6 +893,9 @@ pub(super) fn build_import_map(
 ) -> FxHashMap<String, Vec<(String, Option<String>)>> {
     let mut map: FxHashMap<String, Vec<(String, Option<String>)>> = FxHashMap::default();
     for pf in parsed {
+        if is_external_path(&pf.path) {
+            continue;
+        }
         for r in &pf.refs {
             match r.kind {
                 EdgeKind::TypeRef if r.module.is_some() => {

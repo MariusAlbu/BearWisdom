@@ -62,7 +62,7 @@ pub fn complete_at(
 
     // --- Step 1: Resolve file_id and containing scope ---
     let file_id: Option<i64> = conn
-        .query_row("SELECT id FROM files WHERE path = ?1", [file_path], |r| r.get(0))
+        .query_row("SELECT id FROM files WHERE path = ?1 AND origin = 'internal'", [file_path], |r| r.get(0))
         .optional()
         .context("completion: file lookup")?;
 
@@ -96,6 +96,7 @@ pub fn complete_at(
              FROM symbols s
              JOIN files f ON f.id = s.file_id
              WHERE s.scope_path = ?1
+               AND s.origin = 'internal'
              LIMIT 200"
         );
         let mut stmt = conn.prepare(&sql)?;

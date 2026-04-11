@@ -189,13 +189,44 @@ pub fn full_index(
     };
 
     // --- Step 4: Write files + symbols (shared pipeline) ---
-    let (file_id_map, symbol_id_map) =
+    let (file_id_map, mut symbol_id_map) =
         write::write_parsed_files(db, &parsed).context("Failed to write index to database")?;
     info!(
         "Wrote {} symbols across {} files",
         symbol_id_map.len(),
         file_id_map.len()
     );
+
+    // --- Step 4b: Discover + index external dependencies (MVP: Go only) ---
+    //
+    // External dep sources (e.g. `$GOMODCACHE/github.com/foo/bar@v1.2.3/`) are
+    // parsed through the exact same pipeline and written with origin='external'
+    // so user-facing queries filter them out. The resolver picks them up via
+    // the SymbolIndex so that Tier 1.5 can turn `ext:github.com/foo` refs into
+    // real edges instead of opaque `external_refs` rows.
+    let external_parsed = parse_external_sources(project_root, registry);
+    if !external_parsed.is_empty() {
+        info!(
+            "Parsed {} external files from dependency sources",
+            external_parsed.len()
+        );
+        let (_ext_file_map, ext_symbol_map) =
+            write::write_parsed_files_with_origin(db, &external_parsed, "external")
+                .context("Failed to write external index")?;
+        info!(
+            "Wrote {} external symbols",
+            ext_symbol_map.len()
+        );
+        symbol_id_map.extend(ext_symbol_map);
+    }
+
+    // Combined slice the resolver sees. External files are skipped by the
+    // ref-iteration loop in resolve_and_write but their symbols are still
+    // indexed as lookup targets.
+    let mut combined_parsed: Vec<ParsedFile> = Vec::with_capacity(parsed.len() + external_parsed.len());
+    combined_parsed.extend(parsed);
+    combined_parsed.extend(external_parsed);
+    let parsed = combined_parsed;
 
     // --- Step 5: Cross-file resolution + edge writing ---
     emit("resolving", 0.0, None);
@@ -300,6 +331,106 @@ pub fn full_index(
 // ---------------------------------------------------------------------------
 // Parse a single file
 // ---------------------------------------------------------------------------
+
+/// Discover and parse external dependency sources for the project.
+///
+/// Covers Go (`$GOMODCACHE`) and Python (`site-packages`). Extending to
+/// TypeScript (`node_modules`), Java (Maven local), etc. is a matter of
+/// adding discovery functions in `indexer::externals` and appending to
+/// the walked-files list here.
+///
+/// Returns an empty vec if no externals are discovered. Individual parse
+/// failures are logged but don't abort.
+fn parse_external_sources(project_root: &Path, registry: &LanguageRegistry) -> Vec<ParsedFile> {
+    use crate::indexer::externals;
+
+    // Collect walked files from every supported ecosystem in one batch
+    // so the rayon parallel parse sees them all at once.
+    let mut walked: Vec<WalkedFile> = Vec::new();
+
+    let go_roots = externals::discover_go_externals(project_root);
+    if !go_roots.is_empty() {
+        info!("Discovered {} external Go dependency roots", go_roots.len());
+        for dep in &go_roots {
+            walked.extend(externals::walk_external_root(dep));
+        }
+    }
+
+    let py_roots = externals::discover_python_externals(project_root);
+    if !py_roots.is_empty() {
+        info!(
+            "Discovered {} external Python dependency roots",
+            py_roots.len()
+        );
+        for dep in &py_roots {
+            walked.extend(externals::walk_python_external_root(dep));
+        }
+    }
+
+    let ts_roots = externals::discover_ts_externals(project_root);
+    if !ts_roots.is_empty() {
+        info!(
+            "Discovered {} external TypeScript dependency roots",
+            ts_roots.len()
+        );
+        for dep in &ts_roots {
+            walked.extend(externals::walk_ts_external_root(dep));
+        }
+    }
+
+    if walked.is_empty() {
+        return Vec::new();
+    }
+    debug!("Walking {} external source files total", walked.len());
+
+    let results: Vec<Result<ParsedFile>> =
+        walked.par_iter().map(|w| parse_file(w, registry)).collect();
+
+    let mut parsed = Vec::with_capacity(results.len());
+    let mut errors = 0usize;
+    for (walked, res) in walked.iter().zip(results) {
+        match res {
+            Ok(mut pf) => {
+                // TS declaration files lack a package-level scope, so the
+                // extractor yields bare qualified names (`Button`). The TS
+                // Tier 1 resolver looks up `{import_module}.{target}`, so
+                // we rewrite external TS symbols to `{package}.{name}` here.
+                let pkg = ts_package_from_virtual_path(&pf.path).map(str::to_string);
+                if let Some(pkg) = pkg {
+                    externals::prefix_ts_external_symbols(&mut pf, &pkg);
+                }
+                parsed.push(pf)
+            }
+            Err(e) => {
+                errors += 1;
+                debug!("External parse failed for {}: {e}", walked.relative_path);
+            }
+        }
+    }
+    if errors > 0 {
+        debug!("{errors} external files failed to parse (non-fatal)");
+    }
+    parsed
+}
+
+/// Extract the package name from a virtual path like `ext:ts:fake-ui/index.d.ts`
+/// or `ext:ts:@tanstack/react-query/dist/index.d.ts`. Returns `None` for
+/// non-TS virtual paths.
+fn ts_package_from_virtual_path(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("ext:ts:")?;
+    // Scoped package: `@foo/bar/...` — the package name is the first two
+    // slash-separated segments joined.
+    if rest.starts_with('@') {
+        let mut parts = rest.splitn(3, '/');
+        let scope = parts.next()?;
+        let name = parts.next()?;
+        let end_byte = scope.len() + 1 + name.len();
+        Some(&rest[..end_byte])
+    } else {
+        let slash = rest.find('/')?;
+        Some(&rest[..slash])
+    }
+}
 
 pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
     let bytes = std::fs::read(&walked.absolute_path)
@@ -785,8 +916,8 @@ pub(crate) fn read_stats(
         route_count, db_mapping_count, flow_edge_count, package_count,
     ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
         "SELECT
-           (SELECT COUNT(*) FROM files),
-           (SELECT COUNT(*) FROM symbols),
+           (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
+           (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM edges),
            (SELECT COUNT(*) FROM unresolved_refs),
            (SELECT COUNT(*) FROM external_refs),

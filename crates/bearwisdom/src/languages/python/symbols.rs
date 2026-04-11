@@ -2113,6 +2113,30 @@ fn extract_type_refs_from_annotation(
                 });
             }
         }
+        // `uuid.UUID` or `sqlalchemy.orm.Session` — emit a single ref for the
+        // rightmost identifier with the object path as `module`, so downstream
+        // classification can route via the import map. Do NOT recurse into
+        // the attribute's children (which would otherwise emit a spurious
+        // bare ref for every segment).
+        "attribute" => {
+            if let Some(attr) = node.child_by_field_name("attribute") {
+                let name = node_text(&attr, source);
+                if !name.is_empty() {
+                    let module = node
+                        .child_by_field_name("object")
+                        .map(|o| node_text(&o, source))
+                        .filter(|s| !s.is_empty());
+                    refs.push(ExtractedRef {
+                        source_symbol_index: symbol_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: attr.start_position().row as u32,
+                        module,
+                        chain: None,
+                    });
+                }
+            }
+        }
         _ => {
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {

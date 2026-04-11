@@ -17,6 +17,11 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "Exclude", "Extract", "NonNullable", "ReturnType", "InstanceType",
     "ConstructorParameters", "Parameters", "ThisParameterType",
     "OmitThisParameter", "ThisType", "Awaited",
+    // lib.es5.d.ts built-in helpers and string manipulation utilities
+    "PromiseLike", "ArrayLike", "Iterable",
+    "Lowercase", "Uppercase", "Capitalize", "Uncapitalize",
+    "TemplateStringsArray", "PropertyKey", "PropertyDescriptor",
+    "PropertyDescriptorMap", "TypedPropertyDescriptor",
     // Error subtypes
     "TypeError", "RangeError", "SyntaxError", "ReferenceError", "EvalError",
     "URIError",

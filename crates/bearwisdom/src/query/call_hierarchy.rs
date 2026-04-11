@@ -50,7 +50,7 @@ fn resolve_ids(db: &Database, symbol_name: &str) -> QueryResult<Vec<i64>> {
     let ids = if symbol_name.contains('.') {
         // Qualified name: expect exactly one match.
         let mut stmt = conn.prepare(
-            "SELECT id FROM symbols WHERE qualified_name = ?1"
+            "SELECT id FROM symbols WHERE qualified_name = ?1 AND origin = 'internal'"
         ).context("Failed to prepare qualified lookup")?;
         let rows = stmt.query_map([symbol_name], |r| r.get(0))
             .context("Failed to query qualified lookup")?;
@@ -58,7 +58,7 @@ fn resolve_ids(db: &Database, symbol_name: &str) -> QueryResult<Vec<i64>> {
     } else {
         // Simple name: may be ambiguous — return all matches.
         let mut stmt = conn.prepare(
-            "SELECT id FROM symbols WHERE name = ?1"
+            "SELECT id FROM symbols WHERE name = ?1 AND origin = 'internal'"
         ).context("Failed to prepare simple lookup")?;
         let rows = stmt.query_map([symbol_name], |r| r.get(0))
             .context("Failed to query simple lookup")?;

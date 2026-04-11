@@ -33,6 +33,17 @@ pub fn write_parsed_files(
     db: &Database,
     parsed: &[ParsedFile],
 ) -> Result<(FileIdMap, SymbolIdMap)> {
+    write_parsed_files_with_origin(db, parsed, "internal")
+}
+
+/// Origin-aware variant. Callers that index external dependency sources
+/// (Go module cache, node_modules, site-packages, etc.) pass "external" so
+/// the rows can be partitioned from project code in user-facing queries.
+pub fn write_parsed_files_with_origin(
+    db: &Database,
+    parsed: &[ParsedFile],
+    origin: &str,
+) -> Result<(FileIdMap, SymbolIdMap)> {
     let conn = db.conn();
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -50,20 +61,21 @@ pub fn write_parsed_files(
         // Upsert file row and capture the assigned id via RETURNING.
         let file_id: i64 = tx
             .prepare_cached(
-                "INSERT INTO files (path, hash, language, last_indexed, mtime, size, package_id)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                "INSERT INTO files (path, hash, language, last_indexed, mtime, size, package_id, origin)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
                  ON CONFLICT(path) DO UPDATE SET
                    hash = excluded.hash,
                    language = excluded.language,
                    last_indexed = excluded.last_indexed,
                    mtime = excluded.mtime,
                    size = excluded.size,
-                   package_id = excluded.package_id
+                   package_id = excluded.package_id,
+                   origin = excluded.origin
                  RETURNING id",
             )
             .context("Failed to prepare file upsert")?
             .query_row(
-                rusqlite::params![pf.path, pf.content_hash, pf.language, now, pf.mtime, pf.size as i64, pf.package_id],
+                rusqlite::params![pf.path, pf.content_hash, pf.language, now, pf.mtime, pf.size as i64, pf.package_id, origin],
                 |r| r.get(0),
             )
             .with_context(|| format!("Failed to upsert file {}", pf.path))?;
@@ -85,8 +97,8 @@ pub fn write_parsed_files(
             tx.prepare_cached(
                 "INSERT INTO symbols
                    (file_id, name, qualified_name, kind, line, col,
-                    end_line, end_col, scope_path, signature, doc_comment, visibility)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+                    end_line, end_col, scope_path, signature, doc_comment, visibility, origin)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             )
             .context("Failed to prepare symbol insert")?
             .execute(rusqlite::params![
@@ -102,6 +114,7 @@ pub fn write_parsed_files(
                 sym.signature,
                 sym.doc_comment,
                 sym.visibility.map(|v| v.as_str()),
+                origin,
             ])
             .with_context(|| {
                 format!("Failed to insert symbol {} in {}", sym.qualified_name, pf.path)

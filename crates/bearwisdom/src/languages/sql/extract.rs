@@ -835,8 +835,8 @@ fn object_reference_qualified_name(node: &Node, src: &str) -> Option<String> {
     // Try schema.name
     if let Some(schema) = node.child_by_field_name("schema") {
         if let Some(name) = node.child_by_field_name("name") {
-            let s = node_text(schema, src);
-            let n = node_text(name, src);
+            let s = strip_sql_quotes(&node_text(schema, src));
+            let n = strip_sql_quotes(&node_text(name, src));
             if !s.is_empty() && !n.is_empty() {
                 return Some(format!("{}.{}", s, n));
             }
@@ -848,8 +848,29 @@ fn object_reference_qualified_name(node: &Node, src: &str) -> Option<String> {
 /// Extract the `name` field from an `object_reference` node.
 fn object_reference_name(node: &Node, src: &str) -> Option<String> {
     node.child_by_field_name("name")
-        .map(|n| node_text(n, src))
+        .map(|n| strip_sql_quotes(&node_text(n, src)))
         .filter(|s| !s.is_empty())
+}
+
+/// Strip SQL identifier quote characters (`"name"`, `` `name` ``, `[name]`) —
+/// tree-sitter-sql includes quotes in the token text, but downstream resolvers
+/// match on bare identifiers. A name with mismatched or missing quotes is
+/// returned unchanged.
+fn strip_sql_quotes(s: &str) -> String {
+    let trimmed = s.trim();
+    let bytes = trimmed.as_bytes();
+    if bytes.len() < 2 {
+        return trimmed.to_string();
+    }
+    let (first, last) = (bytes[0], bytes[bytes.len() - 1]);
+    let matches = (first == b'"' && last == b'"')
+        || (first == b'`' && last == b'`')
+        || (first == b'[' && last == b']');
+    if matches {
+        trimmed[1..trimmed.len() - 1].to_string()
+    } else {
+        trimmed.to_string()
+    }
 }
 
 fn first_child_of_kind<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {

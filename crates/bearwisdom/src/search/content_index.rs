@@ -109,7 +109,7 @@ pub fn rebuild_content_index(conn: &Connection, project_root: &Path) -> Result<u
     // Collect (id, path) rows first so we hold no statement borrow during I/O.
     let file_rows: Vec<(i64, String)> = {
         let mut stmt = conn
-            .prepare("SELECT id, path FROM files")
+            .prepare("SELECT id, path FROM files WHERE origin = 'internal'")
             .context("Failed to prepare files query for rebuild")?;
         let iter = stmt
             .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))

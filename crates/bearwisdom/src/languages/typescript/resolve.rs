@@ -122,10 +122,13 @@ impl LanguageResolver for TypeScriptResolver {
         //     may have failed, but we can still look up the target directly in
         //     the source module before falling through to the scope chain walk.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            // External packages are not in our index — skip.
-            if builtins::is_bare_specifier(module) {
-                return None;
-            }
+            // NOTE: Historically this short-circuited on bare specifiers
+            // (`react`, `@tanstack/react-query`) because externals weren't
+            // indexed. With S5 externals wired in, package source lives in
+            // the index under `ext:ts:{pkg}` files and external symbols are
+            // qualified with the package name. Fall through to the normal
+            // lookups so they can match — if they don't, Tier 1.5 still
+            // routes to `ext:{module}` as before.
 
             // Relative import: look up in the target file by simple name.
             for sym in lookup.in_file(module) {
@@ -180,23 +183,40 @@ impl LanguageResolver for TypeScriptResolver {
         //   - Refs with no module field at all.
         //   - Case (B) call refs whose module-based lookup above didn't resolve.
 
-        // Short-circuit: if the target was imported from an external package
-        // (determined via the file's import list), it won't be in our project index.
-        // Returning None here prevents the heuristic from producing spurious matches.
-        //
-        // Note: we don't have project_ctx here (resolve() doesn't receive it), so
-        // we check using is_bare_specifier. Manifest-aware external classification
-        // happens in infer_external_namespace, which runs after resolve() returns None.
+        // Imports-based qualified-name lookup. If the target matches a bare-
+        // specifier import, try `{import_module}.{target}` in the index —
+        // external packages indexed via S5 (`indexer::externals`) rewrite
+        // their symbol qualified_names with the package prefix, so this
+        // matches directly for packages in `ext:ts:` files.
         for import in &file_ctx.imports {
             if import.imported_name != *target {
                 continue;
             }
-            if let Some(module_path) = &import.module_path {
-                if builtins::is_bare_specifier(module_path) {
-                    // Target was imported from a bare specifier — it's external.
-                    return None;
+            let Some(module_path) = &import.module_path else {
+                continue;
+            };
+            if !builtins::is_bare_specifier(module_path) {
+                continue;
+            }
+            let candidate = format!("{module_path}.{target}");
+            if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    debug!(
+                        strategy = "ts_bare_import_qname",
+                        candidate = %candidate,
+                        "resolved"
+                    );
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "ts_bare_import_qname",
+                    });
                 }
             }
+            // Import exists but symbol not in index — it's external and
+            // uncovered. Stop trying so the heuristic doesn't produce a
+            // spurious match on a same-named internal symbol.
+            return None;
         }
 
         // Normalize: strip `this.` prefix for member access on the current class.

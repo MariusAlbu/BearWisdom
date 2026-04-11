@@ -255,7 +255,7 @@ pub fn discover_directory_concepts(db: &Database) -> QueryResult<()> {
         let count: u32 = conn
             .query_row(
                 "SELECT COUNT(*) FROM symbols s JOIN files f ON s.file_id = f.id
-                 WHERE f.path LIKE ?1 || '/%'",
+                 WHERE f.path LIKE ?1 || '/%' AND s.origin = 'internal'",
                 rusqlite::params![prefix],
                 |r| r.get(0),
             )

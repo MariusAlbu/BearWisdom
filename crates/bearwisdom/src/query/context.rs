@@ -173,6 +173,7 @@ fn seed_symbols(db: &Database, task: &str, limit: usize) -> Vec<super::search::S
             let sql = "SELECT s.name, s.qualified_name, s.kind, f.path, s.line
                        FROM symbols s JOIN files f ON f.id = s.file_id
                        WHERE lower(s.name) LIKE ?1
+                         AND s.origin = 'internal'
                        LIMIT 20";
             if let Ok(rows) = db.conn().prepare(sql).and_then(|mut stmt| {
                 stmt.query_map([&pattern], |r| {

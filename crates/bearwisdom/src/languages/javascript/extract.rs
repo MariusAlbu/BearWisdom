@@ -1138,11 +1138,12 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                 extract_calls(&child, src, source_symbol_index, refs);
             }
 
-            // JSX: `<Component />` or `<Component>...</Component>`.
-            // Emit a ref for ALL JSX elements — uppercase (React components) as
-            // Calls edges, lowercase (HTML intrinsics like <div>) as TypeRef edges.
-            // HTML intrinsics are unresolvable in the project graph and will be
-            // filtered at query time, but counting them here keeps coverage accurate.
+            // JSX: `<Component />` or `<Component>...</Component>`. Emit a
+            // Calls edge only for user-defined components (PascalCase).
+            // Lowercase tags like `<div>` / `<span>` are HTML intrinsics — not
+            // graph-resolvable symbols — and were previously emitted as
+            // `type_ref` refs that polluted `unresolved_refs`. Match TS
+            // behaviour and skip them entirely.
             "jsx_self_closing_element" | "jsx_opening_element" => {
                 let tag = child
                     .child_by_field_name("name")
@@ -1150,11 +1151,11 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                 if let Some(tag_node) = tag {
                     let tag_name = node_text(tag_node, src);
                     let is_component = tag_name.chars().next().map_or(false, |c| c.is_uppercase());
-                    if !tag_name.is_empty() {
+                    if !tag_name.is_empty() && is_component {
                         refs.push(Ref {
                             source_symbol_index,
                             target_name: tag_name,
-                            kind: if is_component { EdgeKind::Calls } else { EdgeKind::TypeRef },
+                            kind: EdgeKind::Calls,
                             line: tag_node.start_position().row as u32,
                             module: None,
                             chain: None,

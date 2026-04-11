@@ -96,6 +96,7 @@ pub fn search_symbols(
          JOIN symbols s ON s.id = fts.rowid
          JOIN files   f ON f.id = s.file_id
          WHERE symbols_fts MATCH ?1
+           AND s.origin = 'internal'
          ORDER BY fts.rank
          LIMIT {effective_limit}"
     );
@@ -143,8 +144,9 @@ pub fn search_symbols(
                 0.0    AS score
          FROM symbols s
          JOIN files f ON f.id = s.file_id
-         WHERE s.name           LIKE ?1 ESCAPE '\\'
-            OR s.qualified_name LIKE ?1 ESCAPE '\\'
+         WHERE s.origin = 'internal'
+           AND (s.name           LIKE ?1 ESCAPE '\\'
+             OR s.qualified_name LIKE ?1 ESCAPE '\\')
          ORDER BY s.qualified_name
          LIMIT {effective_limit}"
     );

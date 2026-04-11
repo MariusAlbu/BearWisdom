@@ -60,7 +60,7 @@ impl FuzzyIndex {
 
         // Load files.
         let mut stmt = conn
-            .prepare("SELECT path, language FROM files ORDER BY path")
+            .prepare("SELECT path, language FROM files WHERE origin = 'internal' ORDER BY path")
             .context("Failed to prepare files query for FuzzyIndex")?;
 
         let file_entries: Vec<(String, String)> = stmt
@@ -75,6 +75,7 @@ impl FuzzyIndex {
                 "SELECT s.qualified_name, s.kind, f.path, s.line
                  FROM symbols s
                  JOIN files f ON f.id = s.file_id
+                 WHERE s.origin = 'internal'
                  ORDER BY s.qualified_name",
             )
             .context("Failed to prepare symbols query for FuzzyIndex")?;

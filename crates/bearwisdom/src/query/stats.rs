@@ -31,8 +31,8 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         package_count,
     ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
         "SELECT
-           (SELECT COUNT(*) FROM files),
-           (SELECT COUNT(*) FROM symbols),
+           (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
+           (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM edges),
            (SELECT COUNT(*) FROM unresolved_refs),
            (SELECT COUNT(*) FROM external_refs),

@@ -120,6 +120,10 @@ pub trait SymbolLookup {
     /// Find all symbols whose qualified name starts with the given prefix + ".".
     fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo>;
 
+    /// Cheap existence check: does any symbol live under this namespace?
+    /// O(log N), no allocation. Prefer this over `!in_namespace(x).is_empty()`.
+    fn has_in_namespace(&self, namespace: &str) -> bool;
+
     /// Find all symbols defined in a specific file.
     fn in_file(&self, file_path: &str) -> &[SymbolInfo];
 
@@ -789,6 +793,14 @@ impl SymbolLookup for SymbolIndex {
             .collect()
     }
 
+    fn has_in_namespace(&self, namespace: &str) -> bool {
+        let prefix = format!("{namespace}.");
+        self.by_qname
+            .range(prefix.clone()..)
+            .next()
+            .is_some_and(|(k, _)| k.starts_with(&prefix))
+    }
+
     fn in_file(&self, file_path: &str) -> &[SymbolInfo] {
         // Exact match
         if let Some(syms) = self.by_file.get(file_path) {
@@ -1454,13 +1466,21 @@ pub fn infer_external_from_chain(
     // Phase 2: Walk the chain checking if the current type is external.
     // If no root type was determined, check if the root identifier itself
     // is external (not in the index, or a variable with no resolvable type).
+    //
+    // IMPORTANT: all `by_name` lookups in this function must filter out
+    // external-origin symbols (file_path starts with "ext:"). Otherwise a
+    // Python external type like `sqlalchemy.Table` would match a TS `table`
+    // root and convince the walker the chain is "internal", suppressing the
+    // external classification for entirely unrelated code.
+    let is_internal = |s: &SymbolInfo| -> bool { !s.file_path.starts_with("ext:") };
+
     let mut current_type = match root_type {
         Some(t) => t,
         None => {
             if segments[0].kind == SegmentKind::Identifier {
                 let name = &segments[0].name;
                 let symbols = lookup.by_name(name);
-                let has_type_or_class = symbols.iter().any(|s| {
+                let has_type_or_class = symbols.iter().filter(|s| is_internal(s)).any(|s| {
                     matches!(
                         s.kind.as_str(),
                         "class" | "struct" | "interface" | "enum"
@@ -1481,8 +1501,13 @@ pub fn infer_external_from_chain(
 
     for seg in &segments[1..] {
         // If the current type isn't in the index → it's external.
-        let type_in_index = lookup.by_qualified_name(&current_type).is_some()
-            || lookup.by_name(&current_type).iter().any(|s| {
+        // Filter by_name to internal-only so a Python external with the
+        // same simple name doesn't convince us the type is project-local.
+        let type_in_index = lookup
+            .by_qualified_name(&current_type)
+            .filter(|s| is_internal(s))
+            .is_some()
+            || lookup.by_name(&current_type).iter().filter(|s| is_internal(s)).any(|s| {
                 matches!(
                     s.kind.as_str(),
                     "class" | "struct" | "interface" | "enum" | "type_alias"
