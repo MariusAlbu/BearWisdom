@@ -1176,19 +1176,24 @@ fn callee_name(node: Node, src: &[u8]) -> String {
     match node.kind() {
         "identifier" => node_text(node, src),
         "member_expression" => {
-            let obj = node
-                .child_by_field_name("object")
+            // Return ONLY the property name (the last segment), matching the
+            // TypeScript extractor convention and the `ExtractedRef.target_name`
+            // contract ("For chain-bearing refs, this is the LAST segment name").
+            //
+            // The prior implementation concatenated `obj.prop` using the raw
+            // text of the object sub-tree. That was catastrophic for any
+            // chain whose receiver was itself a call expression (Chai / Jasmine
+            // assertions):
+            //   expect(scratch.innerHTML).to.equal
+            // was stored as a single target_name of literally that whole
+            // string, inflating `unresolved_refs` by thousands of rows per
+            // test-heavy project (javascript-preact alone: ~2,500 such refs).
+            //
+            // The resolver key is the method name; receiver context should
+            // come from chain walking, not from stuffing it into target_name.
+            node.child_by_field_name("property")
                 .map(|n| node_text(n, src))
-                .unwrap_or_default();
-            let prop = node
-                .child_by_field_name("property")
-                .map(|n| node_text(n, src))
-                .unwrap_or_default();
-            if obj.is_empty() || prop.is_empty() {
-                node_text(node, src)
-            } else {
-                format!("{obj}.{prop}")
-            }
+                .unwrap_or_else(|| node_text(node, src))
         }
         _ => {
             let t = node_text(node, src);

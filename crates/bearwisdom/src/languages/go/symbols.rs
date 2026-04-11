@@ -747,22 +747,15 @@ fn extract_field_declaration(
         }
     } else {
         // Named fields.
+        //
+        // We intentionally do NOT emit a TypeRef from the raw `type_text`
+        // string here — that path produced garbage target_names for composite
+        // types like `[]*Handler`, `map[string]User`, or `protoimpl.MessageState`
+        // (the full qualified text was stored as a flat target_name and never
+        // resolved). Instead, `emit_type_refs_from_subtree` below walks the
+        // type tree and emits one correctly-shaped TypeRef per embedded
+        // type_identifier / qualified_type node.
         let type_str = type_text.unwrap_or_default();
-
-        // Emit a TypeRef for the field's type when it is a user-defined
-        // named type (i.e., a type_identifier that is not a Go builtin).
-        // We do this once per field_declaration regardless of how many
-        // field names are listed (they all share the same type).
-        if !type_str.is_empty() && !is_go_builtin_type(&type_str) {
-            refs.push(ExtractedRef {
-                source_symbol_index: parent_index.unwrap_or(0),
-                target_name: type_str.clone(),
-                kind: EdgeKind::TypeRef,
-                line: node.start_position().row as u32,
-                module: None,
-                chain: None,
-            });
-        }
 
         for field_name in field_names {
             let vis = go_visibility(&field_name);
@@ -819,6 +812,36 @@ fn emit_type_refs_from_subtree(
                     kind: EdgeKind::TypeRef,
                     line: node.start_position().row as u32,
                     module: None,
+                    chain: None,
+                });
+            }
+        }
+
+        // Qualified type `pkg.Type` (e.g. `protoimpl.MessageState`,
+        // `http.Handler`, `sync.Mutex`). Emit a single ref with the member
+        // name as target and the package as `module` — the resolver's
+        // external-classification step uses `module` to match against the
+        // file's import list, which is how protobuf-runtime / sync / http
+        // get classified as external packages. Do NOT recurse: the
+        // type_identifier child would otherwise produce a duplicate ref
+        // with no module set.
+        "qualified_type" => {
+            let pkg = (0..node.named_child_count())
+                .filter_map(|i| node.named_child(i))
+                .find(|c| c.kind() == "package_identifier")
+                .map(|n| node_text(&n, source));
+            let name = (0..node.named_child_count())
+                .filter_map(|i| node.named_child(i))
+                .find(|c| c.kind() == "type_identifier")
+                .map(|n| node_text(&n, source))
+                .unwrap_or_default();
+            if !name.is_empty() && !is_go_builtin_type(&name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: name,
+                    kind: EdgeKind::TypeRef,
+                    line: node.start_position().row as u32,
+                    module: pkg,
                     chain: None,
                 });
             }

@@ -245,7 +245,13 @@ const PHOENIX_COMPONENT: &[&str] = &[
     "normalize_attribute",
 ];
 
-/// Phoenix.Router — `use Phoenix.Router` macros.
+/// Phoenix.Router — `use Phoenix.Router` macros AND the auto-generated
+/// `Routes` module that Phoenix injects into every controller / view / test
+/// module via `use MyAppWeb, :controller` / `use MyAppWeb.ConnCase`. The
+/// individual `*_path` / `*_url` helper functions on `Routes` are synthesised
+/// at compile time from the router's route declarations and never appear as
+/// source-defined symbols — the module itself has to be classified external
+/// to avoid thousands of unresolved `Routes.foo_path(...)` receiver refs.
 const PHOENIX_ROUTER: &[&str] = &[
     "get",
     "post",
@@ -263,6 +269,16 @@ const PHOENIX_ROUTER: &[&str] = &[
     "plug",
     "live_session",
     "live_dashboard",
+    // Auto-generated route helper module injected into controllers, views,
+    // and ConnCase-aliased test modules. Present in every Phoenix project.
+    "Routes",
+    // Phoenix 1.7+ verified routes sigil + `url` / `path` builders.
+    "sigil_p",
+    "url",
+    "path",
+    "static_path",
+    "static_url",
+    "static_integrity",
 ];
 
 /// Phoenix.HTML — `use Phoenix.HTML` / `import Phoenix.HTML`.

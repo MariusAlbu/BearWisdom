@@ -3,55 +3,55 @@
     "language": "csharp",
     "files": 676,
     "symbols": 6237,
-    "edges": 4413,
-    "external": 14346,
-    "unresolved": 10,
+    "edges": 4451,
+    "external": 14306,
+    "unresolved": 12,
     "resolution_rate": 99.9
   },
   "dotnet-CleanArchitecture": {
     "language": "csharp",
     "files": 196,
     "symbols": 1437,
-    "edges": 1271,
-    "external": 3080,
-    "unresolved": 378,
-    "resolution_rate": 92.0
+    "edges": 1220,
+    "external": 3136,
+    "unresolved": 190,
+    "resolution_rate": 95.8
   },
   "ts-nestjs-realworld": {
     "language": "typescript",
     "files": 43,
     "symbols": 344,
-    "edges": 376,
-    "external": 1058,
-    "unresolved": 18,
-    "resolution_rate": 98.8
+    "edges": 374,
+    "external": 1066,
+    "unresolved": 12,
+    "resolution_rate": 99.2
   },
   "ts-rallly": {
     "language": "typescript",
-    "files": 1167,
-    "symbols": 7218,
-    "edges": 5977,
-    "external": 22068,
-    "unresolved": 1930,
-    "resolution_rate": 93.6
+    "files": 1168,
+    "symbols": 7469,
+    "edges": 8545,
+    "external": 20660,
+    "unresolved": 524,
+    "resolution_rate": 98.2
   },
   "javascript-preact": {
     "language": "javascript",
     "files": 278,
-    "symbols": 8612,
-    "edges": 9289,
-    "external": 14582,
-    "unresolved": 8256,
-    "resolution_rate": 74.3
+    "symbols": 8616,
+    "edges": 8312,
+    "external": 17957,
+    "unresolved": 3904,
+    "resolution_rate": 87.1
   },
   "vue-vuestic-admin": {
-    "language": "typescript",
-    "files": 99,
-    "symbols": 414,
-    "edges": 353,
-    "external": 748,
-    "unresolved": 15,
-    "resolution_rate": 98.7
+    "language": "vue",
+    "files": 198,
+    "symbols": 1141,
+    "edges": 784,
+    "external": 2182,
+    "unresolved": 427,
+    "resolution_rate": 87.4
   },
   "angular-coreui": {
     "language": "typescript",
@@ -64,120 +64,120 @@
   },
   "goxygen": {
     "language": "go",
-    "files": 84,
-    "symbols": 314,
-    "edges": 257,
-    "external": 1443,
-    "unresolved": 35,
-    "resolution_rate": 98.0
+    "files": 86,
+    "symbols": 318,
+    "edges": 232,
+    "external": 1444,
+    "unresolved": 11,
+    "resolution_rate": 99.3
   },
   "python-cookiecutter-django": {
     "language": "python",
     "files": 138,
     "symbols": 1067,
-    "edges": 357,
-    "external": 1605,
-    "unresolved": 219,
-    "resolution_rate": 90.0
+    "edges": 383,
+    "external": 1681,
+    "unresolved": 117,
+    "resolution_rate": 94.6
   },
   "full-stack-fastapi-template": {
     "language": "typescript",
-    "files": 180,
-    "symbols": 2083,
-    "edges": 1875,
-    "external": 5996,
-    "unresolved": 381,
-    "resolution_rate": 95.4
+    "files": 181,
+    "symbols": 2121,
+    "edges": 3276,
+    "external": 4631,
+    "unresolved": 161,
+    "resolution_rate": 98.0
   },
   "java-petclinic-rest": {
     "language": "java",
     "files": 124,
     "symbols": 1283,
     "edges": 1334,
-    "external": 5595,
-    "unresolved": 303,
-    "resolution_rate": 95.8
+    "external": 5743,
+    "unresolved": 152,
+    "resolution_rate": 97.9
   },
   "java-spring-petclinic": {
     "language": "java",
     "files": 83,
     "symbols": 598,
     "edges": 489,
-    "external": 2110,
-    "unresolved": 115,
+    "external": 2111,
+    "unresolved": 113,
     "resolution_rate": 95.8
   },
   "rust-ast-grep": {
     "language": "rust",
-    "files": 248,
-    "symbols": 10391,
-    "edges": 13653,
-    "external": 25485,
-    "unresolved": 2291,
-    "resolution_rate": 94.5
+    "files": 249,
+    "symbols": 10393,
+    "edges": 11652,
+    "external": 28085,
+    "unresolved": 1764,
+    "resolution_rate": 95.7
   },
   "kotlin-notykt": {
     "language": "kotlin",
     "files": 331,
     "symbols": 1780,
-    "edges": 2930,
-    "external": 12957,
-    "unresolved": 3585,
-    "resolution_rate": 81.6
+    "edges": 1831,
+    "external": 16574,
+    "unresolved": 2774,
+    "resolution_rate": 86.9
   },
   "kotlin-android-showcase": {
     "language": "kotlin",
     "files": 194,
     "symbols": 719,
-    "edges": 1270,
-    "external": 4485,
-    "unresolved": 1911,
-    "resolution_rate": 75.1
+    "edges": 714,
+    "external": 6967,
+    "unresolved": 1050,
+    "resolution_rate": 88.0
   },
   "swift-icecubes": {
     "language": "swift",
     "files": 550,
     "symbols": 7200,
     "edges": 18246,
-    "external": 212891,
-    "unresolved": 1613,
+    "external": 213061,
+    "unresolved": 1587,
     "resolution_rate": 99.3
   },
   "scala-trading": {
     "language": "scala",
     "files": 183,
     "symbols": 2883,
-    "edges": 5374,
-    "external": 15414,
-    "unresolved": 3248,
-    "resolution_rate": 86.5
+    "edges": 5476,
+    "external": 16156,
+    "unresolved": 2587,
+    "resolution_rate": 89.3
   },
   "elixir-changelog": {
     "language": "elixir",
     "files": 885,
     "symbols": 7891,
-    "edges": 20312,
-    "external": 34310,
-    "unresolved": 16492,
-    "resolution_rate": 76.8
+    "edges": 21713,
+    "external": 35736,
+    "unresolved": 13040,
+    "resolution_rate": 81.5
   },
   "ruby-sidekiq": {
     "language": "ruby",
     "files": 256,
     "symbols": 2871,
-    "edges": 3893,
-    "external": 8980,
-    "unresolved": 3193,
-    "resolution_rate": 80.1
+    "edges": 3907,
+    "external": 8988,
+    "unresolved": 3159,
+    "resolution_rate": 80.3
   },
   "ruby-huginn": {
     "language": "ruby",
     "files": 553,
     "symbols": 3799,
-    "edges": 2683,
-    "external": 9145,
-    "unresolved": 4008,
-    "resolution_rate": 74.7
+    "edges": 2870,
+    "external": 9224,
+    "unresolved": 3641,
+    "resolution_rate": 76.9
   },
   "c-tig": {
     "language": "c",
@@ -192,18 +192,18 @@
     "language": "c",
     "files": 348,
     "symbols": 15974,
-    "edges": 25820,
-    "external": 13354,
-    "unresolved": 7052,
+    "edges": 25754,
+    "external": 13084,
+    "unresolved": 6997,
     "resolution_rate": 84.7
   },
   "cpp-clay": {
     "language": "c",
     "files": 88,
     "symbols": 5752,
-    "edges": 8871,
+    "edges": 8872,
     "external": 1121,
-    "unresolved": 3694,
+    "unresolved": 3693,
     "resolution_rate": 73.0
   },
   "bash-ohmybash": {
@@ -238,8 +238,8 @@
     "files": 185,
     "symbols": 1670,
     "edges": 1884,
-    "external": 6851,
-    "unresolved": 4,
+    "external": 6853,
+    "unresolved": 2,
     "resolution_rate": 100.0
   },
   "perl-dancer2": {
@@ -247,9 +247,9 @@
     "files": 163,
     "symbols": 742,
     "edges": 0,
-    "external": 501,
-    "unresolved": 1,
-    "resolution_rate": 99.8
+    "external": 502,
+    "unresolved": 0,
+    "resolution_rate": 100.0
   },
   "ocaml-mirage": {
     "language": "ocaml",
@@ -266,17 +266,17 @@
     "symbols": 12072,
     "edges": 9716,
     "external": 9440,
-    "unresolved": 5866,
+    "unresolved": 5863,
     "resolution_rate": 76.6
   },
   "sql-pgmq": {
-    "language": "sql",
+    "language": "rust",
     "files": 141,
     "symbols": 2632,
-    "edges": 1326,
-    "external": 4030,
+    "edges": 865,
+    "external": 4516,
     "unresolved": 383,
-    "resolution_rate": 93.3
+    "resolution_rate": 93.4
   },
   "nix-disko": {
     "language": "nix",
@@ -308,11 +308,11 @@
   "astro-paper": {
     "language": "astro",
     "files": 103,
-    "symbols": 134,
-    "edges": 98,
-    "external": 311,
-    "unresolved": 106,
-    "resolution_rate": 79.4
+    "symbols": 288,
+    "edges": 140,
+    "external": 708,
+    "unresolved": 91,
+    "resolution_rate": 90.3
   },
   "clojure-ring": {
     "language": "clojure",
@@ -326,29 +326,29 @@
   "cmake-cpm": {
     "language": "cmake",
     "files": 104,
-    "symbols": 1382,
+    "symbols": 1385,
     "edges": 782,
-    "external": 1909,
-    "unresolved": 1038,
+    "external": 1911,
+    "unresolved": 1039,
     "resolution_rate": 72.2
   },
   "dart-frog": {
     "language": "dart",
     "files": 544,
-    "symbols": 4790,
-    "edges": 4367,
-    "external": 11709,
-    "unresolved": 939,
-    "resolution_rate": 94.5
+    "symbols": 4797,
+    "edges": 4364,
+    "external": 12026,
+    "unresolved": 676,
+    "resolution_rate": 96.0
   },
   "dockerfile-jessfraz": {
-    "language": "dockerfile",
+    "language": "lua",
     "files": 246,
     "symbols": 1978,
     "edges": 81,
-    "external": 1294,
-    "unresolved": 257,
-    "resolution_rate": 84.3
+    "external": 1495,
+    "unresolved": 55,
+    "resolution_rate": 96.6
   },
   "erlang-cowboy": {
     "language": "erlang",
@@ -391,17 +391,17 @@
     "files": 89,
     "symbols": 290,
     "edges": 490,
-    "external": 794,
-    "unresolved": 2,
-    "resolution_rate": 99.8
+    "external": 796,
+    "unresolved": 0,
+    "resolution_rate": 100.0
   },
   "groovy-codenarc": {
     "language": "groovy",
     "files": 1177,
     "symbols": 10722,
     "edges": 5122,
-    "external": 10036,
-    "unresolved": 2620,
+    "external": 10039,
+    "unresolved": 2617,
     "resolution_rate": 85.3
   },
   "matlab-prmlt": {
@@ -417,55 +417,55 @@
     "language": "nim",
     "files": 119,
     "symbols": 1381,
-    "edges": 144,
-    "external": 1154,
-    "unresolved": 323,
-    "resolution_rate": 80.1
+    "edges": 151,
+    "external": 1189,
+    "unresolved": 274,
+    "resolution_rate": 83.0
   },
   "odin-ols": {
     "language": "odin",
     "files": 137,
-    "symbols": 3077,
-    "edges": 4888,
-    "external": 3693,
-    "unresolved": 1497,
-    "resolution_rate": 85.1
+    "symbols": 3079,
+    "edges": 4869,
+    "external": 3838,
+    "unresolved": 1361,
+    "resolution_rate": 86.5
   },
   "puppet-apache": {
     "language": "puppet",
     "files": 281,
     "symbols": 568,
     "edges": 32,
-    "external": 2194,
-    "unresolved": 395,
-    "resolution_rate": 84.9
+    "external": 2218,
+    "unresolved": 371,
+    "resolution_rate": 85.8
   },
   "robot-cookbook": {
     "language": "robot",
     "files": 39,
     "symbols": 232,
     "edges": 10,
-    "external": 212,
-    "unresolved": 291,
-    "resolution_rate": 43.3
+    "external": 216,
+    "unresolved": 287,
+    "resolution_rate": 44.1
   },
   "starlark-bazel-skylib": {
     "language": "starlark",
     "files": 187,
     "symbols": 1296,
     "edges": 394,
-    "external": 3784,
-    "unresolved": 788,
-    "resolution_rate": 84.1
+    "external": 3788,
+    "unresolved": 784,
+    "resolution_rate": 84.2
   },
   "svelte-realworld": {
-    "language": "svelte",
+    "language": "javascript",
     "files": 51,
-    "symbols": 99,
-    "edges": 35,
-    "external": 197,
-    "unresolved": 137,
-    "resolution_rate": 62.9
+    "symbols": 142,
+    "edges": 55,
+    "external": 325,
+    "unresolved": 65,
+    "resolution_rate": 85.4
   },
   "vbnet-compactgui": {
     "language": "vbnet",
@@ -477,16 +477,16 @@
     "resolution_rate": 99.5
   },
   "proto-onlineboutique": {
-    "language": "yaml",
+    "language": "go",
     "files": 263,
     "symbols": 6976,
-    "edges": 6824,
-    "external": 34036,
-    "unresolved": 1190,
-    "resolution_rate": 97.2
+    "edges": 6858,
+    "external": 34075,
+    "unresolved": 409,
+    "resolution_rate": 99.0
   },
   "bicep-aks-baseline": {
-    "language": "markdown",
+    "language": "bicep",
     "files": 50,
     "symbols": 272,
     "edges": 0,
@@ -495,7 +495,7 @@
     "resolution_rate": 76.3
   },
   "cobol-course": {
-    "language": "markdown",
+    "language": "cobol",
     "files": 51,
     "symbols": 224,
     "edges": 44,
@@ -514,47 +514,47 @@
   },
   "php-monica": {
     "language": "php",
-    "files": 1749,
-    "symbols": 8554,
-    "edges": 10989,
-    "external": 65320,
-    "unresolved": 1287,
-    "resolution_rate": 98.3
+    "files": 2003,
+    "symbols": 10492,
+    "edges": 12684,
+    "external": 68688,
+    "unresolved": 4151,
+    "resolution_rate": 95.1
   },
   "powershell-winutil": {
-    "language": "markdown",
+    "language": "powershell",
     "files": 218,
     "symbols": 540,
-    "edges": 633,
-    "external": 4767,
-    "unresolved": 802,
-    "resolution_rate": 87.1
+    "edges": 618,
+    "external": 4800,
+    "unresolved": 784,
+    "resolution_rate": 87.4
   },
   "proto-protovalidate": {
-    "language": "proto",
+    "language": "go",
     "files": 280,
     "symbols": 19990,
     "edges": 42104,
-    "external": 95207,
-    "unresolved": 4356,
-    "resolution_rate": 96.9
+    "external": 94955,
+    "unresolved": 1152,
+    "resolution_rate": 99.2
   },
   "scss-bootstrap": {
-    "language": "markdown",
+    "language": "javascript",
     "files": 524,
-    "symbols": 5395,
-    "edges": 2155,
-    "external": 7026,
-    "unresolved": 6302,
-    "resolution_rate": 59.3
+    "symbols": 5800,
+    "edges": 3490,
+    "external": 7384,
+    "unresolved": 5031,
+    "resolution_rate": 68.4
   },
   "vba-stdvba": {
     "language": "vba",
     "files": 163,
-    "symbols": 14509,
-    "edges": 13082,
-    "external": 499,
-    "unresolved": 14987,
-    "resolution_rate": 47.5
+    "symbols": 3604,
+    "edges": 1150,
+    "external": 719,
+    "unresolved": 1682,
+    "resolution_rate": 52.6
   }
 }

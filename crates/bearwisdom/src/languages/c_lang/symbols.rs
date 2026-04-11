@@ -14,10 +14,37 @@ use tree_sitter::Node;
 // Helpers — type reference emission
 // ---------------------------------------------------------------------------
 
+/// C/C++ reserved words, storage-class specifiers, and type qualifiers that
+/// are sometimes captured as `type_identifier` nodes by tree-sitter-cpp when
+/// they appear in template parameter lists or `using`/`class` aliases. They
+/// must not become TypeRef target names — filtering them here cleans up
+/// hundreds of false positives per C++ project without touching the tree-
+/// walk logic.
+const CPP_KEYWORD_BLOCKLIST: &[&str] = &[
+    "class", "struct", "union", "enum", "typename", "using", "namespace",
+    "public", "private", "protected", "virtual", "static", "extern",
+    "const", "constexpr", "consteval", "constinit", "volatile", "mutable",
+    "inline", "friend", "explicit", "operator", "template", "typedef",
+    "final", "override", "noexcept", "throw",
+    "true", "false", "nullptr", "this",
+    "return", "if", "else", "for", "while", "do", "switch", "case", "default",
+    "break", "continue", "goto",
+    "sizeof", "alignof", "decltype", "new", "delete",
+    "auto", "void",
+    // Template type-parameter placeholder names the extractor emits but
+    // which are NEVER resolvable — they're locally-scoped and should stay
+    // inside the template definition.
+    "T", "U", "V", "K", "Args",
+];
+
+fn is_cpp_keyword(name: &str) -> bool {
+    CPP_KEYWORD_BLOCKLIST.contains(&name)
+}
+
 /// Emit a single TypeRef edge from `source_idx` to the type named by `name_node`.
 fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let name = node_text(name_node, src);
-    if name.is_empty() {
+    if name.is_empty() || is_cpp_keyword(&name) {
         return;
     }
     refs.push(ExtractedRef {
