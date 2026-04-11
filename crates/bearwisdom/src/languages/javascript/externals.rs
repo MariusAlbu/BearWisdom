@@ -91,6 +91,7 @@ pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
     // jQuery / AngularJS (classic, not Angular 2+)
     if deps.contains("jquery") || deps.contains("angular") {
         globals.extend(JQUERY_ANGULAR_GLOBALS);
+        globals.extend(JQUERY_METHOD_NAMES);
     }
 
     // Express (adds `app`, `req`, `res`, `next` as well-known names but these
@@ -157,18 +158,12 @@ const QUNIT_GLOBALS: &[&str] = &[
 ];
 
 const JQUERY_ANGULAR_GLOBALS: &[&str] = &[
+    // jQuery and AngularJS top-level globals
     "$",
     "jQuery",
     "angular",
-    "angular.module",
-    "angular.element",
-    "angular.isObject",
-    "angular.isArray",
-    "angular.isString",
-    "angular.isFunction",
-    "angular.forEach",
-    "angular.copy",
-    "angular.extend",
+    // AngularJS DI services (injected as function parameters — the chain
+    // walker sees them as receiver identifiers that never resolve locally)
     "$scope",
     "$rootScope",
     "$http",
@@ -183,4 +178,132 @@ const JQUERY_ANGULAR_GLOBALS: &[&str] = &[
     "$filter",
     "$location",
     "$log",
+];
+
+/// jQuery instance methods that appear as bare last-segment target_names
+/// after the A.3 JS chain-flattening fix. These are the methods commonly
+/// called on jQuery selections (`$el.addClass(...)`, `$(selector).on(...)`)
+/// whose target_name is just the method name.
+///
+/// Only names strongly associated with jQuery are listed — generic names
+/// that commonly appear on project classes (like `each`, `find`, `filter`,
+/// `first`, `last`, `add`, `remove`, `map`) are intentionally excluded to
+/// avoid false-positive external classification of real project methods.
+const JQUERY_METHOD_NAMES: &[&str] = &[
+    // Class manipulation
+    "addClass",
+    "removeClass",
+    "hasClass",
+    "toggleClass",
+    // DOM manipulation
+    "attr",
+    "removeAttr",
+    "prop",
+    "removeProp",
+    "html",
+    "text",
+    "val",
+    "append",
+    "prepend",
+    "appendTo",
+    "prependTo",
+    "after",
+    "before",
+    "insertAfter",
+    "insertBefore",
+    "wrap",
+    "wrapAll",
+    "wrapInner",
+    "unwrap",
+    "replaceWith",
+    "replaceAll",
+    "detach",
+    "clone",
+    "empty",
+    // Traversal (jQuery versions differ subtly from DOM versions —
+    // classifying as external is the correct call either way since these
+    // are never project-defined methods)
+    "closest",
+    "children",
+    "parent",
+    "parents",
+    "parentsUntil",
+    "siblings",
+    "prev",
+    "prevAll",
+    "prevUntil",
+    "next",
+    "nextAll",
+    "nextUntil",
+    "contents",
+    "not",
+    "has",
+    "eq",
+    "slice",
+    "end",
+    // Events
+    "on",
+    "off",
+    "one",
+    "bind",
+    "unbind",
+    "trigger",
+    "triggerHandler",
+    "hover",
+    "focusin",
+    "focusout",
+    // Effects
+    "fadeIn",
+    "fadeOut",
+    "fadeToggle",
+    "fadeTo",
+    "slideUp",
+    "slideDown",
+    "slideToggle",
+    "animate",
+    // Dimensions
+    "height",
+    "width",
+    "innerHeight",
+    "innerWidth",
+    "outerHeight",
+    "outerWidth",
+    "scrollTop",
+    "scrollLeft",
+    "offset",
+    "position",
+    // Static utilities ($.extend, $.isPlainObject, etc. — after A.3 these
+    // appear as bare method names)
+    "extend",
+    "isPlainObject",
+    "isEmptyObject",
+    "isFunction",
+    "isArray",
+    "isNumeric",
+    "isWindow",
+    "isXMLDoc",
+    "inArray",
+    "grep",
+    "noop",
+    "now",
+    "parseJSON",
+    "parseXML",
+    "trim",
+    "when",
+    "Deferred",
+    "ajax",
+    "getJSON",
+    "getScript",
+    // Data
+    "data",
+    "removeData",
+    // AngularJS module / scope methods (`.module(...)`, `.directive(...)`,
+    // `.controller(...)`, `.factory(...)`, `.service(...)`, `.config(...)`)
+    "module",
+    "directive",
+    "controller",
+    "factory",
+    "service",
+    "config",
+    "run",
 ];

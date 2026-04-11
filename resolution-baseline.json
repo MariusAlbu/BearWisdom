@@ -111,7 +111,7 @@
     "language": "rust",
     "files": 249,
     "symbols": 10393,
-    "edges": 11652,
+    "edges": 11651,
     "external": 28085,
     "unresolved": 1764,
     "resolution_rate": 95.7
@@ -156,10 +156,10 @@
     "language": "elixir",
     "files": 885,
     "symbols": 7891,
-    "edges": 21713,
-    "external": 35736,
-    "unresolved": 13040,
-    "resolution_rate": 81.5
+    "edges": 21208,
+    "external": 38439,
+    "unresolved": 11078,
+    "resolution_rate": 84.3
   },
   "ruby-sidekiq": {
     "language": "ruby",
@@ -516,10 +516,10 @@
     "language": "php",
     "files": 2003,
     "symbols": 10492,
-    "edges": 12684,
-    "external": 68688,
-    "unresolved": 4151,
-    "resolution_rate": 95.1
+    "edges": 12327,
+    "external": 70126,
+    "unresolved": 3183,
+    "resolution_rate": 96.3
   },
   "powershell-winutil": {
     "language": "powershell",
@@ -543,10 +543,10 @@
     "language": "javascript",
     "files": 524,
     "symbols": 5800,
-    "edges": 3490,
-    "external": 7384,
-    "unresolved": 5031,
-    "resolution_rate": 68.4
+    "edges": 3272,
+    "external": 7736,
+    "unresolved": 4968,
+    "resolution_rate": 68.9
   },
   "vba-stdvba": {
     "language": "vba",
