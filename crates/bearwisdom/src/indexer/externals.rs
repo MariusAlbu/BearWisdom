@@ -44,8 +44,16 @@ pub struct ExternalDepRoot {
 /// `$GOMODCACHE/{escaped_module_path}@{version}`, and return the entries
 /// whose directory actually exists on disk.
 ///
-/// Indirect deps are skipped for the MVP — they inflate the symbol table
-/// for little marginal resolution benefit.
+/// **Indirect deps are intentionally skipped.** This matches the consistent
+/// cross-ecosystem rule: walk only what the project declares as a direct
+/// dependency, and rely on import-based external inference in the resolver
+/// (see `indexer/resolve/mod.rs` — `inferred_ns` block) to classify refs
+/// that reach transitively into indirect libraries. Walking indirect deps
+/// would inflate the symbol table 10-20x for projects like Gitea/goxygen
+/// (314 indirect vs 14 direct) while the resolver already handles those
+/// refs correctly via import classification. The same rule applies to TS
+/// (nested `node_modules/` skipped) and Python (site-packages walk stops
+/// at the declared dep's own root).
 pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let Some(go_mod_path) = find_go_mod(project_root) else {
         return Vec::new();
@@ -276,6 +284,7 @@ pub fn discover_python_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             continue;
         }
 
+        let mut matched = false;
         for sp in &site_packages {
             // Package directory: site-packages/{normalized}/__init__.py or similar.
             let pkg_dir = sp.join(&normalized);
@@ -287,23 +296,114 @@ pub fn discover_python_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: pkg_dir,
                     ecosystem: "python",
                 });
+                matched = true;
                 break;
             }
             // Single-file module: site-packages/{normalized}.py
             let file = sp.join(format!("{normalized}.py"));
             if file.is_file() {
-                // Wrap the single file as a synthetic root using its parent.
-                // The walker will see just this file because we pass a
-                // one-file root by putting it directly.
-                // Simpler: include the site-packages dir filtered to this one file.
-                // We skip single-file modules in MVP to avoid polluting the
-                // walker with whole site-packages tree.
                 debug!("Single-file module {normalized}.py — skipping (MVP)");
+                matched = true;
                 break;
+            }
+        }
+
+        // Fallback: dist-info/top_level.txt lookup. Covers packages whose
+        // distribution name differs from the import name, e.g.
+        // `PyYAML` → `yaml`, `python-jose` → `jose`, `Pillow` → `PIL`,
+        // `beautifulsoup4` → `bs4`, `opencv-python` → `cv2`.
+        //
+        // Strategy: for each site-packages dir, scan `.dist-info/` entries
+        // whose name starts with the normalized dep name (plus any version
+        // suffix), read `top_level.txt` inside, and resolve each listed
+        // top-level import to a package directory in the same site-packages.
+        if !matched {
+            for sp in &site_packages {
+                if let Some(roots_from_top_level) =
+                    python_top_level_lookup(sp, &normalized, &mut seen)
+                {
+                    roots.extend(roots_from_top_level);
+                    break;
+                }
             }
         }
     }
     roots
+}
+
+/// Look up `top_level.txt` in every `.dist-info/` whose directory name
+/// matches the normalized dependency, and resolve each listed top-level
+/// module to a concrete package directory under the same site-packages.
+///
+/// Returns `None` if no matching dist-info was found, or an empty vector
+/// if the dist-info exists but `top_level.txt` is missing or empty — the
+/// caller can distinguish "keep looking in other site-packages" from
+/// "this dep resolved but had nothing to walk".
+fn python_top_level_lookup(
+    site_packages: &Path,
+    normalized: &str,
+    seen: &mut std::collections::HashSet<PathBuf>,
+) -> Option<Vec<ExternalDepRoot>> {
+    let entries = std::fs::read_dir(site_packages).ok()?;
+    let lower_prefix = normalized.to_lowercase();
+
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_dir() {
+            continue;
+        }
+        let name_os = entry.file_name();
+        let name = name_os.to_string_lossy();
+        if !name.ends_with(".dist-info") {
+            continue;
+        }
+        // Dist-info names look like `{Dist_Name}-{version}.dist-info`. The
+        // Dist_Name has `-` replaced with `_` per PEP 503 for the directory
+        // form. Compare case-insensitively against `normalized`.
+        let stem = name.trim_end_matches(".dist-info");
+        let dist_part = stem.rsplit_once('-').map(|(d, _)| d).unwrap_or(stem);
+        let dist_lower = dist_part.to_lowercase();
+        if dist_lower != lower_prefix {
+            continue;
+        }
+
+        let top_level_path = entry.path().join("top_level.txt");
+        let Ok(contents) = std::fs::read_to_string(&top_level_path) else {
+            debug!(
+                "dist-info {} has no top_level.txt — nothing to walk",
+                entry.path().display()
+            );
+            return Some(Vec::new());
+        };
+
+        let mut out = Vec::new();
+        for line in contents.lines() {
+            let import_name = line.trim();
+            if import_name.is_empty() || import_name.starts_with('_') {
+                // Skip `_cffi_*` style implementation shims.
+                continue;
+            }
+            let pkg_dir = site_packages.join(import_name);
+            if pkg_dir.is_dir() && !seen.contains(&pkg_dir) {
+                seen.insert(pkg_dir.clone());
+                out.push(ExternalDepRoot {
+                    module_path: import_name.to_string(),
+                    version: String::from("unknown"),
+                    root: pkg_dir,
+                    ecosystem: "python",
+                });
+                continue;
+            }
+            let single_file = site_packages.join(format!("{import_name}.py"));
+            if single_file.is_file() {
+                debug!(
+                    "top_level.txt single-file module {import_name}.py — skipping (MVP)"
+                );
+            }
+        }
+        return Some(out);
+    }
+    None
 }
 
 /// Locate Python site-packages directories to scan for the given project.
@@ -585,8 +685,13 @@ pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         //
         // 1. The primary `node_modules/{dep}/` directory (which may ship only
         //    `.js` if the package is untyped).
-        // 2. The DefinitelyTyped sibling `node_modules/@types/{dep}/` that
-        //    carries `.d.ts` for untyped libraries like React, Node, Express.
+        // 2. The DefinitelyTyped sibling that carries `.d.ts` for untyped
+        //    libraries:
+        //    - Unscoped: `node_modules/@types/{dep}/`
+        //    - Scoped:   `node_modules/@types/{scope}__{name}/`
+        //      e.g. `@tanstack/react-query` → `@types/tanstack__react-query`.
+        //      This is the escape scheme DefinitelyTyped uses on npm because
+        //      `@` is not allowed inside an `@types/*` sub-path.
         //
         // Both roots share the same `module_path` so their symbols get the
         // same package prefix (`react.ReactNode`), and the Tier 1 TS
@@ -599,11 +704,14 @@ pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             if primary.is_dir() {
                 pkg_roots.push(primary);
             }
-            // DefinitelyTyped fallback only for unscoped packages; scoped
-            // packages like `@foo/bar` live under `@types/foo__bar` which
-            // we don't try to handle in the MVP.
+            // DefinitelyTyped fallback — unscoped and scoped both.
             if !dep.starts_with('@') {
                 let types_dir = nm_root.join("@types").join(dep);
+                if types_dir.is_dir() {
+                    pkg_roots.push(types_dir);
+                }
+            } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
+                let types_dir = nm_root.join("@types").join(&escaped);
                 if types_dir.is_dir() {
                     pkg_roots.push(types_dir);
                 }
@@ -622,6 +730,26 @@ pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         }
     }
     roots
+}
+
+/// Convert a scoped npm package name into the DefinitelyTyped escape form.
+///
+/// DefinitelyTyped publishes types for scoped packages at
+/// `@types/{scope}__{name}` because npm disallows nested `@` inside a scope
+/// path. For example:
+///
+/// - `@tanstack/react-query` → `tanstack__react-query`
+/// - `@radix-ui/react-dialog` → `radix-ui__react-dialog`
+///
+/// Returns `None` if the input isn't a scoped name (`@scope/name`) so callers
+/// can skip the probe for unscoped deps, which take a different code path.
+fn definitely_typed_scoped_name(dep: &str) -> Option<String> {
+    let rest = dep.strip_prefix('@')?;
+    let (scope, name) = rest.split_once('/')?;
+    if scope.is_empty() || name.is_empty() {
+        return None;
+    }
+    Some(format!("{scope}__{name}"))
 }
 
 /// Locate node_modules directories for the given project.
@@ -877,6 +1005,21 @@ mod tests {
             normalize_python_dep_name("some-pkg @ git+https://github.com/x/y"),
             "some_pkg"
         );
+    }
+
+    #[test]
+    fn definitely_typed_scoped_escapes() {
+        assert_eq!(
+            definitely_typed_scoped_name("@tanstack/react-query"),
+            Some("tanstack__react-query".to_string())
+        );
+        assert_eq!(
+            definitely_typed_scoped_name("@radix-ui/react-dialog"),
+            Some("radix-ui__react-dialog".to_string())
+        );
+        assert_eq!(definitely_typed_scoped_name("react"), None);
+        assert_eq!(definitely_typed_scoped_name("@scope"), None);
+        assert_eq!(definitely_typed_scoped_name("@/empty"), None);
     }
 
     #[test]

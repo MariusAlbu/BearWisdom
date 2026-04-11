@@ -39,3 +39,24 @@ pub(super) fn extract_jsdoc(node: &Node, src: &[u8]) -> Option<String> {
     }
     None
 }
+
+/// Extract the `type_parameters` clause text from a declaration node and
+/// return it as `"<T, U>"`, or the empty string if absent.
+///
+/// Covers `function f<T>()`, `class C<T>`, `interface I<T, U>`, `type A<T> = ...`,
+/// `method<T>(x: T)`, and signature forms. The returned string includes the
+/// angle brackets so callers can splice it directly into a signature.
+///
+/// The tree-sitter TypeScript grammar exposes generics as a child node of kind
+/// `type_parameters`. It appears as a direct child on declaration nodes; we
+/// find it by scanning children rather than `child_by_field_name` because not
+/// every node version exposes it as a named field.
+pub(super) fn extract_type_parameters(node: &Node, src: &[u8]) -> String {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_parameters" {
+            return node_text(child, src);
+        }
+    }
+    String::new()
+}

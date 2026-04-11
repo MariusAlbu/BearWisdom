@@ -1,5 +1,5 @@
 use super::calls::build_chain;
-use super::helpers::{detect_visibility, extract_jsdoc, node_text};
+use super::helpers::{detect_visibility, extract_jsdoc, extract_type_parameters, node_text};
 use super::types::{extract_type_ref_from_annotation, extract_type_refs_recursive};
 use crate::parser::scope_tree;
 use crate::types::{
@@ -25,6 +25,7 @@ pub(super) fn push_class(
     let qualified_name = scope_tree::qualify(&name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
+    let gp = extract_type_parameters(node, src);
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -35,7 +36,7 @@ pub(super) fn push_class(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(format!("class {name}")),
+        signature: Some(format!("class {name}{gp}")),
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
@@ -61,6 +62,7 @@ pub(super) fn push_interface(
     let qualified_name = scope_tree::qualify(&name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
+    let gp = extract_type_parameters(node, src);
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -71,7 +73,7 @@ pub(super) fn push_interface(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(format!("interface {name}")),
+        signature: Some(format!("interface {name}{gp}")),
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
@@ -97,6 +99,7 @@ pub(super) fn push_function(
     let qualified_name = scope_tree::qualify(&name, parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
+    let gp = extract_type_parameters(node, src);
     let params = node
         .child_by_field_name("parameters")
         .map(|p| node_text(p, src))
@@ -116,7 +119,7 @@ pub(super) fn push_function(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(format!("function {name}{params}{ret}").trim().to_string()),
+        signature: Some(format!("function {name}{gp}{params}{ret}").trim().to_string()),
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
@@ -143,6 +146,16 @@ pub(super) fn push_construct_signature(
     let qualified_name = scope_tree::qualify("new", parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
+    let gp = extract_type_parameters(node, src);
+    let params = node
+        .child_by_field_name("parameters")
+        .map(|p| node_text(p, src))
+        .unwrap_or_default();
+    let ret = node
+        .child_by_field_name("return_type")
+        .map(|r| node_text(r, src))
+        .unwrap_or_default();
+
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: "new".to_string(),
@@ -153,7 +166,7 @@ pub(super) fn push_construct_signature(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: None,
+        signature: Some(format!("new{gp}{params}{ret}").trim().to_string()),
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
@@ -179,6 +192,16 @@ pub(super) fn push_call_signature(
     let qualified_name = scope_tree::qualify("call", parent_scope);
     let scope_path = scope_tree::scope_path(parent_scope);
 
+    let gp = extract_type_parameters(node, src);
+    let params = node
+        .child_by_field_name("parameters")
+        .map(|p| node_text(p, src))
+        .unwrap_or_default();
+    let ret = node
+        .child_by_field_name("return_type")
+        .map(|r| node_text(r, src))
+        .unwrap_or_default();
+
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
         name: "call".to_string(),
@@ -189,7 +212,7 @@ pub(super) fn push_call_signature(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: None,
+        signature: Some(format!("call{gp}{params}{ret}").trim().to_string()),
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
@@ -221,9 +244,19 @@ pub(super) fn push_method(
         SymbolKind::Method
     };
 
+    let gp = extract_type_parameters(node, src);
+    let params = node
+        .child_by_field_name("parameters")
+        .map(|p| node_text(p, src))
+        .unwrap_or_default();
+    let ret = node
+        .child_by_field_name("return_type")
+        .map(|r| node_text(r, src))
+        .unwrap_or_default();
+
     let idx = symbols.len();
     symbols.push(ExtractedSymbol {
-        name,
+        name: name.clone(),
         qualified_name,
         kind,
         visibility: detect_visibility(node, src),
@@ -231,7 +264,7 @@ pub(super) fn push_method(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: None,
+        signature: Some(format!("{name}{gp}{params}{ret}").trim().to_string()),
         doc_comment: extract_jsdoc(node, src),
         scope_path,
         parent_index,
@@ -387,7 +420,7 @@ pub(super) fn push_type_alias(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(format!("type {name}")),
+        signature: Some(format!("type {name}{}", extract_type_parameters(node, src))),
         doc_comment: None,
         scope_path,
         parent_index,
@@ -858,6 +891,74 @@ pub(super) fn push_variable_decl(
                                 chain: Some(prop_chain),
                             });
                         }
+                    }
+                } else if name_node.kind() == "array_pattern" {
+                    // `const [isOpen, setIsOpen] = useState(false)` —
+                    // array destructuring. Each named element becomes a
+                    // Variable symbol so references from the surrounding
+                    // scope can resolve against it. Without this the
+                    // destructured bindings are invisible to the index and
+                    // every call like `setIsOpen(true)` leaks out as an
+                    // unresolved cross-file ref.
+                    //
+                    // Elision holes (`const [, setX] = ...`) are allowed in
+                    // TS — the grammar exposes them as unnamed children and
+                    // we simply skip them here.
+                    //
+                    // Type inference for the destructured elements is a
+                    // follow-up. The tuple return of hooks like
+                    // `useState<T>() : [T, Dispatch<SetStateAction<T>>]`
+                    // needs index-aware chain walking; the current chain
+                    // walker doesn't model tuple indices yet. Local-scope
+                    // resolution alone is the critical fix.
+                    let mut apcursor = name_node.walk();
+                    for element in name_node.children(&mut apcursor) {
+                        // Tree-sitter TS yields `identifier` for plain
+                        // bindings and `assignment_pattern` for defaulted
+                        // ones (`[x = 0, y]`). Rest elements (`...rest`)
+                        // appear as `rest_pattern` whose first named child
+                        // is the identifier. Nested destructuring
+                        // (`[[a, b], c]`) is ignored in MVP.
+                        let (elem_name, elem_node) = match element.kind() {
+                            "identifier" => (node_text(element, src), element),
+                            "assignment_pattern" => {
+                                let Some(inner) = element.child_by_field_name("left") else {
+                                    continue;
+                                };
+                                if inner.kind() != "identifier" {
+                                    continue;
+                                }
+                                (node_text(inner, src), inner)
+                            }
+                            "rest_pattern" => {
+                                let mut rc = element.walk();
+                                let inner = element
+                                    .children(&mut rc)
+                                    .find(|c| c.kind() == "identifier");
+                                let Some(inner) = inner else { continue };
+                                (node_text(inner, src), inner)
+                            }
+                            _ => continue,
+                        };
+                        if elem_name.is_empty() {
+                            continue;
+                        }
+
+                        let qualified_name = scope_tree::qualify(&elem_name, parent_scope);
+                        symbols.push(ExtractedSymbol {
+                            name: elem_name,
+                            qualified_name,
+                            kind: SymbolKind::Variable,
+                            visibility: detect_visibility(node, src),
+                            start_line: elem_node.start_position().row as u32,
+                            end_line: elem_node.end_position().row as u32,
+                            start_col: elem_node.start_position().column as u32,
+                            end_col: elem_node.end_position().column as u32,
+                            signature: None,
+                            doc_comment: None,
+                            scope_path: scope_path.clone(),
+                            parent_index,
+                        });
                     }
                 }
             }

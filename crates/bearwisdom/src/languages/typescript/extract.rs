@@ -907,12 +907,32 @@ fn rewrite_aliased_refs(
         if r.kind == EdgeKind::Imports {
             continue;
         }
-        let Some((original, module_path)) = alias_map.get(&r.target_name) else {
-            continue;
-        };
-        r.target_name = original.clone();
-        if r.module.is_none() {
-            r.module = Some(module_path.clone());
+
+        // Case A: simple (non-chain) refs and chain refs whose target_name
+        // (the last segment) happens to BE the alias — e.g. a bare call to
+        // `__request(...)`. Rewrite target_name to the original export.
+        if let Some((original, module_path)) = alias_map.get(&r.target_name) {
+            r.target_name = original.clone();
+            if r.module.is_none() {
+                r.module = Some(module_path.clone());
+            }
+        }
+
+        // Case B: chain refs where the alias is the RECEIVER, e.g.
+        // `__request.get(url)` — target_name is `get` (the last segment),
+        // but the chain walker needs `__request` → `request` so the root
+        // type lookup finds the real exported symbol. Rewrite the first
+        // segment's name in place. This MUST happen independently of Case A
+        // because the last segment rarely matches an alias.
+        if let Some(chain) = r.chain.as_mut() {
+            if let Some(first) = chain.segments.first_mut() {
+                if let Some((original, module_path)) = alias_map.get(&first.name) {
+                    first.name = original.clone();
+                    if r.module.is_none() {
+                        r.module = Some(module_path.clone());
+                    }
+                }
+            }
         }
     }
 }

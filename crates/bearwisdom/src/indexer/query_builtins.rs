@@ -2284,8 +2284,53 @@ pub fn locals_scm_for_language(lang: &str) -> Option<&'static str> {
 \n\
 \n\
 "),
-        "typescript" => Some("(required_parameter (identifier) @local.definition)\n\
-(optional_parameter (identifier) @local.definition)\n\
+        "typescript" => Some("; Scopes\n\
+;-------\n\
+\n\
+[\n\
+  (statement_block)\n\
+  (function_expression)\n\
+  (arrow_function)\n\
+  (function_declaration)\n\
+  (method_definition)\n\
+  (class_body)\n\
+  (for_statement)\n\
+  (for_in_statement)\n\
+  (catch_clause)\n\
+] @local.scope\n\
+\n\
+; Definitions\n\
+;------------\n\
+\n\
+; Simple variable bindings: `const x = ...`, `let y`, `var z = ...`\n\
+(variable_declarator\n\
+  name: (identifier) @local.definition)\n\
+\n\
+; Destructuring: `const { a, b } = ...`, `const [x, setX] = ...`\n\
+; `pattern/identifier` in the tree-sitter TS grammar matches any\n\
+; identifier nested inside an object_pattern or array_pattern binding,\n\
+; including the shorthand and rest forms.\n\
+(object_pattern\n\
+  (shorthand_property_identifier_pattern) @local.definition)\n\
+\n\
+(array_pattern\n\
+  (identifier) @local.definition)\n\
+\n\
+; Function/method parameters — required, optional, and rest.\n\
+(required_parameter\n\
+  pattern: (identifier) @local.definition)\n\
+\n\
+(optional_parameter\n\
+  pattern: (identifier) @local.definition)\n\
+\n\
+; Catch clauses: `catch (err) { ... }`\n\
+(catch_clause\n\
+  parameter: (identifier) @local.definition)\n\
+\n\
+; References\n\
+;------------\n\
+\n\
+(identifier) @local.reference\n\
 "),
         _ => None,
     }
