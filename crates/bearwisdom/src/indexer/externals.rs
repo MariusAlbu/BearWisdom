@@ -1941,7 +1941,7 @@ fn parse_dotnet_dll(
                 &method.signature,
                 &type_generic_names,
                 &method_generic_names,
-                assembly.types().as_ref(),
+                &assembly,
             );
 
             symbols.push(ExtractedSymbol {
@@ -2043,7 +2043,7 @@ fn format_method_signature(
     sig: &dotscope::metadata::signatures::SignatureMethod,
     type_generic_names: &[String],
     method_generic_names: &[String],
-    type_registry: &dotscope::metadata::typesystem::TypeRegistry,
+    assembly: &dotscope::prelude::CilObject,
 ) -> String {
     let gp_suffix = format_generic_suffix(method_generic_names);
 
@@ -2058,7 +2058,7 @@ fn format_method_signature(
             type_generic_names,
             method_generic_names,
         );
-        params_str.push_str(&resolve_signature_tokens(&substituted, type_registry));
+        params_str.push_str(&resolve_signature_tokens(&substituted, assembly));
     }
     params_str.push(')');
 
@@ -2068,27 +2068,38 @@ fn format_method_signature(
         type_generic_names,
         method_generic_names,
     );
-    let return_str = resolve_signature_tokens(&return_substituted, type_registry);
+    let return_str = resolve_signature_tokens(&return_substituted, assembly);
 
     format!("{method_name}{gp_suffix}{params_str}: {return_str}")
 }
 
 /// Replace ECMA-335 `class[HHHHHHHH]` / `valuetype[HHHHHHHH]` token
-/// placeholders with their resolved `Namespace.TypeName` via the
-/// supplied `TypeRegistry`. Leaves unresolvable tokens as-is so the
-/// caller's signature still renders and downstream parsers can still
-/// scan for the top-level `<...>` region.
+/// placeholders with their resolved `Namespace.TypeName`. Tries both
+/// metadata-table sources:
 ///
-/// `dotscope`'s `TypeSignature::Display` emits tokens as upper-case 8-hex
-/// digits wrapped in square brackets. We scan for both prefixes, parse
-/// the hex, look up the registry, and splice the result back in. The
-/// scan is left-to-right and handles multiple tokens per input string
-/// (e.g., generic instantiations like `class[01] <class[02], class[03]>`).
+/// - **TypeDef** (token high byte `0x02`): defined in the current
+///   assembly, looked up via `assembly.types()` (a `TypeRegistry`).
+/// - **TypeRef** (token high byte `0x01`): references to types in
+///   other assemblies (`System.String`, `System.Threading.Tasks.Task`,
+///   `Microsoft.Extensions.Logging.ILogger`, etc.), looked up via
+///   `assembly.imports()`. Most nested type arguments in real .NET
+///   signatures fall into this bucket — they reference types defined
+///   in the BCL or other dependency assemblies.
+///
+/// Leaves unresolvable tokens as-is so the signature still renders and
+/// the top-level `<...>` region stays parseable by downstream code.
+/// `dotscope`'s `TypeSignature::Display` emits tokens as upper-case
+/// 8-hex-digit values wrapped in square brackets; we scan for both
+/// prefixes, parse the hex, select the right lookup via the token's
+/// high byte, and splice the result back in.
 fn resolve_signature_tokens(
     rendered: &str,
-    type_registry: &dotscope::metadata::typesystem::TypeRegistry,
+    assembly: &dotscope::prelude::CilObject,
 ) -> String {
     use dotscope::metadata::token::Token;
+
+    let type_registry = assembly.types();
+    let imports = assembly.imports().cil();
 
     let mut out = String::with_capacity(rendered.len());
     let bytes = rendered.as_bytes();
@@ -2109,16 +2120,32 @@ fn resolve_signature_tokens(
                 let hex = &after_prefix[..close_rel];
                 if let Ok(value) = u32::from_str_radix(hex, 16) {
                     let token = Token::new(value);
-                    if let Some(ty) = type_registry.get(&token) {
-                        let namespace = ty.namespace.clone();
-                        let name = strip_backtick_arity(&ty.name).to_string();
-                        if namespace.is_empty() {
-                            out.push_str(&name);
-                        } else {
-                            out.push_str(&namespace);
-                            out.push('.');
-                            out.push_str(&name);
-                        }
+                    // High byte selects the metadata table:
+                    //   0x02 = TypeDef  (current assembly)
+                    //   0x01 = TypeRef  (external assemblies — BCL etc.)
+                    //   0x1B = TypeSpec (generic instantiations, not handled here)
+                    let table_byte = value >> 24;
+                    let resolved: Option<String> = match table_byte {
+                        0x02 => type_registry.get(&token).map(|ty| {
+                            let name = strip_backtick_arity(&ty.name).to_string();
+                            if ty.namespace.is_empty() {
+                                name
+                            } else {
+                                format!("{}.{}", ty.namespace, name)
+                            }
+                        }),
+                        0x01 => imports.get(token).map(|imp| {
+                            let name = strip_backtick_arity(&imp.name).to_string();
+                            if imp.namespace.is_empty() {
+                                name
+                            } else {
+                                format!("{}.{}", imp.namespace, name)
+                            }
+                        }),
+                        _ => None,
+                    };
+                    if let Some(full) = resolved {
+                        out.push_str(&full);
                         i += prefix_len + close_rel + 1;
                         continue;
                     }
