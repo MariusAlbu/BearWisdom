@@ -329,6 +329,21 @@ impl SymbolIndex {
                             return_type
                                 .insert(sym.qualified_name.clone(), last.to_string());
                         }
+                        // Extra pass: some extractors emit no TypeRef refs
+                        // but DO populate a signature string with the return
+                        // type at the end (`method(...): ReturnType`). This
+                        // fires for synthetic .NET DLL metadata symbols
+                        // where there are no tree-sitter refs to mine. Only
+                        // fills the slot when a direct TypeRef path above
+                        // didn't find one, so languages that already set a
+                        // real return_type aren't overwritten.
+                        if !return_type.contains_key(&sym.qualified_name) {
+                            if let Some(sig) = &sym.signature {
+                                if let Some(rt) = parse_return_type_from_signature(sig) {
+                                    return_type.insert(sym.qualified_name.clone(), rt);
+                                }
+                            }
+                        }
                     }
                     // Classes/interfaces/structs with TypeRef to themselves may have
                     // generic type parameters in the signature.
@@ -680,6 +695,55 @@ fn tuple_element(raw: &str, idx: usize) -> Option<String> {
         parts.push(current.trim().to_string());
     }
     parts.into_iter().nth(idx)
+}
+
+/// Extract a return type from a method signature string of the shape
+/// `{name}{gp}(params): ReturnType`. Returns the substring after the
+/// last top-level `):` separator, trimmed. Returns `None` if the shape
+/// doesn't match (no parens, no colon after the closing paren, etc).
+///
+/// Top-level tracking: the colon must be at paren depth 0 so `(): ret`
+/// inside a nested function type like `(): () => void` doesn't get
+/// captured by mistake.
+///
+/// Used by the TypeInfo builder to populate return_type for synthetic
+/// .NET DLL metadata symbols that have no TypeRef edges but do carry
+/// a dotscope-formatted signature string.
+fn parse_return_type_from_signature(sig: &str) -> Option<String> {
+    // Find the top-level `):` separator. Scan right-to-left tracking
+    // paren depth from zero upward — the FIRST `)` at depth 0 (from
+    // the end) followed by `:` marks the return type boundary.
+    let bytes = sig.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    let mut depth_paren: i32 = 0;
+    let mut depth_angle: i32 = 0;
+    let mut depth_square: i32 = 0;
+    // Scan right-to-left so we get the outermost close paren.
+    for (i, &b) in bytes.iter().enumerate().rev() {
+        match b {
+            b')' => depth_paren += 1,
+            b'(' => depth_paren -= 1,
+            b'>' => depth_angle += 1,
+            b'<' => depth_angle -= 1,
+            b']' => depth_square += 1,
+            b'[' => depth_square -= 1,
+            b':' if depth_paren == 0 && depth_angle == 0 && depth_square == 0 => {
+                // Must be preceded by `)` at position i-1 (or earlier
+                // with whitespace). Trim whitespace and verify.
+                let before = sig[..i].trim_end();
+                if before.ends_with(')') {
+                    let after = sig[i + 1..].trim();
+                    if !after.is_empty() {
+                        return Some(after.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 fn infer_type_from_chain(
@@ -1664,6 +1728,36 @@ mod tests {
     fn test_scope_chain_from_path() {
         let chain = build_scope_chain(Some("A.B.C"));
         assert_eq!(chain, vec!["A.B.C", "A.B", "A"]);
+    }
+
+    #[test]
+    fn parse_return_type_from_dotnet_signature() {
+        assert_eq!(
+            parse_return_type_from_signature("Greet(string): string"),
+            Some("string".to_string())
+        );
+        assert_eq!(
+            parse_return_type_from_signature("Get<T>(int): Task<T>"),
+            Some("Task<T>".to_string())
+        );
+        assert_eq!(
+            parse_return_type_from_signature(
+                "Add<K, V>(K, V): Dictionary<K, V>"
+            ),
+            Some("Dictionary<K, V>".to_string())
+        );
+        // No trailing colon — Java style leading-return-type. Nothing to extract.
+        assert_eq!(parse_return_type_from_signature("String foo()"), None);
+        // Constructor — no colon suffix. Parser must not claim `Foo` or `()`.
+        assert_eq!(parse_return_type_from_signature("Foo()"), None);
+        // Generic with nested angle brackets — colons INSIDE must not fire.
+        assert_eq!(
+            parse_return_type_from_signature(
+                "Map<K: Ord, V>(K): V"
+            ),
+            Some("V".to_string())
+        );
+        assert_eq!(parse_return_type_from_signature(""), None);
     }
 
     #[test]

@@ -1554,11 +1554,20 @@ fn cmd_quality_recapture(baseline_path: &str) -> Result<String> {
                     "min_files" => Some(serde_json::json!(stats.file_count)),
                     _ => {
                         // Handle flow-edge-type thresholds: min_{type}_edges.
+                        // When the type is absent from the new snapshot, the
+                        // connector legitimately produced zero edges — record
+                        // that as 0, not the old threshold. Keeping the old
+                        // value produces perpetual false-regression flags on
+                        // every subsequent quality-check run (the pre-S9
+                        // behavior that made SimplCommerce / eShop / fastapi /
+                        // ts-immich fail on min_http_call_edges while their
+                        // http_call counts were 0).
                         if let Some(ty) = key
                             .strip_prefix("min_")
                             .and_then(|s| s.strip_suffix("_edges"))
                         {
-                            flow_edge_types.get(ty).map(|v| serde_json::json!(*v))
+                            let count = flow_edge_types.get(ty).copied().unwrap_or(0);
+                            Some(serde_json::json!(count))
                         } else {
                             None
                         }

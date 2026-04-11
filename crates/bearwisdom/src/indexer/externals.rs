@@ -1941,6 +1941,7 @@ fn parse_dotnet_dll(
                 &method.signature,
                 &type_generic_names,
                 &method_generic_names,
+                assembly.types().as_ref(),
             );
 
             symbols.push(ExtractedSymbol {
@@ -2021,27 +2022,28 @@ fn format_generic_suffix(names: &[String]) -> String {
 }
 
 /// Format a method signature in a shape the resolver's generic-param
-/// classifier can parse. The classifier scans for `<...>` at the top
-/// level of a signature string and splits on commas to extract parameter
-/// names, so we need the method's own generic params to appear inside
-/// angle brackets with their real names (not ECMA-335 `!!N` placeholders).
+/// classifier and chain walker can parse. The classifier scans for
+/// `<...>` at the top level of a signature string and splits on commas
+/// to extract parameter names; the chain walker reads the return type
+/// portion after the `:` separator.
 ///
 /// Shape: `{method_name}<U, V>(Param1, Param2): ReturnType`
 ///
-/// Parameter types and return type are rendered via `TypeSignature::Display`
-/// then post-processed to substitute ECMA-335 placeholders:
-/// - `!N`  → the declaring type's Nth generic parameter name
-/// - `!!N` → this method's Nth generic parameter name
+/// Parameter and return type strings get two post-processing passes:
+/// 1. ECMA-335 placeholder substitution (`!N` → type param, `!!N` → method param)
+/// 2. Metadata-token resolution: `class[00000042]` and `valuetype[00000042]`
+///    → `Namespace.TypeName` via a `TypeRegistry` lookup.
 ///
-/// Token-based type references (`class[00000042]`) remain as opaque
-/// tokens — resolving those to named types requires walking the TypeRef
-/// table, which is deferred. The classifier only needs the top-level
-/// `<...>` region, so unresolved inner tokens don't affect classification.
+/// Nested `GenericInst(class[…], args)` becomes `TypeName<T, U>` in one
+/// pass — Display renders `class[…]<T, U>` and the token substitution
+/// rewrites the leading `class[…]` to `TypeName` without touching the
+/// already-valid generic argument list.
 fn format_method_signature(
     method_name: &str,
     sig: &dotscope::metadata::signatures::SignatureMethod,
     type_generic_names: &[String],
     method_generic_names: &[String],
+    type_registry: &dotscope::metadata::typesystem::TypeRegistry,
 ) -> String {
     let gp_suffix = format_generic_suffix(method_generic_names);
 
@@ -2051,21 +2053,82 @@ fn format_method_signature(
             params_str.push_str(", ");
         }
         let rendered = format!("{}", p);
-        params_str.push_str(&substitute_generic_placeholders(
+        let substituted = substitute_generic_placeholders(
             &rendered,
             type_generic_names,
             method_generic_names,
-        ));
+        );
+        params_str.push_str(&resolve_signature_tokens(&substituted, type_registry));
     }
     params_str.push(')');
 
-    let return_str = substitute_generic_placeholders(
-        &format!("{}", sig.return_type),
+    let return_rendered = format!("{}", sig.return_type);
+    let return_substituted = substitute_generic_placeholders(
+        &return_rendered,
         type_generic_names,
         method_generic_names,
     );
+    let return_str = resolve_signature_tokens(&return_substituted, type_registry);
 
     format!("{method_name}{gp_suffix}{params_str}: {return_str}")
+}
+
+/// Replace ECMA-335 `class[HHHHHHHH]` / `valuetype[HHHHHHHH]` token
+/// placeholders with their resolved `Namespace.TypeName` via the
+/// supplied `TypeRegistry`. Leaves unresolvable tokens as-is so the
+/// caller's signature still renders and downstream parsers can still
+/// scan for the top-level `<...>` region.
+///
+/// `dotscope`'s `TypeSignature::Display` emits tokens as upper-case 8-hex
+/// digits wrapped in square brackets. We scan for both prefixes, parse
+/// the hex, look up the registry, and splice the result back in. The
+/// scan is left-to-right and handles multiple tokens per input string
+/// (e.g., generic instantiations like `class[01] <class[02], class[03]>`).
+fn resolve_signature_tokens(
+    rendered: &str,
+    type_registry: &dotscope::metadata::typesystem::TypeRegistry,
+) -> String {
+    use dotscope::metadata::token::Token;
+
+    let mut out = String::with_capacity(rendered.len());
+    let bytes = rendered.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let remaining = &rendered[i..];
+        let (prefix_len, skip_prefix) = if remaining.starts_with("class[") {
+            (6, true)
+        } else if remaining.starts_with("valuetype[") {
+            (10, true)
+        } else {
+            (0, false)
+        };
+        if skip_prefix {
+            // Scan for closing bracket.
+            let after_prefix = &remaining[prefix_len..];
+            if let Some(close_rel) = after_prefix.find(']') {
+                let hex = &after_prefix[..close_rel];
+                if let Ok(value) = u32::from_str_radix(hex, 16) {
+                    let token = Token::new(value);
+                    if let Some(ty) = type_registry.get(&token) {
+                        let namespace = ty.namespace.clone();
+                        let name = strip_backtick_arity(&ty.name).to_string();
+                        if namespace.is_empty() {
+                            out.push_str(&name);
+                        } else {
+                            out.push_str(&namespace);
+                            out.push('.');
+                            out.push_str(&name);
+                        }
+                        i += prefix_len + close_rel + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
 }
 
 /// Replace ECMA-335 generic parameter placeholders with their real names.

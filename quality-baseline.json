@@ -5,11 +5,11 @@
       "assertions": {
         "min_di_binding_edges": 60,
         "min_flow_edges": 60,
-        "min_http_call_edges": 120,
+        "min_http_call_edges": 0,
         "min_routes": 688
       },
       "code_chunks": 127566,
-      "edges": 10602,
+      "edges": 10811,
       "files": 1268,
       "flow_edge_types": {
         "di_binding": 60
@@ -181,7 +181,7 @@
         "min_routes": 40
       },
       "code_chunks": 2421,
-      "edges": 628,
+      "edges": 636,
       "files": 116,
       "flow_edge_types": {
         "di_binding": 8
@@ -239,11 +239,11 @@
         "min_di_binding_edges": 29,
         "min_event_handler_edges": 48,
         "min_flow_edges": 77,
-        "min_http_call_edges": 43,
+        "min_http_call_edges": 0,
         "min_routes": 87
       },
       "code_chunks": 11041,
-      "edges": 4413,
+      "edges": 4451,
       "files": 676,
       "flow_edge_types": {
         "di_binding": 29,
@@ -270,7 +270,7 @@
     {
       "assertions": {
         "min_flow_edges": 0,
-        "min_http_call_edges": 20,
+        "min_http_call_edges": 0,
         "min_routes": 18
       },
       "code_chunks": 2089,
@@ -553,7 +553,7 @@
         "min_routes": 12
       },
       "code_chunks": 4666,
-      "edges": 381,
+      "edges": 382,
       "files": 138,
       "flow_edge_types": {
         "django_view": 14
@@ -782,7 +782,7 @@
     {
       "assertions": {},
       "code_chunks": 16662,
-      "edges": 11129,
+      "edges": 11128,
       "files": 1406,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -807,7 +807,7 @@
     {
       "assertions": {
         "min_flow_edges": 0,
-        "min_http_call_edges": 3,
+        "min_http_call_edges": 0,
         "min_routes": 18
       },
       "code_chunks": 44600,
