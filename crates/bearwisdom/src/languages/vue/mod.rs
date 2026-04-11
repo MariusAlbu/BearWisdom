@@ -24,7 +24,7 @@ mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct VuePlugin;
 
@@ -52,6 +52,18 @@ impl LanguagePlugin for VuePlugin {
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
+    }
+
+    /// Split out `<script>` / `<script setup lang="ts">` and `<style>` blocks
+    /// for sub-extraction by the JS/TS/CSS/SCSS plugins. Indexer splices the
+    /// resulting symbols/refs back into the same `.vue` file.
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        crate::languages::common::extract_html_script_style_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

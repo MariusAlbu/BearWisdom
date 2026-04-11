@@ -23,7 +23,7 @@ mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct AstroPlugin;
 
@@ -51,6 +51,23 @@ impl LanguagePlugin for AstroPlugin {
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
+    }
+
+    /// Extract the `---`-delimited TypeScript frontmatter block plus any
+    /// inline `<script>` / `<style>` blocks in the markup. The frontmatter
+    /// holds the imports and data-fetching code the JS extractor needs to
+    /// resolve component references against.
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        let mut regions = crate::languages::common::extract_html_script_style_regions(source);
+        if let Some(frontmatter) = crate::languages::common::extract_astro_frontmatter(source) {
+            regions.insert(0, frontmatter);
+        }
+        regions
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

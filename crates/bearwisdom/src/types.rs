@@ -313,6 +313,67 @@ pub struct ExtractionResult {
     pub has_errors: bool,
 }
 
+// ---------------------------------------------------------------------------
+// Embedded-region dispatch (multi-language host files)
+// ---------------------------------------------------------------------------
+
+/// A region of text inside a host file that should be parsed by a different
+/// language extractor. Produced by host extractors (Svelte/Vue/Astro/Razor/
+/// HTML/PHP/MDX) via the separate `LanguagePlugin::embedded_regions` trait
+/// method; the indexer dispatches each region to the plugin for its declared
+/// language, re-runs locals filtering against the sub-grammar, and splices
+/// the resulting symbols/refs back into the host file with line/column
+/// offsets applied.
+#[derive(Debug, Clone)]
+pub struct EmbeddedRegion {
+    /// Language id the sub-extractor should be looked up by — matches the
+    /// ids registered in `LanguageRegistry` (e.g. `"typescript"`, `"javascript"`,
+    /// `"css"`, `"scss"`, `"csharp"`).
+    pub language_id: String,
+    /// The raw text of the region, already stripped of any host-language
+    /// delimiters (e.g. `<script>…</script>` → the text between the tags).
+    pub text: String,
+    /// 0-based line number in the host file where `text` begins.
+    pub line_offset: u32,
+    /// 0-based column offset in the host file for the first line of `text`.
+    /// Only applied to symbols/refs that start on line 0 of the sub-extraction.
+    pub col_offset: u32,
+    /// Semantic role of this region — used for diagnostics and for origin
+    /// attribution on spliced symbols.
+    pub origin: EmbeddedOrigin,
+    /// Byte spans inside `text` that should be blanked out before sub-parsing.
+    /// Used for interpolation punch-through in string-embedded DSLs
+    /// (e.g. `` sql`SELECT * FROM ${t}` `` — the `${t}` span becomes whitespace
+    /// so the SQL grammar sees syntactically valid text). Empty for host-file
+    /// consumers like Svelte/Vue/Astro/Razor, which emit whole blocks verbatim.
+    pub holes: Vec<Span>,
+}
+
+/// A half-open byte range `[start, end)` inside an `EmbeddedRegion::text`.
+#[derive(Debug, Clone, Copy)]
+pub struct Span {
+    pub start: usize,
+    pub end: usize,
+}
+
+/// Where an embedded region came from inside the host file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum EmbeddedOrigin {
+    /// `<script>` / `<script lang="ts">` / `<script setup>` block inside an
+    /// HTML-dialect host file (Vue, Svelte, Astro, Razor, plain HTML).
+    ScriptBlock,
+    /// `<style>` / `<style lang="scss">` block inside an HTML-dialect host.
+    StyleBlock,
+    /// Astro-style `---`-delimited frontmatter at the top of a file.
+    Frontmatter,
+    /// Razor `@{}`, `@functions{}`, `@code{}`, `@model`, `@inject`, `@(expr)`
+    /// directive or statement block containing C#.
+    RazorCode,
+    /// A tagged template literal or string argument in Tier-3 string DSLs
+    /// (SQL in C# raw strings, GraphQL in TS `gql\`…\``, CSS-in-JS, etc.).
+    StringDsl,
+}
+
 impl ExtractionResult {
     pub fn new(
         symbols: Vec<ExtractedSymbol>,
@@ -368,6 +429,13 @@ pub struct ParsedFile {
     pub refs: Vec<ExtractedRef>,
     pub routes: Vec<ExtractedRoute>,
     pub db_sets: Vec<ExtractedDbSet>,
+    /// Origin language per symbol (indexed same as `symbols`). `None` at a
+    /// given index means "same as `language`"; `Some(lang_id)` means the
+    /// symbol was produced by a sub-extractor on an embedded region (e.g. a
+    /// TypeScript symbol from a `<script lang="ts">` block inside a `.vue`
+    /// file). Always the same length as `symbols`, or empty if no sub-
+    /// extraction happened (DB insert treats empty as all-None).
+    pub symbol_origin_languages: Vec<Option<String>>,
     /// Raw file content, retained for FTS5 content indexing and code chunk extraction.
     pub content: Option<String>,
     /// True if tree-sitter reported syntax errors (extraction is still attempted).

@@ -22,7 +22,7 @@ pub mod common;
 pub mod registry;
 
 use crate::indexer::resolve::engine::LanguageResolver;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 // Re-export the shared utility from common so existing callers using
@@ -56,6 +56,29 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// - `file_path`: relative path (used for heuristics like `.tsx` detection)
     /// - `lang_id`: the language ID from detection (e.g., "typescript" or "tsx")
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult;
+
+    /// Return sub-language text regions contained in this file (e.g. the
+    /// `<script lang="ts">` block inside a Vue SFC, the frontmatter inside an
+    /// Astro file, the `@code { }` block inside a Razor view). The indexer
+    /// dispatches each region to the plugin for its declared language,
+    /// re-runs locals filtering against the sub-grammar, and splices the
+    /// resulting symbols/refs back into the host file with line/column
+    /// offsets applied.
+    ///
+    /// Host extractors that carry embedded sub-languages (Svelte/Vue/Astro/
+    /// Razor/HTML/PHP/MDX) override this. Leaf languages leave the default.
+    ///
+    /// Called by `indexer/full::parse_file` AFTER `extract()` returns — so
+    /// host extractors that parse their source once can cache the parse and
+    /// serve both calls, or re-parse cheaply here.
+    fn embedded_regions(
+        &self,
+        _source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        Vec::new()
+    }
 
     /// Node kinds that SHOULD produce symbols, per the extraction rules.
     /// Used by `bw coverage` to measure extraction completeness.

@@ -1856,6 +1856,7 @@ mod tests {
             refs: vec![],
             routes: vec![],
             db_sets: vec![],
+            symbol_origin_languages: vec![],
         };
 
         let mut id_map = HashMap::new();
@@ -1919,6 +1920,7 @@ mod tests {
             refs: vec![],
             routes: vec![],
             db_sets: vec![],
+            symbol_origin_languages: vec![],
         }
     }
 

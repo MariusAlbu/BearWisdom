@@ -527,6 +527,7 @@ mod resolve_tests {
             refs,
             routes: vec![],
             db_sets: vec![],
+            symbol_origin_languages: vec![],
         }
     }
 
@@ -555,6 +556,7 @@ mod resolve_tests {
                 refs: f.refs.clone(),
                 routes: vec![],
                 db_sets: vec![],
+                symbol_origin_languages: vec![],
             })
             .collect();
         let index = SymbolIndex::build(&owned, &id_map);

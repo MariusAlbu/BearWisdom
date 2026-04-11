@@ -93,12 +93,22 @@ pub fn write_parsed_files_with_origin(
             .execute([file_id])?;
 
         // Insert all symbols.
-        for sym in &pf.symbols {
+        for (i, sym) in pf.symbols.iter().enumerate() {
+            // Sub-extracted symbols carry their own origin language (e.g. TS
+            // inside a .vue file). Host-extracted symbols use the file's
+            // language — represented as NULL in the column for storage
+            // efficiency and queryability ("WHERE origin_language IS NOT NULL"
+            // yields only spliced multi-language symbols).
+            let origin_language: Option<&str> = pf
+                .symbol_origin_languages
+                .get(i)
+                .and_then(|o| o.as_deref());
+
             tx.prepare_cached(
                 "INSERT INTO symbols
                    (file_id, name, qualified_name, kind, line, col,
-                    end_line, end_col, scope_path, signature, doc_comment, visibility, origin)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+                    end_line, end_col, scope_path, signature, doc_comment, visibility, origin, origin_language)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             )
             .context("Failed to prepare symbol insert")?
             .execute(rusqlite::params![
@@ -115,6 +125,7 @@ pub fn write_parsed_files_with_origin(
                 sym.doc_comment,
                 sym.visibility.map(|v| v.as_str()),
                 origin,
+                origin_language,
             ])
             .with_context(|| {
                 format!("Failed to insert symbol {} in {}", sym.qualified_name, pf.path)

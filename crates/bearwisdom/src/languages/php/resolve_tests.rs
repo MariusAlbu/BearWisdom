@@ -65,6 +65,7 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         refs,
         routes: vec![],
         db_sets: vec![],
+        symbol_origin_languages: vec![],
     }
 }
 
@@ -93,6 +94,7 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             refs: f.refs.clone(),
             routes: vec![],
             db_sets: vec![],
+            symbol_origin_languages: vec![],
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);

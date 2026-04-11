@@ -59,6 +59,7 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &CLOJURE,
     &OCAML,
     &SVELTE,
+    &VUE,
     &ASTRO,
     &MATLAB,
     &PERL,

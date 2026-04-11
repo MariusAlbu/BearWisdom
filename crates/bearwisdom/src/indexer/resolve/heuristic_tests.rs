@@ -14,6 +14,7 @@ fn make_parsed_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<Extract
         refs,
         routes: vec![],
         db_sets: vec![],
+        symbol_origin_languages: vec![],
         content: None,
         has_errors: false,
     }

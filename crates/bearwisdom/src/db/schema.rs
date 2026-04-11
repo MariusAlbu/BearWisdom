@@ -122,6 +122,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_files_origin ON files(origin);
          CREATE INDEX IF NOT EXISTS idx_symbols_origin ON symbols(origin);"
     )?;
+    // v0.6: Add origin_language to symbols for multi-language host files
+    // (Vue/Svelte/Astro/Razor/HTML/PHP). NULL = same as the file's language.
+    // Populated by the indexer when it splices sub-extracted symbols back into
+    // a host file; lets queries filter "show me only the TS symbols in this .vue".
+    if !column_exists(conn, "symbols", "origin_language") {
+        conn.execute_batch(
+            "ALTER TABLE symbols ADD COLUMN origin_language TEXT"
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_symbols_origin_language
+           ON symbols(origin_language) WHERE origin_language IS NOT NULL"
+    )?;
     Ok(())
 }
 
@@ -214,7 +227,8 @@ CREATE TABLE IF NOT EXISTS symbols (
     doc_comment    TEXT,   -- XML doc comment (C#) or JSDoc (TS), used by FTS5
     visibility     TEXT,
     incoming_edge_count INTEGER NOT NULL DEFAULT 0,  -- materialized centrality signal
-    origin         TEXT    NOT NULL DEFAULT 'internal'  -- 'internal' | 'external'; mirrors files.origin for fast filtering
+    origin         TEXT    NOT NULL DEFAULT 'internal',  -- 'internal' | 'external'; mirrors files.origin for fast filtering
+    origin_language TEXT   -- sub-language id when different from files.language (NULL = same); set for symbols spliced in from embedded regions (e.g. a script block inside a Vue SFC)
 );
 
 CREATE INDEX IF NOT EXISTS idx_symbols_name      ON symbols(name);

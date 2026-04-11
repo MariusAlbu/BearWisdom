@@ -1992,6 +1992,7 @@ fn parse_dotnet_dll(
         refs: Vec::new(),
         routes: Vec::new(),
         db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
         content: None,
         has_errors: false,
     })

@@ -27,7 +27,7 @@ mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct SveltePlugin;
 
@@ -55,6 +55,18 @@ impl LanguagePlugin for SveltePlugin {
 
     fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source, file_path)
+    }
+
+    /// Split out `<script>` and `<style>` blocks for sub-extraction by the
+    /// JS/TS/CSS/SCSS plugins. The indexer calls this after `extract()` and
+    /// splices the resulting symbols/refs back into the same `.svelte` file.
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        crate::languages::common::extract_html_script_style_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
