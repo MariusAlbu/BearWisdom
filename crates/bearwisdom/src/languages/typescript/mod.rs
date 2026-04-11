@@ -122,6 +122,14 @@ impl LanguagePlugin for TypeScriptPlugin {
         externals::framework_globals(dependencies)
     }
 
+    fn externals_locator(
+        &self,
+    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
+        Some(std::sync::Arc::new(
+            crate::indexer::externals::TypeScriptExternalsLocator,
+        ))
+    }
+
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::TypeScriptResolver))
     }

@@ -111,7 +111,7 @@
     "language": "rust",
     "files": 250,
     "symbols": 10393,
-    "edges": 11623,
+    "edges": 11624,
     "external": 28126,
     "unresolved": 1724,
     "resolution_rate": 95.8
@@ -326,10 +326,10 @@
   "cmake-cpm": {
     "language": "cmake",
     "files": 104,
-    "symbols": 1379,
+    "symbols": 1382,
     "edges": 782,
-    "external": 1910,
-    "unresolved": 1034,
+    "external": 1912,
+    "unresolved": 1035,
     "resolution_rate": 72.2
   },
   "dart-frog": {

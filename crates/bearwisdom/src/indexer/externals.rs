@@ -12,11 +12,13 @@
 // =============================================================================
 
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
 use crate::indexer::manifest::go_mod::{find_go_mod, parse_go_mod, GoModDep};
 use crate::indexer::manifest::npm::NpmManifest;
 use crate::indexer::manifest::pyproject::PyProjectManifest;
 use crate::indexer::manifest::ManifestReader;
+use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 use tracing::debug;
 
@@ -32,6 +34,208 @@ pub struct ExternalDepRoot {
     pub root: PathBuf,
     /// Ecosystem identifier. "go" for now.
     pub ecosystem: &'static str,
+}
+
+// ---------------------------------------------------------------------------
+// ExternalSourceLocator — per-ecosystem external discovery trait
+// ---------------------------------------------------------------------------
+
+/// One-language strategy for finding external dependency source on disk and
+/// turning it into walker / parser input for the main indexing pipeline.
+///
+/// Two output shapes, chosen per ecosystem:
+///
+///   * **Source-file locators** implement `locate_roots` + `walk_root`. The
+///     pipeline walks each root into `WalkedFile`s and parses them with the
+///     language's extractor. Used by Go, Python, TypeScript, Java (sources
+///     jar extraction produces real .java files on disk), and any future
+///     source-shipping ecosystem (Ruby, Elixir, Dart, Rust, PHP, Scala,
+///     Lua, OCaml, Perl, etc.).
+///
+///   * **Metadata locators** implement `parse_metadata_only`. The pipeline
+///     trusts the returned `ParsedFile` entries without re-walking. Used by
+///     ecosystems where source isn't distributed — today only .NET (DLL
+///     metadata via dotscope). Haskell `.hi`, OCaml `.cmi`, R `.rdb` are
+///     future consumers of this path.
+///
+/// Implementations may return both kinds at once (future: Java could return
+/// source jars when available and `.class` metadata as a fallback) — the
+/// default trait methods make unused paths zero-cost.
+pub trait ExternalSourceLocator: Send + Sync {
+    /// Stable identifier for this locator. Used in logs and diagnostics.
+    /// Must be distinct per ecosystem: `"go"`, `"python"`, `"typescript"`,
+    /// `"java"`, `"dotnet"`, `"ruby"`, `"elixir"`, etc.
+    fn ecosystem(&self) -> &'static str;
+
+    /// Discover every external package root belonging to this ecosystem
+    /// for the given project. An empty vec means "nothing to index" —
+    /// never an error. Missing package caches, unavailable toolchains,
+    /// and absent manifests all degrade to an empty vec.
+    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+        Vec::new()
+    }
+
+    /// Enumerate source files under one discovered root. Language-specific
+    /// filtering (skip tests, skip docs, skip minified bundles) lives here.
+    /// Only called for roots this locator's `locate_roots` returned.
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
+
+    /// Alternative output path for ecosystems where source isn't on disk.
+    /// Returns pre-built `ParsedFile` rows straight from compiled metadata
+    /// (.NET DLL via dotscope today, Haskell .hi / OCaml .cmi / R .rdb in
+    /// future phases). Default implementation returns `None`, meaning this
+    /// locator uses the source walk path exclusively.
+    fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
+        None
+    }
+
+    /// Optional per-file post-processing hook applied after the main
+    /// extractor has parsed a walked file. Used by the TS locator today
+    /// to prefix bare declaration symbols with their package name so the
+    /// Tier-1 resolver can match `package.Symbol` lookups. Default is a
+    /// no-op.
+    fn post_process_parsed(&self, _parsed: &mut ParsedFile) {}
+}
+
+// ---------------------------------------------------------------------------
+// Per-ecosystem locator implementations — thin wrappers over the existing
+// free-function pipelines. Phase 0a is a pure abstraction refactor with no
+// behavioural change; the call graph below each locator's methods is the
+// exact same code that full.rs::parse_external_sources used to call
+// directly.
+// ---------------------------------------------------------------------------
+
+/// Go module cache → `discover_go_externals` + `walk_external_root`.
+pub struct GoExternalsLocator;
+
+impl ExternalSourceLocator for GoExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "go" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_go_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_external_root(dep)
+    }
+}
+
+/// Python site-packages → `discover_python_externals` + `walk_python_external_root`.
+pub struct PythonExternalsLocator;
+
+impl ExternalSourceLocator for PythonExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "python" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_python_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_python_external_root(dep)
+    }
+}
+
+/// node_modules + @types → `discover_ts_externals` + `walk_ts_external_root`.
+/// Adds a post-process pass that rewrites TS declaration-file symbols to
+/// `package.Symbol` qualified names so the Tier-1 resolver can match
+/// `import { Button } from 'my-pkg'` → `my-pkg.Button`.
+pub struct TypeScriptExternalsLocator;
+
+impl ExternalSourceLocator for TypeScriptExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "typescript" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_ts_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_ts_external_root(dep)
+    }
+
+    fn post_process_parsed(&self, parsed: &mut ParsedFile) {
+        if let Some(pkg) = ts_package_from_virtual_path(&parsed.path).map(str::to_string) {
+            prefix_ts_external_symbols(parsed, &pkg);
+        }
+    }
+}
+
+/// Maven local repository → `discover_java_externals` + `walk_java_external_root`.
+/// Source jars are extracted on demand by the discovery pass; this locator
+/// returns the extracted directory roots.
+pub struct JavaExternalsLocator;
+
+impl ExternalSourceLocator for JavaExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "java" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_java_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_java_external_root(dep)
+    }
+}
+
+/// NuGet global cache → `parse_dotnet_externals`. .NET is the metadata-only
+/// path: DLLs are parsed by dotscope and emitted as synthetic `ParsedFile`
+/// entries, bypassing the walk-and-extract pipeline.
+pub struct DotNetExternalsLocator;
+
+impl ExternalSourceLocator for DotNetExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "dotnet" }
+
+    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
+        let parsed = parse_dotnet_externals(project_root);
+        if parsed.is_empty() {
+            None
+        } else {
+            Some(parsed)
+        }
+    }
+}
+
+/// Extract the package name from a TS external-file virtual path like
+/// `ext:ts:@types/react/index.d.ts` → `@types/react`, or
+/// `ext:ts:lodash/lodash.d.ts` → `lodash`. Used by the TS locator's
+/// `post_process_parsed` hook to prefix bare declaration-file symbols with
+/// their owning package name so the Tier-1 resolver matches
+/// `import { X } from 'pkg'` → `pkg.X`.
+///
+/// This is the canonical implementation — previously lived as a private
+/// helper in `indexer/full.rs`. Moved here alongside the TS locator so the
+/// Phase 0 refactor keeps the helper and its one caller in the same file.
+pub(crate) fn ts_package_from_virtual_path(path: &str) -> Option<&str> {
+    let rest = path.strip_prefix("ext:ts:")?;
+    // Scoped package: `@foo/bar/...` — the package name is the first two
+    // slash-separated segments joined.
+    if rest.starts_with('@') {
+        let mut parts = rest.splitn(3, '/');
+        let scope = parts.next()?;
+        let name = parts.next()?;
+        let end_byte = scope.len() + 1 + name.len();
+        Some(&rest[..end_byte])
+    } else {
+        let slash = rest.find('/')?;
+        Some(&rest[..slash])
+    }
+}
+
+/// Convenience — build the fixed set of 5 locators that ship today. Phase 1+
+/// ecosystems attach to this list as they land. Language plugins also expose
+/// their own locator via `LanguagePlugin::externals_locator`; that's the
+/// long-term dispatch path. This standalone builder stays available for
+/// unit tests and diagnostic commands that want to sidestep the plugin
+/// registry.
+pub fn builtin_locators() -> Vec<Arc<dyn ExternalSourceLocator>> {
+    vec![
+        Arc::new(GoExternalsLocator),
+        Arc::new(PythonExternalsLocator),
+        Arc::new(TypeScriptExternalsLocator),
+        Arc::new(JavaExternalsLocator),
+        Arc::new(DotNetExternalsLocator),
+    ]
 }
 
 // ---------------------------------------------------------------------------

@@ -342,119 +342,98 @@ pub fn full_index(
 /// Returns an empty vec if no externals are discovered. Individual parse
 /// failures are logged but don't abort.
 fn parse_external_sources(project_root: &Path, registry: &LanguageRegistry) -> Vec<ParsedFile> {
-    use crate::indexer::externals;
+    use crate::indexer::externals::ExternalSourceLocator;
+    use std::sync::Arc;
 
-    // Collect walked files from every supported ecosystem in one batch
-    // so the rayon parallel parse sees them all at once.
+    // Collect every distinct `ExternalSourceLocator` exposed by a registered
+    // language plugin. Plugins without a locator (bash, make, sql, etc.) are
+    // silently skipped. Two or more plugins sharing the same locator (future:
+    // Vue/Svelte/Astro all routing through the TypeScript locator) are
+    // deduplicated by ecosystem id.
+    let mut seen_ecosystems: std::collections::HashSet<&'static str> =
+        std::collections::HashSet::new();
+    let mut locators: Vec<Arc<dyn ExternalSourceLocator>> = Vec::new();
+    for plugin in registry.all() {
+        if let Some(locator) = plugin.externals_locator() {
+            if seen_ecosystems.insert(locator.ecosystem()) {
+                locators.push(locator);
+            }
+        }
+    }
+
+    // Walk source-based locators first; metadata-only locators (.NET) feed
+    // their pre-built ParsedFile entries in after the parallel parse pass.
     let mut walked: Vec<WalkedFile> = Vec::new();
+    let mut walked_owners: Vec<Arc<dyn ExternalSourceLocator>> = Vec::new();
+    let mut metadata_parsed: Vec<ParsedFile> = Vec::new();
 
-    let go_roots = externals::discover_go_externals(project_root);
-    if !go_roots.is_empty() {
-        info!("Discovered {} external Go dependency roots", go_roots.len());
-        for dep in &go_roots {
-            walked.extend(externals::walk_external_root(dep));
+    for locator in &locators {
+        // Source-file path.
+        let roots = locator.locate_roots(project_root);
+        if !roots.is_empty() {
+            info!(
+                "Discovered {} external {} dependency roots",
+                roots.len(),
+                locator.ecosystem()
+            );
+            for dep in &roots {
+                let files = locator.walk_root(dep);
+                walked_owners.extend(std::iter::repeat(locator.clone()).take(files.len()));
+                walked.extend(files);
+            }
         }
-    }
 
-    let py_roots = externals::discover_python_externals(project_root);
-    if !py_roots.is_empty() {
-        info!(
-            "Discovered {} external Python dependency roots",
-            py_roots.len()
-        );
-        for dep in &py_roots {
-            walked.extend(externals::walk_python_external_root(dep));
+        // Metadata-only path (today only .NET).
+        if let Some(pre_parsed) = locator.parse_metadata_only(project_root) {
+            info!(
+                "Parsed {} external {} entries via metadata",
+                pre_parsed.len(),
+                locator.ecosystem()
+            );
+            metadata_parsed.extend(pre_parsed);
         }
-    }
-
-    let ts_roots = externals::discover_ts_externals(project_root);
-    if !ts_roots.is_empty() {
-        info!(
-            "Discovered {} external TypeScript dependency roots",
-            ts_roots.len()
-        );
-        for dep in &ts_roots {
-            walked.extend(externals::walk_ts_external_root(dep));
-        }
-    }
-
-    let java_roots = externals::discover_java_externals(project_root);
-    if !java_roots.is_empty() {
-        info!(
-            "Discovered {} external Java dependency roots",
-            java_roots.len()
-        );
-        for dep in &java_roots {
-            walked.extend(externals::walk_java_external_root(dep));
-        }
-    }
-
-    // .NET externals are read from DLL metadata, not source text, so they
-    // bypass the WalkedFile → parse_file path entirely and come back as
-    // synthetic ParsedFile entries. Append them to whatever the source-
-    // based walk produces below.
-    let dotnet_parsed = externals::parse_dotnet_externals(project_root);
-    if !dotnet_parsed.is_empty() {
-        info!(
-            "Parsed {} external .NET assemblies via NuGet metadata",
-            dotnet_parsed.len()
-        );
     }
 
     if walked.is_empty() {
-        return dotnet_parsed;
+        return metadata_parsed;
     }
     debug!("Walking {} external source files total", walked.len());
 
     let results: Vec<Result<ParsedFile>> =
         walked.par_iter().map(|w| parse_file(w, registry)).collect();
 
-    let mut parsed = Vec::with_capacity(results.len() + dotnet_parsed.len());
+    let mut parsed = Vec::with_capacity(results.len() + metadata_parsed.len());
     let mut errors = 0usize;
-    for (walked, res) in walked.iter().zip(results) {
+    for ((walked_file, owner), res) in walked.iter().zip(walked_owners.iter()).zip(results) {
         match res {
             Ok(mut pf) => {
-                // TS declaration files lack a package-level scope, so the
-                // extractor yields bare qualified names (`Button`). The TS
-                // Tier 1 resolver looks up `{import_module}.{target}`, so
-                // we rewrite external TS symbols to `{package}.{name}` here.
-                let pkg = ts_package_from_virtual_path(&pf.path).map(str::to_string);
-                if let Some(pkg) = pkg {
-                    externals::prefix_ts_external_symbols(&mut pf, &pkg);
-                }
+                // Per-locator post-processing hook: TS rewrites declaration
+                // file symbols to package-qualified names here.
+                owner.post_process_parsed(&mut pf);
                 parsed.push(pf)
             }
             Err(e) => {
                 errors += 1;
-                debug!("External parse failed for {}: {e}", walked.relative_path);
+                debug!(
+                    "External parse failed for {}: {e}",
+                    walked_file.relative_path
+                );
             }
         }
     }
     if errors > 0 {
         debug!("{errors} external files failed to parse (non-fatal)");
     }
-    parsed.extend(dotnet_parsed);
+    parsed.extend(metadata_parsed);
     parsed
 }
 
 /// Extract the package name from a virtual path like `ext:ts:fake-ui/index.d.ts`
 /// or `ext:ts:@tanstack/react-query/dist/index.d.ts`. Returns `None` for
 /// non-TS virtual paths.
-fn ts_package_from_virtual_path(path: &str) -> Option<&str> {
-    let rest = path.strip_prefix("ext:ts:")?;
-    // Scoped package: `@foo/bar/...` — the package name is the first two
-    // slash-separated segments joined.
-    if rest.starts_with('@') {
-        let mut parts = rest.splitn(3, '/');
-        let scope = parts.next()?;
-        let name = parts.next()?;
-        let end_byte = scope.len() + 1 + name.len();
-        Some(&rest[..end_byte])
-    } else {
-        let slash = rest.find('/')?;
-        Some(&rest[..slash])
-    }
-}
+// ts_package_from_virtual_path moved to indexer/externals.rs as part of the
+// Phase 0 ExternalSourceLocator refactor — it's called from the TS locator's
+// post_process_parsed hook and nowhere else.
 
 pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
     let bytes = std::fs::read(&walked.absolute_path)
