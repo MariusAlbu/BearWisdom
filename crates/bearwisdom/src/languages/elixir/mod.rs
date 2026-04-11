@@ -3,6 +3,7 @@
 mod helpers;
 pub(crate) mod connectors;
 pub(crate) mod externals;
+pub(crate) mod phoenix_routes;
 pub(crate) mod primitives;
 pub mod extract;
 

@@ -111,7 +111,7 @@
     "language": "rust",
     "files": 250,
     "symbols": 10393,
-    "edges": 11623,
+    "edges": 11624,
     "external": 28126,
     "unresolved": 1724,
     "resolution_rate": 95.8
@@ -155,11 +155,11 @@
   "elixir-changelog": {
     "language": "elixir",
     "files": 886,
-    "symbols": 7891,
-    "edges": 24158,
-    "external": 33495,
-    "unresolved": 10131,
-    "resolution_rate": 85.1
+    "symbols": 8137,
+    "edges": 24379,
+    "external": 33497,
+    "unresolved": 9647,
+    "resolution_rate": 85.7
   },
   "ruby-sidekiq": {
     "language": "ruby",
@@ -326,10 +326,10 @@
   "cmake-cpm": {
     "language": "cmake",
     "files": 104,
-    "symbols": 1385,
+    "symbols": 1382,
     "edges": 782,
-    "external": 1914,
-    "unresolved": 1036,
+    "external": 1912,
+    "unresolved": 1035,
     "resolution_rate": 72.2
   },
   "dart-frog": {

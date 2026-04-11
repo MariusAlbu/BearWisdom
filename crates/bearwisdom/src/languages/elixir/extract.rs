@@ -62,7 +62,79 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // the top-down walker may have missed. Emits TypeRef for each.
     scan_all_type_refs(root, source, &mut refs);
 
+    // Phoenix route helper synthesis (Phase 1.2b). When the source module
+    // uses `Phoenix.Router` directly OR via the Phoenix 1.5+ indirection
+    // pattern `use MyAppWeb, :router` (where MyAppWeb is the project's
+    // wrapper module), every declared route produces compile-time helper
+    // functions `Routes.*_path` / `Routes.*_url`. BearWisdom doesn't
+    // execute Elixir macros, so these names never appear as source-
+    // defined symbols. Synthesise a Function symbol per derived helper
+    // so the resolver can match them.
+    if is_phoenix_router_module(source) {
+        super::phoenix_routes::synthesize_route_helpers(source, &mut symbols);
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Detect whether an Elixir source file is a Phoenix router module that
+/// should receive compile-time route helper synthesis.
+///
+/// Matches:
+///   * `use Phoenix.Router`               (legacy direct form)
+///   * `use <MyAppWeb>, :router`          (Phoenix 1.5+ indirect form — the
+///                                        project's Web module re-exports
+///                                        Phoenix.Router via `quote`)
+fn is_phoenix_router_module(source: &str) -> bool {
+    if source.contains("Phoenix.Router") {
+        return true;
+    }
+    // Cheap substring check for the indirect form. Avoids pulling in the
+    // regex crate for a simple pattern we can recognise with string ops.
+    for line in source.lines() {
+        let trimmed = line.trim();
+        if !trimmed.starts_with("use ") {
+            continue;
+        }
+        if trimmed.contains(", :router") || trimmed.contains(",:router") {
+            return true;
+        }
+    }
+    false
+}
+
+#[cfg(test)]
+mod phoenix_router_detect_tests {
+    use super::is_phoenix_router_module;
+
+    #[test]
+    fn detects_direct_phoenix_router() {
+        assert!(is_phoenix_router_module(
+            "defmodule Router do\n  use Phoenix.Router\nend"
+        ));
+    }
+
+    #[test]
+    fn detects_phoenix_15_indirect_form() {
+        assert!(is_phoenix_router_module(
+            "defmodule ChangelogWeb.Router do\n  use ChangelogWeb, :router\nend"
+        ));
+    }
+
+    #[test]
+    fn rejects_non_router_module() {
+        assert!(!is_phoenix_router_module(
+            "defmodule Foo do\n  def bar, do: :ok\nend"
+        ));
+    }
+
+    #[test]
+    fn rejects_router_alias_without_use() {
+        // The module uses `:router` as a key in a struct, not a `use` macro.
+        assert!(!is_phoenix_router_module(
+            "defmodule Foo do\n  @opts [type: :router]\nend"
+        ));
+    }
 }
 
 // ---------------------------------------------------------------------------
