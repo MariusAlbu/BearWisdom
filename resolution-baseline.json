@@ -21,10 +21,10 @@
     "language": "typescript",
     "files": 43,
     "symbols": 344,
-    "edges": 374,
-    "external": 1066,
+    "edges": 697,
+    "external": 685,
     "unresolved": 12,
-    "resolution_rate": 99.2
+    "resolution_rate": 99.1
   },
   "ts-rallly": {
     "language": "typescript",
@@ -39,10 +39,10 @@
     "language": "javascript",
     "files": 278,
     "symbols": 8616,
-    "edges": 8053,
-    "external": 19680,
-    "unresolved": 2197,
-    "resolution_rate": 92.7
+    "edges": 9880,
+    "external": 17993,
+    "unresolved": 1863,
+    "resolution_rate": 93.7
   },
   "vue-vuestic-admin": {
     "language": "vue",
@@ -57,14 +57,14 @@
     "language": "typescript",
     "files": 213,
     "symbols": 746,
-    "edges": 411,
-    "external": 3386,
+    "edges": 1772,
+    "external": 1811,
     "unresolved": 68,
-    "resolution_rate": 98.2
+    "resolution_rate": 98.1
   },
   "goxygen": {
     "language": "go",
-    "files": 86,
+    "files": 87,
     "symbols": 318,
     "edges": 232,
     "external": 1444,
@@ -109,9 +109,9 @@
   },
   "rust-ast-grep": {
     "language": "rust",
-    "files": 249,
+    "files": 250,
     "symbols": 10393,
-    "edges": 11625,
+    "edges": 11623,
     "external": 28126,
     "unresolved": 1724,
     "resolution_rate": 95.8
@@ -145,7 +145,7 @@
   },
   "scala-trading": {
     "language": "scala",
-    "files": 183,
+    "files": 184,
     "symbols": 2883,
     "edges": 5463,
     "external": 16217,
@@ -154,12 +154,12 @@
   },
   "elixir-changelog": {
     "language": "elixir",
-    "files": 885,
+    "files": 886,
     "symbols": 7891,
-    "edges": 21157,
-    "external": 38975,
-    "unresolved": 10624,
-    "resolution_rate": 85.0
+    "edges": 24158,
+    "external": 33495,
+    "unresolved": 10131,
+    "resolution_rate": 85.1
   },
   "ruby-sidekiq": {
     "language": "ruby",
@@ -326,20 +326,20 @@
   "cmake-cpm": {
     "language": "cmake",
     "files": 104,
-    "symbols": 1382,
+    "symbols": 1379,
     "edges": 782,
-    "external": 1912,
-    "unresolved": 1035,
+    "external": 1910,
+    "unresolved": 1034,
     "resolution_rate": 72.2
   },
   "dart-frog": {
     "language": "dart",
     "files": 544,
     "symbols": 4797,
-    "edges": 4362,
-    "external": 12053,
-    "unresolved": 651,
-    "resolution_rate": 96.2
+    "edges": 5941,
+    "external": 10590,
+    "unresolved": 516,
+    "resolution_rate": 97.0
   },
   "dockerfile-jessfraz": {
     "language": "lua",
@@ -543,10 +543,10 @@
     "language": "javascript",
     "files": 524,
     "symbols": 5800,
-    "edges": 3253,
-    "external": 11079,
-    "unresolved": 1636,
-    "resolution_rate": 89.8
+    "edges": 3446,
+    "external": 10855,
+    "unresolved": 1643,
+    "resolution_rate": 89.7
   },
   "vba-stdvba": {
     "language": "vba",
