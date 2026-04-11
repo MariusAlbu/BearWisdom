@@ -326,10 +326,10 @@
   "cmake-cpm": {
     "language": "cmake",
     "files": 104,
-    "symbols": 1382,
+    "symbols": 1385,
     "edges": 782,
-    "external": 1912,
-    "unresolved": 1035,
+    "external": 1914,
+    "unresolved": 1036,
     "resolution_rate": 72.2
   },
   "dart-frog": {
