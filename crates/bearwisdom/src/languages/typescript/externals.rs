@@ -55,6 +55,20 @@ pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
         globals.extend(JQUERY_ANGULAR_GLOBALS);
     }
 
+    // Vue 2 instance API — `$t`, `$nextTick`, `$emit`, `$refs`, `$store`, etc.
+    // These appear inside `<script lang="ts">` blocks of .vue SFCs sub-extracted
+    // by S11's embedded-region dispatch. The `$`-prefix makes collision with
+    // real project code extremely unlikely.
+    if deps.contains("vue")
+        || deps.contains("vue-i18n")
+        || deps.contains("vuex")
+        || deps.contains("vue-router")
+        || deps.contains("@vue/composition-api")
+        || deps.contains("nuxt")
+    {
+        globals.extend(VUE2_INSTANCE_GLOBALS);
+    }
+
     // Svelte / SvelteKit
     if deps.contains("svelte") || deps.contains("@sveltejs/kit") {
         globals.extend(SVELTE_GLOBALS);
@@ -111,6 +125,30 @@ const SVELTE_GLOBALS: &[&str] = &[
     "$state", "$derived", "$effect", "$props", "$bindable", "$inspect",
     "$host", "$state.raw", "$derived.by", "$effect.pre", "$effect.root",
     "$:", "$$props", "$$restProps", "$$slots",
+];
+
+/// Vue 2 instance-level API — `$`-prefixed identifiers that are never
+/// project-defined. See javascript/externals.rs VUE2_INSTANCE_GLOBALS for
+/// the architectural rationale; this TS mirror handles `<script lang="ts">`
+/// blocks sub-extracted from .vue files by S11.
+const VUE2_INSTANCE_GLOBALS: &[&str] = &[
+    // vue-i18n
+    "$t", "$tc", "$te", "$d", "$n", "$i18n",
+    // Vue core lifecycle / reactivity
+    "$nextTick", "$forceUpdate", "$set", "$delete", "$watch",
+    "$on", "$off", "$once", "$emit", "$mount", "$destroy", "$createElement",
+    // Vue instance properties
+    "$refs", "$parent", "$children", "$root", "$el", "$data", "$props",
+    "$slots", "$scopedSlots", "$attrs", "$listeners", "$options", "$vnode",
+    // Vuex / Router
+    "$store", "$router", "$route",
+    // Plugin extensions
+    "$axios", "$toast", "$notify", "$confirm", "$alert", "$prompt",
+    "$cookies", "$loading", "$message", "$msgbox",
+    "$bvModal", "$bvToast",
+    "$fetch", "$fetchState", "$config", "$nuxt", "$auth", "$apollo", "$gtag",
+    // Inertia.js
+    "$inertia", "$page", "$headManager", "$flash",
 ];
 
 const SVELTEKIT_GLOBALS: &[&str] = &[

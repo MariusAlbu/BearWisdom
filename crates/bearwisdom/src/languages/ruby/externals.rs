@@ -113,6 +113,14 @@ pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
             "authenticate_user!",
             "require_no_authentication",
             "devise_parameter_sanitizer",
+            // Namespace classes referenced as base classes in User models
+            // and Devise-extending controllers.
+            "Devise",
+            "Devise::Controllers::Helpers",
+            "Devise::Test::ControllerHelpers",
+            "Devise::Test::IntegrationHelpers",
+            "Devise::OmniAuth::AuthCallbacksController",
+            "DeviseController",
         ]);
     }
 
@@ -301,6 +309,56 @@ const RSPEC_GLOBALS: &[&str] = &[
 ];
 
 const RAILS_GLOBALS: &[&str] = &[
+    // Rails namespace classes commonly referenced as base classes or type
+    // annotations in Rails apps. Each is a gem class, never project source,
+    // and the Ruby resolver currently leaks them into unresolved_refs as
+    // `Namespace::Class` atomic target_names.
+    "ActiveRecord::Base",
+    "ActiveRecord::Migration",
+    "ActiveRecord::Relation",
+    "ActiveRecord::Schema",
+    "ActiveRecord::RecordNotFound",
+    "ActiveRecord::RecordInvalid",
+    "ActiveRecord::RecordNotUnique",
+    "ActiveRecord::StatementInvalid",
+    "ActiveRecord::Rollback",
+    "ActiveSupport::Concern",
+    "ActiveSupport::TestCase",
+    "ActiveSupport::Notifications",
+    "ActiveSupport::Configurable",
+    "ActiveSupport::TimeWithZone",
+    "ActiveSupport::HashWithIndifferentAccess",
+    "ActionController::Base",
+    "ActionController::API",
+    "ActionController::Parameters",
+    "ActionController::TestCase",
+    "ActionController::RoutingError",
+    "ActionController::UrlFor",
+    "ActionDispatch::IntegrationTest",
+    "ActionDispatch::TestCase",
+    "ActionDispatch::Request",
+    "ActionDispatch::Response",
+    "ActionView::Base",
+    "ActionView::Helpers",
+    "ActionView::TestCase",
+    "ActionMailer::Base",
+    "ActionMailer::TestCase",
+    "ActionCable::Channel::Base",
+    "ActionCable::Connection::Base",
+    "ActiveJob::Base",
+    "ActiveJob::TestCase",
+    "ActiveModel::Model",
+    "ActiveModel::Validator",
+    "ActiveModel::Errors",
+    "ActiveStorage::Blob",
+    "ActiveStorage::Attachment",
+    "Rails",
+    "Rails.application",
+    "Rails.root",
+    "Rails.env",
+    "Rails.logger",
+    "Rails.configuration",
+    "Rails.cache",
     // ActionController test helpers
     "get",
     "post",

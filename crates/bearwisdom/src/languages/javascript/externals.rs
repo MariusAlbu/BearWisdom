@@ -54,6 +54,92 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "dayjs",
     "lodash",
     "_",
+    // -----------------------------------------------------------------
+    // DOM Element / Event / Node API — method names that appear as bare
+    // last-segment targets after A.3. These are universal browser APIs
+    // that projects never redefine, so unconditional classification is
+    // safe (a `setAttribute` call is always DOM).
+    // -----------------------------------------------------------------
+    // DOM traversal / selection
+    "querySelector",
+    "querySelectorAll",
+    "getElementById",
+    "getElementsByTagName",
+    "getElementsByClassName",
+    "getElementsByName",
+    "closest",
+    "matches",
+    // Attribute / content
+    "getAttribute",
+    "setAttribute",
+    "removeAttribute",
+    "hasAttribute",
+    "getAttributeNode",
+    "setAttributeNS",
+    "getAttributeNS",
+    "hasAttributes",
+    "toggleAttribute",
+    "innerHTML",
+    "outerHTML",
+    "innerText",
+    "textContent",
+    "nodeValue",
+    // Tree mutation
+    "appendChild",
+    "removeChild",
+    "replaceChild",
+    "insertBefore",
+    "insertAdjacentHTML",
+    "insertAdjacentText",
+    "insertAdjacentElement",
+    "cloneNode",
+    "normalize",
+    "contains",
+    // Events
+    "addEventListener",
+    "removeEventListener",
+    "dispatchEvent",
+    "preventDefault",
+    "stopPropagation",
+    "stopImmediatePropagation",
+    // Focus / selection / clipboard
+    "scrollTo",
+    "scrollBy",
+    "scrollIntoView",
+    // Form / input helpers
+    "checkValidity",
+    "reportValidity",
+    "setCustomValidity",
+    // CSSOM / geometry
+    "getBoundingClientRect",
+    "getClientRects",
+    "getComputedStyle",
+    // Function prototype — apply/call are shared by every function value
+    "bind",
+    "apply",
+    "Reflect",
+    // Object / Array / Promise / Symbol static builder methods that often
+    // appear as `Object.defineProperty`, `Promise.resolve`, etc. — last-
+    // segment form after A.3
+    "defineProperty",
+    "defineProperties",
+    "getOwnPropertyDescriptor",
+    "getOwnPropertyNames",
+    "getOwnPropertySymbols",
+    "getPrototypeOf",
+    "setPrototypeOf",
+    "assign",
+    "freeze",
+    "isFrozen",
+    "seal",
+    "isSealed",
+    "entries",
+    "fromEntries",
+    "keys",
+    "values",
+    "hasOwn",
+    "create",
+    "is",
 ];
 
 /// Dependency-gated framework globals for JavaScript.
@@ -94,6 +180,23 @@ pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
         globals.extend(JQUERY_METHOD_NAMES);
     }
 
+    // Vue 2 instance API — `$t`, `$nextTick`, `$emit`, `$refs`, `$store`,
+    // `$router`, `$route`, `$parent`, `$el`, etc. These are Vue 2's instance-
+    // level properties/methods that appear inside `<script>` blocks of .vue
+    // files (and inside component `.js`/`.ts` files). After S11 the script
+    // blocks are sub-extracted as JS/TS, so the refs land in this resolver's
+    // namespace. They're strongly $-prefixed and never collide with project
+    // identifiers, so unconditional classification as external is safe.
+    if deps.contains("vue")
+        || deps.contains("vue-i18n")
+        || deps.contains("vuex")
+        || deps.contains("vue-router")
+        || deps.contains("@vue/composition-api")
+        || deps.contains("nuxt")
+    {
+        globals.extend(VUE2_INSTANCE_GLOBALS);
+    }
+
     // Express (adds `app`, `req`, `res`, `next` as well-known names but these
     // are locals, not true globals — skip to avoid false positives)
 
@@ -123,6 +226,156 @@ const JS_TEST_GLOBALS: &[&str] = &[
     "should",
     "sinon",
     "chai",
+    // Jest / Vitest / Sinon spy matcher family — appear as bare last-segment
+    // targets after A.3 chain flattening (`expect(spy).toHaveBeenCalled()` →
+    // target_name `toHaveBeenCalled`). Adding them here makes spy-heavy test
+    // files resolve cleanly regardless of which specific matcher is used.
+    "toBe",
+    "toEqual",
+    "toStrictEqual",
+    "toBeCalled",
+    "toBeCalledWith",
+    "toBeCalledTimes",
+    "toHaveBeenCalled",
+    "toHaveBeenCalledOnce",
+    "toHaveBeenCalledTimes",
+    "toHaveBeenCalledWith",
+    "toHaveBeenLastCalledWith",
+    "toHaveBeenNthCalledWith",
+    "toHaveReturned",
+    "toHaveReturnedTimes",
+    "toHaveReturnedWith",
+    "toHaveLastReturnedWith",
+    "toHaveNthReturnedWith",
+    "toHaveLength",
+    "toHaveProperty",
+    "toHaveBeenCalledBefore",
+    "toHaveBeenCalledAfter",
+    "toMatch",
+    "toMatchObject",
+    "toMatchSnapshot",
+    "toMatchInlineSnapshot",
+    "toThrow",
+    "toThrowError",
+    "toThrowErrorMatchingSnapshot",
+    "toContain",
+    "toContainEqual",
+    "toBeCloseTo",
+    "toBeDefined",
+    "toBeUndefined",
+    "toBeNull",
+    "toBeNaN",
+    "toBeTruthy",
+    "toBeFalsy",
+    "toBeGreaterThan",
+    "toBeGreaterThanOrEqual",
+    "toBeLessThan",
+    "toBeLessThanOrEqual",
+    "toBeInstanceOf",
+    "rejects",
+    "resolves",
+    "not",
+    "mockImplementation",
+    "mockImplementationOnce",
+    "mockReturnValue",
+    "mockReturnValueOnce",
+    "mockResolvedValue",
+    "mockResolvedValueOnce",
+    "mockRejectedValue",
+    "mockRejectedValueOnce",
+    "mockClear",
+    "mockReset",
+    "mockRestore",
+    "mockName",
+    "getMockName",
+    "mockReturnThis",
+    // Sinon spy / stub chain
+    "returns",
+    "throws",
+    "resolves",
+    "rejects",
+    "yields",
+    "callsFake",
+    "callsArg",
+    "withArgs",
+    "onCall",
+    "onFirstCall",
+    "onSecondCall",
+    "onThirdCall",
+    "restore",
+    "calledWith",
+    "calledOnce",
+    "calledTwice",
+    "calledThrice",
+    "calledBefore",
+    "calledAfter",
+    "getCall",
+    "getCalls",
+    // Chai BDD chain starters
+    "to",
+    "be",
+    "been",
+    "is",
+    "that",
+    "which",
+    "and",
+    "has",
+    "have",
+    "with",
+    "at",
+    "of",
+    "same",
+    "but",
+    "does",
+    "still",
+    "also",
+    "deep",
+    "nested",
+    "ordered",
+    "any",
+    "all",
+    "a",
+    "an",
+    "include",
+    "ok",
+    "true",
+    "false",
+    "null",
+    "undefined",
+    "exist",
+    "empty",
+    "arguments",
+    "equal",
+    "equals",
+    "eql",
+    "above",
+    "below",
+    "gt",
+    "gte",
+    "lt",
+    "lte",
+    "within",
+    "instanceof",
+    "property",
+    "ownProperty",
+    "nested",
+    "throw",
+    "respondTo",
+    "itself",
+    "satisfy",
+    "closeTo",
+    "members",
+    "oneOf",
+    "change",
+    "changes",
+    "increase",
+    "increases",
+    "decrease",
+    "decreases",
+    "fulfilled",
+    "rejected",
+    "eventually",
+    "notify",
 ];
 
 const JASMINE_GLOBALS: &[&str] = &[
@@ -306,4 +559,80 @@ const JQUERY_METHOD_NAMES: &[&str] = &[
     "service",
     "config",
     "run",
+];
+
+/// Vue 2 instance API — `$`-prefixed properties and methods that Vue injects
+/// onto every component instance. These appear in `<script>` blocks and in
+/// `.js`/`.ts` component files as `this.$t(...)`, `this.$nextTick()`, etc.
+/// After the A.3 chain-flattening fix they're stored as bare property names.
+///
+/// Gated on detection of any Vue-family dependency (vue, vue-i18n, vuex,
+/// vue-router, nuxt). The `$`-prefix makes collision with real project code
+/// extremely unlikely — adding them unconditionally within the Vue gate is
+/// safe.
+const VUE2_INSTANCE_GLOBALS: &[&str] = &[
+    // vue-i18n
+    "$t",
+    "$tc",
+    "$te",
+    "$d",
+    "$n",
+    "$i18n",
+    // Vue core lifecycle / reactivity
+    "$nextTick",
+    "$forceUpdate",
+    "$set",
+    "$delete",
+    "$watch",
+    "$on",
+    "$off",
+    "$once",
+    "$emit",
+    "$mount",
+    "$destroy",
+    "$createElement",
+    // Vue instance properties
+    "$refs",
+    "$parent",
+    "$children",
+    "$root",
+    "$el",
+    "$data",
+    "$props",
+    "$slots",
+    "$scopedSlots",
+    "$attrs",
+    "$listeners",
+    "$options",
+    "$vnode",
+    // Vuex
+    "$store",
+    // Vue Router
+    "$router",
+    "$route",
+    // Common Vue 2 plugin extensions
+    "$axios",   // nuxt axios module
+    "$toast",
+    "$notify",
+    "$confirm",
+    "$alert",
+    "$prompt",
+    "$cookies",
+    "$loading",
+    "$message",
+    "$msgbox",
+    "$bvModal",       // bootstrap-vue
+    "$bvToast",       // bootstrap-vue
+    "$fetch",         // nuxt
+    "$fetchState",    // nuxt
+    "$config",        // nuxt runtime config
+    "$nuxt",
+    "$auth",          // nuxt auth module
+    "$apollo",        // vue-apollo
+    "$gtag",          // vue-gtag
+    // Inertia.js (shipped as a Vue plugin in Laravel monorepos)
+    "$inertia",
+    "$page",
+    "$headManager",
+    "$flash",
 ];

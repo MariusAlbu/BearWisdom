@@ -1238,7 +1238,7 @@ fn emit_call_ref_js(
                 chain: None,
             });
         }
-    } else if !callee.is_empty() {
+    } else if !callee.is_empty() && !is_js_keyword(&callee) {
         refs.push(Ref {
             source_symbol_index,
             target_name: callee,
@@ -1248,6 +1248,25 @@ fn emit_call_ref_js(
             chain: None,
         });
     }
+}
+
+/// JS reserved words that should never be emitted as call targets.
+/// Tree-sitter-javascript produces `super(...)` as a `call_expression` whose
+/// `function` field is literally the identifier `super`. That leaks into
+/// `unresolved_refs` as a `super` target (450+ refs in javascript-preact
+/// alone). Similarly for `import(...)`, `new.target`, etc. — all keywords
+/// the resolver has no business looking up against the symbol index.
+fn is_js_keyword(name: &str) -> bool {
+    matches!(
+        name,
+        "super" | "this" | "new" | "typeof" | "instanceof" | "void"
+            | "yield" | "await" | "delete" | "in" | "of" | "return"
+            | "throw" | "try" | "catch" | "finally" | "debugger"
+            | "if" | "else" | "switch" | "case" | "default" | "break"
+            | "continue" | "for" | "while" | "do" | "function" | "class"
+            | "extends" | "const" | "let" | "var" | "static" | "async"
+            | "true" | "false" | "null" | "undefined"
+    )
 }
 
 /// Emit a Calls ref for a single `new_expression` node.
