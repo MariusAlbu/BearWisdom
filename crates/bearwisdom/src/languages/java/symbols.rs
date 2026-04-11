@@ -336,6 +336,14 @@ pub(super) fn push_constructor_decl(
     let qualified_name = qualify_with_package(&name, parent_scope, package);
     let scope_path = scope_path_with_package(parent_scope, package);
 
+    // Java supports generic constructors: `class Foo { public <T> Foo(T t) {} }`.
+    // Splice the type_parameters into the signature so the engine's
+    // generic_params classifier can see the constructor's own type
+    // variables — distinct from the enclosing class's type_params.
+    let type_params = node
+        .child_by_field_name("type_parameters")
+        .map(|tp| node_text(tp, src))
+        .unwrap_or_default();
     let params = node
         .child_by_field_name("parameters")
         .map(|p| node_text(p, src))
@@ -351,7 +359,7 @@ pub(super) fn push_constructor_decl(
         end_line: node.end_position().row as u32,
         start_col: node.start_position().column as u32,
         end_col: node.end_position().column as u32,
-        signature: Some(format!("{name}{params}")),
+        signature: Some(format!("{type_params}{name}{params}").trim().to_string()),
         doc_comment: extract_doc_comment(node, src),
         scope_path,
         parent_index,

@@ -44,16 +44,16 @@ pub struct ExternalDepRoot {
 /// `$GOMODCACHE/{escaped_module_path}@{version}`, and return the entries
 /// whose directory actually exists on disk.
 ///
-/// **Indirect deps are intentionally skipped.** This matches the consistent
-/// cross-ecosystem rule: walk only what the project declares as a direct
-/// dependency, and rely on import-based external inference in the resolver
-/// (see `indexer/resolve/mod.rs` — `inferred_ns` block) to classify refs
-/// that reach transitively into indirect libraries. Walking indirect deps
-/// would inflate the symbol table 10-20x for projects like Gitea/goxygen
-/// (314 indirect vs 14 direct) while the resolver already handles those
-/// refs correctly via import classification. The same rule applies to TS
-/// (nested `node_modules/` skipped) and Python (site-packages walk stops
-/// at the declared dep's own root).
+/// **Indirect deps are walked only when user code imports them.** A
+/// lightweight string scan over `.go` files produces a set of imported
+/// module paths; any `go.mod // indirect` entry whose module path (or
+/// a prefix of it) appears in that set gets walked too. This catches
+/// legitimate transitive exposure — e.g. when a direct dep re-exports
+/// types from a transitive dep and user code references those types
+/// directly — without the 10-20x symbol table explosion that walking
+/// every indirect dep would cause in projects like Gitea (314 indirect
+/// vs 14 direct). Indirect deps that user code never touches are still
+/// skipped.
 pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let Some(go_mod_path) = find_go_mod(project_root) else {
         return Vec::new();
@@ -71,9 +71,17 @@ pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         }
     };
 
+    // For indirect deps, only walk those that user code actually imports.
+    // This catches genuine transitive type exposure (e.g., a direct dep
+    // re-exports types from a transitive) without the 10-20x symbol table
+    // explosion that walking every indirect dep causes in projects like
+    // Gitea (314 indirect vs 14 direct). The user-imports set is built by
+    // a lightweight string scan over .go files — no tree-sitter needed.
+    let user_imports = collect_go_imports(project_root);
+
     let mut roots = Vec::new();
     for dep in &parsed.require_deps {
-        if dep.indirect {
+        if dep.indirect && !go_dep_is_imported(&dep.path, &user_imports) {
             continue;
         }
         if let Some(root) = resolve_go_dep_path(&cache_root, dep) {
@@ -93,6 +101,128 @@ pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         }
     }
     roots
+}
+
+/// Scan `.go` files under `project_root` for import strings. Returns a
+/// set of unique import paths. Skips vendor/, tests, and common build
+/// output directories. This is a lightweight string search — importing
+/// tree-sitter here would be overkill for what amounts to a regex.
+fn collect_go_imports(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut imports: std::collections::HashSet<String> = std::collections::HashSet::new();
+    scan_go_imports_recursive(project_root, &mut imports, 0);
+    imports
+}
+
+fn scan_go_imports_recursive(
+    dir: &Path,
+    out: &mut std::collections::HashSet<String>,
+    depth: usize,
+) {
+    if depth > 10 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(ft) = entry.file_type() {
+            if ft.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if matches!(
+                        name,
+                        ".git" | "vendor" | "node_modules" | "target"
+                            | "build" | "dist" | "testdata"
+                    ) {
+                        continue;
+                    }
+                }
+                scan_go_imports_recursive(&path, out, depth + 1);
+            } else if ft.is_file() {
+                let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                    continue;
+                };
+                if !name.ends_with(".go") || name.ends_with("_test.go") {
+                    continue;
+                }
+                let Ok(content) = std::fs::read_to_string(&path) else {
+                    continue;
+                };
+                extract_imports_from_go_source(&content, out);
+            }
+        }
+    }
+}
+
+/// Parse an `import "..."` or block `import (\n"..."\n)` from Go source.
+/// Intentionally loose — we'd rather include a false positive path string
+/// from a comment than miss a real import and under-count transitives.
+/// The downstream filter `go_dep_is_imported` uses prefix matching so a
+/// stray false positive is inert unless it exactly matches a go.mod dep.
+fn extract_imports_from_go_source(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
+    enum Mode {
+        Top,
+        InBlock,
+    }
+    let mut mode = Mode::Top;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        match mode {
+            Mode::Top => {
+                if trimmed.starts_with("import (") {
+                    mode = Mode::InBlock;
+                    continue;
+                }
+                if let Some(rest) = trimmed.strip_prefix("import ") {
+                    let rest = rest.trim_start_matches('_').trim();
+                    // Support aliased imports: `import foo "..."`
+                    let quoted = rest
+                        .rsplit_once('"')
+                        .map(|(head, _)| head)
+                        .and_then(|head| head.rsplit_once('"').map(|(_, s)| s));
+                    if let Some(path) = quoted {
+                        if !path.is_empty() {
+                            out.insert(path.to_string());
+                        }
+                    }
+                }
+            }
+            Mode::InBlock => {
+                if trimmed == ")" {
+                    mode = Mode::Top;
+                    continue;
+                }
+                // Line might look like: `"fmt"`, `foo "github.com/x/y"`,
+                // `_ "database/sql/driver"`. Extract the first quoted string.
+                let bytes = trimmed.as_bytes();
+                let first = bytes.iter().position(|&b| b == b'"');
+                let Some(start) = first else { continue };
+                let after = &trimmed[start + 1..];
+                let Some(end_rel) = after.find('"') else { continue };
+                let path = &after[..end_rel];
+                if !path.is_empty() {
+                    out.insert(path.to_string());
+                }
+            }
+        }
+    }
+}
+
+/// Does any user import path start with the given dep module path?
+/// Go imports subpackages (`github.com/foo/bar/subpkg`) of declared
+/// modules (`github.com/foo/bar`), so prefix matching is the right test.
+fn go_dep_is_imported(
+    dep_path: &str,
+    user_imports: &std::collections::HashSet<String>,
+) -> bool {
+    if user_imports.contains(dep_path) {
+        return true;
+    }
+    let prefix = format!("{dep_path}/");
+    user_imports.iter().any(|imp| imp.starts_with(&prefix))
 }
 
 /// Resolve the on-disk location of `$GOMODCACHE`.
@@ -299,10 +429,20 @@ pub fn discover_python_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 matched = true;
                 break;
             }
-            // Single-file module: site-packages/{normalized}.py
+            // Single-file module: `site-packages/{normalized}.py`.
+            // Packages like `six`, `typing_extensions`, `packaging` ship
+            // as one top-level file. Point the root at the file itself;
+            // `walk_python_external_root` handles the single-file case
+            // by emitting exactly that one WalkedFile entry.
             let file = sp.join(format!("{normalized}.py"));
-            if file.is_file() {
-                debug!("Single-file module {normalized}.py — skipping (MVP)");
+            if file.is_file() && !seen.contains(&file) {
+                seen.insert(file.clone());
+                roots.push(ExternalDepRoot {
+                    module_path: normalized.clone(),
+                    version: String::from("unknown"),
+                    root: file,
+                    ecosystem: "python",
+                });
                 matched = true;
                 break;
             }
@@ -395,10 +535,14 @@ fn python_top_level_lookup(
                 continue;
             }
             let single_file = site_packages.join(format!("{import_name}.py"));
-            if single_file.is_file() {
-                debug!(
-                    "top_level.txt single-file module {import_name}.py — skipping (MVP)"
-                );
+            if single_file.is_file() && !seen.contains(&single_file) {
+                seen.insert(single_file.clone());
+                out.push(ExternalDepRoot {
+                    module_path: import_name.to_string(),
+                    version: String::from("unknown"),
+                    root: single_file,
+                    ecosystem: "python",
+                });
             }
         }
         return Some(out);
@@ -550,9 +694,29 @@ pub fn normalize_python_dep_name(raw: &str) -> String {
 ///
 /// Virtual relative_path is `ext:py:{package}/{sub_path}` so externals
 /// never collide with internal file paths.
+///
+/// Handles both directory roots (regular packages with `__init__.py`)
+/// and single-file roots (`six.py`, `typing_extensions.py`). For
+/// single-file roots, emits exactly one WalkedFile entry with an
+/// empty sub-path.
 pub fn walk_python_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
-    walk_python_dir(&dep.root, &dep.root, dep, &mut out);
+    if dep.root.is_file() {
+        // Single-file module: one WalkedFile, no recursion.
+        let file_name = dep
+            .root
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("module.py");
+        let virtual_path = format!("ext:py:{}/{}", dep.module_path, file_name);
+        out.push(WalkedFile {
+            relative_path: virtual_path,
+            absolute_path: dep.root.clone(),
+            language: "python",
+        });
+    } else {
+        walk_python_dir(&dep.root, &dep.root, dep, &mut out);
+    }
     out
 }
 
@@ -826,6 +990,19 @@ pub fn walk_ts_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
 }
 
 fn walk_ts_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    // Nested `node_modules/` trees are skipped by default because pnpm,
+    // yarn-workspaces, and legacy hoisting can produce deep duplicate
+    // installs of the same package — walking them indexes the same
+    // symbols N times and inflates index time by 5-10x on large monorepos.
+    //
+    // Opt-in via `BEARWISDOM_TS_WALK_NESTED=1` for projects where nested
+    // deps genuinely differ from the top level (version conflicts that
+    // can't be hoisted, non-portable native deps, pnpm stores). The flag
+    // is read once per walk call — cheap enough to not need caching.
+    let walk_nested = std::env::var_os("BEARWISDOM_TS_WALK_NESTED")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
+
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -836,10 +1013,16 @@ fn walk_ts_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<Wal
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                // `node_modules` is conditionally skipped based on the
+                // opt-in flag. All other skipped dirs (tests, docs, etc.)
+                // stay unconditional because they never carry useful
+                // public API types.
+                if name == "node_modules" && !walk_nested {
+                    continue;
+                }
                 if matches!(
                     name,
-                    "node_modules"
-                        | "__tests__"
+                    "__tests__"
                         | "__mocks__"
                         | "test"
                         | "tests"
@@ -1303,6 +1486,23 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
         };
         coords.extend(parse_package_references_full(&content));
     }
+
+    // Augment with transitive dependencies from `.deps.json`. The dotnet
+    // SDK emits one per project under bin/{config}/{tfm}/{project}.deps.json
+    // after `dotnet build`. It enumerates every assembly loaded at runtime,
+    // including transitives that `.csproj` only declares indirectly
+    // (`Microsoft.Extensions.Hosting` pulls in 30+ packages). This augments
+    // the direct list without walking the whole NuGet cache.
+    //
+    // De-dup happens later at the dll_path level — reading the same package
+    // declared as both a direct dep and a transitive is cheap because the
+    // `seen` set in the main loop catches it.
+    for p in &project_files {
+        if let Some(proj_dir) = p.parent() {
+            coords.extend(collect_transitive_coords_from_deps_json(proj_dir));
+        }
+    }
+
     if coords.is_empty() {
         return Vec::new();
     }
@@ -1318,6 +1518,12 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
         coords.len()
     );
 
+    // Language tag from the project file type: VB and F# call sites
+    // still see .NET metadata through the same DLL, but CLI language
+    // filters and per-language stats should attribute the symbols to
+    // the caller's source language.
+    let lang_id = dominant_dotnet_language(&project_files);
+
     let mut out = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for coord in coords {
@@ -1327,7 +1533,7 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
         if !seen.insert(dll_path.clone()) {
             continue;
         }
-        match parse_dotnet_dll(&dll_path, &coord.name) {
+        match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
             Ok(pf) => out.push(pf),
             Err(e) => debug!(
                 "Failed to read .NET metadata from {}: {e}",
@@ -1336,6 +1542,129 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
         }
     }
     out
+}
+
+/// Collect transitive NuGet dependencies by reading `.deps.json` files
+/// emitted under `{proj_dir}/bin/{config}/{tfm}/`. Each runtime library
+/// listed with `"type": "package"` becomes a `NuGetCoord` so the main
+/// externals pass can resolve its DLL in the global packages cache.
+///
+/// Returns an empty vector when no build output exists — that's the
+/// expected state on a fresh checkout and the direct-dep pass in the
+/// caller handles the common case fine. The transitive augmentation
+/// only kicks in when the user has actually built their project at
+/// least once.
+///
+/// Scans at most 16 deps.json files per project to avoid pathological
+/// matrix TFM builds inflating the coord list. In the overwhelmingly
+/// common single-TFM case this cap is irrelevant.
+fn collect_transitive_coords_from_deps_json(
+    proj_dir: &Path,
+) -> Vec<crate::indexer::manifest::nuget::NuGetCoord> {
+    let mut deps_json_files: Vec<PathBuf> = Vec::new();
+    collect_deps_json(&proj_dir.join("bin"), &mut deps_json_files, 0);
+    if deps_json_files.is_empty() {
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for path in deps_json_files.iter().take(16) {
+        let Ok(content) = std::fs::read_to_string(path) else {
+            continue;
+        };
+        let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+            continue;
+        };
+        // The `libraries` map is keyed by `{name}/{version}` and each
+        // entry carries a `type` field. We want `type == "package"`
+        // entries — local projects (`type == "project"`) and reference
+        // assemblies (`type == "referenceassembly"`) aren't NuGet-cached.
+        let Some(libs) = json.get("libraries").and_then(|v| v.as_object()) else {
+            continue;
+        };
+        for (key, value) in libs {
+            let ty = value
+                .get("type")
+                .and_then(|t| t.as_str())
+                .unwrap_or("");
+            if ty != "package" {
+                continue;
+            }
+            let Some((name, version)) = key.rsplit_once('/') else {
+                continue;
+            };
+            if !seen.insert(key.clone()) {
+                continue;
+            }
+            out.push(crate::indexer::manifest::nuget::NuGetCoord {
+                name: name.to_string(),
+                version: Some(version.to_string()),
+            });
+        }
+    }
+    out
+}
+
+/// Walk a `bin/` tree collecting every `*.deps.json` file. Bounded
+/// depth to avoid accidental traversal outside the build output. Skips
+/// `obj/` and `runtimes/` to stay focused on the actual TFM outputs.
+fn collect_deps_json(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 5 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(ft) = entry.file_type() {
+            if ft.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if matches!(name, "obj" | "runtimes" | "ref") {
+                        continue;
+                    }
+                }
+                collect_deps_json(&path, out, depth + 1);
+            } else if ft.is_file() {
+                if path
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.ends_with(".deps.json"))
+                {
+                    out.push(path);
+                }
+            }
+        }
+    }
+}
+
+/// Determine the language tag to attribute external .NET symbols to.
+/// Scans the project files found in the consumer tree and picks the
+/// most common extension: `csharp` for `.csproj`, `fsharp` for `.fsproj`,
+/// `vb` for `.vbproj`. If the project is a mix, C# wins — it's by far
+/// the most common language and downstream search defaults to it.
+fn dominant_dotnet_language(project_files: &[PathBuf]) -> &'static str {
+    let mut cs = 0usize;
+    let mut fs = 0usize;
+    let mut vb = 0usize;
+    for p in project_files {
+        match p.extension().and_then(|e| e.to_str()) {
+            Some("csproj") => cs += 1,
+            Some("fsproj") => fs += 1,
+            Some("vbproj") => vb += 1,
+            _ => {}
+        }
+    }
+    // C# is the default tiebreaker — it's the overwhelming majority on
+    // NuGet and in the .NET ecosystem at large.
+    if cs >= fs && cs >= vb {
+        "csharp"
+    } else if fs >= vb {
+        "fsharp"
+    } else {
+        "vb"
+    }
 }
 
 /// Locate the NuGet global packages folder in this order:
@@ -1464,16 +1793,31 @@ fn largest_subdir(dir: &Path) -> Option<PathBuf> {
 
 /// Parse a single .NET DLL and emit a synthetic `ParsedFile` with one
 /// symbol per type (`Class` / `Interface` / `Struct` / `Enum`) and one
-/// symbol per method. Signatures include the method's declaring type's
-/// full name so the resolver's `{namespace}.{target}` lookups match.
+/// symbol per method. Signatures include the type's generic parameters
+/// and the method's parameter/return types, with ECMA-335 placeholder
+/// indices (`!0`, `!!0`) substituted back to the real parameter names
+/// from the GenericParam metadata tables so the resolver's generic-param
+/// classifier fires for C# externals the same way it does for TS after S6.
+///
+/// Per-type method iteration: methods are read via `type_def.methods`
+/// (weak refs upgraded lazily) rather than the global `assembly.methods()`
+/// + `declaring_type_fullname()` lookup. This gives direct attribution
+/// without the per-method fullname formatting work that S7 paid.
 ///
 /// Public surface only — types with non-public visibility and methods
 /// with non-public visibility are skipped. Compiler-generated types
-/// (`<>c`, `<PrivateImplementationDetails>`, etc.) are also filtered to
-/// avoid polluting the index.
+/// (`<>c`, `<PrivateImplementationDetails>`, `<Module>`) are filtered to
+/// avoid polluting the index with noise no user code can reference.
+///
+/// The `lang_id` caller-chosen language tag is propagated onto the
+/// synthetic `ParsedFile`; callers pick it based on whether the owning
+/// project was a .csproj (`csharp`), .fsproj (`fsharp`), or .vbproj
+/// (`vb`). The DLL itself is the same metadata format regardless — only
+/// the display language differs.
 fn parse_dotnet_dll(
     dll_path: &Path,
     package_name: &str,
+    lang_id: &str,
 ) -> std::result::Result<crate::types::ParsedFile, String> {
     use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind};
     use dotscope::metadata::method::MethodAccessFlags;
@@ -1516,14 +1860,27 @@ fn parse_dotnet_dll(
             SymbolKind::Class
         };
 
+        // Strip the ECMA-335 backtick-arity suffix (`Repository\`1` → `Repository`)
+        // so user code that references `Repository<User>` resolves to the
+        // right symbol. The arity is reflected in the generic_params vec.
+        let display_name = strip_backtick_arity(&name);
         let qualified_name = if namespace.is_empty() {
-            name.clone()
+            display_name.to_string()
         } else {
-            format!("{namespace}.{name}")
+            format!("{namespace}.{display_name}")
         };
 
+        // Build the real `<T, U>` suffix from the GenericParam table
+        // rather than making up `<T1, T2, ...>` from the backtick count.
+        let type_generic_names: Vec<String> = type_def
+            .generic_params
+            .iter()
+            .map(|(_, gp)| gp.name.clone())
+            .collect();
+        let type_gp_suffix = format_generic_suffix(&type_generic_names);
+
         symbols.push(ExtractedSymbol {
-            name: name.clone(),
+            name: display_name.to_string(),
             qualified_name: qualified_name.clone(),
             kind,
             visibility: Some(crate::types::Visibility::Public),
@@ -1534,8 +1891,8 @@ fn parse_dotnet_dll(
             signature: Some(format!(
                 "{} {}{}",
                 if is_interface { "interface" } else { "class" },
-                name,
-                backtick_generic_suffix(&name)
+                display_name,
+                type_gp_suffix
             )),
             doc_comment: None,
             scope_path: if namespace.is_empty() {
@@ -1545,50 +1902,62 @@ fn parse_dotnet_dll(
             },
             parent_index: None,
         });
-    }
 
-    // Methods live in a global map; we attribute each to its declaring
-    // type via `declaring_type_fullname`, which produces the same
-    // `namespace.type` string we used as a type's qualified_name.
-    for entry in assembly.methods().iter() {
-        let method = entry.value();
+        // Per-type method iteration: walk type_def.methods directly so we
+        // get method-to-type attribution for free and avoid a second pass
+        // over the global method map. `boxcar::Vec` yields `(usize, &T)`
+        // tuples; we only care about the ref.
+        for (_, method_ref) in type_def.methods.iter() {
+            let Some(method) = method_ref.upgrade() else {
+                continue;
+            };
 
-        // Skip compiler-generated accessors (`get_X`, `set_X`), anonymous
-        // methods (`<>c__DisplayClass`), and things with `<` at the start
-        // that are implementation details, not public API.
-        if method.name.starts_with('<') || method.name.starts_with(".") {
-            continue;
+            // Skip compiler-generated accessors and lifecycle methods:
+            // - `get_X` / `set_X` / `add_X` / `remove_X` (property/event accessors)
+            // - `.ctor` / `.cctor` (constructors emit as Constructor symbols elsewhere)
+            // - `<...>` anonymous/closure methods
+            if method.name.starts_with('<') || method.name.starts_with('.') {
+                continue;
+            }
+            // Public surface only.
+            if method.flags_access != MethodAccessFlags::PUBLIC {
+                continue;
+            }
+
+            let method_name = method.name.clone();
+            let method_qname = format!("{qualified_name}.{method_name}");
+
+            // Collect the method's own generic param names so we can
+            // splice them into the signature and substitute `!!N`
+            // placeholders back to real names.
+            let method_generic_names: Vec<String> = method
+                .generic_params
+                .iter()
+                .map(|(_, gp)| gp.name.clone())
+                .collect();
+
+            let signature = format_method_signature(
+                &method_name,
+                &method.signature,
+                &type_generic_names,
+                &method_generic_names,
+            );
+
+            symbols.push(ExtractedSymbol {
+                name: method_name,
+                qualified_name: method_qname,
+                kind: SymbolKind::Method,
+                visibility: Some(crate::types::Visibility::Public),
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
+                signature: Some(signature),
+                doc_comment: None,
+                scope_path: Some(qualified_name.clone()),
+                parent_index: None,
+            });
         }
-        // Public surface only — skip everything else.
-        if method.flags_access != MethodAccessFlags::PUBLIC {
-            continue;
-        }
-
-        let Some(declaring_full) = method.declaring_type_fullname() else {
-            continue;
-        };
-        // Same compiler-generated-type guard as above.
-        if declaring_full.contains("<>") || declaring_full.contains("<Module>") {
-            continue;
-        }
-
-        let name = method.name.clone();
-        let qualified_name = format!("{declaring_full}.{name}");
-
-        symbols.push(ExtractedSymbol {
-            name,
-            qualified_name,
-            kind: SymbolKind::Method,
-            visibility: Some(crate::types::Visibility::Public),
-            start_line: 0,
-            end_line: 0,
-            start_col: 0,
-            end_col: 0,
-            signature: None,
-            doc_comment: None,
-            scope_path: Some(declaring_full),
-            parent_index: None,
-        });
     }
 
     let symbol_count = symbols.len();
@@ -1612,7 +1981,7 @@ fn parse_dotnet_dll(
 
     Ok(ParsedFile {
         path: virtual_path,
-        language: "csharp".to_string(),
+        language: lang_id.to_string(),
         content_hash,
         size,
         line_count: 0,
@@ -1627,22 +1996,118 @@ fn parse_dotnet_dll(
     })
 }
 
-/// Convert a .NET generic type suffix `` `N `` into the more familiar
-/// `<T1, T2, ... TN>` form for signature display.
-/// `Dictionary\`2` → `<T1, T2>`. Returns empty string if not generic.
-fn backtick_generic_suffix(name: &str) -> String {
-    let Some(idx) = name.find('`') else {
-        return String::new();
-    };
-    let suffix = &name[idx + 1..];
-    let Ok(count) = suffix.parse::<u32>() else {
-        return String::new();
-    };
-    if count == 0 {
-        return String::new();
+/// Strip the ECMA-335 backtick arity suffix from a type name.
+///
+/// `Repository\`1` → `Repository`, `Dictionary\`2` → `Dictionary`,
+/// `Func\`4` → `Func`. Left-idempotent on names without a backtick.
+/// This is the surface name users write in source — the arity is
+/// reflected separately in the `generic_params` collection.
+fn strip_backtick_arity(name: &str) -> &str {
+    match name.find('`') {
+        Some(idx) => &name[..idx],
+        None => name,
     }
-    let params: Vec<String> = (1..=count).map(|i| format!("T{i}")).collect();
-    format!("<{}>", params.join(", "))
+}
+
+/// Format a list of generic parameter names as `<A, B, C>` or empty if
+/// the list is empty. Kept as a helper so the type and method signature
+/// builders stay readable.
+fn format_generic_suffix(names: &[String]) -> String {
+    if names.is_empty() {
+        String::new()
+    } else {
+        format!("<{}>", names.join(", "))
+    }
+}
+
+/// Format a method signature in a shape the resolver's generic-param
+/// classifier can parse. The classifier scans for `<...>` at the top
+/// level of a signature string and splits on commas to extract parameter
+/// names, so we need the method's own generic params to appear inside
+/// angle brackets with their real names (not ECMA-335 `!!N` placeholders).
+///
+/// Shape: `{method_name}<U, V>(Param1, Param2): ReturnType`
+///
+/// Parameter types and return type are rendered via `TypeSignature::Display`
+/// then post-processed to substitute ECMA-335 placeholders:
+/// - `!N`  → the declaring type's Nth generic parameter name
+/// - `!!N` → this method's Nth generic parameter name
+///
+/// Token-based type references (`class[00000042]`) remain as opaque
+/// tokens — resolving those to named types requires walking the TypeRef
+/// table, which is deferred. The classifier only needs the top-level
+/// `<...>` region, so unresolved inner tokens don't affect classification.
+fn format_method_signature(
+    method_name: &str,
+    sig: &dotscope::metadata::signatures::SignatureMethod,
+    type_generic_names: &[String],
+    method_generic_names: &[String],
+) -> String {
+    let gp_suffix = format_generic_suffix(method_generic_names);
+
+    let mut params_str = String::from("(");
+    for (i, p) in sig.params.iter().enumerate() {
+        if i > 0 {
+            params_str.push_str(", ");
+        }
+        let rendered = format!("{}", p);
+        params_str.push_str(&substitute_generic_placeholders(
+            &rendered,
+            type_generic_names,
+            method_generic_names,
+        ));
+    }
+    params_str.push(')');
+
+    let return_str = substitute_generic_placeholders(
+        &format!("{}", sig.return_type),
+        type_generic_names,
+        method_generic_names,
+    );
+
+    format!("{method_name}{gp_suffix}{params_str}: {return_str}")
+}
+
+/// Replace ECMA-335 generic parameter placeholders with their real names.
+///
+/// `!0` → first type generic parameter (e.g., `T`)
+/// `!!0` → first method generic parameter (e.g., `U`)
+///
+/// Scans left-to-right, handling multi-digit indices (`!10`, `!!10`).
+/// Unknown indices are left as-is so the signature still renders but
+/// unrecognised generic params don't crash the formatter. Method-level
+/// `!!N` must be checked BEFORE type-level `!N` because `!!` would
+/// otherwise be consumed as two separate `!0` matches.
+fn substitute_generic_placeholders(
+    rendered: &str,
+    type_gen: &[String],
+    method_gen: &[String],
+) -> String {
+    let bytes = rendered.as_bytes();
+    let mut out = String::with_capacity(rendered.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'!' {
+            let is_method = i + 1 < bytes.len() && bytes[i + 1] == b'!';
+            let num_start = if is_method { i + 2 } else { i + 1 };
+            let mut num_end = num_start;
+            while num_end < bytes.len() && bytes[num_end].is_ascii_digit() {
+                num_end += 1;
+            }
+            if num_end > num_start {
+                let idx: usize = rendered[num_start..num_end].parse().unwrap_or(usize::MAX);
+                let target = if is_method { method_gen } else { type_gen };
+                if let Some(name) = target.get(idx) {
+                    out.push_str(name);
+                    i = num_end;
+                    continue;
+                }
+            }
+        }
+        out.push(bytes[i] as char);
+        i += 1;
+    }
+    out
 }
 
 fn collect_dotnet_project_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
@@ -1712,6 +2177,76 @@ mod tests {
         let result = discover_go_externals(&tmp);
         assert!(result.is_empty());
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn strip_backtick_arity_removes_generic_suffix() {
+        assert_eq!(strip_backtick_arity("Repository`1"), "Repository");
+        assert_eq!(strip_backtick_arity("Dictionary`2"), "Dictionary");
+        assert_eq!(strip_backtick_arity("Func`4"), "Func");
+        assert_eq!(strip_backtick_arity("List"), "List");
+        assert_eq!(strip_backtick_arity(""), "");
+    }
+
+    #[test]
+    fn format_generic_suffix_joins_names() {
+        assert_eq!(format_generic_suffix(&[]), "");
+        assert_eq!(
+            format_generic_suffix(&["T".to_string()]),
+            "<T>"
+        );
+        assert_eq!(
+            format_generic_suffix(&["T".to_string(), "U".to_string()]),
+            "<T, U>"
+        );
+    }
+
+    #[test]
+    fn substitute_placeholders_swaps_ecma335_syntax() {
+        let type_gen = vec!["T".to_string()];
+        let method_gen = vec!["U".to_string(), "V".to_string()];
+
+        // Method-level placeholder.
+        assert_eq!(
+            substitute_generic_placeholders("!!0", &type_gen, &method_gen),
+            "U"
+        );
+        assert_eq!(
+            substitute_generic_placeholders("!!1", &type_gen, &method_gen),
+            "V"
+        );
+        // Type-level placeholder.
+        assert_eq!(
+            substitute_generic_placeholders("!0", &type_gen, &method_gen),
+            "T"
+        );
+        // Mixed inside a call-site signature.
+        assert_eq!(
+            substitute_generic_placeholders(
+                "Func<!0, !!0, !!1>",
+                &type_gen,
+                &method_gen
+            ),
+            "Func<T, U, V>"
+        );
+        // Out-of-range index is left alone.
+        assert_eq!(
+            substitute_generic_placeholders("!!5", &type_gen, &method_gen),
+            "!!5"
+        );
+    }
+
+    #[test]
+    fn substitute_placeholders_multi_digit_indices() {
+        let method_gen: Vec<String> = (0..15).map(|i| format!("T{i}")).collect();
+        assert_eq!(
+            substitute_generic_placeholders("!!10", &[], &method_gen),
+            "T10"
+        );
+        assert_eq!(
+            substitute_generic_placeholders("!!14", &[], &method_gen),
+            "T14"
+        );
     }
 
     #[test]
