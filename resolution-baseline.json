@@ -30,18 +30,18 @@
     "language": "typescript",
     "files": 1168,
     "symbols": 7469,
-    "edges": 8545,
-    "external": 20672,
-    "unresolved": 512,
+    "edges": 8542,
+    "external": 20679,
+    "unresolved": 510,
     "resolution_rate": 98.3
   },
   "javascript-preact": {
     "language": "javascript",
     "files": 278,
     "symbols": 8616,
-    "edges": 8055,
-    "external": 19675,
-    "unresolved": 2198,
+    "edges": 8053,
+    "external": 19680,
+    "unresolved": 2197,
     "resolution_rate": 92.7
   },
   "vue-vuestic-admin": {
@@ -49,9 +49,9 @@
     "files": 198,
     "symbols": 1141,
     "edges": 784,
-    "external": 2196,
-    "unresolved": 413,
-    "resolution_rate": 87.8
+    "external": 2197,
+    "unresolved": 412,
+    "resolution_rate": 87.9
   },
   "angular-coreui": {
     "language": "typescript",
@@ -111,8 +111,8 @@
     "language": "rust",
     "files": 249,
     "symbols": 10393,
-    "edges": 11638,
-    "external": 28111,
+    "edges": 11625,
+    "external": 28126,
     "unresolved": 1724,
     "resolution_rate": 95.8
   },
@@ -120,9 +120,9 @@
     "language": "kotlin",
     "files": 331,
     "symbols": 1780,
-    "edges": 1831,
-    "external": 16574,
-    "unresolved": 2774,
+    "edges": 1829,
+    "external": 16579,
+    "unresolved": 2771,
     "resolution_rate": 86.9
   },
   "kotlin-android-showcase": {
@@ -130,44 +130,44 @@
     "files": 194,
     "symbols": 719,
     "edges": 714,
-    "external": 6967,
-    "unresolved": 1050,
+    "external": 6969,
+    "unresolved": 1048,
     "resolution_rate": 88.0
   },
   "swift-icecubes": {
     "language": "swift",
     "files": 550,
     "symbols": 7200,
-    "edges": 18246,
-    "external": 213061,
-    "unresolved": 1587,
+    "edges": 18225,
+    "external": 213139,
+    "unresolved": 1565,
     "resolution_rate": 99.3
   },
   "scala-trading": {
     "language": "scala",
     "files": 183,
     "symbols": 2883,
-    "edges": 5476,
-    "external": 16156,
-    "unresolved": 2587,
-    "resolution_rate": 89.3
+    "edges": 5463,
+    "external": 16217,
+    "unresolved": 2559,
+    "resolution_rate": 89.4
   },
   "elixir-changelog": {
     "language": "elixir",
     "files": 885,
     "symbols": 7891,
-    "edges": 21205,
-    "external": 38856,
-    "unresolved": 10663,
-    "resolution_rate": 84.9
+    "edges": 21157,
+    "external": 38975,
+    "unresolved": 10624,
+    "resolution_rate": 85.0
   },
   "ruby-sidekiq": {
     "language": "ruby",
     "files": 256,
     "symbols": 2871,
     "edges": 3905,
-    "external": 9188,
-    "unresolved": 2954,
+    "external": 9191,
+    "unresolved": 2951,
     "resolution_rate": 81.6
   },
   "ruby-huginn": {
@@ -175,36 +175,36 @@
     "files": 553,
     "symbols": 3799,
     "edges": 2870,
-    "external": 9460,
-    "unresolved": 3405,
+    "external": 9467,
+    "unresolved": 3398,
     "resolution_rate": 78.4
   },
   "c-tig": {
     "language": "c",
     "files": 111,
     "symbols": 6905,
-    "edges": 7325,
-    "external": 2037,
-    "unresolved": 1157,
-    "resolution_rate": 89.0
+    "edges": 7353,
+    "external": 2090,
+    "unresolved": 1092,
+    "resolution_rate": 89.6
   },
   "cpp-libhv": {
     "language": "c",
     "files": 348,
     "symbols": 15974,
-    "edges": 25754,
-    "external": 13084,
-    "unresolved": 6997,
-    "resolution_rate": 84.7
+    "edges": 26117,
+    "external": 13308,
+    "unresolved": 6371,
+    "resolution_rate": 86.1
   },
   "cpp-clay": {
     "language": "c",
     "files": 88,
     "symbols": 5752,
-    "edges": 8872,
-    "external": 1121,
-    "unresolved": 3693,
-    "resolution_rate": 73.0
+    "edges": 9065,
+    "external": 1123,
+    "unresolved": 3463,
+    "resolution_rate": 74.6
   },
   "bash-ohmybash": {
     "language": "shell",
@@ -255,8 +255,8 @@
     "language": "ocaml",
     "files": 167,
     "symbols": 3759,
-    "edges": 2239,
-    "external": 1976,
+    "edges": 2235,
+    "external": 1980,
     "unresolved": 88,
     "resolution_rate": 98.0
   },
@@ -264,10 +264,10 @@
     "language": "r",
     "files": 310,
     "symbols": 12072,
-    "edges": 9716,
-    "external": 9440,
-    "unresolved": 5863,
-    "resolution_rate": 76.6
+    "edges": 3894,
+    "external": 17348,
+    "unresolved": 3872,
+    "resolution_rate": 84.6
   },
   "sql-pgmq": {
     "language": "rust",
@@ -326,10 +326,10 @@
   "cmake-cpm": {
     "language": "cmake",
     "files": 104,
-    "symbols": 1379,
+    "symbols": 1382,
     "edges": 782,
-    "external": 1907,
-    "unresolved": 1037,
+    "external": 1912,
+    "unresolved": 1035,
     "resolution_rate": 72.2
   },
   "dart-frog": {
@@ -337,9 +337,9 @@
     "files": 544,
     "symbols": 4797,
     "edges": 4362,
-    "external": 12046,
-    "unresolved": 658,
-    "resolution_rate": 96.1
+    "external": 12053,
+    "unresolved": 651,
+    "resolution_rate": 96.2
   },
   "dockerfile-jessfraz": {
     "language": "lua",
@@ -355,9 +355,9 @@
     "files": 221,
     "symbols": 4150,
     "edges": 401,
-    "external": 11984,
-    "unresolved": 1341,
-    "resolution_rate": 90.2
+    "external": 11989,
+    "unresolved": 1336,
+    "resolution_rate": 90.3
   },
   "fortran-fpm": {
     "language": "fortran",
@@ -399,37 +399,37 @@
     "language": "groovy",
     "files": 1177,
     "symbols": 10722,
-    "edges": 5122,
-    "external": 10049,
-    "unresolved": 2607,
-    "resolution_rate": 85.3
+    "edges": 5037,
+    "external": 10153,
+    "unresolved": 2590,
+    "resolution_rate": 85.4
   },
   "matlab-prmlt": {
     "language": "matlab",
     "files": 182,
     "symbols": 2923,
-    "edges": 541,
-    "external": 1520,
-    "unresolved": 907,
-    "resolution_rate": 69.4
+    "edges": 539,
+    "external": 1525,
+    "unresolved": 904,
+    "resolution_rate": 69.5
   },
   "nim-nitter": {
     "language": "nim",
     "files": 119,
     "symbols": 1381,
-    "edges": 151,
-    "external": 1240,
-    "unresolved": 222,
-    "resolution_rate": 86.2
+    "edges": 149,
+    "external": 1246,
+    "unresolved": 220,
+    "resolution_rate": 86.4
   },
   "odin-ols": {
     "language": "odin",
     "files": 137,
     "symbols": 3079,
-    "edges": 4869,
-    "external": 3838,
-    "unresolved": 1361,
-    "resolution_rate": 86.5
+    "edges": 4854,
+    "external": 3861,
+    "unresolved": 1354,
+    "resolution_rate": 86.6
   },
   "puppet-apache": {
     "language": "puppet",
@@ -454,8 +454,8 @@
     "files": 187,
     "symbols": 1296,
     "edges": 394,
-    "external": 3788,
-    "unresolved": 784,
+    "external": 3789,
+    "unresolved": 783,
     "resolution_rate": 84.2
   },
   "svelte-realworld": {
@@ -481,8 +481,8 @@
     "files": 263,
     "symbols": 6976,
     "edges": 6858,
-    "external": 34079,
-    "unresolved": 401,
+    "external": 34081,
+    "unresolved": 399,
     "resolution_rate": 99.0
   },
   "bicep-aks-baseline": {
@@ -508,34 +508,34 @@
     "files": 177,
     "symbols": 28051,
     "edges": 9576,
-    "external": 47398,
-    "unresolved": 68,
+    "external": 47400,
+    "unresolved": 66,
     "resolution_rate": 99.9
   },
   "php-monica": {
     "language": "php",
     "files": 2003,
     "symbols": 10492,
-    "edges": 12327,
-    "external": 70499,
-    "unresolved": 2524,
-    "resolution_rate": 97.0
+    "edges": 12325,
+    "external": 70524,
+    "unresolved": 2515,
+    "resolution_rate": 97.1
   },
   "powershell-winutil": {
     "language": "powershell",
     "files": 218,
     "symbols": 540,
     "edges": 618,
-    "external": 4800,
-    "unresolved": 784,
-    "resolution_rate": 87.4
+    "external": 4806,
+    "unresolved": 778,
+    "resolution_rate": 87.5
   },
   "proto-protovalidate": {
     "language": "go",
     "files": 280,
     "symbols": 19990,
-    "edges": 42104,
-    "external": 94955,
+    "edges": 42099,
+    "external": 94992,
     "unresolved": 1152,
     "resolution_rate": 99.2
   },
@@ -544,17 +544,17 @@
     "files": 524,
     "symbols": 5800,
     "edges": 3253,
-    "external": 11070,
-    "unresolved": 1645,
-    "resolution_rate": 89.7
+    "external": 11079,
+    "unresolved": 1636,
+    "resolution_rate": 89.8
   },
   "vba-stdvba": {
     "language": "vba",
     "files": 163,
     "symbols": 3604,
-    "edges": 1150,
-    "external": 721,
-    "unresolved": 1680,
-    "resolution_rate": 52.7
+    "edges": 1147,
+    "external": 738,
+    "unresolved": 1666,
+    "resolution_rate": 53.1
   }
 }

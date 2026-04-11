@@ -228,36 +228,52 @@ pub(super) fn push_typedef(
     symbols: &mut Vec<ExtractedSymbol>,
     parent_index: Option<usize>,
 ) {
+    // For C/C++ `typedef <source_type> <new_name>;`, the grammar lays out
+    // children left-to-right as:
+    //   typedef  <source_type_node>  <declarator>  ;
+    //
+    // The declarator (the LAST eligible child, not the first) is the new
+    // type alias being introduced. Iterating and returning on the first
+    // match produced catastrophic false symbols — e.g.
+    //   `typedef HttpRequestPtr Request;`
+    // would emit `HttpRequestPtr` as a fresh TypeAlias (wrong — it's the
+    // source type) and never emit `Request` (correct — it's the alias),
+    // leaving libhv's hundreds of `typedef std::shared_ptr<X> XPtr;`
+    // aliases entirely unextracted.
+    //
+    // Walk all children, remember the LAST eligible declarator, and emit
+    // that single TypeAlias.
     let mut cursor = node.walk();
+    let mut last_declarator: Option<Node> = None;
     for child in node.children(&mut cursor) {
-        match child.kind() {
-            "type_identifier" | "pointer_declarator" | "function_declarator" => {
-                let name = first_type_identifier(&child, src);
-                if let Some(name) = name {
-                    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-                    let qualified_name = scope_tree::qualify(&name, scope);
-                    let scope_path = scope_tree::scope_path(scope);
-
-                    symbols.push(ExtractedSymbol {
-                        name: name.clone(),
-                        qualified_name,
-                        kind: SymbolKind::TypeAlias,
-                        visibility: None,
-                        start_line: node.start_position().row as u32,
-                        end_line: node.end_position().row as u32,
-                        start_col: node.start_position().column as u32,
-                        end_col: node.end_position().column as u32,
-                        signature: Some(format!("typedef {name}")),
-                        doc_comment: extract_doc_comment(node, src),
-                        scope_path,
-                        parent_index,
-                    });
-                }
-                return;
-            }
-            _ => {}
+        if matches!(
+            child.kind(),
+            "type_identifier" | "pointer_declarator" | "function_declarator"
+        ) {
+            last_declarator = Some(child);
         }
     }
+    let Some(decl) = last_declarator else { return; };
+    let Some(name) = first_type_identifier(&decl, src) else { return; };
+
+    let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+    let qualified_name = scope_tree::qualify(&name, scope);
+    let scope_path = scope_tree::scope_path(scope);
+
+    symbols.push(ExtractedSymbol {
+        name: name.clone(),
+        qualified_name,
+        kind: SymbolKind::TypeAlias,
+        visibility: None,
+        start_line: node.start_position().row as u32,
+        end_line: node.end_position().row as u32,
+        start_col: node.start_position().column as u32,
+        end_col: node.end_position().column as u32,
+        signature: Some(format!("typedef {name}")),
+        doc_comment: extract_doc_comment(node, src),
+        scope_path,
+        parent_index,
+    });
 }
 
 /// Returns true if `node` is or contains a `function_declarator` child,
