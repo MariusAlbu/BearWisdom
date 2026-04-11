@@ -896,36 +896,48 @@ pub(super) fn push_variable_decl(
                     // `const [isOpen, setIsOpen] = useState(false)` —
                     // array destructuring. Each named element becomes a
                     // Variable symbol so references from the surrounding
-                    // scope can resolve against it. Without this the
-                    // destructured bindings are invisible to the index and
-                    // every call like `setIsOpen(true)` leaks out as an
-                    // unresolved cross-file ref.
+                    // scope can resolve against it.
+                    //
+                    // For type inference, each destructured element gets a
+                    // chain-bearing TypeRef: the initializer chain with an
+                    // extra ComputedAccess segment whose `name` is the
+                    // integer element index. The TypeInfo builder's
+                    // infer_type_from_chain handles the tuple-index case —
+                    // when the current type is a tuple literal like
+                    // `[T, Dispatch<SetStateAction<T>>]`, the ComputedAccess
+                    // segment selects the Nth element.
                     //
                     // Elision holes (`const [, setX] = ...`) are allowed in
                     // TS — the grammar exposes them as unnamed children and
-                    // we simply skip them here.
-                    //
-                    // Type inference for the destructured elements is a
-                    // follow-up. The tuple return of hooks like
-                    // `useState<T>() : [T, Dispatch<SetStateAction<T>>]`
-                    // needs index-aware chain walking; the current chain
-                    // walker doesn't model tuple indices yet. Local-scope
-                    // resolution alone is the critical fix.
+                    // we increment the index so subsequent bindings still
+                    // map to the right slot. Nested destructuring
+                    // (`[[a, b], c]`) is ignored in MVP — the element isn't
+                    // a plain identifier so no symbol is pushed.
+                    let source_chain = child
+                        .child_by_field_name("value")
+                        .and_then(|init| build_chain(init, src));
+
                     let mut apcursor = name_node.walk();
+                    let mut elem_index: usize = 0;
                     for element in name_node.children(&mut apcursor) {
-                        // Tree-sitter TS yields `identifier` for plain
-                        // bindings and `assignment_pattern` for defaulted
-                        // ones (`[x = 0, y]`). Rest elements (`...rest`)
-                        // appear as `rest_pattern` whose first named child
-                        // is the identifier. Nested destructuring
-                        // (`[[a, b], c]`) is ignored in MVP.
+                        // Punctuation like `[`, `,`, `]` has no meaningful
+                        // role here — skip via `is_named()`. Elision holes
+                        // aren't represented as a specific grammar node and
+                        // are effectively already skipped because no named
+                        // child sits between commas.
+                        if !element.is_named() {
+                            continue;
+                        }
+                        let is_rest = element.kind() == "rest_pattern";
                         let (elem_name, elem_node) = match element.kind() {
                             "identifier" => (node_text(element, src), element),
                             "assignment_pattern" => {
                                 let Some(inner) = element.child_by_field_name("left") else {
+                                    elem_index += 1;
                                     continue;
                                 };
                                 if inner.kind() != "identifier" {
+                                    elem_index += 1;
                                     continue;
                                 }
                                 (node_text(inner, src), inner)
@@ -935,18 +947,26 @@ pub(super) fn push_variable_decl(
                                 let inner = element
                                     .children(&mut rc)
                                     .find(|c| c.kind() == "identifier");
-                                let Some(inner) = inner else { continue };
+                                let Some(inner) = inner else {
+                                    elem_index += 1;
+                                    continue;
+                                };
                                 (node_text(inner, src), inner)
                             }
-                            _ => continue,
+                            _ => {
+                                elem_index += 1;
+                                continue;
+                            }
                         };
                         if elem_name.is_empty() {
+                            elem_index += 1;
                             continue;
                         }
 
                         let qualified_name = scope_tree::qualify(&elem_name, parent_scope);
+                        let elem_sym_idx = symbols.len();
                         symbols.push(ExtractedSymbol {
-                            name: elem_name,
+                            name: elem_name.clone(),
                             qualified_name,
                             kind: SymbolKind::Variable,
                             visibility: detect_visibility(node, src),
@@ -959,6 +979,35 @@ pub(super) fn push_variable_decl(
                             scope_path: scope_path.clone(),
                             parent_index,
                         });
+
+                        // Rest elements (`...rest`) bind an array of the
+                        // remaining tuple elements — tuple-index inference
+                        // doesn't apply. Skip the TypeRef emission so the
+                        // chain walker isn't misled into thinking it's the
+                        // single element at `elem_index`.
+                        if !is_rest {
+                            if let Some(ref base_chain) = source_chain {
+                                let mut elem_chain = base_chain.clone();
+                                elem_chain.segments.push(ChainSegment {
+                                    name: elem_index.to_string(),
+                                    node_kind: "tuple_index".to_string(),
+                                    kind: SegmentKind::ComputedAccess,
+                                    declared_type: None,
+                                    type_args: vec![],
+                                    optional_chaining: false,
+                                });
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: elem_sym_idx,
+                                    target_name: elem_name,
+                                    kind: EdgeKind::TypeRef,
+                                    line: elem_node.start_position().row as u32,
+                                    module: None,
+                                    chain: Some(elem_chain),
+                                });
+                            }
+                        }
+
+                        elem_index += 1;
                     }
                 }
             }

@@ -67,26 +67,60 @@ fn collect_pom_files(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize
     }
 }
 
+/// A fully-qualified Maven coordinate extracted from a pom.xml dependency.
+/// Needed by the externals discovery pass to locate the `-sources.jar` on
+/// disk — only `group_id` isn't sufficient because the local repository
+/// layout is `groupId.replace('.', '/') / artifactId / version / file`.
+#[derive(Debug, Clone)]
+pub struct MavenCoord {
+    pub group_id: String,
+    pub artifact_id: String,
+    /// None when the pom uses version property resolution (`${spring.version}`)
+    /// that our line parser doesn't handle. Callers can probe the `versions/`
+    /// directory in the local repo to pick one when this is None.
+    pub version: Option<String>,
+}
+
 /// Parse `<dependency><groupId>...</groupId><artifactId>...</artifactId>` from pom.xml.
 ///
 /// Returns a list of groupId strings (e.g., "org.springframework", "com.google.guava").
 /// Lightweight line-based parsing — no XML library needed.
 pub fn parse_pom_xml_dependencies(content: &str) -> Vec<String> {
-    let mut group_ids = Vec::new();
+    parse_pom_xml_coords(content)
+        .into_iter()
+        .map(|c| c.group_id)
+        .collect()
+}
+
+/// Parse full `<dependency>` coordinates from a pom.xml. Accepts groupId /
+/// artifactId / version in any order within a `<dependency>` block.
+/// Dependencies that omit `groupId` or `artifactId` are dropped.
+/// `<version>` is optional — externals discovery falls back to a
+/// version-directory scan when missing.
+pub fn parse_pom_xml_coords(content: &str) -> Vec<MavenCoord> {
+    let mut coords = Vec::new();
     let mut in_dependency = false;
-    let mut current_group_id: Option<String> = None;
+    let mut gid: Option<String> = None;
+    let mut aid: Option<String> = None;
+    let mut ver: Option<String> = None;
 
     for line in content.lines() {
         let trimmed = line.trim();
 
         if trimmed.contains("<dependency>") {
             in_dependency = true;
-            current_group_id = None;
+            gid = None;
+            aid = None;
+            ver = None;
             continue;
         }
         if trimmed.contains("</dependency>") {
-            if let Some(gid) = current_group_id.take() {
-                group_ids.push(gid);
+            if let (Some(g), Some(a)) = (gid.take(), aid.take()) {
+                coords.push(MavenCoord {
+                    group_id: g,
+                    artifact_id: a,
+                    version: ver.take(),
+                });
             }
             in_dependency = false;
             continue;
@@ -97,11 +131,19 @@ pub fn parse_pom_xml_dependencies(content: &str) -> Vec<String> {
         }
 
         if let Some(value) = extract_xml_text(trimmed, "groupId") {
-            current_group_id = Some(value);
+            gid = Some(value);
+        } else if let Some(value) = extract_xml_text(trimmed, "artifactId") {
+            aid = Some(value);
+        } else if let Some(value) = extract_xml_text(trimmed, "version") {
+            // Skip unresolvable property placeholders. The version-dir scan
+            // fallback in externals discovery will find a concrete version.
+            if !value.starts_with("${") {
+                ver = Some(value);
+            }
         }
     }
 
-    group_ids
+    coords
 }
 
 /// Extract the text content of a simple XML element on a single line.

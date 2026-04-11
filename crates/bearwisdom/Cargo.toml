@@ -105,6 +105,10 @@ prost                  = { workspace = true }
 # LRU cache for query results and ref caching
 lru                    = { workspace = true }
 strum                  = { workspace = true }
+# Java externals: read .java entries from Maven sources jars
+zip                    = { workspace = true }
+# .NET externals: ECMA-335 metadata reader for DLL type enumeration
+dotscope               = { workspace = true }
 
 
 [build-dependencies]

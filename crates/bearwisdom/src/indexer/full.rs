@@ -378,15 +378,38 @@ fn parse_external_sources(project_root: &Path, registry: &LanguageRegistry) -> V
         }
     }
 
+    let java_roots = externals::discover_java_externals(project_root);
+    if !java_roots.is_empty() {
+        info!(
+            "Discovered {} external Java dependency roots",
+            java_roots.len()
+        );
+        for dep in &java_roots {
+            walked.extend(externals::walk_java_external_root(dep));
+        }
+    }
+
+    // .NET externals are read from DLL metadata, not source text, so they
+    // bypass the WalkedFile → parse_file path entirely and come back as
+    // synthetic ParsedFile entries. Append them to whatever the source-
+    // based walk produces below.
+    let dotnet_parsed = externals::parse_dotnet_externals(project_root);
+    if !dotnet_parsed.is_empty() {
+        info!(
+            "Parsed {} external .NET assemblies via NuGet metadata",
+            dotnet_parsed.len()
+        );
+    }
+
     if walked.is_empty() {
-        return Vec::new();
+        return dotnet_parsed;
     }
     debug!("Walking {} external source files total", walked.len());
 
     let results: Vec<Result<ParsedFile>> =
         walked.par_iter().map(|w| parse_file(w, registry)).collect();
 
-    let mut parsed = Vec::with_capacity(results.len());
+    let mut parsed = Vec::with_capacity(results.len() + dotnet_parsed.len());
     let mut errors = 0usize;
     for (walked, res) in walked.iter().zip(results) {
         match res {
@@ -410,6 +433,7 @@ fn parse_external_sources(project_root: &Path, registry: &LanguageRegistry) -> V
     if errors > 0 {
         debug!("{errors} external files failed to parse (non-fatal)");
     }
+    parsed.extend(dotnet_parsed);
     parsed
 }
 

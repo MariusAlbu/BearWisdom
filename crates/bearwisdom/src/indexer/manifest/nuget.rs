@@ -145,7 +145,30 @@ pub fn parse_sdk_type(content: &str) -> Option<DotnetSdkType> {
 
 /// Extract `<PackageReference Include="..." />` names from .csproj content.
 pub fn parse_package_references(content: &str) -> Vec<String> {
-    let mut packages = Vec::new();
+    parse_package_references_full(content)
+        .into_iter()
+        .map(|c| c.name)
+        .collect()
+}
+
+/// A NuGet package coordinate extracted from a .csproj `<PackageReference>`.
+/// Needed by externals discovery to probe the NuGet global packages folder
+/// at `~/.nuget/packages/{lowercased_name}/{version}/`.
+#[derive(Debug, Clone)]
+pub struct NuGetCoord {
+    pub name: String,
+    /// None when the csproj omits `Version=` or uses a variable
+    /// (`Version="$(Foo)"`) we can't resolve here. Discovery falls back to
+    /// a version-directory scan in that case.
+    pub version: Option<String>,
+}
+
+/// Extract full `(name, version)` tuples from `<PackageReference ... />`
+/// entries in a .csproj. Handles both self-closing (`<PackageReference
+/// Include="..." Version="..." />`) and paired (`<PackageReference
+/// Include="...">...</PackageReference>`) forms.
+pub fn parse_package_references_full(content: &str) -> Vec<NuGetCoord> {
+    let mut coords = Vec::new();
     let tag = "PackageReference";
 
     let mut search_from = 0;
@@ -154,19 +177,29 @@ pub fn parse_package_references(content: &str) -> Vec<String> {
         search_from = abs_pos + tag.len();
 
         let rest = &content[search_from..];
-        let window = &rest[..rest.len().min(200)];
-        if let Some(inc_pos) = window.find("Include=\"") {
+        // 256 bytes is enough for any well-formed tag including Version.
+        let window = &rest[..rest.len().min(256)];
+        let name = window.find("Include=\"").and_then(|inc_pos| {
             let after_inc = &window[inc_pos + 9..];
-            if let Some(end_quote) = after_inc.find('"') {
-                let name = &after_inc[..end_quote];
-                if !name.is_empty() {
-                    packages.push(name.to_string());
-                }
-            }
-        }
+            after_inc
+                .find('"')
+                .map(|end| after_inc[..end].to_string())
+                .filter(|s| !s.is_empty())
+        });
+        let Some(name) = name else { continue };
+
+        let version = window.find("Version=\"").and_then(|ver_pos| {
+            let after_ver = &window[ver_pos + 9..];
+            after_ver
+                .find('"')
+                .map(|end| after_ver[..end].to_string())
+                .filter(|v| !v.is_empty() && !v.starts_with("$("))
+        });
+
+        coords.push(NuGetCoord { name, version });
     }
 
-    packages
+    coords
 }
 
 /// Pick the "most capable" SDK from a list — Web > Worker > Blazor > Base.

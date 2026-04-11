@@ -937,6 +937,746 @@ fn is_test_or_story_file(name: &str) -> bool {
         || stem == "index.test"
 }
 
+// ===========================================================================
+// JAVA — Maven local repository + sources jar walker
+// ===========================================================================
+
+/// Discover all external Java dependency roots for a project.
+///
+/// Strategy:
+/// 1. Parse every `pom.xml` under the project root via the existing Maven
+///    manifest reader — returns full `MavenCoord` triples (groupId,
+///    artifactId, version).
+/// 2. Locate the Maven local repository in this order:
+///    - `BEARWISDOM_JAVA_MAVEN_REPO` env override
+///    - `$HOME/.m2/repository` (or `%USERPROFILE%\.m2\repository` on Windows)
+/// 3. For each coord, compute the artifact directory
+///    `{repo}/{groupId.replace('.', '/')}/{artifactId}/{version}` and look
+///    for the sources jar `{artifactId}-{version}-sources.jar` inside it.
+///    When the pom didn't specify a version, scan the artifact directory
+///    and pick the lexicographically latest subdirectory as the version.
+/// 4. Extract the jar's `.java` entries to a persistent cache directory
+///    `{repo}/../bearwisdom-sources-cache/{coord_slug}/` so re-indexing
+///    stays fast. Returns one `ExternalDepRoot` per dep pointing at the
+///    cache directory.
+///
+/// Test jars (`-test-sources.jar`) and classifier-suffixed variants are
+/// skipped intentionally — they aren't part of the public API surface and
+/// would inflate the symbol table with test scaffolding.
+pub fn discover_java_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::maven::{parse_pom_xml_coords, MavenCoord};
+
+    // Collect every pom.xml under the project. Reusing the MavenManifest
+    // walker would only surface groupIds, so we re-walk here for the full
+    // coordinates.
+    let mut pom_paths: Vec<PathBuf> = Vec::new();
+    collect_pom_files_bounded(project_root, &mut pom_paths, 0);
+    if pom_paths.is_empty() {
+        return Vec::new();
+    }
+
+    let mut coords: Vec<MavenCoord> = Vec::new();
+    for pom in &pom_paths {
+        let Ok(content) = std::fs::read_to_string(pom) else {
+            continue;
+        };
+        coords.extend(parse_pom_xml_coords(&content));
+    }
+    if coords.is_empty() {
+        return Vec::new();
+    }
+
+    let Some(repo) = maven_local_repo() else {
+        debug!("No Maven local repository discovered; skipping Java externals");
+        return Vec::new();
+    };
+    let cache_base = repo.parent().unwrap_or(&repo).join("bearwisdom-sources-cache");
+    let _ = std::fs::create_dir_all(&cache_base);
+
+    debug!(
+        "Probing Maven local repo {} for {} declared coords",
+        repo.display(),
+        coords.len()
+    );
+
+    let mut roots = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+    for coord in coords {
+        let Some((version, artifact_dir)) = resolve_maven_artifact_dir(&repo, &coord) else {
+            continue;
+        };
+        let sources_jar = artifact_dir.join(format!(
+            "{}-{}-sources.jar",
+            coord.artifact_id, version
+        ));
+        if !sources_jar.is_file() {
+            debug!(
+                "Maven sources jar missing for {}:{}:{} — skipping",
+                coord.group_id, coord.artifact_id, version
+            );
+            continue;
+        }
+
+        let cache_dir = cache_base
+            .join(coord.group_id.replace('.', "_"))
+            .join(&coord.artifact_id)
+            .join(&version);
+        if !cache_dir.exists() || is_cache_stale(&sources_jar, &cache_dir) {
+            if let Err(e) = extract_java_sources_jar(&sources_jar, &cache_dir) {
+                debug!(
+                    "Failed to extract {}: {e}",
+                    sources_jar.display()
+                );
+                continue;
+            }
+        }
+
+        if !seen.insert(cache_dir.clone()) {
+            continue;
+        }
+        roots.push(ExternalDepRoot {
+            module_path: format!("{}:{}", coord.group_id, coord.artifact_id),
+            version,
+            root: cache_dir,
+            ecosystem: "java",
+        });
+    }
+    roots
+}
+
+/// Locate `$MAVEN_LOCAL_REPO` in the order BEARWISDOM_JAVA_MAVEN_REPO →
+/// `$HOME/.m2/repository` → `$USERPROFILE/.m2/repository`. Returns `None`
+/// when no directory is found — Java externals silently drop.
+pub fn maven_local_repo() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_JAVA_MAVEN_REPO") {
+        let p = PathBuf::from(explicit);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let candidate = PathBuf::from(home).join(".m2").join("repository");
+    if candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+/// Resolve `{repo}/{groupId/as/path}/{artifactId}/{version}/` for a coord.
+/// When `coord.version` is None, fall back to the lexicographically largest
+/// subdirectory of `{repo}/{group}/{artifact}/` so Spring Boot starters
+/// that resolve `${spring.version}` still match whatever is locally cached.
+/// Returns `(resolved_version, artifact_dir)`.
+fn resolve_maven_artifact_dir(
+    repo: &Path,
+    coord: &crate::indexer::manifest::maven::MavenCoord,
+) -> Option<(String, PathBuf)> {
+    let mut group_path = repo.to_path_buf();
+    for seg in coord.group_id.split('.') {
+        group_path.push(seg);
+    }
+    group_path.push(&coord.artifact_id);
+    if !group_path.is_dir() {
+        return None;
+    }
+
+    let version = if let Some(v) = &coord.version {
+        v.clone()
+    } else {
+        // Pick the lexicographically largest subdirectory — not perfect
+        // semver ordering but good enough to find any cached version.
+        let entries = std::fs::read_dir(&group_path).ok()?;
+        let mut versions: Vec<String> = entries
+            .flatten()
+            .filter_map(|e| {
+                if e.file_type().ok()?.is_dir() {
+                    e.file_name().into_string().ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        versions.sort();
+        versions.into_iter().next_back()?
+    };
+
+    let artifact_dir = group_path.join(&version);
+    if artifact_dir.is_dir() {
+        Some((version, artifact_dir))
+    } else {
+        None
+    }
+}
+
+/// Mini walker that finds every `pom.xml` under a project root up to a
+/// bounded depth. Mirrors the helper in `manifest/maven.rs` because that
+/// one is private to the module.
+fn collect_pom_files_bounded(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(ft) = entry.file_type() {
+            if ft.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if matches!(
+                        name,
+                        ".git" | "target" | "build" | "node_modules"
+                            | ".gradle" | "bin" | "obj" | ".idea"
+                    ) {
+                        continue;
+                    }
+                }
+                collect_pom_files_bounded(&path, out, depth + 1);
+            } else if ft.is_file() {
+                if path.file_name().and_then(|n| n.to_str()) == Some("pom.xml") {
+                    out.push(path);
+                }
+            }
+        }
+    }
+}
+
+/// Compare the sources jar mtime against the newest `.java` file under
+/// `cache_dir`. If the jar was updated more recently, the cache is stale
+/// and callers should re-extract.
+fn is_cache_stale(jar: &Path, cache_dir: &Path) -> bool {
+    let jar_mtime = match std::fs::metadata(jar).and_then(|m| m.modified()) {
+        Ok(t) => t,
+        Err(_) => return true,
+    };
+    let entries = match std::fs::read_dir(cache_dir) {
+        Ok(e) => e,
+        Err(_) => return true,
+    };
+    let mut newest: Option<std::time::SystemTime> = None;
+    for entry in entries.flatten() {
+        if let Ok(md) = entry.metadata() {
+            if let Ok(t) = md.modified() {
+                newest = Some(newest.map(|cur| cur.max(t)).unwrap_or(t));
+            }
+        }
+    }
+    match newest {
+        Some(t) => jar_mtime > t,
+        None => true,
+    }
+}
+
+/// Extract all `.java` entries from a Maven `-sources.jar` into `dest`.
+/// Skips entries whose path traverses out of `dest` (zip-slip guard) and
+/// ignores non-`.java` files (META-INF, pom.properties, etc.).
+fn extract_java_sources_jar(jar_path: &Path, dest: &Path) -> std::io::Result<()> {
+    use std::io::{Read, Write};
+
+    std::fs::create_dir_all(dest)?;
+    let file = std::fs::File::open(jar_path)?;
+    let mut archive = zip::ZipArchive::new(file)
+        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+
+    for i in 0..archive.len() {
+        let mut entry = archive
+            .by_index(i)
+            .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let Some(entry_path) = entry.enclosed_name() else {
+            continue;
+        };
+        let entry_path = entry_path.to_path_buf();
+        let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if !name.ends_with(".java") {
+            continue;
+        }
+        let out_path = dest.join(&entry_path);
+        if let Some(parent) = out_path.parent() {
+            std::fs::create_dir_all(parent)?;
+        }
+        let mut out_file = std::fs::File::create(&out_path)?;
+        let mut buf = Vec::with_capacity(entry.size() as usize);
+        entry.read_to_end(&mut buf)?;
+        out_file.write_all(&buf)?;
+    }
+    Ok(())
+}
+
+/// Walk one Java external dep root and emit `WalkedFile` entries.
+///
+/// File filtering rules:
+/// - Only `.java` files.
+/// - Skip `package-info.java` (package-level annotations only) and
+///   `module-info.java` (JPMS module descriptor, not public API).
+/// - Skip `tests/`, `test/`, `*Test.java`, `*Tests.java`.
+///
+/// Virtual relative_path is `ext:java:{groupId:artifactId}/{sub_path}`.
+pub fn walk_java_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_java_dir(&dep.root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_java_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        let path = entry.path();
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "test" | "tests" | "META-INF") {
+                    continue;
+                }
+            }
+            walk_java_dir(&path, root, dep, out);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+                continue;
+            };
+            if !name.ends_with(".java") {
+                continue;
+            }
+            if name == "package-info.java" || name == "module-info.java" {
+                continue;
+            }
+            if name.ends_with("Test.java") || name.ends_with("Tests.java") {
+                continue;
+            }
+
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            let virtual_path = format!("ext:java:{}/{}", dep.module_path, rel_sub);
+
+            out.push(WalkedFile {
+                relative_path: virtual_path,
+                absolute_path: path,
+                language: "java",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// .NET — NuGet global packages cache + DLL metadata reader
+// ===========================================================================
+
+/// A parsed .NET external source: a synthetic `ParsedFile` built from
+/// a DLL's ECMA-335 metadata, ready to merge into the index.
+///
+/// Unlike Go/Python/TS/Java, .NET externals don't walk source files.
+/// DLLs carry metadata but no source. `parse_dotnet_externals` uses
+/// `dotscope` to enumerate types + methods directly and emits one
+/// `ParsedFile` per DLL with one `ExtractedSymbol` per type/method.
+///
+/// The returned files have:
+/// - `path`   : `ext:dotnet:{package_id}/{tfm}/{assembly_name}`
+/// - `language`: `csharp` (so CLI search still matches by language filter)
+/// - `symbols`: class/interface/struct/enum symbols from `types()`,
+///              plus method symbols with `qualified_name = namespace.type.method`
+pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFile> {
+    use crate::indexer::manifest::nuget::parse_package_references_full;
+
+    // Walk the project for .csproj / .fsproj / .vbproj and collect coords.
+    let mut project_files: Vec<PathBuf> = Vec::new();
+    collect_dotnet_project_files(project_root, &mut project_files, 0);
+    if project_files.is_empty() {
+        return Vec::new();
+    }
+
+    let mut coords: Vec<crate::indexer::manifest::nuget::NuGetCoord> = Vec::new();
+    for p in &project_files {
+        let Ok(content) = std::fs::read_to_string(p) else {
+            continue;
+        };
+        coords.extend(parse_package_references_full(&content));
+    }
+    if coords.is_empty() {
+        return Vec::new();
+    }
+
+    let Some(nuget_root) = nuget_packages_root() else {
+        debug!("No NuGet packages cache discovered; skipping .NET externals");
+        return Vec::new();
+    };
+
+    debug!(
+        "Probing NuGet cache {} for {} package references",
+        nuget_root.display(),
+        coords.len()
+    );
+
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for coord in coords {
+        let Some(dll_path) = resolve_nuget_dll(&nuget_root, &coord) else {
+            continue;
+        };
+        if !seen.insert(dll_path.clone()) {
+            continue;
+        }
+        match parse_dotnet_dll(&dll_path, &coord.name) {
+            Ok(pf) => out.push(pf),
+            Err(e) => debug!(
+                "Failed to read .NET metadata from {}: {e}",
+                dll_path.display()
+            ),
+        }
+    }
+    out
+}
+
+/// Locate the NuGet global packages folder in this order:
+/// `BEARWISDOM_NUGET_PACKAGES` env override → `NUGET_PACKAGES` env →
+/// `$HOME/.nuget/packages` (or `%USERPROFILE%\.nuget\packages` on Windows).
+pub fn nuget_packages_root() -> Option<PathBuf> {
+    for key in ["BEARWISDOM_NUGET_PACKAGES", "NUGET_PACKAGES"] {
+        if let Some(raw) = std::env::var_os(key) {
+            let p = PathBuf::from(raw);
+            if p.is_dir() {
+                return Some(p);
+            }
+        }
+    }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let candidate = PathBuf::from(home).join(".nuget").join("packages");
+    if candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+/// Resolve `{nuget_root}/{pkg}/{version}/lib/{tfm}/{pkg}.dll` for a coord.
+///
+/// The NuGet package folder is lowercase on disk. Inside, version dirs are
+/// the concrete version strings; we prefer the caller's declared version
+/// but fall back to the lexicographically largest when it's missing or
+/// when the declared version isn't on disk.
+///
+/// Inside `lib/`, there may be multiple target frameworks. We prefer in
+/// order: `net9.0`, `net8.0`, `net7.0`, `net6.0`, `netstandard2.1`,
+/// `netstandard2.0` — newer frameworks tend to have more surface area.
+/// If none of these are present, fall back to the lexicographically
+/// largest subdirectory.
+fn resolve_nuget_dll(
+    nuget_root: &Path,
+    coord: &crate::indexer::manifest::nuget::NuGetCoord,
+) -> Option<PathBuf> {
+    let pkg_dir = nuget_root.join(coord.name.to_lowercase());
+    if !pkg_dir.is_dir() {
+        return None;
+    }
+
+    let version = if let Some(v) = &coord.version {
+        let concrete = pkg_dir.join(v);
+        if concrete.is_dir() {
+            v.clone()
+        } else {
+            largest_version_subdir(&pkg_dir)?
+        }
+    } else {
+        largest_version_subdir(&pkg_dir)?
+    };
+
+    let version_dir = pkg_dir.join(&version);
+    let lib_dir = version_dir.join("lib");
+    if !lib_dir.is_dir() {
+        return None;
+    }
+
+    let preferred_tfms = [
+        "net9.0",
+        "net8.0",
+        "net7.0",
+        "net6.0",
+        "netstandard2.1",
+        "netstandard2.0",
+    ];
+    let mut chosen_tfm: Option<PathBuf> = None;
+    for tfm in preferred_tfms {
+        let candidate = lib_dir.join(tfm);
+        if candidate.is_dir() {
+            chosen_tfm = Some(candidate);
+            break;
+        }
+    }
+    let tfm_dir = chosen_tfm.or_else(|| largest_subdir(&lib_dir))?;
+
+    // The DLL filename matches the package name (case-insensitive). Scan
+    // for a `.dll` that matches instead of guessing exact case.
+    let entries = std::fs::read_dir(&tfm_dir).ok()?;
+    let target_lower = coord.name.to_lowercase() + ".dll";
+    for entry in entries.flatten() {
+        let name = entry.file_name().to_string_lossy().to_lowercase();
+        if name == target_lower {
+            return Some(entry.path());
+        }
+    }
+    None
+}
+
+/// Pick the lexicographically largest subdirectory name — a crude stand-in
+/// for semver ordering that's good enough for finding any cached version.
+fn largest_version_subdir(dir: &Path) -> Option<String> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut versions: Vec<String> = entries
+        .flatten()
+        .filter_map(|e| {
+            if e.file_type().ok()?.is_dir() {
+                e.file_name().into_string().ok()
+            } else {
+                None
+            }
+        })
+        .collect();
+    versions.sort();
+    versions.into_iter().next_back()
+}
+
+fn largest_subdir(dir: &Path) -> Option<PathBuf> {
+    let entries = std::fs::read_dir(dir).ok()?;
+    let mut subs: Vec<PathBuf> = entries
+        .flatten()
+        .filter_map(|e| {
+            if e.file_type().ok()?.is_dir() {
+                Some(e.path())
+            } else {
+                None
+            }
+        })
+        .collect();
+    subs.sort();
+    subs.into_iter().next_back()
+}
+
+/// Parse a single .NET DLL and emit a synthetic `ParsedFile` with one
+/// symbol per type (`Class` / `Interface` / `Struct` / `Enum`) and one
+/// symbol per method. Signatures include the method's declaring type's
+/// full name so the resolver's `{namespace}.{target}` lookups match.
+///
+/// Public surface only — types with non-public visibility and methods
+/// with non-public visibility are skipped. Compiler-generated types
+/// (`<>c`, `<PrivateImplementationDetails>`, etc.) are also filtered to
+/// avoid polluting the index.
+fn parse_dotnet_dll(
+    dll_path: &Path,
+    package_name: &str,
+) -> std::result::Result<crate::types::ParsedFile, String> {
+    use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind};
+    use dotscope::metadata::method::MethodAccessFlags;
+    use dotscope::prelude::CilObject;
+
+    let assembly = CilObject::from_path(dll_path).map_err(|e| e.to_string())?;
+
+    let assembly_name = assembly
+        .assembly()
+        .map(|a| a.name.clone())
+        .unwrap_or_else(|| package_name.to_string());
+
+    let virtual_path = format!("ext:dotnet:{}/{}", package_name, assembly_name);
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+
+    for type_def in assembly.types().all_types().iter() {
+        let name = type_def.name.clone();
+        let namespace = type_def.namespace.clone();
+
+        // Skip compiler-generated types. These have names like `<>c`,
+        // `<PrivateImplementationDetails>`, `<Module>` and inflate the
+        // symbol table with noise no user code can reference.
+        if name.starts_with('<') || name == "<Module>" {
+            continue;
+        }
+
+        // Skip non-public types — public API surface only.
+        // TypeAttributes.VisibilityMask = 0x07
+        let visibility_mask = type_def.flags & 0x07;
+        if visibility_mask != 1 && visibility_mask != 2 {
+            // 1 = Public, 2 = NestedPublic; everything else is private/internal.
+            continue;
+        }
+
+        // Interface flag = TypeAttributes.ClassSemanticsMask & 0x20
+        let is_interface = type_def.flags & 0x20 != 0;
+        let kind = if is_interface {
+            SymbolKind::Interface
+        } else {
+            SymbolKind::Class
+        };
+
+        let qualified_name = if namespace.is_empty() {
+            name.clone()
+        } else {
+            format!("{namespace}.{name}")
+        };
+
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: qualified_name.clone(),
+            kind,
+            visibility: Some(crate::types::Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(format!(
+                "{} {}{}",
+                if is_interface { "interface" } else { "class" },
+                name,
+                backtick_generic_suffix(&name)
+            )),
+            doc_comment: None,
+            scope_path: if namespace.is_empty() {
+                None
+            } else {
+                Some(namespace.clone())
+            },
+            parent_index: None,
+        });
+    }
+
+    // Methods live in a global map; we attribute each to its declaring
+    // type via `declaring_type_fullname`, which produces the same
+    // `namespace.type` string we used as a type's qualified_name.
+    for entry in assembly.methods().iter() {
+        let method = entry.value();
+
+        // Skip compiler-generated accessors (`get_X`, `set_X`), anonymous
+        // methods (`<>c__DisplayClass`), and things with `<` at the start
+        // that are implementation details, not public API.
+        if method.name.starts_with('<') || method.name.starts_with(".") {
+            continue;
+        }
+        // Public surface only — skip everything else.
+        if method.flags_access != MethodAccessFlags::PUBLIC {
+            continue;
+        }
+
+        let Some(declaring_full) = method.declaring_type_fullname() else {
+            continue;
+        };
+        // Same compiler-generated-type guard as above.
+        if declaring_full.contains("<>") || declaring_full.contains("<Module>") {
+            continue;
+        }
+
+        let name = method.name.clone();
+        let qualified_name = format!("{declaring_full}.{name}");
+
+        symbols.push(ExtractedSymbol {
+            name,
+            qualified_name,
+            kind: SymbolKind::Method,
+            visibility: Some(crate::types::Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: Some(declaring_full),
+            parent_index: None,
+        });
+    }
+
+    let symbol_count = symbols.len();
+    debug!(
+        "Parsed {} external .NET symbols from {}",
+        symbol_count,
+        dll_path.display()
+    );
+
+    // Compute a content hash from the DLL bytes so incremental indexing
+    // knows when to re-read. Use the file mtime + size as a cheap proxy
+    // rather than hashing the whole DLL every time.
+    let metadata = std::fs::metadata(dll_path).map_err(|e| e.to_string())?;
+    let size = metadata.len();
+    let mtime = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+    let content_hash = format!("{:x}", size).to_string();
+
+    Ok(ParsedFile {
+        path: virtual_path,
+        language: "csharp".to_string(),
+        content_hash,
+        size,
+        line_count: 0,
+        mtime,
+        package_id: None,
+        symbols,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        content: None,
+        has_errors: false,
+    })
+}
+
+/// Convert a .NET generic type suffix `` `N `` into the more familiar
+/// `<T1, T2, ... TN>` form for signature display.
+/// `Dictionary\`2` → `<T1, T2>`. Returns empty string if not generic.
+fn backtick_generic_suffix(name: &str) -> String {
+    let Some(idx) = name.find('`') else {
+        return String::new();
+    };
+    let suffix = &name[idx + 1..];
+    let Ok(count) = suffix.parse::<u32>() else {
+        return String::new();
+    };
+    if count == 0 {
+        return String::new();
+    }
+    let params: Vec<String> = (1..=count).map(|i| format!("T{i}")).collect();
+    format!("<{}>", params.join(", "))
+}
+
+fn collect_dotnet_project_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 10 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if let Ok(ft) = entry.file_type() {
+            if ft.is_dir() {
+                if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                    if matches!(
+                        name,
+                        "bin" | "obj" | "node_modules" | ".git" | "target"
+                            | "packages" | ".vs" | "TestResults" | "artifacts"
+                    ) {
+                        continue;
+                    }
+                }
+                collect_dotnet_project_files(&path, out, depth + 1);
+            } else if ft.is_file() {
+                if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+                    if matches!(ext, "csproj" | "fsproj" | "vbproj") {
+                        out.push(path);
+                    }
+                }
+            }
+        }
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------

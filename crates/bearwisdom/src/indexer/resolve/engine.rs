@@ -638,6 +638,50 @@ impl SymbolIndex {
 
 /// Lightweight chain resolution for variable type inference during index building.
 /// Uses the already-built type_info map (not the full SymbolLookup trait).
+/// Given a type string that looks like a TypeScript tuple literal
+/// (`[A, B, C]` where commas are at bracket/angle depth zero), return the
+/// Nth element. Returns `None` if `raw` isn't a tuple, if `idx` is out of
+/// range, or if the brackets are unbalanced.
+///
+/// Used by `infer_type_from_chain` to resolve array-pattern destructuring:
+/// `const [a, b] = useState<T>()` walks to `useState`'s return type
+/// `[T, Dispatch<SetStateAction<T>>]`, then slices index 0 or 1.
+///
+/// Nested tuples/generics are handled by tracking `<>`/`[]`/`()` depth so
+/// commas inside `Dispatch<SetStateAction<T>>` or `[inner, tuple]` aren't
+/// split. This is a pure string operation — the walker's TypeEnvironment
+/// handles the subsequent generic substitution separately.
+fn tuple_element(raw: &str, idx: usize) -> Option<String> {
+    let trimmed = raw.trim();
+    let inner = trimmed.strip_prefix('[')?.strip_suffix(']')?;
+    let mut depth_angle = 0i32;
+    let mut depth_square = 0i32;
+    let mut depth_paren = 0i32;
+    let mut current = String::new();
+    let mut parts: Vec<String> = Vec::new();
+    for ch in inner.chars() {
+        match ch {
+            '<' => depth_angle += 1,
+            '>' => depth_angle -= 1,
+            '[' => depth_square += 1,
+            ']' => depth_square -= 1,
+            '(' => depth_paren += 1,
+            ')' => depth_paren -= 1,
+            ',' if depth_angle == 0 && depth_square == 0 && depth_paren == 0 => {
+                parts.push(current.trim().to_string());
+                current.clear();
+                continue;
+            }
+            _ => {}
+        }
+        current.push(ch);
+    }
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+    parts.into_iter().nth(idx)
+}
+
 fn infer_type_from_chain(
     chain: &crate::types::MemberChain,
     scope_path: &Option<String>,
@@ -729,6 +773,25 @@ fn infer_type_from_chain(
 
     // Phase 2: Walk remaining segments.
     for seg in &segments[1..] {
+        // Tuple-index selection: produced by array-pattern destructuring.
+        // `const [isOpen, setIsOpen] = useState<boolean>(false)` emits a
+        // ComputedAccess segment with integer name "0" / "1" so this pass
+        // can slice the tuple return type of the preceding call.
+        //
+        // The incoming `current_type` at this point is the return type of
+        // the call (already generic-resolved by a prior iteration), e.g.
+        // `[boolean, Dispatch<SetStateAction<boolean>>]`. Splitting by
+        // top-level commas and picking the Nth element yields the type
+        // bound to the destructured name.
+        if seg.kind == SegmentKind::ComputedAccess {
+            if let Ok(idx) = seg.name.parse::<usize>() {
+                if let Some(element) = tuple_element(&current_type, idx) {
+                    current_type = env.resolve(&element);
+                    continue;
+                }
+            }
+        }
+
         let member_qname = format!("{current_type}.{}", seg.name);
 
         if let Some(ti) = type_info.get(&member_qname) {
@@ -763,8 +826,32 @@ fn infer_type_from_chain(
             }
         }
 
+        // Fallback: if the segment corresponds to a call with no matching
+        // TypeInfo entry, treat the current_type as the "call return" so
+        // chains like `useState(...)[0]` still work when useState is
+        // external and its signature is in the index keyed by simple name
+        // rather than qualified name. Look up by simple name.
+        if let Some(sym_list) = by_name.get(&seg.name) {
+            for sym in sym_list {
+                if let Some(ti) = type_info.get(&sym.qualified_name) {
+                    if let Some(raw_return) = &ti.return_type {
+                        let resolved = env.resolve(raw_return);
+                        env.push_scope();
+                        current_type = resolved;
+                        break;
+                    }
+                }
+            }
+            // If the loop above didn't `continue`, fall through to the
+            // "can't follow" return below only when nothing matched.
+            if current_type.contains('[') || current_type.contains('<') {
+                // current_type was updated; move to the next segment.
+                continue;
+            }
+        }
+
         // Can't follow further.
-        let _ = by_name; // retained for future use
+        let _ = by_qname; // retained for future use
         return None;
     }
 
@@ -1577,6 +1664,58 @@ mod tests {
     fn test_scope_chain_from_path() {
         let chain = build_scope_chain(Some("A.B.C"));
         assert_eq!(chain, vec!["A.B.C", "A.B", "A"]);
+    }
+
+    #[test]
+    fn tuple_element_simple_pair() {
+        assert_eq!(
+            tuple_element("[boolean, Dispatch<SetStateAction<boolean>>]", 0),
+            Some("boolean".to_string())
+        );
+        assert_eq!(
+            tuple_element("[boolean, Dispatch<SetStateAction<boolean>>]", 1),
+            Some("Dispatch<SetStateAction<boolean>>".to_string())
+        );
+    }
+
+    #[test]
+    fn tuple_element_handles_whitespace_and_commas_in_generics() {
+        assert_eq!(
+            tuple_element(" [ A , B<X, Y> , C ] ", 0),
+            Some("A".to_string())
+        );
+        assert_eq!(
+            tuple_element(" [ A , B<X, Y> , C ] ", 1),
+            Some("B<X, Y>".to_string())
+        );
+        assert_eq!(
+            tuple_element(" [ A , B<X, Y> , C ] ", 2),
+            Some("C".to_string())
+        );
+    }
+
+    #[test]
+    fn tuple_element_handles_nested_tuples() {
+        assert_eq!(
+            tuple_element("[[inner, tuple], outer]", 0),
+            Some("[inner, tuple]".to_string())
+        );
+        assert_eq!(
+            tuple_element("[[inner, tuple], outer]", 1),
+            Some("outer".to_string())
+        );
+    }
+
+    #[test]
+    fn tuple_element_out_of_range_returns_none() {
+        assert_eq!(tuple_element("[A, B]", 2), None);
+    }
+
+    #[test]
+    fn tuple_element_rejects_non_tuple() {
+        assert_eq!(tuple_element("Foo<Bar>", 0), None);
+        assert_eq!(tuple_element("string", 0), None);
+        assert_eq!(tuple_element("", 0), None);
     }
 
     #[test]

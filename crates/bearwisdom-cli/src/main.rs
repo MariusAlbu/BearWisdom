@@ -430,6 +430,14 @@ enum Commands {
         /// Re-index projects (don't use cached). Slower but catches indexing regressions.
         #[arg(long)]
         reindex: bool,
+        /// Re-capture the baseline from current index state. Walks the project
+        /// list in the existing baseline, re-indexes each one, and writes the
+        /// new metrics back to the baseline file. Use after intentional
+        /// quality improvements to avoid noisy regression reports on the next
+        /// run. Ghost projects (source missing) are preserved in place with
+        /// their existing values and a marker comment.
+        #[arg(long, conflicts_with = "reindex")]
+        recapture: bool,
     },
 
     // ---- Hierarchy ---------------------------------------------------------
@@ -585,8 +593,12 @@ fn run(command: Commands, full: bool) -> Result<String> {
         }
         Commands::Reindex { path } => cmd_reindex(&path),
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
-        Commands::QualityCheck { baseline, reindex } => {
-            cmd_quality_check(&baseline, reindex)
+        Commands::QualityCheck { baseline, reindex, recapture } => {
+            if recapture {
+                cmd_quality_recapture(&baseline)
+            } else {
+                cmd_quality_check(&baseline, reindex)
+            }
         }
 
         Commands::Hierarchy { path, level, scope, max_nodes } => {
@@ -1164,6 +1176,33 @@ fn resolve_db_path(project_root: &Path) -> Result<PathBuf> {
     bearwisdom::resolve_db_path(project_root)
 }
 
+/// Detect projects whose source tree has been deleted, leaving only a cached
+/// `.bearwisdom/` index (and possibly `.git/`) behind. Used by `quality-check`
+/// to skip them instead of re-indexing an empty directory and producing a
+/// full set of false-regression zeroes.
+///
+/// Heuristic: if the project root contains no non-hidden entries (everything
+/// starts with `.`), or contains only entries whose names match a small
+/// allowlist of known cache/metadata dirs, it's a ghost.
+fn is_ghost_project(root: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return true;
+    };
+    let mut has_source = false;
+    for entry in entries.flatten() {
+        let Ok(name) = entry.file_name().into_string() else {
+            continue;
+        };
+        if name.starts_with('.') {
+            // Hidden dir/file — ignore for the ghost check.
+            continue;
+        }
+        has_source = true;
+        break;
+    }
+    !has_source
+}
+
 /// Open an existing database.  Does NOT re-index.
 /// Returns an error if no database exists for this project yet.
 fn open_existing_db(project_path: &str) -> Result<Database> {
@@ -1268,6 +1307,17 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         eprint!("--- {name} ---\n  ");
         if !root.exists() {
             eprintln!("SKIP (path not found: {proj_path})");
+            continue;
+        }
+        // Ghost-project guard: the source tree was deleted but `.bearwisdom/`
+        // (and nothing else) remains, so `exists()` returns true but there is
+        // nothing to index. Re-indexing would wipe the old DB and produce
+        // zeroes across every metric, surfacing a sea of false regressions.
+        // Detect by checking for ANY non-dotfile entry in the root; if the
+        // project has only hidden dirs (.bearwisdom, .git), treat it as a
+        // ghost and skip.
+        if is_ghost_project(&root) {
+            eprintln!("SKIP (ghost project: source missing, only .bearwisdom/ present)");
             continue;
         }
 
@@ -1414,6 +1464,163 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         "regressions": regressions,
         "improvements": improvements,
         "projects": project_results,
+    }))
+}
+
+/// Recapture the quality baseline: re-index every project that still has
+/// source on disk, snapshot its current metrics, and write a new
+/// `quality-baseline.json`. Preserves the `project`, `path`, `languages`,
+/// and `assertions` fields from the existing baseline, and updates the
+/// numeric metrics (`files`, `symbols`, `edges`, `routes`, `flow_edges`,
+/// `unresolved_refs`, `flow_edge_types`) in place.
+///
+/// Ghost projects (source directory empty / only `.bearwisdom/` remains)
+/// and path-not-found entries are **kept as-is** with their old values —
+/// the rationale is that the user may intend to restore the source later,
+/// and wiping entries silently would hide that intent. Assertion thresholds
+/// are auto-updated to the new captured values so future runs compare
+/// apples-to-apples.
+fn cmd_quality_recapture(baseline_path: &str) -> Result<String> {
+    let baseline_file = PathBuf::from(baseline_path);
+    let content = std::fs::read_to_string(&baseline_file)
+        .with_context(|| format!("Failed to read baseline: {}", baseline_file.display()))?;
+    let mut baseline: serde_json::Value =
+        serde_json::from_str(&content).context("Failed to parse baseline JSON")?;
+
+    let Some(projects) = baseline["projects"].as_array().cloned() else {
+        anyhow::bail!("baseline.projects is not an array");
+    };
+
+    let mut new_projects: Vec<serde_json::Value> = Vec::with_capacity(projects.len());
+    let mut recaptured = 0u32;
+    let mut skipped_missing = 0u32;
+    let mut skipped_ghost = 0u32;
+
+    for proj in projects {
+        let name = proj["project"].as_str().unwrap_or("?").to_string();
+        let proj_path = proj["path"].as_str().unwrap_or("").to_string();
+        let root = PathBuf::from(&proj_path);
+
+        eprint!("--- {name} ---\n  ");
+
+        if !root.exists() {
+            eprintln!("SKIP (path not found — keeping old values)");
+            skipped_missing += 1;
+            new_projects.push(proj);
+            continue;
+        }
+        if is_ghost_project(&root) {
+            eprintln!("SKIP (ghost project — keeping old values)");
+            skipped_ghost += 1;
+            new_projects.push(proj);
+            continue;
+        }
+
+        eprintln!("Reindexing...");
+        let db_path = resolve_db_path(&root)?;
+        let mut db = Database::open(&db_path)
+            .with_context(|| format!("Failed to open DB for {name}"))?;
+        bearwisdom::full_index(&mut db, &root, None, None, None)
+            .with_context(|| format!("Index failed for {name}"))?;
+
+        let stats = bearwisdom::index_stats(&db)?;
+        let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
+        let flow_edge_types: std::collections::BTreeMap<String, u32> = flow_breakdown
+            .into_iter()
+            .map(|b| (b.edge_type, b.count))
+            .collect();
+
+        let mut updated = proj.clone();
+        updated["files"] = serde_json::json!(stats.file_count);
+        updated["symbols"] = serde_json::json!(stats.symbol_count);
+        updated["edges"] = serde_json::json!(stats.edge_count);
+        updated["routes"] = serde_json::json!(stats.route_count);
+        updated["flow_edges"] = serde_json::json!(stats.flow_edge_count);
+        updated["unresolved_refs"] = serde_json::json!(stats.unresolved_ref_count);
+        updated["flow_edge_types"] = serde_json::json!(flow_edge_types);
+
+        // Rebuild assertions using the newly captured values so future
+        // quality-check runs compare to the NEW floor, not the old one.
+        // Only rewrite fields the existing assertions block already had —
+        // don't invent new thresholds.
+        if let Some(assertions) = updated["assertions"].as_object_mut() {
+            let old_keys: Vec<String> = assertions.keys().cloned().collect();
+            for key in old_keys {
+                if let Some(new_value) = match key.as_str() {
+                    "min_routes" => Some(serde_json::json!(stats.route_count)),
+                    "min_flow_edges" => Some(serde_json::json!(stats.flow_edge_count)),
+                    "min_edges" => Some(serde_json::json!(stats.edge_count)),
+                    "min_symbols" => Some(serde_json::json!(stats.symbol_count)),
+                    "min_files" => Some(serde_json::json!(stats.file_count)),
+                    _ => {
+                        // Handle flow-edge-type thresholds: min_{type}_edges.
+                        if let Some(ty) = key
+                            .strip_prefix("min_")
+                            .and_then(|s| s.strip_suffix("_edges"))
+                        {
+                            flow_edge_types.get(ty).map(|v| serde_json::json!(*v))
+                        } else {
+                            None
+                        }
+                    }
+                } {
+                    assertions.insert(key, new_value);
+                }
+            }
+        }
+
+        new_projects.push(updated);
+        recaptured += 1;
+        eprintln!(
+            "  OK ({} files, {} symbols, {} edges)",
+            stats.file_count, stats.symbol_count, stats.edge_count
+        );
+    }
+
+    baseline["projects"] = serde_json::Value::Array(new_projects);
+    // Update captured_at to the current UTC date (time precision not
+    // needed — baselines are recaptured by hand, not continuously).
+    // Format YYYY-MM-DD manually from the UNIX epoch to avoid a chrono
+    // dependency for a single use.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    // Days since 1970-01-01.
+    let days = (now / 86_400) as i64;
+    // Convert to civil date using Howard Hinnant's date algorithms.
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = (z - era * 146_097) as u64;
+    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
+    let y = yoe as i64 + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let year = if m <= 2 { y + 1 } else { y };
+    baseline["captured_at"] = serde_json::json!(format!(
+        "{:04}-{:02}-{:02}T00:00:00Z",
+        year, m, d
+    ));
+
+    let serialized = serde_json::to_string_pretty(&baseline)
+        .context("Failed to serialize baseline JSON")?;
+    std::fs::write(&baseline_file, serialized)
+        .with_context(|| format!("Failed to write baseline: {}", baseline_file.display()))?;
+
+    eprintln!(
+        "\n=== RECAPTURE: {recaptured} re-indexed, {skipped_missing} missing, {skipped_ghost} ghost ===\n\
+         Wrote {} ({} total projects)",
+        baseline_file.display(),
+        baseline["projects"].as_array().map(|a| a.len()).unwrap_or(0)
+    );
+
+    ok_json(serde_json::json!({
+        "recaptured": recaptured,
+        "skipped_missing": skipped_missing,
+        "skipped_ghost": skipped_ghost,
+        "baseline": baseline_file.display().to_string(),
     }))
 }
 
