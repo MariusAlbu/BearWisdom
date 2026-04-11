@@ -11,6 +11,7 @@
 
 pub mod cargo;
 pub mod composer;
+pub mod description;
 pub mod gemfile;
 pub mod go_mod;
 pub mod gradle;
@@ -47,6 +48,7 @@ pub enum ManifestKind {
     SwiftPM,
     Pubspec,
     Mix,
+    Description,
 }
 
 /// Normalized data extracted from a project manifest.

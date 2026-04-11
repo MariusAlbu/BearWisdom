@@ -111,7 +111,7 @@
     "language": "rust",
     "files": 250,
     "symbols": 10393,
-    "edges": 11624,
+    "edges": 11622,
     "external": 28126,
     "unresolved": 1724,
     "resolution_rate": 95.8
