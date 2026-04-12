@@ -16,6 +16,7 @@ path = "src/main.rs"
 
 [dependencies]
 bearwisdom = { path = "../bearwisdom" }
+rayon      = { workspace = true }
 sqlite-vec = { workspace = true }
 
 # MCP server (Rust SDK)
