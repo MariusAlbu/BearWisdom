@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Runtime globals always external for Haskell.
 ///
 /// NOTE: With the import walk in `infer_external_common`, most third-party
@@ -24,14 +22,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "<=<", ">=>",
 ];
 
-/// Dependency-gated framework globals for Haskell.
-///
-/// NOTE: With the import walk active, test framework names (it, describe,
-/// shouldBe, etc.) are classified via `import Test.Hspec`. These lists are
-/// now a redundant safety net and can be removed once the import walk is
-/// validated across more projects.
-pub(crate) fn framework_globals(_deps: &HashSet<String>) -> Vec<&'static str> {
-    // Import walk handles all framework globals via import tracing.
-    // Keeping the function signature for API compatibility.
-    Vec::new()
-}

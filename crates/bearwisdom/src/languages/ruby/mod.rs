@@ -82,10 +82,6 @@ impl LanguagePlugin for RubyPlugin {
         externals::EXTERNALS
     }
 
-    fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
-        externals::framework_globals(dependencies)
-    }
-
     fn externals_locator(
         &self,
     ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {

@@ -112,24 +112,11 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     ///
     /// **DEPRECATED — scheduled for removal in Phase 4 of the manifest-first
     /// externals plan.** The permanent replacement is `externals_locator`,
-    /// which parses the project's manifest, locates each declared package's
-    /// source in the ecosystem cache, and indexes real symbols with
-    /// `origin='external'`. During the transition both paths run; the
-    /// resolver consults the hardcoded list only for ecosystems whose
-    /// locator returned nothing (missing package cache, uninstalled
-    /// toolchain). A future commit removes this method and every hardcoded
-    /// list file.
-    fn framework_globals(&self, _dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> { vec![] }
-
     /// External source locator for this language's package ecosystem.
     /// When present, the indexer uses it to find on-disk source for every
     /// dependency declared in the project's manifest and indexes that
     /// source with `origin='external'`. Languages without a package
     /// ecosystem (Bash, VBA, Cobol, SQL, Make, Dockerfile) return `None`.
-    ///
-    /// Replaces the hardcoded `framework_globals` path on a per-ecosystem
-    /// schedule: each Phase 1 / Phase 3 session lights one locator up,
-    /// measures the delta, and deletes the corresponding bandaid list.
     fn externals_locator(
         &self,
     ) -> Option<Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {

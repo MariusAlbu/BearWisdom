@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Runtime globals always external for MATLAB.
 ///
 /// MATLAB toolbox functions and OOP infrastructure that appear in project code
@@ -34,44 +32,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "mexErrMsgTxt", "mexPrintf",
 ];
 
-/// Dependency-gated framework globals for MATLAB.
-///
-/// MATLAB toolboxes are identified by their package names or by
-/// characteristic functions present in deps/requirements.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
-
-    // MATLAB Unit Testing Framework (built-in since R2013a, but may be
-    // declared as a dependency in CI config or project manifests)
-    if deps.contains("matlab.unittest") || deps.contains("matlab-test") {
-        globals.extend(MATLAB_TEST_GLOBALS);
-    }
-    // Simulink
-    if deps.contains("simulink") || deps.contains("Simulink") {
-        globals.extend(&[
-            "sim", "simout", "set_param", "get_param",
-            "add_block", "add_line", "delete_block", "delete_line",
-            "new_system", "open_system", "close_system", "save_system",
-            "bdroot", "gcb", "gcs",
-        ]);
-    }
-
-    globals
-}
-
-const MATLAB_TEST_GLOBALS: &[&str] = &[
-    "matlab.unittest.TestCase",
-    "matlab.unittest.TestRunner",
-    "matlab.unittest.TestSuite",
-    "verifyEqual", "verifyTrue", "verifyFalse",
-    "verifyEmpty", "verifyNotEmpty", "verifySize",
-    "verifyError", "verifyWarning", "verifyReturnsTrue",
-    "verifyClass", "verifyInstanceOf",
-    "verifyGreaterThan", "verifyLessThan",
-    "verifyGreaterThanOrEqual", "verifyLessThanOrEqual",
-    "assertError", "assertWarning", "assertEqual",
-    "assumeTrue", "assumeEqual",
-    "fatalAssertEqual", "fatalAssertTrue",
-    "TestCase", "TestRunner", "TestSuite",
-    "run", "runFile", "runDirectory",
-];

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Runtime globals always external for PowerShell.
 ///
 /// These are .NET instance/static method names commonly called on objects in
@@ -51,29 +49,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "GetMethods", "InvokeMember",
 ];
 
-/// Dependency-gated framework globals for PowerShell.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
-
-    if deps.contains("Pester") || deps.contains("pester") {
-        globals.extend(PESTER_GLOBALS);
-    }
-    if deps.contains("PSScriptAnalyzer") {
-        globals.extend(&["Measure-ScriptDefinition", "Invoke-ScriptAnalyzer"]);
-    }
-
-    globals
-}
-
-const PESTER_GLOBALS: &[&str] = &[
-    "Describe", "Context", "It",
-    "BeforeAll", "AfterAll", "BeforeEach", "AfterEach", "BeforeDiscovery",
-    "Should", "Mock", "Assert-MockCalled", "Assert-VerifiableMock",
-    "InModuleScope", "New-MockObject", "Set-ItResult",
-    // Should operators (used as -Be, -BeTrue, etc.)
-    "-Be", "-BeExactly", "-BeGreaterThan", "-BeLessThan",
-    "-BeIn", "-BeOfType", "-BeTrue", "-BeFalse", "-BeNullOrEmpty",
-    "-Contain", "-Exist", "-FileContentMatch",
-    "-HaveCount", "-HaveParameter",
-    "-Match", "-MatchExactly", "-Throw", "-Not", "-BeNull",
-];

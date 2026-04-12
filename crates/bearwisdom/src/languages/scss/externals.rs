@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Runtime globals always external for SCSS/CSS.
 /// Includes framework mixins/functions that are never project-defined.
 pub(crate) const EXTERNALS: &[&str] = &[
@@ -101,46 +99,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "clearfix",
 ];
 
-/// Dependency-gated framework globals for SCSS.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
-
-    // Bootstrap
-    for dep in ["bootstrap", "@bootstrap/scss", "bootstrap-scss"] {
-        if deps.contains(dep) {
-            globals.extend(BOOTSTRAP_GLOBALS);
-            break;
-        }
-    }
-
-    // Angular Material
-    for dep in ["@angular/material", "@angular/material-experimental"] {
-        if deps.contains(dep) {
-            globals.extend(ANGULAR_MATERIAL_GLOBALS);
-            break;
-        }
-    }
-
-    globals
-}
-
-const BOOTSTRAP_GLOBALS: &[&str] = &[
-    "media-breakpoint-up",
-    "media-breakpoint-down",
-    "media-breakpoint-between",
-    "media-breakpoint-only",
-    "make-container",
-    "make-row",
-    "make-col",
-    "make-col-offset",
-];
-
-const ANGULAR_MATERIAL_GLOBALS: &[&str] = &[
-    "mat-core",
-    "mat-palette",
-    "mat-light-theme",
-    "mat-dark-theme",
-    "angular-material-theme",
-    "angular-material-typography",
-    "angular-material-color",
-];

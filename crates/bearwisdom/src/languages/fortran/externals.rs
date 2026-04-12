@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Runtime globals always external for Fortran.
 /// Covers: intrinsic procedures, inquiry functions, mathematical builtins,
 /// character/string intrinsics, bit manipulation, coarray, and C interop.
@@ -111,50 +109,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "out_of_range",
 ];
 
-/// Dependency-gated framework globals for Fortran.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
-
-    // test-drive unit testing framework
-    for dep in ["test-drive", "test_drive", "testdrive"] {
-        if deps.contains(dep) {
-            globals.extend(TESTDRIVE_GLOBALS);
-            break;
-        }
-    }
-
-    // FRUIT (Fortran Unit Test Framework)
-    for dep in ["FRUIT", "fruit"] {
-        if deps.contains(dep) {
-            globals.extend(FRUIT_GLOBALS);
-            break;
-        }
-    }
-
-    // pFUnit
-    for dep in ["pfunit", "pFUnit", "pFUnit-serial"] {
-        if deps.contains(dep) {
-            globals.extend(PFUNIT_GLOBALS);
-            break;
-        }
-    }
-
-    globals
-}
-
-const TESTDRIVE_GLOBALS: &[&str] = &[
-    "check", "new_unittest", "collect_results",
-    "test_failed", "error_type",
-];
-
-const FRUIT_GLOBALS: &[&str] = &[
-    "assert_equals", "assert_not_equals", "assert_true", "assert_false",
-    "assert_not", "assert_real_equals", "assert_complex_equals",
-    "run_test_case", "fruit_summary",
-];
-
-const PFUNIT_GLOBALS: &[&str] = &[
-    "assertTrue", "assertFalse", "assertEqual", "assertNotEqual",
-    "assertRelativelyEqual", "assertExceptionRaised",
-    "TestCase", "TestSuite", "TestResult",
-];

@@ -540,20 +540,7 @@ impl SymbolIndex {
         // one ProjectContext per package (keyed by package_id) and selecting it at resolve
         // time via `SymbolInfo::package_id`.  Defer until package-level dependency graphs
         // are fully materialised in the `packages` table.
-        let test_globals: HashSet<String> = if let Some(ctx) = project_ctx {
-            // Collect all known dependency names across ecosystems.
-            let all_deps = ctx.all_dependency_names();
-            let mut globals = crate::indexer::framework_globals::framework_globals(&all_deps);
-            // Also collect framework globals from each language plugin.
-            for plugin in crate::languages::default_registry().all() {
-                for name in plugin.framework_globals(&all_deps) {
-                    globals.insert(name.to_string());
-                }
-            }
-            globals
-        } else {
-            HashSet::new()
-        };
+        let test_globals: HashSet<String> = HashSet::new();
 
         // Build per-language primitive sets for all languages present in parsed files.
         let mut primitives_by_language: FxHashMap<String, HashSet<&'static str>> =

@@ -118,14 +118,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "Execute JavaScript", "Capture Page Screenshot",
 ];
 
-/// Returns framework-injected globals for Robot Framework.
-///
-/// All Robot standard library keywords are unconditional — they ship with the
-/// Robot Framework runtime and are always available regardless of which
-/// third-party libraries the project declares.
-pub(crate) fn framework_globals(
-    _deps: &std::collections::HashSet<String>,
-) -> Vec<&'static str> {
-    // All Robot keywords are already in EXTERNALS; no dep-gated additions.
-    vec![]
-}

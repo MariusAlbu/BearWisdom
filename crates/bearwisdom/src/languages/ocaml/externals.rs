@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Runtime globals always external for OCaml.
 ///
 /// With the import walk in `infer_external_common`, module-qualified names
@@ -35,9 +33,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "assert", "fun",
 ];
 
-/// Dependency-gated framework globals for OCaml.
-///
-/// Import walk now handles test framework names via `open Alcotest` etc.
-pub(crate) fn framework_globals(_deps: &HashSet<String>) -> Vec<&'static str> {
-    Vec::new()
-}

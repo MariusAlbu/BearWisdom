@@ -2,8 +2,6 @@
 // zig/externals.rs — Zig standard library and runtime globals
 // =============================================================================
 
-use std::collections::HashSet;
-
 /// Zig standard library top-level names that are always external.
 ///
 /// These are the names bound by `const std = @import("std")` and accessed
@@ -86,27 +84,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "AnyReader",
 ];
 
-/// Dependency-gated framework globals for Zig.
-///
-/// Zig uses `build.zig.zon` for package management. We classify known
-/// popular packages when they appear in dependencies.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
-
-    // zigimg — image loading
-    if deps.contains("zigimg") {
-        globals.extend(&["Image", "color"]);
-    }
-
-    // zap / http.zig — web framework
-    if deps.contains("zap") || deps.contains("httpz") {
-        globals.extend(&["App", "Router", "Request", "Response"]);
-    }
-
-    // mach — game engine / window/audio framework
-    if deps.contains("mach") || deps.contains("mach-core") {
-        globals.extend(&["Core", "gpu", "sysaudio"]);
-    }
-
-    globals
-}

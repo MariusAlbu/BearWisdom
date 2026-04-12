@@ -92,10 +92,6 @@ impl LanguagePlugin for KotlinPlugin {
         externals::EXTERNALS
     }
 
-    fn framework_globals(&self, dependencies: &std::collections::HashSet<String>) -> Vec<&'static str> {
-        externals::framework_globals(dependencies)
-    }
-
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::KotlinResolver))
     }

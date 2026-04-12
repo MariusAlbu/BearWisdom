@@ -97,10 +97,6 @@ impl LanguagePlugin for PhpPlugin {
         externals::EXTERNALS
     }
 
-    fn framework_globals(&self, deps: &std::collections::HashSet<String>) -> Vec<&'static str> {
-        externals::framework_globals(deps)
-    }
-
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::PhpResolver))
     }

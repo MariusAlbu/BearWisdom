@@ -2,8 +2,6 @@
 // svelte/externals.rs — Svelte external globals
 // =============================================================================
 
-use std::collections::HashSet;
-
 /// Runtime globals always external for Svelte components.
 ///
 /// Includes the TypeScript EXTERNALS baseline plus Svelte runtime identifiers
@@ -95,34 +93,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "$$slots",
 ];
 
-/// Dependency-gated framework globals for Svelte.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
-
-    // Inherit JS/TS framework globals (test runners, i18n, etc.)
-    globals.extend(crate::languages::typescript::externals::framework_globals(deps));
-
-    // SvelteKit type exports (load, action, request handler types that appear
-    // as bare identifiers in route files).
-    if deps.contains("@sveltejs/kit") {
-        globals.extend(SVELTEKIT_TYPE_GLOBALS);
-    }
-
-    globals
-}
-
-const SVELTEKIT_TYPE_GLOBALS: &[&str] = &[
-    "PageLoad",
-    "PageData",
-    "PageServerLoad",
-    "PageServerData",
-    "LayoutLoad",
-    "LayoutData",
-    "LayoutServerLoad",
-    "LayoutServerData",
-    "Actions",
-    "ActionData",
-    "RequestHandler",
-    "EntryGenerator",
-    "ParamMatcher",
-];

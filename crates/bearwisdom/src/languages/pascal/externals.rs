@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Runtime globals always external for Pascal/Delphi/FPC.
 ///
 /// VCL/LCL/RTL identifiers that appear in project code but are never defined
@@ -69,44 +67,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "MainThreadID", "GetCurrentThreadID",
 ];
 
-/// Dependency-gated framework globals for Pascal/Delphi.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
-
-    // DUnit / DUnitX — Delphi/FPC unit test frameworks
-    if deps.contains("DUnit") || deps.contains("DUnitX") || deps.contains("dunit") {
-        globals.extend(DUNIT_GLOBALS);
-    }
-    // FPCUnit — FPC built-in test framework
-    if deps.contains("fpcunit") || deps.contains("FPCUnit") {
-        globals.extend(FPCUNIT_GLOBALS);
-    }
-    // mORMot ORM framework
-    if deps.contains("mORMot") || deps.contains("mormot") {
-        globals.extend(&[
-            "TSQLRecord", "TSQLModel", "TSQLRest",
-            "TSQLRestServerDB", "TSQLRestClientDB",
-        ]);
-    }
-
-    globals
-}
-
-const DUNIT_GLOBALS: &[&str] = &[
-    "TTestCase", "TTestSuite", "TTestResult", "TTestRunner",
-    "Check", "CheckEquals", "CheckNotEquals",
-    "CheckTrue", "CheckFalse", "CheckNull", "CheckNotNull",
-    "CheckSame", "CheckException",
-    "CheckEqualsString", "CheckEqualsMem",
-    "CheckIs",
-    "SetUp", "TearDown",
-    "RegisterTest", "RegisterTests",
-];
-
-const FPCUNIT_GLOBALS: &[&str] = &[
-    "TTestCase", "TTestSuite", "TTestResult",
-    "AssertEquals", "AssertTrue", "AssertFalse",
-    "AssertNull", "AssertNotNull", "AssertSame",
-    "AssertException",
-    "SetUp", "TearDown",
-];

@@ -6,8 +6,6 @@
 // any F# project.  These include FSharp.Core primitives, collection module
 // functions, Expecto test framework, and common DU constructors.
 
-use std::collections::HashSet;
-
 /// F# core and standard library names that are always external.
 pub(crate) const EXTERNALS: &[&str] = &[
     // -----------------------------------------------------------------------
@@ -125,71 +123,5 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "String.filter", "String.exists", "String.forall", "String.replicate",
 ];
 
-/// Dependency-gated framework globals for F#.
-pub(crate) fn framework_globals(deps: &HashSet<String>) -> Vec<&'static str> {
-    let mut globals = Vec::new();
 
-    // Expecto test framework
-    if deps.contains("Expecto") || deps.contains("expecto") {
-        globals.extend(EXPECTO_GLOBALS);
-    }
-
-    // FsUnit assertion library
-    if deps.contains("FsUnit") || deps.contains("FsUnit.Xunit") || deps.contains("FsUnit.MsTest") {
-        globals.extend(FSUNIT_GLOBALS);
-    }
-
-    globals
-}
-
-static EXPECTO_GLOBALS: &[&str] = &[
-    "testCase",
-    "testCaseAsync",
-    "testList",
-    "testListAsync",
-    "testSequenced",
-    "testSequencedGroup",
-    "testAsync",
-    "testProperty",
-    "testPropertyWithConfig",
-    "pending",
-    "pendingTest",
-    "ftestCase",
-    "ftestList",
-    "ptestCase",
-    "ptestList",
-    "Expect.equal",
-    "Expect.notEqual",
-    "Expect.isTrue",
-    "Expect.isFalse",
-    "Expect.isNull",
-    "Expect.isNotNull",
-    "Expect.isSome",
-    "Expect.isNone",
-    "Expect.isEmpty",
-    "Expect.isNotEmpty",
-    "Expect.throws",
-    "Expect.throwsT",
-    "Expect.isOk",
-    "Expect.isError",
-    "Expect.contains",
-    "Expect.sequenceEqual",
-    "Expect.stringContains",
-    "Expect.stringStarts",
-    "Expect.stringEnds",
-    "Expect.hasCountOf",
-    "Expect.wantOk",
-    "Expect.wantError",
-    "runTests",
-    "runTestsWithArgs",
-    "runTestsWithCLIArgs",
-    "runTestsInAssembly",
-    "defaultConfig",
-];
-
-static FSUNIT_GLOBALS: &[&str] = &[
-    "should", "equal", "not'", "contain", "haveLength", "be",
-    "ofType", "greaterThan", "lessThan", "greaterThanOrEqualTo",
-    "lessThanOrEqualTo",
-];
 

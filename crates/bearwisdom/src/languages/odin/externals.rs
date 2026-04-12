@@ -2,8 +2,6 @@
 // odin/externals.rs — Odin runtime globals and standard library package names
 // =============================================================================
 
-use std::collections::HashSet;
-
 /// Odin standard library package names that are always external.
 ///
 /// Odin's stdlib is accessed via package qualifiers (e.g. `fmt.println`).
@@ -63,9 +61,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "intrinsics",
 ];
 
-/// Dependency-gated framework globals for Odin.
-///
-/// Odin has no package manager — no dynamic framework globals.
-pub(crate) fn framework_globals(_deps: &HashSet<String>) -> Vec<&'static str> {
-    vec![]
-}

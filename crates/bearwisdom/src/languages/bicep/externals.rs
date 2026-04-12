@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Azure resource type provider namespaces always classified as external.
 /// These appear in resource declarations as `'Microsoft.Compute/virtualMachines@...'`.
 pub(crate) const EXTERNALS: &[&str] = &[
@@ -88,11 +86,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "Microsoft.Search/searchServices",
 ];
 
-/// Dependency-gated framework globals for Bicep.
-/// Bicep itself has no package manager; we check for well-known registry aliases
-/// that appear in `using` or `import` statements.
-pub(crate) fn framework_globals(_deps: &HashSet<String>) -> Vec<&'static str> {
-    // No Bicep-specific framework globals — built-in functions are handled
-    // by `is_bicep_builtin` in builtins.rs.
-    Vec::new()
-}

@@ -1,5 +1,3 @@
-use std::collections::HashSet;
-
 /// Well-known Docker base images that are always external (from Docker Hub or
 /// public registries). These appear in `FROM <image>` instructions.
 pub(crate) const EXTERNALS: &[&str] = &[
@@ -92,8 +90,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "public.ecr.aws/lambda/nodejs",
 ];
 
-/// Dependency-gated framework globals for Dockerfiles.
-/// Dockerfiles have no dependency manifest; this is a no-op.
-pub(crate) fn framework_globals(_deps: &HashSet<String>) -> Vec<&'static str> {
-    Vec::new()
-}

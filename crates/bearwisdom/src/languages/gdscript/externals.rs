@@ -2,8 +2,6 @@
 // gdscript/externals.rs — GDScript runtime globals and engine singletons
 // =============================================================================
 
-use std::collections::HashSet;
-
 /// GDScript engine globals and singletons that are always external.
 ///
 /// These are identifiers that appear in GDScript code but are never defined
@@ -38,9 +36,3 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "EventBus",
 ];
 
-/// Dependency-gated framework globals for GDScript.
-///
-/// GDScript has no package manager — no framework globals to add dynamically.
-pub(crate) fn framework_globals(_deps: &HashSet<String>) -> Vec<&'static str> {
-    vec![]
-}
