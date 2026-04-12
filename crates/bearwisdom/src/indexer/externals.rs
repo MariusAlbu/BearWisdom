@@ -337,6 +337,101 @@ impl ExternalSourceLocator for ScalaExternalsLocator {
     }
 }
 
+/// Composer vendor dir → `discover_php_externals` + `walk_php_external_root`.
+///
+/// PHP packages installed via Composer live in `vendor/<vendor>/<package>/`.
+/// Declared deps come from `composer.json` `require` + `require-dev`.
+/// Walk: `src/**/*.php` (PSR-4 convention), skipping `tests/`, `vendor/`.
+pub struct PhpExternalsLocator;
+
+impl ExternalSourceLocator for PhpExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "php" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_php_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_php_external_root(dep)
+    }
+}
+
+/// Erlang rebar3 → `discover_erlang_externals` + `walk_erlang_external_root`.
+///
+/// rebar3 fetches deps into `_build/default/lib/<dep>/`. Declared deps
+/// come from `rebar.config` `{deps, [...]}`. Walk: `src/**/*.erl`.
+pub struct ErlangExternalsLocator;
+
+impl ExternalSourceLocator for ErlangExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "erlang" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_erlang_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_erlang_external_root(dep)
+    }
+}
+
+/// Haskell cabal → `discover_haskell_externals` + walk.
+///
+/// Cabal packages are installed to `~/.cabal/store/ghc-<ver>/` or
+/// `~/.local/state/cabal/store/`. Stack uses `.stack-work/install/`.
+/// Declared deps come from `build-depends:` in `*.cabal` files.
+/// Walk: `*.hs` files from exposed-modules directories.
+pub struct HaskellExternalsLocator;
+
+impl ExternalSourceLocator for HaskellExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "haskell" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_haskell_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_haskell_external_root(dep)
+    }
+}
+
+/// Nim nimble → `discover_nim_externals` + `walk_nim_external_root`.
+///
+/// Nimble packages are installed to `~/.nimble/pkgs2/<pkg>-<ver>-<hash>/`.
+/// Declared deps come from `requires` in `*.nimble` files.
+/// Walk: `*.nim` under the package root.
+pub struct NimExternalsLocator;
+
+impl ExternalSourceLocator for NimExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "nim" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_nim_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_nim_external_root(dep)
+    }
+}
+
+/// Perl cpanm → `discover_perl_externals` + `walk_perl_external_root`.
+///
+/// cpanm installs to `local/lib/perl5/` (local::lib) or system paths.
+/// Declared deps come from `cpanfile` `requires` lines.
+/// Walk: `*.pm` files under the module directory.
+pub struct PerlExternalsLocator;
+
+impl ExternalSourceLocator for PerlExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "perl" }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_perl_externals(project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_perl_external_root(dep)
+    }
+}
+
 /// Extract the package name from a TS external-file virtual path like
 /// `ext:ts:@types/react/index.d.ts` → `@types/react`, or
 /// `ext:ts:lodash/lodash.d.ts` → `lodash`. Used by the TS locator's
@@ -4131,6 +4226,825 @@ libraryDependencies ++= List(
         // Without a Maven local repo, should return empty (gracefully).
         // (May or may not be empty depending on machine — just verify no crash.)
         let _ = discover_scala_externals(&tmp);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+// ===========================================================================
+// PHP / COMPOSER — vendor directory discovery
+// ===========================================================================
+
+pub fn discover_php_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::composer::parse_composer_json_deps;
+
+    let composer_path = project_root.join("composer.json");
+    if !composer_path.is_file() {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(&composer_path) else {
+        return Vec::new();
+    };
+    let declared = parse_composer_json_deps(&content);
+    if declared.is_empty() {
+        return Vec::new();
+    }
+
+    let vendor = project_root.join("vendor");
+    if !vendor.is_dir() {
+        return Vec::new();
+    }
+
+    let mut roots = Vec::new();
+    for dep in &declared {
+        // Composer packages are vendor/name format: "laravel/framework" → vendor/laravel/framework/
+        let pkg_dir = vendor.join(dep.replace('/', std::path::MAIN_SEPARATOR_STR));
+        if pkg_dir.is_dir() {
+            let version = read_composer_version(&pkg_dir);
+            roots.push(ExternalDepRoot {
+                module_path: dep.clone(),
+                version,
+                root: pkg_dir,
+                ecosystem: "php",
+            });
+        }
+    }
+    debug!("PHP: discovered {} external package roots", roots.len());
+    roots
+}
+
+fn read_composer_version(pkg_dir: &Path) -> String {
+    let installed = pkg_dir.join("composer.json");
+    if let Ok(content) = std::fs::read_to_string(&installed) {
+        if let Ok(val) = serde_json::from_str::<serde_json::Value>(&content) {
+            if let Some(v) = val.get("version").and_then(|v| v.as_str()) {
+                return v.to_string();
+            }
+        }
+    }
+    String::new()
+}
+
+pub fn walk_php_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    // Prefer src/ if it exists (PSR-4), otherwise walk root
+    let walk_root = if dep.root.join("src").is_dir() {
+        dep.root.join("src")
+    } else {
+        dep.root.clone()
+    };
+    walk_php_dir(&walk_root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_php_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_php_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_php_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "tests" | "test" | "Tests" | "Test" | "vendor" | "docs" | "examples")
+                    || name.starts_with('.')
+                {
+                    continue;
+                }
+            }
+            walk_php_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !name.ends_with(".php") { continue; }
+            if name.ends_with("Test.php") || name.ends_with("Tests.php") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:php:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "php",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// ERLANG / REBAR3 — _build/default/lib discovery
+// ===========================================================================
+
+pub fn discover_erlang_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    let rebar_config = project_root.join("rebar.config");
+    if !rebar_config.is_file() {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(&rebar_config) else {
+        return Vec::new();
+    };
+    let declared = parse_rebar_deps(&content);
+    if declared.is_empty() {
+        return Vec::new();
+    }
+
+    let deps_dir = project_root.join("_build").join("default").join("lib");
+    if !deps_dir.is_dir() {
+        return Vec::new();
+    }
+
+    let mut roots = Vec::new();
+    for dep_name in &declared {
+        let dep_dir = deps_dir.join(dep_name);
+        if dep_dir.is_dir() {
+            roots.push(ExternalDepRoot {
+                module_path: dep_name.clone(),
+                version: String::new(),
+                root: dep_dir,
+                ecosystem: "erlang",
+            });
+        }
+    }
+    debug!("Erlang: discovered {} external package roots", roots.len());
+    roots
+}
+
+/// Parse dep names from rebar.config `{deps, [...]}` section.
+pub fn parse_rebar_deps(content: &str) -> Vec<String> {
+    let mut deps = Vec::new();
+    let Some(start) = content.find("{deps,") else {
+        return deps;
+    };
+    let rest = &content[start..];
+    let Some(bracket_start) = rest.find('[') else {
+        return deps;
+    };
+    let rest = &rest[bracket_start..];
+    let Some(bracket_end) = rest.find(']') else {
+        return deps;
+    };
+    let deps_block = &rest[1..bracket_end];
+
+    // Top-level dep tuples: {atom, ...}. We track brace depth to only
+    // match the first atom of depth-1 tuples, skipping nested {git,...}.
+    let mut depth = 0u32;
+    let mut in_atom = false;
+    let mut atom_start = 0usize;
+    for (i, ch) in deps_block.char_indices() {
+        match ch {
+            '{' => {
+                depth += 1;
+                if depth == 1 {
+                    in_atom = true;
+                    atom_start = i + 1;
+                }
+            }
+            ',' | '}' if depth == 1 && in_atom => {
+                let name = deps_block[atom_start..i].trim();
+                if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    deps.push(name.to_string());
+                }
+                in_atom = false;
+                if ch == '}' { depth -= 1; }
+            }
+            '}' => { depth = depth.saturating_sub(1); }
+            _ => {}
+        }
+    }
+    deps
+}
+
+pub fn walk_erlang_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    let src_dir = dep.root.join("src");
+    if src_dir.is_dir() {
+        walk_erlang_dir(&src_dir, &dep.root, dep, &mut out);
+    }
+    // Also check include/ for header files
+    let include_dir = dep.root.join("include");
+    if include_dir.is_dir() {
+        walk_erlang_dir(&include_dir, &dep.root, dep, &mut out);
+    }
+    out
+}
+
+fn walk_erlang_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_erlang_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_erlang_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "test" | "tests" | "examples" | "doc") || name.starts_with('.') {
+                    continue;
+                }
+            }
+            walk_erlang_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !(name.ends_with(".erl") || name.ends_with(".hrl")) { continue; }
+            if name.ends_with("_SUITE.erl") || name.ends_with("_tests.erl") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:erlang:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "erlang",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// HASKELL / CABAL — cabal store or stack-work discovery
+// ===========================================================================
+
+pub fn discover_haskell_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    let declared = parse_cabal_build_depends(project_root);
+    if declared.is_empty() {
+        return Vec::new();
+    }
+
+    // Stack projects: .stack-work/install/<platform>/<hash>/lib/<ghc-ver>/
+    let stack_root = project_root.join(".stack-work");
+    if stack_root.is_dir() {
+        let roots = find_haskell_stack_deps(&stack_root, &declared);
+        if !roots.is_empty() {
+            debug!("Haskell: discovered {} external roots via Stack", roots.len());
+            return roots;
+        }
+    }
+
+    // Cabal: ~/.cabal/store/ghc-<ver>/ or ~/.local/state/cabal/store/ghc-<ver>/
+    let roots = find_haskell_cabal_deps(&declared);
+    debug!("Haskell: discovered {} external roots via Cabal", roots.len());
+    roots
+}
+
+fn parse_cabal_build_depends(project_root: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(project_root) else {
+        return Vec::new();
+    };
+    let cabal_file = entries.flatten().find(|e| {
+        e.path().extension().and_then(|x| x.to_str()) == Some("cabal")
+    });
+    let Some(cabal_entry) = cabal_file else {
+        return Vec::new();
+    };
+    let Ok(content) = std::fs::read_to_string(cabal_entry.path()) else {
+        return Vec::new();
+    };
+
+    let mut deps = Vec::new();
+    let mut in_build_depends = false;
+
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.to_lowercase().starts_with("build-depends:") {
+            in_build_depends = true;
+            let rest = trimmed["build-depends:".len()..].trim();
+            if !rest.is_empty() {
+                deps.extend(parse_cabal_dep_list(rest));
+            }
+            continue;
+        }
+        if in_build_depends {
+            if !line.starts_with(' ') && !line.starts_with('\t') && !trimmed.starts_with(',') {
+                in_build_depends = false;
+                continue;
+            }
+            deps.extend(parse_cabal_dep_list(trimmed));
+        }
+    }
+    deps.sort();
+    deps.dedup();
+    deps
+}
+
+fn parse_cabal_dep_list(s: &str) -> Vec<String> {
+    s.split(',')
+        .map(|chunk| {
+            chunk.trim()
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .trim()
+                .to_string()
+        })
+        .filter(|name| !name.is_empty() && name != "base")
+        .collect()
+}
+
+fn find_haskell_stack_deps(stack_work: &Path, declared: &[String]) -> Vec<ExternalDepRoot> {
+    // .stack-work/install/<platform>/<hash>/<ghc-ver>/lib/<ghc-ver>/<pkg>-<ver>/
+    let install = stack_work.join("install");
+    if !install.is_dir() { return Vec::new(); }
+
+    let mut roots = Vec::new();
+    let Ok(platforms) = std::fs::read_dir(&install) else { return Vec::new(); };
+    for platform in platforms.flatten() {
+        let Ok(hashes) = std::fs::read_dir(platform.path()) else { continue; };
+        for hash in hashes.flatten() {
+            let lib = hash.path().join("lib");
+            if !lib.is_dir() { continue; }
+            let Ok(ghc_vers) = std::fs::read_dir(&lib) else { continue; };
+            for ghc_ver in ghc_vers.flatten() {
+                find_haskell_pkgs_in_dir(&ghc_ver.path(), declared, &mut roots);
+            }
+        }
+    }
+    roots
+}
+
+fn find_haskell_cabal_deps(declared: &[String]) -> Vec<ExternalDepRoot> {
+    let mut candidates = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        let store1 = home.join(".cabal").join("store");
+        let store2 = home.join(".local").join("state").join("cabal").join("store");
+        for store in [store1, store2] {
+            if store.is_dir() {
+                if let Ok(entries) = std::fs::read_dir(&store) {
+                    for e in entries.flatten() {
+                        if e.path().is_dir() {
+                            candidates.push(e.path());
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    let mut roots = Vec::new();
+    for ghc_dir in &candidates {
+        find_haskell_pkgs_in_dir(ghc_dir, declared, &mut roots);
+    }
+    roots
+}
+
+fn find_haskell_pkgs_in_dir(dir: &Path, declared: &[String], roots: &mut Vec<ExternalDepRoot>) {
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        for dep in declared {
+            let prefix = format!("{dep}-");
+            if name_str.starts_with(&prefix) && entry.path().is_dir() {
+                let version = name_str[prefix.len()..].to_string();
+                roots.push(ExternalDepRoot {
+                    module_path: dep.clone(),
+                    version,
+                    root: entry.path(),
+                    ecosystem: "haskell",
+                });
+                break;
+            }
+        }
+    }
+}
+
+pub fn walk_haskell_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_haskell_dir(&dep.root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_haskell_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_haskell_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_haskell_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "test" | "tests" | "bench" | "dist-newstyle" | ".stack-work")
+                    || name.starts_with('.')
+                {
+                    continue;
+                }
+            }
+            walk_haskell_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !name.ends_with(".hs") { continue; }
+            if name.ends_with("Spec.hs") || name.ends_with("Test.hs") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:haskell:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "haskell",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// NIM / NIMBLE — ~/.nimble/pkgs2 discovery
+// ===========================================================================
+
+pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    let declared = parse_nimble_requires(project_root);
+    if declared.is_empty() {
+        return Vec::new();
+    }
+
+    let nimble_dir = find_nimble_pkgs_dir();
+    let Some(pkgs_dir) = nimble_dir else {
+        return Vec::new();
+    };
+
+    let mut roots = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&pkgs_dir) else { return Vec::new(); };
+    let all_entries: Vec<_> = entries.flatten().collect();
+
+    for dep_name in &declared {
+        let prefix = format!("{dep_name}-");
+        let mut matches: Vec<PathBuf> = all_entries.iter()
+            .filter(|e| {
+                let n = e.file_name();
+                let s = n.to_string_lossy();
+                s.starts_with(&prefix) && e.path().is_dir()
+            })
+            .map(|e| e.path())
+            .collect();
+        matches.sort();
+        if let Some(best) = matches.pop() {
+            let version = best.file_name()
+                .and_then(|n| n.to_str())
+                .and_then(|n| n.strip_prefix(&prefix))
+                .unwrap_or("")
+                .to_string();
+            roots.push(ExternalDepRoot {
+                module_path: dep_name.clone(),
+                version,
+                root: best,
+                ecosystem: "nim",
+            });
+        }
+    }
+    debug!("Nim: discovered {} external package roots", roots.len());
+    roots
+}
+
+fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
+    let Ok(entries) = std::fs::read_dir(project_root) else {
+        return Vec::new();
+    };
+    let nimble_file = entries.flatten().find(|e| {
+        e.path().extension().and_then(|x| x.to_str()) == Some("nimble")
+    });
+    let Some(entry) = nimble_file else { return Vec::new(); };
+    let Ok(content) = std::fs::read_to_string(entry.path()) else { return Vec::new(); };
+
+    let mut deps = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("requires") {
+            // requires "nim >= 2.0.0", "jester#hash", "karax#hash"
+            for part in trimmed.split('"') {
+                let dep = part.trim();
+                if dep.is_empty() || dep.starts_with("requires") || dep == "," { continue; }
+                // Extract package name (before any version/hash specifier)
+                let name = dep.split(|c: char| c == '>' || c == '<' || c == '=' || c == '#' || c == '@' || c.is_whitespace())
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                if !name.is_empty() && name != "nim" && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+                    if !deps.contains(&name.to_string()) {
+                        deps.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    deps
+}
+
+fn find_nimble_pkgs_dir() -> Option<PathBuf> {
+    if let Ok(nimble_dir) = std::env::var("NIMBLE_DIR") {
+        let p = PathBuf::from(nimble_dir).join("pkgs2");
+        if p.is_dir() { return Some(p); }
+        let p = PathBuf::from(std::env::var("NIMBLE_DIR").unwrap()).join("pkgs");
+        if p.is_dir() { return Some(p); }
+    }
+    let home = dirs::home_dir()?;
+    let pkgs2 = home.join(".nimble").join("pkgs2");
+    if pkgs2.is_dir() { return Some(pkgs2); }
+    let pkgs = home.join(".nimble").join("pkgs");
+    if pkgs.is_dir() { return Some(pkgs); }
+    None
+}
+
+pub fn walk_nim_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_nim_dir(&dep.root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_nim_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_nim_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_nim_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "tests" | "test" | "examples" | "docs" | "nimcache")
+                    || name.starts_with('.')
+                {
+                    continue;
+                }
+            }
+            walk_nim_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !name.ends_with(".nim") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:nim:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "nim",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// PERL / CPANM — cpanfile + local::lib discovery
+// ===========================================================================
+
+pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    let cpanfile = project_root.join("cpanfile");
+    if !cpanfile.is_file() {
+        return Vec::new();
+    }
+    let Ok(content) = std::fs::read_to_string(&cpanfile) else {
+        return Vec::new();
+    };
+    let declared = parse_cpanfile_requires(&content);
+    if declared.is_empty() {
+        return Vec::new();
+    }
+
+    let lib_dirs = perl_lib_dirs(project_root);
+    if lib_dirs.is_empty() {
+        return Vec::new();
+    }
+
+    let mut roots = Vec::new();
+    for module_name in &declared {
+        // Perl module Foo::Bar lives at Foo/Bar.pm or Foo/Bar/
+        let path_fragment = module_name.replace("::", std::path::MAIN_SEPARATOR_STR);
+        for lib in &lib_dirs {
+            let module_dir = lib.join(&path_fragment);
+            if module_dir.is_dir() {
+                roots.push(ExternalDepRoot {
+                    module_path: module_name.clone(),
+                    version: String::new(),
+                    root: module_dir,
+                    ecosystem: "perl",
+                });
+                break;
+            }
+            // Single-file module: Foo/Bar.pm
+            let module_file = lib.join(format!("{path_fragment}.pm"));
+            if module_file.is_file() {
+                roots.push(ExternalDepRoot {
+                    module_path: module_name.clone(),
+                    version: String::new(),
+                    root: module_file.parent().unwrap_or(lib).to_path_buf(),
+                    ecosystem: "perl",
+                });
+                break;
+            }
+        }
+    }
+    debug!("Perl: discovered {} external module roots", roots.len());
+    roots
+}
+
+pub fn parse_cpanfile_requires(content: &str) -> Vec<String> {
+    let mut deps = Vec::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('#') { continue; }
+        // requires 'Module::Name';  or  requires 'Module::Name', '>= 1.0';
+        if trimmed.starts_with("requires") {
+            let rest = trimmed["requires".len()..].trim();
+            let name = rest.trim_start_matches(|c: char| c == '\'' || c == '"' || c.is_whitespace());
+            if let Some(end) = name.find(|c: char| c == '\'' || c == '"' || c == ',' || c == ';') {
+                let module = &name[..end];
+                if !module.is_empty() && module != "perl" {
+                    if !deps.contains(&module.to_string()) {
+                        deps.push(module.to_string());
+                    }
+                }
+            }
+        }
+    }
+    deps
+}
+
+fn perl_lib_dirs(project_root: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    // local::lib: local/lib/perl5/
+    let local = project_root.join("local").join("lib").join("perl5");
+    if local.is_dir() { dirs.push(local); }
+    // PERL5LIB / PERL_LOCAL_LIB_ROOT
+    for var in &["PERL5LIB", "PERL_LOCAL_LIB_ROOT"] {
+        if let Ok(val) = std::env::var(var) {
+            for p in val.split(if cfg!(windows) { ';' } else { ':' }) {
+                let pb = PathBuf::from(p);
+                if pb.is_dir() { dirs.push(pb); }
+            }
+        }
+    }
+    dirs
+}
+
+pub fn walk_perl_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_perl_dir(&dep.root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_perl_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_perl_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_perl_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "t" | "xt" | "blib" | "examples") || name.starts_with('.') {
+                    continue;
+                }
+            }
+            walk_perl_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !(name.ends_with(".pm") || name.ends_with(".pl")) { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:perl:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "perl",
+            });
+        }
+    }
+}
+
+#[cfg(test)]
+mod php_tests {
+    use super::*;
+
+    #[test]
+    fn php_discovers_composer_deps() {
+        let tmp = std::env::temp_dir().join("bw-test-php-discover");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("composer.json"), r#"{"require":{"laravel/framework":"^11.0","guzzlehttp/guzzle":"^7.0"}}"#).unwrap();
+        let vendor = tmp.join("vendor");
+        let laravel = vendor.join("laravel").join("framework").join("src");
+        std::fs::create_dir_all(&laravel).unwrap();
+        std::fs::write(laravel.join("Application.php"), "<?php class Application {}\n").unwrap();
+        let guzzle = vendor.join("guzzlehttp").join("guzzle").join("src");
+        std::fs::create_dir_all(&guzzle).unwrap();
+        std::fs::write(guzzle.join("Client.php"), "<?php class Client {}\n").unwrap();
+
+        let roots = discover_php_externals(&tmp);
+        let mut names: Vec<String> = roots.iter().map(|r| r.module_path.clone()).collect();
+        names.sort();
+        assert_eq!(names, vec!["guzzlehttp/guzzle", "laravel/framework"]);
+
+        let files = walk_php_external_root(&roots.iter().find(|r| r.module_path == "laravel/framework").unwrap());
+        assert_eq!(files.len(), 1);
+        assert!(files[0].relative_path.contains("Application.php"));
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod erlang_tests {
+    use super::*;
+
+    #[test]
+    fn erlang_parses_rebar_deps() {
+        let content = r#"{deps, [
+{cowlib,".*",{git,"https://github.com/ninenines/cowlib",{tag,"2.16.0"}}},{ranch,".*",{git,"https://github.com/ninenines/ranch",{tag,"1.8.1"}}}
+]}."#;
+        let deps = parse_rebar_deps(content);
+        assert_eq!(deps, vec!["cowlib", "ranch"]);
+    }
+
+    #[test]
+    fn erlang_discovers_rebar_deps() {
+        let tmp = std::env::temp_dir().join("bw-test-erlang-discover");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("rebar.config"), r#"{deps, [{cowlib,".*",{git,"url",{tag,"1.0"}}},{ranch,".*",{git,"url",{tag,"1.0"}}}]}."#).unwrap();
+        let deps_dir = tmp.join("_build").join("default").join("lib");
+        let cowlib = deps_dir.join("cowlib").join("src");
+        std::fs::create_dir_all(&cowlib).unwrap();
+        std::fs::write(cowlib.join("cowlib.erl"), "-module(cowlib).\n").unwrap();
+
+        let roots = discover_erlang_externals(&tmp);
+        assert_eq!(roots.len(), 1); // only cowlib exists on disk
+        assert_eq!(roots[0].module_path, "cowlib");
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod nim_tests {
+    use super::*;
+
+    #[test]
+    fn nim_parses_nimble_requires() {
+        let tmp = std::env::temp_dir().join("bw-test-nim-parse");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("test.nimble"), r#"
+requires "nim >= 2.0.0"
+requires "jester#baca3f"
+requires "karax#5cf360c"
+"#).unwrap();
+        let deps = parse_nimble_requires(&tmp);
+        assert_eq!(deps, vec!["jester", "karax"]);
+
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+}
+
+#[cfg(test)]
+mod perl_tests {
+    use super::*;
+
+    #[test]
+    fn perl_parses_cpanfile() {
+        let content = r#"
+requires 'perl', 5.014000;
+requires 'Carp';
+requires 'Clone';
+requires 'Config::Any';
+requires 'Data::Censor' => '0.04';
+"#;
+        let deps = parse_cpanfile_requires(content);
+        assert_eq!(deps, vec!["Carp", "Clone", "Config::Any", "Data::Censor"]);
+    }
+
+    #[test]
+    fn haskell_parses_cabal_build_depends() {
+        let tmp = std::env::temp_dir().join("bw-test-haskell-cabal");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("test.cabal"), r#"
+cabal-version: 2.0
+name: test
+version: 1.0
+library
+  build-depends:
+    aeson >= 2.0,
+    text,
+    bytestring
+"#).unwrap();
+        let deps = parse_cabal_build_depends(&tmp);
+        assert_eq!(deps, vec!["aeson", "bytestring", "text"]);
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
