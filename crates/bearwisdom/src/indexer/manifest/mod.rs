@@ -19,6 +19,7 @@ pub mod maven;
 pub mod mix;
 pub mod npm;
 pub mod nuget;
+pub mod sbt;
 pub mod pubspec;
 pub mod pyproject;
 pub mod swift_pm;
@@ -49,6 +50,7 @@ pub enum ManifestKind {
     Pubspec,
     Mix,
     Description,
+    Sbt,
 }
 
 /// Normalized data extracted from a project manifest.
@@ -101,6 +103,7 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(swift_pm::SwiftPMManifest),
         Box::new(pubspec::PubspecManifest),
         Box::new(mix::MixManifest),
+        Box::new(sbt::SbtManifest),
     ]
 }
 
