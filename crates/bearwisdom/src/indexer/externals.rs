@@ -432,6 +432,84 @@ impl ExternalSourceLocator for PerlExternalsLocator {
     }
 }
 
+/// OCaml opam → `_opam/lib/<pkg>/` or `~/.opam/<switch>/lib/<pkg>/`.
+pub struct OcamlExternalsLocator;
+
+impl ExternalSourceLocator for OcamlExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "ocaml" }
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_ocaml_externals(project_root)
+    }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_ocaml_external_root(dep)
+    }
+}
+
+/// Swift Package Manager → `.build/checkouts/<pkg>/`.
+pub struct SwiftExternalsLocator;
+
+impl ExternalSourceLocator for SwiftExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "swift" }
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_swift_externals(project_root)
+    }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_swift_external_root(dep)
+    }
+}
+
+/// Lua rockspec → luarocks tree `lib/luarocks/rocks-5.1/<pkg>/`.
+pub struct LuaExternalsLocator;
+
+impl ExternalSourceLocator for LuaExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "lua" }
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_lua_externals(project_root)
+    }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_lua_external_root(dep)
+    }
+}
+
+/// Gleam hex packages → `build/packages/<dep>/`.
+pub struct GleamExternalsLocator;
+
+impl ExternalSourceLocator for GleamExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "gleam" }
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_gleam_externals(project_root)
+    }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_gleam_external_root(dep)
+    }
+}
+
+/// Zig package manager → `.zig-cache/p/<hash>/` or `zig-cache/`.
+pub struct ZigExternalsLocator;
+
+impl ExternalSourceLocator for ZigExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "zig" }
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_zig_externals(project_root)
+    }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_zig_external_root(dep)
+    }
+}
+
+/// Clojure deps.edn / project.clj → Maven local repo source jars.
+pub struct ClojureExternalsLocator;
+
+impl ExternalSourceLocator for ClojureExternalsLocator {
+    fn ecosystem(&self) -> &'static str { "clojure" }
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_clojure_externals(project_root)
+    }
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_java_external_root(dep)
+    }
+}
+
 /// Extract the package name from a TS external-file virtual path like
 /// `ext:ts:@types/react/index.d.ts` → `@types/react`, or
 /// `ext:ts:lodash/lodash.d.ts` → `lodash`. Used by the TS locator's
@@ -5048,4 +5126,500 @@ library
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
+}
+
+// ===========================================================================
+// OCAML / OPAM — _opam/lib/ or ~/.opam/<switch>/lib/ discovery
+// ===========================================================================
+
+pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::opam::parse_opam_depends;
+
+    let Ok(entries) = std::fs::read_dir(project_root) else { return Vec::new(); };
+    let opam_file = entries.flatten().find(|e| {
+        e.path().extension().and_then(|x| x.to_str()) == Some("opam")
+    });
+    let Some(opam_entry) = opam_file else { return Vec::new(); };
+    let Ok(content) = std::fs::read_to_string(opam_entry.path()) else { return Vec::new(); };
+    let declared = parse_opam_depends(&content);
+    if declared.is_empty() { return Vec::new(); }
+
+    let lib_dirs = ocaml_lib_dirs(project_root);
+    let mut roots = Vec::new();
+    for dep in &declared {
+        for lib in &lib_dirs {
+            let pkg_dir = lib.join(dep);
+            if pkg_dir.is_dir() {
+                roots.push(ExternalDepRoot {
+                    module_path: dep.clone(),
+                    version: String::new(),
+                    root: pkg_dir,
+                    ecosystem: "ocaml",
+                });
+                break;
+            }
+        }
+    }
+    debug!("OCaml: discovered {} external package roots", roots.len());
+    roots
+}
+
+fn ocaml_lib_dirs(project_root: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let local_opam = project_root.join("_opam").join("lib");
+    if local_opam.is_dir() { dirs.push(local_opam); }
+    if let Ok(switch) = std::env::var("OPAM_SWITCH_PREFIX") {
+        let lib = PathBuf::from(switch).join("lib");
+        if lib.is_dir() { dirs.push(lib); }
+    }
+    if let Some(home) = dirs::home_dir() {
+        let opam = home.join(".opam");
+        if opam.is_dir() {
+            if let Ok(entries) = std::fs::read_dir(&opam) {
+                for e in entries.flatten() {
+                    let lib = e.path().join("lib");
+                    if lib.is_dir() { dirs.push(lib); }
+                }
+            }
+        }
+    }
+    dirs
+}
+
+pub fn walk_ocaml_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_ocaml_dir(&dep.root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_ocaml_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_ocaml_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_ocaml_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "test" | "tests" | "bench") || name.starts_with('.') { continue; }
+            }
+            walk_ocaml_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !(name.ends_with(".ml") || name.ends_with(".mli")) { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:ocaml:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "ocaml",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// SWIFT / SPM — .build/checkouts/ discovery
+// ===========================================================================
+
+pub fn discover_swift_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::swift_pm::parse_swift_package_deps;
+
+    let package_swift = project_root.join("Package.swift");
+    if !package_swift.is_file() { return Vec::new(); }
+    let Ok(content) = std::fs::read_to_string(&package_swift) else { return Vec::new(); };
+    let declared = parse_swift_package_deps(&content);
+    if declared.is_empty() { return Vec::new(); }
+
+    let checkouts = project_root.join(".build").join("checkouts");
+    if !checkouts.is_dir() { return Vec::new(); }
+
+    let mut roots = Vec::new();
+    for dep in &declared {
+        let dep_dir = checkouts.join(dep);
+        if dep_dir.is_dir() {
+            roots.push(ExternalDepRoot {
+                module_path: dep.clone(),
+                version: String::new(),
+                root: dep_dir,
+                ecosystem: "swift",
+            });
+        }
+    }
+    debug!("Swift: discovered {} external package roots", roots.len());
+    roots
+}
+
+pub fn walk_swift_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    let sources = dep.root.join("Sources");
+    let walk_root = if sources.is_dir() { sources } else { dep.root.clone() };
+    walk_swift_dir(&walk_root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_swift_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_swift_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_swift_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "Tests" | "tests" | "Examples" | "Benchmarks") || name.starts_with('.') { continue; }
+            }
+            walk_swift_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !name.ends_with(".swift") { continue; }
+            if name.ends_with("Tests.swift") || name.ends_with("Test.swift") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:swift:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "swift",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// LUA / LUAROCKS — lua_modules/ or luarocks tree discovery
+// ===========================================================================
+
+pub fn discover_lua_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::rockspec::parse_rockspec_deps;
+
+    let Ok(entries) = std::fs::read_dir(project_root) else { return Vec::new(); };
+    let rockspec_file = entries.flatten().find(|e| {
+        e.path().extension().and_then(|x| x.to_str()) == Some("rockspec")
+    });
+    let Some(rs_entry) = rockspec_file else { return Vec::new(); };
+    let Ok(content) = std::fs::read_to_string(rs_entry.path()) else { return Vec::new(); };
+    let declared = parse_rockspec_deps(&content);
+    if declared.is_empty() { return Vec::new(); }
+
+    let lua_dirs = lua_module_dirs(project_root);
+    let mut roots = Vec::new();
+    for dep in &declared {
+        let dep_file = format!("{}.lua", dep.replace('.', std::path::MAIN_SEPARATOR_STR));
+        let dep_dir = dep.replace('.', std::path::MAIN_SEPARATOR_STR);
+        for lib in &lua_dirs {
+            let as_file = lib.join(&dep_file);
+            let as_dir = lib.join(&dep_dir);
+            if as_dir.is_dir() {
+                roots.push(ExternalDepRoot {
+                    module_path: dep.clone(),
+                    version: String::new(),
+                    root: as_dir,
+                    ecosystem: "lua",
+                });
+                break;
+            } else if as_file.is_file() {
+                roots.push(ExternalDepRoot {
+                    module_path: dep.clone(),
+                    version: String::new(),
+                    root: as_file.parent().unwrap_or(lib).to_path_buf(),
+                    ecosystem: "lua",
+                });
+                break;
+            }
+        }
+    }
+    debug!("Lua: discovered {} external module roots", roots.len());
+    roots
+}
+
+fn lua_module_dirs(project_root: &Path) -> Vec<PathBuf> {
+    let mut dirs = Vec::new();
+    let local = project_root.join("lua_modules").join("share").join("lua").join("5.1");
+    if local.is_dir() { dirs.push(local); }
+    let local2 = project_root.join("lua_modules").join("lib").join("lua").join("5.1");
+    if local2.is_dir() { dirs.push(local2); }
+    if let Ok(path) = std::env::var("LUA_PATH") {
+        for p in path.split(';') {
+            let p = p.replace('?', "").replace("/init.lua", "");
+            let pb = PathBuf::from(p.trim_end_matches('/'));
+            if pb.is_dir() { dirs.push(pb); }
+        }
+    }
+    dirs
+}
+
+pub fn walk_lua_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_lua_dir(&dep.root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_lua_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_lua_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_lua_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "tests" | "test" | "spec" | "examples") || name.starts_with('.') { continue; }
+            }
+            walk_lua_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !name.ends_with(".lua") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:lua:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "lua",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// GLEAM — build/packages/<dep>/ discovery
+// ===========================================================================
+
+pub fn discover_gleam_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::gleam::parse_gleam_deps;
+
+    let gleam_toml = project_root.join("gleam.toml");
+    if !gleam_toml.is_file() { return Vec::new(); }
+    let Ok(content) = std::fs::read_to_string(&gleam_toml) else { return Vec::new(); };
+    let declared = parse_gleam_deps(&content);
+    if declared.is_empty() { return Vec::new(); }
+
+    let packages = project_root.join("build").join("packages");
+    if !packages.is_dir() { return Vec::new(); }
+
+    let mut roots = Vec::new();
+    for dep in &declared {
+        let dep_dir = packages.join(dep);
+        if dep_dir.is_dir() {
+            roots.push(ExternalDepRoot {
+                module_path: dep.clone(),
+                version: String::new(),
+                root: dep_dir,
+                ecosystem: "gleam",
+            });
+        }
+    }
+    debug!("Gleam: discovered {} external package roots", roots.len());
+    roots
+}
+
+pub fn walk_gleam_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    let src = dep.root.join("src");
+    let walk_root = if src.is_dir() { src } else { dep.root.clone() };
+    walk_gleam_dir(&walk_root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_gleam_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_gleam_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_gleam_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "test" | "tests") || name.starts_with('.') { continue; }
+            }
+            walk_gleam_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !name.ends_with(".gleam") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:gleam:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "gleam",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// ZIG — .zig-cache/p/ discovery
+// ===========================================================================
+
+pub fn discover_zig_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::zig_zon::parse_zig_zon_deps;
+
+    let zon = project_root.join("build.zig.zon");
+    if !zon.is_file() { return Vec::new(); }
+    let Ok(content) = std::fs::read_to_string(&zon) else { return Vec::new(); };
+    let declared = parse_zig_zon_deps(&content);
+    if declared.is_empty() { return Vec::new(); }
+
+    // Zig fetches deps to .zig-cache/p/<hash>/ — directory names are hashes,
+    // not package names. We look for build.zig.zon inside each to match names.
+    let cache = project_root.join(".zig-cache").join("p");
+    if !cache.is_dir() { return Vec::new(); }
+
+    let Ok(entries) = std::fs::read_dir(&cache) else { return Vec::new(); };
+    let mut roots = Vec::new();
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() { continue; }
+        let zon_path = path.join("build.zig.zon");
+        if let Ok(zon_content) = std::fs::read_to_string(&zon_path) {
+            if let Some(name) = extract_zig_zon_name(&zon_content) {
+                if declared.iter().any(|d| d == &name) {
+                    roots.push(ExternalDepRoot {
+                        module_path: name,
+                        version: String::new(),
+                        root: path,
+                        ecosystem: "zig",
+                    });
+                }
+            }
+        }
+    }
+    debug!("Zig: discovered {} external package roots", roots.len());
+    roots
+}
+
+fn extract_zig_zon_name(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with(".name") {
+            // .name = .dep_name, or .name = "dep_name",
+            let rest = trimmed.splitn(2, '=').nth(1)?.trim();
+            let name = rest.trim_start_matches('.').trim_matches(|c: char| c == ',' || c == '"' || c.is_whitespace());
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    None
+}
+
+pub fn walk_zig_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_zig_dir(&dep.root, &dep.root, dep, &mut out);
+    out
+}
+
+fn walk_zig_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
+    walk_zig_dir_bounded(dir, root, dep, out, 0);
+}
+
+fn walk_zig_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= MAX_WALK_DEPTH { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return; };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(file_type) = entry.file_type() else { continue; };
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "test" | "tests" | "zig-cache") || name.starts_with('.') { continue; }
+            }
+            walk_zig_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue; };
+            if !name.ends_with(".zig") { continue; }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            out.push(WalkedFile {
+                relative_path: format!("ext:zig:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "zig",
+            });
+        }
+    }
+}
+
+// ===========================================================================
+// CLOJURE — Maven source jars (same as Java/Scala)
+// ===========================================================================
+
+pub fn discover_clojure_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    use crate::indexer::manifest::clojure::{parse_project_clj_deps, parse_deps_edn_deps};
+
+    let mut all_deps: Vec<String> = Vec::new();
+
+    let project_clj = project_root.join("project.clj");
+    if let Ok(content) = std::fs::read_to_string(&project_clj) {
+        all_deps.extend(parse_project_clj_deps(&content));
+    }
+    let deps_edn = project_root.join("deps.edn");
+    if let Ok(content) = std::fs::read_to_string(&deps_edn) {
+        for dep in parse_deps_edn_deps(&content) {
+            if !all_deps.contains(&dep) { all_deps.push(dep); }
+        }
+    }
+    if all_deps.is_empty() { return Vec::new(); }
+
+    let Some(repo) = maven_local_repo() else { return Vec::new(); };
+    let cache_base = repo.parent().unwrap_or(&repo).join("bearwisdom-sources-cache");
+    let _ = std::fs::create_dir_all(&cache_base);
+
+    let mut roots = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    for dep in &all_deps {
+        // Clojure deps are group/artifact format
+        let parts: Vec<&str> = dep.splitn(2, '/').collect();
+        let (group_id, artifact_id) = if parts.len() == 2 {
+            (parts[0], parts[1])
+        } else {
+            (dep.as_str(), dep.as_str())
+        };
+
+        let coord = crate::indexer::manifest::maven::MavenCoord {
+            group_id: group_id.to_string(),
+            artifact_id: artifact_id.to_string(),
+            version: None,
+        };
+        let Some((version, artifact_dir)) = resolve_maven_artifact_dir(&repo, &coord) else { continue; };
+        let sources_jar = artifact_dir.join(format!("{artifact_id}-{version}-sources.jar"));
+        if !sources_jar.is_file() { continue; }
+
+        let cache_dir = cache_base
+            .join(group_id.replace('.', "_"))
+            .join(artifact_id)
+            .join(&version);
+        if !cache_dir.exists() || is_cache_stale(&sources_jar, &cache_dir) {
+            if extract_java_sources_jar(&sources_jar, &cache_dir).is_err() { continue; }
+        }
+        if !seen.insert(cache_dir.clone()) { continue; }
+        roots.push(ExternalDepRoot {
+            module_path: dep.clone(),
+            version,
+            root: cache_dir,
+            ecosystem: "clojure",
+        });
+    }
+    debug!("Clojure: discovered {} external source roots", roots.len());
+    roots
 }

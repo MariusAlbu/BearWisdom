@@ -20,6 +20,11 @@ pub mod mix;
 pub mod npm;
 pub mod nuget;
 pub mod sbt;
+pub mod opam;
+pub mod gleam;
+pub mod zig_zon;
+pub mod clojure;
+pub mod rockspec;
 pub mod pubspec;
 pub mod pyproject;
 pub mod swift_pm;
@@ -51,6 +56,11 @@ pub enum ManifestKind {
     Mix,
     Description,
     Sbt,
+    Opam,
+    Gleam,
+    ZigZon,
+    Clojure,
+    Rockspec,
 }
 
 /// Normalized data extracted from a project manifest.
@@ -104,6 +114,11 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(pubspec::PubspecManifest),
         Box::new(mix::MixManifest),
         Box::new(sbt::SbtManifest),
+        Box::new(opam::OpamManifest),
+        Box::new(gleam::GleamManifest),
+        Box::new(zig_zon::ZigZonManifest),
+        Box::new(clojure::ClojureManifest),
+        Box::new(rockspec::RockspecManifest),
     ]
 }
 
