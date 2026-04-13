@@ -94,4 +94,12 @@ impl LanguagePlugin for VbNetPlugin {
             Box::new(connectors::VbNetDiConnector),
         ]
     }
+
+    fn externals_locator(
+        &self,
+    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
+        Some(std::sync::Arc::new(
+            crate::indexer::externals::DotNetExternalsLocator,
+        ))
+    }
 }

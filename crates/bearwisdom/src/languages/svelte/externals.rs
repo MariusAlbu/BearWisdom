@@ -1,95 +1,19 @@
-// =============================================================================
-// svelte/externals.rs — Svelte external globals
-// =============================================================================
-
-/// Runtime globals always external for Svelte components.
+/// Browser runtime globals for Svelte component files.
+/// Svelte/SvelteKit API symbols come from node_modules/svelte/ and are
+/// indexed by the TypeScript externals locator.
 ///
-/// Includes the TypeScript EXTERNALS baseline plus Svelte runtime identifiers
-/// that appear in `.svelte` script blocks without being project-defined.
+/// Svelte 5 runes ($state, $derived, $effect) are compiler transforms, not
+/// runtime functions — they don't exist in node_modules either. Keep them
+/// here as they are truly unindexable.
 pub(crate) const EXTERNALS: &[&str] = &[
-    // ── TypeScript / browser baseline ────────────────────────────────────────
-    "console",
-    "setTimeout",
-    "setInterval",
-    "clearTimeout",
-    "clearInterval",
-    "fetch",
-    "URL",
-    "URLSearchParams",
-    "AbortController",
-    "TextEncoder",
-    "TextDecoder",
-    "structuredClone",
-    "atob",
-    "btoa",
-    "crypto",
-    "performance",
-    "document",
-    "window",
-    "navigator",
-    "location",
-    "history",
-    "localStorage",
-    "sessionStorage",
-    "globalThis",
-    // ── Svelte 4 lifecycle / context ─────────────────────────────────────────
-    "onMount",
-    "onDestroy",
-    "beforeUpdate",
-    "afterUpdate",
-    "tick",
-    "createEventDispatcher",
-    "setContext",
-    "getContext",
-    "hasContext",
-    "getAllContexts",
-    // ── Svelte 5 runes ────────────────────────────────────────────────────────
-    "$state",
-    "$derived",
-    "$effect",
-    "$props",
-    "$bindable",
-    "$inspect",
-    "$host",
-    // ── Svelte stores ─────────────────────────────────────────────────────────
-    "writable",
-    "readable",
-    "derived",
-    "get",
-    "readonly",
-    // ── SvelteKit navigation ──────────────────────────────────────────────────
-    "goto",
-    "invalidate",
-    "invalidateAll",
-    "prefetch",
-    "prefetchRoutes",
-    "beforeNavigate",
-    "afterNavigate",
-    "onNavigate",
-    "pushState",
-    "replaceState",
-    // ── SvelteKit store singletons ────────────────────────────────────────────
-    "page",
-    "navigating",
-    "updated",
-    // ── SvelteKit $app/* exports ──────────────────────────────────────────────
-    "browser",
-    "building",
-    "dev",
-    "version",
-    "enhance",
-    "applyAction",
-    "deserialize",
-    "base",
-    "assets",
-    "resolveRoute",
-    "env",
-    // ── Svelte template magic variables ──────────────────────────────────────
-    "$page",
-    "$navigating",
-    "$updated",
-    "$$props",
-    "$$restProps",
-    "$$slots",
+    "console", "setTimeout", "setInterval", "clearTimeout", "clearInterval",
+    "fetch", "URL", "URLSearchParams", "AbortController",
+    "TextEncoder", "TextDecoder", "structuredClone", "atob", "btoa",
+    "crypto", "performance",
+    "document", "window", "navigator", "location", "history",
+    "localStorage", "sessionStorage", "globalThis",
+    // Svelte 5 runes — compiler transforms, no source on disk
+    "$state", "$derived", "$effect", "$props", "$bindable", "$inspect", "$host",
+    // Svelte template magic variables
+    "$$props", "$$restProps", "$$slots",
 ];
-
