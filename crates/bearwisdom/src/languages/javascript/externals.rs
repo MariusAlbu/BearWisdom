@@ -45,13 +45,6 @@ pub(crate) const EXTERNALS: &[&str] = &[
     "global",
     "globalThis",
     "Buffer",
-    // Common utility libraries (always global when present)
-    "toastr",
-    "bootbox",
-    "moment",
-    "dayjs",
-    "lodash",
-    "_",
     // -----------------------------------------------------------------
     // DOM Element / Event / Node API — method names that appear as bare
     // last-segment targets after A.3. These are universal browser APIs

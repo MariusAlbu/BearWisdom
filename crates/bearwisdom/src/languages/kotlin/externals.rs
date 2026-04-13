@@ -1,5 +1,3 @@
-/// Runtime globals always external for Kotlin.
-pub(crate) const EXTERNALS: &[&str] = &[
-    // SLF4J logging (ubiquitous across JVM)
-    "Logger", "LoggerFactory",
-];
+/// JVM dependencies are indexed by the JavaExternalsLocator from Maven
+/// source jars. No hardcoded externals needed.
+pub(crate) const EXTERNALS: &[&str] = &[];
