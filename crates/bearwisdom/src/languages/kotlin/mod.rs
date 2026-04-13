@@ -96,6 +96,14 @@ impl LanguagePlugin for KotlinPlugin {
         Some(std::sync::Arc::new(resolve::KotlinResolver))
     }
 
+    fn externals_locator(
+        &self,
+    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
+        Some(std::sync::Arc::new(
+            crate::indexer::externals::JavaExternalsLocator,
+        ))
+    }
+
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
         vec![
             Box::new(connectors::KotlinGrpcConnector),

@@ -93,4 +93,12 @@ impl LanguagePlugin for AstroPlugin {
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
     }
+
+    fn externals_locator(
+        &self,
+    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
+        Some(std::sync::Arc::new(
+            crate::indexer::externals::TypeScriptExternalsLocator,
+        ))
+    }
 }
