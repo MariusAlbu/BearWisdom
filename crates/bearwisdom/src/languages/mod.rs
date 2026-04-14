@@ -184,9 +184,11 @@ pub mod dart;
 pub mod dockerfile;
 pub mod ejs;
 pub mod elixir;
+pub mod erb;
 pub mod go;
 pub mod gleam;
 pub mod graphql;
+pub mod haml;
 pub mod handlebars;
 pub mod hare;
 pub mod haskell;
@@ -219,6 +221,7 @@ pub mod ruby;
 pub mod rust_lang;
 pub mod scala;
 pub mod scss;
+pub mod slim;
 pub mod sql;
 pub mod starlark;
 pub mod svelte;
@@ -331,6 +334,10 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(pug::PugPlugin));
     reg.register(Arc::new(ejs::EjsPlugin));
     reg.register(Arc::new(nunjucks::NunjucksPlugin));
+    // E9 — Ruby template engines
+    reg.register(Arc::new(erb::ErbPlugin));
+    reg.register(Arc::new(slim::SlimPlugin));
+    reg.register(Arc::new(haml::HamlPlugin));
 
     reg
 });
