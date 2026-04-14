@@ -446,7 +446,7 @@ impl ExtractionResult {
 pub struct PackageInfo {
     /// Database row ID (assigned after INSERT).
     pub id: Option<i64>,
-    /// Package name (ecosystem-native if available, else directory name).
+    /// Package name (folder-derived key, stable for sort and path matching).
     pub name: String,
     /// Relative path from workspace root to package directory.
     pub path: String,
@@ -454,6 +454,14 @@ pub struct PackageInfo {
     pub kind: Option<String>,
     /// Relative path to the manifest file (e.g., "services/api/package.json").
     pub manifest: Option<String>,
+    /// The package name as declared in its own manifest — `package.json`
+    /// `name`, `Cargo.toml` `[package].name`, `.csproj` filename stem, etc.
+    /// Distinct from `name` which is the folder-derived key. Used by
+    /// resolvers to match import specifiers like `@myorg/utils` to the
+    /// correct workspace package. `None` when the manifest didn't declare
+    /// a name or couldn't be read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub declared_name: Option<String>,
 }
 
 /// Everything extracted from a single source file.

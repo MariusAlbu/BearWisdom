@@ -1130,14 +1130,14 @@ fn detect_packages(project_root: &Path) -> (Vec<crate::types::PackageInfo>, Opti
                                 if sub_name.starts_with('.') { continue; }
                                 let full_rel = format!("{}/{}", base, sub_name);
                                 let abs = project_root.join(&full_rel);
-                                let name = package_name_from_manifest(&abs, kind_hint)
-                                    .unwrap_or_else(|| sub_name.clone());
+                                let declared_name = package_name_from_manifest(&abs, kind_hint);
                                 packages.push(PackageInfo {
                                     id: None,
-                                    name,
+                                    name: sub_name.clone(),
                                     path: full_rel.replace('\\', "/"),
                                     kind: Some(kind_hint.to_string()),
                                     manifest: find_manifest_path_abs(&abs, kind_hint),
+                                    declared_name,
                                 });
                             }
                         }
@@ -1145,14 +1145,14 @@ fn detect_packages(project_root: &Path) -> (Vec<crate::types::PackageInfo>, Opti
                 } else {
                     let abs = project_root.join(rel_path);
                     if !abs.is_dir() { continue; }
-                    let name = package_name_from_manifest(&abs, kind_hint)
-                        .unwrap_or_else(|| dir_name(rel_path));
+                    let declared_name = package_name_from_manifest(&abs, kind_hint);
                     packages.push(PackageInfo {
                         id: None,
-                        name,
+                        name: dir_name(rel_path),
                         path: rel_path.replace('\\', "/"),
                         kind: Some(kind_hint.to_string()),
                         manifest: find_manifest_path_abs(&abs, kind_hint),
+                        declared_name,
                     });
                 }
             }
@@ -1206,14 +1206,14 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<crate::types
                     if sub.join(mf).exists() {
                         let rel = format!("{}/{}", ws_dir, sub_name);
                         let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
-                        let name = package_name_from_manifest(&sub, kind)
-                            .unwrap_or_else(|| sub_name.clone());
+                        let declared_name = package_name_from_manifest(&sub, kind);
                         packages.push(PackageInfo {
                             id: None,
-                            name,
+                            name: sub_name.clone(),
                             path: rel,
                             kind: Some(kind.to_string()),
                             manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, mf)),
+                            declared_name,
                         });
                         found = true;
                         break;
@@ -1223,12 +1223,19 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<crate::types
                 if !found {
                     if let Some(csproj) = find_csproj(&sub) {
                         let rel = format!("{}/{}", ws_dir, sub_name);
+                        // For .NET, the declared name is the .csproj stem
+                        // (common convention); e.g., "MyApp.Api.csproj" →
+                        // "MyApp.Api". This is what <ProjectReference> uses.
+                        let declared_name = csproj
+                            .strip_suffix(".csproj")
+                            .map(|s| s.to_string());
                         packages.push(PackageInfo {
                             id: None,
                             name: sub_name.clone(),
                             path: rel,
                             kind: Some("dotnet".to_string()),
                             manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, csproj)),
+                            declared_name,
                         });
                     }
                 }
@@ -1254,16 +1261,16 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<crate::types
             for mf in manifest_names {
                 if sub.join(mf).exists() {
                     let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
-                    let name = package_name_from_manifest(&sub, kind)
-                        .unwrap_or_else(|| dir_name_str.clone());
+                    let declared_name = package_name_from_manifest(&sub, kind);
                     // Avoid duplicates from workspace_dirs scan.
                     if !packages.iter().any(|p| p.path == dir_name_str) {
                         packages.push(PackageInfo {
                             id: None,
-                            name,
+                            name: dir_name_str.clone(),
                             path: dir_name_str.clone(),
                             kind: Some(kind.to_string()),
                             manifest: Some(format!("{}/{}", dir_name_str, mf)),
+                            declared_name,
                         });
                     }
                     break;
@@ -1275,7 +1282,10 @@ fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<crate::types
     packages
 }
 
-/// Try to extract the native package name from a manifest file.
+/// Try to extract the native package name from a manifest file — the name
+/// by which this package is imported by siblings (`@myorg/utils`,
+/// `my-crate`, `github.com/user/proj/module`, `MyApp.Api`, etc.). Stored
+/// separately from the folder name on `PackageInfo::declared_name`.
 fn package_name_from_manifest(dir: &Path, kind: &str) -> Option<String> {
     match kind {
         "npm" => {
@@ -1299,6 +1309,41 @@ fn package_name_from_manifest(dir: &Path, kind: &str) -> Option<String> {
             let content = std::fs::read_to_string(dir.join("go.mod")).ok()?;
             content.lines().next().and_then(|l| {
                 l.strip_prefix("module ").map(|m| m.trim().to_string())
+            })
+        }
+        "python" => {
+            // pyproject.toml [project].name or [tool.poetry].name.
+            let content = std::fs::read_to_string(dir.join("pyproject.toml")).ok()?;
+            for marker in &["[project]", "[tool.poetry]"] {
+                if let Some(start) = content.find(marker) {
+                    // Scan forward until the next section header.
+                    let tail = &content[start + marker.len()..];
+                    let section = tail.split("\n[").next().unwrap_or(tail);
+                    if let Some(name) = section
+                        .lines()
+                        .find(|l| l.trim_start().starts_with("name"))
+                        .and_then(|l| {
+                            let val = l.split('=').nth(1)?.trim().trim_matches('"').trim_matches('\'');
+                            (!val.is_empty()).then(|| val.to_string())
+                        })
+                    {
+                        return Some(name);
+                    }
+                }
+            }
+            None
+        }
+        "dotnet" => {
+            // .csproj / .fsproj / .vbproj filename stem — this is what
+            // <ProjectReference> resolves against in MSBuild.
+            std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
+                let name = e.file_name().to_string_lossy().into_owned();
+                for ext in &[".csproj", ".fsproj", ".vbproj"] {
+                    if let Some(stem) = name.strip_suffix(ext) {
+                        return Some(stem.to_string());
+                    }
+                }
+                None
             })
         }
         _ => None,

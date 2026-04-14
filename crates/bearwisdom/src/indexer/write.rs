@@ -385,16 +385,23 @@ pub fn write_packages(
     for pkg in packages {
         let id: i64 = conn
             .prepare_cached(
-                "INSERT INTO packages (name, path, kind, manifest)
-                 VALUES (?1, ?2, ?3, ?4)
+                "INSERT INTO packages (name, path, kind, manifest, declared_name)
+                 VALUES (?1, ?2, ?3, ?4, ?5)
                  ON CONFLICT(path) DO UPDATE SET
                    name = excluded.name,
                    kind = excluded.kind,
-                   manifest = excluded.manifest
+                   manifest = excluded.manifest,
+                   declared_name = excluded.declared_name
                  RETURNING id",
             )?
             .query_row(
-                rusqlite::params![pkg.name, pkg.path, pkg.kind, pkg.manifest],
+                rusqlite::params![
+                    pkg.name,
+                    pkg.path,
+                    pkg.kind,
+                    pkg.manifest,
+                    pkg.declared_name,
+                ],
                 |r| r.get(0),
             )
             .with_context(|| format!("Failed to upsert package {}", pkg.name))?;
@@ -405,6 +412,7 @@ pub fn write_packages(
             path: pkg.path.clone(),
             kind: pkg.kind.clone(),
             manifest: pkg.manifest.clone(),
+            declared_name: pkg.declared_name.clone(),
         });
     }
 
@@ -497,7 +505,7 @@ pub fn write_package_deps(
 /// files without re-running full package detection.
 pub fn load_packages_from_db(db: &Database) -> Result<Vec<crate::types::PackageInfo>> {
     let mut stmt = db.conn().prepare(
-        "SELECT id, name, path, kind, manifest FROM packages",
+        "SELECT id, name, path, kind, manifest, declared_name FROM packages",
     )?;
     let rows = stmt.query_map([], |r| {
         Ok(crate::types::PackageInfo {
@@ -506,6 +514,7 @@ pub fn load_packages_from_db(db: &Database) -> Result<Vec<crate::types::PackageI
             path: r.get::<_, String>(2)?,
             kind: r.get::<_, Option<String>>(3)?,
             manifest: r.get::<_, Option<String>>(4)?,
+            declared_name: r.get::<_, Option<String>>(5)?,
         })
     })?;
     let mut packages = Vec::new();
@@ -542,4 +551,60 @@ pub fn load_symbol_id_map(db: &Database) -> Result<SymbolIdMap> {
         map.insert((path, qname), id);
     }
     Ok(map)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::types::PackageInfo;
+
+    #[test]
+    fn declared_name_round_trips_through_db() {
+        let db = Database::open_in_memory().unwrap();
+        let packages = vec![
+            PackageInfo {
+                id: None,
+                name: "web".into(),
+                path: "web".into(),
+                kind: Some("npm".into()),
+                manifest: Some("web/package.json".into()),
+                declared_name: Some("@myorg/web".into()),
+            },
+            PackageInfo {
+                id: None,
+                name: "shared".into(),
+                path: "shared".into(),
+                kind: Some("npm".into()),
+                manifest: Some("shared/package.json".into()),
+                declared_name: Some("@myorg/shared".into()),
+            },
+        ];
+
+        let written = write_packages(&db, &packages).unwrap();
+        assert_eq!(written.len(), 2);
+
+        // Load back via the incremental loader — declared_name must survive.
+        let loaded = load_packages_from_db(&db).unwrap();
+        let web = loaded.iter().find(|p| p.name == "web").expect("web");
+        let shared = loaded.iter().find(|p| p.name == "shared").expect("shared");
+        assert_eq!(web.declared_name.as_deref(), Some("@myorg/web"));
+        assert_eq!(shared.declared_name.as_deref(), Some("@myorg/shared"));
+    }
+
+    #[test]
+    fn declared_name_nullable_when_absent() {
+        let db = Database::open_in_memory().unwrap();
+        let packages = vec![PackageInfo {
+            id: None,
+            name: "legacy".into(),
+            path: "legacy".into(),
+            kind: None,
+            manifest: None,
+            declared_name: None,
+        }];
+        write_packages(&db, &packages).unwrap();
+        let loaded = load_packages_from_db(&db).unwrap();
+        assert_eq!(loaded.len(), 1);
+        assert!(loaded[0].declared_name.is_none());
+    }
 }

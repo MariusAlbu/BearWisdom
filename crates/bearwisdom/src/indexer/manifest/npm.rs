@@ -101,10 +101,16 @@ fn collect_package_json(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     }
 }
 
-/// Parse a package.json file into (name, dependency-names).
+/// Parse a package.json file into (name, external-dep-names).
 ///
 /// Reads `dependencies`, `devDependencies`, `peerDependencies` object keys and
 /// the top-level `name` field. Returns `(None, [])` on parse failure.
+///
+/// **Workspace-protocol deps are excluded** — values starting with
+/// `workspace:`, `file:`, `link:`, or `portal:` point at sibling packages
+/// within the monorepo, not npm registry entries. Including them in the
+/// external dep set causes the resolver to misclassify sibling imports
+/// as external when they should resolve to cross-package edges.
 fn parse_package_json(content: &str) -> (Option<String>, Vec<String>) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
         return (None, Vec::new());
@@ -121,14 +127,35 @@ fn parse_package_json(content: &str) -> (Option<String>, Vec<String>) {
     let mut packages = Vec::new();
     for key in &["dependencies", "devDependencies", "peerDependencies"] {
         if let Some(serde_json::Value::Object(deps)) = obj.get(*key) {
-            for pkg_name in deps.keys() {
-                if !pkg_name.is_empty() {
-                    packages.push(pkg_name.clone());
+            for (pkg_name, version_value) in deps.iter() {
+                if pkg_name.is_empty() {
+                    continue;
                 }
+                let version = version_value.as_str().unwrap_or("");
+                if is_workspace_protocol(version) {
+                    continue;
+                }
+                packages.push(pkg_name.clone());
             }
         }
     }
     (name, packages)
+}
+
+/// True when the dep's version spec points at a sibling workspace package
+/// rather than a registry entry. These must not pollute the external dep
+/// set — they're handled by the workspace-package resolver instead.
+///
+/// Covers:
+///   * `workspace:*`, `workspace:^`, `workspace:~`, `workspace:1.2.3` (pnpm/yarn)
+///   * `file:../path/to/pkg` (npm file: protocol)
+///   * `link:../path/to/pkg` (yarn link: protocol)
+///   * `portal:../path/to/pkg` (yarn portal: protocol)
+fn is_workspace_protocol(version: &str) -> bool {
+    version.starts_with("workspace:")
+        || version.starts_with("file:")
+        || version.starts_with("link:")
+        || version.starts_with("portal:")
 }
 
 /// Extract dependency package names only (for legacy callers).
@@ -180,3 +207,80 @@ const NODE_BUILTINS: &[&str] = &[
     "worker_threads",
     "zlib",
 ];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_name_and_registry_deps() {
+        let json = r#"{"name": "@myorg/web", "dependencies": {"react": "^18.0.0", "axios": "1.2.3"}}"#;
+        let (name, deps) = parse_package_json(json);
+        assert_eq!(name.as_deref(), Some("@myorg/web"));
+        assert!(deps.contains(&"react".to_string()));
+        assert!(deps.contains(&"axios".to_string()));
+    }
+
+    #[test]
+    fn workspace_protocol_deps_excluded() {
+        let json = r#"{
+            "name": "@myorg/web",
+            "dependencies": {
+                "react": "^18.0.0",
+                "@myorg/utils": "workspace:*",
+                "@myorg/ui": "workspace:^",
+                "@myorg/local": "file:../local-pkg"
+            }
+        }"#;
+        let (_, deps) = parse_package_json(json);
+        assert!(deps.contains(&"react".to_string()), "registry dep kept");
+        assert!(!deps.contains(&"@myorg/utils".to_string()), "workspace:* excluded");
+        assert!(!deps.contains(&"@myorg/ui".to_string()), "workspace:^ excluded");
+        assert!(!deps.contains(&"@myorg/local".to_string()), "file: excluded");
+    }
+
+    #[test]
+    fn link_and_portal_protocols_excluded() {
+        let json = r#"{
+            "name": "app",
+            "dependencies": {
+                "pinned": "link:../pinned",
+                "tunneled": "portal:../tunneled"
+            }
+        }"#;
+        let (_, deps) = parse_package_json(json);
+        assert!(deps.is_empty(), "link: and portal: both excluded");
+    }
+
+    #[test]
+    fn mixed_workspace_and_registry_both_work() {
+        let json = r#"{
+            "name": "web",
+            "dependencies": {"react": "^18"},
+            "devDependencies": {
+                "typescript": "^5",
+                "@internal/test-utils": "workspace:*"
+            }
+        }"#;
+        let (_, deps) = parse_package_json(json);
+        assert!(deps.contains(&"react".to_string()));
+        assert!(deps.contains(&"typescript".to_string()));
+        assert!(!deps.contains(&"@internal/test-utils".to_string()));
+    }
+
+    #[test]
+    fn workspace_protocol_helper_recognizes_variants() {
+        assert!(is_workspace_protocol("workspace:*"));
+        assert!(is_workspace_protocol("workspace:^"));
+        assert!(is_workspace_protocol("workspace:~"));
+        assert!(is_workspace_protocol("workspace:1.2.3"));
+        assert!(is_workspace_protocol("file:../foo"));
+        assert!(is_workspace_protocol("link:../foo"));
+        assert!(is_workspace_protocol("portal:../foo"));
+
+        assert!(!is_workspace_protocol("^1.0.0"));
+        assert!(!is_workspace_protocol("1.2.3"));
+        assert!(!is_workspace_protocol("git+https://github.com/x/y"));
+        assert!(!is_workspace_protocol("npm:foo@1.0.0"));
+    }
+}

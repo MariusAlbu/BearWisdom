@@ -105,6 +105,22 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
             "ALTER TABLE packages ADD COLUMN is_service INTEGER NOT NULL DEFAULT 0"
         )?;
     }
+    // v0.3 monorepo Phase A: add declared_name — the package name as stated
+    // in its own manifest (package.json `name`, Cargo.toml [package].name,
+    // .csproj filename stem, etc.). Distinct from `name` which is the
+    // folder-derived key used for sort-stability. Needed so the TS resolver
+    // can map `import { x } from '@myorg/utils'` → package_id of the
+    // workspace package whose package.json declares `"name": "@myorg/utils"`.
+    if !column_exists(conn, "packages", "declared_name") {
+        conn.execute_batch(
+            "ALTER TABLE packages ADD COLUMN declared_name TEXT"
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_packages_declared_name
+         ON packages(declared_name)
+         WHERE declared_name IS NOT NULL"
+    )?;
     // v0.5: Add origin to files and symbols to partition internal project code
     // from externally-indexed dependency code (module cache, package sources).
     // Values: 'internal' | 'external'. User-facing queries filter origin='internal'.
@@ -197,16 +213,20 @@ const SCHEMA_SQL: &str = "
 -- Single-project repos leave this table empty.
 
 CREATE TABLE IF NOT EXISTS packages (
-    id         INTEGER PRIMARY KEY,
-    name       TEXT    NOT NULL UNIQUE,
-    path       TEXT    NOT NULL UNIQUE,  -- relative to workspace root
-    kind       TEXT,                     -- ecosystem hint: npm, cargo, dotnet, go, etc.
-    manifest   TEXT,                     -- relative path to manifest file
-    parent_id  INTEGER REFERENCES packages(id) ON DELETE SET NULL,
-    is_service INTEGER NOT NULL DEFAULT 0  -- 1 if a Dockerfile was found in this package
+    id            INTEGER PRIMARY KEY,
+    name          TEXT    NOT NULL UNIQUE,  -- folder-derived key, stable sort
+    path          TEXT    NOT NULL UNIQUE,  -- relative to workspace root
+    kind          TEXT,                     -- ecosystem hint: npm, cargo, dotnet, go, etc.
+    manifest      TEXT,                     -- relative path to manifest file
+    parent_id     INTEGER REFERENCES packages(id) ON DELETE SET NULL,
+    is_service    INTEGER NOT NULL DEFAULT 0,  -- 1 if a Dockerfile was found in this package
+    declared_name TEXT                         -- manifest-declared name (@myorg/foo, etc.)
 );
 
 CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);
+CREATE INDEX IF NOT EXISTS idx_packages_declared_name
+    ON packages(declared_name)
+    WHERE declared_name IS NOT NULL;
 
 -- ============================================================
 -- PACKAGE DEPENDENCIES  (M3)

@@ -149,6 +149,7 @@ mod m2_tests {
                 path: "server".into(),
                 kind: Some("npm".into()),
                 manifest: Some("server/package.json".into()),
+                declared_name: None,
             },
             PackageInfo {
                 id: Some(2),
@@ -156,6 +157,7 @@ mod m2_tests {
                 path: "web".into(),
                 kind: Some("npm".into()),
                 manifest: Some("web/package.json".into()),
+                declared_name: None,
             },
         ];
 
@@ -209,6 +211,7 @@ mod m2_tests {
             path: "".into(),
             kind: Some("npm".into()),
             manifest: Some("package.json".into()),
+            declared_name: None,
         }];
 
         let ctx = build_project_context_with_packages(root, &packages);
@@ -234,6 +237,7 @@ mod m2_tests {
                 path: "server".into(),
                 kind: Some("npm".into()),
                 manifest: Some("server/package.json".into()),
+                declared_name: None,
             },
             PackageInfo {
                 id: Some(2),
@@ -241,6 +245,7 @@ mod m2_tests {
                 path: "packages/empty".into(),
                 kind: None,
                 manifest: None,
+                declared_name: None,
             },
         ];
 
