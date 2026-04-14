@@ -1,8 +1,8 @@
 // indexer/manifest/cargo.rs — Cargo.toml reader
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{ManifestData, ManifestKind, ManifestReader};
+use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 pub struct CargoManifest;
 
@@ -12,24 +12,44 @@ impl ManifestReader for CargoManifest {
     }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
+        let entries = self.read_all(project_root);
+        if entries.is_empty() {
+            return None;
+        }
+        let mut data = ManifestData::default();
+        for e in &entries {
+            data.dependencies.extend(e.data.dependencies.iter().cloned());
+        }
+        Some(data)
+    }
+
+    fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
         let mut paths = Vec::new();
         collect_cargo_tomls(project_root, &mut paths, 0);
 
-        if paths.is_empty() {
-            return None;
-        }
+        let mut out = Vec::new();
+        for manifest_path in paths {
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
 
-        let mut data = ManifestData::default();
-        for path in &paths {
-            let content = match std::fs::read_to_string(path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+            let mut data = ManifestData::default();
             for name in parse_cargo_dependencies(&content) {
                 data.dependencies.insert(name);
             }
+
+            let name = parse_cargo_package_name(&content);
+            let package_dir = manifest_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| project_root.to_path_buf());
+
+            out.push(ReaderEntry {
+                package_dir,
+                manifest_path,
+                data,
+                name,
+            });
         }
-        Some(data)
+        out
     }
 }
 
@@ -37,7 +57,7 @@ impl ManifestReader for CargoManifest {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-pub(super) fn collect_cargo_tomls(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
+pub(super) fn collect_cargo_tomls(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 8 {
         return;
     }
@@ -119,4 +139,32 @@ pub fn parse_cargo_dependencies(content: &str) -> Vec<String> {
     }
 
     crates
+}
+
+/// Parse the `[package].name` field from a Cargo.toml.
+///
+/// Returns `None` for workspace-root manifests that declare no `[package]`
+/// section (pure `[workspace]` manifests).
+fn parse_cargo_package_name(content: &str) -> Option<String> {
+    let mut in_package = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with('[') {
+            in_package = trimmed == "[package]";
+            continue;
+        }
+        if !in_package {
+            continue;
+        }
+        // `name = "crate-name"` — take the key before `=`, value between quotes.
+        if let Some(rest) = trimmed.strip_prefix("name") {
+            let rest = rest.trim_start();
+            let Some(rest) = rest.strip_prefix('=') else { continue };
+            let rest = rest.trim();
+            let Some(rest) = rest.strip_prefix('"') else { continue };
+            let Some(end) = rest.find('"') else { continue };
+            return Some(rest[..end].to_string());
+        }
+    }
+    None
 }

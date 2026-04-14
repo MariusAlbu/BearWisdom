@@ -1,8 +1,8 @@
 // indexer/manifest/maven.rs — pom.xml reader
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{ManifestData, ManifestKind, ManifestReader};
+use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 pub struct MavenManifest;
 
@@ -12,24 +12,44 @@ impl ManifestReader for MavenManifest {
     }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
+        let entries = self.read_all(project_root);
+        if entries.is_empty() {
+            return None;
+        }
+        let mut data = ManifestData::default();
+        for e in &entries {
+            data.dependencies.extend(e.data.dependencies.iter().cloned());
+        }
+        Some(data)
+    }
+
+    fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
         let mut pom_paths = Vec::new();
         collect_pom_files(project_root, &mut pom_paths, 0);
 
-        if pom_paths.is_empty() {
-            return None;
-        }
+        let mut out = Vec::new();
+        for manifest_path in pom_paths {
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
 
-        let mut data = ManifestData::default();
-        for path in &pom_paths {
-            let content = match std::fs::read_to_string(path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+            let mut data = ManifestData::default();
             for group_id in parse_pom_xml_dependencies(&content) {
                 data.dependencies.insert(group_id);
             }
+
+            let name = parse_pom_artifact_id(&content);
+            let package_dir = manifest_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| project_root.to_path_buf());
+
+            out.push(ReaderEntry {
+                package_dir,
+                manifest_path,
+                data,
+                name,
+            });
         }
-        Some(data)
+        out
     }
 }
 
@@ -37,7 +57,7 @@ impl ManifestReader for MavenManifest {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn collect_pom_files(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
+fn collect_pom_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 8 {
         return;
     }
@@ -144,6 +164,39 @@ pub fn parse_pom_xml_coords(content: &str) -> Vec<MavenCoord> {
     }
 
     coords
+}
+
+/// Extract the project-level `<artifactId>` from a pom.xml — the one that is
+/// a direct child of `<project>`, not the ones inside `<dependency>` blocks.
+fn parse_pom_artifact_id(content: &str) -> Option<String> {
+    let mut in_dependency = false;
+    let mut in_parent = false;
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.contains("<dependency>") {
+            in_dependency = true;
+            continue;
+        }
+        if trimmed.contains("</dependency>") {
+            in_dependency = false;
+            continue;
+        }
+        if trimmed.contains("<parent>") {
+            in_parent = true;
+            continue;
+        }
+        if trimmed.contains("</parent>") {
+            in_parent = false;
+            continue;
+        }
+        if in_dependency || in_parent {
+            continue;
+        }
+        if let Some(value) = extract_xml_text(trimmed, "artifactId") {
+            return Some(value);
+        }
+    }
+    None
 }
 
 /// Extract the text content of a simple XML element on a single line.

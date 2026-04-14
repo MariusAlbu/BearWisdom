@@ -1,8 +1,8 @@
 // indexer/manifest/mix.rs — mix.exs reader (Elixir)
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{ManifestData, ManifestKind, ManifestReader};
+use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 pub struct MixManifest;
 
@@ -12,23 +12,100 @@ impl ManifestReader for MixManifest {
     }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
-        let mix_exs_path = project_root.join("mix.exs");
-        if !mix_exs_path.is_file() {
+        let entries = self.read_all(project_root);
+        if entries.is_empty() {
             return None;
         }
-        let content = std::fs::read_to_string(&mix_exs_path).ok()?;
-
         let mut data = ManifestData::default();
-        for name in parse_mix_deps(&content) {
-            data.dependencies.insert(name);
+        for e in &entries {
+            data.dependencies.extend(e.data.dependencies.iter().cloned());
         }
         Some(data)
+    }
+
+    fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
+        let mut paths = Vec::new();
+        collect_mix_files(project_root, &mut paths, 0);
+
+        let mut out = Vec::new();
+        for manifest_path in paths {
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+
+            let mut data = ManifestData::default();
+            for name in parse_mix_deps(&content) {
+                data.dependencies.insert(name);
+            }
+
+            let name = parse_mix_app_name(&content);
+            let package_dir = manifest_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| project_root.to_path_buf());
+
+            out.push(ReaderEntry {
+                package_dir,
+                manifest_path,
+                data,
+                name,
+            });
+        }
+        out
     }
 }
 
 // ---------------------------------------------------------------------------
 // Internal helpers
 // ---------------------------------------------------------------------------
+
+fn collect_mix_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 6 {
+        return;
+    }
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if matches!(
+                name.as_ref(),
+                ".git" | "deps" | "_build" | "node_modules" | "target" | "bin" | "obj"
+            ) {
+                continue;
+            }
+            collect_mix_files(&path, out, depth + 1);
+        } else if entry.file_name() == "mix.exs" {
+            out.push(path);
+        }
+    }
+}
+
+/// Parse the OTP app name from `app: :my_app` in the `project/0` function.
+fn parse_mix_app_name(content: &str) -> Option<String> {
+    // Match `app: :name` where `name` is an Elixir atom.
+    let needle = "app:";
+    let mut search_from = 0;
+    while let Some(pos) = content[search_from..].find(needle) {
+        let abs = search_from + pos;
+        let after = &content[abs + needle.len()..];
+        let after = after.trim_start();
+        if let Some(rest) = after.strip_prefix(':') {
+            // Atom name ends at `,`, `}`, whitespace, or EOL.
+            let end = rest
+                .find(|c: char| c == ',' || c == '}' || c.is_whitespace())
+                .unwrap_or(rest.len());
+            let name = rest[..end].trim();
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+        search_from = abs + needle.len();
+    }
+    None
+}
 
 /// Parse dependency names from a `mix.exs` file.
 ///

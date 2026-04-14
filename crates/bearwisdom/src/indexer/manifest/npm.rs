@@ -1,8 +1,8 @@
 // indexer/manifest/npm.rs — package.json reader
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{ManifestData, ManifestKind, ManifestReader};
+use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 pub struct NpmManifest;
 
@@ -12,22 +12,34 @@ impl ManifestReader for NpmManifest {
     }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
+        let entries = self.read_all(project_root);
+        if entries.is_empty() {
+            return None;
+        }
+        let mut data = ManifestData::default();
+        for e in &entries {
+            data.dependencies.extend(e.data.dependencies.iter().cloned());
+        }
+        // Node builtins are appended by read_all per-entry; ensure present on
+        // the unioned result as well (idempotent).
+        for builtin in NODE_BUILTINS {
+            data.dependencies.insert(builtin.to_string());
+        }
+        data.dependencies.insert("node".to_string());
+        Some(data)
+    }
+
+    fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
         let mut package_json_files = Vec::new();
         collect_package_json(project_root, &mut package_json_files, 0);
 
-        if package_json_files.is_empty() {
-            return None;
-        }
+        let mut out = Vec::new();
+        for manifest_path in package_json_files {
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
 
-        let mut data = ManifestData::default();
-
-        for path in &package_json_files {
-            let content = match std::fs::read_to_string(path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-            for pkg in parse_package_json_deps(&content) {
-                // For scoped packages like @tanstack/react-query, also add the scope.
+            let mut data = ManifestData::default();
+            let (name, deps) = parse_package_json(&content);
+            for pkg in deps {
                 if pkg.starts_with('@') {
                     if let Some(scope) = pkg.split('/').next() {
                         data.dependencies.insert(scope.to_string());
@@ -35,16 +47,26 @@ impl ManifestReader for NpmManifest {
                 }
                 data.dependencies.insert(pkg);
             }
-        }
+            // Node builtins are always externally resolvable from any TS/JS
+            // package, regardless of what its own package.json declares.
+            for builtin in NODE_BUILTINS {
+                data.dependencies.insert(builtin.to_string());
+            }
+            data.dependencies.insert("node".to_string());
 
-        // Add Node.js built-in module names (always external for TS/JS projects).
-        for builtin in NODE_BUILTINS {
-            data.dependencies.insert(builtin.to_string());
-        }
-        // Also add the node: protocol prefix as a sentinel.
-        data.dependencies.insert("node".to_string());
+            let package_dir = manifest_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| project_root.to_path_buf());
 
-        Some(data)
+            out.push(ReaderEntry {
+                package_dir,
+                manifest_path,
+                data,
+                name,
+            });
+        }
+        out
     }
 }
 
@@ -52,7 +74,7 @@ impl ManifestReader for NpmManifest {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn collect_package_json(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
+fn collect_package_json(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 6 {
         return;
     }
@@ -79,18 +101,22 @@ fn collect_package_json(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: us
     }
 }
 
-/// Extract dependency package names from a package.json file's
-/// `dependencies` and `devDependencies` objects.
+/// Parse a package.json file into (name, dependency-names).
 ///
-/// Uses `serde_json` for parsing since it's already a workspace dependency.
-pub fn parse_package_json_deps(content: &str) -> Vec<String> {
+/// Reads `dependencies`, `devDependencies`, `peerDependencies` object keys and
+/// the top-level `name` field. Returns `(None, [])` on parse failure.
+fn parse_package_json(content: &str) -> (Option<String>, Vec<String>) {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(content) else {
-        return Vec::new();
+        return (None, Vec::new());
     };
-    let obj = match value.as_object() {
-        Some(o) => o,
-        None => return Vec::new(),
+    let Some(obj) = value.as_object() else {
+        return (None, Vec::new());
     };
+
+    let name = obj
+        .get("name")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
 
     let mut packages = Vec::new();
     for key in &["dependencies", "devDependencies", "peerDependencies"] {
@@ -102,7 +128,14 @@ pub fn parse_package_json_deps(content: &str) -> Vec<String> {
             }
         }
     }
-    packages
+    (name, packages)
+}
+
+/// Extract dependency package names only (for legacy callers).
+///
+/// Kept for backward compat with any external consumers of this helper.
+pub fn parse_package_json_deps(content: &str) -> Vec<String> {
+    parse_package_json(content).1
 }
 
 /// Node.js core module names. These are always external regardless of

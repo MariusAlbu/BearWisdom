@@ -1,8 +1,8 @@
 // indexer/manifest/gradle.rs — build.gradle / build.gradle.kts reader
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{ManifestData, ManifestKind, ManifestReader};
+use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 pub struct GradleManifest;
 
@@ -12,24 +12,50 @@ impl ManifestReader for GradleManifest {
     }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
+        let entries = self.read_all(project_root);
+        if entries.is_empty() {
+            return None;
+        }
+        let mut data = ManifestData::default();
+        for e in &entries {
+            data.dependencies.extend(e.data.dependencies.iter().cloned());
+        }
+        Some(data)
+    }
+
+    fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
         let mut gradle_paths = Vec::new();
         collect_gradle_files(project_root, &mut gradle_paths, 0);
 
-        if gradle_paths.is_empty() {
-            return None;
-        }
+        let mut out = Vec::new();
+        for manifest_path in gradle_paths {
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
 
-        let mut data = ManifestData::default();
-        for path in &gradle_paths {
-            let content = match std::fs::read_to_string(path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
+            let mut data = ManifestData::default();
             for group_id in parse_gradle_dependencies(&content) {
                 data.dependencies.insert(group_id);
             }
+
+            let package_dir = manifest_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| project_root.to_path_buf());
+
+            // Gradle doesn't mandate a name inside build.gradle — rootProject.name
+            // lives in settings.gradle(.kts). Fall back to the package directory's
+            // name (consistent with how Gradle itself names subprojects by default).
+            let name = package_dir
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned());
+
+            out.push(ReaderEntry {
+                package_dir,
+                manifest_path,
+                data,
+                name,
+            });
         }
-        Some(data)
+        out
     }
 }
 
@@ -37,7 +63,7 @@ impl ManifestReader for GradleManifest {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
-fn collect_gradle_files(dir: &Path, out: &mut Vec<std::path::PathBuf>, depth: usize) {
+fn collect_gradle_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
     if depth > 8 {
         return;
     }

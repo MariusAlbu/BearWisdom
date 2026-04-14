@@ -1,8 +1,8 @@
 // indexer/manifest/nuget.rs — .csproj / NuGet reader
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-use super::{ManifestData, ManifestKind, ManifestReader};
+use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 pub struct NuGetManifest;
 
@@ -12,26 +12,26 @@ impl ManifestReader for NuGetManifest {
     }
 
     fn read(&self, project_root: &Path) -> Option<ManifestData> {
-        let csproj_files = find_csproj_files(project_root);
-        if csproj_files.is_empty() {
+        // Legacy path: union every csproj's data, pick the most-capable SDK
+        // across the whole project, union all GlobalUsings.cs.
+        let per_proj = self.read_all(project_root);
+        if per_proj.is_empty() {
             return None;
         }
 
         let mut data = ManifestData::default();
         let mut sdk_types = Vec::new();
 
-        for csproj_path in &csproj_files {
-            let content = match std::fs::read_to_string(csproj_path) {
-                Ok(c) => c,
-                Err(_) => continue,
-            };
-
-            if let Some(sdk) = parse_sdk_type(&content) {
-                sdk_types.push(sdk);
+        for entry in &per_proj {
+            data.dependencies
+                .extend(entry.data.dependencies.iter().cloned());
+            for ns in &entry.data.global_usings {
+                if !data.global_usings.contains(ns) {
+                    data.global_usings.push(ns.clone());
+                }
             }
-
-            for pkg in parse_package_references(&content) {
-                data.dependencies.insert(pkg);
+            if let Some(sdk) = entry.data.sdk_type.as_deref().and_then(sdk_from_name) {
+                sdk_types.push(sdk);
             }
         }
 
@@ -39,28 +39,83 @@ impl ManifestReader for NuGetManifest {
         let sdk = most_capable_sdk(&sdk_types);
         data.sdk_type = Some(sdk_type_name(sdk).to_string());
 
-        // Collect SDK implicit usings.
-        let implicit = implicit_usings_for_sdk(sdk);
-        for ns in implicit {
+        // Append the overall SDK's implicit usings (for consumers who look at
+        // the unioned set — matches pre-M1 behavior).
+        for ns in implicit_usings_for_sdk(sdk) {
             if !data.global_usings.contains(&ns.to_string()) {
                 data.global_usings.push(ns.to_string());
             }
         }
 
-        // Scan for GlobalUsings.cs files.
-        let global_using_files = find_global_using_files(project_root);
-        for path in &global_using_files {
-            if let Ok(content) = std::fs::read_to_string(path) {
-                for ns in parse_global_usings(&content) {
-                    if !data.global_usings.contains(&ns) {
-                        data.global_usings.push(ns);
+        Some(data)
+    }
+
+    fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
+        let csproj_files = find_csproj_files(project_root);
+
+        let mut out = Vec::new();
+        for manifest_path in csproj_files {
+            let Ok(content) = std::fs::read_to_string(&manifest_path) else { continue };
+
+            let mut data = ManifestData::default();
+
+            let sdk = parse_sdk_type(&content).unwrap_or(DotnetSdkType::Base);
+            data.sdk_type = Some(sdk_type_name(sdk).to_string());
+
+            for pkg in parse_package_references(&content) {
+                data.dependencies.insert(pkg);
+            }
+
+            // Scope GlobalUsings.cs scanning to this csproj's directory tree
+            // so each project's global_usings is its own set, not the union.
+            let package_dir = manifest_path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_else(|| project_root.to_path_buf());
+
+            for ns in implicit_usings_for_sdk(sdk) {
+                if !data.global_usings.contains(&ns.to_string()) {
+                    data.global_usings.push(ns.to_string());
+                }
+            }
+
+            for path in find_global_using_files(&package_dir) {
+                if let Ok(gu_content) = std::fs::read_to_string(&path) {
+                    for ns in parse_global_usings(&gu_content) {
+                        if !data.global_usings.contains(&ns) {
+                            data.global_usings.push(ns);
+                        }
                     }
                 }
             }
-        }
 
-        Some(data)
+            // Project name from the .csproj filename (e.g. "WebMVC.csproj" → "WebMVC").
+            // The project can override this with `<AssemblyName>` but that's
+            // advanced territory we don't need for package identity.
+            let name = manifest_path
+                .file_stem()
+                .map(|s| s.to_string_lossy().into_owned());
+
+            out.push(ReaderEntry {
+                package_dir,
+                manifest_path,
+                data,
+                name,
+            });
+        }
+        out
     }
+}
+
+fn sdk_from_name(name: &str) -> Option<DotnetSdkType> {
+    Some(match name {
+        "base" => DotnetSdkType::Base,
+        "web" => DotnetSdkType::Web,
+        "worker" => DotnetSdkType::Worker,
+        "blazor" => DotnetSdkType::Blazor,
+        "other" => DotnetSdkType::Other,
+        _ => return None,
+    })
 }
 
 // ---------------------------------------------------------------------------
