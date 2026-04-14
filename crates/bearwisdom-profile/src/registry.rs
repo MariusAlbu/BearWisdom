@@ -90,6 +90,7 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &LIQUID,
     &GOTEMPLATE,
     &TEMPL,
+    &HEEX,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").

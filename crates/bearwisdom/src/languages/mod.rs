@@ -194,6 +194,7 @@ pub mod handlebars;
 pub mod hare;
 pub mod haskell;
 pub mod hcl;
+pub mod heex;
 pub mod html;
 pub mod java;
 pub mod javascript;
@@ -348,6 +349,8 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     // E12 — Go templates + Templ
     reg.register(Arc::new(gotemplate::GoTemplatePlugin));
     reg.register(Arc::new(templ::TemplPlugin));
+    // E13 — Phoenix HEEx
+    reg.register(Arc::new(heex::HeexPlugin));
 
     reg
 });
