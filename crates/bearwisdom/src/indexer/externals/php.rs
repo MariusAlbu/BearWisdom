@@ -55,6 +55,7 @@ pub fn discover_php_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version,
                 root: pkg_dir,
                 ecosystem: "php",
+                package_id: None,
             });
         }
     }

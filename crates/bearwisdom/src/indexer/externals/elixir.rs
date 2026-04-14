@@ -95,6 +95,7 @@ pub fn discover_elixir_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             version,
             root: path,
             ecosystem: "elixir",
+            package_id: None,
         });
     }
     result

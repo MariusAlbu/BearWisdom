@@ -96,6 +96,7 @@ pub fn discover_ruby_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     .to_string(),
                 root: gem_root,
                 ecosystem: "ruby",
+                package_id: None,
             });
         }
     }

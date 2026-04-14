@@ -48,6 +48,7 @@ pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     version: String::new(),
                     root: pkg_dir,
                     ecosystem: "ocaml",
+                    package_id: None,
                 });
                 break;
             }

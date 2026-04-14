@@ -119,6 +119,7 @@ pub fn full_index(
                  DROP TABLE IF EXISTS external_refs;
                  DROP TABLE IF EXISTS symbols;
                  DROP TABLE IF EXISTS files;
+                 DROP TABLE IF EXISTS package_deps;
                  DROP TABLE IF EXISTS packages;
                  PRAGMA foreign_keys = ON;",
             );
@@ -197,14 +198,50 @@ pub fn full_index(
         file_id_map.len()
     );
 
-    // --- Step 4b: Discover + index external dependencies (MVP: Go only) ---
+    // --- Step 4b: Build the per-package project context (M2) ---
+    // Built BEFORE external discovery so (a) M3 can write per-package
+    // dependency rows from it and (b) the resolver reuses the same
+    // instance below without re-reading manifests.
+    let project_ctx = if !written_packages.is_empty() {
+        super::project_context::build_project_context_with_packages(
+            project_root,
+            &written_packages,
+        )
+    } else {
+        super::project_context::build_project_context(project_root)
+    };
+
+    // --- Step 4c: Write per-package dependency graph (M3) ---
+    // `package_deps` rows let queries like "which packages in this monorepo
+    // declare axios?" answer without re-reading every manifest. One row per
+    // (package_id, ecosystem, dep_name). The table is dropped + recreated
+    // by the full-reindex path above, so we can blindly insert.
+    if !written_packages.is_empty() {
+        let dep_rows = collect_package_dep_rows(&project_ctx);
+        if !dep_rows.is_empty() {
+            match write::write_package_deps(db, &dep_rows) {
+                Ok(n) => info!(
+                    "Wrote {} package_deps rows across {} packages",
+                    n,
+                    project_ctx.by_package.len()
+                ),
+                Err(e) => warn!("Failed to write package_deps (non-fatal): {e}"),
+            }
+        }
+    }
+
+    // --- Step 4d: Discover + index external dependencies ---
     //
-    // External dep sources (e.g. `$GOMODCACHE/github.com/foo/bar@v1.2.3/`) are
-    // parsed through the exact same pipeline and written with origin='external'
-    // so user-facing queries filter them out. The resolver picks them up via
-    // the SymbolIndex so that Tier 1.5 can turn `ext:github.com/foo` refs into
-    // real edges instead of opaque `external_refs` rows.
-    let external_parsed = parse_external_sources(project_root, registry);
+    // External dep sources (e.g. `$GOMODCACHE/github.com/foo/bar@v1.2.3/`,
+    // `node_modules/react/`, `site-packages/fastapi/`) are parsed through
+    // the exact same pipeline and written with origin='external' so
+    // user-facing queries filter them out. The resolver picks them up via
+    // the SymbolIndex so that Tier 1.5 can turn `ext:github.com/foo` refs
+    // into real edges instead of opaque `external_refs` rows.
+    //
+    // M3: workspace packages drive per-package locator calls; roots are
+    // deduplicated globally and walked exactly once.
+    let external_parsed = parse_external_sources(project_root, registry, &written_packages);
     if !external_parsed.is_empty() {
         info!(
             "Parsed {} external files from dependency sources",
@@ -230,18 +267,6 @@ pub fn full_index(
 
     // --- Step 5: Cross-file resolution + edge writing ---
     emit("resolving", 0.0, None);
-    // M2: when a monorepo is detected, build a per-package-aware context so
-    // the resolver can scope external classification to the source file's own
-    // package. Single-project layouts keep the legacy builder (empty
-    // by_package map → falls back to union behavior).
-    let project_ctx = if !written_packages.is_empty() {
-        super::project_context::build_project_context_with_packages(
-            project_root,
-            &written_packages,
-        )
-    } else {
-        super::project_context::build_project_context(project_root)
-    };
     let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
         .context("Failed to resolve references")?;
     info!(
@@ -343,17 +368,85 @@ pub fn full_index(
 // Parse a single file
 // ---------------------------------------------------------------------------
 
+/// Map a `ManifestKind` to the locator ecosystem string used by
+/// `ExternalSourceLocator::ecosystem`. The two enums are intentionally
+/// separate — manifests are classified by file format (package.json,
+/// pyproject.toml) while locators are classified by tool ecosystem —
+/// so they must stay linked by an explicit table.
+///
+/// Unmatched kinds return `None`; the caller skips writing package_deps
+/// rows for manifests whose ecosystem has no locator today (e.g. Sbt,
+/// Opam when those locators haven't been wired in yet).
+fn manifest_kind_to_ecosystem(
+    kind: crate::indexer::manifest::ManifestKind,
+) -> Option<&'static str> {
+    use crate::indexer::manifest::ManifestKind;
+    Some(match kind {
+        ManifestKind::Npm => "typescript",
+        ManifestKind::Cargo => "rust",
+        ManifestKind::NuGet => "dotnet",
+        ManifestKind::GoMod => "go",
+        ManifestKind::PyProject => "python",
+        ManifestKind::Gradle => "java",
+        ManifestKind::Maven => "java",
+        ManifestKind::Gemfile => "ruby",
+        ManifestKind::Composer => "php",
+        ManifestKind::SwiftPM => "swift",
+        ManifestKind::Pubspec => "dart",
+        ManifestKind::Mix => "elixir",
+        ManifestKind::Description => "r",
+        ManifestKind::Sbt => "scala",
+        ManifestKind::Opam => "ocaml",
+        // Unknown kinds fall through to None — package_deps row is skipped.
+        #[allow(unreachable_patterns)]
+        _ => return None,
+    })
+}
+
+/// M3: collect `(package_id, ecosystem, dep_name, version, kind)` rows for
+/// every dependency declared by every workspace package. Sourced from the
+/// M2 per-package manifest map already present in `ProjectContext`.
+///
+/// Returned tuples are ready to pass to `write::write_package_deps`.
+/// Version strings are currently None — the manifest readers normalize to
+/// a bare dep-name set and drop version specifiers. That column will light
+/// up in a later pass; today it stays NULL.
+fn collect_package_dep_rows(
+    ctx: &super::project_context::ProjectContext,
+) -> Vec<(i64, &'static str, String, Option<String>, &'static str)> {
+    let mut rows = Vec::new();
+    for (&pkg_id, manifests) in &ctx.by_package {
+        for (&kind, data) in manifests {
+            let Some(ecosystem) = manifest_kind_to_ecosystem(kind) else { continue };
+            for dep in &data.dependencies {
+                rows.push((pkg_id, ecosystem, dep.clone(), None, "runtime"));
+            }
+        }
+    }
+    rows
+}
+
 /// Discover and parse external dependency sources for the project.
 ///
-/// Covers Go (`$GOMODCACHE`) and Python (`site-packages`). Extending to
-/// TypeScript (`node_modules`), Java (Maven local), etc. is a matter of
-/// adding discovery functions in `indexer::externals` and appending to
-/// the walked-files list here.
+/// Covers every ecosystem that exposes an `ExternalSourceLocator` via
+/// `LanguagePlugin::externals_locator` (Go, Python, TypeScript, Java,
+/// .NET, Ruby, Rust, PHP, and the rest).
+///
+/// M3: when `packages` is non-empty (monorepo / workspace), each locator
+/// is invoked ONCE PER PACKAGE via `locate_roots_for_package`. Roots are
+/// then deduplicated by `(ecosystem, module_path, version)` and walked
+/// exactly once regardless of how many packages declared the same dep.
+/// Single-project layouts (empty `packages`) keep the legacy single-call
+/// behavior with unstamped `package_id`.
 ///
 /// Returns an empty vec if no externals are discovered. Individual parse
 /// failures are logged but don't abort.
-fn parse_external_sources(project_root: &Path, registry: &LanguageRegistry) -> Vec<ParsedFile> {
-    use crate::indexer::externals::ExternalSourceLocator;
+fn parse_external_sources(
+    project_root: &Path,
+    registry: &LanguageRegistry,
+    packages: &[crate::types::PackageInfo],
+) -> Vec<ParsedFile> {
+    use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator};
     use std::sync::Arc;
 
     // Collect every distinct `ExternalSourceLocator` exposed by a registered
@@ -372,29 +465,98 @@ fn parse_external_sources(project_root: &Path, registry: &LanguageRegistry) -> V
         }
     }
 
-    // Walk source-based locators first; metadata-only locators (.NET) feed
-    // their pre-built ParsedFile entries in after the parallel parse pass.
+    // Step 1 — discover roots. Either single-project (one locate_roots call
+    // at project_root) or per-package (one locate_roots_for_package per
+    // (locator, package) pair).
+    let mut all_roots: Vec<ExternalDepRoot> = Vec::new();
+    if packages.is_empty() {
+        for locator in &locators {
+            let roots = locator.locate_roots(project_root);
+            if !roots.is_empty() {
+                info!(
+                    "Discovered {} external {} dependency roots",
+                    roots.len(),
+                    locator.ecosystem()
+                );
+            }
+            all_roots.extend(roots);
+        }
+    } else {
+        for pkg in packages {
+            let Some(pkg_id) = pkg.id else { continue };
+            let pkg_abs_path = project_root.join(&pkg.path);
+            for locator in &locators {
+                let roots =
+                    locator.locate_roots_for_package(project_root, &pkg_abs_path, pkg_id);
+                if !roots.is_empty() {
+                    debug!(
+                        "Package {} (id={}): {} external {} roots",
+                        pkg.name,
+                        pkg_id,
+                        roots.len(),
+                        locator.ecosystem()
+                    );
+                }
+                all_roots.extend(roots);
+            }
+        }
+    }
+
+    // Step 2 — deduplicate by (ecosystem, module_path, version) so a dep
+    // shared across workspace packages (e.g. both apps/web and apps/server
+    // declaring react 18.3.1) is walked exactly once. Package attribution
+    // is preserved in the declaring-packages list for logs/diagnostics.
+    let mut deduped: Vec<(ExternalDepRoot, Vec<i64>)> = Vec::new();
+    let mut root_index: std::collections::HashMap<
+        (&'static str, String, String),
+        usize,
+    > = std::collections::HashMap::new();
+    for root in all_roots {
+        let key = (
+            root.ecosystem,
+            root.module_path.clone(),
+            root.version.clone(),
+        );
+        if let Some(&idx) = root_index.get(&key) {
+            if let Some(pid) = root.package_id {
+                if !deduped[idx].1.contains(&pid) {
+                    deduped[idx].1.push(pid);
+                }
+            }
+        } else {
+            root_index.insert(key, deduped.len());
+            let declaring = root.package_id.map(|p| vec![p]).unwrap_or_default();
+            deduped.push((root, declaring));
+        }
+    }
+
+    if !packages.is_empty() && !deduped.is_empty() {
+        let total_declarations: usize = deduped.iter().map(|(_, pkgs)| pkgs.len()).sum();
+        info!(
+            "External discovery: {} unique roots across {} package declarations",
+            deduped.len(),
+            total_declarations
+        );
+    }
+
+    // Build ecosystem → locator index for the walk phase.
+    let mut locator_by_ecosystem: std::collections::HashMap<
+        &'static str,
+        Arc<dyn ExternalSourceLocator>,
+    > = std::collections::HashMap::new();
+    for locator in &locators {
+        locator_by_ecosystem.insert(locator.ecosystem(), locator.clone());
+    }
+
+    // Step 3 — walk source-based roots and collect metadata-only outputs.
     let mut walked: Vec<WalkedFile> = Vec::new();
     let mut walked_owners: Vec<Arc<dyn ExternalSourceLocator>> = Vec::new();
     let mut metadata_parsed: Vec<ParsedFile> = Vec::new();
 
+    // Metadata-only path runs once per locator regardless of package layout.
+    // .NET reads `{project}/obj/*.deps.json` which is already per-csproj
+    // aware internally.
     for locator in &locators {
-        // Source-file path.
-        let roots = locator.locate_roots(project_root);
-        if !roots.is_empty() {
-            info!(
-                "Discovered {} external {} dependency roots",
-                roots.len(),
-                locator.ecosystem()
-            );
-            for dep in &roots {
-                let files = locator.walk_root(dep);
-                walked_owners.extend(std::iter::repeat(locator.clone()).take(files.len()));
-                walked.extend(files);
-            }
-        }
-
-        // Metadata-only path (today only .NET).
         if let Some(pre_parsed) = locator.parse_metadata_only(project_root) {
             info!(
                 "Parsed {} external {} entries via metadata",
@@ -403,6 +565,15 @@ fn parse_external_sources(project_root: &Path, registry: &LanguageRegistry) -> V
             );
             metadata_parsed.extend(pre_parsed);
         }
+    }
+
+    for (root, _declaring_pkgs) in &deduped {
+        let Some(locator) = locator_by_ecosystem.get(root.ecosystem) else {
+            continue;
+        };
+        let files = locator.walk_root(root);
+        walked_owners.extend(std::iter::repeat(locator.clone()).take(files.len()));
+        walked.extend(files);
     }
 
     if walked.is_empty() {

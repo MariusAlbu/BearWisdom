@@ -84,6 +84,7 @@ pub fn discover_clojure_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             version,
             root: cache_dir,
             ecosystem: "clojure",
+            package_id: None,
         });
     }
     debug!("Clojure: discovered {} external source roots", roots.len());

@@ -45,6 +45,7 @@ pub fn discover_swift_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version: String::new(),
                 root: dep_dir,
                 ecosystem: "swift",
+                package_id: None,
             });
         }
     }

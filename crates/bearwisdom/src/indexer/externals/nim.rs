@@ -61,6 +61,7 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version,
                 root: best,
                 ecosystem: "nim",
+                package_id: None,
             });
         }
     }

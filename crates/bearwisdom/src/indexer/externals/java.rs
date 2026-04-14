@@ -124,6 +124,7 @@ pub fn discover_java_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             version,
             root: cache_dir,
             ecosystem: "java",
+            package_id: None,
         });
     }
     roots

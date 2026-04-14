@@ -89,6 +89,7 @@ pub fn discover_scala_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version,
                 root: cache_dir,
                 ecosystem: "scala",
+                package_id: None,
             });
         }
     }

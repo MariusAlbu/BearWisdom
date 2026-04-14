@@ -453,6 +453,40 @@ pub fn assign_package_ids(
     }
 }
 
+/// M3: Write per-package dependency declarations to `package_deps`.
+///
+/// `entries` is a list of `(package_id, ecosystem, dep_name, version, kind)`
+/// rows derived from each workspace package's manifest data during
+/// `parse_external_sources`. The write is an upsert on the composite
+/// primary key `(package_id, ecosystem, dep_name)` — re-running a full
+/// index replaces any stale version/kind without leaving duplicates.
+///
+/// Callers should `DELETE FROM package_deps` first on incremental paths
+/// that discover a shrunk manifest; full index drops + recreates the
+/// table so no explicit clear is needed there.
+pub fn write_package_deps(
+    db: &Database,
+    entries: &[(i64, &str, String, Option<String>, &'static str)],
+) -> Result<usize> {
+    if entries.is_empty() {
+        return Ok(0);
+    }
+    let conn = db.conn();
+    let mut stmt = conn.prepare_cached(
+        "INSERT INTO package_deps (package_id, ecosystem, dep_name, version, kind)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(package_id, ecosystem, dep_name) DO UPDATE SET
+           version = excluded.version,
+           kind    = excluded.kind",
+    )?;
+    let mut written = 0usize;
+    for (pkg_id, ecosystem, dep_name, version, kind) in entries {
+        stmt.execute(rusqlite::params![pkg_id, ecosystem, dep_name, version, kind])?;
+        written += 1;
+    }
+    Ok(written)
+}
+
 // ---------------------------------------------------------------------------
 // Package loading (for incremental package_id assignment)
 // ---------------------------------------------------------------------------

@@ -161,6 +161,7 @@ fn find_haskell_pkgs_in_dir(dir: &Path, declared: &[String], roots: &mut Vec<Ext
                     version,
                     root: entry.path(),
                     ecosystem: "haskell",
+                    package_id: None,
                 });
                 break;
             }

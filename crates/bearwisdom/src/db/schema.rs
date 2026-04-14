@@ -196,6 +196,34 @@ CREATE TABLE IF NOT EXISTS packages (
 CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);
 
 -- ============================================================
+-- PACKAGE DEPENDENCIES  (M3)
+-- ============================================================
+-- Normalized dependency graph per workspace package. Populated by
+-- parse_external_sources during a full index from each declaring
+-- package manifest. Enables cross-package queries like which
+-- packages in this monorepo declare axios without re-reading
+-- manifests at query time.
+--
+-- ecosystem is the locator ecosystem id (typescript, python,
+-- dotnet, etc.). dep_name is the manifest-declared package name
+-- (react, @tanstack/react-query, Microsoft.Extensions.Logging).
+-- kind is one of runtime, dev, peer, build.
+-- version is the specifier string from the manifest, or NULL if
+-- the manifest did not declare a version.
+
+CREATE TABLE IF NOT EXISTS package_deps (
+    package_id INTEGER NOT NULL REFERENCES packages(id) ON DELETE CASCADE,
+    ecosystem  TEXT    NOT NULL,
+    dep_name   TEXT    NOT NULL,
+    version    TEXT,
+    kind       TEXT    NOT NULL,
+    PRIMARY KEY (package_id, ecosystem, dep_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_package_deps_ecosystem_name
+    ON package_deps(ecosystem, dep_name);
+
+-- ============================================================
 -- FILE TRACKING
 -- ============================================================
 

@@ -50,6 +50,7 @@ pub fn discover_erlang_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version: String::new(),
                 root: dep_dir,
                 ecosystem: "erlang",
+                package_id: None,
             });
         }
     }

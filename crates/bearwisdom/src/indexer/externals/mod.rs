@@ -103,6 +103,14 @@ pub struct ExternalDepRoot {
     pub root: PathBuf,
     /// Ecosystem identifier. "go" for now.
     pub ecosystem: &'static str,
+    /// M3: which workspace package declared this dep. `None` for
+    /// single-project layouts or when the orchestrator hasn't stamped
+    /// attribution yet. Stamped per-package by
+    /// `ExternalSourceLocator::locate_roots_for_package`'s default impl
+    /// (and overrides) and read by `parse_external_sources` to populate
+    /// the `package_deps` table and attribute shared walks to multiple
+    /// declaring packages.
+    pub package_id: Option<i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -142,6 +150,32 @@ pub trait ExternalSourceLocator: Send + Sync {
     /// and absent manifests all degrade to an empty vec.
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         Vec::new()
+    }
+
+    /// M3: Discover external package roots scoped to a single workspace
+    /// package. Called once per `(locator, package)` pair by the full-index
+    /// orchestrator when a monorepo is detected. Default implementation
+    /// delegates to `locate_roots(package_abs_path)` and stamps the
+    /// package id on every returned root.
+    ///
+    /// Ecosystems that need workspace-aware behavior — TypeScript walking
+    /// up ancestors to find a hoisted `node_modules`, Python checking
+    /// a parent venv, .NET reading one csproj — override this method.
+    ///
+    /// The `workspace_root` is the full project root (useful for upward
+    /// ancestor walks), the `package_abs_path` is the absolute path of
+    /// the workspace package's own directory.
+    fn locate_roots_for_package(
+        &self,
+        _workspace_root: &Path,
+        package_abs_path: &Path,
+        package_id: i64,
+    ) -> Vec<ExternalDepRoot> {
+        let mut roots = self.locate_roots(package_abs_path);
+        for r in &mut roots {
+            r.package_id = Some(package_id);
+        }
+        roots
     }
 
     /// Enumerate source files under one discovered root. Language-specific

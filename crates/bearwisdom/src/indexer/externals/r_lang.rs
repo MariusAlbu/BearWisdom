@@ -91,6 +91,7 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                         version,
                         root: pkg_dir,
                         ecosystem: "r",
+                        package_id: None,
                     });
                     break;
                 }

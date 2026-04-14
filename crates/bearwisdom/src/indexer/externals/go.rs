@@ -73,6 +73,7 @@ pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version: dep.version.clone(),
                 root,
                 ecosystem: "go",
+                package_id: None,
             });
         } else {
             debug!(

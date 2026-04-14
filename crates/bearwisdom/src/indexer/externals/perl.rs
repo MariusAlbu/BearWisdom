@@ -54,6 +54,7 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     version: String::new(),
                     root: module_dir,
                     ecosystem: "perl",
+                    package_id: None,
                 });
                 break;
             }
@@ -65,6 +66,7 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     version: String::new(),
                     root: module_file.parent().unwrap_or(lib).to_path_buf(),
                     ecosystem: "perl",
+                    package_id: None,
                 });
                 break;
             }

@@ -17,6 +17,23 @@ impl ExternalSourceLocator for PythonExternalsLocator {
         discover_python_externals(project_root)
     }
 
+    /// M3: per-package discovery. Reads this package's own pyproject.toml
+    /// and probes `{package}/.venv` + every ancestor venv up to
+    /// `workspace_root` — covers monorepo layouts with a shared venv at
+    /// the root (`/.venv`) alongside per-service venvs (`services/api/.venv`).
+    fn locate_roots_for_package(
+        &self,
+        workspace_root: &Path,
+        package_abs_path: &Path,
+        package_id: i64,
+    ) -> Vec<ExternalDepRoot> {
+        let mut roots = discover_python_externals_scoped(workspace_root, package_abs_path);
+        for r in &mut roots {
+            r.package_id = Some(package_id);
+        }
+        roots
+    }
+
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_python_external_root(dep)
     }
@@ -76,6 +93,7 @@ pub fn discover_python_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     version: String::from("unknown"),
                     root: pkg_dir,
                     ecosystem: "python",
+                    package_id: None,
                 });
                 matched = true;
                 break;
@@ -93,6 +111,7 @@ pub fn discover_python_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     version: String::from("unknown"),
                     root: file,
                     ecosystem: "python",
+                    package_id: None,
                 });
                 matched = true;
                 break;
@@ -182,6 +201,7 @@ fn python_top_level_lookup(
                     version: String::from("unknown"),
                     root: pkg_dir,
                     ecosystem: "python",
+                    package_id: None,
                 });
                 continue;
             }
@@ -193,12 +213,136 @@ fn python_top_level_lookup(
                     version: String::from("unknown"),
                     root: single_file,
                     ecosystem: "python",
+                    package_id: None,
                 });
             }
         }
         return Some(out);
     }
     None
+}
+
+/// M3: per-package variant. Reads only the single package's
+/// `pyproject.toml` and probes `{package}/.venv` plus every ancestor
+/// venv up to `workspace_root` (inclusive). Returns roots with
+/// `package_id=None`; the caller (locator) stamps ownership.
+pub fn discover_python_externals_scoped(
+    workspace_root: &Path,
+    package_abs_path: &Path,
+) -> Vec<ExternalDepRoot> {
+    let manifest = PyProjectManifest;
+    // PyProjectManifest.read walks subdirs; acceptable here since a package
+    // directory tree typically only contains its own pyproject.toml.
+    let Some(data) = manifest.read(package_abs_path) else {
+        return Vec::new();
+    };
+    if data.dependencies.is_empty() {
+        return Vec::new();
+    }
+
+    let site_packages = find_python_site_packages_with_ancestors(package_abs_path, workspace_root);
+    if site_packages.is_empty() {
+        debug!("No Python site-packages discovered for package at {}; skipping Python externals",
+            package_abs_path.display());
+        return Vec::new();
+    }
+
+    let mut roots = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+    for dep_raw in &data.dependencies {
+        let normalized = normalize_python_dep_name(dep_raw);
+        if normalized.is_empty() {
+            continue;
+        }
+        let mut matched = false;
+        for sp in &site_packages {
+            let pkg_dir = sp.join(&normalized);
+            if pkg_dir.is_dir() && !seen.contains(&pkg_dir) {
+                seen.insert(pkg_dir.clone());
+                roots.push(ExternalDepRoot {
+                    module_path: normalized.clone(),
+                    version: String::from("unknown"),
+                    root: pkg_dir,
+                    ecosystem: "python",
+                    package_id: None,
+                });
+                matched = true;
+                break;
+            }
+            let file = sp.join(format!("{normalized}.py"));
+            if file.is_file() && !seen.contains(&file) {
+                seen.insert(file.clone());
+                roots.push(ExternalDepRoot {
+                    module_path: normalized.clone(),
+                    version: String::from("unknown"),
+                    root: file,
+                    ecosystem: "python",
+                    package_id: None,
+                });
+                matched = true;
+                break;
+            }
+        }
+        if !matched {
+            for sp in &site_packages {
+                if let Some(roots_from_top_level) =
+                    python_top_level_lookup(sp, &normalized, &mut seen)
+                {
+                    roots.extend(roots_from_top_level);
+                    break;
+                }
+            }
+        }
+    }
+    roots
+}
+
+/// Probe for venv site-packages starting at `start` and walking up to
+/// `workspace_root` (inclusive). Respects `BEARWISDOM_PYTHON_SITE_PACKAGES`
+/// as an explicit override that short-circuits the filesystem walk.
+fn find_python_site_packages_with_ancestors(start: &Path, workspace_root: &Path) -> Vec<PathBuf> {
+    if let Some(raw) = std::env::var_os("BEARWISDOM_PYTHON_SITE_PACKAGES") {
+        let mut out = Vec::new();
+        for seg in std::env::split_paths(&raw) {
+            if seg.as_os_str().is_empty() { continue; }
+            if seg.is_dir() && !out.contains(&seg) {
+                out.push(seg);
+            }
+        }
+        if !out.is_empty() { return out; }
+    }
+
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut push_if_dir = |p: PathBuf, out: &mut Vec<PathBuf>| {
+        if p.is_dir() && !out.contains(&p) {
+            out.push(p);
+        }
+    };
+
+    // Walk from `start` up to (and including) `workspace_root`, probing
+    // venv dirs at every level.
+    let mut current: Option<&Path> = Some(start);
+    while let Some(dir) = current {
+        for venv_name in &[".venv", "venv", ".env"] {
+            let venv = dir.join(venv_name);
+            if !venv.is_dir() { continue; }
+            push_if_dir(venv.join("Lib").join("site-packages"), &mut out);
+            let unix_lib = venv.join("lib");
+            if let Ok(entries) = std::fs::read_dir(&unix_lib) {
+                for entry in entries.flatten() {
+                    let name = entry.file_name();
+                    let name = name.to_string_lossy();
+                    if name.starts_with("python") {
+                        push_if_dir(entry.path().join("site-packages"), &mut out);
+                    }
+                }
+            }
+        }
+        if dir == workspace_root { break; }
+        current = dir.parent();
+    }
+    out
 }
 
 /// Locate Python site-packages directories to scan for the given project.

@@ -20,6 +20,23 @@ impl ExternalSourceLocator for TypeScriptExternalsLocator {
         discover_ts_externals(project_root)
     }
 
+    /// M3: per-package discovery. Reads this package's own `package.json`
+    /// and probes `{package}/node_modules` plus every ancestor node_modules
+    /// walking up to `workspace_root` — covers npm/yarn-v1 hoisted layouts
+    /// where shared deps live at the workspace root, not per-package.
+    fn locate_roots_for_package(
+        &self,
+        workspace_root: &Path,
+        package_abs_path: &Path,
+        package_id: i64,
+    ) -> Vec<ExternalDepRoot> {
+        let mut roots = discover_ts_externals_scoped(workspace_root, package_abs_path);
+        for r in &mut roots {
+            r.package_id = Some(package_id);
+        }
+        roots
+    }
+
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_ts_external_root(dep)
     }
@@ -148,6 +165,7 @@ pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     version: String::from("unknown"),
                     root: pkg_dir,
                     ecosystem: "typescript",
+                    package_id: None,
                 });
             }
         }
@@ -173,6 +191,154 @@ fn definitely_typed_scoped_name(dep: &str) -> Option<String> {
         return None;
     }
     Some(format!("{scope}__{name}"))
+}
+
+/// M3: per-package variant of `discover_ts_externals`. Reads only the
+/// single package's `package.json` (no recursive walk) and searches
+/// `{package}/node_modules` plus every ancestor up to `workspace_root`
+/// (inclusive) for hoisted deps. Returns roots with `package_id=None`;
+/// the caller (locator) stamps ownership.
+pub fn discover_ts_externals_scoped(
+    workspace_root: &Path,
+    package_abs_path: &Path,
+) -> Vec<ExternalDepRoot> {
+    let Some(declared) = read_single_package_json_deps(package_abs_path) else {
+        return Vec::new();
+    };
+    if declared.is_empty() {
+        return Vec::new();
+    }
+
+    let node_modules_roots = find_node_modules_with_ancestors(package_abs_path, workspace_root);
+    if node_modules_roots.is_empty() {
+        debug!("No node_modules dirs discovered for package at {}; skipping TS externals",
+            package_abs_path.display());
+        return Vec::new();
+    }
+
+    let builtins: std::collections::HashSet<&'static str> = [
+        "assert", "buffer", "child_process", "cluster", "console", "crypto",
+        "dgram", "dns", "domain", "events", "fs", "http", "http2", "https",
+        "inspector", "module", "net", "node", "os", "path", "perf_hooks",
+        "process", "punycode", "querystring", "readline", "repl", "stream",
+        "string_decoder", "timers", "tls", "trace_events", "tty", "url",
+        "util", "v8", "vm", "wasi", "worker_threads", "zlib",
+    ].into_iter().collect();
+
+    let mut roots = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for dep in &declared {
+        if builtins.contains(dep.as_str()) { continue }
+        if dep.starts_with('@') && !dep.contains('/') { continue }
+        if dep.starts_with("@types/") { continue }
+
+        let mut pkg_roots: Vec<PathBuf> = Vec::new();
+        for nm_root in &node_modules_roots {
+            let primary = nm_root.join(dep);
+            if primary.is_dir() { pkg_roots.push(primary); }
+            if !dep.starts_with('@') {
+                let types_dir = nm_root.join("@types").join(dep);
+                if types_dir.is_dir() { pkg_roots.push(types_dir); }
+            } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
+                let types_dir = nm_root.join("@types").join(&escaped);
+                if types_dir.is_dir() { pkg_roots.push(types_dir); }
+            }
+        }
+        for pkg_dir in pkg_roots {
+            if seen.insert(pkg_dir.clone()) {
+                roots.push(ExternalDepRoot {
+                    module_path: dep.clone(),
+                    version: String::from("unknown"),
+                    root: pkg_dir,
+                    ecosystem: "typescript",
+                    package_id: None,
+                });
+            }
+        }
+    }
+    roots
+}
+
+/// Read deps from a SINGLE `{dir}/package.json` — no recursive subdir
+/// walk, so a workspace-root caller doesn't suck in every sub-package's
+/// deps. Node builtins are appended to the result set (they're implicitly
+/// available in every JS package). Returns `None` when `package.json` is
+/// missing or unparseable.
+fn read_single_package_json_deps(dir: &Path) -> Option<std::collections::HashSet<String>> {
+    let manifest_path = dir.join("package.json");
+    let content = std::fs::read_to_string(&manifest_path).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let obj = value.as_object()?;
+    let mut deps = std::collections::HashSet::new();
+    for field in &["dependencies", "devDependencies", "peerDependencies"] {
+        if let Some(map) = obj.get(*field).and_then(|v| v.as_object()) {
+            for key in map.keys() {
+                if key.starts_with('@') {
+                    if let Some(scope) = key.split('/').next() {
+                        deps.insert(scope.to_string());
+                    }
+                }
+                deps.insert(key.clone());
+            }
+        }
+    }
+    Some(deps)
+}
+
+/// Probe `{dir}/node_modules` for every directory from `start` walking up
+/// (inclusive) to `workspace_root` (inclusive). Handles hoisted workspace
+/// layouts where deps live at a shared ancestor, not the individual package.
+/// Respects `BEARWISDOM_TS_NODE_MODULES` as an explicit override.
+fn find_node_modules_with_ancestors(start: &Path, workspace_root: &Path) -> Vec<PathBuf> {
+    if let Some(raw) = std::env::var_os("BEARWISDOM_TS_NODE_MODULES") {
+        let mut out = Vec::new();
+        for seg in std::env::split_paths(&raw) {
+            if seg.as_os_str().is_empty() { continue; }
+            if seg.is_dir() && !out.contains(&seg) {
+                out.push(seg);
+            }
+        }
+        if !out.is_empty() { return out; }
+    }
+
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut push_if_dir = |p: PathBuf, out: &mut Vec<PathBuf>| {
+        if p.is_dir() && !out.contains(&p) {
+            out.push(p);
+        }
+    };
+
+    // Package's own node_modules + immediate subdir node_modules.
+    push_if_dir(start.join("node_modules"), &mut out);
+    if let Ok(entries) = std::fs::read_dir(start) {
+        for entry in entries.flatten() {
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let name = entry.file_name();
+            let name_lossy = name.to_string_lossy();
+            if name_lossy.starts_with('.')
+                || matches!(
+                    name_lossy.as_ref(),
+                    "node_modules" | "target" | "dist" | "build" | ".turbo" | ".next"
+                )
+            {
+                continue;
+            }
+            push_if_dir(entry.path().join("node_modules"), &mut out);
+        }
+    }
+
+    // Ancestor walk — stop at (and include) workspace_root.
+    let mut current = start.parent();
+    while let Some(dir) = current {
+        push_if_dir(dir.join("node_modules"), &mut out);
+        if dir == workspace_root {
+            break;
+        }
+        current = dir.parent();
+    }
+    out
 }
 
 /// Locate node_modules directories for the given project.
@@ -412,5 +578,106 @@ mod tests {
         assert!(!is_test_or_story_file("index.ts"));
         assert!(!is_test_or_story_file("App.tsx"));
         assert!(!is_test_or_story_file("useForm.ts"));
+    }
+
+    // ---------------------------------------------------------------
+    // M3 — per-package scoped discovery
+    // ---------------------------------------------------------------
+
+    #[test]
+    fn m3_find_node_modules_walks_ancestors() {
+        // Layout: workspace/apps/web/ with workspace/node_modules/ (hoisted).
+        // find_node_modules_with_ancestors(apps/web, workspace) must find
+        // the workspace-root node_modules via ancestor walk.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ws = tmp.path();
+        let pkg = ws.join("apps").join("web");
+        std::fs::create_dir_all(ws.join("node_modules")).unwrap();
+        std::fs::create_dir_all(&pkg).unwrap();
+
+        // Ensure env doesn't leak into the test.
+        std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
+
+        let roots = find_node_modules_with_ancestors(&pkg, ws);
+        assert!(
+            roots.iter().any(|p| p == &ws.join("node_modules")),
+            "expected hoisted workspace node_modules, got {roots:?}"
+        );
+    }
+
+    #[test]
+    fn m3_find_node_modules_prefers_package_local() {
+        // Layout: workspace/ with both workspace/node_modules and
+        // workspace/apps/web/node_modules. Per-package local should
+        // appear before the ancestor.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ws = tmp.path();
+        let pkg = ws.join("apps").join("web");
+        std::fs::create_dir_all(ws.join("node_modules")).unwrap();
+        std::fs::create_dir_all(pkg.join("node_modules")).unwrap();
+
+        std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
+
+        let roots = find_node_modules_with_ancestors(&pkg, ws);
+        let local_idx = roots.iter().position(|p| p == &pkg.join("node_modules"));
+        let hoisted_idx = roots.iter().position(|p| p == &ws.join("node_modules"));
+        assert!(local_idx.is_some() && hoisted_idx.is_some(),
+            "expected both node_modules discovered: {roots:?}");
+        assert!(local_idx.unwrap() < hoisted_idx.unwrap(),
+            "package-local should precede hoisted: {roots:?}");
+    }
+
+    #[test]
+    fn m3_read_single_package_json_scoped_to_dir() {
+        // The scoped reader must only read the direct package.json, not
+        // recursively walk subdirs — otherwise workspace roots would pull
+        // in every sub-package's deps.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir = tmp.path();
+        std::fs::write(
+            dir.join("package.json"),
+            r#"{"dependencies":{"react":"18"},"devDependencies":{"vitest":"1"}}"#,
+        ).unwrap();
+        // Nested sub-package.json should NOT be read.
+        std::fs::create_dir_all(dir.join("sub")).unwrap();
+        std::fs::write(
+            dir.join("sub").join("package.json"),
+            r#"{"dependencies":{"axios":"1"}}"#,
+        ).unwrap();
+
+        let deps = read_single_package_json_deps(dir).unwrap();
+        assert!(deps.contains("react"));
+        assert!(deps.contains("vitest"));
+        assert!(!deps.contains("axios"), "scoped reader must not recurse into sub/");
+    }
+
+    #[test]
+    fn m3_discover_ts_externals_scoped_uses_hoisted_node_modules() {
+        // Workspace with hoisted node_modules/react/. Package at apps/web
+        // declares react. Scoped discovery must find react via ancestor walk.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ws = tmp.path();
+        let pkg = ws.join("apps").join("web");
+        std::fs::create_dir_all(&pkg).unwrap();
+        std::fs::write(
+            pkg.join("package.json"),
+            r#"{"name":"web","dependencies":{"react":"18"}}"#,
+        ).unwrap();
+
+        let react_dir = ws.join("node_modules").join("react");
+        std::fs::create_dir_all(&react_dir).unwrap();
+        std::fs::write(
+            react_dir.join("index.d.ts"),
+            "export function Component(): any;",
+        ).unwrap();
+
+        std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
+
+        let roots = discover_ts_externals_scoped(ws, &pkg);
+        assert!(
+            roots.iter().any(|r| r.module_path == "react" && r.root == react_dir),
+            "expected react root from hoisted node_modules, got {:?}",
+            roots.iter().map(|r| (&r.module_path, &r.root)).collect::<Vec<_>>()
+        );
     }
 }

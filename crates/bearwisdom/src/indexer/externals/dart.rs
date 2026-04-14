@@ -79,6 +79,7 @@ pub fn discover_dart_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version: entry.version.clone(),
                 root: lib_dir,
                 ecosystem: "dart",
+                package_id: None,
             });
         }
     }

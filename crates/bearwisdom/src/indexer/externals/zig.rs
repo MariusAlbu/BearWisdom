@@ -53,6 +53,7 @@ pub fn discover_zig_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                         version: String::new(),
                         root: path,
                         ecosystem: "zig",
+                        package_id: None,
                     });
                 }
             }

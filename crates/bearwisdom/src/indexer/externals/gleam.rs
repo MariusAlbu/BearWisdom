@@ -45,6 +45,7 @@ pub fn discover_gleam_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version: String::new(),
                 root: dep_dir,
                 ecosystem: "gleam",
+                package_id: None,
             });
         }
     }

@@ -73,6 +73,7 @@ pub fn discover_rust_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 version,
                 root: best,
                 ecosystem: "rust",
+                package_id: None,
             });
         }
     }
