@@ -187,10 +187,12 @@ pub mod eex;
 pub mod ejs;
 pub mod elixir;
 pub mod erb;
+pub mod freemarker;
 pub mod go;
 pub mod gotemplate;
 pub mod gleam;
 pub mod graphql;
+pub mod gsp;
 pub mod haml;
 pub mod handlebars;
 pub mod hare;
@@ -201,6 +203,7 @@ pub mod html;
 pub mod java;
 pub mod javascript;
 pub mod jinja;
+pub mod jsp;
 pub mod jupyter;
 pub mod kotlin;
 pub mod liquid;
@@ -237,8 +240,10 @@ pub mod starlark;
 pub mod svelte;
 pub mod swift;
 pub mod templ;
+pub mod thymeleaf;
 pub mod twig;
 pub mod typescript;
+pub mod velocity;
 pub mod vue;
 pub mod zig;
 // --- Wave 3 plugins (SO 2025 lower-priority) ---
@@ -367,6 +372,12 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     // E26 — systemd + crontab
     reg.register(Arc::new(systemd::SystemdPlugin));
     reg.register(Arc::new(crontab::CrontabPlugin));
+    // E20 — JVM template engines
+    reg.register(Arc::new(freemarker::FreemarkerPlugin));
+    reg.register(Arc::new(jsp::JspPlugin));
+    reg.register(Arc::new(velocity::VelocityPlugin));
+    reg.register(Arc::new(gsp::GspPlugin));
+    reg.register(Arc::new(thymeleaf::ThymeleafPlugin));
 
     reg
 });

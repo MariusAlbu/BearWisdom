@@ -97,6 +97,11 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &NGINX,
     &SYSTEMD,
     &CRONTAB,
+    &FREEMARKER,
+    &JSP,
+    &VELOCITY,
+    &GSP,
+    &THYMELEAF,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").
