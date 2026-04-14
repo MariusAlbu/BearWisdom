@@ -196,8 +196,10 @@ pub mod hcl;
 pub mod html;
 pub mod java;
 pub mod javascript;
+pub mod jinja;
 pub mod jupyter;
 pub mod kotlin;
+pub mod liquid;
 pub mod lua;
 pub mod make;
 pub mod markdown;
@@ -338,6 +340,9 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(erb::ErbPlugin));
     reg.register(Arc::new(slim::SlimPlugin));
     reg.register(Arc::new(haml::HamlPlugin));
+    // E10 — Python templates, E11 — Liquid
+    reg.register(Arc::new(jinja::JinjaPlugin));
+    reg.register(Arc::new(liquid::LiquidPlugin));
 
     reg
 });

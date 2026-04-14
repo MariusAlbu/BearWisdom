@@ -86,6 +86,8 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &ERB,
     &SLIM,
     &HAML,
+    &JINJA,
+    &LIQUID,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").
