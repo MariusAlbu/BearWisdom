@@ -171,6 +171,7 @@ pub trait LanguagePlugin: Send + Sync + 'static {
 use std::sync::{Arc, LazyLock};
 
 pub mod angular;
+pub mod angular_template;
 pub mod astro;
 pub mod bash;
 pub mod bicep;
@@ -249,6 +250,7 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     let mut reg = LanguageRegistry::new(generic);
 
     reg.register(Arc::new(angular::AngularPlugin));
+    reg.register(Arc::new(angular_template::AngularTemplatePlugin));
     reg.register(Arc::new(astro::AstroPlugin));
     reg.register(Arc::new(bash::BashPlugin));
     reg.register(Arc::new(bicep::BicepPlugin));

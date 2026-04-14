@@ -1,4 +1,5 @@
 pub mod ada;
+pub mod angular_template;
 pub mod astro;
 pub mod bicep;
 pub mod blade;
@@ -73,6 +74,7 @@ pub mod make;
 pub mod hare;
 
 pub use ada::ADA;
+pub use angular_template::ANGULAR_TEMPLATE;
 pub use astro::ASTRO;
 pub use bicep::BICEP;
 pub use blade::BLADE;
