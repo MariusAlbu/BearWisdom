@@ -186,6 +186,7 @@ pub mod ejs;
 pub mod elixir;
 pub mod erb;
 pub mod go;
+pub mod gotemplate;
 pub mod gleam;
 pub mod graphql;
 pub mod haml;
@@ -228,6 +229,7 @@ pub mod sql;
 pub mod starlark;
 pub mod svelte;
 pub mod swift;
+pub mod templ;
 pub mod twig;
 pub mod typescript;
 pub mod vue;
@@ -343,6 +345,9 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     // E10 — Python templates, E11 — Liquid
     reg.register(Arc::new(jinja::JinjaPlugin));
     reg.register(Arc::new(liquid::LiquidPlugin));
+    // E12 — Go templates + Templ
+    reg.register(Arc::new(gotemplate::GoTemplatePlugin));
+    reg.register(Arc::new(templ::TemplPlugin));
 
     reg
 });
