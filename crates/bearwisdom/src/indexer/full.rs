@@ -863,6 +863,20 @@ fn dispatch_embedded_regions(
             if let Some(parent) = sym.parent_index.as_mut() {
                 *parent += symbol_offset;
             }
+            // E1: host-injected wrapper prefix (e.g. Razor's synthetic
+            // `__RazorBody` class) is stripped from qualified_name and
+            // scope_path so user-facing names don't carry the wrapper.
+            if let Some(prefix) = region.strip_scope_prefix.as_deref() {
+                strip_scope_prefix_in_place(&mut sym.qualified_name, prefix);
+                if let Some(sp) = sym.scope_path.as_mut() {
+                    strip_scope_prefix_in_place(sp, prefix);
+                }
+                if let Some(sp) = sym.scope_path.as_ref() {
+                    if sp.is_empty() {
+                        sym.scope_path = None;
+                    }
+                }
+            }
             r.symbols.push(sym);
             origin_langs.push(Some(region.language_id.clone()));
         }
@@ -880,6 +894,27 @@ fn dispatch_embedded_regions(
             r.db_sets.push(ds);
         }
         r.has_errors = r.has_errors || sub.has_errors;
+    }
+}
+
+/// Strip a synthetic scope prefix (`"__RazorBody"`) from a dotted qualified
+/// name in place. Handles both exact match and leading-with-dot forms:
+///
+///   * `"__RazorBody"`          → `""`   (empty — caller treats as no scope)
+///   * `"__RazorBody.Foo"`      → `"Foo"`
+///   * `"__RazorBody.Foo.Bar"`  → `"Foo.Bar"`
+///   * `"Other.__RazorBody.X"`  → unchanged (prefix only strips at start)
+fn strip_scope_prefix_in_place(name: &mut String, prefix: &str) {
+    if prefix.is_empty() {
+        return;
+    }
+    if name == prefix {
+        name.clear();
+        return;
+    }
+    let dotted = format!("{prefix}.");
+    if name.starts_with(&dotted) {
+        *name = name[dotted.len()..].to_string();
     }
 }
 

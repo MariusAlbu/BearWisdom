@@ -6,13 +6,19 @@
 //!
 //!   * Produces no host-level symbols from `extract()` — the host
 //!     language is a thin shell.
-//!   * Implements `embedded_regions()` with a hand-rolled region detector
-//!     (`embedded.rs`) that splits the file into C# (`@{...}`,
-//!     `@code{...}`, `@functions{...}`, `@(expr)`) and JavaScript /
-//!     TypeScript (`<script>`) chunks.
-//!   * Lets the indexer dispatch each region through the sub-language's
-//!     plugin — so a `@{ var svc = new UserService(); }` block becomes
-//!     a real `UserService` type ref after the C# extractor parses it.
+//!   * Implements `embedded_regions()` with a hand-rolled region
+//!     detector (`embedded.rs`) that splits the file into:
+//!     - C# from `@{...}`, `@code{...}`, `@functions{...}`, `@(expr)`
+//!     - C# from directives `@model`, `@inject`, `@using` (namespace),
+//!       `@inherits`, `@implements`, `@namespace`
+//!     - C# from control flow `@if (...){...}`, `@foreach`, `@while`,
+//!       `@switch`, `@for`, and `@using (disposable){...}`
+//!     - JavaScript / TypeScript from `<script>` blocks
+//!   * Wraps every C# region in `class __RazorBody { … }` (or a
+//!     directive-specific variant) so tree-sitter-csharp accepts bare
+//!     declarations. The synthetic prefix is stripped from the resulting
+//!     symbols' qualified_name / scope_path via the dispatcher's
+//!     `strip_scope_prefix` hook.
 //!
 //! Registered with extension `.cshtml` (MVC views) and `.razor` (Blazor
 //! components) so both Razor dialects go through the same pipeline.

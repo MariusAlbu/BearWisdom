@@ -167,6 +167,7 @@ fn build_region_from_element(element: &Node, source: &str) -> Option<EmbeddedReg
             EmbeddedOrigin::StyleBlock
         },
         holes: Vec::new(),
+        strip_scope_prefix: None,
     })
 }
 
@@ -252,6 +253,7 @@ pub fn extract_astro_frontmatter(source: &str) -> Option<EmbeddedRegion> {
         col_offset,
         origin: EmbeddedOrigin::Frontmatter,
         holes: Vec::new(),
+        strip_scope_prefix: None,
     })
 }
 

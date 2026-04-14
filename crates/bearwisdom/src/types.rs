@@ -347,6 +347,15 @@ pub struct EmbeddedRegion {
     /// so the SQL grammar sees syntactically valid text). Empty for host-file
     /// consumers like Svelte/Vue/Astro/Razor, which emit whole blocks verbatim.
     pub holes: Vec<Span>,
+    /// Synthetic scope prefix to strip from every sub-extracted symbol's
+    /// `qualified_name` and `scope_path` before splicing back into the
+    /// host file. Set by hosts that wrap their region text in a
+    /// synthetic class / namespace to satisfy the sub-language grammar
+    /// (e.g. Razor wraps C# bodies in `class __RazorBody { … }` so
+    /// tree-sitter-csharp accepts bare method declarations — the
+    /// wrapper then needs to disappear from user-facing names).
+    /// `None` for hosts that pass the source verbatim.
+    pub strip_scope_prefix: Option<String>,
 }
 
 /// A half-open byte range `[start, end)` inside an `EmbeddedRegion::text`.
