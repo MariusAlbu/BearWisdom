@@ -79,6 +79,10 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &QUARTO,
     &POLYGLOT_NB,
     &ANGULAR_TEMPLATE,
+    &HANDLEBARS,
+    &PUG,
+    &EJS,
+    &NUNJUCKS,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").

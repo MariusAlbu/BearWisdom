@@ -182,10 +182,12 @@ pub mod cmake;
 pub mod csharp;
 pub mod dart;
 pub mod dockerfile;
+pub mod ejs;
 pub mod elixir;
 pub mod go;
 pub mod gleam;
 pub mod graphql;
+pub mod handlebars;
 pub mod hare;
 pub mod haskell;
 pub mod hcl;
@@ -200,11 +202,13 @@ pub mod markdown;
 pub mod mdx;
 pub mod nim;
 pub mod nix;
+pub mod nunjucks;
 pub mod odin;
 pub mod php;
 pub mod polyglot_nb;
 pub mod prisma;
 pub mod proto;
+pub mod pug;
 pub mod puppet;
 pub mod python;
 pub mod r_lang;
@@ -322,6 +326,11 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(rmarkdown::RMarkdownPlugin));
     reg.register(Arc::new(rmarkdown::QuartoPlugin));
     reg.register(Arc::new(polyglot_nb::PolyglotNbPlugin));
+    // E8 — Node template engines
+    reg.register(Arc::new(handlebars::HandlebarsPlugin));
+    reg.register(Arc::new(pug::PugPlugin));
+    reg.register(Arc::new(ejs::EjsPlugin));
+    reg.register(Arc::new(nunjucks::NunjucksPlugin));
 
     reg
 });
