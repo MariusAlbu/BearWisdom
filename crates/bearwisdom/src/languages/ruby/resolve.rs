@@ -196,7 +196,7 @@ impl LanguageResolver for RubyResolver {
 
             // Manifest-driven: check Gemfile dependencies first.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Gemfile) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
                     let gem_root = require_path.split('/').next().unwrap_or(require_path);
                     if manifest.dependencies.contains(gem_root)
                         || manifest.dependencies.contains(require_path)
@@ -231,7 +231,7 @@ impl LanguageResolver for RubyResolver {
 
             // Manifest-driven check.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Gemfile) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Gemfile) {
                     let gem_root = module_path.split('/').next().unwrap_or(module_path);
                     if manifest.dependencies.contains(gem_root)
                         || manifest.dependencies.contains(module_path.as_str())

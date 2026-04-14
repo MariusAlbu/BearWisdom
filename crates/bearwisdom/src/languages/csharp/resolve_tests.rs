@@ -116,6 +116,7 @@ fn test_scope_chain_resolution() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[2],
         scope_chain: build_scope_chain(file.symbols[2].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -171,6 +172,7 @@ fn test_same_namespace_resolution() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[1],
         scope_chain: build_scope_chain(file2.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -241,6 +243,7 @@ fn test_using_directive_resolution() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[1],
         scope_chain: build_scope_chain(file2.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -293,6 +296,7 @@ fn test_qualified_name_resolution() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[0],
         scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -345,6 +349,7 @@ fn test_private_visibility_cross_file() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[1],
         scope_chain: build_scope_chain(file2.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     assert!(
@@ -386,6 +391,7 @@ fn test_private_visibility_same_file() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[2],
         scope_chain: build_scope_chain(file.symbols[2].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -423,6 +429,7 @@ fn test_falls_back_for_unknown() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     assert!(
@@ -467,6 +474,7 @@ fn test_infer_bcl_type_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -490,6 +498,7 @@ fn test_infer_cancellation_token_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -511,6 +520,7 @@ fn test_infer_linq_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -536,6 +546,7 @@ fn test_infer_ilogger_via_sdk_usings() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx_type, Some(&ctx));
     assert!(ns.is_some(), "ILogger should be inferred as external");
@@ -548,6 +559,7 @@ fn test_infer_ilogger_via_sdk_usings() {
         extracted_ref: &file.refs[1],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx_call, Some(&ctx));
     assert!(ns.is_some(), "LogInformation should be inferred as external");
@@ -594,6 +606,7 @@ fn test_infer_no_false_positive_on_project_ref() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     // Even with a ProjectContext, MyService should be inferred as external because
@@ -637,6 +650,7 @@ fn test_infer_without_project_context_fallback() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     // No ProjectContext, no external usings → should return None

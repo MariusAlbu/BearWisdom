@@ -131,6 +131,7 @@ fn resolve_and_write_inner(
                     extracted_ref: r,
                     source_symbol: source_sym,
                     scope_chain: build_scope_chain(source_sym.scope_path.as_deref()),
+                    file_package_id: pf.package_id,
                 };
 
                 if let Some(resolution) = resolver.resolve(file_ctx, &ref_ctx, &index) {
@@ -183,8 +184,8 @@ fn resolve_and_write_inner(
                 if is_generic_param {
                     tx.prepare_cached(
                         "INSERT INTO external_refs
-                           (source_id, target_name, kind, source_line, namespace)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                           (source_id, target_name, kind, source_line, namespace, package_id)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     )
                     .and_then(|mut stmt| {
                         stmt.execute(rusqlite::params![
@@ -193,6 +194,7 @@ fn resolve_and_write_inner(
                             r.kind.as_str(),
                             r.line,
                             "generic_param",
+                            pf.package_id,
                         ])
                     })
                     .ok();
@@ -215,6 +217,7 @@ fn resolve_and_write_inner(
                     extracted_ref: r,
                     source_symbol: source_sym,
                     scope_chain: scope_chain.clone(),
+                    file_package_id: pf.package_id,
                 };
                 resolver.infer_external_namespace(file_ctx, &ref_ctx, project_ctx)
             } else {
@@ -310,8 +313,8 @@ fn resolve_and_write_inner(
                 if let Err(e) = tx
                     .prepare_cached(
                         "INSERT INTO external_refs
-                           (source_id, target_name, kind, source_line, namespace)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                           (source_id, target_name, kind, source_line, namespace, package_id)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     )
                     .and_then(|mut stmt| {
                         stmt.execute(rusqlite::params![
@@ -320,6 +323,7 @@ fn resolve_and_write_inner(
                             r.kind.as_str(),
                             r.line,
                             ns,
+                            pf.package_id,
                         ])
                     })
                 {
@@ -384,8 +388,8 @@ fn resolve_and_write_inner(
                     let module_value = r.module.as_deref();
                     tx.prepare_cached(
                         "INSERT INTO unresolved_refs
-                           (source_id, target_name, kind, source_line, module)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                           (source_id, target_name, kind, source_line, module, package_id)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                     )
                     .and_then(|mut stmt| {
                         stmt.execute(rusqlite::params![
@@ -394,6 +398,7 @@ fn resolve_and_write_inner(
                             r.kind.as_str(),
                             r.line,
                             module_value,
+                            pf.package_id,
                         ])
                     })
                     .ok();

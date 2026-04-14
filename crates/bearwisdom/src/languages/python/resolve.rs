@@ -393,7 +393,7 @@ impl LanguageResolver for PythonResolver {
             // Manifest-driven: check pyproject.toml / requirements.txt dependencies first.
             // pip package names may use hyphens; Python imports use underscores.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::PyProject) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::PyProject) {
                     if manifest.dependencies.contains(root)
                         || manifest.dependencies.contains(&root.replace('_', "-"))
                     {
@@ -434,7 +434,7 @@ impl LanguageResolver for PythonResolver {
             }
             // Manifest-driven check.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::PyProject) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::PyProject) {
                     if manifest.dependencies.contains(root)
                         || manifest.dependencies.contains(&root.replace('_', "-"))
                     {
@@ -602,6 +602,7 @@ mod resolve_tests {
             extracted_ref: &consumer_file.refs[1], // the Calls ref
             source_symbol: &consumer_file.symbols[0],
             scope_chain: build_scope_chain(None),
+        file_package_id: None,
         };
 
         let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -652,6 +653,7 @@ mod resolve_tests {
             extracted_ref: &consumer_file.refs[1],
             source_symbol: &consumer_file.symbols[0],
             scope_chain: build_scope_chain(None),
+        file_package_id: None,
         };
 
         let result = resolver.resolve(&file_ctx, &ref_ctx, &index);

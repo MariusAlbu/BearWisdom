@@ -346,14 +346,14 @@ impl LanguageResolver for TypeScriptResolver {
             if builtins::is_bare_specifier(module) {
                 // Manifest-driven: check package.json dependencies first.
                 if let Some(ctx) = project_ctx {
-                    if let Some(manifest) = ctx.manifests.get(&ManifestKind::Npm) {
+                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
                         if is_npm_package_match(module, &manifest.dependencies) {
                             return Some(module.clone());
                         }
                     }
                 }
                 let is_external = match project_ctx {
-                    Some(ctx) => is_manifest_ts_package(ctx, module),
+                    Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module),
                     // Without ProjectContext, treat all bare specifiers as external.
                     None => true,
                 };
@@ -379,14 +379,14 @@ impl LanguageResolver for TypeScriptResolver {
             }
             // Manifest-driven: check package.json dependencies first.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Npm) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
                     if is_npm_package_match(module_path, &manifest.dependencies) {
                         return Some(module_path.clone());
                     }
                 }
             }
             let is_external = match project_ctx {
-                Some(ctx) => is_manifest_ts_package(ctx, module_path),
+                Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
                 None => true,
             };
             if is_external {
@@ -407,7 +407,7 @@ impl LanguageResolver for TypeScriptResolver {
                     if let Some(module_path) = &import.module_path {
                         if builtins::is_bare_specifier(module_path) {
                             let is_external = match project_ctx {
-                                Some(ctx) => is_manifest_ts_package(ctx, module_path),
+                                Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
                                 None => true,
                             };
                             if is_external {
@@ -543,11 +543,19 @@ fn follow_reexports(
 
 /// Check whether a bare module specifier is an external npm package or Node.js built-in,
 /// using the project manifest (package.json) directly.
-pub(crate) fn is_manifest_ts_package(ctx: &ProjectContext, specifier: &str) -> bool {
+///
+/// M2: scoped to the source file's `package_id` when available so a package
+/// that doesn't declare a dep in its own package.json doesn't inherit it
+/// from a sibling workspace package.
+pub(crate) fn is_manifest_ts_package(
+    ctx: &ProjectContext,
+    package_id: Option<i64>,
+    specifier: &str,
+) -> bool {
     if specifier.starts_with("node:") {
         return true;
     }
-    if let Some(m) = ctx.manifest(ManifestKind::Npm) {
+    if let Some(m) = ctx.manifests_for(package_id).get(&ManifestKind::Npm) {
         let deps = &m.dependencies;
         if deps.contains(specifier) {
             return true;

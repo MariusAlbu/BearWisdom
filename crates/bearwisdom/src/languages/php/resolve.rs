@@ -217,7 +217,7 @@ impl LanguageResolver for PhpResolver {
             // Composer packages use `"vendor/package"` format (e.g., `"intervention/image"`).
             // PHP namespace roots are CamelCase (e.g., `"Intervention"`).
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Composer) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Composer) {
                     let ns_root = normalized.split('.').next().unwrap_or(&normalized);
                     if is_composer_package_match(ns_root, &manifest.dependencies) {
                         return Some(normalized);
@@ -247,7 +247,7 @@ impl LanguageResolver for PhpResolver {
 
             // Manifest-driven check.
             let is_ext = if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Composer) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Composer) {
                     let ns_root = ns.split('.').next().unwrap_or(ns);
                     if is_composer_package_match(ns_root, &manifest.dependencies) {
                         true

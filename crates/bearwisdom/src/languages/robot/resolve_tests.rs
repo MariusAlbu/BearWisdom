@@ -142,6 +142,7 @@ fn resolve_first_ref(
         extracted_ref: r,
         source_symbol: src_sym,
         scope_chain: build_scope_chain(src_sym.scope_path.as_deref()),
+    file_package_id: None,
     };
     resolver.resolve(&file_ctx, &ref_ctx, &index)
 }
@@ -156,6 +157,7 @@ fn infer_ns_first_ref(file: &ParsedFile, all_files: &[&ParsedFile]) -> Option<St
         extracted_ref: r,
         source_symbol: src_sym,
         scope_chain: build_scope_chain(src_sym.scope_path.as_deref()),
+    file_package_id: None,
     };
     resolver.infer_external_namespace(&file_ctx, &ref_ctx, None)
 }
@@ -184,6 +186,7 @@ fn resolve_same_file_exact_name() {
         extracted_ref: r,
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("should resolve");
     assert_eq!(res.strategy, "robot_same_file");
@@ -210,6 +213,7 @@ fn resolve_same_file_case_insensitive() {
         extracted_ref: r,
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("case-insensitive match");
     assert_eq!(res.strategy, "robot_same_file");
@@ -236,6 +240,7 @@ fn resolve_same_file_underscore_space_equivalence() {
         extracted_ref: r,
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index)
         .expect("underscore/space normalization should match");
@@ -278,6 +283,7 @@ fn library_import_keyword_not_resolved() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     // `Open Browser` is a known BuiltIn keyword — should return None from resolve.
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -350,6 +356,7 @@ fn resolve_resource_import_exact() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("resource import resolution");
     assert_eq!(res.strategy, "robot_resource_import");
@@ -382,6 +389,7 @@ fn resolve_resource_import_normalized() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver
         .resolve(&file_ctx, &ref_ctx, &index)
@@ -413,6 +421,7 @@ fn resolve_variable_same_file() {
         extracted_ref: r,
         source_symbol: &file.symbols[1],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index).expect("variable resolution");
     assert_eq!(res.strategy, "robot_variable_same_file");
@@ -439,6 +448,7 @@ fn resolve_variable_case_insensitive() {
         extracted_ref: r,
         source_symbol: &file.symbols[1],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver
         .resolve(&file_ctx, &ref_ctx, &index)
@@ -472,6 +482,7 @@ fn resolve_variable_from_resource() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver
         .resolve(&file_ctx, &ref_ctx, &index)
@@ -543,6 +554,7 @@ fn qualified_library_keyword_not_resolved() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
     assert!(
@@ -571,6 +583,7 @@ fn qualified_library_keyword_external_namespace() {
         extracted_ref: r,
         source_symbol: &caller.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
     assert_eq!(

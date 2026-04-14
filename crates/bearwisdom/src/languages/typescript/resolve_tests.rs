@@ -165,6 +165,7 @@ fn test_same_file_resolution() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -219,6 +220,7 @@ fn test_scope_chain_resolution() {
         source_symbol: &file.symbols[1],
         // scope_path = "Service" → scope chain = ["Service"]
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -272,6 +274,7 @@ fn test_import_resolution_relative_by_in_file_lookup() {
         extracted_ref: &app_file.refs[0],
         source_symbol: &app_file.symbols[0],
         scope_chain: build_scope_chain(app_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -327,6 +330,7 @@ fn test_import_resolution_by_qualified_name() {
         extracted_ref: &app_file.refs[0],
         source_symbol: &app_file.symbols[0],
         scope_chain: build_scope_chain(app_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -372,6 +376,7 @@ fn test_external_import_not_resolved() {
         extracted_ref: &app_file.refs[0],
         source_symbol: &app_file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -413,6 +418,7 @@ fn test_qualified_name_resolution() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[0],
         scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -443,6 +449,7 @@ fn test_falls_back_for_unknown() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     assert!(
@@ -479,6 +486,7 @@ fn test_infer_external_react_import() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -509,6 +517,7 @@ fn test_infer_external_scoped_package() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -539,6 +548,7 @@ fn test_infer_external_node_builtin() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -569,6 +579,7 @@ fn test_infer_external_node_protocol() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -599,6 +610,7 @@ fn test_no_external_inference_for_relative_import() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -627,6 +639,7 @@ fn test_infer_external_without_project_context() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
@@ -666,6 +679,7 @@ fn test_infer_external_via_file_ctx_imports() {
         extracted_ref: &file.refs[1], // Calls ref, no module
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &usage_ref_ctx, Some(&ctx));
@@ -728,16 +742,16 @@ fn test_parse_package_json_deps() {
 fn test_project_context_external_package_lookup() {
     let ctx = make_ts_project_ctx();
 
-    assert!(super::resolve::is_manifest_ts_package(&ctx,"react"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx,"@tanstack/react-query"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx,"@tanstack"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx,"fs"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx,"path"));
-    assert!(super::resolve::is_manifest_ts_package(&ctx,"node:fs")); // node: protocol always external
+    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"react"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"@tanstack/react-query"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"@tanstack"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"fs"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"path"));
+    assert!(super::resolve::is_manifest_ts_package(&ctx, None,"node:fs")); // node: protocol always external
 
-    assert!(!super::resolve::is_manifest_ts_package(&ctx,"./utils"));
-    assert!(!super::resolve::is_manifest_ts_package(&ctx,"../shared"));
-    assert!(!super::resolve::is_manifest_ts_package(&ctx,"MyInternalService"));
+    assert!(!super::resolve::is_manifest_ts_package(&ctx, None,"./utils"));
+    assert!(!super::resolve::is_manifest_ts_package(&ctx, None,"../shared"));
+    assert!(!super::resolve::is_manifest_ts_package(&ctx, None,"MyInternalService"));
 }
 
 #[test]
@@ -785,6 +799,7 @@ fn test_namespace_import_binding_not_external() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     // The import binding itself is classified as external.
@@ -871,6 +886,7 @@ fn test_barrel_named_reexport() {
         extracted_ref: &consumer_file.refs[0],
         source_symbol: &consumer_file.symbols[0],
         scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -932,6 +948,7 @@ fn test_barrel_aliased_reexport() {
         extracted_ref: &consumer_file.refs[0],
         source_symbol: &consumer_file.symbols[0],
         scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -990,6 +1007,7 @@ fn test_barrel_wildcard_reexport() {
         extracted_ref: &consumer_file.refs[0],
         source_symbol: &consumer_file.symbols[0],
         scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -1063,6 +1081,7 @@ fn test_barrel_deep_chain() {
         extracted_ref: &consumer_file.refs[0],
         source_symbol: &consumer_file.symbols[0],
         scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -1117,6 +1136,7 @@ fn test_barrel_depth_limit() {
         extracted_ref: &consumer_file.refs[0],
         source_symbol: &consumer_file.symbols[0],
         scope_chain: build_scope_chain(consumer_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     // Should not panic and should return None (Foo never defined).

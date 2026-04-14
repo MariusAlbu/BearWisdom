@@ -161,7 +161,7 @@ pub fn full_index(
 
     // --- Step 3b: Detect workspace packages ---
     let (packages, workspace_kind) = detect_packages(project_root);
-    let _packages = if !packages.is_empty() {
+    let written_packages = if !packages.is_empty() {
         let written = write::write_packages(db, &packages)
             .context("Failed to write packages")?;
         info!("Detected {} workspace packages", written.len());
@@ -230,7 +230,18 @@ pub fn full_index(
 
     // --- Step 5: Cross-file resolution + edge writing ---
     emit("resolving", 0.0, None);
-    let project_ctx = super::project_context::build_project_context(project_root);
+    // M2: when a monorepo is detected, build a per-package-aware context so
+    // the resolver can scope external classification to the source file's own
+    // package. Single-project layouts keep the legacy builder (empty
+    // by_package map → falls back to union behavior).
+    let project_ctx = if !written_packages.is_empty() {
+        super::project_context::build_project_context_with_packages(
+            project_root,
+            &written_packages,
+        )
+    } else {
+        super::project_context::build_project_context(project_root)
+    };
     let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
         .context("Failed to resolve references")?;
     info!(

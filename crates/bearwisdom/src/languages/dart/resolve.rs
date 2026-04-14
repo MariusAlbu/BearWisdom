@@ -181,7 +181,7 @@ impl LanguageResolver for DartResolver {
             // For `package:` URIs not in the hardcoded list, check pubspec.yaml.
             if uri.starts_with("package:") {
                 if let Some(ctx) = project_ctx {
-                    if let Some(manifest) = ctx.manifests.get(&ManifestKind::Pubspec) {
+                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Pubspec) {
                         let pkg_name = uri
                             .strip_prefix("package:")
                             .unwrap_or(uri)
@@ -223,7 +223,7 @@ impl LanguageResolver for DartResolver {
 
             let is_manifest_external = !pkg_name_from_uri.is_empty()
                 && project_ctx
-                    .and_then(|ctx| ctx.manifests.get(&ManifestKind::Pubspec))
+                    .and_then(|ctx| ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Pubspec))
                     .is_some_and(|m| m.dependencies.contains(pkg_name_from_uri));
 
             // Alias-qualified: `u.Foo` where `import '...' as u`

@@ -234,7 +234,7 @@ impl LanguageResolver for JavaResolver {
             // Maven/Gradle group IDs (e.g., "org.springframework") are stored in dependencies.
             if let Some(ctx) = project_ctx {
                 for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests.get(&kind) {
+                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
                         if manifest.dependencies.iter().any(|group_id| {
                             import_path == group_id
                                 || import_path.starts_with(group_id.as_str())
@@ -273,7 +273,7 @@ impl LanguageResolver for JavaResolver {
             // Manifest-driven check on import namespace.
             if let Some(ctx) = project_ctx {
                 for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests.get(&kind) {
+                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
                         if manifest.dependencies.iter().any(|group_id| {
                             ns == group_id
                                 || ns.starts_with(group_id.as_str())

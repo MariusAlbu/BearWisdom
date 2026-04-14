@@ -76,6 +76,11 @@ pub struct RefContext<'a> {
     /// The scope chain at the reference site, innermost first.
     /// Built from scope_path: e.g., ["Foo.Bar.Baz", "Foo.Bar", "Foo"].
     pub scope_chain: Vec<String>,
+    /// The source file's workspace package id (from `ParsedFile::package_id`).
+    /// Used by the external-classification path to scope manifest lookups
+    /// to the package that declared the dep — prevents `server/` from
+    /// reaching `e2e/`'s devDependencies in a pnpm monorepo.
+    pub file_package_id: Option<i64>,
 }
 
 /// The result of a successful resolution.
@@ -1340,14 +1345,20 @@ pub fn infer_external_common(
         // means no ecosystem parser exists for this language (Haskell, OCaml, etc.).
         // In that case, treat non-relative imports as external since we have no
         // way to distinguish project-local from third-party.
-        let has_manifest = project_ctx
-            .map(|ctx| !ctx.manifests.is_empty())
+        //
+        // For per-package isolation (M2), `manifests_for(package_id)` returns
+        // only the source file's own package's manifests — so `server/` files
+        // don't see deps that only `e2e/` declares.
+        let pkg_id = ref_ctx.file_package_id;
+        let pkg_manifests = project_ctx.map(|ctx| ctx.manifests_for(pkg_id));
+        let has_manifest = pkg_manifests
+            .map(|m| !m.is_empty())
             .unwrap_or(false);
 
         // Named import match: `from foo import Bar` → target "Bar" matches.
         if !import.is_wildcard && import.imported_name == simple {
             if has_manifest {
-                if is_manifest_dependency(project_ctx.unwrap(), module_path) {
+                if is_manifest_dependency(project_ctx.unwrap(), pkg_id, module_path) {
                     return Some(module_path.clone());
                 }
                 // Manifest exists but dep not in it — project-internal.
@@ -1361,7 +1372,7 @@ pub fn infer_external_common(
         if let Some(alias) = &import.alias {
             if alias == simple {
                 if has_manifest {
-                    if is_manifest_dependency(project_ctx.unwrap(), module_path) {
+                    if is_manifest_dependency(project_ctx.unwrap(), pkg_id, module_path) {
                         return Some(module_path.clone());
                     }
                     continue;
@@ -1376,7 +1387,7 @@ pub fn infer_external_common(
         //   (b) no manifest parser exists for this language at all
         if import.is_wildcard {
             if has_manifest {
-                if is_manifest_dependency(project_ctx.unwrap(), module_path) {
+                if is_manifest_dependency(project_ctx.unwrap(), pkg_id, module_path) {
                     return Some(module_path.clone());
                 }
             } else {
@@ -1404,7 +1415,9 @@ pub fn infer_external_common(
                     continue;
                 }
                 let is_ext = match project_ctx {
-                    Some(ctx) => is_manifest_dependency(ctx, module_path),
+                    Some(ctx) => {
+                        is_manifest_dependency(ctx, ref_ctx.file_package_id, module_path)
+                    }
                     None => true,
                 };
                 if is_ext {
@@ -1417,15 +1430,24 @@ pub fn infer_external_common(
     None
 }
 
-/// Check if a module path corresponds to a known dependency in any project manifest.
+/// Check if a module path corresponds to a known dependency in the manifest
+/// visible to `package_id`.
 ///
-/// Extracts the root package name from the module path and checks all manifests.
+/// Extracts the root package name from the module path and checks the
+/// per-package manifests when `package_id` is known — falls back to the
+/// whole-project union for files without a package (root configs, shared
+/// scripts) or for legacy single-unit contexts.
+///
 /// Handles common naming conventions:
 ///   - Python: `django.db` → root "django", also checks "django" with hyphen swap
 ///   - Rust: `tokio::runtime` → root "tokio"
 ///   - Haskell: `Test.Hspec` → root "hspec" (lowercase)
 ///   - Elixir: `Phoenix.Controller` → root "phoenix" (lowercase)
-fn is_manifest_dependency(ctx: &ProjectContext, module_path: &str) -> bool {
+fn is_manifest_dependency(
+    ctx: &ProjectContext,
+    package_id: Option<i64>,
+    module_path: &str,
+) -> bool {
     // Extract the root segment — the part before the first separator.
     let root = module_path
         .split('.')
@@ -1433,9 +1455,9 @@ fn is_manifest_dependency(ctx: &ProjectContext, module_path: &str) -> bool {
         .and_then(|s| s.split("::").next())
         .unwrap_or(module_path);
 
-    // Direct check across all manifests.
     let root_lower = root.to_lowercase();
-    for manifest in ctx.manifests.values() {
+    let manifests = ctx.manifests_for(package_id);
+    for manifest in manifests.values() {
         if manifest.dependencies.contains(root)
             || manifest.dependencies.contains(&root_lower)
             || manifest.dependencies.contains(&root_lower.replace('_', "-"))

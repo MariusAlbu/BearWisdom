@@ -123,6 +123,7 @@ fn test_scope_chain_resolution() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -161,6 +162,7 @@ fn test_same_file_resolution() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[0],
         scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -194,6 +196,7 @@ fn test_same_module_resolution() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -227,6 +230,7 @@ fn test_falls_back_for_unknown() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     assert!(
@@ -249,6 +253,7 @@ fn test_infer_builtin_external() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
@@ -301,6 +306,7 @@ fn test_stdlib_require_is_external() {
         extracted_ref: &import_ref,
         source_symbol: &sym,
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);

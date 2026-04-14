@@ -457,7 +457,7 @@ impl LanguageResolver for RustResolver {
                     // Manifest-driven: check Cargo.toml dependencies first.
                     // Crate names may use hyphens in Cargo.toml but underscores in source.
                     if let Some(ctx) = project_ctx {
-                        if let Some(manifest) = ctx.manifests.get(&ManifestKind::Cargo) {
+                        if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
                             if manifest.dependencies.contains(name)
                                 || manifest.dependencies.contains(&name.replace('_', "-"))
                             {
@@ -501,7 +501,7 @@ impl LanguageResolver for RustResolver {
                 name => {
                     // Manifest-driven check.
                     if let Some(ctx) = project_ctx {
-                        if let Some(manifest) = ctx.manifests.get(&ManifestKind::Cargo) {
+                        if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
                             if manifest.dependencies.contains(name)
                                 || manifest.dependencies.contains(&name.replace('_', "-"))
                             {

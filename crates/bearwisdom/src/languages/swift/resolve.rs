@@ -179,7 +179,7 @@ impl LanguageResolver for SwiftResolver {
             // Package names in Package.swift are lowercase (e.g., "vapor", "swift-argument-parser").
             // Module import names are typically CamelCase (e.g., "Vapor", "ArgumentParser").
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::SwiftPM) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::SwiftPM) {
                     let root_lower = root.to_lowercase();
                     if manifest.dependencies.iter().any(|d| {
                         // Match by lowercased name or by stripping common "swift-" prefix patterns.
@@ -214,7 +214,7 @@ impl LanguageResolver for SwiftResolver {
 
             // Manifest-driven check.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::SwiftPM) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::SwiftPM) {
                     let root_lower = root.to_lowercase();
                     if manifest.dependencies.iter().any(|d| {
                         let d_lower = d.to_lowercase();
@@ -237,7 +237,7 @@ impl LanguageResolver for SwiftResolver {
 
             // Manifest-driven check.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::SwiftPM) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::SwiftPM) {
                     let root_lower = root.to_lowercase();
                     if manifest.dependencies.iter().any(|d| {
                         let d_lower = d.to_lowercase();

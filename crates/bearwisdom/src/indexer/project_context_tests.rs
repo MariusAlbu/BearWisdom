@@ -105,3 +105,150 @@ fn test_most_capable_sdk() {
     assert_eq!(most_capable_sdk(&[]), DotnetSdkType::Other);
     assert_eq!(most_capable_sdk(&[DotnetSdkType::Base]), DotnetSdkType::Base);
 }
+
+
+// ===========================================================================
+// M2 — per-package context lookups
+// ===========================================================================
+
+#[cfg(test)]
+mod m2_tests {
+    use super::super::*;
+    use super::super::manifest::ManifestKind;
+    use crate::types::PackageInfo;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write_file(root: &std::path::Path, rel: &str, content: &str) {
+        let path = root.join(rel);
+        if let Some(parent) = path.parent() {
+            fs::create_dir_all(parent).unwrap();
+        }
+        fs::write(path, content).unwrap();
+    }
+
+    #[test]
+    fn manifests_for_returns_per_package_when_available() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "server/package.json",
+            r#"{"name":"server","dependencies":{"express":"4"}}"#,
+        );
+        write_file(
+            root,
+            "web/package.json",
+            r#"{"name":"web","dependencies":{"react":"18"}}"#,
+        );
+
+        let packages = vec![
+            PackageInfo {
+                id: Some(1),
+                name: "server".into(),
+                path: "server".into(),
+                kind: Some("npm".into()),
+                manifest: Some("server/package.json".into()),
+            },
+            PackageInfo {
+                id: Some(2),
+                name: "web".into(),
+                path: "web".into(),
+                kind: Some("npm".into()),
+                manifest: Some("web/package.json".into()),
+            },
+        ];
+
+        let ctx = build_project_context_with_packages(root, &packages);
+        assert!(ctx.is_per_package());
+
+        // Package 1 (server) sees express, NOT react.
+        assert!(ctx.has_dependency_for(Some(1), ManifestKind::Npm, "express"));
+        assert!(!ctx.has_dependency_for(Some(1), ManifestKind::Npm, "react"));
+
+        // Package 2 (web) sees react, NOT express.
+        assert!(ctx.has_dependency_for(Some(2), ManifestKind::Npm, "react"));
+        assert!(!ctx.has_dependency_for(Some(2), ManifestKind::Npm, "express"));
+
+        // Unknown package id or None falls back to the union — both deps visible.
+        assert!(ctx.has_dependency_for(None, ManifestKind::Npm, "express"));
+        assert!(ctx.has_dependency_for(None, ManifestKind::Npm, "react"));
+        assert!(ctx.has_dependency_for(Some(999), ManifestKind::Npm, "express"));
+    }
+
+    #[test]
+    fn legacy_builder_leaves_by_package_empty() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "package.json",
+            r#"{"name":"solo","dependencies":{"lodash":"4"}}"#,
+        );
+
+        let ctx = build_project_context(root);
+        assert!(!ctx.is_per_package());
+        // has_dependency_for with any id falls back to the union.
+        assert!(ctx.has_dependency_for(Some(1), ManifestKind::Npm, "lodash"));
+    }
+
+    #[test]
+    fn single_package_with_packages_populates_by_package() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "package.json",
+            r#"{"name":"solo","dependencies":{"axios":"1"}}"#,
+        );
+
+        // Even single-package mode gets a per-package entry at path "".
+        let packages = vec![PackageInfo {
+            id: Some(1),
+            name: "solo".into(),
+            path: "".into(),
+            kind: Some("npm".into()),
+            manifest: Some("package.json".into()),
+        }];
+
+        let ctx = build_project_context_with_packages(root, &packages);
+        assert!(ctx.is_per_package());
+        assert!(ctx.has_dependency_for(Some(1), ManifestKind::Npm, "axios"));
+    }
+
+    #[test]
+    fn package_with_no_manifest_yields_no_entry() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write_file(
+            root,
+            "server/package.json",
+            r#"{"name":"server","dependencies":{"express":"4"}}"#,
+        );
+        // packages/empty has NO manifest — should get no by_package entry.
+
+        let packages = vec![
+            PackageInfo {
+                id: Some(1),
+                name: "server".into(),
+                path: "server".into(),
+                kind: Some("npm".into()),
+                manifest: Some("server/package.json".into()),
+            },
+            PackageInfo {
+                id: Some(2),
+                name: "empty".into(),
+                path: "packages/empty".into(),
+                kind: None,
+                manifest: None,
+            },
+        ];
+
+        let ctx = build_project_context_with_packages(root, &packages);
+        assert!(ctx.by_package.contains_key(&1));
+        assert!(!ctx.by_package.contains_key(&2));
+        // Package 2 (empty) falls back to union — sees express.
+        assert!(ctx.has_dependency_for(Some(2), ManifestKind::Npm, "express"));
+    }
+}
+

@@ -208,7 +208,7 @@ impl LanguageResolver for ElixirResolver {
             // Mix dep atoms are snake_case (e.g., "phoenix", "ecto_sql").
             // Elixir module roots are CamelCase (e.g., "Phoenix", "Ecto").
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
                     if is_mix_dep_match(root, &manifest.dependencies) {
                         return Some(root.to_string());
                     }
@@ -231,7 +231,7 @@ impl LanguageResolver for ElixirResolver {
         if let Some(module) = &ref_ctx.extracted_ref.module {
             let root = module.split('.').next().unwrap_or(module);
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
                     if is_mix_dep_match(root, &manifest.dependencies) {
                         return Some(root.to_string());
                     }
@@ -252,7 +252,7 @@ impl LanguageResolver for ElixirResolver {
 
             // Manifest-driven check for alias targets.
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
                     if is_mix_dep_match(root, &manifest.dependencies) {
                         return Some(root.to_string());
                     }
@@ -269,7 +269,7 @@ impl LanguageResolver for ElixirResolver {
             let root = target.split('.').next().unwrap_or(target);
 
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
                     if is_mix_dep_match(root, &manifest.dependencies) {
                         return Some(root.to_string());
                     }
@@ -282,7 +282,7 @@ impl LanguageResolver for ElixirResolver {
         } else {
             // Plain module name (single segment, uppercase = Elixir module).
             if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
                     if is_mix_dep_match(target, &manifest.dependencies) {
                         return Some(target.clone());
                     }
@@ -306,7 +306,7 @@ impl LanguageResolver for ElixirResolver {
             // Only check modules confirmed as external dependencies.
             let root = module.split('.').next().unwrap_or(module);
             let is_external_module = if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests.get(&ManifestKind::Mix) {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
                     is_mix_dep_match(root, &manifest.dependencies)
                 } else {
                     builtins::is_external_elixir_module(module)

@@ -421,6 +421,7 @@ fn test_same_package_resolution_by_qualified_name() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[0],
         scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -484,6 +485,7 @@ fn test_same_package_resolution_method_on_same_receiver() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[1],
         scope_chain: build_scope_chain(file.symbols[1].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -537,6 +539,7 @@ fn test_cross_package_import_resolution() {
         extracted_ref: &main_file.refs[1], // NewRouter call, not the import
         source_symbol: &main_file.symbols[0],
         scope_chain: build_scope_chain(main_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -597,6 +600,7 @@ fn test_import_alias_resolution() {
         extracted_ref: &main_file.refs[0], // Default call
         source_symbol: &main_file.symbols[0],
         scope_chain: build_scope_chain(main_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -641,6 +645,7 @@ fn test_visibility_unexported_same_package() {
         extracted_ref: &file2.refs[0],
         source_symbol: &file2.symbols[0],
         scope_chain: build_scope_chain(file2.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -691,6 +696,7 @@ fn test_visibility_unexported_cross_package_not_visible() {
         extracted_ref: &caller_file.refs[1], // helper call
         source_symbol: &caller_file.symbols[0],
         scope_chain: build_scope_chain(caller_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     // The "internal" package has a symbol named "helper" but it's Private.
@@ -725,6 +731,7 @@ fn test_import_ref_skipped_in_resolve() {
         extracted_ref: &file.refs[0], // the import ref
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
@@ -753,6 +760,7 @@ fn test_falls_back_for_unknown() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     assert!(
@@ -794,6 +802,7 @@ fn test_infer_external_namespace_exported_symbol() {
         extracted_ref: &file.refs[1], // NewLogger call
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -831,6 +840,7 @@ fn test_infer_external_namespace_unexported_returns_none() {
         extracted_ref: &file.refs[1], // unexportedHelper call
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -872,6 +882,7 @@ fn test_infer_external_namespace_internal_import_not_returned() {
         extracted_ref: &file.refs[1], // NewLogger call
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -901,6 +912,7 @@ fn test_infer_no_imports_returns_none() {
         extracted_ref: &file.refs[0],
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
@@ -933,6 +945,7 @@ fn test_infer_external_namespace_import_ref_skipped() {
         extracted_ref: &file.refs[0], // the import ref itself
         source_symbol: &file.symbols[0],
         scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
@@ -982,6 +995,7 @@ fn test_is_visible_public_always() {
         extracted_ref: &sym_ref,
         source_symbol: &source_sym,
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let resolver = GoResolver;
@@ -1021,6 +1035,7 @@ fn test_is_visible_private_same_dir() {
         extracted_ref: &sym_ref,
         source_symbol: &source_sym,
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let resolver = GoResolver;
@@ -1060,6 +1075,7 @@ fn test_is_visible_private_different_dir() {
         extracted_ref: &sym_ref,
         source_symbol: &source_sym,
         scope_chain: vec![],
+    file_package_id: None,
     };
 
     let resolver = GoResolver;
@@ -1114,6 +1130,7 @@ fn test_instantiates_ref_resolution() {
         extracted_ref: &main_file.refs[1], // Instantiates
         source_symbol: &main_file.symbols[0],
         scope_chain: build_scope_chain(main_file.symbols[0].scope_path.as_deref()),
+    file_package_id: None,
     };
 
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
