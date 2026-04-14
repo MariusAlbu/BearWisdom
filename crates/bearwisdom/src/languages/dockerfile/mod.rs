@@ -4,12 +4,13 @@ mod builtins;
 pub(crate) mod externals;
 pub mod connectors;
 pub mod primitives;
+pub mod embedded;
 pub mod extract;
 pub mod resolve;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -44,6 +45,10 @@ impl LanguagePlugin for DockerfilePlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
+    }
+
+    fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {
+        embedded::detect_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
