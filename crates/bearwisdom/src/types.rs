@@ -381,6 +381,16 @@ pub enum EmbeddedOrigin {
     /// A tagged template literal or string argument in Tier-3 string DSLs
     /// (SQL in C# raw strings, GraphQL in TS `gql\`…\``, CSS-in-JS, etc.).
     StringDsl,
+    /// PHP `<?php … ?>` / `<?= … ?>` short-echo or `@php … @endphp` Blade
+    /// block — an explicit switch into PHP mode from a template host.
+    PhpBlock,
+    /// `{{ expr }}` / `{!! expr !!}` (Blade) or `{{ expr }}` (Twig /
+    /// Jinja / Handlebars / Angular) — a single expression interpolation
+    /// inside template text.
+    TemplateExpr,
+    /// `{% tag … %}` (Twig / Jinja / Liquid) directive forms that control
+    /// template flow (`block`, `extends`, `include`, `use`, `set`, etc.).
+    TemplateDirective,
 }
 
 impl ExtractionResult {

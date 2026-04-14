@@ -2,6 +2,7 @@
 
 mod calls;
 pub(crate) mod decorators;
+pub mod embedded;
 mod helpers;
 pub(crate) mod primitives;
 mod symbols;
@@ -26,7 +27,7 @@ mod coverage_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 pub use resolve::PhpResolver;
@@ -50,6 +51,19 @@ impl LanguagePlugin for PhpPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
+    }
+
+    /// E2: surface `<script>` and `<style>` blocks that live in the HTML
+    /// regions between `<?php … ?>` blocks for sub-extraction by the JS,
+    /// TS, CSS, and SCSS plugins. Pure-PHP files (no HTML mode) emit
+    /// nothing.
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        embedded::detect_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
