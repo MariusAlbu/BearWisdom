@@ -91,6 +91,12 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &GOTEMPLATE,
     &TEMPL,
     &HEEX,
+    &EEX,
+    &MAKO,
+    &SMARTY,
+    &NGINX,
+    &SYSTEMD,
+    &CRONTAB,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").

@@ -179,9 +179,11 @@ pub mod blade;
 pub mod c_lang;
 mod generic;
 pub mod cmake;
+pub mod crontab;
 pub mod csharp;
 pub mod dart;
 pub mod dockerfile;
+pub mod eex;
 pub mod ejs;
 pub mod elixir;
 pub mod erb;
@@ -204,8 +206,10 @@ pub mod kotlin;
 pub mod liquid;
 pub mod lua;
 pub mod make;
+pub mod mako;
 pub mod markdown;
 pub mod mdx;
+pub mod nginx;
 pub mod nim;
 pub mod nix;
 pub mod nunjucks;
@@ -226,7 +230,9 @@ pub mod rust_lang;
 pub mod scala;
 pub mod scss;
 pub mod slim;
+pub mod smarty;
 pub mod sql;
+pub mod systemd;
 pub mod starlark;
 pub mod svelte;
 pub mod swift;
@@ -351,6 +357,16 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(templ::TemplPlugin));
     // E13 — Phoenix HEEx
     reg.register(Arc::new(heex::HeexPlugin));
+    // E22 — Elixir EEx
+    reg.register(Arc::new(eex::EexPlugin));
+    // E23 — Python Mako, PHP Smarty
+    reg.register(Arc::new(mako::MakoPlugin));
+    reg.register(Arc::new(smarty::SmartyPlugin));
+    // E25 — Nginx
+    reg.register(Arc::new(nginx::NginxPlugin));
+    // E26 — systemd + crontab
+    reg.register(Arc::new(systemd::SystemdPlugin));
+    reg.register(Arc::new(crontab::CrontabPlugin));
 
     reg
 });
