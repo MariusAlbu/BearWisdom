@@ -1,8 +1,10 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use rustc_hash::FxHashMap;
 
 use super::LanguagePlugin;
+use crate::types::ParsedFile;
 
 /// Central registry mapping language IDs to their plugin implementations.
 ///
@@ -73,5 +75,94 @@ impl LanguageRegistry {
     /// Whether the registry has no dedicated plugins.
     pub fn is_empty(&self) -> bool {
         self.plugins.is_empty()
+    }
+
+    /// L1: Return every language actually observed in a parsed-file set —
+    /// host file language plus any embedded sub-language recorded on
+    /// individual symbols.
+    ///
+    /// Differs from a naive `files.iter().map(|f| f.language).collect()`
+    /// pass in that it also picks up languages that only appear inside
+    /// embedded regions (e.g. C# inside Razor `.cshtml`, TypeScript inside
+    /// Vue `<script>` blocks). A Razor-only MVC project still reports
+    /// `{razor, csharp, javascript}` when the host extractor dispatched
+    /// into those sub-extractors.
+    pub fn detected_languages(files: &[ParsedFile]) -> HashSet<String> {
+        let mut langs = HashSet::new();
+        for f in files {
+            langs.insert(f.language.clone());
+            for origin in f.symbol_origin_languages.iter().flatten() {
+                langs.insert(origin.clone());
+            }
+        }
+        langs
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn blank_file(lang: &str, origins: Vec<Option<String>>) -> ParsedFile {
+        ParsedFile {
+            path: format!("f.{lang}"),
+            language: lang.to_string(),
+            content_hash: String::new(),
+            size: 0,
+            line_count: 0,
+            mtime: None,
+            package_id: None,
+            symbols: Vec::new(),
+            refs: Vec::new(),
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            symbol_origin_languages: origins,
+            content: None,
+            has_errors: false,
+        }
+    }
+
+    #[test]
+    fn detected_languages_host_only() {
+        let files = vec![
+            blank_file("csharp", vec![]),
+            blank_file("typescript", vec![]),
+            blank_file("csharp", vec![]),
+        ];
+        let langs = LanguageRegistry::detected_languages(&files);
+        assert_eq!(langs, HashSet::from(["csharp".to_string(), "typescript".to_string()]));
+    }
+
+    #[test]
+    fn detected_languages_includes_embedded_origins() {
+        // A .cshtml file hosts razor but its symbols come from csharp + javascript.
+        let files = vec![blank_file(
+            "razor",
+            vec![
+                None,
+                Some("csharp".to_string()),
+                Some("javascript".to_string()),
+                Some("csharp".to_string()),
+            ],
+        )];
+        let langs = LanguageRegistry::detected_languages(&files);
+        assert_eq!(
+            langs,
+            HashSet::from([
+                "razor".to_string(),
+                "csharp".to_string(),
+                "javascript".to_string()
+            ])
+        );
+    }
+
+    #[test]
+    fn detected_languages_empty_input() {
+        let langs = LanguageRegistry::detected_languages(&[]);
+        assert!(langs.is_empty());
     }
 }

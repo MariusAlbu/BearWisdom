@@ -158,6 +158,11 @@ pub fn full_index(
         }
     }
     info!("Parsed {} files ({} with syntax errors)", parsed.len(), files_with_errors);
+
+    // L1: per-language audit log — host file counts + embedded-region
+    // awareness so operators can spot missing plugin coverage (zero files
+    // for an expected language, missing embedded sub-languages, etc.).
+    log_language_breakdown(&parsed);
     emit("parsing", 1.0, Some(&format!("{} files parsed", parsed.len())));
 
     // --- Step 3b: Detect workspace packages ---
@@ -367,6 +372,56 @@ pub fn full_index(
 // ---------------------------------------------------------------------------
 // Parse a single file
 // ---------------------------------------------------------------------------
+
+/// L1: Log a per-language breakdown of parsed files so operators can spot
+/// missing plugin coverage during a full index. Reports host file counts,
+/// host symbol counts, and (separately) symbols produced by embedded
+/// sub-extractors on each sub-language. A Razor `.cshtml`-heavy project
+/// should show e.g. `razor: 120 files, 200 host symbols` alongside
+/// `csharp (embedded): 4500 symbols` once E1 lands.
+fn log_language_breakdown(parsed: &[ParsedFile]) {
+    use std::collections::BTreeMap;
+
+    let mut host_files: BTreeMap<String, u32> = BTreeMap::new();
+    let mut host_symbols: BTreeMap<String, u32> = BTreeMap::new();
+    let mut embedded_symbols: BTreeMap<String, u32> = BTreeMap::new();
+
+    for pf in parsed {
+        *host_files.entry(pf.language.clone()).or_insert(0) += 1;
+        // Count symbols by their ACTUAL origin (host language when None, sub
+        // extractor language when Some). `symbol_origin_languages` is either
+        // empty (all host) or the same length as symbols.
+        if pf.symbol_origin_languages.is_empty() {
+            *host_symbols.entry(pf.language.clone()).or_insert(0) +=
+                pf.symbols.len() as u32;
+        } else {
+            for origin in &pf.symbol_origin_languages {
+                match origin {
+                    None => {
+                        *host_symbols.entry(pf.language.clone()).or_insert(0) += 1;
+                    }
+                    Some(sub) => {
+                        *embedded_symbols.entry(sub.clone()).or_insert(0) += 1;
+                    }
+                }
+            }
+        }
+    }
+
+    let detected = crate::languages::LanguageRegistry::detected_languages(parsed);
+    info!(
+        "Language audit: {} distinct languages ({} host + embedded)",
+        detected.len(),
+        detected.len()
+    );
+    for (lang, files) in &host_files {
+        let syms = host_symbols.get(lang).copied().unwrap_or(0);
+        info!("  {lang}: {files} files, {syms} host symbols");
+    }
+    for (sub, syms) in &embedded_symbols {
+        info!("  {sub} (embedded): {syms} symbols");
+    }
+}
 
 /// Map a `ManifestKind` to the locator ecosystem string used by
 /// `ExternalSourceLocator::ecosystem`. The two enums are intentionally

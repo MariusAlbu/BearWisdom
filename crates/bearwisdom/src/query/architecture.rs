@@ -141,17 +141,42 @@ pub fn get_overview_with_limits(
             .context("Failed to count edges")?;
 
     // --- 2. Language breakdown ---
-    // LEFT JOIN so languages with zero symbols still appear.
+    //
+    // L1: embedded-region aware. Symbol counts are grouped by EFFECTIVE
+    // language — `COALESCE(symbols.origin_language, files.language)` —
+    // so a C# block inside a Razor `.cshtml` contributes to `csharp` not
+    // `razor`. File counts stay keyed by host language (a `.cshtml` is
+    // one razor file regardless of what sub-languages it embeds).
+    //
+    // The UNION ALL tail picks up languages that appear ONLY as embedded
+    // content — e.g. a project with zero standalone `.cs` files but many
+    // C# blocks in `.cshtml` views still surfaces `csharp` as a row.
     let languages = {
         let mut stmt = conn.prepare(
-            "SELECT f.language,
-                    COUNT(DISTINCT f.id)  AS file_count,
-                    COUNT(s.id)           AS symbol_count
-             FROM files f
-             LEFT JOIN symbols s ON s.file_id = f.id AND s.origin = 'internal'
-             WHERE f.origin = 'internal'
-             GROUP BY f.language
-             ORDER BY file_count DESC",
+            "WITH file_counts AS (
+                SELECT language, COUNT(*) AS file_count
+                FROM files WHERE origin = 'internal'
+                GROUP BY language
+             ),
+             symbol_counts AS (
+                SELECT COALESCE(s.origin_language, f.language) AS language,
+                       COUNT(*) AS symbol_count
+                FROM symbols s
+                JOIN files f ON f.id = s.file_id
+                WHERE s.origin = 'internal' AND f.origin = 'internal'
+                GROUP BY COALESCE(s.origin_language, f.language)
+             )
+             SELECT fc.language,
+                    fc.file_count,
+                    COALESCE(sc.symbol_count, 0) AS symbol_count
+             FROM file_counts fc
+             LEFT JOIN symbol_counts sc ON fc.language = sc.language
+             UNION ALL
+             SELECT sc.language, 0, sc.symbol_count
+             FROM symbol_counts sc
+             LEFT JOIN file_counts fc ON fc.language = sc.language
+             WHERE fc.language IS NULL
+             ORDER BY file_count DESC, symbol_count DESC",
         ).context("Failed to prepare language stats query")?;
 
         let rows = stmt.query_map([], |row| {
