@@ -19,6 +19,27 @@ fn error_response(code: &str, message: &str) -> String {
     .to_string()
 }
 
+/// Shape a full-index IndexStats as the payload for `bw_reindex` responses.
+fn full_stats_json(stats: &bearwisdom::IndexStats) -> serde_json::Value {
+    serde_json::json!({
+        "files_indexed": stats.file_count,
+        "symbols": stats.symbol_count,
+        "edges": stats.edge_count,
+        "duration_ms": stats.duration_ms,
+    })
+}
+
+/// Shape an IncrementalStats delta as the payload for `bw_reindex` responses.
+fn incremental_stats_json(inc: &bearwisdom::indexer::incremental::IncrementalStats) -> serde_json::Value {
+    serde_json::json!({
+        "files_added": inc.files_added,
+        "files_modified": inc.files_modified,
+        "files_deleted": inc.files_deleted,
+        "files_unchanged": inc.files_unchanged,
+        "duration_ms": inc.duration_ms,
+    })
+}
+
 // =============================================================================
 // MCP tool parameter types (schemars generates JSON Schema for Claude Code)
 // =============================================================================
@@ -139,6 +160,14 @@ pub struct PackagesParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct ReindexParams {
+    /// Force a full re-index instead of git-aware incremental (default: false).
+    pub force: Option<bool>,
+    /// Output format: "json" (default) or "compact" (token-optimized text)
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct WorkspaceOverviewParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
@@ -233,6 +262,44 @@ impl BearWisdomServer {
         self.pool
             .get()
             .map_err(|e| error_response("INTERNAL_ERROR", &format!("Pool error: {e}")))
+    }
+
+    /// Shared implementation for `bw_reindex`. Held out of the tool handler so
+    /// the error type stays `Result<String, String>` without the audit/timing
+    /// wrapper cluttering the hot path.
+    fn run_reindex(&self, force: bool) -> Result<String, String> {
+        let ref_cache = self.pool.ref_cache().clone();
+        let mut db = self.get_db()?;
+        let (mode, stats_json) = if force {
+            let stats = bearwisdom::full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))
+                .map_err(|e| error_response("INTERNAL_ERROR", &format!("Full index failed: {e}")))?;
+            ("full", full_stats_json(&stats))
+        } else if bearwisdom::indexer::changeset::get_meta(&db, "indexed_commit").is_some() {
+            let inc = bearwisdom::git_reindex(&mut db, &self.project_root, Some(&ref_cache))
+                .map_err(|e| error_response("INTERNAL_ERROR", &format!("Git-incremental reindex failed: {e}")))?;
+            ("git-incremental", incremental_stats_json(&inc))
+        } else {
+            let file_count: i64 = db
+                .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+                .unwrap_or(0);
+            if file_count > 0 {
+                let inc = bearwisdom::incremental_index(&mut db, &self.project_root, Some(&ref_cache))
+                    .map_err(|e| error_response("INTERNAL_ERROR", &format!("Hash-incremental reindex failed: {e}")))?;
+                ("hash-incremental", incremental_stats_json(&inc))
+            } else {
+                let stats = bearwisdom::full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))
+                    .map_err(|e| error_response("INTERNAL_ERROR", &format!("Full index failed: {e}")))?;
+                ("full", full_stats_json(&stats))
+            }
+        };
+        let response = serde_json::json!({
+            "ok": true,
+            "data": {
+                "mode": mode,
+                "stats": stats_json,
+            },
+        });
+        Ok(response.to_string())
     }
 
     /// Write one audit record.  Best-effort — a write failure must not propagate.
@@ -532,6 +599,22 @@ impl BearWisdomServer {
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::packages(&r)) } else { Self::to_json(&r) })
         })
+    }
+
+    /// Reindex the project. Idempotent: runs git-aware incremental reindex on
+    /// an existing DB (falling back to hash-diff if git is unavailable) and a
+    /// full index on a fresh DB. Pass `force: true` to force a full rebuild.
+    #[tool(name = "bw_reindex")]
+    fn reindex(&self, Parameters(params): Parameters<ReindexParams>) -> String {
+        let t0 = std::time::Instant::now();
+        let params_json = serde_json::to_string(&params).unwrap_or_default();
+        let result = self.run_reindex(params.force.unwrap_or(false));
+        let response = match result {
+            Ok(msg) => msg,
+            Err(e) => e,
+        };
+        self.audit_call("bw_reindex", &params_json, &response, t0.elapsed().as_millis() as u64);
+        response
     }
 
     /// Workspace overview: per-package breakdown + cross-package edge count + shared hotspots.

@@ -42,14 +42,19 @@ struct Cli {
 #[derive(Subcommand)]
 enum Commands {
     // ---- Lifecycle ---------------------------------------------------------
-    /// Index a project (full re-index) and open the database.
-    /// Also discovers and auto-assigns namespace concepts.
+    /// Open (or index) a project. Idempotent: on a fresh DB this runs a full
+    /// index; on an existing DB it runs a git-aware incremental reindex (with
+    /// hash-diff fallback when git is unavailable). Use `reindex --force` to
+    /// force a full rebuild.
     Open {
         /// Absolute path to the project root.
         path: String,
         /// Skip embedding computation (faster indexing for quality checks).
         #[arg(long)]
         no_embed: bool,
+        /// Force a full re-index even if an existing DB is present.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Show index status for a project (state, file count, symbol count, edge count).
@@ -400,10 +405,14 @@ enum Commands {
 
     // ---- Quality ---------------------------------------------------------------
     /// Re-index a project without running the embedder.
-    /// Equivalent to `open --no-embed` but outputs machine-readable JSON stats.
+    /// Default: git-aware incremental reindex (hash-diff fallback).
+    /// With --force: full rebuild. Outputs machine-readable JSON stats.
     Reindex {
         /// Path to the project root.
         path: String,
+        /// Force a full re-index instead of git-aware incremental.
+        #[arg(long)]
+        force: bool,
     },
 
     /// Analyze tree-sitter extraction coverage for a project.
@@ -522,7 +531,7 @@ fn main() {
 
 fn run(command: Commands, full: bool) -> Result<String> {
     match command {
-        Commands::Open { path, no_embed } => cmd_open(&path, no_embed),
+        Commands::Open { path, no_embed, force } => cmd_open(&path, no_embed, force),
         Commands::Status { path } => cmd_status(&path),
         Commands::Watch { path, debounce_ms } => cmd_watch(&path, debounce_ms),
 
@@ -596,7 +605,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::FullTrace { path, symbol, depth, max_traces } => {
             cmd_full_trace(&path, symbol.as_deref(), depth, max_traces)
         }
-        Commands::Reindex { path } => cmd_reindex(&path),
+        Commands::Reindex { path, force } => cmd_reindex(&path, force),
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
         Commands::QualityCheck { baseline, reindex, recapture } => {
             if recapture {
@@ -621,7 +630,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 /// Open and fully index the project, then print stats.
-fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
+fn cmd_open(project_path: &str, no_embed: bool, force: bool) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
 
@@ -630,10 +639,8 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
     let mut db = Database::open(&db_path)
         .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
-    eprintln!("Running full index for {} ...", root.display());
-
-    let stats = bearwisdom::full_index(&mut db, &root, None, None, None)
-        .context("Full index failed")?;
+    let mode = pick_index_mode(&db, force);
+    let stats = run_index(&mut db, &root, mode)?;
 
     // Auto-discover namespace concepts and assign members.
     if let Err(e) = bearwisdom::query::concepts::discover_concepts(&db) {
@@ -667,6 +674,7 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
 
     ok_json(serde_json::json!({
         "db_path": db_path.display().to_string(),
+        "mode": mode.label(),
         "file_count": stats.file_count,
         "symbol_count": stats.symbol_count,
         "edge_count": stats.edge_count,
@@ -675,6 +683,101 @@ fn cmd_open(project_path: &str, no_embed: bool) -> Result<String> {
         "chunks_embedded": chunks_embedded,
         "duration_ms": stats.duration_ms,
     }))
+}
+
+/// Which index path to take. Picked by `pick_index_mode` based on DB state
+/// and the caller's --force flag.
+#[derive(Debug, Clone, Copy)]
+enum IndexMode {
+    /// Full (re)build. Fresh DB or user forced it.
+    Full,
+    /// Git-aware incremental. Falls back to HashDiff when git is unavailable
+    /// or the indexed commit is unreachable.
+    GitIncremental,
+    /// Hash-based incremental. Used for non-git projects (or git projects
+    /// indexed before `indexed_commit` was persisted) when the DB already
+    /// has state.
+    HashIncremental,
+}
+
+impl IndexMode {
+    fn label(self) -> &'static str {
+        match self {
+            IndexMode::Full => "full",
+            IndexMode::GitIncremental => "git-incremental",
+            IndexMode::HashIncremental => "hash-incremental",
+        }
+    }
+}
+
+fn pick_index_mode(db: &Database, force: bool) -> IndexMode {
+    if force {
+        return IndexMode::Full;
+    }
+    // Prefer incremental when the DB has state from a prior index.
+    //   * `indexed_commit` set → git-aware diff path (with HashDiff fallback
+    //     if the commit became unreachable).
+    //   * Otherwise, any indexed files → HashDiff path (non-git repos, or
+    //     the first index was done before we persisted `indexed_commit`).
+    //   * Empty DB → start from a full index.
+    if bearwisdom::indexer::changeset::get_meta(db, "indexed_commit").is_some() {
+        return IndexMode::GitIncremental;
+    }
+    let file_count: i64 = db
+        .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+        .unwrap_or(0);
+    if file_count > 0 {
+        IndexMode::HashIncremental
+    } else {
+        IndexMode::Full
+    }
+}
+
+/// Execute the selected index mode and return IndexStats regardless of path.
+/// GitIncremental returns IncrementalStats which is mapped into IndexStats
+/// shape by re-querying the DB so the two call sites stay unified.
+fn run_index(
+    db: &mut Database,
+    root: &Path,
+    mode: IndexMode,
+) -> Result<bearwisdom::IndexStats> {
+    match mode {
+        IndexMode::Full => {
+            eprintln!("Running full index for {} ...", root.display());
+            bearwisdom::full_index(db, root, None, None, None)
+                .context("Full index failed")
+        }
+        IndexMode::GitIncremental => {
+            eprintln!("Running git-aware incremental reindex for {} ...", root.display());
+            let inc = bearwisdom::git_reindex(db, root, None)
+                .context("Git-aware reindex failed")?;
+            report_incremental(db, &inc)
+        }
+        IndexMode::HashIncremental => {
+            eprintln!("Running hash-diff incremental reindex for {} ...", root.display());
+            let inc = bearwisdom::incremental_index(db, root, None)
+                .context("Hash-diff reindex failed")?;
+            report_incremental(db, &inc)
+        }
+    }
+}
+
+/// Build an IndexStats snapshot of the DB after an incremental reindex.
+/// IncrementalStats only carries deltas; the user-visible report shows
+/// whole-DB totals paired with the incremental duration.
+fn report_incremental(
+    db: &Database,
+    inc: &bearwisdom::indexer::incremental::IncrementalStats,
+) -> Result<bearwisdom::IndexStats> {
+    eprintln!(
+        "Incremental: +{} added, ~{} modified, -{} deleted, {} unchanged in {:.2}s",
+        inc.files_added, inc.files_modified, inc.files_deleted, inc.files_unchanged,
+        inc.duration_ms as f64 / 1000.0,
+    );
+    let mut stats = bearwisdom::index_stats(db)
+        .map_err(|e| anyhow::anyhow!("index_stats failed: {e}"))?;
+    stats.duration_ms = inc.duration_ms;
+    Ok(stats)
 }
 
 /// Compute embeddings for all un-embedded code chunks.
@@ -1245,17 +1348,16 @@ fn resolve_model_dir(project_root: &Path) -> Option<PathBuf> {
 // Reindex
 // ---------------------------------------------------------------------------
 
-fn cmd_reindex(project_path: &str) -> Result<String> {
+fn cmd_reindex(project_path: &str, force: bool) -> Result<String> {
     let root = PathBuf::from(project_path);
     let db_path = resolve_db_path(&root)?;
     let start = std::time::Instant::now();
 
-    eprintln!("Reindexing {} ...", root.display());
-
     let mut db = Database::open(&db_path)
         .with_context(|| format!("Failed to open DB at {}", db_path.display()))?;
 
-    bearwisdom::full_index(&mut db, &root, None, None, None)
+    let mode = pick_index_mode(&db, force);
+    run_index(&mut db, &root, mode)
         .with_context(|| format!("Index failed for {}", root.display()))?;
 
     let stats = bearwisdom::index_stats(&db)?;
@@ -1266,13 +1368,14 @@ fn cmd_reindex(project_path: &str) -> Result<String> {
         .collect();
 
     let elapsed_ms = start.elapsed().as_millis() as u64;
-    eprintln!("Done in {:.2}s: {} files, {} symbols, {} edges, {} routes, {} flow_edges",
-        elapsed_ms as f64 / 1000.0,
+    eprintln!("Done in {:.2}s ({} mode): {} files, {} symbols, {} edges, {} routes, {} flow_edges",
+        elapsed_ms as f64 / 1000.0, mode.label(),
         stats.file_count, stats.symbol_count, stats.edge_count,
         stats.route_count, stats.flow_edge_count);
 
     ok_json(serde_json::json!({
         "project": root.display().to_string(),
+        "mode": mode.label(),
         "duration_ms": elapsed_ms,
         "files": stats.file_count,
         "symbols": stats.symbol_count,

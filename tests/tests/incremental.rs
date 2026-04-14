@@ -89,6 +89,29 @@ fn incremental_detects_deleted_file() {
 }
 
 #[test]
+fn git_reindex_falls_back_to_hash_diff_when_not_a_git_repo() {
+    // The `bw open` idempotency path calls git_reindex on an existing DB.
+    // For non-git projects (TestProject fixtures don't initialize a repo),
+    // git_reindex must fall back to HashDiff internally — not panic or
+    // error. Regression guard for the CLI wire-up that assumed git when
+    // `indexed_commit` happened to be set.
+    use bearwisdom::git_reindex;
+
+    let project = TestProject::csharp_service();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    // No changes, no git — should not error.
+    let stats = git_reindex(&mut db, project.path(), None)
+        .expect("git_reindex should fall back cleanly on non-git projects");
+    // Nothing changed on disk since the last full index.
+    assert_eq!(stats.files_added, 0);
+    assert_eq!(stats.files_modified, 0);
+    assert_eq!(stats.files_deleted, 0);
+}
+
+#[test]
 fn incremental_on_unchanged_project_is_noop() {
     let project = TestProject::csharp_service();
     let mut db = TestProject::in_memory_db();

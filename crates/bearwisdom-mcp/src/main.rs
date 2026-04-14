@@ -94,40 +94,55 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     let transport = rmcp::transport::io::stdio();
     let service = mcp_server.serve(transport).await?;
 
-    // Full index in background
+    // Index in background. Fresh DB → full index; existing DB with an
+    // `indexed_commit` → git-aware incremental reindex so MCP startup
+    // stays fast on the hot path. Falls back to HashDiff if git is
+    // unavailable or the indexed commit isn't reachable.
     let bg_pool = pool.clone();
     let bg_project = project.clone();
     let _bg_handle = tokio::task::spawn(async move {
         let idx_pool = bg_pool;
         let idx_project = bg_project;
         let idx_ref_cache = idx_pool.ref_cache().clone();
-        let index_result = tokio::task::spawn_blocking(move || {
-            let mut db = match idx_pool.get() {
-                Ok(db) => db,
-                Err(e) => {
-                    tracing::error!("Background indexer could not acquire DB connection: {e}");
-                    return Err(anyhow::anyhow!("pool get failed: {e}"));
-                }
-            };
-            bearwisdom::full_index(&mut db, &idx_project, None, None, Some(&idx_ref_cache))
+        let index_result = tokio::task::spawn_blocking(move || -> anyhow::Result<String> {
+            let mut db = idx_pool.get()
+                .map_err(|e| anyhow::anyhow!("pool get failed: {e}"))?;
+            let prior_commit = bearwisdom::indexer::changeset::get_meta(&db, "indexed_commit");
+            if prior_commit.is_some() {
+                let inc = bearwisdom::git_reindex(&mut db, &idx_project, Some(&idx_ref_cache))?;
+                return Ok(format!(
+                    "Git-incremental reindex: +{} added, ~{} modified, -{} deleted, {} unchanged ({:.2}s)",
+                    inc.files_added, inc.files_modified, inc.files_deleted, inc.files_unchanged,
+                    inc.duration_ms as f64 / 1000.0,
+                ));
+            }
+            let file_count: i64 = db
+                .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+                .unwrap_or(0);
+            if file_count > 0 {
+                let inc = bearwisdom::incremental_index(&mut db, &idx_project, Some(&idx_ref_cache))?;
+                return Ok(format!(
+                    "Hash-incremental reindex: +{} added, ~{} modified, -{} deleted, {} unchanged ({:.2}s)",
+                    inc.files_added, inc.files_modified, inc.files_deleted, inc.files_unchanged,
+                    inc.duration_ms as f64 / 1000.0,
+                ));
+            }
+            let stats = bearwisdom::full_index(&mut db, &idx_project, None, None, Some(&idx_ref_cache))?;
+            Ok(format!(
+                "Full index: {} files, {} symbols, {} edges ({:.2}s){}",
+                stats.file_count, stats.symbol_count, stats.edge_count,
+                stats.duration_ms as f64 / 1000.0,
+                if stats.files_with_errors > 0 {
+                    format!(", {} with errors", stats.files_with_errors)
+                } else {
+                    String::new()
+                },
+            ))
         })
         .await;
 
         match index_result {
-            Ok(Ok(stats)) => {
-                eprintln!(
-                    "Full index: {} files, {} symbols, {} edges ({:.2}s){}",
-                    stats.file_count,
-                    stats.symbol_count,
-                    stats.edge_count,
-                    stats.duration_ms as f64 / 1000.0,
-                    if stats.files_with_errors > 0 {
-                        format!(", {} with errors", stats.files_with_errors)
-                    } else {
-                        String::new()
-                    }
-                );
-            }
+            Ok(Ok(msg)) => eprintln!("{msg}"),
             Ok(Err(e)) => eprintln!("Index error: {e}"),
             Err(e) => eprintln!("Index task panicked: {e}"),
         }
