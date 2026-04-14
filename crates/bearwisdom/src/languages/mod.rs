@@ -201,6 +201,7 @@ pub mod proto;
 pub mod puppet;
 pub mod python;
 pub mod r_lang;
+pub mod razor;
 pub mod robot;
 pub mod ruby;
 pub mod rust_lang;
@@ -269,6 +270,7 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(puppet::PuppetPlugin));
     reg.register(Arc::new(python::PythonPlugin));
     reg.register(Arc::new(r_lang::RLangPlugin));
+    reg.register(Arc::new(razor::RazorPlugin));
     reg.register(Arc::new(robot::RobotPlugin));
     reg.register(Arc::new(ruby::RubyPlugin));
     reg.register(Arc::new(rust_lang::RustLangPlugin));

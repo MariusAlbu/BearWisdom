@@ -70,6 +70,7 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &ROBOT,
     &MAKE,
     &HARE,
+    &RAZOR,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").
