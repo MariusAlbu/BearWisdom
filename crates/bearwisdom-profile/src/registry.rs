@@ -102,6 +102,10 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &VELOCITY,
     &GSP,
     &THYMELEAF,
+    &HAMLET,
+    &CASSIUS,
+    &LUCIUS,
+    &JULIUS,
 ];
 
 /// Find a language descriptor by its stable id (e.g. "rust", "typescript").

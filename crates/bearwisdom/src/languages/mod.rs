@@ -232,6 +232,7 @@ pub mod ruby;
 pub mod rust_lang;
 pub mod scala;
 pub mod scss;
+pub mod shakespeare;
 pub mod slim;
 pub mod smarty;
 pub mod sql;
@@ -378,6 +379,11 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(velocity::VelocityPlugin));
     reg.register(Arc::new(gsp::GspPlugin));
     reg.register(Arc::new(thymeleaf::ThymeleafPlugin));
+    // E21 — Yesod Shakespearean template plugins
+    reg.register(Arc::new(shakespeare::HamletPlugin));
+    reg.register(Arc::new(shakespeare::CassiusPlugin));
+    reg.register(Arc::new(shakespeare::LuciusPlugin));
+    reg.register(Arc::new(shakespeare::JuliusPlugin));
 
     reg
 });
