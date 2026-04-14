@@ -194,6 +194,7 @@ pub mod kotlin;
 pub mod lua;
 pub mod make;
 pub mod markdown;
+pub mod mdx;
 pub mod nim;
 pub mod nix;
 pub mod odin;
@@ -266,6 +267,7 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(lua::LuaPlugin));
     reg.register(Arc::new(make::MakePlugin));
     reg.register(Arc::new(markdown::MarkdownPlugin));
+    reg.register(Arc::new(mdx::MdxPlugin));
     reg.register(Arc::new(nim::NimPlugin));
     reg.register(Arc::new(nix::NixPlugin));
     reg.register(Arc::new(odin::OdinPlugin));

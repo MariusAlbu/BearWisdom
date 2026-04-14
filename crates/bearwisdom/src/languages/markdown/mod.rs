@@ -27,6 +27,7 @@
 pub mod embedded;
 pub mod extract;
 pub mod fenced;
+pub mod host_scan;
 pub mod info_string;
 
 use crate::languages::LanguagePlugin;

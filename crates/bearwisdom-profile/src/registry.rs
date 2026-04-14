@@ -30,6 +30,7 @@ pub static LANGUAGES: &[&LanguageDescriptor] = &[
     &YAML,
     &XML,
     &MARKDOWN,
+    &MDX,
     &SQL,
     &SHELL,
     &DOCKERFILE,
