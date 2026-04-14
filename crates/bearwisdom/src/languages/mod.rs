@@ -20,6 +20,7 @@
 
 pub mod common;
 pub mod registry;
+pub mod string_dsl;
 
 use crate::indexer::resolve::engine::LanguageResolver;
 use crate::types::{EmbeddedRegion, ExtractionResult};
@@ -246,6 +247,7 @@ pub mod twig;
 pub mod typescript;
 pub mod velocity;
 pub mod vue;
+pub mod yaml;
 pub mod zig;
 // --- Wave 3 plugins (SO 2025 lower-priority) ---
 pub mod cobol;
@@ -321,6 +323,7 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(twig::TwigPlugin));
     reg.register(Arc::new(typescript::TypeScriptPlugin));
     reg.register(Arc::new(vue::VuePlugin));
+    reg.register(Arc::new(yaml::YamlPlugin));
     reg.register(Arc::new(zig::ZigPlugin));
     // Wave 3
     reg.register(Arc::new(cobol::CobolPlugin));

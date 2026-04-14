@@ -407,6 +407,14 @@ pub enum EmbeddedOrigin {
     /// project code whose unresolved refs should count against
     /// aggregate resolution stats the same as any other source file.
     NotebookCell,
+    /// Shell / script payload embedded in a build-tool directive:
+    /// Go `//go:generate`, CMake `COMMAND`, Bazel/Starlark `genrule`
+    /// `cmd`, Terraform/HCL `user_data` / `provisioner`, Bicep/ARM
+    /// `scriptContent`. Produces a region (usually bash or
+    /// powershell) whose refs and symbols should count toward
+    /// aggregate stats — unlike snippets, these commands actually
+    /// run at build/deploy time.
+    BuildToolShell,
 }
 
 impl ExtractionResult {

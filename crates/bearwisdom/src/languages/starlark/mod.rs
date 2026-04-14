@@ -3,6 +3,7 @@
 //! `grammar()` returns the tree-sitter-starlark grammar; extraction also uses a line-oriented parser that
 //! recognises Starlark's `def`, `load()`, rule assignments, and calls.
 
+pub mod embedded;
 pub mod primitives;
 pub mod extract;
 pub mod resolve;
@@ -15,7 +16,7 @@ mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct StarlarkPlugin;
 
@@ -36,6 +37,15 @@ impl LanguagePlugin for StarlarkPlugin {
 
     fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
         extract::extract(source)
+    }
+
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        embedded::detect_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

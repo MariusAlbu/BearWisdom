@@ -18,6 +18,7 @@
 
 use crate::languages::markdown::fenced;
 use crate::languages::markdown::info_string;
+use crate::languages::string_dsl;
 use crate::types::{EmbeddedOrigin, EmbeddedRegion};
 
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
@@ -25,6 +26,21 @@ pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
     for docstring in find_docstrings(source) {
         collect_doctests(&docstring, &mut regions);
         collect_fences(&docstring, &mut regions);
+        // If the docstring body itself sniffs as a DSL (SQL / HTML /
+        // JSON / CSS), emit a StringDsl region. Rare for actual
+        // docstrings but common for triple-quoted string assignments
+        // that `find_docstrings` also picks up.
+        if let Some(lang_id) = string_dsl::sniff(&docstring.text) {
+            regions.push(EmbeddedRegion {
+                language_id: lang_id.to_string(),
+                text: docstring.text.clone(),
+                line_offset: docstring.line_offset,
+                col_offset: 0,
+                origin: EmbeddedOrigin::StringDsl,
+                holes: Vec::new(),
+                strip_scope_prefix: None,
+            });
+        }
     }
     regions
 }
@@ -266,5 +282,13 @@ result = compute(3)
         let src = "\n\"\"\"\nThis module does things.\nIt is important.\n\"\"\"\n";
         let regions = detect_regions(src);
         assert!(regions.is_empty());
+    }
+
+    #[test]
+    fn triple_quoted_sql_emits_string_dsl_region() {
+        let src = "query = \"\"\"\nSELECT id, name FROM users WHERE active = 1\n\"\"\"\n";
+        let regions = detect_regions(src);
+        let sql = regions.iter().find(|r| r.language_id == "sql").expect("sql region");
+        assert_eq!(sql.origin, EmbeddedOrigin::StringDsl);
     }
 }

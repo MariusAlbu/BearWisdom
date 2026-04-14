@@ -1,6 +1,7 @@
 //! go language plugin.
 
 mod calls;
+mod embedded;
 mod helpers;
 pub(crate) mod primitives;
 mod symbols;
@@ -25,7 +26,7 @@ mod resolve_tests;
 mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 pub use resolve::GoResolver;
@@ -49,6 +50,15 @@ impl LanguagePlugin for GoPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
+    }
+
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        embedded::detect_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

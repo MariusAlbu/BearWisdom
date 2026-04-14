@@ -3,6 +3,7 @@
 mod calls;
 pub(crate) mod connectors;
 pub(crate) mod decorators;
+mod embedded;
 pub(crate) mod externals;
 mod helpers;
 pub(crate) mod primitives;
@@ -26,7 +27,7 @@ mod resolve_tests;
 mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 pub use resolve::JavaResolver;
@@ -50,6 +51,15 @@ impl LanguagePlugin for JavaPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
+    }
+
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        embedded::detect_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

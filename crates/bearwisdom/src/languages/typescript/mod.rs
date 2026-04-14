@@ -9,6 +9,7 @@ pub(crate) mod externals;
 pub mod connectors;
 mod calls;
 pub(crate) mod decorators;
+mod embedded;
 mod helpers;
 mod imports;
 mod narrowing;
@@ -37,7 +38,7 @@ mod extract_tests;
 mod resolve_tests;
 
 use crate::languages::LanguagePlugin;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;
 
 // Re-export the resolver for registration in default_resolvers().
@@ -74,6 +75,15 @@ impl LanguagePlugin for TypeScriptPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let is_tsx = file_path.ends_with(".tsx") || lang_id == "tsx";
         extract::extract(source, is_tsx)
+    }
+
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        embedded::detect_regions(source, lang_id)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

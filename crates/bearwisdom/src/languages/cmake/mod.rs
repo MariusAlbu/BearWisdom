@@ -1,5 +1,6 @@
 //! CMake language plugin.
 
+pub mod embedded;
 pub mod primitives;
 pub mod extract;
 pub mod resolve;
@@ -10,7 +11,7 @@ mod coverage_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
-use crate::types::ExtractionResult;
+use crate::types::{EmbeddedRegion, ExtractionResult};
 
 pub struct CMakePlugin;
 
@@ -40,6 +41,15 @@ impl LanguagePlugin for CMakePlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source, tree_sitter_cmake::LANGUAGE.into())
+    }
+
+    fn embedded_regions(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<EmbeddedRegion> {
+        embedded::detect_regions(source)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

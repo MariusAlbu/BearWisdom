@@ -25,7 +25,24 @@ use crate::languages::markdown::fenced;
 use crate::languages::markdown::info_string;
 use crate::types::{EmbeddedOrigin, EmbeddedRegion};
 
+/// Rust UI-framework macros whose body is HTML-like markup. Detected at
+/// `macro_invocation` nodes whose macro path's final segment matches one
+/// of these. The body of the enclosing token-tree becomes an `html` region
+/// with `EmbeddedOrigin::TemplateExpr`.
+const VIEW_MACRO_NAMES: &[&str] = &[
+    "view",   // leptos::view! { ... }
+    "html",   // yew::html! { ... }
+    "rsx",    // dioxus::rsx! { ... }
+    "rhtml",  // some crates
+];
+
 pub fn detect_regions(source: &str) -> Vec<EmbeddedRegion> {
+    let mut regions = detect_doc_fence_regions(source);
+    regions.extend(detect_view_macro_regions(source));
+    regions
+}
+
+fn detect_doc_fence_regions(source: &str) -> Vec<EmbeddedRegion> {
     let mut regions = Vec::new();
     for run in collect_doc_comment_runs(source) {
         // Strip the leading `///` or `//!` from each line (plus one
@@ -118,6 +135,96 @@ fn collect_doc_comment_runs(source: &str) -> Vec<DocRun> {
     runs
 }
 
+/// Walk the Rust tree-sitter AST and emit an HTML-ish region for every
+/// `view!` / `html!` / `rsx!` macro invocation. The body is the token-tree
+/// with its outer delimiters stripped. Interpolations `{expr}` are left in
+/// the text — the HTML sub-extractor tolerates stray braces in attribute
+/// values well enough for component-name extraction, which is the main
+/// signal we want to preserve.
+fn detect_view_macro_regions(source: &str) -> Vec<EmbeddedRegion> {
+    use tree_sitter::Parser;
+    let mut parser = Parser::new();
+    if parser
+        .set_language(&tree_sitter_rust::LANGUAGE.into())
+        .is_err()
+    {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let mut regions = Vec::new();
+    walk_for_view_macros(&tree.root_node(), source, &mut regions);
+    regions
+}
+
+fn walk_for_view_macros(
+    node: &tree_sitter::Node,
+    source: &str,
+    regions: &mut Vec<EmbeddedRegion>,
+) {
+    if node.kind() == "macro_invocation" {
+        if let Some(region) = try_extract_view_macro(node, source) {
+            regions.push(region);
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        walk_for_view_macros(&child, source, regions);
+    }
+}
+
+fn try_extract_view_macro(
+    node: &tree_sitter::Node,
+    source: &str,
+) -> Option<EmbeddedRegion> {
+    let macro_node = node.child_by_field_name("macro")?;
+    let macro_text = source.get(macro_node.start_byte()..macro_node.end_byte())?;
+    // Final path segment — `leptos::view` → `view`.
+    let last_seg = macro_text.rsplit("::").next().unwrap_or(macro_text);
+    let name = last_seg.trim_end_matches('!').trim();
+    if !VIEW_MACRO_NAMES.contains(&name) {
+        return None;
+    }
+    // The token-tree child holds the `{...}`, `(...)`, or `[...]` body.
+    let mut cursor = node.walk();
+    let token_tree = node
+        .children(&mut cursor)
+        .find(|c| c.kind() == "token_tree")?;
+    let body_text = source.get(token_tree.start_byte()..token_tree.end_byte())?;
+    if body_text.len() < 2 {
+        return None;
+    }
+    // Strip outer delimiters.
+    let inner = &body_text[1..body_text.len() - 1];
+    let trimmed = inner.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Body position skips the opening delimiter.
+    let start_byte = token_tree.start_byte() + 1;
+    let (line_offset, col_offset) = byte_to_line_col(source, start_byte);
+    Some(EmbeddedRegion {
+        language_id: "html".to_string(),
+        text: inner.to_string(),
+        line_offset,
+        col_offset,
+        origin: EmbeddedOrigin::TemplateExpr,
+        holes: Vec::new(),
+        strip_scope_prefix: None,
+    })
+}
+
+fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
+    let prefix = &source[..byte.min(source.len())];
+    let line = prefix.bytes().filter(|&b| b == b'\n').count() as u32;
+    let col = match prefix.rfind('\n') {
+        Some(nl) => (byte - nl - 1) as u32,
+        None => byte as u32,
+    };
+    (line, col)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,5 +305,47 @@ pub fn f() {}
         assert_eq!(regions.len(), 1);
         // Body starts at the line AFTER ```rust — source line 5 (0-indexed).
         assert_eq!(regions[0].line_offset, 5);
+    }
+
+    #[test]
+    fn leptos_view_macro_emits_html_region() {
+        let src = "fn app() { view! { <Button on_click=handle>Click</Button> } }";
+        let regions = detect_regions(src);
+        let view_region = regions.iter().find(|r| r.language_id == "html").expect("html region");
+        assert_eq!(view_region.origin, EmbeddedOrigin::TemplateExpr);
+        assert!(view_region.text.contains("<Button"));
+        assert!(view_region.text.contains("Click"));
+    }
+
+    #[test]
+    fn yew_html_macro_emits_region() {
+        let src = "fn view() { html! { <div class=\"foo\"><p>{name}</p></div> } }";
+        let regions = detect_regions(src);
+        let r = regions.iter().find(|r| r.language_id == "html").expect("html region");
+        assert!(r.text.contains("<div"));
+        assert!(r.text.contains("<p"));
+    }
+
+    #[test]
+    fn dioxus_rsx_macro_emits_region() {
+        let src = "fn app() { rsx! { div { \"hi\" } } }";
+        let regions = detect_regions(src);
+        // rsx uses non-HTML syntax but we still emit a region — the HTML
+        // sub-parser may find nothing, which is fine.
+        assert_eq!(regions.iter().filter(|r| r.language_id == "html").count(), 1);
+    }
+
+    #[test]
+    fn scoped_leptos_view_path_recognized() {
+        let src = "fn a() { leptos::view! { <A/> } }";
+        let regions = detect_regions(src);
+        assert!(regions.iter().any(|r| r.language_id == "html"));
+    }
+
+    #[test]
+    fn non_view_macro_ignored() {
+        let src = "fn main() { println!(\"hi\"); vec![1,2,3]; }";
+        let regions = detect_regions(src);
+        assert!(regions.iter().all(|r| r.language_id != "html"));
     }
 }
