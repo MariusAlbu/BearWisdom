@@ -717,6 +717,7 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
             routes: Vec::new(),
             db_sets: Vec::new(),
             symbol_origin_languages: Vec::new(),
+            symbol_from_snippet: Vec::new(),
             content: Some(content),
             has_errors: false,
         });
@@ -739,6 +740,11 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
     // so the origin vector starts empty and grows only when we splice in
     // sub-extracted regions below.
     let mut symbol_origin_languages: Vec<Option<String>> = Vec::new();
+    // E3: parallel snippet flag — true for symbols spliced in from a
+    // MarkdownFence region (fenced code in Markdown, Rust doctests, Python
+    // docstring `>>>` lines). Used downstream to exclude these symbols'
+    // unresolved references from aggregate resolution stats.
+    let mut symbol_from_snippet: Vec<bool> = Vec::new();
 
     // Dispatch embedded regions (Vue/Svelte/Astro/Razor/HTML/PHP/MDX) —
     // each region is sub-parsed by the declared language's plugin and the
@@ -747,12 +753,14 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
     if !regions.is_empty() {
         // Pad origin vec so host symbols are all None before we append Some(..).
         symbol_origin_languages.resize(r.symbols.len(), None);
+        symbol_from_snippet.resize(r.symbols.len(), false);
         dispatch_embedded_regions(
             &walked.relative_path,
             registry,
             regions,
             &mut r,
             &mut symbol_origin_languages,
+            &mut symbol_from_snippet,
         );
     }
 
@@ -769,6 +777,7 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
         routes: r.routes,
         db_sets: r.db_sets,
         symbol_origin_languages,
+        symbol_from_snippet,
         content: Some(content),
         has_errors: r.has_errors,
     })
@@ -833,7 +842,9 @@ fn dispatch_embedded_regions(
     regions: Vec<crate::types::EmbeddedRegion>,
     r: &mut crate::types::ExtractionResult,
     origin_langs: &mut Vec<Option<String>>,
+    from_snippet: &mut Vec<bool>,
 ) {
+    use crate::types::EmbeddedOrigin;
     for region in regions {
         let sub_plugin = registry.get(&region.language_id);
         let sub_text = if region.holes.is_empty() {
@@ -848,6 +859,11 @@ fn dispatch_embedded_regions(
         let symbol_offset = r.symbols.len();
         let line_offset = region.line_offset;
         let col_offset = region.col_offset;
+        // E3: Markdown fenced code, Rust doctests, and Python doctests are
+        // snippet contexts — usually missing imports, so unresolved refs
+        // from their symbols should be excluded from aggregate resolution
+        // stats. Frontmatter (YAML/TOML/JSON) doesn't qualify.
+        let region_is_snippet = matches!(region.origin, EmbeddedOrigin::MarkdownFence);
 
         for mut sym in sub.symbols {
             let start_on_first = sym.start_line == 0;
@@ -879,6 +895,7 @@ fn dispatch_embedded_regions(
             }
             r.symbols.push(sym);
             origin_langs.push(Some(region.language_id.clone()));
+            from_snippet.push(region_is_snippet);
         }
         for mut rf in sub.refs {
             rf.source_symbol_index += symbol_offset;
@@ -1381,7 +1398,7 @@ pub(crate) fn read_stats(
            (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM edges),
-           (SELECT COUNT(*) FROM unresolved_refs),
+           (SELECT COUNT(*) FROM unresolved_refs WHERE from_snippet = 0),
            (SELECT COUNT(*) FROM external_refs),
            (SELECT COUNT(*) FROM routes),
            (SELECT COUNT(*) FROM db_mappings),

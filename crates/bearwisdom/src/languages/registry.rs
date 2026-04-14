@@ -121,6 +121,7 @@ mod tests {
             routes: Vec::new(),
             db_sets: Vec::new(),
             symbol_origin_languages: origins,
+            symbol_from_snippet: Vec::new(),
             content: None,
             has_errors: false,
         }

@@ -168,6 +168,7 @@ mod tests {
             routes: vec![],
             db_sets: vec![],
             symbol_origin_languages: vec![],
+            symbol_from_snippet: vec![],
             content: None,
             has_errors: false,
         }

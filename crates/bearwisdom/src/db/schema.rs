@@ -153,6 +153,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_external_refs_package   ON external_refs(package_id)   WHERE package_id IS NOT NULL;
          CREATE INDEX IF NOT EXISTS idx_unresolved_refs_package ON unresolved_refs(package_id) WHERE package_id IS NOT NULL;"
     )?;
+    // v0.8 (E3): Snippet-origin flag on unresolved_refs. Set to 1 for refs
+    // that originate from symbols spliced in from a Markdown fenced code
+    // block, Rust doctest, or Python docstring `>>>` region. Aggregate
+    // resolution stats exclude these rows — snippets typically lack imports.
+    if !column_exists(conn, "unresolved_refs", "from_snippet") {
+        conn.execute_batch(
+            "ALTER TABLE unresolved_refs ADD COLUMN from_snippet INTEGER NOT NULL DEFAULT 0"
+        )?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_unresolved_refs_snippet
+           ON unresolved_refs(from_snippet) WHERE from_snippet = 1"
+    )?;
     Ok(())
 }
 
@@ -327,7 +340,8 @@ CREATE TABLE IF NOT EXISTS unresolved_refs (
     kind        TEXT    NOT NULL,
     source_line INTEGER,
     module      TEXT,
-    package_id  INTEGER REFERENCES packages(id) ON DELETE SET NULL  -- M1/M2: per-package attribution
+    package_id  INTEGER REFERENCES packages(id) ON DELETE SET NULL,  -- M1/M2: per-package attribution
+    from_snippet INTEGER NOT NULL DEFAULT 0                          -- E3: 1 if source symbol is from a Markdown fence / doctest
 );
 
 CREATE INDEX IF NOT EXISTS idx_unresolved_name       ON unresolved_refs(target_name);

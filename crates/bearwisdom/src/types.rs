@@ -391,6 +391,16 @@ pub enum EmbeddedOrigin {
     /// `{% tag … %}` (Twig / Jinja / Liquid) directive forms that control
     /// template flow (`block`, `extends`, `include`, `use`, `set`, etc.).
     TemplateDirective,
+    /// Fenced code block (```lang ... ```) inside a Markdown/MDX host or a
+    /// host-language doc comment (Rust `///`, JSDoc `@example`, Python
+    /// docstring `>>>`). Snippets tag their symbols as `from_snippet=true`
+    /// so unresolved references don't pollute the project's resolution
+    /// stats — snippets are usually missing imports.
+    MarkdownFence,
+    /// YAML / TOML / JSON frontmatter block at the top of a Markdown file
+    /// (Jekyll, Hugo, Docusaurus, Obsidian, Hexo, Astro content collection).
+    /// Not snippet-tagged — frontmatter is structured configuration.
+    MarkdownFrontmatter,
 }
 
 impl ExtractionResult {
@@ -455,6 +465,14 @@ pub struct ParsedFile {
     /// file). Always the same length as `symbols`, or empty if no sub-
     /// extraction happened (DB insert treats empty as all-None).
     pub symbol_origin_languages: Vec<Option<String>>,
+    /// E3: per-symbol snippet flag, parallel to `symbols`. `true` means the
+    /// symbol was extracted from a code snippet — Markdown fenced block,
+    /// Rust doc-test, Python doctest. Snippet symbols propagate
+    /// `unresolved_refs.from_snippet = 1` so resolution-rate aggregates can
+    /// exclude them (snippets typically lack imports, so noise is expected).
+    /// Same length as `symbols`, or empty if no snippet extraction happened
+    /// (DB insert treats empty as all-false).
+    pub symbol_from_snippet: Vec<bool>,
     /// Raw file content, retained for FTS5 content indexing and code chunk extraction.
     pub content: Option<String>,
     /// True if tree-sitter reported syntax errors (extraction is still attempted).

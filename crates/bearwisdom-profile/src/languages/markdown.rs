@@ -3,7 +3,7 @@ use crate::types::*;
 pub static MARKDOWN: LanguageDescriptor = LanguageDescriptor {
     id: "markdown",
     display_name: "Markdown",
-    file_extensions: &[".md", ".mdx", ".markdown"],
+    file_extensions: &[".md", ".markdown", ".mdown", ".mkd", ".mkdn", ".mdx"],
     filenames: &["README", "CHANGELOG", "CONTRIBUTING", "LICENSE"],
     aliases: &["md"],
     exclude_dirs: &[],

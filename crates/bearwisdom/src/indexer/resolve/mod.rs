@@ -386,10 +386,17 @@ fn resolve_and_write_inner(
                     // Truly unresolved — no external namespace identified,
                     // no heuristic match found.
                     let module_value = r.module.as_deref();
+                    // E3: propagate snippet flag from source symbol for
+                    // aggregate-stats exclusion.
+                    let from_snippet = pf
+                        .symbol_from_snippet
+                        .get(r.source_symbol_index)
+                        .copied()
+                        .unwrap_or(false);
                     tx.prepare_cached(
                         "INSERT INTO unresolved_refs
-                           (source_id, target_name, kind, source_line, module, package_id)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                           (source_id, target_name, kind, source_line, module, package_id, from_snippet)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                     )
                     .and_then(|mut stmt| {
                         stmt.execute(rusqlite::params![
@@ -399,6 +406,7 @@ fn resolve_and_write_inner(
                             r.line,
                             module_value,
                             pf.package_id,
+                            from_snippet as i32,
                         ])
                     })
                     .ok();

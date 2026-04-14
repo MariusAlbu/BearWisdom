@@ -34,7 +34,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
            (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM edges),
-           (SELECT COUNT(*) FROM unresolved_refs),
+           (SELECT COUNT(*) FROM unresolved_refs WHERE from_snippet = 0),
            (SELECT COUNT(*) FROM external_refs),
            (SELECT COUNT(*) FROM routes),
            (SELECT COUNT(*) FROM db_mappings),

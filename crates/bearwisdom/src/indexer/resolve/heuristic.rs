@@ -148,17 +148,25 @@ pub fn resolve_and_write(
                     }
                 }
                 None => {
-                    // Store for diagnostics.
+                    // Store for diagnostics. E3: tag with from_snippet when
+                    // the source symbol originated from a Markdown fence or
+                    // doctest region — excluded from aggregate stats.
+                    let from_snippet = pf
+                        .symbol_from_snippet
+                        .get(r.source_symbol_index)
+                        .copied()
+                        .unwrap_or(false);
                     tx.execute(
                         "INSERT INTO unresolved_refs
-                           (source_id, target_name, kind, source_line, module)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                           (source_id, target_name, kind, source_line, module, from_snippet)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         rusqlite::params![
                             source_id,
                             r.target_name,
                             r.kind.as_str(),
                             r.line,
                             r.module,
+                            from_snippet as i32,
                         ],
                     ).ok(); // best-effort — don't fail the whole pass
                     unresolved += 1;
