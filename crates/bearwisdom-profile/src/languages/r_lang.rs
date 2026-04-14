@@ -3,7 +3,7 @@ use crate::types::*;
 pub static R: LanguageDescriptor = LanguageDescriptor {
     id: "r",
     display_name: "R",
-    file_extensions: &[".R", ".r", ".Rmd"],
+    file_extensions: &[".R", ".r"],
     filenames: &[],
     aliases: &["rlang"],
     exclude_dirs: &[".Rproj.user", "renv"],

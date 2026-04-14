@@ -190,6 +190,7 @@ pub mod haskell;
 pub mod hcl;
 pub mod java;
 pub mod javascript;
+pub mod jupyter;
 pub mod kotlin;
 pub mod lua;
 pub mod make;
@@ -199,12 +200,14 @@ pub mod nim;
 pub mod nix;
 pub mod odin;
 pub mod php;
+pub mod polyglot_nb;
 pub mod prisma;
 pub mod proto;
 pub mod puppet;
 pub mod python;
 pub mod r_lang;
 pub mod razor;
+pub mod rmarkdown;
 pub mod robot;
 pub mod ruby;
 pub mod rust_lang;
@@ -310,6 +313,11 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(erlang::ErlangPlugin));
     reg.register(Arc::new(fsharp::FSharpPlugin));
     reg.register(Arc::new(gdscript::GDScriptPlugin));
+    // E5 — notebook family
+    reg.register(Arc::new(jupyter::JupyterPlugin));
+    reg.register(Arc::new(rmarkdown::RMarkdownPlugin));
+    reg.register(Arc::new(rmarkdown::QuartoPlugin));
+    reg.register(Arc::new(polyglot_nb::PolyglotNbPlugin));
 
     reg
 });

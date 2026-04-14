@@ -401,6 +401,12 @@ pub enum EmbeddedOrigin {
     /// (Jekyll, Hugo, Docusaurus, Obsidian, Hexo, Astro content collection).
     /// Not snippet-tagged — frontmatter is structured configuration.
     MarkdownFrontmatter,
+    /// A single code cell inside a notebook (Jupyter `.ipynb`,
+    /// RMarkdown `.Rmd`, Quarto `.qmd`, or .NET Polyglot `.dib`).
+    /// Notebook cells are NOT snippet-tagged — they're real, runnable
+    /// project code whose unresolved refs should count against
+    /// aggregate resolution stats the same as any other source file.
+    NotebookCell,
 }
 
 impl ExtractionResult {
