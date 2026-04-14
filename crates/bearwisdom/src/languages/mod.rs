@@ -188,6 +188,7 @@ pub mod graphql;
 pub mod hare;
 pub mod haskell;
 pub mod hcl;
+pub mod html;
 pub mod java;
 pub mod javascript;
 pub mod jupyter;
@@ -264,6 +265,7 @@ static DEFAULT_REGISTRY: LazyLock<LanguageRegistry> = LazyLock::new(|| {
     reg.register(Arc::new(hare::HarePlugin));
     reg.register(Arc::new(haskell::HaskellPlugin));
     reg.register(Arc::new(hcl::HclPlugin));
+    reg.register(Arc::new(html::HtmlPlugin));
     reg.register(Arc::new(java::JavaPlugin));
     reg.register(Arc::new(javascript::JavascriptPlugin));
     reg.register(Arc::new(kotlin::KotlinPlugin));
