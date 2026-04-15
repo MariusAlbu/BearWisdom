@@ -35,8 +35,8 @@ impl LanguagePlugin for RLangPlugin {
         &[]
     }
 
-    fn extract(&self, source: &str, _file_path: &str, _lang_id: &str) -> ExtractionResult {
-        extract::extract(source)
+    fn extract(&self, source: &str, file_path: &str, _lang_id: &str) -> ExtractionResult {
+        extract::extract(source, file_path)
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

@@ -192,6 +192,7 @@ fn all_readers() -> Vec<Box<dyn ManifestReader>> {
         Box::new(zig_zon::ZigZonManifest),
         Box::new(clojure::ClojureManifest),
         Box::new(rockspec::RockspecManifest),
+        Box::new(description::DescriptionManifest),
     ]
 }
 

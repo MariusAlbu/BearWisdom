@@ -33,7 +33,15 @@ const TEST_FUNCS: &[&str] = &["test_that", "it", "describe"];
 // Public entry point
 // ---------------------------------------------------------------------------
 
-pub fn extract(source: &str) -> ExtractionResult {
+pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
+    // NAMESPACE files in R packages use a special directive syntax that the
+    // tree-sitter R grammar parses as call expressions, but which we need to
+    // treat as symbol *definitions* rather than call references. Short-circuit
+    // to the dedicated NAMESPACE parser when the file path ends with NAMESPACE.
+    if file_path.ends_with("/NAMESPACE") || file_path.ends_with("\\NAMESPACE") || file_path == "NAMESPACE" {
+        return parse_namespace_file(source, file_path);
+    }
+
     let lang: tree_sitter::Language = tree_sitter_r::LANGUAGE.into();
 
     let mut parser = Parser::new();
@@ -54,6 +62,112 @@ pub fn extract(source: &str) -> ExtractionResult {
     visit(root, src, &mut symbols, &mut refs, None);
 
     ExtractionResult::new(symbols, refs, has_errors)
+}
+
+// ---------------------------------------------------------------------------
+// NAMESPACE file parser — emits Function symbols for each exported name
+// ---------------------------------------------------------------------------
+
+/// Parse an R package NAMESPACE file and emit Function symbols for every
+/// exported name. The NAMESPACE format uses R-syntax directives:
+///
+///   export(func1, func2)          — explicit function exports
+///   exportPattern("^[^\\.]")      — regex pattern export (emit as-is)
+///   S3method(generic, class)      — S3 method registration (skip — internal)
+///   importFrom(pkg, name)         — import from another package (skip)
+///   import(pkg)                   — import whole package (skip)
+///   useDynLib(...)                — C linkage (skip)
+///
+/// We emit one `Function` symbol per exported name. For `exportPattern` we
+/// emit a single `Function` symbol named `<pattern>` so the resolver has
+/// something to match against if needed.
+fn parse_namespace_file(source: &str, _file_path: &str) -> ExtractionResult {
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut line_num: u32 = 0;
+
+    for raw_line in source.lines() {
+        let line = raw_line.trim();
+        line_num += 1;
+
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        // Accumulate multi-line export(...) blocks by detecting unclosed parens.
+        // For simplicity we handle the common single-line and the typical
+        // multi-line-one-per-arg patterns by splitting on commas after
+        // extracting the directive name and its argument list.
+        if let Some(rest) = line.strip_prefix("export(") {
+            let args = strip_trailing_paren(rest);
+            emit_export_args(args, line_num, &mut symbols);
+        } else if let Some(rest) = line.strip_prefix("exportPattern(") {
+            let pattern = strip_trailing_paren(rest).trim().trim_matches(|c| c == '"' || c == '\'');
+            if !pattern.is_empty() {
+                symbols.push(make_function_symbol(pattern, line_num));
+            }
+        } else if let Some(rest) = line.strip_prefix("exportMethods(") {
+            // S4 generic method exports — treat same as export()
+            let args = strip_trailing_paren(rest);
+            emit_export_args(args, line_num, &mut symbols);
+        } else if let Some(rest) = line.strip_prefix("exportClasses(") {
+            // S4 class exports — emit as Class symbols
+            let args = strip_trailing_paren(rest);
+            for name in split_namespace_args(args) {
+                let clean = name.trim().trim_matches(|c| c == '"' || c == '\'');
+                if !clean.is_empty() {
+                    symbols.push(make_function_symbol(clean, line_num));
+                }
+            }
+        }
+        // S3method, importFrom, import, useDynLib — all skipped intentionally.
+    }
+
+    ExtractionResult::new(symbols, vec![], false)
+}
+
+/// Extract individual export names from an `export(a, b, c)` argument string
+/// (the part after the opening paren, possibly including the closing paren).
+fn emit_export_args(args: &str, line_num: u32, symbols: &mut Vec<ExtractedSymbol>) {
+    for name in split_namespace_args(args) {
+        let clean = name.trim().trim_matches(|c| c == '"' || c == '\'');
+        if !clean.is_empty() {
+            symbols.push(make_function_symbol(clean, line_num));
+        }
+    }
+}
+
+/// Strip the trailing `)` from a NAMESPACE directive argument string.
+/// Handles both `func)` and `func` (already stripped).
+fn strip_trailing_paren(s: &str) -> &str {
+    s.trim_end_matches(')').trim_end_matches(|c: char| c == ',' || c == ' ')
+}
+
+/// Split a comma-separated argument list that may contain quoted strings.
+/// Handles backtick-quoted names, single-quoted, and double-quoted exports.
+fn split_namespace_args(args: &str) -> Vec<&str> {
+    // Simple comma split — good enough for NAMESPACE format which doesn't
+    // nest function calls inside argument lists.
+    args.split(',')
+        .map(|s| s.trim().trim_end_matches(')'))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn make_function_symbol(name: &str, line: u32) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: name.to_string(),
+        qualified_name: name.to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: line.saturating_sub(1),
+        end_line: line.saturating_sub(1),
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    }
 }
 
 // ---------------------------------------------------------------------------

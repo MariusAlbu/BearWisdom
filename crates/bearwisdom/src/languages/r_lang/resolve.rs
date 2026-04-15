@@ -44,7 +44,7 @@ impl LanguageResolver for RResolver {
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         let mut imports = Vec::new();
 
@@ -62,6 +62,37 @@ impl LanguageResolver for RResolver {
                 alias: None,
                 is_wildcard: true,
             });
+        }
+
+        // R packages declare their namespace imports via `DESCRIPTION` Imports /
+        // Depends fields (parsed at index time into ManifestKind::Description).
+        // These don't produce explicit `library()` calls in source files — they
+        // are package-level implicit wildcard imports. Add a wildcard entry for
+        // every declared dep so the resolver can classify bare function calls
+        // (e.g. `abort()` from `rlang`) as external.
+        //
+        // We add these as *lower-priority* entries after any explicit library()
+        // calls; if a library() call already added the package, the resolver
+        // sees it once. Duplicates are harmless — the engine stops on first
+        // matching wildcard that passes the manifest check.
+        if let Some(ctx) = project_ctx {
+            let all_deps = ctx.all_dependency_names();
+            for dep in &all_deps {
+                // Skip base R "packages" that are never external.
+                if matches!(dep.as_str(), "methods" | "utils" | "stats" | "base"
+                    | "datasets" | "grDevices" | "graphics" | "tools") {
+                    continue;
+                }
+                // Only add if not already present from an explicit library() call.
+                if !imports.iter().any(|i| i.module_path.as_deref() == Some(dep)) {
+                    imports.push(ImportEntry {
+                        imported_name: dep.clone(),
+                        module_path: Some(dep.clone()),
+                        alias: None,
+                        is_wildcard: true,
+                    });
+                }
+            }
         }
 
         FileContext {

@@ -52,14 +52,24 @@ impl ExternalSourceLocator for RExternalsLocator {
 pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     use crate::indexer::manifest::description::parse_description_deps;
 
-    let description_path = project_root.join("DESCRIPTION");
-    if !description_path.is_file() {
-        return Vec::new();
-    }
-    let Ok(description_content) = std::fs::read_to_string(&description_path) else {
-        return Vec::new();
+    // Collect declared package names from the best available manifest.
+    // Priority: renv.lock (authoritative for installed snapshot) > DESCRIPTION.
+    let declared: Vec<String> = {
+        let renv_lock = project_root.join("renv.lock");
+        if renv_lock.is_file() {
+            parse_renv_lock_packages(&renv_lock).unwrap_or_default()
+        } else {
+            let description_path = project_root.join("DESCRIPTION");
+            if description_path.is_file() {
+                std::fs::read_to_string(&description_path)
+                    .ok()
+                    .map(|c| parse_description_deps(&c))
+                    .unwrap_or_default()
+            } else {
+                Vec::new()
+            }
+        }
     };
-    let declared: Vec<String> = parse_description_deps(&description_content);
     if declared.is_empty() {
         return Vec::new();
     }
@@ -105,6 +115,24 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 /// installed packages for this project.
 fn r_candidate_library_paths(project_root: &Path) -> Vec<PathBuf> {
     let mut candidates = Vec::new();
+
+    // 0. BEARWISDOM_R_LIBS environment override — highest priority.
+    //    Semicolon-separated on Windows, colon-separated on Unix.
+    //    Used for CI/test environments where R is not installed system-wide.
+    if let Ok(override_libs) = std::env::var("BEARWISDOM_R_LIBS") {
+        let sep = if cfg!(windows) { ';' } else { ':' };
+        for entry in override_libs.split(sep) {
+            let p = PathBuf::from(entry);
+            if p.is_dir() {
+                candidates.push(p);
+            }
+        }
+        // When the override is set, skip all other discovery — the caller
+        // explicitly told us where to look.
+        if !candidates.is_empty() {
+            return candidates;
+        }
+    }
 
     // 1. renv project-local library — `renv/library/<platform>/<r-ver>/`.
     //    renv nests two levels deep for platform / R version, but package
@@ -240,4 +268,133 @@ pub fn walk_r_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         absolute_path: namespace_path,
         language: "r",
     }]
+}
+
+/// Parse package names from an `renv.lock` JSON file.
+///
+/// renv.lock structure:
+/// ```json
+/// {
+///   "R": { "Version": "4.3.0", ... },
+///   "Packages": {
+///     "rlang": { "Package": "rlang", "Version": "1.2.0", ... },
+///     ...
+///   }
+/// }
+/// ```
+/// Returns the set of package names listed under `"Packages"`.
+pub fn parse_renv_lock_packages(renv_lock: &std::path::Path) -> Option<Vec<String>> {
+    let content = std::fs::read_to_string(renv_lock).ok()?;
+    let val: serde_json::Value = serde_json::from_str(&content).ok()?;
+    let packages = val.get("Packages")?.as_object()?;
+    let mut names: Vec<String> = packages.keys().cloned().collect();
+    names.sort();
+    Some(names)
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    /// `r_candidate_library_paths` honours `BEARWISDOM_R_LIBS` when set.
+    #[test]
+    fn bearwisdom_r_libs_env_override_is_picked_up() {
+        let tmp = TempDir::new().unwrap();
+        let lib_dir = tmp.path().to_path_buf();
+
+        let old = std::env::var("BEARWISDOM_R_LIBS").ok();
+        std::env::set_var("BEARWISDOM_R_LIBS", lib_dir.to_str().unwrap());
+
+        let candidates = r_candidate_library_paths(std::path::Path::new("/nonexistent"));
+
+        match old {
+            Some(v) => std::env::set_var("BEARWISDOM_R_LIBS", v),
+            None => std::env::remove_var("BEARWISDOM_R_LIBS"),
+        }
+
+        assert!(
+            candidates.contains(&lib_dir),
+            "Expected BEARWISDOM_R_LIBS path in candidates; got {:?}",
+            candidates
+        );
+    }
+
+    /// `discover_r_externals` finds packages under a `BEARWISDOM_R_LIBS` cache.
+    #[test]
+    fn discovers_r_externals_from_lib_cache() {
+        let tmp = TempDir::new().unwrap();
+
+        // Fake project with DESCRIPTION declaring a dep on "mypkg"
+        fs::write(
+            tmp.path().join("DESCRIPTION"),
+            "Package: testpkg\nVersion: 1.0\nImports:\n    mypkg\n",
+        )
+        .unwrap();
+
+        // Fake R library with mypkg installed
+        let lib_dir = tmp.path().join("r-lib");
+        let pkg_dir = lib_dir.join("mypkg");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(pkg_dir.join("DESCRIPTION"), "Package: mypkg\nVersion: 2.0\n").unwrap();
+        fs::write(pkg_dir.join("NAMESPACE"), "export(hello)\nexport(world)\n").unwrap();
+
+        let old = std::env::var("BEARWISDOM_R_LIBS").ok();
+        std::env::set_var("BEARWISDOM_R_LIBS", lib_dir.to_str().unwrap());
+
+        let roots = discover_r_externals(tmp.path());
+
+        match old {
+            Some(v) => std::env::set_var("BEARWISDOM_R_LIBS", v),
+            None => std::env::remove_var("BEARWISDOM_R_LIBS"),
+        }
+
+        assert_eq!(roots.len(), 1, "expected 1 root; got {:?}", roots);
+        assert_eq!(roots[0].module_path, "mypkg");
+        assert_eq!(roots[0].version, "2.0");
+    }
+
+    /// `walk_r_external_root` emits the NAMESPACE file as a WalkedFile.
+    #[test]
+    fn walk_emits_namespace_as_walked_file() {
+        let tmp = TempDir::new().unwrap();
+        let pkg_dir = tmp.path().join("mypkg");
+        fs::create_dir_all(&pkg_dir).unwrap();
+        fs::write(pkg_dir.join("NAMESPACE"), "export(foo)\n").unwrap();
+
+        let dep = ExternalDepRoot {
+            module_path: "mypkg".to_string(),
+            version: "1.0".to_string(),
+            root: pkg_dir,
+            ecosystem: "r",
+            package_id: None,
+        };
+
+        let walked = walk_r_external_root(&dep);
+        assert_eq!(walked.len(), 1);
+        assert_eq!(walked[0].relative_path, "ext:r:mypkg/NAMESPACE");
+        assert_eq!(walked[0].language, "r");
+    }
+
+    /// `parse_renv_lock_packages` extracts package names from renv.lock JSON.
+    #[test]
+    fn parse_renv_lock_extracts_package_names() {
+        let tmp = TempDir::new().unwrap();
+        let lock = tmp.path().join("renv.lock");
+        fs::write(
+            &lock,
+            r#"{"R":{"Version":"4.3.0"},"Packages":{"rlang":{"Package":"rlang","Version":"1.2.0"},"vctrs":{"Package":"vctrs","Version":"0.6.5"}}}"#,
+        )
+        .unwrap();
+
+        let names = parse_renv_lock_packages(&lock).unwrap();
+        assert!(names.contains(&"rlang".to_string()));
+        assert!(names.contains(&"vctrs".to_string()));
+        assert_eq!(names.len(), 2);
+    }
 }

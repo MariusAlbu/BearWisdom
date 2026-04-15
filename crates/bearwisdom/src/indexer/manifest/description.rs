@@ -45,7 +45,13 @@ impl ManifestReader for DescriptionManifest {
         let content = std::fs::read_to_string(&description_path).ok()?;
 
         let mut data = ManifestData::default();
-        for name in parse_description_deps(&content) {
+        // For resolver classification, only `Imports` and `Depends` represent
+        // packages whose symbols are unconditionally in scope for the package's
+        // main R code. `Suggests` and `LinkingTo` are excluded:
+        //   - `Suggests`: optional test/vignette deps — not available in runtime
+        //     namespaces, so their names must not fire the wildcard import path.
+        //   - `LinkingTo`: C/C++ header-level deps — no R symbol imports.
+        for name in parse_description_runtime_deps(&content) {
             data.dependencies.insert(name);
         }
         Some(data)
@@ -56,6 +62,20 @@ impl ManifestReader for DescriptionManifest {
 // Internal helpers
 // ---------------------------------------------------------------------------
 
+/// Parse runtime-import package names from a DESCRIPTION file — only
+/// `Depends` and `Imports` sections. These are the packages whose symbols
+/// are unconditionally in scope for the package's main R code.
+///
+/// `Suggests` (optional test/vignette deps) and `LinkingTo` (C/C++ headers)
+/// are excluded: they must not fire the wildcard import path in the resolver.
+///
+/// Used by the manifest reader (`DescriptionManifest`) for resolver classification.
+/// Use `parse_description_deps` when you need all four sections (e.g. externals
+/// discovery, where we want to index Suggests packages if installed).
+pub fn parse_description_runtime_deps(content: &str) -> Vec<String> {
+    parse_description_fields(content, &["Depends", "Imports"])
+}
+
 /// Parse dependency package names from a DESCRIPTION file's body.
 ///
 /// Walks the file line by line and extracts values for the four dependency
@@ -65,11 +85,15 @@ impl ManifestReader for DescriptionManifest {
 /// the result set.
 ///
 /// Returns a `Vec<String>` (deduplicated, stable-order) of package names.
+/// For resolver use, prefer `parse_description_runtime_deps` (Imports+Depends only).
 pub fn parse_description_deps(content: &str) -> Vec<String> {
+    parse_description_fields(content, &["Depends", "Imports", "LinkingTo", "Suggests"])
+}
+
+fn parse_description_fields(content: &str, field_names: &[&str]) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
-    let field_names = ["Depends", "Imports", "LinkingTo", "Suggests"];
     for field in field_names {
         if let Some(value) = read_field(content, field) {
             for pkg in split_package_list(&value) {
