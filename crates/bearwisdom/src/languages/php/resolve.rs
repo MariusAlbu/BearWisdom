@@ -192,6 +192,31 @@ impl LanguageResolver for PhpResolver {
             }
         }
 
+        // Step 5: Global bare-name lookup for PHP global helper functions.
+        //
+        // PHP helper functions like `route()`, `trans()`, `auth()`, `view()`,
+        // `config()` are declared at global scope — no namespace, so their
+        // qualified name in the index is just their simple name (e.g. `route`).
+        // These functions are called without `use` statements anywhere in the
+        // project, so Steps 1-4 all miss them. We look them up directly via
+        // `by_qualified_name(bare_name)` which finds external symbols indexed
+        // from vendor/laravel/framework/src/Illuminate/Foundation/helpers.php
+        // and similar global-helper files.
+        //
+        // Only triggers for Calls edges on simple (no-dot) names to avoid
+        // matching class method names (those always carry a scope prefix).
+        if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
+            if let Some(sym) = lookup.by_qualified_name(effective_target) {
+                if sym.kind == "function" {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.9,
+                        strategy: "php_global_function",
+                    });
+                }
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }
