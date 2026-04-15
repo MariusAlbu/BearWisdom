@@ -397,7 +397,11 @@ pub(crate) fn extract_java_sources_jar(jar_path: &Path, dest: &Path) -> std::io:
         let Some(name) = entry_path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        if !name.ends_with(".java") {
+        // Extract both Java source files and Clojure source files.
+        // Clojure Maven artifacts (ring, compojure, etc.) ship .clj sources
+        // in their standard jars; -sources.jar variants contain .java stubs for
+        // Java interop classes. We need both to index external Clojure libraries.
+        if !name.ends_with(".java") && !name.ends_with(".clj") && !name.ends_with(".cljc") {
             continue;
         }
         let out_path = dest.join(&entry_path);

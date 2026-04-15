@@ -4,6 +4,48 @@
 
 use crate::types::EdgeKind;
 
+/// True for Java interop method-call forms (start with `.`, e.g. `.getBytes`)
+/// and Java constructor-call forms (end with `.`, e.g. `File.`).
+///
+/// These can never resolve to a Clojure project symbol, so the resolver skips
+/// the symbol-index lookup and immediately classifies them as external.
+pub(super) fn is_java_interop(name: &str) -> bool {
+    // Method call: (.getBytes s), (.close stream)
+    // Constructor:  (File. path), (ByteArrayOutputStream.)
+    (name.starts_with('.') && name.len() > 1) || (name.ends_with('.') && name.len() > 1)
+}
+
+/// True for fully-qualified Java class references that contain internal dots,
+/// e.g. `java.io.ByteArrayOutputStream.`, `java.lang.Thread`, `javax.servlet.http.HttpServletRequest`.
+///
+/// Clojure namespace names also contain dots (e.g. `ring.util.codec`) but those
+/// are already handled by the import alias lookup path. This guard fires only
+/// for names that look like Java package paths because they start with a
+/// well-known Java top-level package (`java.`, `javax.`, `org.`, `com.`, `sun.`,
+/// `io.`, `net.`) which Clojure namespaces effectively never use as a prefix.
+pub(super) fn is_java_class_ref(name: &str) -> bool {
+    if !name.contains('.') {
+        return false;
+    }
+    // Names ending with `.` that also have internal `.` separators are
+    // fully-qualified constructor calls (already caught by is_java_interop,
+    // but guard here as well for clarity).
+    let check = name.trim_end_matches('.');
+    matches!(
+        check.split('.').next().unwrap_or(""),
+        "java"
+            | "javax"
+            | "org"
+            | "com"
+            | "sun"
+            | "io"
+            | "net"
+            | "edu"
+            | "gov"
+            | "mil"
+    )
+}
+
 /// Check that the edge kind is compatible with the symbol kind.
 pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     match edge_kind {
@@ -444,6 +486,119 @@ pub(super) fn is_clojure_builtin(name: &str) -> bool {
             | "recur"
             | "letfn"
             | "let*"
+            // Array / interop utilities (clojure.core)
+            | "into-array"
+            | "to-array"
+            | "to-array-2d"
+            | "object-array"
+            | "int-array"
+            | "long-array"
+            | "float-array"
+            | "double-array"
+            | "boolean-array"
+            | "byte-array"
+            | "char-array"
+            | "short-array"
+            | "make-array"
+            | "aset"
+            | "aget"
+            | "aclone"
+            | "alength"
+            | "amap"
+            | "areduce"
+            | "copy-array"
+            // Numeric extras
+            | "num"
+            | "int"
+            | "long"
+            | "float"
+            | "double"
+            | "short"
+            | "byte"
+            | "char"
+            | "boolean"
+            | "bigint"
+            | "biginteger"
+            | "bigdec"
+            | "rationalize"
+            | "bit-set"
+            | "bit-clear"
+            | "bit-flip"
+            | "bit-test"
+            // Misc clojure.core that commonly appear
+            | "str/join"
+            | "str/split"
+            | "str/replace"
+            | "str/starts-with?"
+            | "str/ends-with?"
+            | "str/includes?"
+            | "str/trim"
+            | "str/lower-case"
+            | "str/upper-case"
+            | "str/blank?"
+            | "nth"
+            | "peek"
+            | "pop"
+            | "subvec"
+            | "re-find"
+            | "re-matches"
+            | "not-empty"
+            | "min-key"
+            | "max-key"
+            | "fnil"
+            | "juxt"
+            | "constantly"
+            | "every-pred"
+            | "some-fn"
+            | "scan"
+            | "index"
+            | "project"
+            | "rename"
+            | "rename-keys"
+            | "map-invert"
+            | "union"
+            | "intersection"
+            | "difference"
+            | "subset?"
+            | "superset?"
+            | "walk"
+            | "prewalk"
+            | "postwalk"
+            | "keywordize-keys"
+            | "stringify-keys"
+            | "with-precision"
+            | "char?"
+            | "bytes?"
+            | "seqable?"
+            | "isa?"
+            | "supers"
+            | "ancestors"
+            | "descendants"
+            | "derive"
+            | "underive"
+            | "make-hierarchy"
+            | "set-validator!"
+            | "validator"
+            | "add-watch"
+            | "remove-watch"
+            | "alter-var-root"
+            | "var-get"
+            | "var-set"
+            | "test"
+            | "assert"
+            | "assert-any"
+            | "assert-predicate"
+            | "deftest"
+            | "testing"
+            | "is"
+            | "are"
+            | "use-fixtures"
+            | "run-tests"
+            | "run-all-tests"
+            | "test-vars"
+            | "with-test-out"
+            | "thrown?"
+            | "thrown-with-msg?"
             // Common single-letter / underscore locals emitted as refs
             | "_"
             | "k"
@@ -456,6 +611,8 @@ pub(super) fn is_clojure_builtin(name: &str) -> bool {
             | "s"
             | "r"
             | "h"
+            // Varargs marker — appears in param vecs [x & args]; emitted as ref in edge cases
+            | "&"
             // Common namespaces (used as unqualified aliases)
             | "clojure.string"
             | "clojure.set"
@@ -465,5 +622,10 @@ pub(super) fn is_clojure_builtin(name: &str) -> bool {
             | "clojure.test"
             | "clojure.spec.alpha"
             | "clojure.core.async"
+            | "clojure.java.io"
+            | "clojure.java.shell"
+            | "clojure.reflect"
+            | "clojure.repl"
+            | "clojure.edn"
     )
 }

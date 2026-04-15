@@ -1,7 +1,7 @@
 // indexer/manifest/clojure.rs — project.clj / deps.edn reader
 
 use std::path::Path;
-use super::{ManifestData, ManifestKind, ManifestReader};
+use super::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 
 pub struct ClojureManifest;
 
@@ -33,6 +33,112 @@ impl ManifestReader for ClojureManifest {
         }
 
         if found { Some(data) } else { None }
+    }
+
+    /// Monorepo-aware walk: discovers sub-project `project.clj` / `deps.edn`
+    /// files up to 3 directory levels deep.
+    ///
+    /// Leiningen multi-module projects (like the ring library) declare sub-modules
+    /// via `:sub [...]` in the root `project.clj`, but each sub-module carries its
+    /// own dependency list in its own `project.clj`. This override surfaces each
+    /// sub-module as a separate `ReaderEntry` so `is_manifest_dependency` can find
+    /// `ring/ring-codec` when resolving symbols in `ring-core/src/`.
+    fn read_all(&self, project_root: &Path) -> Vec<ReaderEntry> {
+        let mut out = Vec::new();
+        collect_clojure_manifests(project_root, project_root, &mut out, 0);
+        out
+    }
+}
+
+/// Recursively walk `dir` (bounded depth) looking for `project.clj` / `deps.edn`.
+/// Each manifest found becomes a separate `ReaderEntry` keyed to its directory.
+/// Skips well-known non-source directories to avoid false positives.
+fn collect_clojure_manifests(
+    project_root: &Path,
+    dir: &Path,
+    out: &mut Vec<ReaderEntry>,
+    depth: usize,
+) {
+    const MAX_DEPTH: usize = 3;
+
+    // Try to read a manifest at this directory level.
+    let mut data = ManifestData::default();
+    let mut found = false;
+    let mut manifest_path = dir.to_path_buf();
+
+    let project_clj = dir.join("project.clj");
+    if project_clj.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&project_clj) {
+            found = true;
+            manifest_path = project_clj;
+            for name in parse_project_clj_deps(&content) {
+                data.dependencies.insert(name);
+            }
+        }
+    }
+    let deps_edn = dir.join("deps.edn");
+    if deps_edn.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&deps_edn) {
+            if !found {
+                manifest_path = deps_edn;
+            }
+            found = true;
+            for name in parse_deps_edn_deps(&content) {
+                data.dependencies.insert(name);
+            }
+        }
+    }
+
+    if found {
+        // Extract a package name from the first `defproject` or `deps.edn` root key.
+        let rel = dir.strip_prefix(project_root).unwrap_or(dir);
+        let name = rel
+            .file_name()
+            .map(|s| s.to_string_lossy().into_owned())
+            .or_else(|| {
+                project_root
+                    .file_name()
+                    .map(|s| s.to_string_lossy().into_owned())
+            })
+            .unwrap_or_else(|| "root".to_string());
+        out.push(ReaderEntry {
+            package_dir: dir.to_path_buf(),
+            manifest_path,
+            data,
+            name: Some(name),
+        });
+    }
+
+    if depth >= MAX_DEPTH {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        // Skip directories that never contain sub-project manifests.
+        if matches!(
+            name,
+            ".git"
+                | "target"
+                | "out"
+                | "node_modules"
+                | ".clj-kondo"
+                | ".lsp"
+                | ".cpcache"
+                | "resources"
+                | "doc"
+                | "docs"
+        ) {
+            continue;
+        }
+        collect_clojure_manifests(project_root, &path, out, depth + 1);
     }
 }
 

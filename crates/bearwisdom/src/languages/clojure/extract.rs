@@ -445,6 +445,11 @@ fn process_list(
                 symbols,
                 parent_idx,
             );
+            // Also emit symbols for each protocol method spec.
+            // Each method spec is a list_lit whose head is the method name:
+            //   (read-session [store key] "doc")
+            //   (write-session [store key data] "doc")
+            extract_protocol_methods(node, src, symbols, Some(idx));
             walk_list_children(node, src, symbols, refs, Some(idx), locals);
         }
         "ns" => {
@@ -710,6 +715,63 @@ fn first_named_child_node(node: Node) -> Option<Node> {
         }
     }
     None
+}
+
+/// Emit a `Function` symbol for each protocol method spec inside a `defprotocol`
+/// or `definterface` form.
+///
+/// Protocol method specs have the shape:
+///   `(method-name [arg1 arg2] "optional doc")`
+///   `(method-name [arg1] [arg1 arg2] "doc")`  — multi-arity
+///
+/// We emit one symbol per distinct method name using the line of its first
+/// occurrence. The method-name sym_lit is the head of a list_lit child.
+fn extract_protocol_methods(
+    protocol_node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_idx: Option<usize>,
+) {
+    let mut cursor = protocol_node.walk();
+    // Track emitted names to avoid duplicate symbols from multi-arity specs.
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for child in protocol_node.children(&mut cursor) {
+        if child.kind() != "list_lit" {
+            continue;
+        }
+        let (method_name, _, method_line) = list_head_with_line(child, src);
+        if method_name.is_empty() || method_name.starts_with(':') || seen.contains(&method_name) {
+            continue;
+        }
+        seen.insert(method_name.clone());
+        // Use the child node's start line for the symbol; the head gives the name.
+        let mut sym = ExtractedSymbol {
+            qualified_name: method_name.clone(),
+            name: method_name,
+            kind: SymbolKind::Function,
+            visibility: Some(Visibility::Public),
+            start_line: method_line,
+            end_line: child.end_position().row as u32,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: parent_idx,
+        };
+        // Try to build a signature from the first vec_lit child (params).
+        let mut inner = child.walk();
+        for ic in child.children(&mut inner) {
+            if ic.kind() == "vec_lit" {
+                let sig_text = ic.utf8_text(src).unwrap_or("").trim().to_string();
+                if !sig_text.is_empty() {
+                    sym.signature = Some(sig_text);
+                }
+                break;
+            }
+        }
+        symbols.push(sym);
+    }
 }
 
 fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx: usize) {

@@ -33,17 +33,20 @@ pub fn discover_clojure_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     use crate::indexer::manifest::clojure::{parse_deps_edn_deps, parse_project_clj_deps};
 
     let mut all_deps: Vec<String> = Vec::new();
+    let mut seen_dirs: std::collections::HashSet<std::path::PathBuf> = std::collections::HashSet::new();
 
-    let project_clj = project_root.join("project.clj");
-    if let Ok(content) = std::fs::read_to_string(&project_clj) {
-        all_deps.extend(parse_project_clj_deps(&content));
-    }
-    let deps_edn = project_root.join("deps.edn");
-    if let Ok(content) = std::fs::read_to_string(&deps_edn) {
-        for dep in parse_deps_edn_deps(&content) {
-            if !all_deps.contains(&dep) { all_deps.push(dep); }
-        }
-    }
+    // Collect deps from root manifest and all sub-project manifests (up to 3 levels deep).
+    // Leiningen multi-module projects (e.g. ring) have per-sub-project project.clj files
+    // that carry their own dependency lists.
+    collect_clojure_deps_recursive(
+        project_root,
+        &mut all_deps,
+        &mut seen_dirs,
+        0,
+        parse_project_clj_deps,
+        parse_deps_edn_deps,
+    );
+
     if all_deps.is_empty() { return Vec::new(); }
 
     let Some(repo) = maven_local_repo() else { return Vec::new(); };
@@ -94,4 +97,68 @@ pub fn discover_clojure_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 pub fn walk_clojure_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     // Delegate to the Java walker — extracted source jars have the same layout.
     super::java::walk_java_external_root(dep)
+}
+
+/// Recursively collect Clojure dependency names from `project.clj` and `deps.edn`
+/// files found under `dir`, up to `MAX_DEPTH` directory levels deep.
+///
+/// Used by `discover_clojure_externals` so that multi-module Leiningen projects
+/// (like ring) have all sub-project deps available for Maven jar resolution.
+fn collect_clojure_deps_recursive(
+    dir: &Path,
+    all_deps: &mut Vec<String>,
+    seen_dirs: &mut std::collections::HashSet<std::path::PathBuf>,
+    depth: usize,
+    parse_project_clj: fn(&str) -> Vec<String>,
+    parse_deps_edn: fn(&str) -> Vec<String>,
+) {
+    const MAX_DEPTH: usize = 3;
+
+    if !seen_dirs.insert(dir.to_path_buf()) {
+        return;
+    }
+
+    let project_clj = dir.join("project.clj");
+    if project_clj.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&project_clj) {
+            for dep in parse_project_clj(&content) {
+                if !all_deps.contains(&dep) {
+                    all_deps.push(dep);
+                }
+            }
+        }
+    }
+    let deps_edn = dir.join("deps.edn");
+    if deps_edn.is_file() {
+        if let Ok(content) = std::fs::read_to_string(&deps_edn) {
+            for dep in parse_deps_edn(&content) {
+                if !all_deps.contains(&dep) {
+                    all_deps.push(dep);
+                }
+            }
+        }
+    }
+
+    if depth >= MAX_DEPTH {
+        return;
+    }
+
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if !path.is_dir() {
+            continue;
+        }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
+            continue;
+        };
+        if matches!(
+            name,
+            ".git" | "target" | "out" | "node_modules" | ".clj-kondo"
+                | ".lsp" | ".cpcache" | "resources" | "doc" | "docs"
+        ) {
+            continue;
+        }
+        collect_clojure_deps_recursive(&path, all_deps, seen_dirs, depth + 1, parse_project_clj, parse_deps_edn);
+    }
 }

@@ -96,6 +96,45 @@ impl LanguageResolver for ClojureResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
+        let target = &ref_ctx.extracted_ref.target_name;
+
+        // Java interop — method calls start with `.` (e.g. `.getBytes`, `.close`)
+        // and constructor calls end with `.` (e.g. `File.`, `ArrayList.`).
+        // Neither can resolve to a project symbol, so classify them immediately
+        // as Java interop externals rather than leaving them unresolved.
+        if builtins::is_java_interop(target) {
+            return Some("java".to_string());
+        }
+
+        // Fully-qualified Java class references (contain a `.` that isn't a
+        // Clojure namespace separator we already know about, e.g.
+        // `java.io.ByteArrayOutputStream.` or `java.lang.Thread`).
+        if builtins::is_java_class_ref(target) {
+            return Some("java".to_string());
+        }
+
+        // Bare Java class names imported via `:import` (e.g. `File`, `InputStream`,
+        // `Server`). The extractor emits the Java package (`java.io`) as a wildcard
+        // import, but `infer_external_common` won't match unqualified class names to
+        // those wildcard imports because the Clojure manifest guard blocks it.
+        //
+        // Heuristic: if the target is CamelCase (starts with an uppercase letter,
+        // no `-` or `/`) and the file has at least one Java package import, classify
+        // it as a Java external. This covers `File`, `InputStream`, `Server`, etc.
+        // without touching truly Clojure-style names like `ClojurePlugin` (which are
+        // indexed as local project symbols and resolve normally).
+        let is_camel = target.starts_with(|c: char| c.is_uppercase())
+            && !target.contains('-')
+            && !target.contains('/');
+        if is_camel {
+            let has_java_import = file_ctx.imports.iter().any(|imp| {
+                imp.module_path.as_deref().map(builtins::is_java_class_ref).unwrap_or(false)
+            });
+            if has_java_import {
+                return Some("java".to_string());
+            }
+        }
+
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_clojure_builtin)
     }
 }
