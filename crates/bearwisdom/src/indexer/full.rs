@@ -563,13 +563,19 @@ fn parse_external_sources(
         }
     }
 
-    // Step 2 — deduplicate by (ecosystem, module_path, version) so a dep
-    // shared across workspace packages (e.g. both apps/web and apps/server
-    // declaring react 18.3.1) is walked exactly once. Package attribution
-    // is preserved in the declaring-packages list for logs/diagnostics.
+    // Step 2 — deduplicate by (ecosystem, module_path, version, root_path) so
+    // a dep shared across workspace packages (e.g. both apps/web and apps/server
+    // declaring react 18.3.1) is walked exactly once. Package attribution is
+    // preserved in the declaring-packages list for logs/diagnostics.
+    //
+    // The root path is included in the key so that a package with BOTH a primary
+    // directory (e.g. node_modules/chai/ — JS only) AND a DefinitelyTyped sibling
+    // (node_modules/@types/chai/ — .d.ts) are treated as separate roots to walk.
+    // Without the root path, the second root would be dropped because it shares
+    // the same (ecosystem, module_path, version) as the first.
     let mut deduped: Vec<(ExternalDepRoot, Vec<i64>)> = Vec::new();
     let mut root_index: std::collections::HashMap<
-        (&'static str, String, String),
+        (&'static str, String, String, std::path::PathBuf),
         usize,
     > = std::collections::HashMap::new();
     for root in all_roots {
@@ -577,6 +583,7 @@ fn parse_external_sources(
             root.ecosystem,
             root.module_path.clone(),
             root.version.clone(),
+            root.root.clone(),
         );
         if let Some(&idx) = root_index.get(&key) {
             if let Some(pid) = root.package_id {

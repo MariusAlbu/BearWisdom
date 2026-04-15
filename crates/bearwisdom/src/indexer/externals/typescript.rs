@@ -193,18 +193,32 @@ fn definitely_typed_scoped_name(dep: &str) -> Option<String> {
     Some(format!("{scope}__{name}"))
 }
 
-/// M3: per-package variant of `discover_ts_externals`. Reads only the
-/// single package's `package.json` (no recursive walk) and searches
-/// `{package}/node_modules` plus every ancestor up to `workspace_root`
-/// (inclusive) for hoisted deps. Returns roots with `package_id=None`;
-/// the caller (locator) stamps ownership.
+/// M3: per-package variant of `discover_ts_externals`. Reads the single
+/// package's `package.json` AND the workspace root's `package.json`
+/// (when they differ), then merges the dep sets. This covers the standard
+/// npm/yarn monorepo pattern where root-level `devDependencies` hold shared
+/// test tooling (chai, vitest, jest, etc.) that no individual sub-package
+/// redeclares. Searches `{package}/node_modules` plus every ancestor up to
+/// `workspace_root` (inclusive) for hoisted deps. Returns roots with
+/// `package_id=None`; the caller (locator) stamps ownership.
 pub fn discover_ts_externals_scoped(
     workspace_root: &Path,
     package_abs_path: &Path,
 ) -> Vec<ExternalDepRoot> {
-    let Some(declared) = read_single_package_json_deps(package_abs_path) else {
+    let Some(mut declared) = read_single_package_json_deps(package_abs_path) else {
         return Vec::new();
     };
+
+    // Also read workspace root deps when the package lives below root.
+    // Root devDependencies (shared test tooling, build tools) aren't
+    // redeclared per-package in npm/yarn monorepos, so the per-package
+    // reader would miss them entirely.
+    if package_abs_path != workspace_root {
+        if let Some(root_deps) = read_single_package_json_deps(workspace_root) {
+            declared.extend(root_deps);
+        }
+    }
+
     if declared.is_empty() {
         return Vec::new();
     }
@@ -678,6 +692,65 @@ mod tests {
             roots.iter().any(|r| r.module_path == "react" && r.root == react_dir),
             "expected react root from hoisted node_modules, got {:?}",
             roots.iter().map(|r| (&r.module_path, &r.root)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn m3_discover_ts_externals_scoped_merges_workspace_root_deps() {
+        // Simulate the javascript-preact pattern:
+        // - workspace root package.json has devDependencies: { chai, vitest }
+        // - sub-package package.json has dependencies: { preact } only
+        // - node_modules/ is hoisted at workspace root
+        // scoped discovery must discover BOTH sub-package and root-declared deps.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ws = tmp.path();
+        let pkg = ws.join("hooks");
+        std::fs::create_dir_all(&pkg).unwrap();
+
+        // Root package.json: declares shared devDeps
+        std::fs::write(
+            ws.join("package.json"),
+            r#"{"name":"preact","devDependencies":{"chai":"5","vitest":"2"}}"#,
+        ).unwrap();
+
+        // Sub-package package.json: declares only its own dep
+        std::fs::write(
+            pkg.join("package.json"),
+            r#"{"name":"preact-hooks","dependencies":{"preact":"*"}}"#,
+        ).unwrap();
+
+        // Hoisted node_modules at workspace root
+        let chai_dir = ws.join("node_modules").join("@types").join("chai");
+        std::fs::create_dir_all(&chai_dir).unwrap();
+        std::fs::write(chai_dir.join("index.d.ts"), "export function assert(x: any): void;").unwrap();
+
+        let vitest_dir = ws.join("node_modules").join("vitest");
+        std::fs::create_dir_all(&vitest_dir).unwrap();
+        std::fs::write(vitest_dir.join("index.d.ts"), "export function describe(n: string, f: () => void): void;").unwrap();
+
+        let preact_dir = ws.join("node_modules").join("preact");
+        std::fs::create_dir_all(&preact_dir).unwrap();
+        std::fs::write(preact_dir.join("index.d.ts"), "export function h(): any;").unwrap();
+
+        std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
+
+        let roots = discover_ts_externals_scoped(ws, &pkg);
+        let module_paths: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+
+        // chai is a root devDep — should be discovered via @types/chai
+        assert!(
+            roots.iter().any(|r| r.module_path == "chai"),
+            "expected chai from workspace root devDeps, got {module_paths:?}"
+        );
+        // vitest is a root devDep and ships .d.ts — should be discovered
+        assert!(
+            roots.iter().any(|r| r.module_path == "vitest"),
+            "expected vitest from workspace root devDeps, got {module_paths:?}"
+        );
+        // preact is the sub-package's own dep — still discovered
+        assert!(
+            roots.iter().any(|r| r.module_path == "preact"),
+            "expected preact from sub-package deps, got {module_paths:?}"
         );
     }
 }
