@@ -195,6 +195,48 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_edges_strategy
            ON edges(strategy) WHERE strategy IS NOT NULL"
     )?;
+    // v0.10: drop UNIQUE(name) on packages. A2 made `name` folder-derived,
+    // and nested workspaces commonly have repeating folder names
+    // (`apps/routes/`, `packages/routes/`). Identity is `path`. Old DBs
+    // built before this change still carry the UNIQUE inline — detect via
+    // sqlite_master and rebuild the table when needed.
+    let needs_packages_rebuild: bool = conn
+        .query_row(
+            "SELECT EXISTS(
+                SELECT 1 FROM sqlite_master
+                WHERE type='table'
+                  AND name='packages'
+                  AND sql LIKE '%name%TEXT%NOT NULL%UNIQUE%'
+             )",
+            [],
+            |r| r.get::<_, i64>(0),
+        )
+        .map(|n| n == 1)
+        .unwrap_or(false);
+    if needs_packages_rebuild {
+        conn.execute_batch(
+            "BEGIN;
+             CREATE TABLE packages_new (
+                 id            INTEGER PRIMARY KEY,
+                 name          TEXT    NOT NULL,
+                 path          TEXT    NOT NULL UNIQUE,
+                 kind          TEXT,
+                 manifest      TEXT,
+                 parent_id     INTEGER REFERENCES packages_new(id) ON DELETE SET NULL,
+                 is_service    INTEGER NOT NULL DEFAULT 0,
+                 declared_name TEXT
+             );
+             INSERT INTO packages_new (id, name, path, kind, manifest, parent_id, is_service, declared_name)
+                 SELECT id, name, path, kind, manifest, parent_id, is_service, declared_name FROM packages;
+             DROP TABLE packages;
+             ALTER TABLE packages_new RENAME TO packages;
+             CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);
+             CREATE INDEX IF NOT EXISTS idx_packages_declared_name
+                 ON packages(declared_name)
+                 WHERE declared_name IS NOT NULL;
+             COMMIT;",
+        )?;
+    }
     Ok(())
 }
 
@@ -227,7 +269,11 @@ const SCHEMA_SQL: &str = "
 
 CREATE TABLE IF NOT EXISTS packages (
     id            INTEGER PRIMARY KEY,
-    name          TEXT    NOT NULL UNIQUE,  -- folder-derived key, stable sort
+    -- Folder-derived sort key. NOT unique — nested workspaces frequently
+    -- have repeating folder names (`apps/routes/`, `packages/routes/`).
+    -- Identity is `path`. Use `declared_name` to find a package by its
+    -- manifest-reported name.
+    name          TEXT    NOT NULL,
     path          TEXT    NOT NULL UNIQUE,  -- relative to workspace root
     kind          TEXT,                     -- ecosystem hint: npm, cargo, dotnet, go, etc.
     manifest      TEXT,                     -- relative path to manifest file

@@ -250,6 +250,14 @@ impl LanguageResolver for TypeScriptResolver {
             // like `<Button>` after `import { Button } from "./button"`
             // fall through to the heuristic when the TS resolver should
             // have caught them deterministically.
+            //
+            // CRITICAL: only return early when the relative module is
+            // KNOWN to resolve to an indexed file but doesn't carry the
+            // target. When the per-source map has no entry (parse miss,
+            // generated file, etc.) we fall through so scope-chain /
+            // same-file / heuristic still get a shot — without this,
+            // shadowed locals and variables that happen to share an
+            // imported name lose their edges.
             if !builtins::is_bare_specifier(module_path) {
                 for sym in lookup.in_module_from(&file_ctx.file_path, module_path) {
                     if sym.name == *target
@@ -268,10 +276,6 @@ impl LanguageResolver for TypeScriptResolver {
                         });
                     }
                 }
-                // Follow barrel re-exports when the relative module itself
-                // is a barrel that forwards the named export. The
-                // per-source resolved path makes this work even when many
-                // files share the same `./` specifier.
                 let resolved_path = lookup
                     .resolve_module_from(&file_ctx.file_path, module_path)
                     .map(|s| s.to_string());
@@ -282,17 +286,18 @@ impl LanguageResolver for TypeScriptResolver {
                         return Some(res);
                     }
                 }
-                // Fallback: try the spec itself in case follow_reexports
-                // can pick it up via its own module_to_file lookup.
                 if let Some(res) =
                     follow_reexports(module_path, target, edge_kind, lookup, 0)
                 {
                     return Some(res);
                 }
-                // Relative import exists but the symbol is not in the
-                // referenced file (or any re-export chain). Stop here so
-                // the heuristic doesn't produce a spurious match.
-                return None;
+                // Only short-circuit when the import resolved (we know the
+                // target file) but the symbol genuinely isn't in it.
+                // Otherwise fall through to scope chain / same-file etc.
+                if resolved_path.is_some() {
+                    return None;
+                }
+                continue;
             }
 
             let candidate = format!("{module_path}.{target}");
