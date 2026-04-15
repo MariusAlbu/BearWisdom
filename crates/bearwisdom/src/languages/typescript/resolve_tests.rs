@@ -1446,6 +1446,85 @@ fn tsconfig_alias_resolves_bare_specifier() {
 }
 
 #[test]
+fn tsconfig_alias_prepends_package_path_in_monorepo() {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
+
+    // Monorepo layout: `apps/landing/tsconfig.json` declares `@/* -> src/*`.
+    // The producer lives at `apps/landing/src/components/Button.tsx`. The
+    // consumer's `@/components/Button` import must resolve to that file,
+    // not the workspace-relative `src/components/Button.tsx` (which doesn't
+    // exist).
+    let producer = make_ts_file_in_pkg(
+        "apps/landing/src/components/Button.tsx",
+        Some(7),
+        vec![make_symbol(
+            "Button",
+            "Button",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    let consumer = make_ts_file_in_pkg(
+        "apps/landing/src/app/page.tsx",
+        Some(7),
+        vec![make_symbol(
+            "Page",
+            "Page",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "Button", "@/components/Button", 1)],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&producer, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+
+    let mut ctx = ProjectContext::default();
+    let mut landing_npm = ManifestData::default();
+    landing_npm
+        .tsconfig_paths
+        .push(("@/".to_string(), "src/".to_string()));
+    let mut by_pkg = std::collections::HashMap::new();
+    by_pkg.insert(ManifestKind::Npm, landing_npm);
+    ctx.by_package.insert(7, by_pkg);
+    ctx.workspace_pkg_paths
+        .insert(7, "apps/landing".to_string());
+
+    let parsed = vec![producer, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[1];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(7),
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("per-package alias should resolve after path prepend");
+    assert_eq!(res.strategy, "ts_tsconfig_alias");
+    assert_eq!(res.confidence, 1.0);
+    let expected = id_map[&(
+        "apps/landing/src/components/Button.tsx".to_string(),
+        "Button".to_string(),
+    )];
+    assert_eq!(res.target_symbol_id, expected);
+}
+
+#[test]
 fn tsconfig_alias_longest_prefix_wins() {
     use crate::indexer::manifest::{ManifestData, ManifestKind};
 
@@ -1516,6 +1595,33 @@ fn tsconfig_alias_longest_prefix_wins() {
         "Button".to_string(),
     )];
     assert_eq!(res.target_symbol_id, expected_id);
+}
+
+#[test]
+fn tsconfig_alias_parser_handles_realworld_landing_shape() {
+    // Exact shape from ts-rallly's apps/landing/tsconfig.json — the wild
+    // case we missed. Has `extends`, `baseUrl`, mixed-type compilerOptions,
+    // and trailing commas may or may not appear.
+    use crate::indexer::manifest::npm::parse_tsconfig_paths;
+    let content = r##"{
+        "extends": "@rallly/tsconfig/next.json",
+        "compilerOptions": {
+            "baseUrl": ".",
+            "paths": {
+                "@/*": ["src/*"],
+                "~/*": ["public/*"]
+            },
+            "checkJs": false,
+            "strictNullChecks": true,
+            "target": "ES2017"
+        },
+        "include": ["**/*.ts", "**/*.tsx"],
+        "exclude": ["node_modules", ".next"]
+    }"##;
+    let aliases = parse_tsconfig_paths(content);
+    assert_eq!(aliases.len(), 2, "expected 2 aliases, got {aliases:?}");
+    assert!(aliases.contains(&("@/".to_string(), "src/".to_string())));
+    assert!(aliases.contains(&("~/".to_string(), "public/".to_string())));
 }
 
 #[test]

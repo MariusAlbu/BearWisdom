@@ -91,6 +91,13 @@ pub struct ProjectContext {
     /// metadata, or manifests that couldn't be parsed) are absent from
     /// this map.
     pub workspace_pkg_by_declared_name: HashMap<String, i64>,
+
+    /// Map from `package_id` → package's relative path (e.g. `apps/landing`).
+    /// Populated alongside `workspace_pkg_by_declared_name`. Used to resolve
+    /// package-relative paths like tsconfig `paths` targets, which are
+    /// specified relative to each package's own directory, not the
+    /// workspace root.
+    pub workspace_pkg_paths: HashMap<i64, String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -113,6 +120,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         manifests,
         by_package: HashMap::new(),
         workspace_pkg_by_declared_name: HashMap::new(),
+        workspace_pkg_paths: HashMap::new(),
     }
 }
 
@@ -178,8 +186,10 @@ pub fn build_project_context_with_packages(
     // reported a name in their manifest participate — folder-derived `name`
     // is never used here because it doesn't match what imports will reference.
     let mut workspace_pkg_by_declared_name: HashMap<String, i64> = HashMap::new();
+    let mut workspace_pkg_paths: HashMap<i64, String> = HashMap::new();
     for pkg in packages {
         let Some(id) = pkg.id else { continue };
+        workspace_pkg_paths.insert(id, pkg.path.clone());
         let Some(declared) = &pkg.declared_name else { continue };
         if declared.is_empty() {
             continue;
@@ -199,6 +209,7 @@ pub fn build_project_context_with_packages(
         manifests,
         by_package,
         workspace_pkg_by_declared_name,
+        workspace_pkg_paths,
     }
 }
 

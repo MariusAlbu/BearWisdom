@@ -260,6 +260,20 @@ impl LanguageResolver for TypeScriptResolver {
                     });
                 }
             }
+            // tsconfig `paths` alias: the import specifier may be a
+            // package-relative alias (`@/components/x` → `apps/landing/src/components/x`).
+            // Try the rewrite before bailing out — without this, JSX usage
+            // refs (whose own `module` field is None) fall through to the
+            // heuristic when an alias rewrite would have resolved them.
+            if let Some(rewritten) =
+                lookup.resolve_tsconfig_alias(ref_ctx.file_package_id, module_path)
+            {
+                if let Some(res) =
+                    resolve_via_alias(&rewritten, target, edge_kind, lookup)
+                {
+                    return Some(res);
+                }
+            }
             // Import exists but symbol not in index — it's external and
             // uncovered. Stop trying so the heuristic doesn't produce a
             // spurious match on a same-named internal symbol.

@@ -650,6 +650,13 @@ impl SymbolIndex {
 
         // Snapshot tsconfig aliases — per-package if available, plus a union
         // derived from the NPM manifest for files with no package_id.
+        //
+        // tsconfig `paths` targets are relative to each package's own
+        // directory, not the workspace root. In a monorepo with
+        // `apps/landing/tsconfig.json` declaring `"@/*": ["src/*"]`, a
+        // rewritten `@/components/x` must land at
+        // `apps/landing/src/components/x` for `in_file()` to find the file.
+        // Prepend the package path to each target at snapshot time.
         let mut tsconfig_paths_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
         let mut tsconfig_paths_union: Vec<(String, String)> = Vec::new();
         if let Some(ctx) = project_ctx {
@@ -659,7 +666,19 @@ impl SymbolIndex {
             for (&pkg_id, manifests) in &ctx.by_package {
                 if let Some(npm) = manifests.get(&crate::indexer::manifest::ManifestKind::Npm) {
                     if !npm.tsconfig_paths.is_empty() {
-                        tsconfig_paths_by_pkg.insert(pkg_id, npm.tsconfig_paths.clone());
+                        let pkg_path = ctx.workspace_pkg_paths.get(&pkg_id);
+                        let rewritten: Vec<(String, String)> = npm
+                            .tsconfig_paths
+                            .iter()
+                            .map(|(alias, target)| {
+                                let full_target = match pkg_path {
+                                    Some(p) if !p.is_empty() => format!("{p}/{target}"),
+                                    _ => target.clone(),
+                                };
+                                (alias.clone(), full_target)
+                            })
+                            .collect();
+                        tsconfig_paths_by_pkg.insert(pkg_id, rewritten);
                     }
                 }
             }
