@@ -489,6 +489,14 @@ enum Commands {
         /// Absolute path to the project root.
         path: String,
     },
+
+    /// Workspace graph: one row per (source_pkg, target_pkg) with per-kind
+    /// code/flow edge counts and a manifest-declared-dependency flag.
+    /// Returns an empty array for single-project repos.
+    WorkspaceGraph {
+        /// Absolute path to the project root.
+        path: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -622,6 +630,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::Packages { path } => cmd_packages(&path),
         Commands::Workspace { path } => cmd_workspace(&path),
         Commands::Dependencies { path } => cmd_dependencies(&path),
+        Commands::WorkspaceGraph { path } => cmd_workspace_graph(&path),
     }
 }
 
@@ -1834,6 +1843,13 @@ fn cmd_dependencies(project_path: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
     let deps = bearwisdom::package_dependencies(&db).context("package_dependencies failed")?;
     ok_json(deps)
+}
+
+/// Workspace graph with per-kind edge counts and manifest-declared-dep flags.
+fn cmd_workspace_graph(project_path: &str) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let graph = bearwisdom::workspace_graph(&db).context("workspace_graph failed")?;
+    ok_json(graph)
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.

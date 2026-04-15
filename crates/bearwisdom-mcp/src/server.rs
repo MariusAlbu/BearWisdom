@@ -174,6 +174,12 @@ pub struct WorkspaceOverviewParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct WorkspaceGraphParams {
+    /// Output format: "json" (default) or "compact" (token-optimized text)
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct InvestigateParams {
     /// Symbol name or qualified name to investigate
     pub symbol: String,
@@ -626,6 +632,19 @@ impl BearWisdomServer {
             bearwisdom::workspace_overview(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::workspace(&r)) } else { Self::to_json(&r) })
+        })
+    }
+
+    /// Workspace graph: one row per (source_pkg, target_pkg) with per-kind
+    /// code/flow edge counts and a manifest-declared-dependency flag.
+    /// Returns an empty array for single-project repos.
+    #[tool(name = "bw_workspace_graph")]
+    fn workspace_graph(&self, Parameters(params): Parameters<WorkspaceGraphParams>) -> String {
+        let compact = Self::is_compact(&params.format);
+        self.run_tool("bw_workspace_graph", &params, |db| {
+            bearwisdom::workspace_graph(db)
+                .map_err(Self::query_err)
+                .and_then(|r| if compact { Ok(crate::compact::workspace_graph(&r)) } else { Self::to_json(&r) })
         })
     }
 

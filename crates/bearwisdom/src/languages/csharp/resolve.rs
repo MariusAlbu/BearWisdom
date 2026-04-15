@@ -248,6 +248,13 @@ impl LanguageResolver for CSharpResolver {
         // Import refs (e.g., `using System.Linq;`) — classify the using directive
         // itself as external if the namespace is known-external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            // Sibling workspace project — never external. The target namespace
+            // (or its root segment) matches another project's declared_name.
+            if let Some(ctx) = project_ctx {
+                if matches_workspace_project(ctx, target) {
+                    return None;
+                }
+            }
             let external = match project_ctx {
                 Some(ctx) => is_manifest_external_namespace(ctx, target),
                 None => builtins::is_external_namespace_fallback(target),
@@ -269,6 +276,16 @@ impl LanguageResolver for CSharpResolver {
             let ns = import.module_path.as_deref().unwrap_or("");
             if ns.is_empty() {
                 continue;
+            }
+
+            // Sibling workspace projects are not external — skip before
+            // the NuGet/system classifier to avoid root-prefix false
+            // positives (e.g. `Shared.*` namespace vs. a `Shared.*`
+            // NuGet package on the same prefix).
+            if let Some(ctx) = project_ctx {
+                if matches_workspace_project(ctx, ns) {
+                    continue;
+                }
             }
 
             let external = match project_ctx {
@@ -329,6 +346,32 @@ impl LanguageResolver for CSharpResolver {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Check whether a namespace refers to a sibling workspace project.
+///
+/// The `declared_name` for a .NET workspace package is the .csproj / .fsproj /
+/// .vbproj filename stem (A2). MSBuild convention maps that stem to the
+/// project's root namespace, so a `using Shared.Foo;` in a consumer project
+/// targeting `Shared.csproj` resolves via `declared_name = "Shared"`.
+///
+/// Handles exact matches and nested namespaces: `Shared`, `Shared.Models`,
+/// `Shared.Models.Users` all collapse to the `Shared` workspace package by
+/// dot-walking from right to left. (`workspace_package_id` on ProjectContext
+/// walks `/` separators for TypeScript-style deep imports — .NET namespaces
+/// use `.` so we reimplement the walk locally.)
+fn matches_workspace_project(ctx: &ProjectContext, namespace: &str) -> bool {
+    if ctx.workspace_pkg_by_declared_name.contains_key(namespace) {
+        return true;
+    }
+    let mut path = namespace;
+    while let Some(dot) = path.rfind('.') {
+        path = &path[..dot];
+        if ctx.workspace_pkg_by_declared_name.contains_key(path) {
+            return true;
+        }
+    }
+    false
+}
 
 /// Check whether a .NET namespace is external, using the NuGet manifest directly.
 ///

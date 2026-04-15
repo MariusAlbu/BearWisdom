@@ -31,7 +31,7 @@ pub use super::manifest::maven::{extract_xml_text, parse_pom_xml_dependencies};
 pub use super::manifest::npm::parse_package_json_deps;
 pub use super::manifest::nuget::{
     implicit_usings_for_sdk, most_capable_sdk, parse_global_usings, parse_package_references,
-    parse_sdk_type, DotnetSdkType,
+    parse_project_references, parse_sdk_type, DotnetSdkType,
 };
 pub use super::manifest::pyproject::{
     parse_pipfile_deps, parse_pyproject_deps, parse_requirements_txt,
@@ -78,6 +78,19 @@ pub struct ProjectContext {
     /// `manifests_for(package_id)` which transparently falls back to the
     /// union when the package isn't in the map.
     pub by_package: HashMap<i64, HashMap<ManifestKind, ManifestData>>,
+
+    /// Workspace packages keyed by `declared_name` (the manifest-reported
+    /// name, e.g. `@myorg/utils` from `package.json`).
+    ///
+    /// Populated only by `build_project_context_with_packages`. A hit means
+    /// the module specifier refers to a sibling workspace package — the
+    /// TypeScript (and other) resolvers use this to produce confidence-1.0
+    /// cross-package edges instead of classifying as external.
+    ///
+    /// Packages with no `declared_name` (e.g. .csproj without AssemblyName
+    /// metadata, or manifests that couldn't be parsed) are absent from
+    /// this map.
+    pub workspace_pkg_by_declared_name: HashMap<String, i64>,
 }
 
 // ---------------------------------------------------------------------------
@@ -99,6 +112,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
     ProjectContext {
         manifests,
         by_package: HashMap::new(),
+        workspace_pkg_by_declared_name: HashMap::new(),
     }
 }
 
@@ -143,6 +157,11 @@ pub fn build_project_context_with_packages(
                 if pm.data.sdk_type.is_some() {
                     entry.sdk_type = pm.data.sdk_type.clone();
                 }
+                for pr in &pm.data.project_refs {
+                    if !entry.project_refs.contains(pr) {
+                        entry.project_refs.push(pr.clone());
+                    }
+                }
             }
         }
         if !pkg_manifests.is_empty() {
@@ -150,16 +169,31 @@ pub fn build_project_context_with_packages(
         }
     }
 
+    // Workspace declared_name → package_id index. Only packages that actually
+    // reported a name in their manifest participate — folder-derived `name`
+    // is never used here because it doesn't match what imports will reference.
+    let mut workspace_pkg_by_declared_name: HashMap<String, i64> = HashMap::new();
+    for pkg in packages {
+        let Some(id) = pkg.id else { continue };
+        let Some(declared) = &pkg.declared_name else { continue };
+        if declared.is_empty() {
+            continue;
+        }
+        workspace_pkg_by_declared_name.insert(declared.clone(), id);
+    }
+
     log_manifests(&manifests);
     info!(
-        "ProjectContext: per-package contexts for {}/{} workspace packages",
+        "ProjectContext: per-package contexts for {}/{} workspace packages, {} declared names indexed",
         by_package.len(),
         packages.len(),
+        workspace_pkg_by_declared_name.len(),
     );
 
     ProjectContext {
         manifests,
         by_package,
+        workspace_pkg_by_declared_name,
     }
 }
 
@@ -176,6 +210,11 @@ fn union_manifests(per_package: &[PackageManifest]) -> HashMap<ManifestKind, Man
             .extend(pm.data.global_usings.iter().cloned());
         if pm.data.sdk_type.is_some() {
             entry.sdk_type = pm.data.sdk_type.clone();
+        }
+        for pr in &pm.data.project_refs {
+            if !entry.project_refs.contains(pr) {
+                entry.project_refs.push(pr.clone());
+            }
         }
     }
     out
@@ -258,6 +297,28 @@ impl ProjectContext {
     /// layouts and for contexts built via the legacy `build_project_context`.
     pub fn is_per_package(&self) -> bool {
         !self.by_package.is_empty()
+    }
+
+    /// Resolve a module specifier (e.g. `@myorg/utils`, `@myorg/utils/sub/mod`)
+    /// to a workspace `package_id` via `declared_name`.
+    ///
+    /// Matches exact first, then strips trailing path segments to handle deep
+    /// imports: `@myorg/utils/sub/mod` → `@myorg/utils` → `@myorg`.
+    ///
+    /// Returns `None` if no workspace package declared that name, including
+    /// single-project contexts where `workspace_pkg_by_declared_name` is empty.
+    pub fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
+        if let Some(&id) = self.workspace_pkg_by_declared_name.get(specifier) {
+            return Some(id);
+        }
+        let mut path = specifier;
+        while let Some(slash) = path.rfind('/') {
+            path = &path[..slash];
+            if let Some(&id) = self.workspace_pkg_by_declared_name.get(path) {
+                return Some(id);
+            }
+        }
+        None
     }
 }
 

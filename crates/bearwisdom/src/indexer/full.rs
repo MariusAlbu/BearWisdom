@@ -476,6 +476,12 @@ fn collect_package_dep_rows(
             for dep in &data.dependencies {
                 rows.push((pkg_id, ecosystem, dep.clone(), None, "runtime"));
             }
+            // .NET <ProjectReference> — sibling workspace project intent.
+            // Emitted with a distinct kind so downstream consumers can
+            // separate external NuGet deps from internal workspace refs.
+            for pr in &data.project_refs {
+                rows.push((pkg_id, ecosystem, pr.clone(), None, "project_reference"));
+            }
         }
     }
     rows

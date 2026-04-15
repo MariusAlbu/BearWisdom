@@ -33,6 +33,11 @@ impl ManifestReader for NuGetManifest {
             if let Some(sdk) = entry.data.sdk_type.as_deref().and_then(sdk_from_name) {
                 sdk_types.push(sdk);
             }
+            for pr in &entry.data.project_refs {
+                if !data.project_refs.contains(pr) {
+                    data.project_refs.push(pr.clone());
+                }
+            }
         }
 
         // Determine the most capable SDK type across all project files.
@@ -65,6 +70,12 @@ impl ManifestReader for NuGetManifest {
             for pkg in parse_package_references(&content) {
                 data.dependencies.insert(pkg);
             }
+
+            // <ProjectReference> entries — sibling workspace projects.
+            // Kept out of `dependencies` (which is the NuGet package set) so
+            // the NuGet externals classifier doesn't treat a sibling project
+            // as an external dependency.
+            data.project_refs = parse_project_references(&content);
 
             // Scope GlobalUsings.cs scanning to this csproj's directory tree
             // so each project's global_usings is its own set, not the union.
@@ -204,6 +215,56 @@ pub fn parse_package_references(content: &str) -> Vec<String> {
         .into_iter()
         .map(|c| c.name)
         .collect()
+}
+
+/// Extract `<ProjectReference Include="..." />` values from .csproj content,
+/// normalized to the referenced project's filename stem.
+///
+/// Examples:
+///   `<ProjectReference Include="../Shared/Shared.csproj" />` → `"Shared"`
+///   `<ProjectReference Include="..\Lib\Lib.fsproj" />`       → `"Lib"`
+///
+/// The stem matches the sibling package's `declared_name` (A2 wrote the same
+/// stem there), so downstream code can map a project ref → package_id via
+/// the workspace declared_name index.
+pub fn parse_project_references(content: &str) -> Vec<String> {
+    let tag = "ProjectReference";
+    let mut out = Vec::new();
+    let mut search_from = 0;
+    while let Some(pos) = content[search_from..].find(tag) {
+        let abs_pos = search_from + pos;
+        search_from = abs_pos + tag.len();
+
+        let rest = &content[search_from..];
+        let window = &rest[..rest.len().min(512)];
+        let Some(inc_pos) = window.find("Include=\"") else { continue };
+        let after_inc = &window[inc_pos + 9..];
+        let Some(end) = after_inc.find('"') else { continue };
+        let raw = &after_inc[..end];
+        if raw.is_empty() {
+            continue;
+        }
+
+        // Take the last path segment (handles both `/` and `\`), then strip
+        // the .csproj / .fsproj / .vbproj extension.
+        let last = raw
+            .rsplit(|c: char| c == '/' || c == '\\')
+            .next()
+            .unwrap_or(raw);
+        let stem = last
+            .strip_suffix(".csproj")
+            .or_else(|| last.strip_suffix(".fsproj"))
+            .or_else(|| last.strip_suffix(".vbproj"))
+            .unwrap_or(last);
+        if stem.is_empty() {
+            continue;
+        }
+        let stem = stem.to_string();
+        if !out.contains(&stem) {
+            out.push(stem);
+        }
+    }
+    out
 }
 
 /// A NuGet package coordinate extracted from a .csproj `<PackageReference>`.
@@ -380,4 +441,60 @@ pub fn parse_global_usings(content: &str) -> Vec<String> {
         }
     }
     usings
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn project_references_extract_filename_stems() {
+        let csproj = r#"
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <ProjectReference Include="../Shared/Shared.csproj" />
+                <ProjectReference Include="..\Infra\Infra.fsproj" />
+                <ProjectReference Include="./Legacy.vbproj" />
+              </ItemGroup>
+            </Project>
+        "#;
+        let refs = parse_project_references(csproj);
+        assert_eq!(refs, vec!["Shared", "Infra", "Legacy"]);
+    }
+
+    #[test]
+    fn project_references_deduplicate() {
+        let csproj = r#"
+            <ProjectReference Include="../Shared/Shared.csproj" />
+            <ProjectReference Include="../SharedAlias/Shared.csproj" />
+        "#;
+        let refs = parse_project_references(csproj);
+        assert_eq!(refs, vec!["Shared"]);
+    }
+
+    #[test]
+    fn project_references_empty_for_missing_include() {
+        let csproj = r#"<ProjectReference Version="1.0" />"#;
+        let refs = parse_project_references(csproj);
+        assert!(refs.is_empty());
+    }
+
+    #[test]
+    fn project_references_kept_separate_from_packages() {
+        // Having both <PackageReference> and <ProjectReference> in the same
+        // csproj must produce independent outputs — the project ref must not
+        // land in the NuGet package set.
+        let csproj = r#"
+            <Project Sdk="Microsoft.NET.Sdk">
+              <ItemGroup>
+                <PackageReference Include="Newtonsoft.Json" Version="13.0.1" />
+                <ProjectReference Include="../Shared/Shared.csproj" />
+              </ItemGroup>
+            </Project>
+        "#;
+        let pkgs = parse_package_references(csproj);
+        let prs = parse_project_references(csproj);
+        assert_eq!(pkgs, vec!["Newtonsoft.Json"]);
+        assert_eq!(prs, vec!["Shared"]);
+    }
 }

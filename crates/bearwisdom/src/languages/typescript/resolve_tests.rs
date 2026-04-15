@@ -1145,3 +1145,250 @@ fn test_barrel_depth_limit() {
     let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
     assert!(result.is_none(), "Circular barrel chain should return None, not panic");
 }
+
+// ---------------------------------------------------------------------------
+// Workspace package resolution (A3)
+// ---------------------------------------------------------------------------
+
+fn make_ts_file_in_pkg(
+    path: &str,
+    pkg_id: Option<i64>,
+    symbols: Vec<ExtractedSymbol>,
+    refs: Vec<ExtractedRef>,
+) -> ParsedFile {
+    let mut pf = make_ts_file(path, symbols, refs);
+    pf.package_id = pkg_id;
+    pf
+}
+
+#[test]
+fn workspace_package_exact_import_resolves_at_confidence_1() {
+    // Producer package "@myorg/utils" exports `formatDate` from src/index.ts.
+    let producer = make_ts_file_in_pkg(
+        "packages/utils/src/index.ts",
+        Some(7),
+        vec![make_symbol(
+            "formatDate",
+            "formatDate",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+
+    // Consumer package imports it via the declared_name.
+    let consumer = make_ts_file_in_pkg(
+        "packages/app/src/main.ts",
+        Some(9),
+        vec![make_symbol(
+            "main",
+            "main",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "formatDate", "@myorg/utils", 1)],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&producer, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("@myorg/utils".to_string(), 7);
+
+    let parsed = vec![producer, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[1];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(9),
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("workspace import should resolve");
+    assert_eq!(res.strategy, "ts_workspace_pkg");
+    assert_eq!(res.confidence, 1.0);
+}
+
+#[test]
+fn workspace_package_deep_import_prefers_matching_file() {
+    // Producer declares `@myorg/utils` with two files that both export `foo`.
+    // Consumer's `@myorg/utils/sub/mod` import must prefer the file whose
+    // path contains `sub/mod`.
+    let producer_root = make_ts_file_in_pkg(
+        "packages/utils/src/index.ts",
+        Some(7),
+        vec![make_symbol("foo", "foo", SymbolKind::Function, Visibility::Public, None)],
+        vec![],
+    );
+    let producer_sub = make_ts_file_in_pkg(
+        "packages/utils/src/sub/mod.ts",
+        Some(7),
+        vec![make_symbol(
+            "foo",
+            "sub.mod.foo",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    let consumer = make_ts_file_in_pkg(
+        "packages/app/src/main.ts",
+        Some(9),
+        vec![make_symbol(
+            "main",
+            "main",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "foo", "@myorg/utils/sub/mod", 1)],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&producer_root, &producer_sub, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("@myorg/utils".to_string(), 7);
+    let parsed = vec![producer_root, producer_sub, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[2];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(9),
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("deep import should resolve");
+    assert_eq!(res.strategy, "ts_workspace_pkg");
+    assert_eq!(res.confidence, 1.0);
+    let expected_id = id_map[&(
+        "packages/utils/src/sub/mod.ts".to_string(),
+        "sub.mod.foo".to_string(),
+    )];
+    assert_eq!(res.target_symbol_id, expected_id);
+}
+
+#[test]
+fn workspace_package_import_not_classified_as_external() {
+    // Import that references a workspace package must not surface as
+    // external even if the resolver's main path didn't land a match.
+    let consumer = make_ts_file_in_pkg(
+        "packages/app/src/main.ts",
+        Some(9),
+        vec![make_symbol(
+            "main",
+            "main",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "missing", "@myorg/utils", 1)],
+    );
+
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("@myorg/utils".to_string(), 7);
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer.refs[0],
+        source_symbol: &consumer.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(9),
+    };
+
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    assert!(
+        ns.is_none(),
+        "workspace package must not be classified as external, got {ns:?}"
+    );
+}
+
+#[test]
+fn symbol_lookup_symbols_in_package_groups_by_pkg_id() {
+    let pf_a = make_ts_file_in_pkg(
+        "packages/a/src/a.ts",
+        Some(1),
+        vec![make_symbol("A", "A", SymbolKind::Class, Visibility::Public, None)],
+        vec![],
+    );
+    let pf_b = make_ts_file_in_pkg(
+        "packages/b/src/b.ts",
+        Some(2),
+        vec![make_symbol("B", "B", SymbolKind::Class, Visibility::Public, None)],
+        vec![],
+    );
+    let pf_root = make_ts_file_in_pkg(
+        "tools/script.ts",
+        None,
+        vec![make_symbol(
+            "R",
+            "R",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&pf_a, &pf_b, &pf_root] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+
+    let parsed = vec![pf_a, pf_b, pf_root];
+    let index = SymbolIndex::build(&parsed, &id_map);
+
+    use crate::indexer::resolve::engine::SymbolLookup;
+    assert_eq!(index.symbols_in_package(1).len(), 1);
+    assert_eq!(index.symbols_in_package(1)[0].qualified_name, "A");
+    assert_eq!(index.symbols_in_package(2).len(), 1);
+    assert_eq!(index.symbols_in_package(2)[0].qualified_name, "B");
+    // Root-scoped symbols (no package_id) do not surface via this index.
+    assert!(index.symbols_in_package(99).is_empty());
+}
+
+#[test]
+fn project_context_workspace_package_id_handles_deep_imports() {
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("@myorg/utils".to_string(), 7);
+
+    assert_eq!(ctx.workspace_package_id("@myorg/utils"), Some(7));
+    assert_eq!(ctx.workspace_package_id("@myorg/utils/sub"), Some(7));
+    assert_eq!(ctx.workspace_package_id("@myorg/utils/sub/mod"), Some(7));
+    assert_eq!(ctx.workspace_package_id("@myorg/other"), None);
+    assert_eq!(ctx.workspace_package_id("react"), None);
+}

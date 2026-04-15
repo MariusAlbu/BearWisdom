@@ -163,6 +163,29 @@ pub trait SymbolLookup {
     /// root segment of a member chain is externally known, the whole chain is
     /// external and need not be resolved against the project index.
     fn is_external_name(&self, name: &str, language: &str) -> bool;
+
+    /// Return all symbols belonging to a workspace package.
+    ///
+    /// Used by language resolvers to scope lookups when an import specifier
+    /// matches a sibling package's `declared_name`. Returns an empty slice
+    /// when the package isn't known (e.g. single-project layouts).
+    fn symbols_in_package(&self, _package_id: i64) -> &[SymbolInfo] {
+        &[]
+    }
+
+    /// Resolve a module specifier to a workspace `package_id`, honoring deep
+    /// imports by stripping trailing `/seg` segments until the declared name
+    /// matches. Returns `None` when no workspace package declares that name.
+    fn workspace_package_id(&self, _specifier: &str) -> Option<i64> {
+        None
+    }
+
+    /// Exact declared_name match without the deep-import prefix walk.
+    /// Returns true when `name` is literally a workspace package's
+    /// `declared_name`. Used to tell deep imports apart from bare imports.
+    fn is_workspace_declared_name(&self, _name: &str) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -208,6 +231,15 @@ pub struct SymbolIndex {
     /// Built once from `primitives::primitives_for_language` for all languages
     /// present in the parsed files.
     primitives_by_language: FxHashMap<String, HashSet<&'static str>>,
+    /// All symbols grouped by their owning workspace `package_id`. Empty for
+    /// single-project layouts or for files whose `ParsedFile::package_id`
+    /// is None. Used by language resolvers to scope cross-package import
+    /// lookups.
+    by_package: FxHashMap<i64, Vec<SymbolInfo>>,
+    /// Snapshot of `ProjectContext::workspace_pkg_by_declared_name` taken at
+    /// build time — lets `SymbolLookup::workspace_package_id` stand alone
+    /// without holding a borrow on the project context.
+    workspace_pkg_by_declared_name: FxHashMap<String, i64>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -559,6 +591,26 @@ impl SymbolIndex {
             }
         }
 
+        // Group symbols by workspace package_id so language resolvers can
+        // scope lookups when an import specifier matches a sibling package's
+        // declared_name. One entry per qname — duplicates filtered via
+        // by_qname's first-wins semantics.
+        let mut by_package: FxHashMap<i64, Vec<SymbolInfo>> = FxHashMap::default();
+        for sym in by_qname.values() {
+            if let Some(pkg_id) = sym.package_id {
+                by_package.entry(pkg_id).or_default().push(sym.clone());
+            }
+        }
+
+        let workspace_pkg_by_declared_name: FxHashMap<String, i64> = project_ctx
+            .map(|ctx| {
+                ctx.workspace_pkg_by_declared_name
+                    .iter()
+                    .map(|(k, v)| (k.clone(), *v))
+                    .collect()
+            })
+            .unwrap_or_default();
+
         Self {
             by_name,
             by_qname,
@@ -568,6 +620,8 @@ impl SymbolIndex {
             module_to_file,
             test_globals,
             primitives_by_language,
+            by_package,
+            workspace_pkg_by_declared_name,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -637,6 +691,9 @@ impl SymbolIndex {
 
             self.by_name.entry(name).or_default().push(info.clone());
             self.by_qname.insert(qname, info.clone());
+            if let Some(pkg_id) = info.package_id {
+                self.by_package.entry(pkg_id).or_default().push(info.clone());
+            }
             // by_file key stays String (one allocation per file, not per symbol)
             self.by_file.entry(file_path).or_default().push(info);
         }
@@ -1021,6 +1078,31 @@ impl SymbolLookup for SymbolIndex {
         // We intentionally do NOT call by_name here — that is used by the resolution
         // path. This method only covers the three positive-match cases above.
         false
+    }
+
+    fn symbols_in_package(&self, package_id: i64) -> &[SymbolInfo] {
+        self.by_package
+            .get(&package_id)
+            .map(|v| v.as_slice())
+            .unwrap_or(&self.empty)
+    }
+
+    fn workspace_package_id(&self, specifier: &str) -> Option<i64> {
+        if let Some(&id) = self.workspace_pkg_by_declared_name.get(specifier) {
+            return Some(id);
+        }
+        let mut path = specifier;
+        while let Some(slash) = path.rfind('/') {
+            path = &path[..slash];
+            if let Some(&id) = self.workspace_pkg_by_declared_name.get(path) {
+                return Some(id);
+            }
+        }
+        None
+    }
+
+    fn is_workspace_declared_name(&self, name: &str) -> bool {
+        self.workspace_pkg_by_declared_name.contains_key(name)
     }
 }
 

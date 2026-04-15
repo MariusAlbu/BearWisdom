@@ -11,7 +11,7 @@ use std::fmt::Write;
 
 use bearwisdom::{
     ArchitectureOverview, BlastRadiusResult, CallHierarchyItem, FileSymbol, InvestigateResult,
-    PackageStats, SearchResult, SymbolDetail, SymbolSummary, WorkspaceOverview,
+    PackageStats, SearchResult, SymbolDetail, SymbolSummary, WorkspaceGraphEdge, WorkspaceOverview,
 };
 use bearwisdom::query::completion::CompletionItem;
 use bearwisdom::query::context::SmartContextResult;
@@ -599,5 +599,41 @@ pub fn workspace(overview: &WorkspaceOverview) -> String {
         out.push('\n');
     }
     out.push_str(&body);
+    out
+}
+
+/// `bw_workspace_graph`
+///
+/// Format: one line per (src, tgt) pair. `code` and `flow` use `kind:count`
+/// tuples separated by `+`; a trailing `declared` flag surfaces manifest
+/// intent. Lines sort by total edges descending (matches the query order).
+pub fn workspace_graph(edges: &[WorkspaceGraphEdge]) -> String {
+    let mut out = start(&format!("edges:{}", edges.len()));
+    for e in edges {
+        let code_parts = if e.code_by_kind.is_empty() {
+            "-".to_string()
+        } else {
+            e.code_by_kind
+                .iter()
+                .map(|(k, n)| format!("{k}:{n}"))
+                .collect::<Vec<_>>()
+                .join("+")
+        };
+        let flow_parts = if e.flow_by_kind.is_empty() {
+            "-".to_string()
+        } else {
+            e.flow_by_kind
+                .iter()
+                .map(|(k, n)| format!("{k}:{n}"))
+                .collect::<Vec<_>>()
+                .join("+")
+        };
+        let declared = if e.declared_dep { "declared" } else { "-" };
+        let _ = writeln!(
+            out,
+            "{}->{}|code:{}|flow:{}|{}|total:{}",
+            e.source_package, e.target_package, code_parts, flow_parts, declared, e.total_edges
+        );
+    }
     out
 }

@@ -31,7 +31,7 @@ use super::{builtins, chain};
 
 use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
@@ -109,6 +109,38 @@ impl LanguageResolver for TypeScriptResolver {
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, ref_ctx, lookup) {
                 return Some(res);
+            }
+        }
+
+        // Workspace package lookup — highest priority for bare specifiers.
+        // `import { foo } from '@myorg/utils'` where `@myorg/utils` is a
+        // sibling workspace package. Scope lookup to that package's
+        // symbol set and emit at confidence 1.0. Also handles deep imports
+        // like `@myorg/utils/sub/mod` by stripping the trailing path.
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if builtins::is_bare_specifier(module) {
+                if let Some(res) =
+                    resolve_workspace_package(module, target, edge_kind, lookup)
+                {
+                    return Some(res);
+                }
+            }
+        } else {
+            for import in &file_ctx.imports {
+                if import.imported_name != *target {
+                    continue;
+                }
+                let Some(module_path) = &import.module_path else {
+                    continue;
+                };
+                if !builtins::is_bare_specifier(module_path) {
+                    continue;
+                }
+                if let Some(res) =
+                    resolve_workspace_package(module_path, target, edge_kind, lookup)
+                {
+                    return Some(res);
+                }
             }
         }
 
@@ -344,6 +376,15 @@ impl LanguageResolver for TypeScriptResolver {
         // If the ref itself carries a module path, check it directly.
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if builtins::is_bare_specifier(module) {
+                // Workspace package: not external. The resolver's main path
+                // already handles this at confidence 1.0 — here we just
+                // prevent the fallback from reclassifying it as external
+                // when the specific symbol wasn't found in the package.
+                if let Some(ctx) = project_ctx {
+                    if ctx.workspace_package_id(module).is_some() {
+                        return None;
+                    }
+                }
                 // Manifest-driven: check package.json dependencies first.
                 if let Some(ctx) = project_ctx {
                     if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
@@ -377,6 +418,12 @@ impl LanguageResolver for TypeScriptResolver {
             if !builtins::is_bare_specifier(module_path) {
                 continue;
             }
+            // Workspace package — not external; let the main resolver path own it.
+            if let Some(ctx) = project_ctx {
+                if ctx.workspace_package_id(module_path).is_some() {
+                    return None;
+                }
+            }
             // Manifest-driven: check package.json dependencies first.
             if let Some(ctx) = project_ctx {
                 if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Npm) {
@@ -406,6 +453,11 @@ impl LanguageResolver for TypeScriptResolver {
                     }
                     if let Some(module_path) = &import.module_path {
                         if builtins::is_bare_specifier(module_path) {
+                            if let Some(ctx) = project_ctx {
+                                if ctx.workspace_package_id(module_path).is_some() {
+                                    return None;
+                                }
+                            }
                             let is_external = match project_ctx {
                                 Some(ctx) => is_manifest_ts_package(ctx, ref_ctx.file_package_id, module_path),
                                 None => true,
@@ -437,6 +489,93 @@ impl LanguageResolver for TypeScriptResolver {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Resolve an import that targets a sibling workspace package.
+///
+/// When `module_specifier` matches a package's `declared_name` (exact or by
+/// prefix for deep imports like `@myorg/utils/sub/mod`), scope the symbol
+/// lookup to that package and return a confidence-1.0 resolution.
+///
+/// For deep imports we prefer a symbol whose file path contains the import's
+/// sub-path, falling back to the first kind-compatible same-name symbol in
+/// the package. That keeps multi-file workspace packages resolving correctly
+/// without needing to map each sub-path to an exact file.
+fn resolve_workspace_package(
+    module_specifier: &str,
+    target: &str,
+    edge_kind: crate::types::EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    let pkg_id = lookup.workspace_package_id(module_specifier)?;
+
+    // If this was a deep import, compute the sub-path so we can prefer a
+    // matching file. For an exact match the sub-path is empty.
+    let sub_path = sub_path_for_deep_import(module_specifier, lookup);
+
+    let syms = lookup.symbols_in_package(pkg_id);
+    let mut fallback: Option<&SymbolInfo> = None;
+    for sym in syms {
+        if sym.name != target {
+            continue;
+        }
+        if !builtins::kind_compatible(edge_kind, &sym.kind) {
+            continue;
+        }
+        if let Some(sub) = &sub_path {
+            if sym.file_path.contains(sub.as_str()) {
+                debug!(
+                    strategy = "ts_workspace_pkg",
+                    module = %module_specifier,
+                    target = %target,
+                    sub = %sub,
+                    "resolved (deep import)"
+                );
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "ts_workspace_pkg",
+                });
+            }
+        }
+        if fallback.is_none() {
+            fallback = Some(sym);
+        }
+    }
+
+    fallback.map(|sym| {
+        debug!(
+            strategy = "ts_workspace_pkg",
+            module = %module_specifier,
+            target = %target,
+            "resolved"
+        );
+        Resolution {
+            target_symbol_id: sym.id,
+            confidence: 1.0,
+            strategy: "ts_workspace_pkg",
+        }
+    })
+}
+
+/// Compute the sub-path portion of a deep workspace import.
+///
+/// Finds the longest declared_name prefix (exact match) and returns the
+/// remainder after the boundary `/`. Returns `None` when `specifier` is
+/// itself the declared_name (no deep path) or when no workspace package
+/// matches.
+fn sub_path_for_deep_import(specifier: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+    if lookup.is_workspace_declared_name(specifier) {
+        return None;
+    }
+    let mut path = specifier;
+    while let Some(slash) = path.rfind('/') {
+        path = &path[..slash];
+        if lookup.is_workspace_declared_name(path) {
+            return Some(specifier[path.len() + 1..].to_string());
+        }
+    }
+    None
+}
 
 /// Follow re-export chains through barrel files.
 ///

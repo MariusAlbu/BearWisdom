@@ -74,6 +74,11 @@ pub struct ManifestData {
     pub global_usings: Vec<String>,
     /// .NET: most capable SDK type string (`"web"`, `"base"`, etc.).
     pub sdk_type: Option<String>,
+    /// .NET: workspace sibling projects referenced via
+    /// `<ProjectReference Include="..."/>`. Each entry is the referenced
+    /// project's filename stem (e.g. `../Shared/Shared.csproj` →
+    /// `"Shared"`). Matches sibling packages' `declared_name`.
+    pub project_refs: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

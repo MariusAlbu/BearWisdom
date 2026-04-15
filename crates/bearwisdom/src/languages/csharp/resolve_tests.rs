@@ -659,3 +659,102 @@ fn test_infer_without_project_context_fallback() {
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
     assert!(ns.is_none(), "Without external usings, should not infer external");
 }
+
+// ---------------------------------------------------------------------------
+// Workspace ProjectReference guard (B3)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn workspace_project_namespace_not_classified_as_external() {
+    // `using Shared.Models;` where `Shared.csproj` is a sibling workspace
+    // project must NOT surface as external, even if a NuGet root-prefix
+    // match would otherwise catch it.
+    let make_import_ref = |source_idx, target: &str, line| ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name: target.to_string(),
+        kind: EdgeKind::Imports,
+        line,
+        module: Some(target.to_string()),
+        chain: None,
+    };
+    let file = make_file(
+        "App/Foo.cs",
+        vec![make_symbol(
+            "Foo",
+            "App.Foo",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "Shared.Models", 1)],
+    );
+
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("Shared".to_string(), 42);
+
+    let resolver = CSharpResolver;
+    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[0],
+        source_symbol: &file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    assert!(
+        ns.is_none(),
+        "sibling workspace project namespace must not be external, got {ns:?}"
+    );
+}
+
+#[test]
+fn workspace_project_guard_root_prefix_beats_nuget_collision() {
+    // Tricky case: a sibling project named `Shared` AND a NuGet package
+    // named `Shared.Utility`. A consumer writes `using Shared.Something;`.
+    // The NuGet root-prefix classifier would normally say external; the
+    // workspace guard must win.
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    let make_import_ref = |source_idx, target: &str, line| ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name: target.to_string(),
+        kind: EdgeKind::Imports,
+        line,
+        module: Some(target.to_string()),
+        chain: None,
+    };
+    let file = make_file(
+        "App/Foo.cs",
+        vec![make_symbol(
+            "Foo",
+            "App.Foo",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "Shared.Something", 1)],
+    );
+
+    let mut ctx = ProjectContext::default();
+    ctx.workspace_pkg_by_declared_name
+        .insert("Shared".to_string(), 42);
+    let mut nuget = ManifestData::default();
+    nuget.dependencies.insert("Shared.Utility".to_string());
+    ctx.manifests.insert(ManifestKind::NuGet, nuget);
+
+    let resolver = CSharpResolver;
+    let file_ctx = resolver.build_file_context(&file, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[0],
+        source_symbol: &file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
+    assert!(
+        ns.is_none(),
+        "workspace guard must beat NuGet root-prefix match, got {ns:?}"
+    );
+}

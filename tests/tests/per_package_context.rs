@@ -72,7 +72,12 @@ export function run() {
 }
 
 fn collect_packages(db: &bearwisdom::Database) -> Vec<(i64, String)> {
-    let mut stmt = db.prepare("SELECT id, name FROM packages").unwrap();
+    // Looks up by `declared_name` — the manifest-reported package name
+    // (A2). `name` is the folder-derived key (e.g. `server`, `e2e`) and
+    // doesn't match `@app/server` etc.
+    let mut stmt = db
+        .prepare("SELECT id, COALESCE(declared_name, name) FROM packages")
+        .unwrap();
     stmt.query_map([], |row| {
         Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
     })
