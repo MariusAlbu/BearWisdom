@@ -11,7 +11,7 @@
 //   Phase 3: Resolve final segment on the resolved type
 // =============================================================================
 
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup};
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
@@ -286,12 +286,34 @@ pub fn resolve_via_chain(
     }
 
     // by_name scoped to the resolved type.
-    for sym in lookup.by_name(&last.name) {
-        if sym.qualified_name.starts_with(&current_type)
-            && (config.kind_compatible)(edge_kind, &sym.kind)
-        {
+    //
+    // Constrain the prefix match: `current_type = "Foo"` must be followed by
+    // a `.` so it doesn't spuriously collide with `FooBar.bar`. Then collect
+    // all matches — a single match is deterministic enough to emit at
+    // confidence 1.0 via a dedicated "*_chain_resolution_unique" strategy,
+    // while multiple matches keep the 0.95 hedge.
+    let type_prefix = format!("{current_type}.");
+    let matches: Vec<&SymbolInfo> = lookup
+        .by_name(&last.name)
+        .iter()
+        .filter(|sym| {
+            (sym.qualified_name == current_type
+                || sym.qualified_name.starts_with(&type_prefix))
+                && (config.kind_compatible)(edge_kind, &sym.kind)
+        })
+        .collect();
+    match matches.len() {
+        0 => {}
+        1 => {
             return Some(Resolution {
-                target_symbol_id: sym.id,
+                target_symbol_id: matches[0].id,
+                confidence: 1.0,
+                strategy: chain_strategy_unique(strategy),
+            });
+        }
+        _ => {
+            return Some(Resolution {
+                target_symbol_id: matches[0].id,
                 confidence: 0.95,
                 strategy: chain_strategy(strategy),
             });
@@ -460,5 +482,27 @@ fn chain_strategy(prefix: &str) -> &'static str {
         "swift" => "swift_chain_resolution",
         "c" => "c_chain_resolution",
         _ => "chain_resolution",
+    }
+}
+
+/// Strategy name for the unique prefix-match variant — exactly one symbol
+/// within the resolved type owns the trailing segment, so the resolution
+/// is deterministic and emitted at confidence 1.0.
+fn chain_strategy_unique(prefix: &str) -> &'static str {
+    match prefix {
+        "ts" => "ts_chain_resolution_unique",
+        "python" => "python_chain_resolution_unique",
+        "rust" => "rust_chain_resolution_unique",
+        "go" => "go_chain_resolution_unique",
+        "csharp" => "csharp_chain_resolution_unique",
+        "java" => "java_chain_resolution_unique",
+        "php" => "php_chain_resolution_unique",
+        "ruby" => "ruby_chain_resolution_unique",
+        "kotlin" => "kotlin_chain_resolution_unique",
+        "scala" => "scala_chain_resolution_unique",
+        "dart" => "dart_chain_resolution_unique",
+        "swift" => "swift_chain_resolution_unique",
+        "c" => "c_chain_resolution_unique",
+        _ => "chain_resolution_unique",
     }
 }

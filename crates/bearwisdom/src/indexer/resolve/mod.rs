@@ -138,8 +138,8 @@ fn resolve_and_write_inner(
                     let result = tx
                         .prepare_cached(
                             "INSERT OR IGNORE INTO edges
-                               (source_id, target_id, kind, source_line, confidence)
-                             VALUES (?1, ?2, ?3, ?4, ?5)",
+                               (source_id, target_id, kind, source_line, confidence, strategy)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         )
                         .and_then(|mut stmt| {
                             stmt.execute(rusqlite::params![
@@ -148,6 +148,7 @@ fn resolve_and_write_inner(
                                 r.kind.as_str(),
                                 r.line,
                                 resolution.confidence,
+                                resolution.strategy,
                             ])
                         });
                     match result {
@@ -361,12 +362,12 @@ fn resolve_and_write_inner(
             );
 
             match resolution {
-                Some((target_id, confidence)) => {
+                Some((target_id, confidence, strategy)) => {
                     let result = tx
                         .prepare_cached(
                             "INSERT OR IGNORE INTO edges
-                               (source_id, target_id, kind, source_line, confidence)
-                             VALUES (?1, ?2, ?3, ?4, ?5)",
+                               (source_id, target_id, kind, source_line, confidence, strategy)
+                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         )
                         .and_then(|mut stmt| {
                             stmt.execute(rusqlite::params![
@@ -375,6 +376,7 @@ fn resolve_and_write_inner(
                                 r.kind.as_str(),
                                 r.line,
                                 confidence,
+                                strategy,
                             ])
                         });
                     match result {

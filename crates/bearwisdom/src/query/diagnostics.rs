@@ -167,6 +167,87 @@ pub fn get_diagnostics(
 }
 
 // ---------------------------------------------------------------------------
+// Project-wide low-confidence roll-up
+// ---------------------------------------------------------------------------
+
+/// One bucket in the low-confidence summary — a (strategy, kind) pair with
+/// its count and a range of observed confidence values.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LowConfidenceBucket {
+    /// Resolver strategy string (e.g. "heuristic_name_kind", "ts_chain_resolution").
+    /// `None` for edges written before strategy tracking landed, or for
+    /// directly-inserted edges (SCIP import, tests).
+    pub strategy: Option<String>,
+    /// Edge kind (`calls`, `type_ref`, etc.).
+    pub kind: String,
+    pub count: u64,
+    pub min_confidence: f64,
+    pub max_confidence: f64,
+}
+
+/// Project-wide summary of low-confidence edges grouped by strategy and kind.
+///
+/// Used to audit the resolution pipeline — spot the largest sources of
+/// heuristic edges and prioritize improvements. Rows sort by count desc.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LowConfidenceReport {
+    pub threshold: f64,
+    pub total: u64,
+    pub buckets: Vec<LowConfidenceBucket>,
+}
+
+/// Return a roll-up of edges with `confidence < threshold`, grouped by
+/// `(strategy, kind)`. Edges from the `external` file origin are excluded
+/// so external-package noise doesn't dominate the view.
+pub fn low_confidence_edges(
+    db: &Database,
+    threshold: f64,
+) -> QueryResult<LowConfidenceReport> {
+    let _timer = db.timer("low_confidence_edges");
+    let conn = db.conn();
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT e.strategy,
+                    e.kind,
+                    COUNT(*)          AS cnt,
+                    MIN(e.confidence) AS mn,
+                    MAX(e.confidence) AS mx
+             FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE e.confidence < ?1
+               AND f.origin = 'internal'
+             GROUP BY e.strategy, e.kind
+             ORDER BY cnt DESC, e.strategy, e.kind",
+        )
+        .context("low_confidence_edges: prepare roll-up")?;
+
+    let rows = stmt
+        .query_map([threshold], |row| {
+            Ok(LowConfidenceBucket {
+                strategy: row.get::<_, Option<String>>(0)?,
+                kind: row.get::<_, String>(1)?,
+                count: row.get::<_, i64>(2)? as u64,
+                min_confidence: row.get::<_, f64>(3)?,
+                max_confidence: row.get::<_, f64>(4)?,
+            })
+        })
+        .context("low_confidence_edges: execute roll-up")?;
+
+    let buckets: Vec<LowConfidenceBucket> = rows
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("low_confidence_edges: collect rows")?;
+    let total = buckets.iter().map(|b| b.count).sum();
+
+    Ok(LowConfidenceReport {
+        threshold,
+        total,
+        buckets,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -246,5 +327,85 @@ mod tests {
         assert_eq!(result.low_confidence_count, 1);
         assert_eq!(result.diagnostics[0].kind, DiagnosticKind::LowConfidenceEdge);
         assert_eq!(result.diagnostics[0].confidence, Some(0.50));
+    }
+
+    /// Seed two edges at different confidences + strategies, verify the
+    /// project-wide roll-up groups them correctly.
+    fn seed_edge(
+        db: &Database,
+        file_id: i64,
+        src_name: &str,
+        tgt_name: &str,
+        confidence: f64,
+        strategy: Option<&str>,
+    ) {
+        let conn = db.conn();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, ?2, ?3, 'function', 1, 0)",
+            rusqlite::params![file_id, src_name, format!("mod::{src_name}")],
+        )
+        .unwrap();
+        let src_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO symbols (file_id, name, qualified_name, kind, line, col)
+             VALUES (?1, ?2, ?3, 'function', 5, 0)",
+            rusqlite::params![file_id, tgt_name, format!("mod::{tgt_name}")],
+        )
+        .unwrap();
+        let tgt_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO edges (source_id, target_id, kind, source_line, confidence, strategy)
+             VALUES (?1, ?2, 'calls', 1, ?3, ?4)",
+            rusqlite::params![src_id, tgt_id, confidence, strategy],
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn low_confidence_edges_buckets_by_strategy_and_kind() {
+        let db = Database::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO files (path, hash, language, last_indexed, origin)
+                 VALUES ('src/a.rs', 'h', 'rust', 0, 'internal')",
+                [],
+            )
+            .unwrap();
+        let file_id = db.conn().last_insert_rowid();
+
+        seed_edge(&db, file_id, "a1", "a2", 0.50, Some("heuristic_name_kind"));
+        seed_edge(&db, file_id, "b1", "b2", 0.35, Some("heuristic_name_kind"));
+        seed_edge(&db, file_id, "c1", "c2", 0.95, Some("ts_chain_resolution"));
+        seed_edge(&db, file_id, "d1", "d2", 1.00, Some("csharp_same_namespace"));
+
+        let report = low_confidence_edges(&db, LOW_CONFIDENCE_THRESHOLD).unwrap();
+        // 0.50, 0.35, 0.95 all < 0.80? No — 0.95 > 0.80, so only 0.50/0.35
+        // actually fall under the default threshold.
+        assert_eq!(report.total, 2);
+        assert_eq!(report.buckets.len(), 1);
+        let b = &report.buckets[0];
+        assert_eq!(b.strategy.as_deref(), Some("heuristic_name_kind"));
+        assert_eq!(b.kind, "calls");
+        assert_eq!(b.count, 2);
+        assert!((b.min_confidence - 0.35).abs() < 1e-9);
+        assert!((b.max_confidence - 0.50).abs() < 1e-9);
+    }
+
+    #[test]
+    fn low_confidence_edges_excludes_external_origin() {
+        let db = Database::open_in_memory().unwrap();
+        db.conn()
+            .execute(
+                "INSERT INTO files (path, hash, language, last_indexed, origin)
+                 VALUES ('ext/pkg/x.ts', 'h', 'typescript', 0, 'external')",
+                [],
+            )
+            .unwrap();
+        let file_id = db.conn().last_insert_rowid();
+        seed_edge(&db, file_id, "x1", "x2", 0.50, Some("heuristic_name_kind"));
+
+        let report = low_confidence_edges(&db, LOW_CONFIDENCE_THRESHOLD).unwrap();
+        assert_eq!(report.total, 0);
     }
 }

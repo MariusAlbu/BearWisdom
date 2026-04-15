@@ -497,6 +497,18 @@ enum Commands {
         /// Absolute path to the project root.
         path: String,
     },
+
+    /// Low-confidence edge report grouped by (strategy, kind). Surfaces
+    /// which resolver strategies are producing heuristic/ambiguous edges
+    /// so the team can target them for improvement.
+    LowConfidenceEdges {
+        /// Absolute path to the project root.
+        path: String,
+        /// Confidence threshold — edges strictly below this are counted.
+        /// Defaults to 1.0 (all sub-1.0 edges surface).
+        #[arg(long, default_value_t = 1.0)]
+        threshold: f64,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -631,6 +643,9 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::Workspace { path } => cmd_workspace(&path),
         Commands::Dependencies { path } => cmd_dependencies(&path),
         Commands::WorkspaceGraph { path } => cmd_workspace_graph(&path),
+        Commands::LowConfidenceEdges { path, threshold } => {
+            cmd_low_confidence_edges(&path, threshold)
+        }
     }
 }
 
@@ -1850,6 +1865,14 @@ fn cmd_workspace_graph(project_path: &str) -> Result<String> {
     let db = open_existing_db(project_path)?;
     let graph = bearwisdom::workspace_graph(&db).context("workspace_graph failed")?;
     ok_json(graph)
+}
+
+/// Low-confidence edge report — aggregated by resolver strategy and kind.
+fn cmd_low_confidence_edges(project_path: &str, threshold: f64) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let report = bearwisdom::low_confidence_edges(&db, threshold)
+        .context("low_confidence_edges failed")?;
+    ok_json(report)
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.

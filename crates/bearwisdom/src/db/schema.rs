@@ -182,6 +182,19 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_unresolved_refs_snippet
            ON unresolved_refs(from_snippet) WHERE from_snippet = 1"
     )?;
+    // v0.9 (T9): Record which resolver strategy produced each edge.
+    // Populated by the resolution pipeline — the engine writes the language
+    // resolver's named strategy (e.g. "ts_workspace_pkg", "csharp_using_directive"),
+    // the heuristic writes a "heuristic_*" family. NULL for legacy rows and
+    // direct DB inserts (SCIP import, tests). Lets diagnostic queries answer
+    // "why is this edge 0.95?" without re-running the resolver.
+    if !column_exists(conn, "edges", "strategy") {
+        conn.execute_batch("ALTER TABLE edges ADD COLUMN strategy TEXT")?;
+    }
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_edges_strategy
+           ON edges(strategy) WHERE strategy IS NOT NULL"
+    )?;
     Ok(())
 }
 
@@ -336,6 +349,8 @@ CREATE TABLE IF NOT EXISTS edges (
     kind        TEXT    NOT NULL,
     source_line INTEGER,
     confidence  REAL    NOT NULL DEFAULT 1.0,
+    -- T9: which resolver strategy produced this edge. NULL for legacy / direct inserts.
+    strategy    TEXT,
     UNIQUE(source_id, target_id, kind, source_line)
 );
 

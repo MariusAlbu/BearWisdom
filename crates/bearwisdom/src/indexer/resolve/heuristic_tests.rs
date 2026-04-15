@@ -154,7 +154,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         &parsed,
     );
     assert_eq!(
-        resolution,
+        resolution.map(|(id, conf, _)| (id, conf)),
         Some((42, 0.92)),
         "Full pipeline: TypeRef to 'Foo' with using NS.Models should resolve at 0.92"
     );
@@ -199,7 +199,7 @@ fn p4_kind_matching_prefers_method_for_calls() {
         &parsed,
     );
     assert_eq!(
-        resolution.map(|(id, _)| id),
+        resolution.map(|(id, _, _)| id),
         Some(20),
         "Calls ref to 'Foo' should prefer the method symbol over the class symbol"
     );

@@ -128,18 +128,19 @@ pub fn resolve_and_write(
             );
 
             match resolution {
-                Some((target_id, confidence)) => {
+                Some((target_id, confidence, strategy)) => {
                     // Write the edge (ignore duplicate constraint violations).
                     let result = tx.execute(
                         "INSERT OR IGNORE INTO edges
-                           (source_id, target_id, kind, source_line, confidence)
-                         VALUES (?1, ?2, ?3, ?4, ?5)",
+                           (source_id, target_id, kind, source_line, confidence, strategy)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
                         rusqlite::params![
                             source_id,
                             target_id,
                             r.kind.as_str(),
                             r.line,
                             confidence,
+                            strategy,
                         ],
                     );
                     match result {
@@ -199,7 +200,7 @@ pub(super) fn resolve_ref(
     module_to_files: &FxHashMap<String, Vec<String>>,
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
-) -> Option<(i64, f64)> {
+) -> Option<(i64, f64, &'static str)> {
     // --- Priority 0: Direct module match (0.95) ---
     // The extractor set `module` on this ref (e.g., Erlang `lists:map()`,
     // OCaml `List.map`, R `dplyr::mutate`).
@@ -208,7 +209,7 @@ pub(super) fn resolve_ref(
         if let Some(id) =
             resolve_via_ref_module(target_name, module, name_to_ids, module_to_files, qname_to_id)
         {
-            return Some((id, 0.95));
+            return Some((id, 0.95, "heuristic_ref_module"));
         }
     }
 
@@ -224,13 +225,13 @@ pub(super) fn resolve_ref(
         if let Some(id) = resolve_via_chain_prefix(
             target_name, prefix, file_imports, name_to_ids, parsed,
         ) {
-            return Some((id, 0.95));
+            return Some((id, 0.95, "heuristic_chain_prefix"));
         }
     }
 
     // --- Priority 1: Import match (0.95) ---
     if let Some(id) = resolve_via_import(target_name, source_file, file_imports, name_to_ids, symbol_id_map, parsed) {
-        return Some((id, 0.95));
+        return Some((id, 0.95, "heuristic_import"));
     }
 
     // --- Priority 1.5: Namespace import match (0.92) ---
@@ -238,13 +239,13 @@ pub(super) fn resolve_ref(
     // not the individual type names.  Look for a symbol whose qualified_name is
     // "{namespace}.{target_name}" for any dotted import in scope.
     if let Some(id) = resolve_via_namespace_import(target_name, file_imports, qname_to_id) {
-        return Some((id, 0.92));
+        return Some((id, 0.92, "heuristic_namespace_import"));
     }
 
     // --- Priority 2: Qualified name (0.90) ---
     if target_name.contains('.') {
         if let Some(&id) = qname_to_id.get(target_name) {
-            return Some((id, 0.90));
+            return Some((id, 0.90, "heuristic_qualified_name"));
         }
     }
 
@@ -254,13 +255,13 @@ pub(super) fn resolve_ref(
     // Transaction can use Category without `using FamilyBudget.Api.Entities`.
     if let Some(ns) = source_namespace {
         if let Some(id) = resolve_via_same_namespace(target_name, ns, name_to_ids) {
-            return Some((id, 0.85));
+            return Some((id, 0.85, "heuristic_same_namespace"));
         }
     }
 
     // --- Priority 3: Namespace match (0.80) ---
     if let Some(id) = resolve_via_namespace(target_name, source_file, file_imports, name_to_ids, parsed) {
-        return Some((id, 0.80));
+        return Some((id, 0.80, "heuristic_namespace"));
     }
 
     // --- Priority 4: Name + kind (0.50 base, with ambiguity decay) ---
@@ -299,7 +300,7 @@ pub(super) fn resolve_ref(
                 .unwrap();
             // Confidence decays with candidate count: 0.50 / sqrt(n).
             let confidence = 0.50 / (pool.len() as f64).sqrt();
-            return Some((best.3, confidence));
+            return Some((best.3, confidence, "heuristic_name_kind"));
         }
     }
 
