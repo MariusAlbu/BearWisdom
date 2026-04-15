@@ -55,7 +55,7 @@ pub struct ImportEntry {
 }
 
 /// Context for the file being resolved. Built once per file by the resolver.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct FileContext {
     /// The file path (relative to project root).
     pub file_path: String,
