@@ -242,9 +242,43 @@ impl LanguageResolver for TypeScriptResolver {
             let Some(module_path) = &import.module_path else {
                 continue;
             };
+
+            // Relative import (`./x`, `../y`): look up in the target file
+            // via the module_to_file index. Without this, JSX usage refs
+            // like `<Button>` after `import { Button } from "./button"`
+            // fall through to the heuristic when the TS resolver should
+            // have caught them deterministically.
             if !builtins::is_bare_specifier(module_path) {
-                continue;
+                for sym in lookup.in_file(module_path) {
+                    if sym.name == *target
+                        && builtins::kind_compatible(edge_kind, &sym.kind)
+                    {
+                        debug!(
+                            strategy = "ts_relative_import",
+                            module = %module_path,
+                            target = %target,
+                            "resolved"
+                        );
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "ts_relative_import",
+                        });
+                    }
+                }
+                // Follow barrel re-exports when the relative module itself
+                // is a barrel that forwards the named export.
+                if let Some(res) =
+                    follow_reexports(module_path, target, edge_kind, lookup, 0)
+                {
+                    return Some(res);
+                }
+                // Relative import exists but the symbol is not in the
+                // referenced file (or any re-export chain). Stop here so
+                // the heuristic doesn't produce a spurious match.
+                return None;
             }
+
             let candidate = format!("{module_path}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if builtins::kind_compatible(edge_kind, &sym.kind) {

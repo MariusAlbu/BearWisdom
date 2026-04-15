@@ -1598,6 +1598,77 @@ fn tsconfig_alias_longest_prefix_wins() {
 }
 
 #[test]
+fn relative_import_jsx_usage_resolves_via_module_to_file() {
+    // `import { cn } from "./lib/utils"` produces two refs: an import
+    // binding (TypeRef with module set) and JSX/call usages (module=None,
+    // just the target name). The non-module resolver path must handle
+    // the relative-import case — without it, usages fall through to the
+    // heuristic.
+    use crate::indexer::resolve::engine::SymbolIndex;
+
+    let producer = make_ts_file_in_pkg(
+        "packages/ui/src/lib/utils.ts",
+        None,
+        vec![make_symbol(
+            "cn",
+            "cn",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    let consumer = make_ts_file_in_pkg(
+        "packages/ui/src/button.tsx",
+        None,
+        vec![make_symbol(
+            "Button",
+            "Button",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![
+            // Import binding ref — has module set.
+            make_import_ref(0, "cn", "./lib/utils", 1),
+            // JSX usage ref — module=None, just the bare target.
+            make_ref(0, "cn", EdgeKind::Calls, 5),
+        ],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&producer, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+
+    let parsed = vec![producer, consumer];
+    let index = SymbolIndex::build(&parsed, &id_map);
+    let consumer_ref = &parsed[1];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, None);
+    // Resolve the JSX usage ref (index 1 — the Calls ref without module).
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[1],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("JSX usage of relative-imported symbol should resolve");
+    assert_eq!(res.strategy, "ts_relative_import");
+    assert_eq!(res.confidence, 1.0);
+    let expected = id_map[&("packages/ui/src/lib/utils.ts".to_string(), "cn".to_string())];
+    assert_eq!(res.target_symbol_id, expected);
+}
+
+#[test]
 fn tsconfig_alias_parser_handles_realworld_landing_shape() {
     // Exact shape from ts-rallly's apps/landing/tsconfig.json — the wild
     // case we missed. Has `extends`, `baseUrl`, mixed-type compilerOptions,
