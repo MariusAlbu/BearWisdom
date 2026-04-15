@@ -723,6 +723,7 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
             routes: Vec::new(),
             db_sets: Vec::new(),
             symbol_origin_languages: Vec::new(),
+            ref_origin_languages: Vec::new(),
             symbol_from_snippet: Vec::new(),
             content: Some(content),
             has_errors: false,
@@ -751,15 +752,17 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
     // docstring `>>>` lines). Used downstream to exclude these symbols'
     // unresolved references from aggregate resolution stats.
     let mut symbol_from_snippet: Vec<bool> = Vec::new();
+    let mut ref_origin_languages: Vec<Option<String>> = Vec::new();
 
     // Dispatch embedded regions (Vue/Svelte/Astro/Razor/HTML/PHP/MDX) —
     // each region is sub-parsed by the declared language's plugin and the
     // results are spliced back with line/column offsets.
     let regions = plugin.embedded_regions(&content, &walked.relative_path, walked.language);
     if !regions.is_empty() {
-        // Pad origin vec so host symbols are all None before we append Some(..).
+        // Pad origin vecs so host symbols/refs are all None before embedded Some(..).
         symbol_origin_languages.resize(r.symbols.len(), None);
         symbol_from_snippet.resize(r.symbols.len(), false);
+        ref_origin_languages.resize(r.refs.len(), None);
         dispatch_embedded_regions(
             &walked.relative_path,
             registry,
@@ -767,6 +770,7 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
             &mut r,
             &mut symbol_origin_languages,
             &mut symbol_from_snippet,
+            &mut ref_origin_languages,
         );
     }
 
@@ -783,6 +787,7 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
         routes: r.routes,
         db_sets: r.db_sets,
         symbol_origin_languages,
+        ref_origin_languages,
         symbol_from_snippet,
         content: Some(content),
         has_errors: r.has_errors,
@@ -849,6 +854,7 @@ fn dispatch_embedded_regions(
     r: &mut crate::types::ExtractionResult,
     origin_langs: &mut Vec<Option<String>>,
     from_snippet: &mut Vec<bool>,
+    ref_origin_langs: &mut Vec<Option<String>>,
 ) {
     use crate::types::EmbeddedOrigin;
     for region in regions {
@@ -907,6 +913,10 @@ fn dispatch_embedded_regions(
             rf.source_symbol_index += symbol_offset;
             rf.line = rf.line.saturating_add(line_offset);
             r.refs.push(rf);
+            // Tag this ref with the embedded language so the resolver
+            // routes it to the correct externals/primitives table instead
+            // of the host-file language.
+            ref_origin_langs.push(Some(region.language_id.clone()));
         }
         for mut rt in sub.routes {
             rt.handler_symbol_index += symbol_offset;
@@ -1442,14 +1452,21 @@ pub(crate) fn read_stats(
 ) -> Result<IndexStats> {
     let (
         file_count, symbol_count, edge_count,
-        unresolved_ref_count, external_ref_count,
+        unresolved_ref_count, unresolved_ref_count_external, external_ref_count,
         route_count, db_mapping_count, flow_edge_count, package_count,
-    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
         "SELECT
            (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM edges),
-           (SELECT COUNT(*) FROM unresolved_refs WHERE from_snippet = 0),
+           (SELECT COUNT(*)
+            FROM unresolved_refs ur
+            JOIN symbols s ON s.id = ur.source_id
+            WHERE ur.from_snippet = 0 AND s.origin = 'internal'),
+           (SELECT COUNT(*)
+            FROM unresolved_refs ur
+            JOIN symbols s ON s.id = ur.source_id
+            WHERE ur.from_snippet = 0 AND s.origin = 'external'),
            (SELECT COUNT(*) FROM external_refs),
            (SELECT COUNT(*) FROM routes),
            (SELECT COUNT(*) FROM db_mappings),
@@ -1458,8 +1475,8 @@ pub(crate) fn read_stats(
         [],
         |r| Ok((
             r.get(0)?, r.get(1)?, r.get(2)?,
-            r.get(3)?, r.get(4)?,
-            r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?,
+            r.get(3)?, r.get(4)?, r.get(5)?,
+            r.get(6)?, r.get(7)?, r.get(8)?, r.get(9)?,
         )),
     )?;
 
@@ -1468,6 +1485,7 @@ pub(crate) fn read_stats(
         symbol_count,
         edge_count,
         unresolved_ref_count,
+        unresolved_ref_count_external,
         external_ref_count,
         route_count,
         db_mapping_count,

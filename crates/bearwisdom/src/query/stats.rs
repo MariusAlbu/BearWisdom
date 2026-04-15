@@ -24,17 +24,25 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         symbol_count,
         edge_count,
         unresolved_ref_count,
+        unresolved_ref_count_external,
         external_ref_count,
         route_count,
         db_mapping_count,
         flow_edge_count,
         package_count,
-    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
+    ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
         "SELECT
            (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
            (SELECT COUNT(*) FROM edges),
-           (SELECT COUNT(*) FROM unresolved_refs WHERE from_snippet = 0),
+           (SELECT COUNT(*)
+            FROM unresolved_refs ur
+            JOIN symbols s ON s.id = ur.source_id
+            WHERE ur.from_snippet = 0 AND s.origin = 'internal'),
+           (SELECT COUNT(*)
+            FROM unresolved_refs ur
+            JOIN symbols s ON s.id = ur.source_id
+            WHERE ur.from_snippet = 0 AND s.origin = 'external'),
            (SELECT COUNT(*) FROM external_refs),
            (SELECT COUNT(*) FROM routes),
            (SELECT COUNT(*) FROM db_mappings),
@@ -52,6 +60,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
                 r.get(6)?,
                 r.get(7)?,
                 r.get(8)?,
+                r.get(9)?,
             ))
         },
     )?;
@@ -61,6 +70,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         symbol_count,
         edge_count,
         unresolved_ref_count,
+        unresolved_ref_count_external,
         external_ref_count,
         route_count,
         db_mapping_count,

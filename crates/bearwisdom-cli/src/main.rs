@@ -703,6 +703,7 @@ fn cmd_open(project_path: &str, no_embed: bool, force: bool) -> Result<String> {
         "symbol_count": stats.symbol_count,
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
+        "unresolved_ref_count_external": stats.unresolved_ref_count_external,
         "external_ref_count": stats.external_ref_count,
         "chunks_embedded": chunks_embedded,
         "duration_ms": stats.duration_ms,
@@ -864,6 +865,7 @@ fn cmd_status(project_path: &str) -> Result<String> {
         "symbol_count": stats.symbol_count,
         "edge_count": stats.edge_count,
         "unresolved_ref_count": stats.unresolved_ref_count,
+        "unresolved_ref_count_external": stats.unresolved_ref_count_external,
         "external_ref_count": stats.external_ref_count,
         "package_count": stats.package_count,
     }))
@@ -1407,6 +1409,7 @@ fn cmd_reindex(project_path: &str, force: bool) -> Result<String> {
         "routes": stats.route_count,
         "flow_edges": stats.flow_edge_count,
         "unresolved_refs": stats.unresolved_ref_count,
+        "unresolved_refs_external": stats.unresolved_ref_count_external,
         "flow_edge_types": flow_edge_types,
     }))
 }
@@ -1475,6 +1478,7 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         let routes = stats.route_count as i64;
         let flow_edges = stats.flow_edge_count as i64;
         let unresolved = stats.unresolved_ref_count as i64;
+        let unresolved_external = stats.unresolved_ref_count_external as i64;
         let unresolved_flows: i64 =
             bearwisdom::unresolved_flow_count(&db)? as i64;
 

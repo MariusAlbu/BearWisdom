@@ -487,6 +487,13 @@ pub struct ParsedFile {
     /// file). Always the same length as `symbols`, or empty if no sub-
     /// extraction happened (DB insert treats empty as all-None).
     pub symbol_origin_languages: Vec<Option<String>>,
+    /// Origin language per ref (indexed same as `refs`). `None` means the
+    /// ref belongs to the host language (`language` field); `Some(lang_id)`
+    /// means the ref was extracted from an embedded region of a different
+    /// language (e.g. a JS ref from a `<script>` block inside a `.ex` HEEx
+    /// file). Always the same length as `refs`, or empty when no embedded
+    /// regions were processed (resolver treats empty as all-None / host lang).
+    pub ref_origin_languages: Vec<Option<String>>,
     /// E3: per-symbol snippet flag, parallel to `symbols`. `true` means the
     /// symbol was extracted from a code snippet — Markdown fenced block,
     /// Rust doc-test, Python doctest. Snippet symbols propagate
@@ -594,7 +601,12 @@ pub struct IndexStats {
     pub file_count: u32,
     pub symbol_count: u32,
     pub edge_count: u32,
+    /// Unresolved refs whose source symbol lives in a project-internal file.
+    /// External-origin sources (node_modules .d.ts, Go pkg/mod, etc.) are
+    /// excluded so the metric reflects the health of real project code only.
     pub unresolved_ref_count: u32,
+    /// Unresolved refs originating from externally-indexed files (informational).
+    pub unresolved_ref_count_external: u32,
     pub external_ref_count: u32,
     pub route_count: u32,
     pub db_mapping_count: u32,
