@@ -117,14 +117,31 @@ fn resolve_and_write_inner(
         let file_imports = import_map.get(&pf.path).unwrap_or(&empty_vec);
         let source_namespace = file_namespace_map.get(&pf.path).map(|s| s.as_str());
 
-        for r in &pf.refs {
+        for (ref_idx, r) in pf.refs.iter().enumerate() {
+            // Determine the effective language for this ref. Refs from embedded
+            // regions (e.g. JS inside a HEEx/Elixir file, TS inside PHP) carry
+            // their own language tag so externals/primitives classification uses
+            // the correct language's ruleset rather than the host language's.
+            let effective_lang: &str = pf
+                .ref_origin_languages
+                .get(ref_idx)
+                .and_then(|o| o.as_deref())
+                .unwrap_or(&pf.language);
+            // Whether this ref belongs to a different language than the host.
+            let is_cross_lang_embedded = effective_lang != pf.language.as_str();
+
             let source_id = match file_symbol_ids.get(r.source_symbol_index).and_then(|id| *id) {
                 Some(id) => id,
                 None => continue,
             };
 
             // Tier 1: Try language-specific resolver.
+            // Skip for cross-language embedded refs: the host file_ctx was built
+            // from host-language imports and would misclassify embedded-language
+            // refs. The Tier 1.5 path below handles external classification with
+            // the correct effective language.
             let mut resolved_by_engine = false;
+            if !is_cross_lang_embedded {
             if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
                 let source_sym = &pf.symbols[r.source_symbol_index];
                 let ref_ctx = RefContext {
@@ -161,6 +178,7 @@ fn resolve_and_write_inner(
                     }
                 }
             }
+            } // end if !is_cross_lang_embedded
 
             if resolved_by_engine {
                 continue;
@@ -212,17 +230,25 @@ fn resolve_and_write_inner(
             // Check this FIRST so the heuristic doesn't create false
             // low-confidence edges for things like `map`, `iter`, `get`
             // that match internal method names by coincidence.
+            //
+            // Skip the host-language resolver inference for cross-language
+            // embedded refs — the host resolver has no knowledge of the
+            // embedded language's package ecosystem.
             // ---------------------------------------------------------------
-            let inferred_ns = if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
-                let ref_ctx = RefContext {
-                    extracted_ref: r,
-                    source_symbol: source_sym,
-                    scope_chain: scope_chain.clone(),
-                    file_package_id: pf.package_id,
-                };
-                resolver.infer_external_namespace_with_lookup(
-                    file_ctx, &ref_ctx, project_ctx, &index,
-                )
+            let inferred_ns = if !is_cross_lang_embedded {
+                if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
+                    let ref_ctx = RefContext {
+                        extracted_ref: r,
+                        source_symbol: source_sym,
+                        scope_chain: scope_chain.clone(),
+                        file_package_id: pf.package_id,
+                    };
+                    resolver.infer_external_namespace_with_lookup(
+                        file_ctx, &ref_ctx, project_ctx, &index,
+                    )
+                } else {
+                    None
+                }
             } else {
                 None
             };
@@ -237,9 +263,12 @@ fn resolve_and_write_inner(
 
             // Bare-name external check: test globals, language primitives,
             // and runtime builtins — classified with specific namespaces.
+            // Use effective_lang so JS/TS refs embedded in Elixir/PHP/Ruby
+            // host files are classified against the JS/TS primitive/builtin
+            // tables, not the host language's.
             let inferred_ns = inferred_ns.or_else(|| {
                 index
-                    .classify_external_name(&r.target_name, &pf.language)
+                    .classify_external_name(&r.target_name, effective_lang)
                     .map(|ns| ns.to_string())
             });
 

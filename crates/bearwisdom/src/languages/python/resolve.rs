@@ -528,6 +528,7 @@ mod resolve_tests {
             routes: vec![],
             db_sets: vec![],
             symbol_origin_languages: vec![],
+            ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
         }
     }
@@ -558,6 +559,7 @@ mod resolve_tests {
                 routes: vec![],
                 db_sets: vec![],
                 symbol_origin_languages: vec![],
+                ref_origin_languages: vec![],
                 symbol_from_snippet: vec![],
             })
             .collect();

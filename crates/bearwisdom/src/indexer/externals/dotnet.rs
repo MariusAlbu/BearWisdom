@@ -559,6 +559,7 @@ fn parse_dotnet_dll(
         routes: Vec::new(),
         db_sets: Vec::new(),
         symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
         symbol_from_snippet: Vec::new(),
         content: None,
         has_errors: false,

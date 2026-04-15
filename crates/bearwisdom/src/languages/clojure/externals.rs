@@ -172,6 +172,17 @@ pub(crate) const EXTERNALS: &[&str] = &[
     // -----------------------------------------------------------------------
     "deftest", "is", "are", "testing", "use-fixtures",
     "run-tests", "run-all-tests", "test-vars",
+    "thrown?", "thrown-with-msg?", "assert-any", "assert-predicate",
+    // -----------------------------------------------------------------------
+    // Object / proxy / reify special forms
+    // -----------------------------------------------------------------------
+    "proxy", "reify", "extend", "extend-type", "extend-protocol",
+    "satisfies?", "implements?",
+    // -----------------------------------------------------------------------
+    // Exception forms
+    // -----------------------------------------------------------------------
+    "throw", "try", "catch", "finally",
+    "ex-info", "ex-data", "ex-message", "ex-cause",
     // -----------------------------------------------------------------------
     // clojure.spec.alpha
     // -----------------------------------------------------------------------

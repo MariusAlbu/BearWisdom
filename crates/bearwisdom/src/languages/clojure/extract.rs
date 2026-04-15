@@ -15,6 +15,16 @@
 //   Imports   — `ns` with `:require` / `:use` / `:import` vectors
 //   Calls     — every `sym_lit` encountered during CST traversal
 //
+// SCOPE TRACKING:
+//   Local bindings are collected and suppressed from Calls refs.
+//   Forms that introduce locals:
+//     - `defn`/`defn-`/`defmacro`/`fn` parameter vectors: [x y z]
+//     - `let`/`loop`/`letfn`/`binding`/`with-redefs`/`doseq`/`for`
+//       binding vectors: [name expr name2 expr2]
+//     - Destructuring in binding positions: {:keys [a b]} [a b]
+//   A sym_lit whose target_name is in the current locals set (and has no
+//   namespace qualifier) is not emitted as a Calls ref.
+//
 // COVERAGE APPROACH:
 //   The grammar has no dedicated declaration nodes — everything is `list_lit`.
 //   ref_node_kinds = ["sym_name"] tracks every identifier leaf.
@@ -33,6 +43,7 @@
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
 };
+use std::collections::HashSet;
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -52,11 +63,152 @@ pub fn extract(source: &str) -> ExtractionResult {
     let src = source.as_bytes();
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
+    let locals = HashSet::new();
 
-    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None);
+    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None, &locals);
 
     ExtractionResult::new(symbols, refs, tree.root_node().has_error())
 }
+
+// ---------------------------------------------------------------------------
+// Scope helpers
+// ---------------------------------------------------------------------------
+
+/// Collect all locally-bound names from a `vec_lit` parameter/binding node.
+///
+/// Handles:
+///   - Plain sym_lits: `[request respond raise]` → {"request","respond","raise"}
+///   - Map destructuring: `{:keys [a b] :as m}` → {"a","b","m"}
+///   - Vector destructuring: `[a b & rest]` → {"a","b","rest"}
+///   - Nested patterns are not recursed — only first-level names.
+fn collect_params_from_vec(node: Node, src: &[u8]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    collect_binding_names(node, src, &mut names);
+    names
+}
+
+/// Recursively collect binding names from a pattern node.
+fn collect_binding_names(node: Node, src: &[u8], names: &mut HashSet<String>) {
+    match node.kind() {
+        "sym_lit" => {
+            let name = sym_lit_name(node, src);
+            // Skip & (varargs marker), _ (ignore), keywords, anon fn args
+            if !name.is_empty()
+                && name != "&"
+                && !name.starts_with(':')
+                && !name.starts_with('%')
+                && !name.starts_with('"')
+            {
+                names.insert(name);
+            }
+        }
+        "vec_lit" => {
+            // [a b & rest] — collect all sym_lits at this level
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_binding_names(child, src, names);
+            }
+        }
+        "map_lit" => {
+            // {:keys [a b] :strs [c] :syms [d] :as m} — collect :keys/:strs/:syms vectors
+            // and the :as alias
+            let mut cursor = node.walk();
+            let children: Vec<Node> = node.children(&mut cursor).collect();
+            let mut i = 0;
+            while i < children.len() {
+                let child = children[i];
+                if child.kind() == "kwd_lit" {
+                    let kw = child.utf8_text(src).unwrap_or("").trim();
+                    if matches!(kw, ":keys" | ":strs" | ":syms") {
+                        // Next child should be a vec_lit of names
+                        if let Some(next) = children.get(i + 1) {
+                            if next.kind() == "vec_lit" {
+                                let mut vc = next.walk();
+                                for inner in next.children(&mut vc) {
+                                    if inner.kind() == "sym_lit" {
+                                        let n = sym_lit_name(inner, src);
+                                        if !n.is_empty() {
+                                            names.insert(n);
+                                        }
+                                    }
+                                }
+                                i += 2;
+                                continue;
+                            }
+                        }
+                    } else if kw == ":as" {
+                        // :as alias — next sym_lit is the alias name
+                        if let Some(next) = children.get(i + 1) {
+                            if next.kind() == "sym_lit" {
+                                let n = sym_lit_name(*next, src);
+                                if !n.is_empty() {
+                                    names.insert(n);
+                                }
+                                i += 2;
+                                continue;
+                            }
+                        }
+                    } else if kw == ":or" {
+                        // :or default map — skip it entirely (values are defaults, not bindings)
+                        i += 2;
+                        continue;
+                    }
+                }
+                i += 1;
+            }
+        }
+        _ => {
+            // Other node kinds (literals, etc.) — no bindings to collect
+        }
+    }
+}
+
+/// Collect let-style binding names from a `vec_lit` binding vector.
+///
+/// In `(let [a 1, b 2, {:keys [c d]} m] ...)` the binding vector has pairs:
+/// `[pattern expr pattern expr ...]`. We collect names from even-indexed
+/// (0, 2, 4, ...) positions which are the binding targets.
+fn collect_let_bindings(vec_node: Node, src: &[u8]) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut cursor = vec_node.walk();
+    let children: Vec<Node> = vec_node.children(&mut cursor).collect();
+    let mut i = 0;
+    while i < children.len() {
+        let child = children[i];
+        // Skip punctuation tokens (brackets, commas, whitespace)
+        if child.is_named() {
+            collect_binding_names(child, src, &mut names);
+            // Skip the value expression (the next named child)
+            // Fast path: advance past the immediate next named sibling
+            i += 1;
+            // Skip one value expression (may be multiple raw tokens)
+            while i < children.len() && !children[i].is_named() {
+                i += 1;
+            }
+            // Now skip the value node itself
+            if i < children.len() {
+                i += 1;
+            }
+        } else {
+            i += 1;
+        }
+    }
+    names
+}
+
+/// Merge a new scope into a cloned set (so the parent scope is unaffected).
+fn extend_scope(parent: &HashSet<String>, new_names: HashSet<String>) -> HashSet<String> {
+    if new_names.is_empty() {
+        return parent.clone();
+    }
+    let mut merged = parent.clone();
+    merged.extend(new_names);
+    merged
+}
+
+// ---------------------------------------------------------------------------
+// Tree walk
+// ---------------------------------------------------------------------------
 
 fn walk_node(
     node: Node,
@@ -64,19 +216,24 @@ fn walk_node(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    locals: &HashSet<String>,
 ) {
     if node.kind() == "list_lit" {
         // process_list handles both symbol extraction and child recursion for list_lits.
-        process_list(node, src, symbols, refs, parent_idx);
+        process_list(node, src, symbols, refs, parent_idx, locals);
         return;
     }
     if node.kind() == "sym_lit" {
         // When walk_node is called directly on a sym_lit (e.g. from walk_list_children
         // for body values like `db/tx0`), emit a ref for it here.
-        // The child-iteration path below handles nested sym_lits inside other parents.
         let name = sym_lit_name(node, src);
-        // Skip keywords (:foo), anonymous fn args (%, %1, %2, %&), and gensyms.
-        if !name.is_empty() && !name.starts_with(':') && !name.starts_with('%') {
+        // Skip keywords (:foo), anonymous fn args (%, %1, %2, %&), gensyms,
+        // and names bound in the current scope.
+        if !name.is_empty()
+            && !name.starts_with(':')
+            && !name.starts_with('%')
+            && !is_local(node, src, &name, locals)
+        {
             let ns = sym_lit_ns(node, src);
             refs.push(ExtractedRef {
                 source_symbol_index: parent_idx.unwrap_or(0),
@@ -94,9 +251,11 @@ fn walk_node(
     for child in node.children(&mut cursor) {
         if child.kind() == "sym_lit" {
             let name = sym_lit_name(child, src);
-            // Emit a ref for every sym_lit so sym_name coverage engine nodes are satisfied.
-            // Skip keywords (:foo) and anonymous fn args (%, %1, %2, %&).
-            if !name.is_empty() && !name.starts_with(':') && !name.starts_with('%') {
+            if !name.is_empty()
+                && !name.starts_with(':')
+                && !name.starts_with('%')
+                && !is_local(child, src, &name, locals)
+            {
                 let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index: parent_idx.unwrap_or(0),
@@ -108,9 +267,17 @@ fn walk_node(
                 });
             }
         } else {
-            walk_node(child, src, symbols, refs, parent_idx);
+            walk_node(child, src, symbols, refs, parent_idx, locals);
         }
     }
+}
+
+/// Returns true if `name` is a local binding (unqualified symbol in the locals set).
+#[inline]
+fn is_local(node: Node, src: &[u8], name: &str, locals: &HashSet<String>) -> bool {
+    // Namespace-qualified refs (e.g. str/join) are never locals — the module
+    // qualifier disambiguates them.
+    sym_lit_ns(node, src).is_none() && locals.contains(name)
 }
 
 /// Process a `list_lit` node.
@@ -130,29 +297,31 @@ fn process_list(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    locals: &HashSet<String>,
 ) {
     let (head, head_ns, head_line) = list_head_with_line(node, src);
     if head.is_empty() {
         // No sym_lit head — classify by first named child and walk children.
-        let first_named_kind: Option<String> = {
-            let mut cursor = node.walk();
-            let mut kind = None;
-            for child in node.children(&mut cursor) {
-                if child.is_named() {
-                    kind = Some(child.kind().to_owned());
-                    break;
-                }
-            }
-            kind
-        };
-        match first_named_kind.as_deref() {
-            // Multi-arity function clause, keyword-headed ns clause, or
-            // reader-conditional call — walk all children for refs.
-            Some("vec_lit") | Some("kwd_lit")
-            | Some("read_cond_lit") | Some("splicing_read_cond_lit") => {
+        let first_named = first_named_child_kind(node);
+        match first_named.as_deref() {
+            // Multi-arity function clause: ([x] body) — collect params then walk body
+            Some("vec_lit") => {
+                let param_vec = first_named_child_node(node);
+                let new_locals = if let Some(pv) = param_vec {
+                    extend_scope(locals, collect_params_from_vec(pv, src))
+                } else {
+                    locals.clone()
+                };
                 let mut cursor = node.walk();
                 for child in node.children(&mut cursor) {
-                    walk_node(child, src, symbols, refs, parent_idx);
+                    walk_node(child, src, symbols, refs, parent_idx, &new_locals);
+                }
+            }
+            // Keyword-headed ns clause or reader-conditional — walk all children
+            Some("kwd_lit") | Some("read_cond_lit") | Some("splicing_read_cond_lit") => {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    walk_node(child, src, symbols, refs, parent_idx, locals);
                 }
             }
             _ => {}
@@ -160,11 +329,11 @@ fn process_list(
         return;
     }
 
-    // Always emit a ref for the head sym_lit (the declaration keyword or call verb).
-    // Use the head node's actual line (not the list's start) so the coverage engine
-    // correctly correlates this ref to the sym_name child of the head sym_lit.
-    // For namespace-qualified heads like `str/join`, set module = Some("str").
-    if !head.starts_with(':') && !head.starts_with('"') && !head.starts_with('%') {
+    // Emit a ref for the head sym_lit (the declaration keyword or call verb),
+    // unless it resolves to a local binding (e.g. `(options :key val)` where
+    // `options` is a parameter used as a lookup function).
+    let head_is_local = head_ns.is_none() && locals.contains(&head);
+    if !head.starts_with(':') && !head.starts_with('"') && !head.starts_with('%') && !head_is_local {
         refs.push(ExtractedRef {
             source_symbol_index: parent_idx.unwrap_or(0),
             target_name: head.clone(),
@@ -196,7 +365,16 @@ fn process_list(
                 Visibility::Public
             };
             let idx = push_sym(node, name, SymbolKind::Function, vis, symbols, parent_idx);
-            walk_list_children(node, src, symbols, refs, Some(idx));
+            // Collect params from the parameter vector (3rd child after defn + name).
+            let param_locals = collect_defn_params(node, src, locals);
+            walk_list_children(node, src, symbols, refs, Some(idx), &param_locals);
+        }
+        "fn" => {
+            // Anonymous function: (fn [x y] body) or (fn name [x y] body)
+            // Collect params from the parameter vector, then walk body.
+            let param_locals = collect_fn_params(node, src, locals);
+            // No symbol emitted for anonymous fn; walk children (skip head).
+            walk_list_children_raw(node, src, symbols, refs, parent_idx, &param_locals, 1);
         }
         "def" | "defonce" => {
             let (name, name_line) = list_second_name_with_line(node, src);
@@ -219,7 +397,7 @@ fn process_list(
                 symbols,
                 parent_idx,
             );
-            walk_list_children(node, src, symbols, refs, Some(idx));
+            walk_list_children(node, src, symbols, refs, Some(idx), locals);
         }
         "defrecord" | "deftype" => {
             let (name, name_line) = list_second_name_with_line(node, src);
@@ -242,7 +420,9 @@ fn process_list(
                 symbols,
                 parent_idx,
             );
-            walk_list_children(node, src, symbols, refs, Some(idx));
+            // Collect field names from the fields vector (3rd child).
+            let field_locals = collect_defn_params(node, src, locals);
+            walk_list_children(node, src, symbols, refs, Some(idx), &field_locals);
         }
         "defprotocol" | "definterface" => {
             let (name, name_line) = list_second_name_with_line(node, src);
@@ -265,7 +445,7 @@ fn process_list(
                 symbols,
                 parent_idx,
             );
-            walk_list_children(node, src, symbols, refs, Some(idx));
+            walk_list_children(node, src, symbols, refs, Some(idx), locals);
         }
         "ns" => {
             let (ns_name, name_line) = list_second_name_with_line(node, src);
@@ -287,120 +467,145 @@ fn process_list(
                     parent_idx,
                 );
                 extract_ns_refs(node, src, refs, idx);
-                // Recurse into the ns form body so that all sym_lits inside
-                // :require / :use / :import vectors are covered as refs.
-                walk_list_children(node, src, symbols, refs, Some(idx));
+                walk_list_children(node, src, symbols, refs, Some(idx), locals);
             }
+        }
+        // Binding forms — collect locals from binding vector before walking body
+        "let" | "let*" | "loop" | "binding" | "with-redefs" | "with-bindings"
+        | "with-local-vars" => {
+            let binding_locals = collect_binding_form_locals(node, src, locals);
+            walk_list_children_raw(node, src, symbols, refs, parent_idx, &binding_locals, 1);
+        }
+        "letfn" => {
+            let letfn_locals = collect_letfn_locals(node, src, locals);
+            walk_list_children_raw(node, src, symbols, refs, parent_idx, &letfn_locals, 1);
+        }
+        "doseq" | "for" => {
+            // Same shape as let: binding vector then body
+            let binding_locals = collect_binding_form_locals(node, src, locals);
+            walk_list_children_raw(node, src, symbols, refs, parent_idx, &binding_locals, 1);
         }
         _ => {
             // Head ref already emitted above. Walk argument children.
-            walk_call_args(node, src, symbols, refs, parent_idx);
+            walk_call_args(node, src, symbols, refs, parent_idx, locals);
         }
     }
 }
 
-/// Extract the head verb, its namespace qualifier, and its start line from a `list_lit`.
-/// Returns `(name, ns, line)` for the first `sym_lit` child, or `("", None, node_line)` if none.
-fn list_head_with_line(node: Node, src: &[u8]) -> (String, Option<String>, u32) {
+// ---------------------------------------------------------------------------
+// Param / local collection helpers
+// ---------------------------------------------------------------------------
+
+/// Collect params for `defn`/`defmacro`/`defrecord`/`deftype` — the `vec_lit`
+/// immediately following the name (3rd child of the list).
+fn collect_defn_params(node: Node, src: &[u8], parent_locals: &HashSet<String>) -> HashSet<String> {
+    // Children: ( defn name [params...] body... )
+    // We want the first vec_lit child after the head+name.
     let mut cursor = node.walk();
+    let mut sym_count = 0usize;
     for child in node.children(&mut cursor) {
         if child.kind() == "sym_lit" {
-            let name = sym_lit_name(child, src);
-            let ns = sym_lit_ns(child, src);
-            let line = child.start_position().row as u32;
-            return (name, ns, line);
-        }
-    }
-    (String::new(), None, node.start_position().row as u32)
-}
-
-/// Extract the defined name and its `sym_name` leaf line from the second
-/// `sym_lit` child of a `list_lit`.
-///
-/// Uses the `sym_name` child's line (not the outer `sym_lit`'s line) so that
-/// coverage correlation works even when metadata decorators like `^:const` or
-/// `^{:tag Foo}` push the `sym_lit`'s start earlier than the name text.
-fn list_second_name_with_line(node: Node, src: &[u8]) -> (String, u32) {
-    let mut cursor = node.walk();
-    let mut count = 0usize;
-    for child in node.children(&mut cursor) {
-        if child.kind() == "sym_lit" {
-            if count == 1 {
-                let name = sym_lit_name(child, src);
-                let line = sym_name_line(child)
-                    .unwrap_or_else(|| child.start_position().row as u32);
-                return (name, line);
-            }
-            count += 1;
-        }
-    }
-    (String::new(), 0)
-}
-
-/// Return the start row of the first `sym_name` child of a `sym_lit`, if any.
-fn sym_name_line(sym_lit_node: Node) -> Option<u32> {
-    let mut cursor = sym_lit_node.walk();
-    for child in sym_lit_node.children(&mut cursor) {
-        if child.kind() == "sym_name" {
-            return Some(child.start_position().row as u32);
-        }
-    }
-    None
-}
-
-/// Extract the bare name from a `sym_lit` node, ignoring any metadata prefix.
-///
-/// Plain sym_lit:    `sym_lit → sym_name = "foo"`               → returns `"foo"`
-/// Metadata sym_lit: `sym_lit → [meta_lit, sym_name = "foo"]`   → returns `"foo"`
-/// Namespaced:       `sym_lit → [sym_ns, sym_name = "bar"]`     → returns `"bar"`
-///
-/// Falling back to the full text handles sym_lits parsed without a separate
-/// `sym_name` child (rare edge cases in the grammar).
-fn sym_lit_name(node: Node, src: &[u8]) -> String {
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "sym_name" {
-            let t = child.utf8_text(src).unwrap_or("").trim().to_string();
-            if !t.is_empty() {
-                return t;
+            sym_count += 1;
+            if sym_count == 2 {
+                // This is the name — next named sibling should be vec_lit
+                continue;
             }
         }
+        if sym_count >= 2 && child.kind() == "vec_lit" {
+            return extend_scope(parent_locals, collect_params_from_vec(child, src));
+        }
     }
-    // Fallback: full sym_lit text (no metadata child present).
-    // If the fallback text contains a `/` namespace separator, return only
-    // the part after `/` to stay consistent with the sym_name child path.
-    let full = node.utf8_text(src).unwrap_or("").trim().to_string();
-    if let Some(pos) = full.find('/') {
-        full[pos + 1..].to_string()
-    } else {
-        full
-    }
+    parent_locals.clone()
 }
 
-/// Extract the namespace qualifier from a `sym_lit` node, if present.
-///
-/// Returns `Some("clojure.string")` for `clojure.string/join`, `None` otherwise.
-fn sym_lit_ns(node: Node, src: &[u8]) -> Option<String> {
+/// Collect params for `fn` — handles both `(fn [x] body)` and `(fn name [x] body)`.
+fn collect_fn_params(node: Node, src: &[u8], parent_locals: &HashSet<String>) -> HashSet<String> {
     let mut cursor = node.walk();
+    let mut past_head = false;
     for child in node.children(&mut cursor) {
-        if child.kind() == "sym_ns" {
-            let t = child.utf8_text(src).unwrap_or("").trim().to_string();
-            if !t.is_empty() {
-                return Some(t);
+        if !past_head {
+            // Skip the `fn` head itself
+            if child.kind() == "sym_lit" {
+                past_head = true;
             }
+            continue;
+        }
+        match child.kind() {
+            "vec_lit" => {
+                return extend_scope(parent_locals, collect_params_from_vec(child, src));
+            }
+            "sym_lit" => {
+                // Named fn: (fn name [x] body) — skip the name, keep going for vec_lit
+                continue;
+            }
+            _ => {}
         }
     }
-    // Fallback: if there is no sym_ns child but the full text has a `/`,
-    // treat the part before `/` as the namespace.
-    let full = node.utf8_text(src).unwrap_or("").trim();
-    if let Some(pos) = full.find('/') {
-        let ns = full[..pos].trim();
-        if !ns.is_empty() {
-            return Some(ns.to_string());
-        }
-    }
-    None
+    parent_locals.clone()
 }
+
+/// Collect let-style binding locals: (let [a expr b expr] ...)
+/// Returns parent scope extended with new binding names.
+fn collect_binding_form_locals(
+    node: Node,
+    src: &[u8],
+    parent_locals: &HashSet<String>,
+) -> HashSet<String> {
+    let mut cursor = node.walk();
+    let mut past_head = false;
+    for child in node.children(&mut cursor) {
+        if !past_head {
+            if child.kind() == "sym_lit" {
+                past_head = true;
+            }
+            continue;
+        }
+        if child.kind() == "vec_lit" {
+            return extend_scope(parent_locals, collect_let_bindings(child, src));
+        }
+    }
+    parent_locals.clone()
+}
+
+/// Collect letfn binding names: (letfn [(helper [x] x)] body)
+/// Each element of the binding vector is a list_lit whose first sym_lit is the name.
+fn collect_letfn_locals(
+    node: Node,
+    src: &[u8],
+    parent_locals: &HashSet<String>,
+) -> HashSet<String> {
+    let mut names = HashSet::new();
+    let mut cursor = node.walk();
+    let mut past_head = false;
+    for child in node.children(&mut cursor) {
+        if !past_head {
+            if child.kind() == "sym_lit" {
+                past_head = true;
+            }
+            continue;
+        }
+        if child.kind() == "vec_lit" {
+            // Each element is a list_lit: (name [args] body)
+            let mut vc = child.walk();
+            for fn_form in child.children(&mut vc) {
+                if fn_form.kind() == "list_lit" {
+                    let (fname, _, _) = list_head_with_line(fn_form, src);
+                    // For letfn, the head IS the function name (not a verb)
+                    // Actually letfn forms are (name [args] body) — head is the fn name
+                    if !fname.is_empty() {
+                        names.insert(fname);
+                    }
+                }
+            }
+            break;
+        }
+    }
+    extend_scope(parent_locals, names)
+}
+
+// ---------------------------------------------------------------------------
+// Child-walking helpers
+// ---------------------------------------------------------------------------
 
 /// Walk children of a declaration form, starting after the head and name.
 fn walk_list_children(
@@ -409,6 +614,7 @@ fn walk_list_children(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    locals: &HashSet<String>,
 ) {
     let mut cursor = node.walk();
     let mut skip = 2usize; // skip head (`defn`) and name
@@ -417,18 +623,40 @@ fn walk_list_children(
             skip -= 1;
             continue;
         }
-        walk_node(child, src, symbols, refs, parent_idx);
+        walk_node(child, src, symbols, refs, parent_idx, locals);
+    }
+}
+
+/// Walk children starting after the first N children (by raw child index, not named-only).
+fn walk_list_children_raw(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_idx: Option<usize>,
+    locals: &HashSet<String>,
+    skip: usize,
+) {
+    let mut cursor = node.walk();
+    let mut skipped = 0usize;
+    for child in node.children(&mut cursor) {
+        if skipped < skip {
+            skipped += 1;
+            continue;
+        }
+        walk_node(child, src, symbols, refs, parent_idx, locals);
     }
 }
 
 /// Walk all argument children of a call-form list_lit (skipping the head).
-/// Emits refs for sym_lits in argument positions.
+/// Emits refs for sym_lits in argument positions that are not locals.
 fn walk_call_args(
     node: Node,
     src: &[u8],
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    locals: &HashSet<String>,
 ) {
     let mut cursor = node.walk();
     let mut first = true;
@@ -439,9 +667,11 @@ fn walk_call_args(
         }
         if child.kind() == "sym_lit" {
             let name = sym_lit_name(child, src);
-            // Emit refs for all sym_lits in argument positions.
-            // Skip keywords (:foo) and anonymous fn args (%, %1, %2, %&).
-            if !name.is_empty() && !name.starts_with(':') && !name.starts_with('%') {
+            if !name.is_empty()
+                && !name.starts_with(':')
+                && !name.starts_with('%')
+                && !is_local(child, src, &name, locals)
+            {
                 let ns = sym_lit_ns(child, src);
                 refs.push(ExtractedRef {
                     source_symbol_index: parent_idx.unwrap_or(0),
@@ -453,9 +683,33 @@ fn walk_call_args(
                 });
             }
         } else {
-            walk_node(child, src, symbols, refs, parent_idx);
+            walk_node(child, src, symbols, refs, parent_idx, locals);
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Utility helpers for non-sym-headed list_lits
+// ---------------------------------------------------------------------------
+
+fn first_named_child_kind(node: Node) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.is_named() {
+            return Some(child.kind().to_owned());
+        }
+    }
+    None
+}
+
+fn first_named_child_node(node: Node) -> Option<Node> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.is_named() {
+            return Some(child);
+        }
+    }
+    None
 }
 
 fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx: usize) {
@@ -503,6 +757,98 @@ fn extract_first_sym(node: Node, src: &[u8]) -> String {
         }
     }
     String::new()
+}
+
+// ---------------------------------------------------------------------------
+// sym_lit node helpers
+// ---------------------------------------------------------------------------
+
+/// Extract the head verb, its namespace qualifier, and its start line from a `list_lit`.
+/// Returns `(name, ns, line)` for the first `sym_lit` child, or `("", None, node_line)` if none.
+fn list_head_with_line(node: Node, src: &[u8]) -> (String, Option<String>, u32) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_lit" {
+            let name = sym_lit_name(child, src);
+            let ns = sym_lit_ns(child, src);
+            let line = child.start_position().row as u32;
+            return (name, ns, line);
+        }
+    }
+    (String::new(), None, node.start_position().row as u32)
+}
+
+/// Extract the defined name and its `sym_name` leaf line from the second
+/// `sym_lit` child of a `list_lit`.
+fn list_second_name_with_line(node: Node, src: &[u8]) -> (String, u32) {
+    let mut cursor = node.walk();
+    let mut count = 0usize;
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_lit" {
+            if count == 1 {
+                let name = sym_lit_name(child, src);
+                let line = sym_name_line(child)
+                    .unwrap_or_else(|| child.start_position().row as u32);
+                return (name, line);
+            }
+            count += 1;
+        }
+    }
+    (String::new(), 0)
+}
+
+/// Return the start row of the first `sym_name` child of a `sym_lit`, if any.
+fn sym_name_line(sym_lit_node: Node) -> Option<u32> {
+    let mut cursor = sym_lit_node.walk();
+    for child in sym_lit_node.children(&mut cursor) {
+        if child.kind() == "sym_name" {
+            return Some(child.start_position().row as u32);
+        }
+    }
+    None
+}
+
+/// Extract the bare name from a `sym_lit` node, ignoring any metadata prefix.
+fn sym_lit_name(node: Node, src: &[u8]) -> String {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_name" {
+            let t = child.utf8_text(src).unwrap_or("").trim().to_string();
+            if !t.is_empty() {
+                return t;
+            }
+        }
+    }
+    // Fallback: full sym_lit text (no metadata child present).
+    let full = node.utf8_text(src).unwrap_or("").trim().to_string();
+    if let Some(pos) = full.find('/') {
+        full[pos + 1..].to_string()
+    } else {
+        full
+    }
+}
+
+/// Extract the namespace qualifier from a `sym_lit` node, if present.
+fn sym_lit_ns(node: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_ns" {
+            let t = child.utf8_text(src).unwrap_or("").trim().to_string();
+            if !t.is_empty() {
+                return Some(t);
+            }
+        }
+    }
+    // Fallback: if there is no sym_ns child but the full text has a `/`,
+    // treat the part before `/` as the namespace.
+    let full = node.utf8_text(src).unwrap_or("").trim();
+    if let Some(pos) = full.find('/') {
+        let ns = full[..pos].trim();
+        if !ns.is_empty() {
+            return Some(ns.to_string());
+        }
+    }
+    None
 }
 
 fn push_sym(

@@ -308,3 +308,69 @@ fn ref_extend_type_emits_refs() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Scope tracking — local bindings should NOT be emitted as Calls refs
+// ---------------------------------------------------------------------------
+
+/// defn parameters should be suppressed as Calls refs
+#[test]
+fn scope_defn_params_suppressed() {
+    let r = extract("(defn handle [request respond raise] (handler request respond raise))");
+    // request, respond, raise are params — should NOT appear as unqualified Calls refs
+    let leaked: Vec<_> = r.refs.iter()
+        .filter(|rf| matches!(rf.target_name.as_str(), "request" | "respond" | "raise") && rf.module.is_none())
+        .collect();
+    assert!(leaked.is_empty(),
+        "params leaked as refs: {:?}",
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+}
+
+/// let bindings should be suppressed as Calls refs
+#[test]
+fn scope_let_bindings_suppressed() {
+    let r = extract("(defn foo [x] (let [options {:a 1} result (bar x)] (use options result)))");
+    let leaked: Vec<_> = r.refs.iter()
+        .filter(|rf| matches!(rf.target_name.as_str(), "options" | "result") && rf.module.is_none())
+        .collect();
+    assert!(leaked.is_empty(),
+        "let bindings leaked as refs: {:?}",
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+}
+
+/// Map destructuring {:keys [a b]} should suppress a and b
+#[test]
+fn scope_map_destructuring_suppressed() {
+    let r = extract("(defn foo [{:keys [decoder encoder]}] (use decoder encoder))");
+    let leaked: Vec<_> = r.refs.iter()
+        .filter(|rf| matches!(rf.target_name.as_str(), "decoder" | "encoder") && rf.module.is_none())
+        .collect();
+    assert!(leaked.is_empty(),
+        "destructured keys leaked as refs: {:?}",
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+}
+
+/// Multi-arity fn params in anonymous fn should be suppressed
+#[test]
+fn scope_anon_fn_params_suppressed() {
+    let r = extract("(defn wrap [handler options] (fn ([request] (handler request)) ([request respond raise] (handler request respond raise))))");
+    let leaked: Vec<_> = r.refs.iter()
+        .filter(|rf| matches!(rf.target_name.as_str(), "request" | "respond" | "raise" | "options") && rf.module.is_none())
+        .collect();
+    assert!(leaked.is_empty(),
+        "fn params leaked as refs: {:?}",
+        leaked.iter().map(|rf| &rf.target_name).collect::<Vec<_>>());
+}
+
+/// Namespace-qualified refs (e.g. str/join) should still be emitted even if
+/// the unqualified name would be a local
+#[test]
+fn scope_qualified_refs_not_suppressed() {
+    let r = extract("(defn foo [str] (str/join \",\" str))");
+    // str/join should still emit a ref with module="str"
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "join" && rf.module.as_deref() == Some("str")),
+        "qualified str/join ref missing; got: {:?}",
+        r.refs.iter().filter(|rf| rf.target_name == "join").collect::<Vec<_>>()
+    );
+}
