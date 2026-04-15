@@ -79,6 +79,12 @@ pub struct ManifestData {
     /// project's filename stem (e.g. `../Shared/Shared.csproj` →
     /// `"Shared"`). Matches sibling packages' `declared_name`.
     pub project_refs: Vec<String>,
+    /// TypeScript: `compilerOptions.paths` alias map from tsconfig.json.
+    /// Each entry is `(alias_prefix, target_prefix)` with trailing `*`
+    /// stripped — e.g. `("@/", "src/")` lets `@/utils` resolve to
+    /// `src/utils`. Populated only for the NuGet-sibling TS ecosystem;
+    /// other manifest kinds leave this empty.
+    pub tsconfig_paths: Vec<(String, String)>,
 }
 
 // ---------------------------------------------------------------------------

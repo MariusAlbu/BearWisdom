@@ -1381,6 +1381,169 @@ fn symbol_lookup_symbols_in_package_groups_by_pkg_id() {
 }
 
 #[test]
+fn tsconfig_alias_resolves_bare_specifier() {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
+
+    // Producer at src/utils/format.ts exports `formatDate`.
+    let producer = make_ts_file_in_pkg(
+        "src/utils/format.ts",
+        None,
+        vec![make_symbol(
+            "formatDate",
+            "formatDate",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    // Consumer imports `@/utils/format` relying on a `@/* -> src/*` alias.
+    let consumer = make_ts_file_in_pkg(
+        "src/app/main.ts",
+        None,
+        vec![make_symbol(
+            "main",
+            "main",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "formatDate", "@/utils/format", 1)],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&producer, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+
+    let mut ctx = ProjectContext::default();
+    let mut npm = ManifestData::default();
+    npm.tsconfig_paths.push(("@/".to_string(), "src/".to_string()));
+    ctx.manifests.insert(ManifestKind::Npm, npm);
+
+    let parsed = vec![producer, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[1];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("alias-rewritten import should resolve");
+    assert_eq!(res.strategy, "ts_tsconfig_alias");
+    assert_eq!(res.confidence, 1.0);
+}
+
+#[test]
+fn tsconfig_alias_longest_prefix_wins() {
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
+
+    // Two aliases: @/ → src/ and @/components/ → packages/ui/src/.
+    // An import of `@/components/Button` must use the longer mapping.
+    let producer = make_ts_file_in_pkg(
+        "packages/ui/src/Button.ts",
+        None,
+        vec![make_symbol(
+            "Button",
+            "Button",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    let consumer = make_ts_file_in_pkg(
+        "src/app/main.ts",
+        None,
+        vec![make_symbol(
+            "main",
+            "main",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "Button", "@/components/Button", 1)],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&producer, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+
+    let mut ctx = ProjectContext::default();
+    let mut npm = ManifestData::default();
+    npm.tsconfig_paths.push(("@/".to_string(), "src/".to_string()));
+    npm.tsconfig_paths.push((
+        "@/components/".to_string(),
+        "packages/ui/src/".to_string(),
+    ));
+    ctx.manifests.insert(ManifestKind::Npm, npm);
+
+    let parsed = vec![producer, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[1];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("longer alias prefix should win");
+    assert_eq!(res.strategy, "ts_tsconfig_alias");
+    let expected_id = id_map[&(
+        "packages/ui/src/Button.ts".to_string(),
+        "Button".to_string(),
+    )];
+    assert_eq!(res.target_symbol_id, expected_id);
+}
+
+#[test]
+fn tsconfig_alias_parser_extracts_wildcard_mappings() {
+    use crate::indexer::manifest::npm::parse_tsconfig_paths;
+
+    let tsconfig = r##"{
+        // top-of-file comment
+        "compilerOptions": {
+            "paths": {
+                "@/*": ["src/*"],
+                "@components/*": ["src/components/*"],
+                /* block */ "#no_wildcard": ["src/ignored"],
+                "@utils": ["src/utils/index"]
+            }
+        }
+    }"##;
+    let aliases = parse_tsconfig_paths(tsconfig);
+    assert!(aliases.contains(&("@/".to_string(), "src/".to_string())));
+    assert!(aliases.contains(&(
+        "@components/".to_string(),
+        "src/components/".to_string()
+    )));
+    // Non-wildcard keys are currently skipped — document that.
+    assert!(!aliases.iter().any(|(k, _)| k == "@utils"));
+}
+
+#[test]
 fn project_context_workspace_package_id_handles_deep_imports() {
     let mut ctx = ProjectContext::default();
     ctx.workspace_pkg_by_declared_name

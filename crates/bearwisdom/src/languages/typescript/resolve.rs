@@ -144,6 +144,21 @@ impl LanguageResolver for TypeScriptResolver {
             }
         }
 
+        // tsconfig `paths` alias rewrite — before the bare-specifier lookup
+        // below tries `in_file(module)`. Lets `@/utils` → `src/utils` resolve
+        // through the existing relative-import path.
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if let Some(rewritten) =
+                lookup.resolve_tsconfig_alias(ref_ctx.file_package_id, module)
+            {
+                if let Some(res) =
+                    resolve_via_alias(&rewritten, target, edge_kind, lookup)
+                {
+                    return Some(res);
+                }
+            }
+        }
+
         // If the ref carries a module path, two distinct cases apply:
         //
         // (A) Import-statement refs (no chain): the module is the import source.
@@ -489,6 +504,55 @@ impl LanguageResolver for TypeScriptResolver {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Resolve an import after rewriting the specifier through tsconfig
+/// `paths` aliases. The rewritten value is a bare project-relative path
+/// stem (e.g. `src/utils`), matched via `in_file` against both exact paths
+/// and common TS extensions.
+fn resolve_via_alias(
+    rewritten: &str,
+    target: &str,
+    edge_kind: crate::types::EdgeKind,
+    lookup: &dyn SymbolLookup,
+) -> Option<Resolution> {
+    // Try the rewritten path directly first — this catches
+    // `module_to_file` hits populated by the TS ecosystem resolver.
+    for sym in lookup.in_file(rewritten) {
+        if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 1.0,
+                strategy: "ts_tsconfig_alias",
+            });
+        }
+    }
+    // Common TS/JS file extensions — the rewritten stem usually omits them.
+    const EXTS: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
+    for ext in EXTS {
+        let candidate = format!("{rewritten}{ext}");
+        for sym in lookup.in_file(&candidate) {
+            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "ts_tsconfig_alias",
+                });
+            }
+        }
+        // Also try `{rewritten}/index{ext}` for barrel/index resolution.
+        let barrel = format!("{rewritten}/index{ext}");
+        for sym in lookup.in_file(&barrel) {
+            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 1.0,
+                    strategy: "ts_tsconfig_alias",
+                });
+            }
+        }
+    }
+    None
+}
 
 /// Resolve an import that targets a sibling workspace package.
 ///

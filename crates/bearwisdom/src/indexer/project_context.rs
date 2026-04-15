@@ -162,6 +162,11 @@ pub fn build_project_context_with_packages(
                         entry.project_refs.push(pr.clone());
                     }
                 }
+                for alias in &pm.data.tsconfig_paths {
+                    if !entry.tsconfig_paths.contains(alias) {
+                        entry.tsconfig_paths.push(alias.clone());
+                    }
+                }
             }
         }
         if !pkg_manifests.is_empty() {
@@ -214,6 +219,11 @@ fn union_manifests(per_package: &[PackageManifest]) -> HashMap<ManifestKind, Man
         for pr in &pm.data.project_refs {
             if !entry.project_refs.contains(pr) {
                 entry.project_refs.push(pr.clone());
+            }
+        }
+        for alias in &pm.data.tsconfig_paths {
+            if !entry.tsconfig_paths.contains(alias) {
+                entry.tsconfig_paths.push(alias.clone());
             }
         }
     }
@@ -297,6 +307,38 @@ impl ProjectContext {
     /// layouts and for contexts built via the legacy `build_project_context`.
     pub fn is_per_package(&self) -> bool {
         !self.by_package.is_empty()
+    }
+
+    /// Rewrite a TS import specifier through the given package's tsconfig
+    /// `paths` aliases.
+    ///
+    /// Returns the longest-matching alias prefix's rewrite, or `None` if no
+    /// alias matches. The target is a bare prefix (trailing `*` already
+    /// stripped), so `@/utils` with alias `@/ -> src/` becomes `src/utils`.
+    /// Consumers typically drop the result into `SymbolLookup::in_file`
+    /// (via the module_to_file map) or use it as a filename-stem match.
+    pub fn resolve_tsconfig_alias(
+        &self,
+        package_id: Option<i64>,
+        specifier: &str,
+    ) -> Option<String> {
+        let manifests = self.manifests_for(package_id);
+        let npm = manifests.get(&ManifestKind::Npm)?;
+        // Prefer the longest matching alias to handle nested aliases like
+        //   "@/":           "src/"
+        //   "@/components/": "packages/ui/src/"
+        let mut best: Option<&(String, String)> = None;
+        for entry in &npm.tsconfig_paths {
+            let (alias, _) = entry;
+            if specifier.starts_with(alias.as_str()) {
+                if best.map_or(true, |(b, _)| alias.len() > b.len()) {
+                    best = Some(entry);
+                }
+            }
+        }
+        let (alias, target) = best?;
+        let remainder = &specifier[alias.len()..];
+        Some(format!("{target}{remainder}"))
     }
 
     /// Resolve a module specifier (e.g. `@myorg/utils`, `@myorg/utils/sub/mod`)

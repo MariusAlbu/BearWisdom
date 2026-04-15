@@ -186,6 +186,28 @@ pub trait SymbolLookup {
     fn is_workspace_declared_name(&self, _name: &str) -> bool {
         false
     }
+
+    /// Rewrite a TS import specifier through the source package's tsconfig
+    /// `paths` aliases. Returns the resolved bare path (e.g. `@/utils` →
+    /// `src/utils`) or `None` when no alias matches.
+    fn resolve_tsconfig_alias(
+        &self,
+        _package_id: Option<i64>,
+        _specifier: &str,
+    ) -> Option<String> {
+        None
+    }
+
+    /// Per-package test-framework global check.
+    ///
+    /// Returns true when `name` is exported by a test framework declared in
+    /// the given package's own manifest — NOT a sibling's. Prefer this over
+    /// `is_external_name` when `ref_ctx.file_package_id` is available so a
+    /// non-test package doesn't inherit `describe`/`it`/etc. from a sibling
+    /// that pulls in vitest or jest.
+    fn is_test_global_for(&self, _package_id: Option<i64>, _name: &str) -> bool {
+        false
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -227,6 +249,13 @@ pub struct SymbolIndex {
     /// manifest dependencies. Keyed by language-independent name since most test
     /// globals are language-specific sets unioned at build time.
     test_globals: HashSet<String>,
+    /// Per-package test-globals set. A package inherits globals only from
+    /// test frameworks declared in its own manifest — a consumer package
+    /// that never declares vitest/jest/etc. cannot smuggle `describe`/`it`
+    /// in through a sibling's dependencies. Resolvers with a package_id in
+    /// scope (via `ref_ctx.file_package_id`) should prefer
+    /// `is_test_global_for(package_id, name)` to the union-based check.
+    test_globals_by_pkg: FxHashMap<i64, HashSet<String>>,
     /// Primitive type names keyed by language id → set of primitive names.
     /// Built once from `primitives::primitives_for_language` for all languages
     /// present in the parsed files.
@@ -240,6 +269,13 @@ pub struct SymbolIndex {
     /// build time — lets `SymbolLookup::workspace_package_id` stand alone
     /// without holding a borrow on the project context.
     workspace_pkg_by_declared_name: FxHashMap<String, i64>,
+    /// Per-package tsconfig `paths` aliases, snapshot of the NPM manifest's
+    /// `tsconfig_paths` for each workspace package. Empty for single-project
+    /// layouts — callers fall back to the union.
+    tsconfig_paths_by_pkg: FxHashMap<i64, Vec<(String, String)>>,
+    /// Project-wide union of tsconfig alias entries; used when no
+    /// `package_id` is set or the package has no per-package entry.
+    tsconfig_paths_union: Vec<(String, String)>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -567,17 +603,18 @@ impl SymbolIndex {
 
         // Build test-framework globals from manifest dependencies.
         //
-        // TODO(future): Per-package external classification.
-        // Currently the ProjectContext (and thus `test_globals` / `external_prefixes`) is
-        // built once for the whole project root and shared across all files in all packages.
-        // This is correct for resolution — the SymbolIndex already contains every package's
-        // symbols — but it means a `shared-lib` package that does not declare `react` as a
-        // dependency will still have react imports classified as external, because another
-        // package in the monorepo does.  Per-package classification would require building
-        // one ProjectContext per package (keyed by package_id) and selecting it at resolve
-        // time via `SymbolInfo::package_id`.  Defer until package-level dependency graphs
-        // are fully materialised in the `packages` table.
-        let test_globals: HashSet<String> = HashSet::new();
+        // Union set: the name is a test global if ANY package declared a
+        // framework that exports it. Used by the existing
+        // `is_external_name` / `classify_external_name` API which has no
+        // package_id parameter today.
+        //
+        // Per-package set: built separately below so resolvers can query
+        // `is_test_global_for(package_id, name)` and avoid misclassifying
+        // a bare `describe` as external inside a non-test package just
+        // because a sibling test package declared vitest.
+        let test_globals: HashSet<String> = build_test_globals_union(project_ctx);
+        let test_globals_by_pkg: FxHashMap<i64, HashSet<String>> =
+            build_test_globals_by_pkg(project_ctx);
 
         // Build per-language primitive sets for all languages present in parsed files.
         let mut primitives_by_language: FxHashMap<String, HashSet<&'static str>> =
@@ -611,6 +648,23 @@ impl SymbolIndex {
             })
             .unwrap_or_default();
 
+        // Snapshot tsconfig aliases — per-package if available, plus a union
+        // derived from the NPM manifest for files with no package_id.
+        let mut tsconfig_paths_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
+        let mut tsconfig_paths_union: Vec<(String, String)> = Vec::new();
+        if let Some(ctx) = project_ctx {
+            if let Some(npm) = ctx.manifest(crate::indexer::manifest::ManifestKind::Npm) {
+                tsconfig_paths_union = npm.tsconfig_paths.clone();
+            }
+            for (&pkg_id, manifests) in &ctx.by_package {
+                if let Some(npm) = manifests.get(&crate::indexer::manifest::ManifestKind::Npm) {
+                    if !npm.tsconfig_paths.is_empty() {
+                        tsconfig_paths_by_pkg.insert(pkg_id, npm.tsconfig_paths.clone());
+                    }
+                }
+            }
+        }
+
         Self {
             by_name,
             by_qname,
@@ -619,9 +673,12 @@ impl SymbolIndex {
             reexport_map,
             module_to_file,
             test_globals,
+            test_globals_by_pkg,
             primitives_by_language,
             by_package,
             workspace_pkg_by_declared_name,
+            tsconfig_paths_by_pkg,
+            tsconfig_paths_union,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -1103,6 +1160,47 @@ impl SymbolLookup for SymbolIndex {
 
     fn is_workspace_declared_name(&self, name: &str) -> bool {
         self.workspace_pkg_by_declared_name.contains_key(name)
+    }
+
+    fn resolve_tsconfig_alias(
+        &self,
+        package_id: Option<i64>,
+        specifier: &str,
+    ) -> Option<String> {
+        let paths = package_id
+            .and_then(|id| self.tsconfig_paths_by_pkg.get(&id))
+            .map(|v| v.as_slice())
+            .unwrap_or(self.tsconfig_paths_union.as_slice());
+        if paths.is_empty() {
+            return None;
+        }
+        // Pick the longest matching alias so nested prefixes win.
+        let mut best: Option<&(String, String)> = None;
+        for entry in paths {
+            let (alias, _) = entry;
+            if specifier.starts_with(alias.as_str())
+                && best.map_or(true, |(b, _)| alias.len() > b.len())
+            {
+                best = Some(entry);
+            }
+        }
+        let (alias, target) = best?;
+        let remainder = &specifier[alias.len()..];
+        Some(format!("{target}{remainder}"))
+    }
+
+    fn is_test_global_for(&self, package_id: Option<i64>, name: &str) -> bool {
+        // Per-package check first; falls back to the union only when there's
+        // no package_id at all (root-scoped file). A known package that
+        // doesn't declare a test framework correctly answers `false` —
+        // sibling frameworks do not leak.
+        if let Some(id) = package_id {
+            return self
+                .test_globals_by_pkg
+                .get(&id)
+                .map_or(false, |s| s.contains(name));
+        }
+        self.test_globals.contains(name)
     }
 }
 
@@ -2078,4 +2176,121 @@ mod tests {
         assert!(index.in_namespace("Missing").is_empty());
         assert!(index.in_namespace("N").is_empty()); // "N" is a prefix of "NS" but not "NS."
     }
+
+    #[test]
+    fn test_globals_scope_to_declaring_package() {
+        use crate::indexer::manifest::{ManifestData, ManifestKind};
+        use crate::indexer::project_context::ProjectContext;
+
+        // Two packages: `e2e` declares vitest; `server` declares nothing.
+        let mut ctx = ProjectContext::default();
+        let mut e2e_npm = ManifestData::default();
+        e2e_npm.dependencies.insert("vitest".to_string());
+        let mut server_npm = ManifestData::default();
+        server_npm.dependencies.insert("express".to_string());
+        ctx.by_package.insert(1, [(ManifestKind::Npm, e2e_npm)].into());
+        ctx.by_package
+            .insert(2, [(ManifestKind::Npm, server_npm)].into());
+
+        // Union must also be populated so union-based callers (no pkg_id
+        // context) still classify describe/it correctly.
+        let mut union = ManifestData::default();
+        union.dependencies.insert("vitest".to_string());
+        union.dependencies.insert("express".to_string());
+        ctx.manifests.insert(ManifestKind::Npm, union);
+
+        let index = SymbolIndex::build_with_context(&[], &HashMap::new(), Some(&ctx));
+
+        // e2e (pkg 1) sees vitest globals.
+        assert!(index.is_test_global_for(Some(1), "describe"));
+        assert!(index.is_test_global_for(Some(1), "expect"));
+        // server (pkg 2) does NOT see them — vitest wasn't declared there.
+        assert!(!index.is_test_global_for(Some(2), "describe"));
+        assert!(!index.is_test_global_for(Some(2), "expect"));
+        // Root-scoped file (no package_id) falls back to union.
+        assert!(index.is_test_global_for(None, "describe"));
+    }
+
+    #[test]
+    fn test_globals_empty_when_no_framework_declared() {
+        let index = SymbolIndex::build(&[], &HashMap::new());
+        assert!(!index.is_test_global_for(None, "describe"));
+        assert!(!index.is_test_global_for(Some(1), "describe"));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Test-framework globals — manifest-declared → exported global set
+// ---------------------------------------------------------------------------
+
+/// Map a manifest-declared test-framework dep name to the set of globals it
+/// exposes to source files at test time.
+///
+/// Only covers the runtime-global case: frameworks whose helpers are
+/// injected as free identifiers rather than imported. Python's unittest
+/// / pytest do NOT qualify here — their helpers come through explicit
+/// imports and are resolved by the normal import-aware path.
+fn test_framework_globals(dep: &str) -> &'static [&'static str] {
+    match dep {
+        // JS/TS — vitest + jest overlap in the BDD surface.
+        "vitest" | "jest" | "@jest/globals" => &[
+            "describe", "it", "test", "expect",
+            "beforeEach", "afterEach", "beforeAll", "afterAll",
+            "vi", "jest",
+        ],
+        "mocha" => &["describe", "it", "before", "after", "beforeEach", "afterEach"],
+        "chai" => &["expect", "assert", "should"],
+        "ava" => &["test"],
+        "jasmine" => &[
+            "describe", "it", "expect", "beforeEach", "afterEach",
+            "beforeAll", "afterAll",
+        ],
+        // Bun's built-in test runner — same shape as vitest.
+        "bun-types" => &[
+            "describe", "it", "test", "expect",
+            "beforeEach", "afterEach", "beforeAll", "afterAll",
+        ],
+        _ => &[],
+    }
+}
+
+/// Build the project-wide union of test globals from every ecosystem manifest.
+fn build_test_globals_union(
+    project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+) -> HashSet<String> {
+    let mut globals = HashSet::new();
+    let Some(ctx) = project_ctx else { return globals };
+    for manifest in ctx.manifests.values() {
+        for dep in &manifest.dependencies {
+            for g in test_framework_globals(dep) {
+                globals.insert((*g).to_string());
+            }
+        }
+    }
+    globals
+}
+
+/// Build per-package test globals keyed by `packages.id`.
+///
+/// Only packages that directly declare a test framework in their own manifest
+/// get entries — sibling packages stay clean.
+fn build_test_globals_by_pkg(
+    project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
+) -> FxHashMap<i64, HashSet<String>> {
+    let mut out: FxHashMap<i64, HashSet<String>> = FxHashMap::default();
+    let Some(ctx) = project_ctx else { return out };
+    for (&pkg_id, manifests) in &ctx.by_package {
+        let mut set = HashSet::new();
+        for manifest in manifests.values() {
+            for dep in &manifest.dependencies {
+                for g in test_framework_globals(dep) {
+                    set.insert((*g).to_string());
+                }
+            }
+        }
+        if !set.is_empty() {
+            out.insert(pkg_id, set);
+        }
+    }
+    out
 }

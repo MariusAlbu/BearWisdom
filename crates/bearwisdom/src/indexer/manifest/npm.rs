@@ -59,6 +59,14 @@ impl ManifestReader for NpmManifest {
                 .map(|p| p.to_path_buf())
                 .unwrap_or_else(|| project_root.to_path_buf());
 
+            // tsconfig.json aliases live alongside package.json for TS
+            // packages. Missing or unparseable tsconfig is non-fatal — the
+            // resolver just won't rewrite aliases for this package.
+            let tsconfig_path = package_dir.join("tsconfig.json");
+            if let Ok(ts_content) = std::fs::read_to_string(&tsconfig_path) {
+                data.tsconfig_paths = parse_tsconfig_paths(&ts_content);
+            }
+
             out.push(ReaderEntry {
                 package_dir,
                 manifest_path,
@@ -68,6 +76,101 @@ impl ManifestReader for NpmManifest {
         }
         out
     }
+}
+
+/// Parse `compilerOptions.paths` from a tsconfig.json file.
+///
+/// Returns `(alias_prefix, target_prefix)` tuples with trailing `*` stripped.
+/// Exact-match entries (no wildcard) come through with empty-string sentinels
+/// reserved via a trailing `=` — here we only surface prefix-mapped entries
+/// because those are what the resolver rewrites. Exact alias matches are a
+/// rare special case and not worth the extra bookkeeping today.
+///
+/// Strips `//` line comments and `/* */` block comments before JSON parsing
+/// so valid JSONC tsconfigs don't fail. Does not follow `extends`.
+pub fn parse_tsconfig_paths(content: &str) -> Vec<(String, String)> {
+    let stripped = strip_json_comments(content);
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) else {
+        return Vec::new();
+    };
+    let Some(paths) = value
+        .get("compilerOptions")
+        .and_then(|co| co.get("paths"))
+        .and_then(|p| p.as_object())
+    else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    for (key, targets) in paths {
+        // Only wildcard-mapped aliases: `"@/*": ["src/*"]`. Strip the
+        // trailing `*` on both sides to get bare prefix strings.
+        let Some(alias_prefix) = key.strip_suffix('*') else {
+            continue;
+        };
+        let Some(arr) = targets.as_array() else { continue };
+        let Some(first) = arr.first().and_then(|v| v.as_str()) else {
+            continue;
+        };
+        let Some(target_prefix) = first.strip_suffix('*') else {
+            continue;
+        };
+        if alias_prefix.is_empty() {
+            continue;
+        }
+        out.push((alias_prefix.to_string(), target_prefix.to_string()));
+    }
+    out
+}
+
+/// Strip `//` line comments and `/* */` block comments, respecting strings
+/// so we don't mangle URLs or paths that happen to contain `//`.
+fn strip_json_comments(src: &str) -> String {
+    let mut out = String::with_capacity(src.len());
+    let bytes = src.as_bytes();
+    let mut i = 0;
+    let mut in_string = false;
+    let mut escape = false;
+    while i < bytes.len() {
+        let b = bytes[i];
+        if in_string {
+            out.push(b as char);
+            if escape {
+                escape = false;
+            } else if b == b'\\' {
+                escape = true;
+            } else if b == b'"' {
+                in_string = false;
+            }
+            i += 1;
+            continue;
+        }
+        if b == b'"' {
+            in_string = true;
+            out.push('"');
+            i += 1;
+            continue;
+        }
+        // `//` to end of line
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'/' {
+            while i < bytes.len() && bytes[i] != b'\n' {
+                i += 1;
+            }
+            continue;
+        }
+        // `/* ... */`
+        if b == b'/' && i + 1 < bytes.len() && bytes[i + 1] == b'*' {
+            i += 2;
+            while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                i += 1;
+            }
+            i = (i + 2).min(bytes.len());
+            continue;
+        }
+        out.push(b as char);
+        i += 1;
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
