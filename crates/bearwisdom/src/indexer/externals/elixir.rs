@@ -24,6 +24,40 @@ impl ExternalSourceLocator for ElixirExternalsLocator {
         discover_elixir_externals(project_root)
     }
 
+    /// M3 override: in a workspace (e.g. an Elixir project that also has
+    /// `assets/package.json` or `magefiles/`), the package list will contain
+    /// the sub-packages but NOT the root Elixir project itself. The default
+    /// implementation delegates to `locate_roots(package_abs_path)`, which
+    /// only finds Elixir deps when `package_abs_path` == the mix project root.
+    ///
+    /// This override checks `package_abs_path` first, then falls back to
+    /// `workspace_root`. That covers:
+    ///   - Umbrella apps: each `apps/<child>` has its own mix.exs with deps.
+    ///   - Root-level mix.exs alongside JS sub-packages: the root Elixir
+    ///     project is discovered via `workspace_root` even when the per-package
+    ///     loop is iterating over the JS and Go sub-packages.
+    fn locate_roots_for_package(
+        &self,
+        workspace_root: &Path,
+        package_abs_path: &Path,
+        package_id: i64,
+    ) -> Vec<ExternalDepRoot> {
+        // Try the specific package path first (covers umbrella app children).
+        let mut roots = discover_elixir_externals(package_abs_path);
+
+        // Fall back to workspace root when the package is a non-Elixir
+        // sub-directory (e.g. `assets/`, `magefiles/`) inside an Elixir
+        // project whose mix.exs lives at the workspace root.
+        if roots.is_empty() && package_abs_path != workspace_root {
+            roots = discover_elixir_externals(workspace_root);
+        }
+
+        for r in &mut roots {
+            r.package_id = Some(package_id);
+        }
+        roots
+    }
+
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_elixir_external_root(dep)
     }
@@ -33,31 +67,22 @@ impl ExternalSourceLocator for ElixirExternalsLocator {
 ///
 /// Strategy:
 ///   1. Require `mix.exs` at the project root — otherwise empty.
-///   2. Walk `<project>/deps/`. Every direct-child directory is a package
-///      (`mix deps.get` guarantees this layout). Cross-check against the
-///      mix.exs-declared deps so arbitrary stray directories don't leak in.
-///   3. For each matching package, point the ExternalDepRoot at the
-///      package's directory. `walk_elixir_external_root` restricts the
-///      walk to `lib/**/*.ex` + `lib/**/*.exs`.
+///   2. Walk `<project>/deps/`. Every direct-child directory placed there by
+///      `mix deps.get` is a valid package (direct or transitive). All dirs
+///      are included — `deps/` is exclusively managed by mix so stray dirs
+///      are not a concern in practice.
+///   3. For each package dir that contains a `lib/` subdirectory, emit an
+///      `ExternalDepRoot`. `walk_elixir_external_root` restricts the walk
+///      to `lib/**/*.ex` + `lib/**/*.exs`.
+///   4. Read version from the package's mix.exs `@version` attribute for
+///      logging. Not load-bearing.
 ///
-/// Unlike Go/Java/Ruby, mix doesn't use a global cache: every project gets
-/// its own isolated copy of each dep under `deps/`. That keeps the locator
-/// simple — no cross-machine path discovery, no home-directory probing.
+/// Unlike Go/Java/Ruby, mix uses a project-local `deps/` directory rather
+/// than a global user cache. Transitive deps are included alongside direct
+/// deps — all appear as siblings under `deps/`.
 pub fn discover_elixir_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
-    use crate::indexer::manifest::mix::parse_mix_deps;
-
     let mix_exs = project_root.join("mix.exs");
     if !mix_exs.is_file() {
-        return Vec::new();
-    }
-    let Ok(mix_content) = std::fs::read_to_string(&mix_exs) else {
-        return Vec::new();
-    };
-
-    // Declared dep atoms from `deps do [...] end`.
-    let declared: std::collections::HashSet<String> =
-        parse_mix_deps(&mix_content).into_iter().collect();
-    if declared.is_empty() {
         return Vec::new();
     }
 
@@ -83,12 +108,14 @@ pub fn discover_elixir_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
             continue;
         };
-        if !declared.contains(name) {
+        // Only include packages that have a lib/ directory — pure Erlang
+        // deps without .ex source (e.g. gproc, hpack_erl, parse_trans)
+        // would contribute no files and can be skipped cheaply.
+        if !path.join("lib").is_dir() {
             continue;
         }
-        // Version isn't captured by parse_mix_deps today — read it from the
-        // package's mix.exs @version attribute when available, otherwise
-        // blank. Not load-bearing; used only for logs.
+        // Version read from the package's mix.exs @version attribute when
+        // available, otherwise blank. Not load-bearing; used only for logs.
         let version = read_mix_package_version(&path).unwrap_or_default();
         result.push(ExternalDepRoot {
             module_path: name.to_string(),
@@ -300,18 +327,33 @@ mod tests {
     }
 
     #[test]
-    fn elixir_locator_ignores_undeclared_deps_subdirs() {
-        let tmp = std::env::temp_dir().join("bw-test-elixir-locator-undeclared");
+    fn elixir_locator_includes_transitive_deps_dirs() {
+        let tmp = std::env::temp_dir().join("bw-test-elixir-locator-transitive");
         let _ = std::fs::remove_dir_all(&tmp);
         make_elixir_fixture(&tmp, &["phoenix"]);
-        // Plant a rogue directory under deps/ that isn't in mix.exs — it
-        // should NOT show up as a discovered root.
-        let rogue = tmp.join("deps").join("rogue_package");
-        std::fs::create_dir_all(rogue.join("lib")).unwrap();
+        // Plant a transitive dep (cowboy) that isn't declared in mix.exs
+        // but was fetched by mix. It should be discovered because it has a
+        // lib/ directory — all dirs in deps/ are placed there by mix.
+        let transitive = tmp.join("deps").join("cowboy");
+        std::fs::create_dir_all(transitive.join("lib")).unwrap();
+        std::fs::write(
+            transitive.join("lib").join("cowboy.ex"),
+            "defmodule Cowboy do\n  def start, do: :ok\nend\n",
+        )
+        .unwrap();
+        // A dir WITHOUT lib/ (e.g. an Erlang-only dep like parse_trans that
+        // ships no .ex source) should NOT appear.
+        let no_lib = tmp.join("deps").join("parse_trans");
+        std::fs::create_dir_all(&no_lib).unwrap();
 
         let roots = discover_elixir_externals(&tmp);
-        let names: Vec<String> = roots.iter().map(|r| r.module_path.clone()).collect();
-        assert_eq!(names, vec!["phoenix".to_string()]);
+        let names: std::collections::HashSet<String> =
+            roots.iter().map(|r| r.module_path.clone()).collect();
+        // Both declared (phoenix) and transitive (cowboy) are included.
+        assert!(names.contains("phoenix"), "missing phoenix");
+        assert!(names.contains("cowboy"), "missing transitive dep cowboy");
+        // parse_trans (no lib/) must be excluded.
+        assert!(!names.contains("parse_trans"), "parse_trans (no lib/) should be excluded");
 
         let _ = std::fs::remove_dir_all(&tmp);
     }
