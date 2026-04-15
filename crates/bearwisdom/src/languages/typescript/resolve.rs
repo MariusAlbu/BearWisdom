@@ -563,11 +563,117 @@ impl LanguageResolver for TypeScriptResolver {
     // is_visible: default implementation (always true) is correct for TS.
     // TypeScript's `export` keyword controls visibility, but for resolution
     // purposes we treat all indexed symbols as accessible.
+
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        // Try the lookup-free path first — covers the common cases.
+        if let Some(ns) =
+            self.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
+        {
+            return Some(ns);
+        }
+        // R2: alias → barrel → external. When `@/foo/bar` resolves through
+        // tsconfig paths to a workspace file that ONLY re-exports from a
+        // bare external specifier, classify the consumer ref as external
+        // using that bare specifier as the namespace. Without this, the
+        // ref would fall through to the heuristic and pick a wrong
+        // same-named symbol elsewhere in the project.
+        let target = &ref_ctx.extracted_ref.target_name;
+
+        // Check the ref's own module first.
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if let Some(ns) = classify_passthrough_alias(
+                module,
+                target,
+                ref_ctx.file_package_id,
+                project_ctx,
+                lookup,
+            ) {
+                return Some(ns);
+            }
+        } else {
+            // No module on the ref — check file imports.
+            for import in &file_ctx.imports {
+                if import.imported_name != *target {
+                    continue;
+                }
+                let Some(module_path) = &import.module_path else {
+                    continue;
+                };
+                if let Some(ns) = classify_passthrough_alias(
+                    module_path,
+                    target,
+                    ref_ctx.file_package_id,
+                    project_ctx,
+                    lookup,
+                ) {
+                    return Some(ns);
+                }
+            }
+        }
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Classify a consumer ref as external when its import specifier
+/// rewrites through a tsconfig alias to a workspace file that only
+/// re-exports the target from a bare (external) specifier.
+///
+/// Common pattern: `apps/x/src/i18n/client/trans.tsx` containing exactly
+/// `export { Trans } from "react-i18next"` — the consumer's
+/// `@/i18n/client/trans` import is effectively a re-export of the
+/// external `react-i18next` package, not an internal symbol.
+///
+/// Returns the bare external namespace (e.g. `"react-i18next"`) when the
+/// chain holds; `None` otherwise.
+fn classify_passthrough_alias(
+    spec: &str,
+    target: &str,
+    package_id: Option<i64>,
+    _project_ctx: Option<&ProjectContext>,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    // Need the rewritten bare path. Skip when no alias matches.
+    let rewritten = lookup.resolve_tsconfig_alias(package_id, spec)?;
+
+    // Try to locate the resolved file in the index. Walk the same shape
+    // resolve_via_alias uses so we land on the actual indexed file.
+    const EXTS: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
+    let mut candidate_paths: Vec<String> = vec![rewritten.clone()];
+    for ext in EXTS {
+        candidate_paths.push(format!("{rewritten}{ext}"));
+        candidate_paths.push(format!("{rewritten}/index{ext}"));
+    }
+
+    for candidate in &candidate_paths {
+        let reexports = lookup.reexports_from(candidate);
+        if reexports.is_empty() {
+            continue;
+        }
+        // Look for a re-export entry that matches `target` (or a wildcard)
+        // and points at a bare specifier. That bare spec is the external
+        // namespace this ref resolves through.
+        for (exported_name, source_module) in reexports {
+            if !builtins::is_bare_specifier(source_module) {
+                continue;
+            }
+            if exported_name != target && exported_name != "*" {
+                continue;
+            }
+            return Some(source_module.clone());
+        }
+    }
+    None
+}
 
 /// Resolve an import after rewriting the specifier through tsconfig
 /// `paths` aliases. The rewritten value is a bare project-relative path

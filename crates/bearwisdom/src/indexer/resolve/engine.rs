@@ -1414,6 +1414,21 @@ pub trait LanguageResolver: Send + Sync {
     ) -> Option<String> {
         None
     }
+
+    /// Same as `infer_external_namespace` but with `lookup` access for
+    /// barrel/re-export inspection. Resolvers that need to chase a
+    /// passthrough barrel (`@/foo` → `apps/x/src/foo.ts` → `export { Y }
+    /// from "external-pkg"`) override this; default delegates to the
+    /// lookup-free variant for callers that don't need it.
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        _lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        self.infer_external_namespace(file_ctx, ref_ctx, project_ctx)
+    }
 }
 
 // ---------------------------------------------------------------------------

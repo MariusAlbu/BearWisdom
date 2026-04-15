@@ -1769,6 +1769,90 @@ fn relative_import_jsx_usage_resolves_via_module_to_file() {
 }
 
 #[test]
+fn passthrough_alias_barrel_classifies_as_external() {
+    // Pattern: `import { Trans } from "@/i18n/client/trans"` where
+    // `apps/landing/src/i18n/client/trans.tsx` is exactly:
+    //   export { Trans } from "react-i18next";
+    // The consumer ref must classify as external `react-i18next`, NOT
+    // fall through to the heuristic which would pick a wrong same-named
+    // symbol elsewhere in the project.
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::indexer::resolve::engine::SymbolIndex;
+
+    // Barrel: zero own symbols, one re-export ref pointing at a bare spec.
+    let barrel_ref = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "Trans".to_string(),
+        kind: EdgeKind::Imports,
+        line: 1,
+        module: Some("react-i18next".to_string()),
+        chain: None,
+    };
+    let barrel = make_ts_file_in_pkg(
+        "apps/landing/src/i18n/client/trans.tsx",
+        Some(7),
+        vec![],
+        vec![barrel_ref],
+    );
+    let consumer = make_ts_file_in_pkg(
+        "apps/landing/src/footer.tsx",
+        Some(7),
+        vec![make_symbol(
+            "Footer",
+            "Footer",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "Trans", "@/i18n/client/trans", 1)],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&barrel, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+
+    let mut ctx = ProjectContext::default();
+    let mut npm = ManifestData::default();
+    npm.tsconfig_paths
+        .push(("@/".to_string(), "src/".to_string()));
+    let mut by_pkg = std::collections::HashMap::new();
+    by_pkg.insert(ManifestKind::Npm, npm);
+    ctx.by_package.insert(7, by_pkg);
+    ctx.workspace_pkg_paths
+        .insert(7, "apps/landing".to_string());
+
+    let parsed = vec![barrel, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[1];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(7),
+    };
+
+    let ns = resolver.infer_external_namespace_with_lookup(
+        &file_ctx,
+        &ref_ctx,
+        Some(&ctx),
+        &index,
+    );
+    assert_eq!(
+        ns.as_deref(),
+        Some("react-i18next"),
+        "passthrough barrel should classify as the external bare spec"
+    );
+}
+
+#[test]
 fn tsconfig_alias_parser_handles_realworld_landing_shape() {
     // Exact shape from ts-rallly's apps/landing/tsconfig.json — the wild
     // case we missed. Has `extends`, `baseUrl`, mixed-type compilerOptions,

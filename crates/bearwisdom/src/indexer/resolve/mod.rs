@@ -220,7 +220,9 @@ fn resolve_and_write_inner(
                     scope_chain: scope_chain.clone(),
                     file_package_id: pf.package_id,
                 };
-                resolver.infer_external_namespace(file_ctx, &ref_ctx, project_ctx)
+                resolver.infer_external_namespace_with_lookup(
+                    file_ctx, &ref_ctx, project_ctx, &index,
+                )
             } else {
                 None
             };
