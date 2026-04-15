@@ -132,6 +132,30 @@ pub trait SymbolLookup {
     /// Find all symbols defined in a specific file.
     fn in_file(&self, file_path: &str) -> &[SymbolInfo];
 
+    /// Resolve a module specifier in the context of a specific source file
+    /// and return the symbols of the target module.
+    ///
+    /// Necessary for relative specifiers (`./utils`, `../shared`) where the
+    /// resolution depends on the source file's directory — `./utils` from
+    /// `apps/web/foo.ts` and `apps/web/bar/baz.ts` are different files.
+    /// Default impl falls back to `in_file(spec)` for callers (and indexes)
+    /// that don't carry per-source resolution data.
+    fn in_module_from(&self, _source_file: &str, spec: &str) -> &[SymbolInfo] {
+        self.in_file(spec)
+    }
+
+    /// Look up the resolved file path for a module specifier in the context
+    /// of a specific source file. Returns `None` when no resolution is
+    /// known. Used by re-export following so chain hops can also be
+    /// resolved per-source.
+    fn resolve_module_from(
+        &self,
+        _source_file: &str,
+        _spec: &str,
+    ) -> Option<&str> {
+        None
+    }
+
     /// Get the annotated type name for a property/field symbol.
     /// e.g., "AlbumService.db" → Some("DatabaseRepository")
     fn field_type_name(&self, property_qname: &str) -> Option<&str>;
@@ -244,7 +268,17 @@ pub struct SymbolIndex {
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
     /// Module specifier resolution: maps specifiers to actual file paths.
     /// Populated by ecosystem-specific ModuleResolvers during index construction.
+    /// Used for bare/aliased specifiers where source-file context doesn't
+    /// affect resolution. Relative specifiers are NOT cached here — they
+    /// live in `module_to_file_per_source` because `./utils` from one
+    /// directory is a different file than from another.
     module_to_file: FxHashMap<String, String>,
+    /// Per-source-file resolution map for relative module specifiers.
+    /// Keyed by `(source_file_path, module_specifier)`. Necessary because
+    /// `./utils` resolves differently for each consumer file — sharing a
+    /// global slot causes the first-resolved consumer to win and silently
+    /// breaks resolution for every other file.
+    module_to_file_per_source: FxHashMap<(String, String), String>,
     /// Test-framework globals (e.g., `expect`, `describe`, `it`) computed from
     /// manifest dependencies. Keyed by language-independent name since most test
     /// globals are language-specific sets unioned at build time.
@@ -570,6 +604,17 @@ impl SymbolIndex {
         // Build module-to-file mapping using ecosystem-specific ModuleResolvers.
         // For each import ref that carries a module specifier, resolve it to an
         // actual indexed file path and cache the result.
+        //
+        // Two cache shapes:
+        //   - module_to_file: spec → file (for bare/aliased specifiers where
+        //     the source file's directory doesn't affect resolution)
+        //   - module_to_file_per_source: (source_file, spec) → file (for
+        //     relative specifiers like ./utils, ../shared — different
+        //     source dirs resolve the same spec to different files)
+        //
+        // Sharing one global map for relative paths causes the first
+        // consumer to "win the slot" for `./utils` and silently breaks
+        // resolution for every other file with a same-named neighbour.
         let go_module_path = project_ctx
             .and_then(|ctx| ctx.manifest(crate::indexer::manifest::ManifestKind::GoMod))
             .and_then(|m| m.module_path.as_deref());
@@ -577,6 +622,8 @@ impl SymbolIndex {
             crate::indexer::module_resolution::all_resolvers_with_go_module(go_module_path);
         let file_paths: Vec<&str> = parsed.iter().map(|pf| pf.path.as_str()).collect();
         let mut module_to_file: FxHashMap<String, String> = FxHashMap::default();
+        let mut module_to_file_per_source: FxHashMap<(String, String), String> =
+            FxHashMap::default();
 
         for pf in parsed {
             let resolver = resolvers
@@ -590,7 +637,25 @@ impl SymbolIndex {
                 let Some(module) = &r.module else {
                     continue;
                 };
-                if module.is_empty() || module_to_file.contains_key(module.as_str()) {
+                if module.is_empty() {
+                    continue;
+                }
+                // Relative specifiers must be cached per-source because the
+                // resolution depends on the importing file's directory.
+                let is_relative = module.starts_with('.');
+                if is_relative {
+                    let key = (pf.path.clone(), module.clone());
+                    if module_to_file_per_source.contains_key(&key) {
+                        continue;
+                    }
+                    if let Some(resolved) =
+                        resolver.resolve_to_file(module, &pf.path, &file_paths)
+                    {
+                        module_to_file_per_source.insert(key, resolved);
+                    }
+                    continue;
+                }
+                if module_to_file.contains_key(module.as_str()) {
                     continue;
                 }
                 if let Some(resolved) =
@@ -691,6 +756,7 @@ impl SymbolIndex {
             type_info,
             reexport_map,
             module_to_file,
+            module_to_file_per_source,
             test_globals,
             test_globals_by_pkg,
             primitives_by_language,
@@ -1089,6 +1155,42 @@ impl SymbolLookup for SymbolIndex {
             }
         }
         &self.empty
+    }
+
+    fn in_module_from(&self, source_file: &str, spec: &str) -> &[SymbolInfo] {
+        // Per-source resolution wins for relative specifiers — `./utils`
+        // from one file is a different file than from another. Falls back
+        // to the global lookups (exact path / global module_to_file) when
+        // the per-source map has no entry for this (source, spec) pair.
+        if spec.starts_with('.') {
+            if let Some(resolved) = self
+                .module_to_file_per_source
+                .get(&(source_file.to_string(), spec.to_string()))
+            {
+                if let Some(syms) = self.by_file.get(resolved) {
+                    return syms.as_slice();
+                }
+            }
+            // Backward-compat: if the spec literally matches an indexed
+            // file path (test fixtures often use the spec as the path),
+            // surface it. Real-world relative specs like `./utils` won't
+            // collide with indexed paths so this is harmless.
+        }
+        self.in_file(spec)
+    }
+
+    fn resolve_module_from(
+        &self,
+        source_file: &str,
+        spec: &str,
+    ) -> Option<&str> {
+        if spec.starts_with('.') {
+            return self
+                .module_to_file_per_source
+                .get(&(source_file.to_string(), spec.to_string()))
+                .map(|s| s.as_str());
+        }
+        self.module_to_file.get(spec).map(|s| s.as_str())
     }
 
     fn field_type_name(&self, property_qname: &str) -> Option<&str> {

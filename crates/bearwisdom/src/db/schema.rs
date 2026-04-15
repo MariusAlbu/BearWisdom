@@ -237,9 +237,9 @@ CREATE TABLE IF NOT EXISTS packages (
 );
 
 CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);
-CREATE INDEX IF NOT EXISTS idx_packages_declared_name
-    ON packages(declared_name)
-    WHERE declared_name IS NOT NULL;
+-- idx_packages_declared_name lives in migrate() — old DBs receive the
+-- column via ALTER TABLE there, and the index needs to be created AFTER
+-- the column exists.
 
 -- ============================================================
 -- PACKAGE DEPENDENCIES  (M3)

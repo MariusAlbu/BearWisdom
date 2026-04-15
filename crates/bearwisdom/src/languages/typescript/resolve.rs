@@ -178,7 +178,9 @@ impl LanguageResolver for TypeScriptResolver {
             // routes to `ext:{module}` as before.
 
             // Relative import: look up in the target file by simple name.
-            for sym in lookup.in_file(module) {
+            // Use per-source resolution so `./utils` gets the correct file
+            // for THIS source rather than whoever resolved it first.
+            for sym in lookup.in_module_from(&file_ctx.file_path, module) {
                 if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_import_file",
@@ -244,12 +246,12 @@ impl LanguageResolver for TypeScriptResolver {
             };
 
             // Relative import (`./x`, `../y`): look up in the target file
-            // via the module_to_file index. Without this, JSX usage refs
+            // via the per-source module index. Without this, JSX usage refs
             // like `<Button>` after `import { Button } from "./button"`
             // fall through to the heuristic when the TS resolver should
             // have caught them deterministically.
             if !builtins::is_bare_specifier(module_path) {
-                for sym in lookup.in_file(module_path) {
+                for sym in lookup.in_module_from(&file_ctx.file_path, module_path) {
                     if sym.name == *target
                         && builtins::kind_compatible(edge_kind, &sym.kind)
                     {
@@ -267,7 +269,21 @@ impl LanguageResolver for TypeScriptResolver {
                     }
                 }
                 // Follow barrel re-exports when the relative module itself
-                // is a barrel that forwards the named export.
+                // is a barrel that forwards the named export. The
+                // per-source resolved path makes this work even when many
+                // files share the same `./` specifier.
+                let resolved_path = lookup
+                    .resolve_module_from(&file_ctx.file_path, module_path)
+                    .map(|s| s.to_string());
+                if let Some(path) = resolved_path.as_deref() {
+                    if let Some(res) =
+                        follow_reexports(path, target, edge_kind, lookup, 0)
+                    {
+                        return Some(res);
+                    }
+                }
+                // Fallback: try the spec itself in case follow_reexports
+                // can pick it up via its own module_to_file lookup.
                 if let Some(res) =
                     follow_reexports(module_path, target, edge_kind, lookup, 0)
                 {
@@ -752,8 +768,11 @@ fn follow_reexports(
             continue;
         }
 
-        // Named match: look up `target_name` directly in `source_module`.
-        for sym in lookup.in_file(source_module) {
+        // Named match: look up `target_name` in `source_module` from the
+        // CONTAINING barrel's perspective. `./quick-create-button` inside
+        // `apps/web/.../index.ts` resolves to a different file than the
+        // same spec from elsewhere — per-source resolution is mandatory.
+        for sym in lookup.in_module_from(module_path, source_module) {
             if sym.name == target_name && builtins::kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "ts_reexport_chain",
@@ -772,14 +791,20 @@ fn follow_reexports(
         }
 
         // Not directly in `source_module` — recurse (it may itself be a barrel).
-        if let Some(res) = follow_reexports(source_module, target_name, edge_kind, lookup, depth + 1) {
+        // Prefer the resolved file path so the next hop's reexports_from
+        // lookup hits its file-keyed map directly.
+        let next = lookup
+            .resolve_module_from(module_path, source_module)
+            .map(|s| s.to_string());
+        let next_path: &str = next.as_deref().unwrap_or(source_module);
+        if let Some(res) = follow_reexports(next_path, target_name, edge_kind, lookup, depth + 1) {
             return Some(res);
         }
     }
 
     // No named match. Try wildcard sources in order.
     for source_module in wildcard_sources {
-        for sym in lookup.in_file(source_module) {
+        for sym in lookup.in_module_from(module_path, source_module) {
             if sym.name == target_name && builtins::kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "ts_reexport_star",
@@ -797,8 +822,12 @@ fn follow_reexports(
             }
         }
 
-        // Recurse into wildcard sources too.
-        if let Some(res) = follow_reexports(source_module, target_name, edge_kind, lookup, depth + 1) {
+        // Recurse into wildcard sources too — chase via resolved file path.
+        let next = lookup
+            .resolve_module_from(module_path, source_module)
+            .map(|s| s.to_string());
+        let next_path: &str = next.as_deref().unwrap_or(source_module);
+        if let Some(res) = follow_reexports(next_path, target_name, edge_kind, lookup, depth + 1) {
             return Some(res);
         }
     }
