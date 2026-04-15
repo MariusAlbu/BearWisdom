@@ -1525,6 +1525,106 @@ fn tsconfig_alias_prepends_package_path_in_monorepo() {
 }
 
 #[test]
+fn tsconfig_alias_follows_barrel_reexport() {
+    // Pattern: `import { QuickCreateButton } from "@/features/quick-create"`
+    // where `@/features/quick-create/index.ts` is a barrel that forwards
+    // the name from a neighbour file. The alias rewrite lands in the
+    // index.ts — but that file has no own symbols, only re-exports.
+    // `resolve_via_alias` must walk the barrel chain.
+    use crate::indexer::manifest::{ManifestData, ManifestKind};
+
+    let producer = make_ts_file_in_pkg(
+        "apps/web/src/features/quick-create/quick-create-button.tsx",
+        Some(7),
+        vec![make_symbol(
+            "QuickCreateButton",
+            "QuickCreateButton",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![],
+    );
+    // Barrel: `export { QuickCreateButton } from "./quick-create-button"`
+    // The TS extractor emits this as an Imports ref with module set. We
+    // build the file with one such ref and no own symbols.
+    let barrel_ref = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "QuickCreateButton".to_string(),
+        kind: EdgeKind::Imports,
+        line: 1,
+        module: Some("./quick-create-button".to_string()),
+        chain: None,
+    };
+    let barrel = make_ts_file_in_pkg(
+        "apps/web/src/features/quick-create/index.ts",
+        Some(7),
+        vec![],
+        vec![barrel_ref],
+    );
+    let consumer = make_ts_file_in_pkg(
+        "apps/web/src/app/layout.tsx",
+        Some(7),
+        vec![make_symbol(
+            "Layout",
+            "Layout",
+            SymbolKind::Function,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "QuickCreateButton", "@/features/quick-create", 1)],
+    );
+
+    let mut id_map = HashMap::new();
+    let mut next_id = 1i64;
+    for pf in [&producer, &barrel, &consumer] {
+        for sym in &pf.symbols {
+            id_map.insert((pf.path.clone(), sym.qualified_name.clone()), next_id);
+            next_id += 1;
+        }
+    }
+
+    let mut ctx = ProjectContext::default();
+    let mut npm = ManifestData::default();
+    npm.tsconfig_paths
+        .push(("@/".to_string(), "src/".to_string()));
+    let mut by_pkg = std::collections::HashMap::new();
+    by_pkg.insert(ManifestKind::Npm, npm);
+    ctx.by_package.insert(7, by_pkg);
+    ctx.workspace_pkg_paths
+        .insert(7, "apps/web".to_string());
+
+    let parsed = vec![producer, barrel, consumer];
+    let index = SymbolIndex::build_with_context(&parsed, &id_map, Some(&ctx));
+    let consumer_ref = &parsed[2];
+
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(consumer_ref, Some(&ctx));
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_ref.refs[0],
+        source_symbol: &consumer_ref.symbols[0],
+        scope_chain: vec![],
+        file_package_id: Some(7),
+    };
+
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("alias + barrel chain should resolve");
+    // Either tsconfig_alias (if landed directly) or reexport_chain (if
+    // the barrel walk surfaced the result).
+    assert!(
+        res.strategy == "ts_tsconfig_alias" || res.strategy == "ts_reexport_chain",
+        "got unexpected strategy: {}",
+        res.strategy
+    );
+    let expected = id_map[&(
+        "apps/web/src/features/quick-create/quick-create-button.tsx".to_string(),
+        "QuickCreateButton".to_string(),
+    )];
+    assert_eq!(res.target_symbol_id, expected);
+}
+
+#[test]
 fn tsconfig_alias_longest_prefix_wins() {
     use crate::indexer::manifest::{ManifestData, ManifestKind};
 

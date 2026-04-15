@@ -574,22 +574,26 @@ fn resolve_via_alias(
             });
         }
     }
+
     // Common TS/JS file extensions — the rewritten stem usually omits them.
     const EXTS: &[&str] = &[".ts", ".tsx", ".js", ".jsx", ".mts", ".cts", ".mjs", ".cjs"];
-    for ext in EXTS {
-        let candidate = format!("{rewritten}{ext}");
-        for sym in lookup.in_file(&candidate) {
-            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 1.0,
-                    strategy: "ts_tsconfig_alias",
-                });
-            }
+
+    // Two-pass strategy: first try direct own-symbol matches across every
+    // candidate file shape (bare + ext + /index+ext). Only if none of those
+    // hit, follow re-export chains — barrel files (`export { X } from './y'`)
+    // and single-line re-exports (`export { X } from 'pkg'`) never carry
+    // own symbols, so an in_file miss doesn't mean the symbol isn't there.
+    let candidates: Vec<String> = {
+        let mut v = vec![rewritten.to_string()];
+        for ext in EXTS {
+            v.push(format!("{rewritten}{ext}"));
+            v.push(format!("{rewritten}/index{ext}"));
         }
-        // Also try `{rewritten}/index{ext}` for barrel/index resolution.
-        let barrel = format!("{rewritten}/index{ext}");
-        for sym in lookup.in_file(&barrel) {
+        v
+    };
+
+    for candidate in &candidates {
+        for sym in lookup.in_file(candidate) {
             if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -599,6 +603,16 @@ fn resolve_via_alias(
             }
         }
     }
+
+    // Own-symbol miss — walk re-export chains from every plausible path
+    // shape. Follows `export { X } from './y'` and `export * from './z'`
+    // up to the existing 5-hop depth limit.
+    for candidate in &candidates {
+        if let Some(res) = follow_reexports(candidate, target, edge_kind, lookup, 0) {
+            return Some(res);
+        }
+    }
+
     None
 }
 
