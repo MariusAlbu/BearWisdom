@@ -45,7 +45,7 @@ impl LanguageResolver for RubyResolver {
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         let mut imports = Vec::new();
 
@@ -64,6 +64,31 @@ impl LanguageResolver for RubyResolver {
                 alias: None,
                 is_wildcard: false,
             });
+        }
+
+        // Add all declared gems from the project's Gemfile manifest as wildcard
+        // imports. This covers transitive requires — e.g., a test file that
+        // does `require_relative "helper"` where helper.rb requires minitest.
+        // Since Ruby's require is global-state-based, any gem declared in the
+        // project is potentially in scope for any file.
+        if let Some(ctx) = project_ctx {
+            let pkg_id = file.package_id;
+            if let Some(manifest) = ctx.manifests_for(pkg_id).get(&ManifestKind::Gemfile) {
+                for dep in &manifest.dependencies {
+                    // Avoid duplicating deps already in imports list.
+                    let gem_root = dep.split('/').next().unwrap_or(dep.as_str());
+                    if !imports.iter().any(|i| {
+                        i.module_path.as_deref().map(|m| m.split('/').next().unwrap_or(m)) == Some(gem_root)
+                    }) {
+                        imports.push(ImportEntry {
+                            imported_name: gem_root.to_string(),
+                            module_path: Some(gem_root.to_string()),
+                            alias: None,
+                            is_wildcard: true,
+                        });
+                    }
+                }
+            }
         }
 
         // Ruby has no file-level package/namespace declaration in the same sense —
@@ -173,6 +198,57 @@ impl LanguageResolver for RubyResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ruby_qualified_name",
+                    });
+                }
+            }
+        }
+
+        // Step 5: External symbol lookup.
+        //
+        // When the project has external gem sources indexed (origin='external'),
+        // try to match the bare name against external symbols. This resolves
+        // calls like `assert_equal` → `Minitest::Assertions::assert_equal` when
+        // the file has `require 'minitest'` and minitest is in the gem cache.
+        //
+        // Constraint: only match if the file's imports include the gem that owns
+        // the external symbol, to avoid false positives from similarly-named
+        // methods in unrelated gems.
+        {
+            let candidates = lookup.by_name(target);
+            // Collect imported gem names from this file's requires.
+            let imported_gems: Vec<&str> = file_ctx
+                .imports
+                .iter()
+                .filter_map(|imp| {
+                    let m = imp.module_path.as_deref()?;
+                    // Only bare (non-relative) requires can refer to gems.
+                    if m.starts_with('.') {
+                        return None;
+                    }
+                    // The gem name is the first path segment (e.g., "minitest/test"→"minitest").
+                    Some(m.split('/').next().unwrap_or(m))
+                })
+                .collect();
+
+            for sym in candidates {
+                // Only consider external Ruby symbols (path starts with ext:ruby:).
+                if !sym.file_path.starts_with("ext:ruby:") {
+                    continue;
+                }
+                if !builtins::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                // Extract the gem name from the virtual path: "ext:ruby:<gem>/..."
+                let gem_name = sym.file_path
+                    .strip_prefix("ext:ruby:")
+                    .and_then(|rest| rest.split('/').next())
+                    .unwrap_or("");
+                // Accept if the file imports this gem (or any path within it).
+                if imported_gems.iter().any(|&g| g == gem_name || gem_name.starts_with(&format!("{g}-"))) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.8,
+                        strategy: "ruby_external_gem",
                     });
                 }
             }
