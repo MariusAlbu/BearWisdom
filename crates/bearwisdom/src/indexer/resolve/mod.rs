@@ -435,6 +435,15 @@ fn resolve_and_write_inner(
                 None => {
                     // Truly unresolved — no external namespace identified,
                     // no heuristic match found.
+                    //
+                    // Guard: the outer loop skips ext: files entirely, but a
+                    // symbol's file_path could still be external (e.g. augmented
+                    // from DB during incremental). Don't pollute unresolved_refs
+                    // with gaps from third-party code — only project code's
+                    // unresolved refs are the user's concern.
+                    if pf.path.starts_with("ext:") {
+                        continue;
+                    }
                     let module_value = r.module.as_deref();
                     // E3: propagate snippet flag from source symbol for
                     // aggregate-stats exclusion.
