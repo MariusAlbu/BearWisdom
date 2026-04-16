@@ -6,7 +6,7 @@ use super::{
 };
 use crate::walker::WalkedFile;
 use std::path::{Path, PathBuf};
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// Scala sbt → Maven source jars (via the Java externals pipeline).
 ///
@@ -77,6 +77,7 @@ pub fn discover_scala_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let mut roots = Vec::new();
     let mut seen = std::collections::HashSet::new();
 
+    let mut misses = 0usize;
     for artifact in &all_artifacts {
         if let Some((group, art, version, cache_dir)) =
             find_scala_source_jar(&repo, artifact, &cache_base)
@@ -91,7 +92,20 @@ pub fn discover_scala_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 ecosystem: "scala",
                 package_id: None,
             });
+        } else {
+            misses += 1;
+            warn!(artifact = %artifact, "Scala: sources jar not found in Maven local repo (cache miss)");
         }
+    }
+    if misses > 0 {
+        let total = all_artifacts.len();
+        warn!(
+            misses,
+            total,
+            "Scala: {misses}/{total} artifacts had no sources jar in Maven cache \
+             (~/.m2/repository or BEARWISDOM_JAVA_MAVEN_REPO); \
+             run `sbt publishLocal` or set BEARWISDOM_JAVA_MAVEN_REPO to populate it"
+        );
     }
     debug!("Scala: discovered {} external source roots", roots.len());
     roots
