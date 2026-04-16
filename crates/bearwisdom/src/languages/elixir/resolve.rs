@@ -294,6 +294,32 @@ impl LanguageResolver for ElixirResolver {
             }
         }
 
+        // `Routes` is the conventional alias for `<App>.Router.Helpers` — a
+        // Phoenix compile-time module that never appears as a source-defined
+        // symbol. It can reach files via multiple injection paths:
+        //
+        //   1. Direct alias: `alias MyApp.Router.Helpers, as: Routes` in source.
+        //   2. ConnCase injection: handled by `is_phoenix_test_case_wrapper` below.
+        //   3. Web wrapper injection: `use MyAppWeb, :controller` or `:view`
+        //      — the web module's quote block injects the alias invisibly.
+        //
+        // For case 1 we check for Router.Helpers in imports. For case 3 we
+        // detect `use <AppWeb>, :<controller|view|...>` and apply externalization.
+        if target == "Routes" {
+            for import in &file_ctx.imports {
+                let mp = import.module_path.as_deref().unwrap_or("");
+                // Case 1: explicit alias present in this file's own source.
+                if mp.ends_with("Router.Helpers") {
+                    return Some("Phoenix".to_string());
+                }
+                // Case 3: web wrapper module — `Routes` is injected by the
+                // web module's `quote do` block; we can't see the alias itself.
+                if builtins::is_internal_web_module(mp) {
+                    return Some("Phoenix".to_string());
+                }
+            }
+        }
+
         // Use-macro injection inference: if the file has `use ExternalModule`
         // and that module is known to inject functions, any unresolved bare name
         // that matches the injection set is external. This is type inference
@@ -316,6 +342,32 @@ impl LanguageResolver for ElixirResolver {
                 && builtins::is_conn_case_injected(target)
             {
                 return Some("Phoenix".to_string());
+            }
+
+            // Project-internal Schema modules (e.g. `Changelog.Schema`,
+            // `MyApp.Schema`) commonly inject query-builder helpers via
+            // `defmacro __using__` + `quote do`. BearWisdom can't expand
+            // these macros, so the injected functions never appear as
+            // top-level symbols. Detect by module name convention and apply
+            // the known injection set.
+            if builtins::is_internal_schema_module(module)
+                && builtins::is_schema_using_injected(target)
+            {
+                // Attribute to the module's namespace root as an internal
+                // origin (no external package). Use the full module path as
+                // the namespace so the ref is classified as internal but
+                // resolvable.
+                return Some(module.split('.').next().unwrap_or(module).to_string());
+            }
+
+            // Project-internal `<AppWeb>` controller wrapper modules inject
+            // shared helpers via a `def controller do quote do ... end end`
+            // pattern. Any controller that does `use ChangelogWeb, :controller`
+            // gets these helpers without them appearing as defined symbols.
+            if builtins::is_internal_web_module(module)
+                && builtins::is_web_controller_injected(target)
+            {
+                return Some(module.split('.').next().unwrap_or(module).to_string());
             }
 
             // Only check modules confirmed as external dependencies.

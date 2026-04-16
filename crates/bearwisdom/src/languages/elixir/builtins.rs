@@ -379,6 +379,80 @@ pub(super) fn is_conn_case_injected(name: &str) -> bool {
     )
 }
 
+/// Check whether `name` is commonly injected by an Ecto-schema-style
+/// `__using__` macro pattern.
+///
+/// Many Phoenix/Ecto projects define a `Schema` module (e.g. `MyApp.Schema`,
+/// `Changelog.Schema`) with a `defmacro __using__` that injects a standard
+/// set of query-builder helpers via `quote do`. BearWisdom can't expand these
+/// macros, so the injected function bodies are never seen as top-level symbols.
+///
+/// This predicate recognises the conventional helper names injected by such
+/// macros. It fires when the file has `use <Anything>.Schema` (or similar
+/// project-internal schema wrappers) AND the name is in the expected set.
+pub(super) fn is_schema_using_injected(name: &str) -> bool {
+    matches!(
+        name,
+        // Common Ecto query helper names injected by project Schema modules
+        "newest_first"
+            | "newest_last"
+            | "by_position"
+            | "any?"
+            | "with_ids"
+            | "newer_than"
+            | "older_than"
+            | "hashid"
+            | "decode"
+            // Ecto.Query wrappers often re-exported by schema modules
+            | "paginate"
+            | "published"
+            | "unpublished"
+            | "published_after"
+            | "published_before"
+            | "search_by"
+    )
+}
+
+/// Returns true if `module` looks like a project-internal Schema wrapper
+/// (e.g. `Changelog.Schema`, `MyApp.Schemas.Base`, `AppWeb.Schema`).
+pub(super) fn is_internal_schema_module(module: &str) -> bool {
+    let last = module.split('.').last().unwrap_or(module);
+    last == "Schema" || last == "Schemas" || last == "BaseSchema" || last == "ModelHelpers"
+}
+
+/// Check whether `name` is commonly injected by a project-internal
+/// `<AppWeb>` controller wrapper module (the Phoenix 1.5+ `use AppWeb, :controller`
+/// pattern, where `AppWeb.controller/0` returns a `quote do` block that
+/// defines shared helpers for all controllers in the project).
+///
+/// These names appear in controllers that do `use ChangelogWeb, :controller`
+/// (or `use MyAppWeb, :controller`) and call functions defined in the web
+/// module's `quote do` block — invisible to the extractor.
+pub(super) fn is_web_controller_injected(name: &str) -> bool {
+    matches!(
+        name,
+        // Commonly defined in AppWeb.controller quote blocks
+        "redirect_next"
+            | "replace_next_edit_path"
+            | "log_request"
+            | "send_to_sentry"
+            | "current_user_or_nil"
+            | "require_user"
+            | "is_admin?"
+            | "is_editor?"
+            | "is_host?"
+    )
+}
+
+/// Returns true if `module` looks like a project-internal `<AppWeb>` wrapper
+/// module (e.g. `ChangelogWeb`, `MyAppWeb`, `HelloWeb`).
+pub(super) fn is_internal_web_module(module: &str) -> bool {
+    // Single-segment CamelCase module ending in "Web" — the conventional
+    // Phoenix project web module name.
+    let last = module.split('.').last().unwrap_or(module);
+    last.ends_with("Web") && !last.is_empty()
+}
+
 /// Check whether a bare function name is injected by a `use Module` macro.
 ///
 /// When Elixir code does `use Phoenix.Controller`, the macro injects functions

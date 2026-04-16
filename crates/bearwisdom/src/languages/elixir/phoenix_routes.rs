@@ -71,16 +71,37 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
         "#,
     ).expect("phoenix verb regex");
 
-    // `resources "/path", Controller [, only: [...]] [, as: :alias]`
+    // `resources "/path", Controller [, only/except: [...]] [, as: :alias] [do]`
+    // The trailing `do` (with or without `end` on the same line) indicates a
+    // nested block — child routes declared inside use the parent resource name
+    // as an additional prefix segment. Phoenix generates e.g.
+    //   podcast_episode_path  from  resources "/podcasts", PodcastController do
+    //                                 resources "/episodes", EpisodeController
+    //                               end
+    //
+    // We use two separate regexes: one for the controller name, and one each
+    // for `only:` and `as:` options. This avoids ordering problems where `.*?`
+    // in a combined regex can consume one option before the other is captured.
     let re_resources = Regex::new(
         r#"(?x)
         ^\s*resources\s+
         "[^"]*"\s*,\s*                                 # path
-        ([A-Z][\w.]*Controller)                        # Controller
-        (?:.*?only:\s*\[([^\]]*)\])?                    # optional only: [...]
-        (?:.*?as:\s*:(\w+))?                           # optional as: :alias
+        ([A-Z][\w.]*Controller)                        # Controller module
         "#,
     ).expect("phoenix resources regex");
+
+    // Option-specific regexes applied to the full line independently.
+    let re_resources_only = Regex::new(r#"(?x)\bonly:\s*\[([^\]]*)\]"#)
+        .expect("resources-only regex");
+    let re_resources_as = Regex::new(r#"(?x)\bas:\s*:(\w+)"#)
+        .expect("resources-as regex");
+
+    // Detects whether a `resources` line (or any route line) ends with a bare
+    // `do` keyword that opens a nested block.  We check separately because the
+    // controller-capture regex uses `.*?` optional groups that may consume the
+    // trailing ` do` before the named capture sees it when the line also
+    // contains `except:` or other options.
+    let re_line_opens_block = Regex::new(r"\bdo\s*$").expect("do-at-eol regex");
 
     // `live "/path", LiveModule, :action [, as: :alias]`
     let re_live = Regex::new(
@@ -92,40 +113,67 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
         "#,
     ).expect("phoenix live regex");
 
-    // Track nested `scope ... as: :X` aliases. Bare `scope "/path"` blocks
-    // without `as:` push an empty segment — end pops regardless. The effective
-    // prefix for a route is the underscored concatenation of all non-empty
-    // `as:` aliases currently on the stack.
-    let mut scope_stack: Vec<String> = Vec::new();
+    // Scope stack — each entry is `(depth, name_segment)`:
+    //   - `depth` is the do/end nesting depth at which this entry was pushed.
+    //   - `name_segment` is the path prefix contributed by this scope level
+    //     (empty for bare `scope "..."` without `as:`).
+    //
+    // We track a global nesting depth counter separately.  Every line that
+    // opens a `do` block (scope, resources, pipeline, for, defmodule, etc.)
+    // increments the depth.  Every standalone `end` decrements it.  Scope /
+    // resources entries are popped when the depth falls back to their push
+    // depth — this way `for ... do ... end` and `pipeline ... do ... end`
+    // blocks nested inside a scope don't accidentally pop the scope entry.
+    let mut nesting_depth: i32 = 0;
+    let mut scope_stack: Vec<(i32, String)> = Vec::new();
     let mut synthesized = std::collections::HashSet::new();
+
+    // Regex for any line that ends with `do` (opens a block).
+    // Used to track nesting depth for non-scope do/end pairs.
+    let re_any_do = Regex::new(r"\bdo\s*$").expect("any-do regex");
 
     for line in source.lines() {
         // scope "/admin", Mod, as: :admin do
         if let Some(cap) = re_scope_as.captures(line) {
-            scope_stack.push(cap[1].to_string());
+            nesting_depth += 1;
+            scope_stack.push((nesting_depth, cap[1].to_string()));
             continue;
         }
         if re_scope_bare.is_match(line) {
-            scope_stack.push(String::new());
+            // Bare scope without `as:` — still opens a depth level.
+            nesting_depth += 1;
+            scope_stack.push((nesting_depth, String::new()));
             continue;
         }
         if re_end.is_match(line) {
-            scope_stack.pop();
+            // Pop any scope entries that were pushed at this depth.
+            scope_stack.retain(|(d, _)| *d != nesting_depth);
+            nesting_depth = (nesting_depth - 1).max(0);
             continue;
         }
-
         let scope_prefix: String = scope_stack
             .iter()
-            .filter(|s| !s.is_empty())
-            .cloned()
+            .filter(|(_, s)| !s.is_empty())
+            .map(|(_, s)| s.as_str())
             .collect::<Vec<_>>()
             .join("_");
 
-        // resources "/users", UserController
+        // resources "/users", UserController [do]
         if let Some(cap) = re_resources.captures(line) {
             let controller = cap.get(1).map(|m| m.as_str()).unwrap_or("");
-            let only = cap.get(2).map(|m| m.as_str()).unwrap_or("");
-            let explicit_as = cap.get(3).map(|m| m.as_str().to_string());
+            // Capture `only:` and `as:` independently from the full line so
+            // that their relative order doesn't matter.
+            let only = re_resources_only.captures(line)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str())
+                .unwrap_or("");
+            let explicit_as = re_resources_as.captures(line)
+                .and_then(|c| c.get(1))
+                .map(|m| m.as_str().to_string());
+            // Use a separate check for trailing `do` — the capture regex's
+            // optional `.*?` groups can consume ` do` when the line also
+            // contains `except:` or similar options before `do`.
+            let opens_block = re_line_opens_block.is_match(line);
 
             let base = explicit_as.unwrap_or_else(|| resource_singular(controller));
             let prefixed = join_scope(&scope_prefix, &base);
@@ -157,6 +205,19 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
                 };
                 push_helper(&name, &mut synthesized, symbols);
             }
+
+            // Push the resource name as a scope prefix for nested routes declared
+            // inside this `resources ... do` block. Phoenix folds the parent
+            // resource name into child helper names:
+            //   resources "/podcasts", PodcastController do
+            //     resources "/episodes", EpisodeController
+            //   end
+            // → podcast_episode_path (no admin prefix) or admin_podcast_episode_path
+            //   when the outer scope has as: :admin.
+            if opens_block {
+                nesting_depth += 1;
+                scope_stack.push((nesting_depth, base.clone()));
+            }
             continue;
         }
 
@@ -181,6 +242,19 @@ pub fn synthesize_route_helpers(source: &str, symbols: &mut Vec<ExtractedSymbol>
             let prefixed = join_scope(&scope_prefix, &base);
             let name = format!("{prefixed}_path");
             push_helper(&name, &mut synthesized, symbols);
+            // `live` routes don't open nested blocks in practice; no continue needed
+            // for depth tracking — fall through to `re_any_do` which won't match
+            // since `live` DSL lines don't typically end in `do`.
+            continue;
+        }
+
+        // Track depth for any other `do`-block openers (pipeline, for, if, etc.)
+        // that we don't push named entries for — they still affect nesting depth.
+        // This MUST come last so that route-handling arms above (which use
+        // `continue`) have already exited before we get here. Scope lines
+        // (`scope ... do`) are handled earlier via `continue` too.
+        if re_any_do.is_match(line) {
+            nesting_depth += 1;
         }
     }
 }
@@ -362,6 +436,67 @@ end
         assert!(names.contains(&"admin_user_path".to_string()));
         assert!(names.contains(&"admin_login_path".to_string()));
         assert!(names.contains(&"admin_login_url".to_string()));
+    }
+
+    #[test]
+    fn nested_resources_generates_compound_helpers() {
+        let src = r#"
+defmodule ChangelogWeb.Router do
+  use Phoenix.Router
+  scope "/admin", ChangelogWeb.Admin, as: :admin do
+    resources "/podcasts", PodcastController do
+      resources "/episodes", EpisodeController
+      resources "/episode_requests", EpisodeRequestController
+    end
+  end
+end
+"#;
+        let names = helper_names(src);
+        // Parent resource helpers still emitted
+        assert!(names.contains(&"admin_podcast_path".to_string()));
+        // Nested: admin + podcast + episode
+        assert!(names.contains(&"admin_podcast_episode_path".to_string()));
+        assert!(names.contains(&"admin_podcast_episode_url".to_string()));
+        assert!(names.contains(&"admin_podcast_episode_request_path".to_string()));
+    }
+
+    #[test]
+    fn non_scope_do_end_does_not_break_scope_stack() {
+        // `pipeline` and `for` blocks have their own `do`/`end` — they must not
+        // pop the enclosing `scope` entry off the stack.
+        let src = r#"
+defmodule ChangelogWeb.Router do
+  use Phoenix.Router
+
+  pipeline :browser do
+    plug :accepts, ["html"]
+  end
+
+  scope "/admin", ChangelogWeb.Admin, as: :admin do
+    pipe_through [:browser, :admin]
+
+    resources "/news/items", NewsItemController, except: [:show] do
+      resources "/subscriptions", NewsItemSubscriptionController, as: :subscription, only: [:index]
+    end
+
+    for provider <- ~w(github) do
+      get "/auth/#{provider}", AuthController, :request
+    end
+
+    resources "/podcasts", PodcastController do
+      resources "/episodes", EpisodeController
+    end
+  end
+end
+"#;
+        let names = helper_names(src);
+        // Scoped top-level resources
+        assert!(names.contains(&"admin_news_item_path".to_string()), "admin_news_item_path missing; got: {names:?}");
+        // Nested resources inside `resources ... do`
+        assert!(names.contains(&"admin_news_item_subscription_path".to_string()), "admin_news_item_subscription_path missing");
+        assert!(names.contains(&"admin_podcast_path".to_string()), "admin_podcast_path missing");
+        assert!(names.contains(&"admin_podcast_episode_path".to_string()), "admin_podcast_episode_path missing");
+        assert!(names.contains(&"admin_podcast_episode_url".to_string()), "admin_podcast_episode_url missing");
     }
 
     #[test]
