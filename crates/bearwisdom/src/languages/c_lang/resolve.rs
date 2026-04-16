@@ -18,7 +18,7 @@
 // target_name (the header path) to distinguish system from project headers.
 // =============================================================================
 
-use super::builtins;
+use super::{builtins, chain};
 use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -102,6 +102,14 @@ impl LanguageResolver for CLangResolver {
         // Template parameters and builtins are never in the index.
         if builtins::is_template_param(target) || builtins::is_c_builtin(target) {
             return None;
+        }
+
+        // Chain-aware resolution: walk member chains like `obj.method()` or
+        // `this->field.method()` by following field types through the index.
+        if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
+            if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, ref_ctx, lookup) {
+                return Some(res);
+            }
         }
 
         // R C API symbols (Rinternals.h, Rdefines.h, R_ext/*.h) are never in

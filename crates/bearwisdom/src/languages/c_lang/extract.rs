@@ -38,8 +38,35 @@ pub(crate) static CPP_SCOPE_KINDS: &[ScopeKind] = &[
 // Public entry point
 // ---------------------------------------------------------------------------
 
+/// Return `true` when `source` contains C++-only constructs that indicate the
+/// file should be parsed with the C++ grammar even if the language id was
+/// detected as `"c"` (happens for `.h` files in mixed C/C++ projects).
+fn is_cpp_content(source: &str) -> bool {
+    // Fast byte-scan: look for C++-only keywords before the first function
+    // body (i.e. the first `{`). Using byte search avoids regex overhead.
+    let sentinel = source.find('{').unwrap_or(source.len());
+    let header = &source[..sentinel];
+    for token in ["namespace ", "template<", "template <", "class ", "operator "] {
+        if header.contains(token) {
+            return true;
+        }
+    }
+    false
+}
+
 pub fn extract(source: &str, language: &str) -> super::ExtractionResult {
-    let lang: tree_sitter::Language = if language == "c" {
+    // Upgrade ".h" files that contain C++-only constructs to the C++ grammar.
+    // The language-profile detector maps ".h" → "c" (correct for pure C
+    // projects), but in mixed or C++-only projects the header files contain
+    // namespaces, templates, and classes that require the C++ grammar and the
+    // CPP_SCOPE_KINDS scope config.
+    let effective_language = if language == "c" && is_cpp_content(source) {
+        "cpp"
+    } else {
+        language
+    };
+
+    let lang: tree_sitter::Language = if effective_language == "c" {
         tree_sitter_c::LANGUAGE.into()
     } else {
         tree_sitter_cpp::LANGUAGE.into()
@@ -59,20 +86,20 @@ pub fn extract(source: &str, language: &str) -> super::ExtractionResult {
     let src = source.as_bytes();
     let has_errors = root.has_error();
 
-    let scope_config = if language == "c" { C_SCOPE_KINDS } else { CPP_SCOPE_KINDS };
+    let scope_config = if effective_language == "c" { C_SCOPE_KINDS } else { CPP_SCOPE_KINDS };
     let scope_tree = scope_tree::build(root, src, scope_config);
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    extract_node(root, src, &scope_tree, language, &mut symbols, &mut refs, None);
+    extract_node(root, src, &scope_tree, effective_language, &mut symbols, &mut refs, None);
 
     // Full-CST type-ref sweep: emit TypeRef for every non-builtin type_identifier
     // and a ref for every template_argument_list in the CST.  This ensures the
     // ref coverage engine can match all type_identifier and template_argument_list
     // nodes, regardless of their depth or syntactic context.
     let sweep_idx = symbols.len().saturating_sub(1);
-    sweep_typerefs(root, src, sweep_idx, language, &mut refs);
+    sweep_typerefs(root, src, sweep_idx, effective_language, &mut refs);
 
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
@@ -170,9 +197,13 @@ fn extract_node<'a>(
             }
 
             "type_definition" => {
+                let pre_typedef_len = symbols.len();
                 push_typedef(&child, src, scope_tree, symbols, parent_index);
-                // Also extract any struct/union/enum specifier that is the type
-                // being aliased, e.g. `typedef struct { int x; } Foo;`
+                let post_typedef_len = symbols.len();
+
+                // Emit TypeRef from each new TypeAlias symbol to its source type.
+                // This populates field_type_name("TSocketChannelPtr") so the chain
+                // walker can dereference typedef aliases (e.g., TSocketChannelPtr → SocketChannel).
                 if let Some(type_node) = child.child_by_field_name("type") {
                     match type_node.kind() {
                         "struct_specifier" | "union_specifier" => {
@@ -191,6 +222,17 @@ fn extract_node<'a>(
                             );
                             if let Some(body) = type_node.child_by_field_name("body") {
                                 extract_enum_body(&body, src, scope_tree, symbols, spec_idx);
+                            }
+                        }
+                        // Emit TypeRef from the typedef alias to the source type.
+                        // e.g., `typedef SocketChannel* SocketChannelPtr;`
+                        //   → TypeRef from SocketChannelPtr → SocketChannel
+                        // This lets field_type_name("SocketChannelPtr") return "SocketChannel"
+                        // after the type_info pass processes it.
+                        "type_identifier" | "pointer_declarator" | "template_type"
+                        | "qualified_identifier" => {
+                            for sym_idx in pre_typedef_len..post_typedef_len {
+                                emit_typerefs_for_type_descriptor(type_node, src, sym_idx, refs);
                             }
                         }
                         _ => {}
@@ -235,8 +277,27 @@ fn extract_node<'a>(
             }
 
             "declaration" | "field_declaration" => {
+                // Capture the symbol count before pushing so we know which
+                // symbols were just introduced by this declaration.
+                let pre_decl_len = symbols.len();
                 push_declaration(&child, src, scope_tree, symbols, parent_index);
-                let source_idx = parent_index.unwrap_or(symbols.len().saturating_sub(1));
+
+                // For type TypeRefs: attribute them to the newly declared
+                // variable/field symbol (not the parent class/function).
+                // This populates field_type_name("ClassName.field") in the
+                // type_info map, which the chain walker uses for type inference.
+                //
+                // If push_declaration pushed no new symbols (e.g. it was a
+                // type-only forward declaration), fall back to the parent.
+                let type_source_idx = if symbols.len() > pre_decl_len {
+                    symbols.len().saturating_sub(1)
+                } else {
+                    parent_index.unwrap_or(symbols.len().saturating_sub(1))
+                };
+                // For calls in initialisers, use parent scope (consistent with prior
+                // behaviour and avoids false field_type attribution from RHS expressions).
+                let call_source_idx = parent_index.unwrap_or(symbols.len().saturating_sub(1));
+
                 // If the declaration's type is itself a struct/class/enum, extract
                 // that specifier as a symbol too (e.g. `struct Foo { int x; } var;`).
                 if let Some(type_node) = child.child_by_field_name("type") {
@@ -280,7 +341,7 @@ fn extract_node<'a>(
                             let name = node_text(type_node, src);
                             if !name.is_empty() && !builtins::is_c_builtin(&name) {
                                 refs.push(ExtractedRef {
-                                    source_symbol_index: source_idx,
+                                    source_symbol_index: type_source_idx,
                                     target_name: name,
                                     kind: EdgeKind::TypeRef,
                                     line: type_node.start_position().row as u32,
@@ -290,14 +351,14 @@ fn extract_node<'a>(
                             }
                         }
                         "template_type" | "qualified_identifier" => {
-                            emit_typerefs_for_type_descriptor(type_node, src, source_idx, refs);
+                            emit_typerefs_for_type_descriptor(type_node, src, type_source_idx, refs);
                         }
                         _ => {}
                     }
                 }
                 // Emit Calls refs for call_expressions in declaration initialisers
                 // (e.g. `static int x = compute_len("abc");`).
-                extract_calls_from_body(&child, src, source_idx, refs);
+                extract_calls_from_body(&child, src, call_source_idx, refs);
                 // Also recurse fully into the declaration so that nested
                 // struct/enum/union specifiers in initializers and complex
                 // declarators are extracted as symbols.

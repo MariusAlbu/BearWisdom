@@ -1,6 +1,7 @@
 //! c_lang language plugin.
 
 mod calls;
+mod chain;
 mod helpers;
 mod symbols;
 pub mod extract;

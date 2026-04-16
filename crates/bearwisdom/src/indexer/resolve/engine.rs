@@ -463,6 +463,23 @@ impl SymbolIndex {
                             );
                         }
                     }
+                    // Type aliases (typedefs, `using Alias = Type`): first TypeRef
+                    // is the aliased type. This populates field_type_name("AliasName")
+                    // so chain walkers can dereference typedef aliases.
+                    // e.g., `typedef SocketChannel* SocketChannelPtr;`
+                    //   → field_type("SocketChannelPtr") = "SocketChannel"
+                    // Used by the C/C++ chain walker's dereference_typedef step.
+                    SymbolKind::TypeAlias => {
+                        field_type
+                            .insert(sym.qualified_name.clone(), type_refs[0].to_string());
+                        // Also index by simple name for cross-TU lookups where
+                        // the typedef may be referenced without its full scope prefix.
+                        if sym.name != sym.qualified_name {
+                            field_type
+                                .entry(sym.name.clone())
+                                .or_insert_with(|| type_refs[0].to_string());
+                        }
+                    }
                     // Methods/functions: last TypeRef is likely the return type.
                     SymbolKind::Method
                     | SymbolKind::Function

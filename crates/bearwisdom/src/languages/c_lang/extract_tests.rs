@@ -455,3 +455,267 @@ Result compute() { return Result(); }
             .collect();
         assert!(type_refs.contains(&"Result"), "missing Result TypeRef: {type_refs:?}");
     }
+
+    // =========================================================================
+    // typedef alias TypeRef (for chain walker dereference support)
+    // =========================================================================
+
+    #[test]
+    fn cpp_typedef_alias_emits_typeref_to_source_type() {
+        // `typedef SocketChannel* SocketChannelPtr;`
+        // The TypeAlias symbol SocketChannelPtr must have a TypeRef to SocketChannel
+        // so field_type_name("SocketChannelPtr") returns "SocketChannel".
+        let src = r#"
+class SocketChannel {};
+typedef SocketChannel* SocketChannelPtr;
+"#;
+        let r = extract::extract(src, "cpp");
+        // Should have a TypeAlias symbol for SocketChannelPtr.
+        let alias = r.symbols.iter().find(|s| s.name == "SocketChannelPtr");
+        assert!(alias.is_some(), "missing SocketChannelPtr TypeAlias symbol: {:?}", r.symbols);
+        let alias = alias.unwrap();
+        assert_eq!(alias.kind, SymbolKind::TypeAlias);
+
+        // There must be a TypeRef from SocketChannelPtr (source_symbol_index == alias idx)
+        // to "SocketChannel".
+        let alias_idx = r.symbols.iter().position(|s| s.name == "SocketChannelPtr").unwrap();
+        let has_typeref = r.refs.iter().any(|rf| {
+            rf.source_symbol_index == alias_idx
+                && rf.target_name == "SocketChannel"
+                && rf.kind == EdgeKind::TypeRef
+        });
+        assert!(has_typeref, "SocketChannelPtr missing TypeRef to SocketChannel: {:?}", r.refs);
+    }
+
+    #[test]
+    fn cpp_typedef_inside_template_class_is_scoped() {
+        // typedef inside a template class body should be qualified under the class.
+        let src = r#"
+namespace hv {
+template<class TSocketChannel>
+class TcpClientTmpl {
+public:
+    typedef TSocketChannel* TSocketChannelPtr;
+};
+}
+"#;
+        let r = extract::extract(src, "cpp");
+        // The typedef symbol should exist and be scoped to the class.
+        let alias = r.symbols.iter().find(|s| s.name == "TSocketChannelPtr");
+        assert!(alias.is_some(), "missing TSocketChannelPtr: {:?}", r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>());
+        let alias = alias.unwrap();
+        assert_eq!(alias.kind, SymbolKind::TypeAlias);
+        // qualified_name should include the class scope.
+        assert!(
+            alias.qualified_name.contains("TcpClientTmpl"),
+            "expected TcpClientTmpl in qualified_name, got: {}",
+            alias.qualified_name
+        );
+    }
+
+    #[test]
+    fn cpp_class_field_typeref_attributed_to_field_not_class() {
+        // `SocketChannel* channel;` inside a class → TypeRef from the field
+        // Variable symbol to SocketChannel (not from the class).
+        let src = r#"
+class SocketChannel {};
+class TcpClient {
+public:
+    SocketChannel* channel;
+};
+"#;
+        let r = extract::extract(src, "cpp");
+        // Find the "channel" Variable symbol.
+        let field_sym = r.symbols.iter().find(|s| s.name == "channel");
+        assert!(field_sym.is_some(), "missing channel symbol: {:?}", r.symbols);
+        let field_idx = r.symbols.iter().position(|s| s.name == "channel").unwrap();
+
+        // TypeRef to SocketChannel must be attributed to the "channel" field, not
+        // the TcpClient class.
+        let has_typeref = r.refs.iter().any(|rf| {
+            rf.source_symbol_index == field_idx
+                && rf.target_name == "SocketChannel"
+                && rf.kind == EdgeKind::TypeRef
+        });
+        assert!(
+            has_typeref,
+            "expected TypeRef from channel (idx {field_idx}) to SocketChannel, refs: {:?}",
+            r.refs.iter()
+                .filter(|rf| rf.kind == EdgeKind::TypeRef)
+                .collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn cpp_template_class_field_has_class_scope_debug() {
+        let src = r#"
+namespace hv {
+template<class TSocketChannel>
+class TcpClientEventLoopTmpl {
+public:
+    typedef TSocketChannel* TSocketChannelPtr;
+    TSocketChannelPtr channel;
+};
+}
+"#;
+        let r = extract::extract(src, "cpp");
+        // Print all symbols for debugging
+        for sym in &r.symbols {
+            println!("sym: name={}, qualified_name={}, kind={:?}", sym.name, sym.qualified_name, sym.kind);
+        }
+        // The channel field should be scoped to the class
+        let channel = r.symbols.iter().find(|s| s.name == "channel");
+        assert!(channel.is_some(), "channel not found");
+        let channel = channel.unwrap();
+        assert!(
+            channel.qualified_name.contains("TcpClientEventLoopTmpl"),
+            "channel not scoped to class, got: {}",
+            channel.qualified_name
+        );
+    }
+
+    #[test]
+    fn cpp_template_class_with_default_field_has_class_scope() {
+        let src = r#"
+namespace hv {
+template<class TSocketChannel = SocketChannel>
+class TcpClientEventLoopTmpl {
+public:
+    typedef TSocketChannel* TSocketChannelPtr;
+    TSocketChannelPtr channel;
+};
+}
+"#;
+        let r = extract::extract(src, "cpp");
+        for sym in &r.symbols {
+            println!("sym: name={}, qualified_name={}, kind={:?}", sym.name, sym.qualified_name, sym.kind);
+        }
+        let channel = r.symbols.iter().find(|s| s.name == "channel");
+        assert!(channel.is_some(), "channel not found");
+        let channel = channel.unwrap();
+        assert!(
+            channel.qualified_name.contains("TcpClientEventLoopTmpl"),
+            "channel not scoped to class, got: {} (all: {:?})",
+            channel.qualified_name,
+            r.symbols.iter().map(|s| format!("{}={}", s.name, s.qualified_name)).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn cpp_namespace_emits_namespace_symbol() {
+        let src = r#"
+namespace hv {
+int foo() { return 0; }
+}
+"#;
+        let r = extract::extract(src, "cpp");
+        for sym in &r.symbols {
+            println!("sym: name={}, qualified_name={}, kind={:?}", sym.name, sym.qualified_name, sym.kind);
+        }
+        let ns = r.symbols.iter().find(|s| s.name == "hv");
+        assert!(ns.is_some(), "hv namespace not found: {:?}", r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>());
+        let ns = ns.unwrap();
+        assert_eq!(ns.kind, SymbolKind::Namespace, "hv has wrong kind: {:?}", ns.kind);
+        let foo = r.symbols.iter().find(|s| s.name == "foo");
+        assert!(foo.is_some(), "foo not found");
+        let foo = foo.unwrap();
+        assert!(foo.qualified_name.contains("hv"), "foo not scoped to hv, got: {}", foo.qualified_name);
+    }
+
+    #[test]
+    fn cpp_tcpclient_real_file_scope_debug() {
+        // Mimics the actual evpp/TcpClient.h structure from cpp-libhv
+        let src = r#"
+#include "Channel.h"
+
+namespace hv {
+
+template<class TSocketChannel = SocketChannel>
+class TcpClientEventLoopTmpl {
+public:
+    typedef std::shared_ptr<TSocketChannel> TSocketChannelPtr;
+
+    TcpClientEventLoopTmpl(EventLoopPtr loop = NULL) {
+        loop_ = loop ? loop : std::make_shared<EventLoop>();
+        connect_timeout = 0;
+    }
+
+    virtual ~TcpClientEventLoopTmpl() {}
+
+    const EventLoopPtr& loop() { return loop_; }
+
+    int createsocket(int remote_port, const char* remote_host = "127.0.0.1") {
+        this->remote_port = remote_port;
+        return 0;
+    }
+
+    int createsocket(struct sockaddr* remote_addr) {
+        channel = std::make_shared<TSocketChannel>(NULL);
+        return 0;
+    }
+
+public:
+    TSocketChannelPtr channel;
+    std::string remote_host;
+    int remote_port;
+    int connect_timeout;
+};
+
+typedef TcpClientEventLoopTmpl<SocketChannel> TcpClient;
+
+} // namespace hv
+"#;
+        let r = extract::extract(src, "cpp");
+        for sym in &r.symbols {
+            println!("sym: name={}, qname={}, kind={:?}", sym.name, sym.qualified_name, sym.kind);
+        }
+        let hv = r.symbols.iter().find(|s| s.name == "hv");
+        assert!(hv.is_some(), "hv namespace not found");
+        assert_eq!(hv.unwrap().kind, SymbolKind::Namespace, "hv has wrong kind: {:?}", hv.unwrap().kind);
+        let channel = r.symbols.iter().find(|s| s.name == "channel");
+        assert!(channel.is_some(), "channel field not found");
+        assert!(
+            channel.unwrap().qualified_name.contains("TcpClientEventLoopTmpl"),
+            "channel not scoped to class, got: {}",
+            channel.unwrap().qualified_name
+        );
+    }
+
+    #[test]
+    fn cpp_tcpclient_actual_file_parse_debug() {
+        // Read the actual TcpClient.h file and inspect what gets extracted
+        let path = "/f/Work/Projects/TestProjects/cpp-libhv/evpp/TcpClient.h";
+        let src = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => {
+                println!("File not found, skipping");
+                return;
+            }
+        };
+        let r = extract::extract(&src, "cpp");
+        println!("has_errors: {}", r.has_errors);
+        for sym in &r.symbols {
+            if matches!(sym.name.as_str(), "hv" | "channel" | "TcpClientEventLoopTmpl" | "TSocketChannelPtr" | "TcpClient") {
+                println!("sym: name={}, qname={}, kind={:?}, line={}", 
+                    sym.name, sym.qualified_name, sym.kind, sym.start_line);
+            }
+        }
+        let hv = r.symbols.iter().find(|s| s.name == "hv");
+        assert!(hv.is_some(), "hv not found in actual file");
+        assert_eq!(
+            hv.unwrap().kind,
+            SymbolKind::Namespace,
+            "hv has wrong kind {:?} in actual file. All syms: {:?}",
+            hv.unwrap().kind,
+            r.symbols.iter().map(|s| format!("{}:{:?}", s.name, s.kind)).collect::<Vec<_>>()
+        );
+
+        let channel = r.symbols.iter().find(|s| s.name == "channel" && s.qualified_name.contains("TcpClient"));
+        assert!(
+            channel.is_some(),
+            "channel not scoped to TcpClient class. All channel syms: {:?}",
+            r.symbols.iter().filter(|s| s.name == "channel")
+                .map(|s| format!("qname={}", s.qualified_name))
+                .collect::<Vec<_>>()
+        );
+    }
