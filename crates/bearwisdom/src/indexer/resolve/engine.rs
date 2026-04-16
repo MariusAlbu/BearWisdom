@@ -2468,21 +2468,30 @@ fn test_framework_globals(dep: &str) -> &'static [&'static str] {
         // Includes assertion/mock methods that appear as bare calls after fluent chains
         // (e.g., `expect(x).toEqual(y)` emits `toEqual` as a standalone calls ref).
         "vitest" | "jest" | "@jest/globals" => &[
-            "describe", "it", "test", "expect",
+            "describe", "xdescribe", "fdescribe", "it", "xit", "fit", "test", "expect",
             "beforeEach", "afterEach", "beforeAll", "afterAll",
             "vi", "jest",
             // jest/vitest assertion methods accessed via chain
-            "toEqual", "toStrictEqual", "toBe", "toBeNull", "toBeUndefined",
-            "toBeTruthy", "toBeFalsy", "toBeNaN", "toBeGreaterThan",
+            "toEqual", "toStrictEqual", "toBe", "toBeTrue", "toBeFalse",
+            "toBeNull", "toBeUndefined", "toBeTruthy", "toBeFalsy",
+            "toBeDefined", "toBeNaN", "toBeGreaterThan",
             "toBeGreaterThanOrEqual", "toBeLessThan", "toBeLessThanOrEqual",
             "toBeCloseTo", "toContain", "toContainEqual", "toHaveLength",
             "toHaveProperty", "toMatch", "toMatchObject", "toMatchSnapshot",
             "toMatchInlineSnapshot", "toThrow", "toThrowError",
             "toThrowErrorMatchingSnapshot", "toThrowErrorMatchingInlineSnapshot",
+            "toBeInstanceOf",
             "toHaveBeenCalled", "toHaveBeenCalledTimes", "toHaveBeenCalledWith",
             "toHaveBeenCalledOnce", "toHaveBeenLastCalledWith",
             "toHaveBeenNthCalledWith", "toHaveReturned", "toHaveReturnedTimes",
             "toHaveReturnedWith", "toHaveLastReturnedWith", "toHaveNthReturnedWith",
+            // DOM matchers (jest-dom / @testing-library)
+            "toHaveClass", "toHaveAttr", "toHaveText", "toContainText",
+            "toBeVisible", "toBeDisabled", "toBeEnabled", "toBeInTheDocument",
+            "toHaveValue", "toHaveStyle", "toHaveFocus",
+            // asymmetric matchers
+            "anything", "any", "objectContaining", "arrayContaining",
+            "stringContaining", "stringMatching",
             // spy/mock methods
             "spyOn", "mockClear", "mockReset", "mockRestore",
             "mockImplementation", "mockImplementationOnce",
@@ -2505,9 +2514,36 @@ fn test_framework_globals(dep: &str) -> &'static [&'static str] {
             "equalNode", "equalDom", "equalHtml",
         ],
         "ava" => &["test"],
-        "jasmine" => &[
-            "describe", "it", "expect", "beforeEach", "afterEach",
-            "beforeAll", "afterAll",
+        "jasmine" | "jasmine-core" | "karma-jasmine" | "@angular-devkit/build-angular" => &[
+            // lifecycle
+            "describe", "xdescribe", "fdescribe", "it", "xit", "fit",
+            "expect", "fail", "pending",
+            "beforeEach", "afterEach", "beforeAll", "afterAll",
+            // namespace object (jasmine.createSpy etc.)
+            "jasmine",
+            // matchers — emitted as bare chain calls
+            "toEqual", "toStrictEqual", "toBe", "toBeTrue", "toBeFalse",
+            "toBeTruthy", "toBeFalsy", "toBeDefined", "toBeUndefined",
+            "toBeNull", "toBeNaN", "toBeGreaterThan", "toBeGreaterThanOrEqual",
+            "toBeLessThan", "toBeLessThanOrEqual", "toBeCloseTo",
+            "toContain", "toContainEqual", "toMatch", "toMatchObject",
+            "toHaveLength", "toHaveProperty",
+            "toHaveBeenCalled", "toHaveBeenCalledTimes", "toHaveBeenCalledWith",
+            "toHaveBeenCalledOnce", "toHaveBeenLastCalledWith",
+            "toHaveBeenNthCalledWith",
+            "toBeInstanceOf", "toThrow", "toThrowError",
+            // DOM/Angular-testing-library matchers
+            "toHaveClass", "toHaveAttr", "toHaveText", "toContainText",
+            "toBeVisible", "toBeDisabled", "toBeEnabled",
+            // spy / mock helpers
+            "spyOn", "spyOnProperty", "createSpy", "createSpyObj",
+            "callThrough", "callFake", "returnValue", "returnValues",
+            "stub", "restore",
+            // fluent chain nodes emitted as bare refs
+            "and", "calls",
+            // asymmetric matchers
+            "anything", "any", "objectContaining", "arrayContaining",
+            "stringContaining", "stringMatching",
         ],
         // Bun's built-in test runner — same shape as vitest.
         "bun-types" => &[
