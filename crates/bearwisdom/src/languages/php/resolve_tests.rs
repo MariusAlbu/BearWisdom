@@ -408,3 +408,241 @@ fn test_build_file_context_normalizes_backslash() {
     assert_eq!(ctx.imports[0].module_path.as_deref(), Some("App.Models.User"));
     assert_eq!(ctx.imports[0].imported_name, "User");
 }
+
+/// `$this->account()` in a service that *extends* a base class should resolve
+/// via the inheritance walk (Step 6) even though `account` is not defined on
+/// the calling class itself.
+#[test]
+fn test_inherited_method_via_this_resolves() {
+    // BaseService defines `account()`.
+    let base_file = make_file(
+        "app/Services/BaseService.php",
+        vec![
+            make_symbol("App.Services", "App.Services", SymbolKind::Namespace, Visibility::Public, None),
+            make_symbol("BaseService", "App.Services.BaseService", SymbolKind::Class, Visibility::Public, Some("App.Services")),
+            make_symbol("account", "App.Services.BaseService.account", SymbolKind::Method, Visibility::Public, Some("App.Services.BaseService")),
+        ],
+        vec![],
+    );
+
+    // SetupAccount extends BaseService; execute() calls $this->account().
+    let child_file = make_file(
+        "app/Domains/Settings/Services/SetupAccount.php",
+        vec![
+            make_symbol("App.Domains.Settings.Services", "App.Domains.Settings.Services", SymbolKind::Namespace, Visibility::Public, None),
+            make_symbol("SetupAccount", "App.Domains.Settings.Services.SetupAccount", SymbolKind::Class, Visibility::Public, Some("App.Domains.Settings.Services")),
+            make_symbol("execute", "App.Domains.Settings.Services.SetupAccount.execute", SymbolKind::Method, Visibility::Public, Some("App.Domains.Settings.Services.SetupAccount")),
+        ],
+        vec![
+            // class SetupAccount extends BaseService
+            ExtractedRef {
+                source_symbol_index: 1, // SetupAccount
+                target_name: "BaseService".to_string(),
+                kind: EdgeKind::Inherits,
+                line: 5,
+                module: None,
+                chain: None,
+            },
+            // $this->account() inside execute()
+            ExtractedRef {
+                source_symbol_index: 2, // execute
+                target_name: "$this->account".to_string(),
+                kind: EdgeKind::Calls,
+                line: 20,
+                module: None,
+                chain: None,
+            },
+        ],
+    );
+
+    let (index, id_map) = build_test_env(&[&base_file, &child_file]);
+    let resolver = PhpResolver;
+    let file_ctx = resolver.build_file_context(&child_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &child_file.refs[1], // $this->account
+        source_symbol: &child_file.symbols[2], // execute
+        scope_chain: build_scope_chain(child_file.symbols[2].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "Should resolve $this->account via inheritance walk");
+    let res = result.unwrap();
+    assert_eq!(res.strategy, "php_inherited_method");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "app/Services/BaseService.php".to_string(),
+                "App.Services.BaseService.account".to_string()
+            ))
+            .unwrap()
+    );
+}
+
+/// Realistic extractor output: `$this->account()` emits target_name = "account"
+/// with a chain whose first segment is SelfRef("this").  Step 6 must detect this
+/// via the chain, not via the target_name prefix.
+#[test]
+fn test_inherited_method_via_chain_selfref() {
+    let base_file = make_file(
+        "app/Services/BaseService.php",
+        vec![
+            make_symbol("BaseService", "App.Services.BaseService", SymbolKind::Class, Visibility::Public, Some("App.Services")),
+            make_symbol("account", "App.Services.BaseService.account", SymbolKind::Method, Visibility::Public, Some("App.Services.BaseService")),
+        ],
+        vec![],
+    );
+    let child_file = make_file(
+        "app/Services/ConcreteService.php",
+        vec![
+            make_symbol("ConcreteService", "App.Services.ConcreteService", SymbolKind::Class, Visibility::Public, Some("App.Services")),
+            make_symbol("run", "App.Services.ConcreteService.run", SymbolKind::Method, Visibility::Public, Some("App.Services.ConcreteService")),
+        ],
+        vec![
+            ExtractedRef {
+                source_symbol_index: 0,
+                target_name: "BaseService".to_string(),
+                kind: EdgeKind::Inherits,
+                line: 3,
+                module: None,
+                chain: None,
+            },
+            // Realistic: extractor emits target_name="account" with SelfRef chain.
+            ExtractedRef {
+                source_symbol_index: 1,
+                target_name: "account".to_string(), // NOT "$this->account"
+                kind: EdgeKind::Calls,
+                line: 10,
+                module: None,
+                chain: Some(MemberChain {
+                    segments: vec![
+                        ChainSegment {
+                            name: "this".to_string(),
+                            node_kind: "variable_name".to_string(),
+                            kind: SegmentKind::SelfRef,
+                            declared_type: None,
+                            type_args: vec![],
+                            optional_chaining: false,
+                        },
+                        ChainSegment {
+                            name: "account".to_string(),
+                            node_kind: "member_call_expression".to_string(),
+                            kind: SegmentKind::Property,
+                            declared_type: None,
+                            type_args: vec![],
+                            optional_chaining: false,
+                        },
+                    ],
+                }),
+            },
+        ],
+    );
+
+    let (index, id_map) = build_test_env(&[&base_file, &child_file]);
+    let resolver = PhpResolver;
+    let file_ctx = resolver.build_file_context(&child_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &child_file.refs[1],
+        source_symbol: &child_file.symbols[1], // run
+        scope_chain: build_scope_chain(child_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "Should resolve $this->account (chain-based) via inheritance walk");
+    let res = result.unwrap();
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "app/Services/BaseService.php".to_string(),
+                "App.Services.BaseService.account".to_string()
+            ))
+            .unwrap(),
+        "Should resolve to BaseService.account, got strategy={}",
+        res.strategy
+    );
+}
+
+/// Two-hop inheritance: SubClass → MidClass → BaseClass.account() should
+/// resolve via transitively walking the inherits_map.
+#[test]
+fn test_transitive_inherited_method_resolves() {
+    let base_file = make_file(
+        "app/Services/BaseService.php",
+        vec![
+            make_symbol("BaseService", "App.Services.BaseService", SymbolKind::Class, Visibility::Public, Some("App.Services")),
+            make_symbol("account", "App.Services.BaseService.account", SymbolKind::Method, Visibility::Public, Some("App.Services.BaseService")),
+        ],
+        vec![],
+    );
+    let mid_file = make_file(
+        "app/Services/QueuableService.php",
+        vec![
+            make_symbol("QueuableService", "App.Services.QueuableService", SymbolKind::Class, Visibility::Public, Some("App.Services")),
+        ],
+        vec![
+            ExtractedRef {
+                source_symbol_index: 0, // QueuableService
+                target_name: "BaseService".to_string(),
+                kind: EdgeKind::Inherits,
+                line: 3,
+                module: None,
+                chain: None,
+            },
+        ],
+    );
+    let child_file = make_file(
+        "app/Jobs/SetupJob.php",
+        vec![
+            make_symbol("SetupJob", "App.Jobs.SetupJob", SymbolKind::Class, Visibility::Public, Some("App.Jobs")),
+            make_symbol("handle", "App.Jobs.SetupJob.handle", SymbolKind::Method, Visibility::Public, Some("App.Jobs.SetupJob")),
+        ],
+        vec![
+            ExtractedRef {
+                source_symbol_index: 0, // SetupJob
+                target_name: "QueuableService".to_string(),
+                kind: EdgeKind::Inherits,
+                line: 3,
+                module: None,
+                chain: None,
+            },
+            ExtractedRef {
+                source_symbol_index: 1, // handle
+                target_name: "$this->account".to_string(),
+                kind: EdgeKind::Calls,
+                line: 15,
+                module: None,
+                chain: None,
+            },
+        ],
+    );
+
+    let (index, id_map) = build_test_env(&[&base_file, &mid_file, &child_file]);
+    let resolver = PhpResolver;
+    let file_ctx = resolver.build_file_context(&child_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &child_file.refs[1],
+        source_symbol: &child_file.symbols[1], // handle
+        scope_chain: build_scope_chain(child_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(result.is_some(), "Should resolve $this->account via 2-hop inheritance");
+    let res = result.unwrap();
+    assert_eq!(res.strategy, "php_inherited_method");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "app/Services/BaseService.php".to_string(),
+                "App.Services.BaseService.account".to_string()
+            ))
+            .unwrap()
+    );
+}

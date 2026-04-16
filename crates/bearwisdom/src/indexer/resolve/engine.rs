@@ -17,6 +17,13 @@ use std::sync::Arc;
 // Bracket-matching utility
 // ---------------------------------------------------------------------------
 
+/// Count the number of leading dotted-path segments shared between two qualified
+/// names (e.g. `"App.Services"` and `"App.Services.Foo"` → 2).  Used to pick
+/// the best parent-class candidate when multiple symbols share the same short name.
+fn common_prefix_len(a: &str, b: &str) -> usize {
+    a.split('.').zip(b.split('.')).take_while(|(x, y)| x == y).count()
+}
+
 /// Find the index of the closing bracket that matches the first opening bracket
 /// in `s`.  Uses depth counting so nested brackets are handled correctly.
 ///
@@ -232,6 +239,26 @@ pub trait SymbolLookup {
     fn is_test_global_for(&self, _package_id: Option<i64>, _name: &str) -> bool {
         false
     }
+
+    /// Return the direct parent class qualified name for the given class.
+    ///
+    /// Built from `Inherits` edges at index construction time.  Returns `None`
+    /// when the class has no known parent in the project (e.g., top-level
+    /// classes, external base classes, or classes not yet indexed).
+    ///
+    /// Callers that need transitive ancestors should chain calls:
+    /// ```text
+    /// let mut cls = my_class;
+    /// for _ in 0..MAX_DEPTH {
+    ///     match lookup.parent_class_qname(cls) {
+    ///         Some(p) => cls = p,
+    ///         None => break,
+    ///     }
+    /// }
+    /// ```
+    fn parent_class_qname(&self, _class_qname: &str) -> Option<&str> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -310,6 +337,14 @@ pub struct SymbolIndex {
     /// Project-wide union of tsconfig alias entries; used when no
     /// `package_id` is set or the package has no per-package entry.
     tsconfig_paths_union: Vec<(String, String)>,
+    /// Class inheritance map: child class qualified_name → parent class qualified_name.
+    /// Built from `Inherits` refs at index construction time.  Used by language
+    /// resolvers to walk the ancestor chain when `$this->method()` calls cannot
+    /// be resolved within the immediate class scope.
+    ///
+    /// Keyed by child qname (dotted form), value is the direct parent qname.
+    /// Transitive ancestors are reached by chaining lookups.
+    inherits_map: FxHashMap<String, String>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -578,6 +613,60 @@ impl SymbolIndex {
             }
         }
 
+        // Build class inheritance map: child_qname → parent_qname.
+        //
+        // Source: `Inherits` refs emitted by language extractors.  The
+        // `source_symbol_index` identifies the child class symbol in its own
+        // file; `target_name` is the parent's short/simple name.  We resolve
+        // it to a qualified name via the by_name index (already built above).
+        //
+        // When multiple symbols share the same short name, we prefer the one
+        // whose namespace matches the child class's namespace most closely
+        // (longest common prefix).  This is a best-effort approximation —
+        // the common case (one class per simple name in a project) will always
+        // resolve correctly.
+        let mut inherits_map: FxHashMap<String, String> = FxHashMap::default();
+        for pf in parsed {
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Inherits {
+                    continue;
+                }
+                // Identify the child class symbol.
+                let Some(child_sym) = pf.symbols.get(r.source_symbol_index) else {
+                    continue;
+                };
+                if !matches!(child_sym.kind, SymbolKind::Class | SymbolKind::Interface) {
+                    continue;
+                }
+                let child_qname = &child_sym.qualified_name;
+                // Avoid overwriting an existing entry (first Inherits edge wins).
+                if inherits_map.contains_key(child_qname) {
+                    continue;
+                }
+                // Resolve parent simple name → qname via by_name.
+                let parent_simple = r.target_name.trim_start_matches('\\');
+                let candidates = by_name.get(parent_simple).map(|v| v.as_slice()).unwrap_or(&[]);
+                if candidates.is_empty() {
+                    continue;
+                }
+                // Pick the candidate whose namespace best matches the child's namespace.
+                // "Best" = longest common dotted prefix.
+                let child_ns = child_qname.rfind('.').map(|i| &child_qname[..i]).unwrap_or("");
+                let best = if candidates.len() == 1 {
+                    &candidates[0]
+                } else {
+                    candidates
+                        .iter()
+                        .max_by_key(|c| {
+                            let cns = c.qualified_name.rfind('.').map(|i| &c.qualified_name[..i]).unwrap_or("");
+                            common_prefix_len(child_ns, cns)
+                        })
+                        .unwrap_or(&candidates[0])
+                };
+                inherits_map.insert(child_qname.clone(), best.qualified_name.clone());
+            }
+        }
+
         // Build re-export map from Imports refs that have a module set.
         // These are emitted by the TS/JS extractor for:
         //   export { X } from './y'   → Imports ref, target_name="X", module="./y"
@@ -764,6 +853,7 @@ impl SymbolIndex {
             workspace_pkg_by_declared_name,
             tsconfig_paths_by_pkg,
             tsconfig_paths_union,
+            inherits_map,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -1322,6 +1412,10 @@ impl SymbolLookup for SymbolIndex {
                 .map_or(false, |s| s.contains(name));
         }
         self.test_globals.contains(name)
+    }
+
+    fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
+        self.inherits_map.get(class_qname).map(|s| s.as_str())
     }
 }
 

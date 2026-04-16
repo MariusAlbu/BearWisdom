@@ -217,6 +217,70 @@ impl LanguageResolver for PhpResolver {
             }
         }
 
+        // Step 6: Inheritance-chain walk for `$this->method()` calls.
+        //
+        // When a method call on `$this` could not be resolved by the scope
+        // chain (Step 1), the method is likely defined on a parent class.
+        // We walk the `inherits_map` upward from the calling class, trying
+        // `{ancestor}.{method_name}` at each level (depth ≤ 10 to guard
+        // against inheritance cycles in malformed source).
+        //
+        // Only fires for:
+        //   - EdgeKind::Calls on a simple (no-dot) name
+        //   - the call is on `$this` — detected via the chain's first segment
+        //     being SelfRef, OR the original target had a `$this->` prefix
+        //   - the scope chain has at least one class-level entry
+        let is_this_call = {
+            use crate::types::SegmentKind;
+            // Check chain for SelfRef first segment (the normal PHP `$this->method()` pattern).
+            let via_chain = ref_ctx
+                .extracted_ref
+                .chain
+                .as_ref()
+                .and_then(|c| c.segments.first())
+                .map(|s| s.kind == SegmentKind::SelfRef)
+                .unwrap_or(false);
+            // Fallback: target still has the `$this->` prefix (emitted by some code paths).
+            via_chain || target.starts_with("$this->") || target.starts_with("this.")
+        };
+        if edge_kind == EdgeKind::Calls
+            && is_this_call
+            && !effective_target.contains('.')
+        {
+            // The calling class is the first entry in the scope chain —
+            // scope_chain is built from the source symbol's scope_path, which
+            // is the enclosing class qname (e.g. "App.Services.SetupAccount").
+            // scope_chain[0] is thus the class; scope_chain[1] is the namespace.
+            let calling_class = ref_ctx
+                .scope_chain
+                .first()
+                .map(|s| s.as_str());
+
+            if let Some(mut class_qname) = calling_class {
+                // Walk up at most 10 ancestors so cycles don't spin forever.
+                for _ in 0..10 {
+                    match lookup.parent_class_qname(class_qname) {
+                        None => break,
+                        Some(parent_qname) => {
+                            let candidate = format!("{parent_qname}.{effective_target}");
+                            if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                                if self.is_visible(file_ctx, ref_ctx, sym)
+                                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                                {
+                                    return Some(Resolution {
+                                        target_symbol_id: sym.id,
+                                        confidence: 0.85,
+                                        strategy: "php_inherited_method",
+                                    });
+                                }
+                            }
+                            class_qname = parent_qname;
+                        }
+                    }
+                }
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }
