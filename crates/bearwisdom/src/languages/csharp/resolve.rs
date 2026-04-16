@@ -22,6 +22,7 @@ use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
+use crate::indexer::resolve::inheritance;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -229,6 +230,35 @@ impl LanguageResolver for CSharpResolver {
                         }
                         break;
                     }
+                }
+            }
+        }
+
+        // Step 6: Inheritance-chain walk for implicit `this` calls.
+        //
+        // C# allows bare method calls inside a class body — `MyMethod()` is
+        // implicitly `this.MyMethod()` and may target a protected/public method
+        // on a base class.  When Steps 1–5 all miss, walk the inherits_map
+        // upward from the enclosing class (scope_chain[1]) trying
+        // `{ancestor}.{target}`.
+        //
+        // Only fires for Calls edges on simple (no-dot) names inside a class.
+        if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
+            if let Some(calling_class) =
+                inheritance::enclosing_class_from_scope(&ref_ctx.scope_chain)
+            {
+                if let Some(res) = inheritance::resolve_via_inheritance(
+                    calling_class,
+                    effective_target,
+                    edge_kind,
+                    file_ctx,
+                    ref_ctx,
+                    lookup,
+                    builtins::kind_compatible,
+                    |fc, rc, sym| self.is_visible(fc, rc, sym),
+                    "csharp_inherited_method",
+                ) {
+                    return Some(res);
                 }
             }
         }

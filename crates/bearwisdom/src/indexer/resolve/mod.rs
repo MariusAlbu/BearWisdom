@@ -12,6 +12,7 @@
 pub mod chain_walker;
 pub mod engine;
 mod heuristic;
+pub mod inheritance;
 pub mod rules;
 pub mod type_env;
 

@@ -25,6 +25,7 @@ use crate::indexer::resolve::chain_walker::{
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
+use crate::indexer::resolve::inheritance;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -208,6 +209,34 @@ impl LanguageResolver for KotlinResolver {
                         confidence: 1.0,
                         strategy: "kotlin_qualified_name",
                     });
+                }
+            }
+        }
+
+        // Step 6: Inheritance-chain walk for implicit `this` calls.
+        //
+        // Kotlin allows bare method calls inside a class body — `myMethod()`
+        // is equivalent to `this.myMethod()` and may target a parent class.
+        // When Steps 1–5 all miss, walk the inherits_map upward from the
+        // enclosing class (scope_chain[1]) trying `{ancestor}.{target}`.
+        //
+        // Fires for: EdgeKind::Calls, simple (no-dot) name, inside a class.
+        if edge_kind == EdgeKind::Calls && !effective_target.contains('.') {
+            if let Some(calling_class) =
+                inheritance::enclosing_class_from_scope(&ref_ctx.scope_chain)
+            {
+                if let Some(res) = inheritance::resolve_via_inheritance(
+                    calling_class,
+                    effective_target,
+                    edge_kind,
+                    file_ctx,
+                    ref_ctx,
+                    lookup,
+                    builtins::kind_compatible,
+                    |fc, rc, sym| self.is_visible(fc, rc, sym),
+                    "kotlin_inherited_method",
+                ) {
+                    return Some(res);
                 }
             }
         }

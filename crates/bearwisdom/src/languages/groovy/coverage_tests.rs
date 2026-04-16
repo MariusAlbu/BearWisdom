@@ -28,6 +28,31 @@ fn symbol_class_definition() {
     );
 }
 
+/// Class methods in packaged Groovy file get qualified_name and scope_path set.
+#[test]
+fn groovy_packaged_class_methods_are_qualified() {
+    let src = "package org.codenarc.rule\n\nabstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {\n    void assertSingleViolation(String code) {}\n    void testFoo() {\n        assertSingleViolation('code')\n    }\n}";
+    let r = extract(src);
+    let cls = r.symbols.iter().find(|s| s.name == "AbstractRuleTestCase").expect("missing class");
+    assert_eq!(cls.qualified_name, "org.codenarc.rule.AbstractRuleTestCase");
+    let method = r.symbols.iter().find(|s| s.name == "assertSingleViolation").expect("missing method");
+    assert_eq!(method.scope_path.as_deref(), Some("org.codenarc.rule.AbstractRuleTestCase"));
+    assert_eq!(method.qualified_name, "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation");
+}
+
+/// Probe exact AbstractAstVisitorRuleTest syntax from groovy-codenarc.
+#[test]
+fn groovy_concrete_subclass_with_generic_parent() {
+    let src = "package org.codenarc.rule\n\nimport static org.codenarc.test.TestUtil.shouldFailWithMessageContaining\n\nclass AbstractAstVisitorRuleTest extends AbstractRuleTestCase<AbstractAstVisitorRule> {\n    void testApplyTo() {\n        assertSingleViolation('code')\n    }\n}";
+    let r = extract(src);
+    eprintln!("has_errors={}, symbols={:?}", r.has_errors, r.symbols.iter().map(|s| (&s.name, s.kind, s.scope_path.as_deref())).collect::<Vec<_>>());
+    assert!(
+        r.symbols.iter().any(|s| s.name == "AbstractAstVisitorRuleTest"),
+        "expected class symbol; got {:?}",
+        r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+    );
+}
+
 /// symbol_node_kind: `function_definition` (top-level `def`)  →  Function
 #[test]
 fn symbol_function_definition_top_level() {
@@ -219,6 +244,58 @@ fn ref_class_implements_produces_implements() {
     );
 }
 
+/// abstract class with generic bound `<T extends X>` is extracted as Class
+#[test]
+fn symbol_abstract_class_with_generic_bound() {
+    let r = extract("package org.codenarc.rule\n\nabstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {\n    protected void assertSingleViolation(String code) {}\n}");
+    eprintln!("has_errors={}, symbols={:?}", r.has_errors, r.symbols.iter().map(|s| (&s.name, s.kind, &s.qualified_name)).collect::<Vec<_>>());
+    assert!(
+        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        "expected Class AbstractRuleTestCase; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    let method = r.symbols.iter().find(|s| s.name == "assertSingleViolation");
+    assert!(method.is_some(), "expected method assertSingleViolation");
+    let method = method.unwrap();
+    assert_eq!(method.qualified_name, "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation");
+}
+
+/// annotated class (with @Annotation before class keyword) is extracted as Class
+#[test]
+fn symbol_annotated_class_is_extracted() {
+    let r = extract("package org.codenarc.rule\n\n@SuppressWarnings('DuplicateLiteral')\nabstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {\n    protected void assertSingleViolation(String code) {}\n}");
+    eprintln!("annotated class: has_errors={}, symbols={:?}", r.has_errors, r.symbols.iter().map(|s| (&s.name, s.kind, &s.qualified_name)).collect::<Vec<_>>());
+    assert!(
+        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        "expected Class AbstractRuleTestCase with @SuppressWarnings; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// class with static final field using angle bracket literal causes parse error check
+#[test]
+fn symbol_class_with_angle_bracket_literal() {
+    // '<init>' in a field causes Groovy grammar confusion with generic types
+    let src = "package org.codenarc.rule\n\n@SuppressWarnings('DuplicateLiteral')\nabstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {\n    protected static final CONSTRUCTOR_METHOD_NAME = '<init>'\n    protected void assertSingleViolation(String code) {}\n}";
+    let r = extract(src);
+    eprintln!("angle bracket literal: has_errors={}", r.has_errors);
+    for s in &r.symbols {
+        eprintln!("  {:?} name={} qname={} scope={:?}", s.kind, s.name, s.qualified_name, s.scope_path);
+    }
+    assert!(
+        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        "expected Class AbstractRuleTestCase with '<init>' literal; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    let method = r.symbols.iter().find(|s| s.name == "assertSingleViolation");
+    assert!(method.is_some(), "expected method assertSingleViolation");
+    let m = method.unwrap();
+    assert_eq!(m.qualified_name, "org.codenarc.rule.AbstractRuleTestCase.assertSingleViolation",
+        "method qname should be fully qualified");
+    assert_eq!(m.scope_path.as_deref(), Some("org.codenarc.rule.AbstractRuleTestCase"),
+        "method scope_path should point to class");
+}
+
 /// Method with typed return type → Method symbol still emitted
 #[test]
 fn symbol_method_with_return_type_produces_method() {
@@ -226,6 +303,62 @@ fn symbol_method_with_return_type_produces_method() {
     assert!(
         r.symbols.iter().any(|s| s.name == "getNames" && s.kind == SymbolKind::Method),
         "expected Method getNames; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Test reading the actual AbstractRuleTestCase.groovy file from disk (integration-style)
+#[test]
+#[ignore = "requires test project on disk; run manually"]
+fn symbol_actual_abstract_rule_test_case_from_disk() {
+    let path = "F:/Work/Projects/TestProjects/groovy-codenarc/src/main/groovy/org/codenarc/rule/AbstractRuleTestCase.groovy";
+    let src = std::fs::read_to_string(path).expect("file not found");
+    let r = extract(&src);
+    eprintln!("actual file from disk: has_errors={}", r.has_errors);
+    for s in &r.symbols {
+        eprintln!("  {:?} name={} qname={}", s.kind, s.name, s.qualified_name);
+    }
+    assert!(
+        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        "expected Class AbstractRuleTestCase from file; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Test with the actual AbstractRuleTestCase.groovy content (first 100 lines)
+#[test]
+fn symbol_actual_abstract_rule_test_case() {
+    // Minimal reproduction: package + import + annotation + abstract class with '<init>'
+    let src = r#"package org.codenarc.rule
+
+import org.codenarc.test.AbstractTestCase
+import org.junit.jupiter.api.Test
+
+import java.util.regex.Pattern
+
+@SuppressWarnings('DuplicateLiteral')
+abstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {
+
+    protected static final CONSTRUCTOR_METHOD_NAME = '<init>'
+    protected T rule
+
+    @Test
+    void testThatUnrelatedCodeHasNoViolations() {
+        final SOURCE = 'class MyClass { }'
+        assertNoViolations(SOURCE)
+    }
+
+    protected void assertSingleViolation(String code) {}
+    protected void assertViolations(String code, Map[] args) {}
+}"#;
+    let r = extract(src);
+    eprintln!("actual file: has_errors={}", r.has_errors);
+    for s in &r.symbols {
+        eprintln!("  {:?} name={} qname={} scope={:?}", s.kind, s.name, s.qualified_name, s.scope_path);
+    }
+    assert!(
+        r.symbols.iter().any(|s| s.name == "AbstractRuleTestCase" && s.kind == SymbolKind::Class),
+        "expected Class AbstractRuleTestCase; got {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
