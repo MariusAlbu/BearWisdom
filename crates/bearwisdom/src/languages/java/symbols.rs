@@ -545,21 +545,40 @@ pub(super) fn push_import(
     current_symbol_count: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Detect wildcard import: `import com.foo.*;` — the import_declaration
+    // node has an `*` or `asterisk` child alongside the scoped_identifier.
+    // We check the raw source text of the node rather than walking children
+    // again to avoid cursor lifetime conflicts.
+    let import_text = node_text(*node, src);
+    let has_wildcard = import_text.contains(".*");
+
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "scoped_identifier" => {
                 let full = node_text(child, src);
-                // imported_name = simple name (last segment)
-                let imported = full.rsplit('.').next().unwrap_or(&full).to_string();
-                refs.push(ExtractedRef {
-                    source_symbol_index: current_symbol_count,
-                    target_name: imported,
-                    kind: EdgeKind::Imports,
-                    line: child.start_position().row as u32,
-                    module: Some(full),
-                    chain: None,
-                });
+                if has_wildcard {
+                    // `import com.foo.*;` — wildcard: target_name = "*", module = package path.
+                    refs.push(ExtractedRef {
+                        source_symbol_index: current_symbol_count,
+                        target_name: "*".to_string(),
+                        kind: EdgeKind::Imports,
+                        line: child.start_position().row as u32,
+                        module: Some(full),
+                        chain: None,
+                    });
+                } else {
+                    // `import com.foo.Bar;` — exact import.
+                    let imported = full.rsplit('.').next().unwrap_or(&full).to_string();
+                    refs.push(ExtractedRef {
+                        source_symbol_index: current_symbol_count,
+                        target_name: imported,
+                        kind: EdgeKind::Imports,
+                        line: child.start_position().row as u32,
+                        module: Some(full),
+                        chain: None,
+                    });
+                }
                 return;
             }
             "identifier" => {

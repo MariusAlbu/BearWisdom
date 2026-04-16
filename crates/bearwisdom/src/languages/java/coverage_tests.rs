@@ -547,13 +547,28 @@ fn coverage_array_creation_expression() {
 
 #[test]
 fn coverage_import_wildcard() {
-    // Wildcard import: `import java.util.*` — should emit an Imports edge.
+    // Wildcard import: `import java.util.*` — should emit an Imports edge with
+    // target_name = "*" and module_path = "java.util" so the resolver can
+    // classify all types from that package as external.
     let src = "import java.util.*;";
     let r = refs(src);
+    let wildcard = r.iter().find(|r| r.kind == EdgeKind::Imports);
     assert!(
-        r.iter().any(|r| r.kind == EdgeKind::Imports),
+        wildcard.is_some(),
         "expected Imports edge from wildcard import; refs: {:?}",
         r.iter().map(|r| (&r.target_name, r.kind)).collect::<Vec<_>>()
+    );
+    let wc = wildcard.unwrap();
+    assert_eq!(
+        wc.target_name, "*",
+        "wildcard import should have target_name=\"*\", got {:?}",
+        wc.target_name
+    );
+    assert_eq!(
+        wc.module.as_deref(),
+        Some("java.util"),
+        "wildcard import should have module=\"java.util\", got {:?}",
+        wc.module
     );
 }
 
