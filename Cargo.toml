@@ -132,6 +132,9 @@ strum                 = { version = "0.26", features = ["derive"] }
 zip                   = { version = "2", default-features = false, features = ["deflate"] }
 # --- .NET externals: ECMA-335 metadata reader (no IL analysis needed) ---
 dotscope              = { version = "0.6", default-features = false }
+# --- Erlang hex tarball extraction: nested gzip + tar ---
+flate2                = "1"
+tar                   = "0.4"
 
 [profile.release]
 strip   = true

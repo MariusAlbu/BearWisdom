@@ -109,6 +109,9 @@ strum                  = { workspace = true }
 zip                    = { workspace = true }
 # .NET externals: ECMA-335 metadata reader for DLL type enumeration
 dotscope               = { workspace = true }
+# Erlang hex tarball extraction: outer POSIX tar + inner gzip + tar
+flate2                 = { workspace = true }
+tar                    = { workspace = true }
 
 
 [build-dependencies]
