@@ -12,20 +12,48 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
         EdgeKind::Implements => matches!(sym_kind, "class" | "interface"),
         EdgeKind::TypeRef => matches!(
             sym_kind,
-            "class" | "interface" | "enum" | "type_alias" | "function" | "variable"
+            "class" | "interface" | "enum" | "type_alias" | "function" | "variable" | "struct"
         ),
-        EdgeKind::Instantiates => matches!(sym_kind, "class" | "function"),
+        // Erlang record construction (#state{...}) targets a struct symbol.
+        EdgeKind::Instantiates => matches!(sym_kind, "class" | "function" | "struct"),
         _ => true,
     }
 }
 
 /// Erlang built-in functions and standard library modules always in scope.
-/// Covers all OTP module names and BIFs that appear unqualified in Erlang source.
+/// Covers all OTP module names, BIFs, and primitive types that appear
+/// unqualified in Erlang source (including in `-spec` type expressions).
 pub(super) fn is_erlang_builtin(name: &str) -> bool {
     matches!(
         name,
-        // ── OTP module names ──────────────────────────────────────────────────
-        "erlang"
+        // ── Primitive types (appear as call nodes in -spec expressions) ───────
+        "pid"
+            | "port"
+            | "reference"
+            | "fun"
+            | "iolist"
+            | "iodata"
+            | "char"
+            | "byte"
+            | "timeout"
+            | "none"
+            | "term"
+            | "number"
+            | "boolean"
+            | "bitstring"
+            | "identifier"
+            | "neg_integer"
+            | "non_neg_integer"
+            | "pos_integer"
+            | "mfa"
+            | "module"
+            | "no_return"
+            | "arity"
+            | "atom"
+            | "integer"
+            | "float"
+            // ── OTP module names ──────────────────────────────────────────────────
+            | "erlang"
             | "io"
             | "lists"
             | "maps"

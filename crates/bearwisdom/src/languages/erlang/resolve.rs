@@ -77,12 +77,49 @@ impl LanguageResolver for ErlangResolver {
             return None;
         }
 
-        // Erlang BIFs and stdlib modules are not in the index.
+        // Erlang BIFs, stdlib modules, and primitive types are not in the index.
         if builtins::is_erlang_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("erlang", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        // Run common resolution first.
+        if let Some(res) = engine::resolve_common("erlang", file_ctx, ref_ctx, lookup, builtins::kind_compatible) {
+            return Some(res);
+        }
+
+        // Arity-aware same-file fallback.
+        //
+        // Erlang function symbols are indexed as "name/arity" (e.g. "loop/1"),
+        // but call-site refs carry only the bare name ("loop"). resolve_common
+        // step 4 does an exact name match which fails for every Erlang function.
+        // We retry here by comparing the target against the base name before the
+        // `/` in each same-file symbol name.
+        if edge_kind == EdgeKind::Calls {
+            let mut best: Option<Resolution> = None;
+            for sym in lookup.in_file(&file_ctx.file_path) {
+                if !builtins::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                // sym.name is "foo/N" for Erlang functions.
+                let base = sym.name.split('/').next().unwrap_or(&sym.name);
+                if base == target.as_str() {
+                    // Prefer the first match; all arities of the same function
+                    // in the same file are equally valid at this confidence level.
+                    if best.is_none() {
+                        best = Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.9,
+                            strategy: "erlang_same_file_arity",
+                        });
+                    }
+                }
+            }
+            if best.is_some() {
+                return best;
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
