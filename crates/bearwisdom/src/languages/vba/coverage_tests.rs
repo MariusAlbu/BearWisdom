@@ -61,3 +61,62 @@ fn cov_call_statement_produces_calls() {
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Artefact regression tests (Task 7d)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn no_trailing_comma_in_call_ref() {
+    // Arguments of a Call should not be mistaken for callee names.
+    // "QuoteChar," on a continuation line must not be emitted.
+    let src = "Sub Main()\n    Call WriteCsv QuoteChar, FieldID, fieldDelimiter\nEnd Sub\n";
+    let r = extract::extract(src);
+    for rf in &r.refs {
+        assert!(
+            !rf.target_name.ends_with(','),
+            "ref target_name has trailing comma: {:?}",
+            rf.target_name
+        );
+    }
+}
+
+#[test]
+fn dotted_call_emits_method_name_only() {
+    // "Call Create.protInit" should emit "protInit", not "Create.protInit".
+    let src = "Sub Main()\n    Call Create.protInit\nEnd Sub\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "protInit"),
+        "dotted Call should emit last segment; got: {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+    assert!(
+        !r.refs.iter().any(|rf| rf.target_name.contains('.')),
+        "no ref target should contain a dot; got: {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn implicit_call_token_with_trailing_comma_is_dropped() {
+    // A line whose first token is "QuoteChar," (from a multi-line continuation)
+    // must not produce a call ref.
+    let src = "Sub Main()\n    QuoteChar, FieldID\nEnd Sub\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().all(|rf| rf.target_name != "QuoteChar,"),
+        "comma-suffixed token must not become a call ref"
+    );
+}
+
+#[test]
+fn path_like_first_token_is_dropped() {
+    // A first token containing '/' or '\' is a path string, not a callee.
+    let src = "Sub Main()\n    docs/assets/Status_G something\nEnd Sub\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().all(|rf| !rf.target_name.contains('/')),
+        "path-like identifier must not become a call ref"
+    );
+}

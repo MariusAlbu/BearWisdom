@@ -272,10 +272,15 @@ fn parse_variable_decl(upper: &str, original: &str) -> Option<String> {
 /// Parse a call statement: "Call <Name>" or "<Name> [args]" inside a proc body.
 /// Returns the callee name if it looks like a procedure call.
 fn parse_call_stmt(upper: &str, original: &str) -> Option<String> {
-    // Explicit "Call SubName"
+    // Explicit "Call SubName" or "Call Obj.Method"
     if upper.starts_with("CALL ") {
         let rest = &original[5..].trim_start();
-        let name = rest.split(|c| c == ' ' || c == '(').next()?.trim().to_string();
+        // Split on space or '(' to get the callee token, then take only the
+        // simple name (before any '.') to avoid emitting "Obj.Method" chains
+        // as a single opaque identifier.
+        let token = rest.split(|c| c == ' ' || c == '(').next()?.trim();
+        // Use the last segment of a dotted chain (e.g. "Create.protInit" → "protInit").
+        let name = token.split('.').last().unwrap_or(token).to_string();
         if !name.is_empty() {
             return Some(name);
         }
@@ -289,6 +294,9 @@ fn parse_call_stmt(upper: &str, original: &str) -> Option<String> {
         || first_token.contains('=')
         || first_token.contains('.')
         || first_token.contains('(')
+        || first_token.contains(',')   // trailing comma → this token is an argument
+        || first_token.contains('/')   // path-like string
+        || first_token.contains('\\')  // path-like string
     {
         return None;
     }
@@ -297,14 +305,20 @@ fn parse_call_stmt(upper: &str, original: &str) -> Option<String> {
         return None;
     }
     // Only emit if line doesn't look like an assignment.
-    if upper.contains(" = ") || upper.contains(" = ") {
+    if upper.contains(" = ") {
         return None;
     }
     // Must have arguments (space after name or parentheses) to distinguish from labels.
     if !upper.contains(' ') && !upper.contains('(') {
         return None;
     }
-    Some(first_token.split('(').next().unwrap_or(first_token).to_string())
+    // Strip trailing punctuation that can cling to an identifier (e.g. "QuoteChar,").
+    let raw = first_token.split('(').next().unwrap_or(first_token);
+    let name = raw.trim_end_matches(|c: char| c == ',' || c == ')' || c == ';' || c == ':' || c.is_whitespace());
+    if name.is_empty() {
+        return None;
+    }
+    Some(name.to_string())
 }
 
 // ---------------------------------------------------------------------------
