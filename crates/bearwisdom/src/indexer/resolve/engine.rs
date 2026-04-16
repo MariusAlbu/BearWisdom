@@ -2465,13 +2465,45 @@ mod tests {
 fn test_framework_globals(dep: &str) -> &'static [&'static str] {
     match dep {
         // JS/TS — vitest + jest overlap in the BDD surface.
+        // Includes assertion/mock methods that appear as bare calls after fluent chains
+        // (e.g., `expect(x).toEqual(y)` emits `toEqual` as a standalone calls ref).
         "vitest" | "jest" | "@jest/globals" => &[
             "describe", "it", "test", "expect",
             "beforeEach", "afterEach", "beforeAll", "afterAll",
             "vi", "jest",
+            // jest/vitest assertion methods accessed via chain
+            "toEqual", "toStrictEqual", "toBe", "toBeNull", "toBeUndefined",
+            "toBeTruthy", "toBeFalsy", "toBeNaN", "toBeGreaterThan",
+            "toBeGreaterThanOrEqual", "toBeLessThan", "toBeLessThanOrEqual",
+            "toBeCloseTo", "toContain", "toContainEqual", "toHaveLength",
+            "toHaveProperty", "toMatch", "toMatchObject", "toMatchSnapshot",
+            "toMatchInlineSnapshot", "toThrow", "toThrowError",
+            "toThrowErrorMatchingSnapshot", "toThrowErrorMatchingInlineSnapshot",
+            "toHaveBeenCalled", "toHaveBeenCalledTimes", "toHaveBeenCalledWith",
+            "toHaveBeenCalledOnce", "toHaveBeenLastCalledWith",
+            "toHaveBeenNthCalledWith", "toHaveReturned", "toHaveReturnedTimes",
+            "toHaveReturnedWith", "toHaveLastReturnedWith", "toHaveNthReturnedWith",
+            // spy/mock methods
+            "spyOn", "mockClear", "mockReset", "mockRestore",
+            "mockImplementation", "mockImplementationOnce",
+            "mockReturnValue", "mockReturnValueOnce",
+            "mockResolvedValue", "mockResolvedValueOnce",
+            "mockRejectedValue", "mockRejectedValueOnce",
+            "mockFn", "fn",
         ],
         "mocha" => &["describe", "it", "before", "after", "beforeEach", "afterEach"],
-        "chai" => &["expect", "assert", "should"],
+        "chai" => &[
+            "expect", "assert", "should",
+            // chai BDD assertion methods — emitted as bare calls from fluent chains
+            // (e.g., `expect(x).to.equal(y)` emits `equal` as a standalone calls ref)
+            "equal", "eql", "deep", "include", "contain", "members", "keys",
+            "property", "match", "satisfy", "closeTo", "approximately",
+            "above", "below", "least", "most", "within", "instanceof",
+            "an", "ok", "true", "false", "null", "undefined", "NaN",
+            "exist", "empty", "arguments", "throw", "respondTo", "itself",
+            "change", "increase", "decrease", "lengthOf", "oneOf",
+            "equalNode", "equalDom", "equalHtml",
+        ],
         "ava" => &["test"],
         "jasmine" => &[
             "describe", "it", "expect", "beforeEach", "afterEach",

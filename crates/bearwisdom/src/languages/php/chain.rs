@@ -2,6 +2,7 @@
 // php/chain.rs — PHP chain-aware resolution
 // =============================================================================
 
+use crate::indexer::resolve::chain_walker::external_type_qname;
 use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
 use super::builtins::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
@@ -91,12 +92,37 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
+        // External-type fallback: `current_type` may be a short name like
+        // "Builder" whose external symbol lives as "laravel/framework.Builder".
+        // Resolve to the full external qname and retry member lookups.
+        if let Some(ext_qname) = external_type_qname(&current_type, lookup) {
+            let ext_member = format!("{ext_qname}.{}", seg.name);
+            if let Some(next_type) = lookup.field_type_name(&ext_member) {
+                current_type = next_type.to_string();
+                continue;
+            }
+            if let Some(next_type) = lookup.return_type_name(&ext_member) {
+                current_type = next_type.to_string();
+                continue;
+            }
+            // External type known but member not typed — keep walking
+            // with the full external qname so Phase 3 can still match.
+            current_type = ext_qname;
+            continue;
+        }
+
         return None;
     }
 
     // Phase 3: Resolve the final segment.
     let last = &segments[segments.len() - 1];
-    let candidate = format!("{current_type}.{}", last.name);
+
+    // Resolve `current_type` to its external qname if needed
+    // (e.g., "Builder" -> "laravel/framework.Builder").
+    let effective_type = external_type_qname(&current_type, lookup)
+        .unwrap_or_else(|| current_type.clone());
+
+    let candidate = format!("{effective_type}.{}", last.name);
 
     if let Some(sym) = lookup.by_qualified_name(&candidate) {
         if kind_compatible(edge_kind, &sym.kind) {
@@ -124,8 +150,12 @@ pub(super) fn resolve_via_chain(
         }
     }
 
+    let type_prefix = format!("{effective_type}.");
     for sym in lookup.by_name(&last.name) {
-        if sym.qualified_name.starts_with(&current_type) && kind_compatible(edge_kind, &sym.kind) {
+        if (sym.qualified_name == effective_type
+            || sym.qualified_name.starts_with(&type_prefix))
+            && kind_compatible(edge_kind, &sym.kind)
+        {
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 0.90,

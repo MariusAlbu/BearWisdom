@@ -327,6 +327,30 @@ pub fn resolve_via_chain(
 // Shared helpers
 // ---------------------------------------------------------------------------
 
+/// Resolve a short type name to its fully-qualified external symbol name.
+///
+/// When the chain walker has `current_type = "Assertion"` (just the short name,
+/// as returned by a function's return_type stored in TypeInfo), but the external
+/// symbol lives under `chai.Assertion`, the direct lookup `field_type_name("Assertion.to")`
+/// fails. This helper bridges the gap:
+///
+/// 1. Look up `by_name(current_type)`.
+/// 2. Filter for symbols whose file_path starts with `"ext:"` (external origin).
+/// 3. Return the first match's `qualified_name` (e.g., `"chai.Assertion"`).
+///
+/// The caller then retries member lookups using the full qname:
+///   `field_type_name("chai.Assertion.to")`  →  success.
+///
+/// Returns `None` when no external symbol owns this short name, preserving
+/// the existing bail-out behaviour.
+pub fn external_type_qname(current_type: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+    lookup
+        .by_name(current_type)
+        .iter()
+        .find(|s| s.file_path.starts_with("ext:"))
+        .map(|s| s.qualified_name.clone())
+}
+
 /// Find the enclosing type from the scope chain, matching against
 /// the specified set of type kinds.
 pub fn find_enclosing_type(
