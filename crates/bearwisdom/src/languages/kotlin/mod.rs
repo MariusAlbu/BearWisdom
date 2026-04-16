@@ -110,7 +110,7 @@ impl LanguagePlugin for KotlinPlugin {
         &self,
     ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
         Some(std::sync::Arc::new(
-            crate::indexer::externals::JavaExternalsLocator,
+            crate::languages::kotlin::externals::KotlinExternalsLocator,
         ))
     }
 

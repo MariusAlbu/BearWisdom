@@ -86,6 +86,7 @@ namespace App {
             by_package,
             workspace_pkg_by_declared_name: HashMap::new(),
             workspace_pkg_paths: HashMap::new(),
+            gradle_catalog_names: Vec::new(),
         };
         let rows = collect_package_dep_rows(&ctx);
         assert_eq!(rows.len(), 3, "expected 3 dep rows, got {rows:?}");

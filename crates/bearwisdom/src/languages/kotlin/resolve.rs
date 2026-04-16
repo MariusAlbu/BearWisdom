@@ -249,10 +249,33 @@ impl LanguageResolver for KotlinResolver {
             return None;
         }
 
-        // Kotlin builtins.
+        // Kotlin builtins (includes Compose test DSL).
         if builtins::is_kotlin_builtin(target) {
             return Some("kotlin.stdlib".to_string());
         }
+
+        // Gradle version catalog accessors: `libs`, `versions`, `plugins`, and
+        // any custom catalog names defined in `gradle/*.versions.toml`.
+        // These are DSL properties injected by Gradle — not real Kotlin symbols.
+        {
+            let root = target.split('.').next().unwrap_or(target);
+            if let Some(ctx) = project_ctx {
+                if ctx.gradle_catalog_names.iter().any(|n| n == root) {
+                    return Some(format!("gradle.catalog.{root}"));
+                }
+            }
+            // `plugins` in a `plugins { }` block and `versions` are always
+            // Gradle build-script concepts — classify as external regardless
+            // of whether we found a catalog file.
+            if matches!(root, "plugins" | "versions" | "dev" | "buildSrc") {
+                return Some(format!("gradle.catalog.{root}"));
+            }
+        }
+
+        // Android SDK bare names: Activity, Context, View, Fragment, etc.
+        // These are imported from android.* / androidx.* which is already in
+        // ALWAYS_EXTERNAL, but they appear as bare names after a wildcard import
+        // (e.g. `import android.app.*`). Classify them via the import walk below.
 
         // Walk imports for a match on this target name.
         for import in &file_ctx.imports {
