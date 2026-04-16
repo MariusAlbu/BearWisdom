@@ -16,24 +16,27 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
 use super::manifest::{self, ManifestData, ManifestKind, PackageManifest};
+use crate::ecosystem::{
+    self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
+};
 use crate::types::PackageInfo;
 
 // ---------------------------------------------------------------------------
 // Re-exports — keep existing `project_context::parse_*` paths working
 // ---------------------------------------------------------------------------
 
-pub use super::manifest::cargo::parse_cargo_dependencies;
-pub use super::manifest::composer::parse_composer_json_deps;
-pub use super::manifest::gemfile::parse_gemfile_gems;
-pub use super::manifest::go_mod::{find_go_mod, parse_go_mod, GoModData};
+pub use crate::ecosystem::cargo::parse_cargo_dependencies;
+pub use crate::ecosystem::composer::parse_composer_json_deps;
+pub use crate::ecosystem::rubygems::parse_gemfile_gems;
+pub use crate::ecosystem::go_mod::{find_go_mod, parse_go_mod, GoModData};
 pub use super::manifest::gradle::parse_gradle_dependencies;
 pub use super::manifest::maven::{extract_xml_text, parse_pom_xml_dependencies};
 pub use super::manifest::npm::parse_package_json_deps;
-pub use super::manifest::nuget::{
+pub use crate::ecosystem::nuget::{
     implicit_usings_for_sdk, most_capable_sdk, parse_global_usings, parse_package_references,
     parse_project_references, parse_sdk_type, DotnetSdkType,
 };
-pub use super::manifest::pyproject::{
+pub use crate::ecosystem::pypi::{
     parse_pipfile_deps, parse_pyproject_deps, parse_requirements_txt,
 };
 
@@ -110,6 +113,23 @@ pub struct ProjectContext {
     /// specified relative to each package's own directory, not the
     /// workspace root.
     pub workspace_pkg_paths: HashMap<i64, String>,
+
+    /// Ecosystems whose `activation()` returned true for this project.
+    ///
+    /// Populated by `ProjectContext::initialize` (Phase 4). The full
+    /// indexer iterates this list to drive externals discovery; resolvers
+    /// filter by this set via `resolvable_ecosystems(lang)` at query time.
+    ///
+    /// Empty for contexts built via the legacy `build_project_context*`
+    /// helpers — they predate the ecosystem seam and preserve old behavior
+    /// (every ecosystem implicitly on). Callers that require the ecosystem
+    /// seam must construct via `ProjectContext::initialize`.
+    pub active_ecosystems: Vec<EcosystemId>,
+
+    /// Language ids observed in the project's own files. Drives the
+    /// `EcosystemActivation::LanguagePresent(lang)` predicate during
+    /// initialization, and is itself a useful signal for diagnostics.
+    pub language_presence: HashSet<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -135,6 +155,8 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         workspace_pkg_by_declared_name: HashMap::new(),
         workspace_pkg_paths: HashMap::new(),
         gradle_catalog_names,
+        active_ecosystems: Vec::new(),
+        language_presence: HashSet::new(),
     }
 }
 
@@ -227,6 +249,197 @@ pub fn build_project_context_with_packages(
         workspace_pkg_by_declared_name,
         workspace_pkg_paths,
         gradle_catalog_names,
+        active_ecosystems: Vec::new(),
+        language_presence: HashSet::new(),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Phase 4 seam — ProjectContext::initialize
+// ---------------------------------------------------------------------------
+
+/// Map from `EcosystemId` to the `ManifestKind`s that ecosystem owns. Used
+/// to translate the legacy manifest-kind-indexed map into ecosystem-indexed
+/// activation input. Ecosystems without any `ManifestKind` coverage
+/// (currently cabal, nimble, cpan) fall back to language-presence-driven
+/// activation — which is what their predicates request anyway.
+#[allow(dead_code)] // wired in when ManifestMatch gains per-ecosystem scope
+pub(crate) fn manifest_kinds_for_ecosystem(id: EcosystemId) -> &'static [ManifestKind] {
+    match id.as_str() {
+        "maven" => &[ManifestKind::Maven, ManifestKind::Gradle,
+                     ManifestKind::Sbt, ManifestKind::Clojure],
+        "npm" => &[ManifestKind::Npm],
+        "pypi" => &[ManifestKind::PyProject],
+        "cargo" => &[ManifestKind::Cargo],
+        "hex" => &[ManifestKind::Mix, ManifestKind::Gleam],
+        "nuget" => &[ManifestKind::NuGet],
+        "spm" => &[ManifestKind::SwiftPM],
+        "go-mod" => &[ManifestKind::GoMod],
+        "rubygems" => &[ManifestKind::Gemfile],
+        "composer" => &[ManifestKind::Composer],
+        "cran" => &[ManifestKind::Description],
+        "pub" => &[ManifestKind::Pubspec],
+        "opam" => &[ManifestKind::Opam],
+        "luarocks" => &[ManifestKind::Rockspec],
+        "zig-pkg" => &[ManifestKind::ZigZon],
+        _ => &[],
+    }
+}
+
+impl ProjectContext {
+    /// Phase 4 entry point. Constructs a fully populated `ProjectContext`:
+    /// manifest scan + ecosystem activation evaluation + language presence
+    /// detection. Prefer this over the legacy `build_project_context*`
+    /// helpers in new code paths.
+    ///
+    /// Language presence is derived from the supplied `language_ids`
+    /// (typically the distinct languages of parsed project files), so the
+    /// caller doesn't re-walk the project. Passing an empty set disables
+    /// `LanguagePresent(...)` activation and leaves only manifest-driven
+    /// activations.
+    pub fn initialize<I>(
+        project_root: &Path,
+        packages: &[PackageInfo],
+        language_ids: I,
+        ecosystems: &EcosystemRegistry,
+    ) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
+        let mut ctx = if packages.is_empty() {
+            build_project_context(project_root)
+        } else {
+            build_project_context_with_packages(project_root, packages)
+        };
+        ctx.language_presence = language_ids.into_iter().collect();
+        ctx.active_ecosystems = evaluate_active_ecosystems(&ctx, ecosystems);
+        if !ctx.active_ecosystems.is_empty() {
+            info!(
+                "ProjectContext: {} active ecosystems ({})",
+                ctx.active_ecosystems.len(),
+                ctx.active_ecosystems
+                    .iter()
+                    .map(|e| e.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+        }
+        ctx
+    }
+
+    /// Ecosystems that a ref produced from a `lang` file can reach. Filters
+    /// `active_ecosystems` by each ecosystem's `languages()` capability.
+    ///
+    /// Returns an empty vec for contexts built via the legacy helpers (when
+    /// `active_ecosystems` is empty) — callers that need honest filtering
+    /// must use `ProjectContext::initialize`.
+    pub fn resolvable_ecosystems(&self, lang: &str) -> Vec<EcosystemId> {
+        if self.active_ecosystems.is_empty() {
+            return Vec::new();
+        }
+        let reg = ecosystem::default_registry();
+        self.active_ecosystems
+            .iter()
+            .copied()
+            .filter(|id| {
+                reg.get(*id)
+                    .map(|e| e.languages().iter().any(|l| *l == lang))
+                    .unwrap_or(false)
+            })
+            .collect()
+    }
+}
+
+/// Walk every registered ecosystem, evaluate its `activation()` predicate
+/// against the given project context, and return the active ids in
+/// registration order.
+fn evaluate_active_ecosystems(
+    ctx: &ProjectContext,
+    reg: &EcosystemRegistry,
+) -> Vec<EcosystemId> {
+    let mut active: Vec<EcosystemId> = Vec::new();
+    // Two passes to handle `TransitiveOn(other)` without depending on
+    // registration order: pass 1 resolves everything non-transitive, pass 2
+    // resolves transitives against pass 1's output. Nested transitives
+    // aren't supported; the trait doesn't use them today.
+    for eco in reg.all() {
+        if is_transitive_only(&eco.activation()) {
+            continue;
+        }
+        if evaluate_activation(&eco.activation(), ctx, &active) {
+            active.push(eco.id());
+        }
+    }
+    for eco in reg.all() {
+        if !is_transitive_only(&eco.activation()) {
+            continue;
+        }
+        if active.contains(&eco.id()) {
+            continue;
+        }
+        if evaluate_activation(&eco.activation(), ctx, &active) {
+            active.push(eco.id());
+        }
+    }
+    active
+}
+
+fn is_transitive_only(act: &EcosystemActivation) -> bool {
+    matches!(act, EcosystemActivation::TransitiveOn(_))
+}
+
+fn evaluate_activation(
+    act: &EcosystemActivation,
+    ctx: &ProjectContext,
+    already_active: &[EcosystemId],
+) -> bool {
+    match act {
+        EcosystemActivation::Always => true,
+        EcosystemActivation::Never => false,
+        EcosystemActivation::ManifestMatch => ctx_has_manifest_for_current_ecosystem(ctx),
+        EcosystemActivation::LanguagePresent(lang) => {
+            ctx.language_presence.contains(*lang)
+        }
+        EcosystemActivation::ManifestFieldContains { .. } => {
+            // Not evaluated in Phase 4 — no ecosystem uses this today.
+            false
+        }
+        EcosystemActivation::AlwaysOnPlatform(plat) => matches_platform(*plat),
+        EcosystemActivation::TransitiveOn(id) => already_active.contains(id),
+        EcosystemActivation::All(clauses) => clauses
+            .iter()
+            .all(|c| evaluate_activation(c, ctx, already_active)),
+        EcosystemActivation::Any(clauses) => clauses
+            .iter()
+            .any(|c| evaluate_activation(c, ctx, already_active)),
+    }
+}
+
+/// Called with a `ManifestMatch` clause. We don't know which ecosystem we're
+/// evaluating here (the activation enum is ecosystem-agnostic by design), so
+/// we conservatively treat `ManifestMatch` as "some manifest was detected"
+/// — unioned across every ecosystem kind. The ecosystem's own
+/// `locate_roots` re-filters at discovery time, and in practice every
+/// ecosystem's `activation` predicate is `Any([ManifestMatch, Language...])`
+/// so the language clause carries the load when a manifest isn't mapped.
+///
+/// When Phase 5 adds stdlib ecosystems with pure `ManifestMatch` activations
+/// against a specific manifest glob, this becomes the place to thread the
+/// per-ecosystem manifest spec check through.
+fn ctx_has_manifest_for_current_ecosystem(ctx: &ProjectContext) -> bool {
+    !ctx.manifests.is_empty()
+}
+
+fn matches_platform(plat: Platform) -> bool {
+    let is_windows = cfg!(target_os = "windows");
+    let is_macos = cfg!(target_os = "macos");
+    let is_linux = cfg!(target_os = "linux");
+    match plat {
+        Platform::Windows => is_windows,
+        Platform::MacOs => is_macos,
+        Platform::Linux => is_linux,
+        Platform::Unix => !is_windows,
+        Platform::AnyDesktop => is_windows || is_macos || is_linux,
     }
 }
 

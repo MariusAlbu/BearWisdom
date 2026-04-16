@@ -106,11 +106,4 @@ impl LanguagePlugin for ScalaPlugin {
         Some(std::sync::Arc::new(resolve::ScalaResolver))
     }
 
-    fn externals_locator(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
-        Some(std::sync::Arc::new(
-            crate::indexer::externals::ScalaExternalsLocator,
-        ))
-    }
 }

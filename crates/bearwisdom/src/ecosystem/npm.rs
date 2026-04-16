@@ -1,20 +1,106 @@
-// TypeScript / JavaScript node_modules discovery + walker
+// =============================================================================
+// ecosystem/npm.rs — npm ecosystem (JS/TS/Vue/Svelte/Angular/Astro/SCSS)
+//
+// Covers every language whose third-party code lives in `node_modules/`. The
+// file-level language detection inside an npm package is already handled by
+// the existing walker (`.ts`, `.tsx`, `.d.ts`, `.mts`, `.cts` → TypeScript;
+// `.vue` / `.svelte` inside a package route to those plugins via the
+// extension registry).
+//
+// Before this refactor:
+//   indexer/externals/typescript.rs — TypeScriptExternalsLocator
+//   7 plugins all returned Arc::new(TypeScriptExternalsLocator)
+//
+// After: one ecosystem, one locator, one walker. The legacy
+// `ExternalSourceLocator` trait impl keeps `ecosystem() = "typescript"` so
+// DB rows in `package_deps.ecosystem` and existing integration tests
+// (full_tests.rs queries `WHERE pd.ecosystem = 'typescript'`) continue to
+// work unchanged. Phase 4 migrates the schema and renames.
+// =============================================================================
 
-use super::{ts_package_from_virtual_path, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
+use std::path::{Path, PathBuf};
+use std::sync::Arc;
+
+use tracing::debug;
+
+use super::{
+    Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+};
+use crate::indexer::externals::{
+    ts_package_from_virtual_path, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
+};
 use crate::indexer::manifest::npm::NpmManifest;
 use crate::indexer::manifest::ManifestReader;
 use crate::walker::WalkedFile;
-use std::path::{Path, PathBuf};
-use tracing::debug;
 
-/// node_modules + @types → `discover_ts_externals` + `walk_ts_external_root`.
-/// Adds a post-process pass that rewrites TS declaration-file symbols to
-/// `package.Symbol` qualified names so the Tier-1 resolver can match
-/// `import { Button } from 'my-pkg'` → `my-pkg.Button`.
-pub struct TypeScriptExternalsLocator;
+pub const ID: EcosystemId = EcosystemId::new("npm");
 
-impl ExternalSourceLocator for TypeScriptExternalsLocator {
-    fn ecosystem(&self) -> &'static str { "typescript" }
+/// Legacy ecosystem tag persisted in `package_deps.ecosystem` and
+/// `ExternalDepRoot::ecosystem`. Renamed to "npm" in Phase 4 alongside a
+/// DB migration; kept here so no schema change is required in Phase 2.
+const LEGACY_ECOSYSTEM_TAG: &str = "typescript";
+
+const MANIFESTS: &[ManifestSpec] = &[];
+const LANGUAGES: &[&str] = &[
+    "typescript",
+    "tsx",
+    "javascript",
+    "vue",
+    "svelte",
+    "angular",
+    "astro",
+    "scss",
+];
+
+/// The npm ecosystem. Single locator, single walker, covers every language
+/// whose dependencies live in `node_modules/`.
+pub struct NpmEcosystem;
+
+// ---------------------------------------------------------------------------
+// Ecosystem trait impl (new — authoritative)
+// ---------------------------------------------------------------------------
+
+impl Ecosystem for NpmEcosystem {
+    fn id(&self) -> EcosystemId { ID }
+    fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
+    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+    fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+
+    fn activation(&self) -> EcosystemActivation {
+        EcosystemActivation::Any(&[
+            EcosystemActivation::ManifestMatch,
+            EcosystemActivation::LanguagePresent("typescript"),
+            EcosystemActivation::LanguagePresent("tsx"),
+            EcosystemActivation::LanguagePresent("javascript"),
+            EcosystemActivation::LanguagePresent("vue"),
+            EcosystemActivation::LanguagePresent("svelte"),
+            EcosystemActivation::LanguagePresent("angular"),
+            EcosystemActivation::LanguagePresent("astro"),
+        ])
+    }
+
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        discover_ts_externals(ctx.project_root)
+    }
+
+    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        walk_ts_external_root(dep)
+    }
+
+    fn post_process_parsed(&self, _dep: &ExternalDepRoot, parsed: &mut crate::types::ParsedFile) {
+        if let Some(pkg) = ts_package_from_virtual_path(&parsed.path).map(str::to_string) {
+            prefix_ts_external_symbols(parsed, &pkg);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Legacy ExternalSourceLocator impl — adapter for the indexer pipeline
+// until Phase 4 migrates to Ecosystem directly.
+// ---------------------------------------------------------------------------
+
+impl ExternalSourceLocator for NpmEcosystem {
+    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
 
     fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_ts_externals(project_root)
@@ -48,45 +134,20 @@ impl ExternalSourceLocator for TypeScriptExternalsLocator {
     }
 }
 
-/// Discover all external TypeScript/JavaScript dependency roots for a project.
-///
-/// Strategy:
-/// 1. Read package.json(s) via the existing `NpmManifest` reader (already
-///    walks subdirs and handles dependencies/devDependencies/peerDependencies
-///    plus Node.js builtins).
-/// 2. Locate node_modules via (in order) `BEARWISDOM_TS_NODE_MODULES` env
-///    override, project-local `node_modules` at root and immediate subdirs
-///    (monorepo layout).
-/// 3. For each declared dep, resolve to `node_modules/{name}/` (scoped
-///    packages like `@tanstack/react-query` map to `node_modules/@tanstack/react-query/`).
-/// 4. Skip Node.js builtins — they don't have an on-disk source tree. The
-///    NpmManifest reader adds them to the dep set but they don't exist
-///    under node_modules.
-/// 5. Skip packages whose directory is missing (not installed).
-pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let manifest = NpmManifest;
-    let Some(data) = manifest.read(project_root) else {
-        return Vec::new();
-    };
-    if data.dependencies.is_empty() {
-        return Vec::new();
-    }
+/// Process-wide shared instance used by every npm-consuming plugin.
+pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
+    use std::sync::OnceLock;
+    static LOCATOR: OnceLock<Arc<NpmEcosystem>> = OnceLock::new();
+    LOCATOR.get_or_init(|| Arc::new(NpmEcosystem)).clone()
+}
 
-    let node_modules_roots = find_node_modules(project_root);
-    if node_modules_roots.is_empty() {
-        debug!("No node_modules dirs discovered; skipping TS externals");
-        return Vec::new();
-    }
-    debug!(
-        "Probing {} node_modules root(s) for {} declared deps",
-        node_modules_roots.len(),
-        data.dependencies.len()
-    );
+// ---------------------------------------------------------------------------
+// Node builtins — appear in package.json declared deps but have no on-disk
+// source under node_modules. Skipped during walk.
+// ---------------------------------------------------------------------------
 
-    // Node builtins — these are declared as deps by NpmManifest but have no
-    // on-disk source under node_modules. Skip them entirely; language
-    // resolvers already route them via test_globals / runtime globals.
-    let builtins: std::collections::HashSet<&'static str> = [
+fn node_builtins() -> std::collections::HashSet<&'static str> {
+    [
         "assert", "buffer", "child_process", "cluster", "console", "crypto",
         "dgram", "dns", "domain", "events", "fs", "http", "http2", "https",
         "inspector", "module", "net", "node", "os", "path", "perf_hooks",
@@ -95,66 +156,58 @@ pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         "util", "v8", "vm", "wasi", "worker_threads", "zlib",
     ]
     .into_iter()
-    .collect();
+    .collect()
+}
 
+// ---------------------------------------------------------------------------
+// Discovery — project-level
+// ---------------------------------------------------------------------------
+
+/// Discover all external TypeScript/JavaScript dependency roots for a project.
+///
+/// Strategy:
+/// 1. Read package.json(s) via `NpmManifest` reader (already walks subdirs
+///    and handles dependencies/devDependencies/peerDependencies).
+/// 2. Locate node_modules via `BEARWISDOM_TS_NODE_MODULES` env → project-local
+///    root → immediate subdirs.
+/// 3. For each declared dep, resolve to `node_modules/{name}/` plus the
+///    DefinitelyTyped `@types/` fallback for untyped packages.
+/// 4. Skip Node builtins.
+fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
+    let manifest = NpmManifest;
+    let Some(data) = manifest.read(project_root) else { return Vec::new() };
+    if data.dependencies.is_empty() { return Vec::new() }
+
+    let node_modules_roots = find_node_modules(project_root);
+    if node_modules_roots.is_empty() {
+        debug!("No node_modules dirs discovered; skipping npm externals");
+        return Vec::new();
+    }
+    debug!(
+        "Probing {} node_modules root(s) for {} declared deps",
+        node_modules_roots.len(),
+        data.dependencies.len()
+    );
+
+    let builtins = node_builtins();
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
 
     for dep in &data.dependencies {
-        if builtins.contains(dep.as_str()) {
-            continue;
-        }
-        // Skip bare scope sentinels (`@tanstack`) — NpmManifest inserts these
-        // alongside the real scoped package names; resolving them as a package
-        // would incorrectly pull in the whole scope directory.
-        if dep.starts_with('@') && !dep.contains('/') {
-            continue;
-        }
-        // Skip `@types/X` entries (DefinitelyTyped type-only packages). The
-        // real package `X` is typically also in deps, and the fallback probe
-        // below will pull `node_modules/@types/X/` under the `X` module path
-        // so its symbols get qualified as `X.Foo` — which is what the TS
-        // resolver looks for on `import { Foo } from 'X'`. If we processed
-        // `@types/X` as its own dep it would land as `@types/X.Foo` and
-        // never match a user-code import.
-        if dep.starts_with("@types/") {
-            continue;
-        }
+        if builtins.contains(dep.as_str()) { continue }
+        if dep.starts_with('@') && !dep.contains('/') { continue }
+        if dep.starts_with("@types/") { continue }
 
-        // Collect every on-disk root for this dep:
-        //
-        // 1. The primary `node_modules/{dep}/` directory (which may ship only
-        //    `.js` if the package is untyped).
-        // 2. The DefinitelyTyped sibling that carries `.d.ts` for untyped
-        //    libraries:
-        //    - Unscoped: `node_modules/@types/{dep}/`
-        //    - Scoped:   `node_modules/@types/{scope}__{name}/`
-        //      e.g. `@tanstack/react-query` → `@types/tanstack__react-query`.
-        //      This is the escape scheme DefinitelyTyped uses on npm because
-        //      `@` is not allowed inside an `@types/*` sub-path.
-        //
-        // Both roots share the same `module_path` so their symbols get the
-        // same package prefix (`react.ReactNode`), and the Tier 1 TS
-        // resolver's `{import_module}.{target}` lookup finds them equally.
         let mut pkg_roots: Vec<PathBuf> = Vec::new();
         for nm_root in &node_modules_roots {
-            // Scoped package: `@foo/bar` → `node_modules/@foo/bar/`
-            // Unscoped: `react` → `node_modules/react/`
             let primary = nm_root.join(dep);
-            if primary.is_dir() {
-                pkg_roots.push(primary);
-            }
-            // DefinitelyTyped fallback — unscoped and scoped both.
+            if primary.is_dir() { pkg_roots.push(primary) }
             if !dep.starts_with('@') {
                 let types_dir = nm_root.join("@types").join(dep);
-                if types_dir.is_dir() {
-                    pkg_roots.push(types_dir);
-                }
+                if types_dir.is_dir() { pkg_roots.push(types_dir) }
             } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
                 let types_dir = nm_root.join("@types").join(&escaped);
-                if types_dir.is_dir() {
-                    pkg_roots.push(types_dir);
-                }
+                if types_dir.is_dir() { pkg_roots.push(types_dir) }
             }
         }
 
@@ -164,7 +217,7 @@ pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     module_path: dep.clone(),
                     version: String::from("unknown"),
                     root: pkg_dir,
-                    ecosystem: "typescript",
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
                 });
             }
@@ -173,35 +226,27 @@ pub fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     roots
 }
 
-/// Convert a scoped npm package name into the DefinitelyTyped escape form.
-///
 /// DefinitelyTyped publishes types for scoped packages at
 /// `@types/{scope}__{name}` because npm disallows nested `@` inside a scope
-/// path. For example:
-///
-/// - `@tanstack/react-query` → `tanstack__react-query`
-/// - `@radix-ui/react-dialog` → `radix-ui__react-dialog`
-///
-/// Returns `None` if the input isn't a scoped name (`@scope/name`) so callers
-/// can skip the probe for unscoped deps, which take a different code path.
+/// path. Returns None for non-scoped names.
 fn definitely_typed_scoped_name(dep: &str) -> Option<String> {
     let rest = dep.strip_prefix('@')?;
     let (scope, name) = rest.split_once('/')?;
-    if scope.is_empty() || name.is_empty() {
-        return None;
-    }
+    if scope.is_empty() || name.is_empty() { return None }
     Some(format!("{scope}__{name}"))
 }
 
-/// M3: per-package variant of `discover_ts_externals`. Reads the single
-/// package's `package.json` AND the workspace root's `package.json`
-/// (when they differ), then merges the dep sets. This covers the standard
-/// npm/yarn monorepo pattern where root-level `devDependencies` hold shared
-/// test tooling (chai, vitest, jest, etc.) that no individual sub-package
+// ---------------------------------------------------------------------------
+// Discovery — per-package (monorepo M3)
+// ---------------------------------------------------------------------------
+
+/// Per-package variant. Reads the single package's `package.json` AND the
+/// workspace root's, then merges the dep sets — covers the standard
+/// npm/yarn monorepo pattern where root-level devDependencies hold shared
+/// test tooling (chai, vitest, jest) that no individual sub-package
 /// redeclares. Searches `{package}/node_modules` plus every ancestor up to
-/// `workspace_root` (inclusive) for hoisted deps. Returns roots with
-/// `package_id=None`; the caller (locator) stamps ownership.
-pub fn discover_ts_externals_scoped(
+/// `workspace_root` (inclusive) for hoisted deps.
+fn discover_ts_externals_scoped(
     workspace_root: &Path,
     package_abs_path: &Path,
 ) -> Vec<ExternalDepRoot> {
@@ -209,36 +254,24 @@ pub fn discover_ts_externals_scoped(
         return Vec::new();
     };
 
-    // Also read workspace root deps when the package lives below root.
-    // Root devDependencies (shared test tooling, build tools) aren't
-    // redeclared per-package in npm/yarn monorepos, so the per-package
-    // reader would miss them entirely.
     if package_abs_path != workspace_root {
         if let Some(root_deps) = read_single_package_json_deps(workspace_root) {
             declared.extend(root_deps);
         }
     }
 
-    if declared.is_empty() {
-        return Vec::new();
-    }
+    if declared.is_empty() { return Vec::new() }
 
     let node_modules_roots = find_node_modules_with_ancestors(package_abs_path, workspace_root);
     if node_modules_roots.is_empty() {
-        debug!("No node_modules dirs discovered for package at {}; skipping TS externals",
-            package_abs_path.display());
+        debug!(
+            "No node_modules dirs discovered for package at {}; skipping npm externals",
+            package_abs_path.display()
+        );
         return Vec::new();
     }
 
-    let builtins: std::collections::HashSet<&'static str> = [
-        "assert", "buffer", "child_process", "cluster", "console", "crypto",
-        "dgram", "dns", "domain", "events", "fs", "http", "http2", "https",
-        "inspector", "module", "net", "node", "os", "path", "perf_hooks",
-        "process", "punycode", "querystring", "readline", "repl", "stream",
-        "string_decoder", "timers", "tls", "trace_events", "tty", "url",
-        "util", "v8", "vm", "wasi", "worker_threads", "zlib",
-    ].into_iter().collect();
-
+    let builtins = node_builtins();
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for dep in &declared {
@@ -249,13 +282,13 @@ pub fn discover_ts_externals_scoped(
         let mut pkg_roots: Vec<PathBuf> = Vec::new();
         for nm_root in &node_modules_roots {
             let primary = nm_root.join(dep);
-            if primary.is_dir() { pkg_roots.push(primary); }
+            if primary.is_dir() { pkg_roots.push(primary) }
             if !dep.starts_with('@') {
                 let types_dir = nm_root.join("@types").join(dep);
-                if types_dir.is_dir() { pkg_roots.push(types_dir); }
+                if types_dir.is_dir() { pkg_roots.push(types_dir) }
             } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
                 let types_dir = nm_root.join("@types").join(&escaped);
-                if types_dir.is_dir() { pkg_roots.push(types_dir); }
+                if types_dir.is_dir() { pkg_roots.push(types_dir) }
             }
         }
         for pkg_dir in pkg_roots {
@@ -264,7 +297,7 @@ pub fn discover_ts_externals_scoped(
                     module_path: dep.clone(),
                     version: String::from("unknown"),
                     root: pkg_dir,
-                    ecosystem: "typescript",
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
                 });
             }
@@ -273,11 +306,6 @@ pub fn discover_ts_externals_scoped(
     roots
 }
 
-/// Read deps from a SINGLE `{dir}/package.json` — no recursive subdir
-/// walk, so a workspace-root caller doesn't suck in every sub-package's
-/// deps. Node builtins are appended to the result set (they're implicitly
-/// available in every JS package). Returns `None` when `package.json` is
-/// missing or unparseable.
 fn read_single_package_json_deps(dir: &Path) -> Option<std::collections::HashSet<String>> {
     let manifest_path = dir.join("package.json");
     let content = std::fs::read_to_string(&manifest_path).ok()?;
@@ -299,36 +327,25 @@ fn read_single_package_json_deps(dir: &Path) -> Option<std::collections::HashSet
     Some(deps)
 }
 
-/// Probe `{dir}/node_modules` for every directory from `start` walking up
-/// (inclusive) to `workspace_root` (inclusive). Handles hoisted workspace
-/// layouts where deps live at a shared ancestor, not the individual package.
-/// Respects `BEARWISDOM_TS_NODE_MODULES` as an explicit override.
 fn find_node_modules_with_ancestors(start: &Path, workspace_root: &Path) -> Vec<PathBuf> {
     if let Some(raw) = std::env::var_os("BEARWISDOM_TS_NODE_MODULES") {
         let mut out = Vec::new();
         for seg in std::env::split_paths(&raw) {
-            if seg.as_os_str().is_empty() { continue; }
-            if seg.is_dir() && !out.contains(&seg) {
-                out.push(seg);
-            }
+            if seg.as_os_str().is_empty() { continue }
+            if seg.is_dir() && !out.contains(&seg) { out.push(seg) }
         }
-        if !out.is_empty() { return out; }
+        if !out.is_empty() { return out }
     }
 
     let mut out: Vec<PathBuf> = Vec::new();
     let mut push_if_dir = |p: PathBuf, out: &mut Vec<PathBuf>| {
-        if p.is_dir() && !out.contains(&p) {
-            out.push(p);
-        }
+        if p.is_dir() && !out.contains(&p) { out.push(p) }
     };
 
-    // Package's own node_modules + immediate subdir node_modules.
     push_if_dir(start.join("node_modules"), &mut out);
     if let Ok(entries) = std::fs::read_dir(start) {
         for entry in entries.flatten() {
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                continue;
-            }
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue }
             let name = entry.file_name();
             let name_lossy = name.to_string_lossy();
             if name_lossy.starts_with('.')
@@ -336,63 +353,39 @@ fn find_node_modules_with_ancestors(start: &Path, workspace_root: &Path) -> Vec<
                     name_lossy.as_ref(),
                     "node_modules" | "target" | "dist" | "build" | ".turbo" | ".next"
                 )
-            {
-                continue;
-            }
+            { continue }
             push_if_dir(entry.path().join("node_modules"), &mut out);
         }
     }
 
-    // Ancestor walk — stop at (and include) workspace_root.
     let mut current = start.parent();
     while let Some(dir) = current {
         push_if_dir(dir.join("node_modules"), &mut out);
-        if dir == workspace_root {
-            break;
-        }
+        if dir == workspace_root { break }
         current = dir.parent();
     }
     out
 }
 
-/// Locate node_modules directories for the given project.
-///
-/// Order of preference:
-/// 1. `BEARWISDOM_TS_NODE_MODULES` env override (platform-separated list).
-/// 2. `{project_root}/node_modules` (most common).
-/// 3. Immediate subdirs of project_root (monorepo pattern: `frontend/`,
-///    `packages/`, `apps/`, etc. — same walk shape used for Python venvs).
-pub fn find_node_modules(project_root: &Path) -> Vec<PathBuf> {
+fn find_node_modules(project_root: &Path) -> Vec<PathBuf> {
     let mut out = Vec::new();
     let mut push_if_dir = |p: PathBuf, out: &mut Vec<PathBuf>| {
-        if p.is_dir() && !out.contains(&p) {
-            out.push(p);
-        }
+        if p.is_dir() && !out.contains(&p) { out.push(p) }
     };
 
     if let Some(raw) = std::env::var_os("BEARWISDOM_TS_NODE_MODULES") {
         for seg in std::env::split_paths(&raw) {
-            if seg.as_os_str().is_empty() {
-                continue;
-            }
+            if seg.as_os_str().is_empty() { continue }
             push_if_dir(seg, &mut out);
         }
-        if !out.is_empty() {
-            return out;
-        }
+        if !out.is_empty() { return out }
     }
 
-    // Root-level node_modules.
     push_if_dir(project_root.join("node_modules"), &mut out);
 
-    // Immediate subdirs — covers `frontend/node_modules`, `apps/web/node_modules`,
-    // `packages/foo/node_modules`, etc. Same monorepo-friendly walk shape as
-    // `find_python_site_packages`.
     if let Ok(entries) = std::fs::read_dir(project_root) {
         for entry in entries.flatten() {
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                continue;
-            }
+            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue }
             let name = entry.file_name();
             let name_lossy = name.to_string_lossy();
             if name_lossy.starts_with('.')
@@ -400,101 +393,70 @@ pub fn find_node_modules(project_root: &Path) -> Vec<PathBuf> {
                     name_lossy.as_ref(),
                     "node_modules" | "target" | "dist" | "build" | ".turbo" | ".next"
                 )
-            {
-                continue;
-            }
+            { continue }
             push_if_dir(entry.path().join("node_modules"), &mut out);
         }
     }
-
     out
 }
 
-/// Walk one TS external dep root and emit `WalkedFile` entries.
+// ---------------------------------------------------------------------------
+// Walk
+// ---------------------------------------------------------------------------
+
+/// Walk one npm external dep root and emit `WalkedFile` entries.
 ///
 /// File filtering rules:
 /// - Include `.ts`, `.tsx`, `.d.ts`, `.mts`, `.cts`, `.d.mts`, `.d.cts`.
-/// - Skip `.js`/`.jsx`/`.mjs` — type info for those packages lives in
-///   sibling `.d.ts` files that we'll pick up anyway.
-/// - Skip `node_modules/` subtrees (nested deps).
-/// - Skip `__tests__/`, `test/`, `tests/`, `__mocks__/`, `docs/`,
-///   `example/`, `examples/`, `_examples/`, `.storybook/`, `fixtures/`.
-/// - Skip `*.test.*`, `*.spec.*`, `*.stories.*`, `*.bench.*`, `*.fixture.*`.
+/// - Skip `.js`/`.jsx`/`.mjs` (type info lives in sibling `.d.ts`).
+/// - Skip nested `node_modules/` unless `BEARWISDOM_TS_WALK_NESTED=1`.
+/// - Skip test/story/example/fixture dirs and files.
 ///
 /// Virtual relative_path is `ext:ts:{package}/{sub_path}`.
-pub fn walk_ts_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+fn walk_ts_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
-    walk_ts_dir(&dep.root, &dep.root, dep, &mut out);
+    walk_ts_dir_bounded(&dep.root, &dep.root, dep, &mut out, 0);
     out
 }
 
-fn walk_ts_dir(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>) {
-    walk_ts_dir_bounded(dir, root, dep, out, 0);
-}
-
-fn walk_ts_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Vec<WalkedFile>, depth: u32) {
-    if depth >= MAX_WALK_DEPTH {
-        return;
-    }
+fn walk_ts_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH { return }
     let walk_nested = std::env::var_os("BEARWISDOM_TS_WALK_NESTED")
         .map(|v| v != "0" && !v.is_empty())
         .unwrap_or(false);
 
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
-        let Ok(file_type) = entry.file_type() else {
-            continue;
-        };
+        let Ok(file_type) = entry.file_type() else { continue };
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if name == "node_modules" && !walk_nested {
-                    continue;
-                }
+                if name == "node_modules" && !walk_nested { continue }
                 if matches!(
                     name,
-                    "__tests__"
-                        | "__mocks__"
-                        | "test"
-                        | "tests"
-                        | "docs"
-                        | "example"
-                        | "examples"
-                        | "_examples"
-                        | "fixtures"
-                        | ".storybook"
-                        | ".git"
-                ) {
-                    continue;
-                }
+                    "__tests__" | "__mocks__" | "test" | "tests" | "docs"
+                        | "example" | "examples" | "_examples" | "fixtures"
+                        | ".storybook" | ".git"
+                ) { continue }
             }
             walk_ts_dir_bounded(&path, root, dep, out, depth + 1);
         } else if file_type.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            if !is_ts_source_file(name) {
-                continue;
-            }
-            if is_test_or_story_file(name) {
-                continue;
-            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !is_ts_source_file(name) { continue }
+            if is_test_or_story_file(name) { continue }
 
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
             };
             let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
-            // Tree-sitter TS grammar handles `.d.ts` transparently. `.tsx`
-            // needs the TSX-specific grammar, which the language registry
-            // routes via the `tsx` language id.
-            let language = if name.ends_with(".tsx") {
-                "tsx"
-            } else {
-                "typescript"
-            };
+            let language = if name.ends_with(".tsx") { "tsx" } else { "typescript" };
             out.push(WalkedFile {
                 relative_path: virtual_path,
                 absolute_path: path,
@@ -505,28 +467,36 @@ fn walk_ts_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut
 }
 
 fn is_ts_source_file(name: &str) -> bool {
-    // .d.ts / .d.mts / .d.cts handled by the generic .ts / .mts / .cts suffix match.
     name.ends_with(".ts")
         || name.ends_with(".tsx")
         || name.ends_with(".mts")
         || name.ends_with(".cts")
 }
 
+fn is_test_or_story_file(name: &str) -> bool {
+    let stem = name.rsplit_once('.').map(|(s, _)| s).unwrap_or(name);
+    stem.ends_with(".test")
+        || stem.ends_with(".spec")
+        || stem.ends_with(".stories")
+        || stem.ends_with(".bench")
+        || stem.ends_with(".fixture")
+        || stem == "test"
+        || stem == "index.test"
+}
+
+// ---------------------------------------------------------------------------
+// Post-process: prefix declaration-file symbols with their package name
+// ---------------------------------------------------------------------------
+
 /// Prefix every symbol's `qualified_name` (and `scope_path`) in a parsed
 /// TypeScript external file with the owning package name.
 ///
 /// TypeScript declaration files don't carry a package-level scope, so the
-/// extractor yields bare qualified names like `Button` or `Button.render`.
-/// To make these look up cleanly by `{import_module}.{target}` (which is what
-/// the TS Tier 1 resolver tries), rewrite them to `fake-ui.Button` /
-/// `fake-ui.Button.render`.
-///
-/// Mutates the parsed file in place. Idempotent: already-prefixed names are
-/// left alone.
-pub fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
-    if package.is_empty() {
-        return;
-    }
+/// extractor yields bare qualified names like `Button`. Rewrite them to
+/// `fake-ui.Button` so the TS resolver's `{import_module}.{target}` lookup
+/// matches. Idempotent: already-prefixed names are left alone.
+fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
+    if package.is_empty() { return }
     let prefix = format!("{package}.");
     for sym in &mut pf.symbols {
         if !sym.qualified_name.starts_with(&prefix) {
@@ -540,22 +510,30 @@ pub fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &s
     }
 }
 
-fn is_test_or_story_file(name: &str) -> bool {
-    // Look for `.test.`, `.spec.`, `.stories.`, `.bench.`, `.fixture.` anywhere
-    // before the extension.
-    let stem = name.rsplit_once('.').map(|(s, _)| s).unwrap_or(name);
-    stem.ends_with(".test")
-        || stem.ends_with(".spec")
-        || stem.ends_with(".stories")
-        || stem.ends_with(".bench")
-        || stem.ends_with(".fixture")
-        || stem == "test"
-        || stem == "index.test"
-}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ecosystem_identity() {
+        let n = NpmEcosystem;
+        assert_eq!(n.id(), ID);
+        assert_eq!(Ecosystem::kind(&n), EcosystemKind::Package);
+        assert!(Ecosystem::languages(&n).contains(&"typescript"));
+        assert!(Ecosystem::languages(&n).contains(&"javascript"));
+        assert!(Ecosystem::languages(&n).contains(&"vue"));
+        assert!(Ecosystem::languages(&n).contains(&"svelte"));
+    }
+
+    #[test]
+    fn legacy_locator_string_unchanged() {
+        // Keep "typescript" to avoid schema/test churn in Phase 2.
+        assert_eq!(ExternalSourceLocator::ecosystem(&NpmEcosystem), "typescript");
+    }
 
     #[test]
     fn definitely_typed_scoped_escapes() {
@@ -594,22 +572,17 @@ mod tests {
         assert!(!is_test_or_story_file("useForm.ts"));
     }
 
-    // ---------------------------------------------------------------
-    // M3 — per-package scoped discovery
-    // ---------------------------------------------------------------
+    // -----------------------------------------------------------------
+    // M3 — per-package scoped discovery (migrated from typescript.rs)
+    // -----------------------------------------------------------------
 
     #[test]
     fn m3_find_node_modules_walks_ancestors() {
-        // Layout: workspace/apps/web/ with workspace/node_modules/ (hoisted).
-        // find_node_modules_with_ancestors(apps/web, workspace) must find
-        // the workspace-root node_modules via ancestor walk.
         let tmp = tempfile::TempDir::new().unwrap();
         let ws = tmp.path();
         let pkg = ws.join("apps").join("web");
         std::fs::create_dir_all(ws.join("node_modules")).unwrap();
         std::fs::create_dir_all(&pkg).unwrap();
-
-        // Ensure env doesn't leak into the test.
         std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
 
         let roots = find_node_modules_with_ancestors(&pkg, ws);
@@ -621,15 +594,11 @@ mod tests {
 
     #[test]
     fn m3_find_node_modules_prefers_package_local() {
-        // Layout: workspace/ with both workspace/node_modules and
-        // workspace/apps/web/node_modules. Per-package local should
-        // appear before the ancestor.
         let tmp = tempfile::TempDir::new().unwrap();
         let ws = tmp.path();
         let pkg = ws.join("apps").join("web");
         std::fs::create_dir_all(ws.join("node_modules")).unwrap();
         std::fs::create_dir_all(pkg.join("node_modules")).unwrap();
-
         std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
 
         let roots = find_node_modules_with_ancestors(&pkg, ws);
@@ -643,16 +612,12 @@ mod tests {
 
     #[test]
     fn m3_read_single_package_json_scoped_to_dir() {
-        // The scoped reader must only read the direct package.json, not
-        // recursively walk subdirs — otherwise workspace roots would pull
-        // in every sub-package's deps.
         let tmp = tempfile::TempDir::new().unwrap();
         let dir = tmp.path();
         std::fs::write(
             dir.join("package.json"),
             r#"{"dependencies":{"react":"18"},"devDependencies":{"vitest":"1"}}"#,
         ).unwrap();
-        // Nested sub-package.json should NOT be read.
         std::fs::create_dir_all(dir.join("sub")).unwrap();
         std::fs::write(
             dir.join("sub").join("package.json"),
@@ -667,8 +632,6 @@ mod tests {
 
     #[test]
     fn m3_discover_ts_externals_scoped_uses_hoisted_node_modules() {
-        // Workspace with hoisted node_modules/react/. Package at apps/web
-        // declares react. Scoped discovery must find react via ancestor walk.
         let tmp = tempfile::TempDir::new().unwrap();
         let ws = tmp.path();
         let pkg = ws.join("apps").join("web");
@@ -684,42 +647,31 @@ mod tests {
             react_dir.join("index.d.ts"),
             "export function Component(): any;",
         ).unwrap();
-
         std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
 
         let roots = discover_ts_externals_scoped(ws, &pkg);
         assert!(
             roots.iter().any(|r| r.module_path == "react" && r.root == react_dir),
-            "expected react root from hoisted node_modules, got {:?}",
-            roots.iter().map(|r| (&r.module_path, &r.root)).collect::<Vec<_>>()
+            "expected react root from hoisted node_modules"
         );
     }
 
     #[test]
     fn m3_discover_ts_externals_scoped_merges_workspace_root_deps() {
-        // Simulate the javascript-preact pattern:
-        // - workspace root package.json has devDependencies: { chai, vitest }
-        // - sub-package package.json has dependencies: { preact } only
-        // - node_modules/ is hoisted at workspace root
-        // scoped discovery must discover BOTH sub-package and root-declared deps.
         let tmp = tempfile::TempDir::new().unwrap();
         let ws = tmp.path();
         let pkg = ws.join("hooks");
         std::fs::create_dir_all(&pkg).unwrap();
 
-        // Root package.json: declares shared devDeps
         std::fs::write(
             ws.join("package.json"),
             r#"{"name":"preact","devDependencies":{"chai":"5","vitest":"2"}}"#,
         ).unwrap();
-
-        // Sub-package package.json: declares only its own dep
         std::fs::write(
             pkg.join("package.json"),
             r#"{"name":"preact-hooks","dependencies":{"preact":"*"}}"#,
         ).unwrap();
 
-        // Hoisted node_modules at workspace root
         let chai_dir = ws.join("node_modules").join("@types").join("chai");
         std::fs::create_dir_all(&chai_dir).unwrap();
         std::fs::write(chai_dir.join("index.d.ts"), "export function assert(x: any): void;").unwrap();
@@ -735,22 +687,16 @@ mod tests {
         std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
 
         let roots = discover_ts_externals_scoped(ws, &pkg);
-        let module_paths: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+        assert!(roots.iter().any(|r| r.module_path == "chai"),
+            "expected chai from workspace root devDeps");
+        assert!(roots.iter().any(|r| r.module_path == "vitest"),
+            "expected vitest from workspace root devDeps");
+        assert!(roots.iter().any(|r| r.module_path == "preact"),
+            "expected preact from sub-package deps");
+    }
 
-        // chai is a root devDep — should be discovered via @types/chai
-        assert!(
-            roots.iter().any(|r| r.module_path == "chai"),
-            "expected chai from workspace root devDeps, got {module_paths:?}"
-        );
-        // vitest is a root devDep and ships .d.ts — should be discovered
-        assert!(
-            roots.iter().any(|r| r.module_path == "vitest"),
-            "expected vitest from workspace root devDeps, got {module_paths:?}"
-        );
-        // preact is the sub-package's own dep — still discovered
-        assert!(
-            roots.iter().any(|r| r.module_path == "preact"),
-            "expected preact from sub-package deps, got {module_paths:?}"
-        );
+    #[allow(dead_code)]
+    fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
+        shared_locator()
     }
 }

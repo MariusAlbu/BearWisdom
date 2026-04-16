@@ -118,14 +118,6 @@ impl LanguagePlugin for CSharpPlugin {
         externals::EXTERNALS
     }
 
-    fn externals_locator(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
-        Some(std::sync::Arc::new(
-            crate::indexer::externals::DotNetExternalsLocator,
-        ))
-    }
-
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::CSharpResolver))
     }

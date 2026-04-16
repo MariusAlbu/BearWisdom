@@ -101,14 +101,6 @@ impl LanguagePlugin for PythonPlugin {
         Some(std::sync::Arc::new(resolve::PythonResolver))
     }
 
-    fn externals_locator(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
-        Some(std::sync::Arc::new(
-            crate::indexer::externals::PythonExternalsLocator,
-        ))
-    }
-
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
         vec![
             Box::new(connectors::DjangoRouteConnector),

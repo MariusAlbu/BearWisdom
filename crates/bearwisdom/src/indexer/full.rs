@@ -233,18 +233,26 @@ pub fn full_index(
         file_id_map.len()
     );
 
-    // --- Step 4b: Build the per-package project context (M2) ---
+    // --- Step 4b: Build the per-package project context (M2 + Phase 4) ---
     // Built BEFORE external discovery so (a) M3 can write per-package
     // dependency rows from it and (b) the resolver reuses the same
-    // instance below without re-reading manifests.
-    let project_ctx = if !written_packages.is_empty() {
-        super::project_context::build_project_context_with_packages(
-            project_root,
-            &written_packages,
-        )
-    } else {
-        super::project_context::build_project_context(project_root)
+    // instance below without re-reading manifests. Phase 4: also evaluates
+    // every registered ecosystem's activation predicate and stores the
+    // active set on the context so externals discovery and resolution
+    // share the same authoritative list.
+    let distinct_langs: Vec<String> = {
+        let mut set: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for pf in &parsed {
+            set.insert(pf.language.clone());
+        }
+        set.into_iter().collect()
     };
+    let project_ctx = super::project_context::ProjectContext::initialize(
+        project_root,
+        &written_packages,
+        distinct_langs,
+        crate::ecosystem::default_registry(),
+    );
 
     // --- Step 4c: Write per-package dependency graph (M3) ---
     // `package_deps` rows let queries like "which packages in this monorepo
@@ -276,7 +284,7 @@ pub fn full_index(
     //
     // M3: workspace packages drive per-package locator calls; roots are
     // deduplicated globally and walked exactly once.
-    let external_parsed = parse_external_sources(project_root, registry, &written_packages);
+    let external_parsed = parse_external_sources(project_root, registry, &project_ctx, &written_packages);
     if !external_parsed.is_empty() {
         info!(
             "Parsed {} external files from dependency sources",
@@ -530,13 +538,17 @@ fn collect_package_dep_rows(
 
 /// Discover and parse external dependency sources for the project.
 ///
-/// Covers every ecosystem that exposes an `ExternalSourceLocator` via
-/// `LanguagePlugin::externals_locator` (Go, Python, TypeScript, Java,
-/// .NET, Ruby, Rust, PHP, and the rest).
+/// Phase 4: driven by `ProjectContext::active_ecosystems`. Each active
+/// ecosystem id is resolved against `ecosystem::default_registry()` to
+/// pick up its `Ecosystem` trait impl, and against
+/// `ecosystem::default_locator` for per-package attribution overrides
+/// (`locate_roots_for_package` on the legacy trait). The legacy plugin
+/// hook (`LanguagePlugin::externals_locator`) is gone — every dispatch
+/// flows through ecosystems now.
 ///
-/// M3: when `packages` is non-empty (monorepo / workspace), each locator
+/// M3: when `packages` is non-empty (monorepo / workspace), each ecosystem
 /// is invoked ONCE PER PACKAGE via `locate_roots_for_package`. Roots are
-/// then deduplicated by `(ecosystem, module_path, version)` and walked
+/// deduplicated by `(ecosystem, module_path, version, root)` and walked
 /// exactly once regardless of how many packages declared the same dep.
 /// Single-project layouts (empty `packages`) keep the legacy single-call
 /// behavior with unstamped `package_id`.
@@ -546,24 +558,23 @@ fn collect_package_dep_rows(
 fn parse_external_sources(
     project_root: &Path,
     registry: &LanguageRegistry,
+    ctx: &super::project_context::ProjectContext,
     packages: &[crate::types::PackageInfo],
 ) -> Vec<ParsedFile> {
     use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator};
     use std::sync::Arc;
 
-    // Collect every distinct `ExternalSourceLocator` exposed by a registered
-    // language plugin. Plugins without a locator (bash, make, sql, etc.) are
-    // silently skipped. Two or more plugins sharing the same locator (future:
-    // Vue/Svelte/Astro all routing through the TypeScript locator) are
-    // deduplicated by ecosystem id.
-    let mut seen_ecosystems: std::collections::HashSet<&'static str> =
-        std::collections::HashSet::new();
-    let mut locators: Vec<Arc<dyn ExternalSourceLocator>> = Vec::new();
-    for plugin in registry.all() {
-        if let Some(locator) = plugin.externals_locator() {
-            if seen_ecosystems.insert(locator.ecosystem()) {
-                locators.push(locator);
-            }
+    // Resolve every active ecosystem to its legacy locator adapter. The
+    // legacy trait still carries the per-package attribution overrides
+    // (`locate_roots_for_package`) and the post-parse hook — those move
+    // onto `Ecosystem` in a later phase; today we bridge.
+    let mut locators: Vec<(
+        crate::ecosystem::EcosystemId,
+        Arc<dyn ExternalSourceLocator>,
+    )> = Vec::new();
+    for &id in &ctx.active_ecosystems {
+        if let Some(loc) = crate::ecosystem::default_locator(id) {
+            locators.push((id, loc));
         }
     }
 
@@ -572,13 +583,13 @@ fn parse_external_sources(
     // (locator, package) pair).
     let mut all_roots: Vec<ExternalDepRoot> = Vec::new();
     if packages.is_empty() {
-        for locator in &locators {
+        for (id, locator) in &locators {
             let roots = locator.locate_roots(project_root);
             if !roots.is_empty() {
                 info!(
                     "Discovered {} external {} dependency roots",
                     roots.len(),
-                    locator.ecosystem()
+                    id
                 );
             }
             all_roots.extend(roots);
@@ -587,7 +598,7 @@ fn parse_external_sources(
         for pkg in packages {
             let Some(pkg_id) = pkg.id else { continue };
             let pkg_abs_path = project_root.join(&pkg.path);
-            for locator in &locators {
+            for (id, locator) in &locators {
                 let roots =
                     locator.locate_roots_for_package(project_root, &pkg_abs_path, pkg_id);
                 if !roots.is_empty() {
@@ -596,7 +607,7 @@ fn parse_external_sources(
                         pkg.name,
                         pkg_id,
                         roots.len(),
-                        locator.ecosystem()
+                        id
                     );
                 }
                 all_roots.extend(roots);
@@ -648,12 +659,16 @@ fn parse_external_sources(
         );
     }
 
-    // Build ecosystem → locator index for the walk phase.
+    // Build ecosystem-tag → locator index for the walk phase. The tag is the
+    // legacy string written to `ExternalDepRoot.ecosystem` by each ecosystem
+    // (see `LEGACY_ECOSYSTEM_TAG` in every ecosystem file), distinct from
+    // the new `EcosystemId`. Phase 4 preserves the old tag on disk; the id
+    // is the trait-level identity.
     let mut locator_by_ecosystem: std::collections::HashMap<
         &'static str,
         Arc<dyn ExternalSourceLocator>,
     > = std::collections::HashMap::new();
-    for locator in &locators {
+    for (_id, locator) in &locators {
         locator_by_ecosystem.insert(locator.ecosystem(), locator.clone());
     }
 
@@ -665,12 +680,12 @@ fn parse_external_sources(
     // Metadata-only path runs once per locator regardless of package layout.
     // .NET reads `{project}/obj/*.deps.json` which is already per-csproj
     // aware internally.
-    for locator in &locators {
+    for (id, locator) in &locators {
         if let Some(pre_parsed) = locator.parse_metadata_only(project_root) {
             info!(
                 "Parsed {} external {} entries via metadata",
                 pre_parsed.len(),
-                locator.ecosystem()
+                id
             );
             metadata_parsed.extend(pre_parsed);
         }

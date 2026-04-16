@@ -350,7 +350,20 @@ fn run_incremental_pipeline(
     }
 
     // --- Step 11: Cross-file resolution ---
-    let project_ctx = super::project_context::build_project_context(project_root);
+    // Phase 4: construct the ProjectContext through the ecosystem-aware
+    // initializer so incremental resolution sees the same `active_ecosystems`
+    // set the full index pipeline sees. Language presence is taken from the
+    // current parsed batch; that's adequate for resolver filtering since
+    // refs in the unchanged file slice were already resolved against an
+    // earlier ctx and only the parsed slice is re-resolved here.
+    let distinct_langs: HashSet<String> =
+        parsed.iter().map(|pf| pf.language.clone()).collect();
+    let project_ctx = super::project_context::ProjectContext::initialize(
+        project_root,
+        &[], // incremental path doesn't re-detect workspace packages
+        distinct_langs,
+        crate::ecosystem::default_registry(),
+    );
     let rstats = resolve::resolve_and_write_incremental(db, &parsed, &symbol_id_map, Some(&project_ctx))
         .context("Failed to resolve references")?;
     stats.edges_written = rstats.resolved as u32;

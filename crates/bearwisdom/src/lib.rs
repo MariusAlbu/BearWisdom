@@ -19,6 +19,7 @@
 
 pub mod connectors;
 pub mod db;
+pub mod ecosystem;
 pub mod indexer;
 pub mod languages;
 pub mod parser;

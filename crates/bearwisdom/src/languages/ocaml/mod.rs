@@ -78,11 +78,4 @@ impl LanguagePlugin for OcamlPlugin {
         Some(std::sync::Arc::new(resolve::OcamlResolver))
     }
 
-    fn externals_locator(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
-        Some(std::sync::Arc::new(
-            crate::indexer::externals::OcamlExternalsLocator,
-        ))
-    }
 }

@@ -18,78 +18,13 @@ use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 use tracing::debug;
 
-pub mod clojure;
-pub mod dart;
-pub mod dotnet;
-pub mod elixir;
-pub mod erlang;
-pub mod gleam;
-pub mod go;
-pub mod haskell;
-pub mod java;
-pub mod lua;
-pub mod nim;
-pub mod ocaml;
-pub mod perl;
-pub mod php;
-pub mod python;
-pub mod r_lang;
-pub mod ruby;
-pub mod rust_lang;
-pub mod scala;
-pub mod swift;
-pub mod typescript;
-pub mod zig;
+// NOTE: all per-language locators have migrated to `crate::ecosystem::*` in
+// Phase 2+3. This module now only holds the `ExternalSourceLocator` trait,
+// `ExternalDepRoot` struct, shared Maven helpers, and legacy re-exports
+// used by callers still on the old import paths.
 
-pub use clojure::ClojureExternalsLocator;
-pub use dart::DartExternalsLocator;
-pub use dotnet::DotNetExternalsLocator;
-pub use elixir::ElixirExternalsLocator;
-pub use erlang::ErlangExternalsLocator;
-pub use gleam::GleamExternalsLocator;
-pub use go::GoExternalsLocator;
-pub use haskell::HaskellExternalsLocator;
-pub use java::JavaExternalsLocator;
-pub use lua::LuaExternalsLocator;
-pub use nim::NimExternalsLocator;
-pub use ocaml::OcamlExternalsLocator;
-pub use perl::PerlExternalsLocator;
-pub use php::PhpExternalsLocator;
-pub use python::PythonExternalsLocator;
-pub use r_lang::RExternalsLocator;
-pub use ruby::RubyExternalsLocator;
-pub use rust_lang::RustExternalsLocator;
-pub use scala::ScalaExternalsLocator;
-pub use swift::SwiftExternalsLocator;
-pub use typescript::TypeScriptExternalsLocator;
-pub use zig::ZigExternalsLocator;
-
-// Also re-export functions used by submodules or external callers
-pub use go::discover_go_externals;
-pub use python::{discover_python_externals, find_python_site_packages, normalize_python_dep_name};
-pub use typescript::{
-    discover_ts_externals, find_node_modules, prefix_ts_external_symbols,
-    walk_ts_external_root,
-};
-pub use java::{discover_java_externals, walk_java_external_root};
-pub use dotnet::{parse_dotnet_externals, nuget_packages_root};
-pub use ruby::discover_ruby_externals;
-pub use r_lang::discover_r_externals;
-pub use elixir::discover_elixir_externals;
-pub use dart::discover_dart_externals;
-pub use scala::discover_scala_externals;
-pub use php::discover_php_externals;
-pub use erlang::{discover_erlang_externals, parse_rebar_deps};
-pub use haskell::discover_haskell_externals;
-pub use nim::discover_nim_externals;
-pub use perl::{discover_perl_externals, parse_cpanfile_requires};
-pub use ocaml::discover_ocaml_externals;
-pub use swift::discover_swift_externals;
-pub use lua::discover_lua_externals;
-pub use gleam::discover_gleam_externals;
-pub use zig::discover_zig_externals;
-pub use rust_lang::discover_rust_externals;
-pub use clojure::discover_clojure_externals;
+// Re-exports of functions that moved to ecosystem modules, for back-compat.
+pub use crate::ecosystem::nuget::{parse_dotnet_externals, nuget_packages_root};
 
 /// A discovered external dependency root — the directory containing one
 /// version of one package on disk.
@@ -228,19 +163,18 @@ pub(crate) fn ts_package_from_virtual_path(path: &str) -> Option<&str> {
     }
 }
 
-/// Convenience — build the fixed set of 5 locators that ship today. Phase 1+
-/// ecosystems attach to this list as they land. Language plugins also expose
-/// their own locator via `LanguagePlugin::externals_locator`; that's the
-/// long-term dispatch path. This standalone builder stays available for
-/// unit tests and diagnostic commands that want to sidestep the plugin
-/// registry.
+/// Convenience — build the fixed set of 5 locators that ship today. Post-
+/// Phase 4 the authoritative dispatch path is
+/// `ecosystem::default_registry()`; this standalone builder stays available
+/// for unit tests and diagnostic commands that want a direct handle on a
+/// known locator without iterating the registry.
 pub fn builtin_locators() -> Vec<Arc<dyn ExternalSourceLocator>> {
     vec![
-        Arc::new(GoExternalsLocator),
-        Arc::new(PythonExternalsLocator),
-        Arc::new(TypeScriptExternalsLocator),
-        Arc::new(JavaExternalsLocator),
-        Arc::new(DotNetExternalsLocator),
+        Arc::new(crate::ecosystem::GoModEcosystem),
+        Arc::new(crate::ecosystem::PypiEcosystem),
+        Arc::new(crate::ecosystem::NpmEcosystem),
+        Arc::new(crate::ecosystem::MavenEcosystem),
+        Arc::new(crate::ecosystem::NugetEcosystem),
     ]
 }
 

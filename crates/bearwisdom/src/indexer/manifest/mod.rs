@@ -9,25 +9,26 @@
 // the per-language fields on `ProjectContext` for backward compatibility.
 // =============================================================================
 
-pub mod cargo;
-pub mod composer;
-pub mod description;
-pub mod gemfile;
-pub mod go_mod;
+// NOTE: `cargo` manifest reader migrated to `crate::ecosystem::cargo` in
+// Phase 2+3. Call sites now import directly from the ecosystem module.
+// NOTE: `composer` manifest reader migrated to `crate::ecosystem::composer` in Phase 2+3.
+// NOTE: `description` manifest reader migrated to `crate::ecosystem::cran` in Phase 2+3.
+// NOTE: `gemfile` manifest reader migrated to `crate::ecosystem::rubygems` in Phase 2+3.
+// NOTE: `go_mod` manifest reader migrated to `crate::ecosystem::go_mod` in Phase 2+3.
 pub mod gradle;
 pub mod maven;
 pub mod mix;
 pub mod npm;
-pub mod nuget;
+// NOTE: `nuget` manifest reader migrated to `crate::ecosystem::nuget` in Phase 2+3.
 pub mod sbt;
-pub mod opam;
+// NOTE: `opam` manifest reader migrated to `crate::ecosystem::opam` in Phase 2+3.
 pub mod gleam;
-pub mod zig_zon;
+// NOTE: `zig_zon` manifest reader migrated to `crate::ecosystem::zig_pkg` in Phase 2+3.
 pub mod clojure;
-pub mod rockspec;
-pub mod pubspec;
-pub mod pyproject;
-pub mod swift_pm;
+// NOTE: `rockspec` manifest reader migrated to `crate::ecosystem::luarocks` in Phase 2+3.
+// NOTE: `pubspec` manifest reader migrated to `crate::ecosystem::pub_pkg` in Phase 2+3.
+// NOTE: `pyproject` manifest reader migrated to `crate::ecosystem::pypi` in Phase 2+3.
+// NOTE: `swift_pm` manifest reader migrated to `crate::ecosystem::spm` in Phase 2+3.
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
@@ -175,24 +176,24 @@ pub struct PackageManifest {
 fn all_readers() -> Vec<Box<dyn ManifestReader>> {
     vec![
         Box::new(npm::NpmManifest),
-        Box::new(cargo::CargoManifest),
-        Box::new(nuget::NuGetManifest),
-        Box::new(go_mod::GoModManifest),
-        Box::new(pyproject::PyProjectManifest),
+        Box::new(crate::ecosystem::cargo::CargoManifest),
+        Box::new(crate::ecosystem::nuget::NuGetManifest),
+        Box::new(crate::ecosystem::go_mod::GoModManifest),
+        Box::new(crate::ecosystem::pypi::PyProjectManifest),
         Box::new(gradle::GradleManifest),
         Box::new(maven::MavenManifest),
-        Box::new(gemfile::GemfileManifest),
-        Box::new(composer::ComposerManifest),
-        Box::new(swift_pm::SwiftPMManifest),
-        Box::new(pubspec::PubspecManifest),
+        Box::new(crate::ecosystem::rubygems::GemfileManifest),
+        Box::new(crate::ecosystem::composer::ComposerManifest),
+        Box::new(crate::ecosystem::spm::SwiftPMManifest),
+        Box::new(crate::ecosystem::pub_pkg::PubspecManifest),
         Box::new(mix::MixManifest),
         Box::new(sbt::SbtManifest),
-        Box::new(opam::OpamManifest),
+        Box::new(crate::ecosystem::opam::OpamManifest),
         Box::new(gleam::GleamManifest),
-        Box::new(zig_zon::ZigZonManifest),
+        Box::new(crate::ecosystem::zig_pkg::ZigZonManifest),
         Box::new(clojure::ClojureManifest),
-        Box::new(rockspec::RockspecManifest),
-        Box::new(description::DescriptionManifest),
+        Box::new(crate::ecosystem::luarocks::RockspecManifest),
+        Box::new(crate::ecosystem::cran::DescriptionManifest),
     ]
 }
 

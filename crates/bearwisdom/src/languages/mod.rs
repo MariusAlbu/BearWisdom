@@ -106,24 +106,6 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// are identifiers that appear in code but are never project-defined.
     fn externals(&self) -> &'static [&'static str] { &[] }
 
-    /// Dependency-gated framework globals. Given the project's declared
-    /// dependencies, returns names injected by frameworks/libraries that should
-    /// be classified as external. Examples: Spring annotations when
-    /// `org.springframework` is a dep, Jest globals when `jest` is a dep.
-    ///
-    /// **DEPRECATED — scheduled for removal in Phase 4 of the manifest-first
-    /// externals plan.** The permanent replacement is `externals_locator`,
-    /// External source locator for this language's package ecosystem.
-    /// When present, the indexer uses it to find on-disk source for every
-    /// dependency declared in the project's manifest and indexes that
-    /// source with `origin='external'`. Languages without a package
-    /// ecosystem (Bash, VBA, Cobol, SQL, Make, Dockerfile) return `None`.
-    fn externals_locator(
-        &self,
-    ) -> Option<Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
-        None
-    }
-
     /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
     /// be counted in the coverage denominator when it appears as a direct child of
     /// the given parent kind.

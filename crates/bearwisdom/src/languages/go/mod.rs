@@ -100,14 +100,6 @@ impl LanguagePlugin for GoPlugin {
         Some(std::sync::Arc::new(resolve::GoResolver))
     }
 
-    fn externals_locator(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
-        Some(std::sync::Arc::new(
-            crate::indexer::externals::GoExternalsLocator,
-        ))
-    }
-
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
         vec![
             Box::new(connectors::GoRouteConnector),

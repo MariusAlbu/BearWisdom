@@ -79,11 +79,4 @@ impl LanguagePlugin for HaskellPlugin {
         Some(std::sync::Arc::new(resolve::HaskellResolver))
     }
 
-    fn externals_locator(
-        &self,
-    ) -> Option<std::sync::Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
-        Some(std::sync::Arc::new(
-            crate::indexer::externals::HaskellExternalsLocator,
-        ))
-    }
 }
