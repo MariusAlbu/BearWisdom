@@ -22,9 +22,67 @@ pub mod extract;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+use crate::indexer::resolve::engine::{FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup};
+use crate::indexer::project_context::ProjectContext;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
+
+// ---------------------------------------------------------------------------
+// VueResolver — wraps TypeScriptResolver, claims "vue" as its language_id.
+//
+// Vue SFC template refs (language = "vue") go through this resolver instead
+// of falling through with no resolver at all.  All logic delegates to
+// TypeScriptResolver; the builtin check in `infer_external_namespace` fires
+// for `.vue` files automatically via the `file_ctx.file_path` check.
+// ---------------------------------------------------------------------------
+pub(crate) struct VueResolver;
+
+impl LanguageResolver for VueResolver {
+    fn language_ids(&self) -> &[&str] {
+        &["vue"]
+    }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> FileContext {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .build_file_context(file, project_ctx)
+    }
+
+    fn resolve(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .resolve(file_ctx, ref_ctx, lookup)
+    }
+
+    fn infer_external_namespace(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .infer_external_namespace(file_ctx, ref_ctx, project_ctx)
+    }
+
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .infer_external_namespace_with_lookup(file_ctx, ref_ctx, project_ctx, lookup)
+    }
+}
 
 pub struct VuePlugin;
 
@@ -90,7 +148,7 @@ impl LanguagePlugin for VuePlugin {
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
+        Some(std::sync::Arc::new(VueResolver))
     }
 
     fn externals_locator(

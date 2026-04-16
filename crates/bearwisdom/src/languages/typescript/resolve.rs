@@ -457,6 +457,17 @@ impl LanguageResolver for TypeScriptResolver {
             return Some("runtime".to_string());
         }
 
+        // Vue composition API macros, template instance properties ($t, $emit,
+        // etc.), and Inertia helpers are compiler-injected globals inside Vue
+        // SFCs.  They live in node_modules/vue (or @inertiajs/vue3) but are
+        // often used without an import (script-setup macros) or as this.$x
+        // template sugar.  Classify as "builtin" when the host file is .vue.
+        if file_ctx.file_path.ends_with(".vue")
+            && crate::languages::vue::builtins::is_vue_builtin(target)
+        {
+            return Some("builtin".to_string());
+        }
+
         // If the ref itself carries a module path, check it directly.
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if builtins::is_bare_specifier(module) {

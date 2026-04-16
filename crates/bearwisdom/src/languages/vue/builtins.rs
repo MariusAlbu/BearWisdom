@@ -13,7 +13,10 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 
 /// Check whether a name is a Vue Composition API or Vue runtime builtin that
 /// will never appear in the project symbol index.
-pub(super) fn is_vue_builtin(name: &str) -> bool {
+///
+/// This is called from the TypeScript resolver when the host file is `.vue` to
+/// classify embedded `<script setup>` refs without explicit imports.
+pub(crate) fn is_vue_builtin(name: &str) -> bool {
     let root = name.split('.').next().unwrap_or(name);
 
     // Delegate JS/TS runtime globals first.
@@ -110,5 +113,49 @@ pub(super) fn is_vue_builtin(name: &str) -> bool {
             | "mount"
             | "shallowMount"
             | "flushPromises"
+            // ── Vue template instance properties ($-prefixed) ─────────────────
+            // Injected by the Vue runtime on `this` in Options API and
+            // accessible as `$x` in templates. Never in the project symbol index.
+            | "$el"
+            | "$refs"
+            | "$attrs"
+            | "$slots"
+            | "$emit"
+            | "$forceUpdate"
+            | "$nextTick"
+            | "$options"
+            | "$parent"
+            | "$props"
+            | "$root"
+            | "$data"
+            | "$watch"
+            | "$set"
+            | "$delete"
+            | "$on"
+            | "$once"
+            | "$off"
+            // ── Vue I18n ──────────────────────────────────────────────────────
+            | "$t"
+            | "$tc"
+            | "$te"
+            | "$d"
+            | "$n"
+            | "$i18n"
+            | "useI18n"
+            // ── VueRouter instance properties ────────────────────────────────
+            | "$router"
+            | "$route"
+            // ── Pinia instance ────────────────────────────────────────────────
+            | "$store"
+            // ── Inertia.js (@inertiajs/vue3) ─────────────────────────────────
+            // Components and composables injected without explicit import in
+            // script setup or accessed bare in templates.
+            | "InertiaLink"
+            | "Link"
+            | "Head"
+            | "usePage"
+            | "useForm"
+            | "router"
+            | "route"
     )
 }
