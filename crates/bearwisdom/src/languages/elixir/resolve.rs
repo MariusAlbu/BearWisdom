@@ -303,6 +303,21 @@ impl LanguageResolver for ElixirResolver {
             if module.is_empty() {
                 continue;
             }
+
+            // Phoenix test-case wrappers (e.g. `ChangelogWeb.ConnCase`) are
+            // internal project modules, so the external-module guard below
+            // would skip them. Handle them first, before that guard.
+            //
+            // These wrappers use `ExUnit.CaseTemplate` + `using do` blocks
+            // that import `Phoenix.ConnTest` and alias `Router.Helpers` as
+            // `Routes`. BearWisdom can't expand macros, so we detect the
+            // wrapper by name convention and apply the ConnTest injection set.
+            if builtins::is_phoenix_test_case_wrapper(module)
+                && builtins::is_conn_case_injected(target)
+            {
+                return Some("Phoenix".to_string());
+            }
+
             // Only check modules confirmed as external dependencies.
             let root = module.split('.').next().unwrap_or(module);
             let is_external_module = if let Some(ctx) = project_ctx {

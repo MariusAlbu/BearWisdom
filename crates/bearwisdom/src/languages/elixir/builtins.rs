@@ -339,6 +339,46 @@ pub(super) fn is_elixir_builtin(name: &str) -> bool {
     )
 }
 
+/// Check whether a module name matches the Phoenix test-case wrapper pattern.
+///
+/// Phoenix projects conventionally define `*ConnCase`, `*ChannelCase`, and
+/// `*DataCase` modules in `test/support/` that re-export `Phoenix.ConnTest`
+/// helpers via `using do ... import Phoenix.ConnTest ... end`. These modules
+/// are internal to the project so the external-module guard in the resolver
+/// would skip them — this predicate identifies them by convention.
+pub(super) fn is_phoenix_test_case_wrapper(module: &str) -> bool {
+    // Match the conventional suffix patterns used in Phoenix projects.
+    module.ends_with("ConnCase")
+        || module.ends_with("ChannelCase")
+        || module.ends_with("ControllerCase")
+        || module.ends_with("ViewCase")
+        || module.ends_with("LiveCase")
+}
+
+/// Check whether `name` is a symbol injected by a Phoenix test-case wrapper.
+///
+/// Called when the file has `use *ConnCase` (or similar), meaning Phoenix.ConnTest
+/// and Plug.Conn helpers are available, plus the `Routes` alias to Router.Helpers.
+pub(super) fn is_conn_case_injected(name: &str) -> bool {
+    // All ConnTest helpers
+    matches!(
+        name,
+        "html_response" | "json_response" | "text_response" | "response"
+        | "redirected_to" | "get" | "post" | "put" | "patch" | "delete"
+        | "recycle" | "build_conn" | "assert_error_sent"
+        | "dispatch" | "bypass_through"
+        | "put_req_header" | "get_flash" | "put_flash"
+        | "conn" | "resp_body"
+        // Plug.Conn helpers typically imported in ConnCase
+        | "send_resp" | "put_resp_header" | "assign" | "fetch_session"
+        | "get_session" | "put_session" | "get_resp_header"
+        // `Routes` — injected as `alias MyAppWeb.Router.Helpers, as: Routes`
+        // in almost every Phoenix ConnCase; it resolves to a compile-time
+        // Helpers module we synthesise in phoenix_routes.rs.
+        | "Routes"
+    )
+}
+
 /// Check whether a bare function name is injected by a `use Module` macro.
 ///
 /// When Elixir code does `use Phoenix.Controller`, the macro injects functions
@@ -404,12 +444,20 @@ pub(super) fn is_use_injected(module: &str, name: &str) -> bool {
             | "group_by" | "having" | "limit" | "offset" | "distinct"
             | "subquery" | "dynamic" | "first" | "last"
         ),
-        // Phoenix.ConnTest — injects test helpers
+        // Phoenix.ConnTest — injects test helpers.
+        // `conn` appears as a zero-arity function call in the tree-sitter AST
+        // because Elixir identifiers and zero-arg calls are syntactically
+        // identical; it's actually the setup-injected connection variable.
+        // `resp_body` is a Plug.Conn struct field but is also emitted as a
+        // Calls edge when accessed without a dot receiver in some macro contexts.
         "Phoenix.ConnTest" => matches!(
             name,
             "html_response" | "json_response" | "text_response" | "response"
             | "redirected_to" | "get" | "post" | "put" | "patch" | "delete"
             | "recycle" | "build_conn" | "assert_error_sent"
+            | "dispatch" | "bypass_through"
+            | "put_req_header" | "get_flash" | "put_flash"
+            | "conn" | "resp_body"
         ),
         // Phoenix.Router — injects route DSL
         m if m == "Phoenix.Router" || m.ends_with("Router") => matches!(
@@ -418,12 +466,17 @@ pub(super) fn is_use_injected(module: &str, name: &str) -> bool {
             | "resources" | "scope" | "pipe_through" | "forward" | "live"
             | "pipeline" | "plug" | "match" | "connect" | "trace"
         ),
-        // Plug.Conn — injects connection helpers
+        // Plug.Conn — injects connection helpers and struct fields.
+        // `resp_body` is a struct field on %Plug.Conn{} and is sometimes emitted
+        // as a Calls ref by the extractor when accessed via pattern matching or
+        // local variable lookup rather than explicit dot syntax.
         "Plug.Conn" => matches!(
             name,
             "send_resp" | "put_resp_header" | "put_resp_content_type"
             | "resp" | "halt" | "assign" | "fetch_query_params"
             | "fetch_session" | "get_session" | "put_session" | "delete_session"
+            | "resp_body" | "status" | "halted" | "assigns" | "params"
+            | "get_resp_header" | "put_req_header" | "delete_req_header"
         ),
         // ExUnit.Case — test DSL (supplements is_elixir_builtin)
         "ExUnit.Case" | "ExUnit.CaseTemplate" => matches!(
