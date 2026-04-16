@@ -13,11 +13,16 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
 }
 
 /// Build a `HashSet<&'static str>` of ALL names that should be classified as
-/// external for a given language. Combines three sources:
+/// external for a given language. Combines two sources:
 ///
 ///   1. **Primitives** — language keyword types (from `LanguagePlugin::primitives()`)
-///   2. **Externals** — always-external runtime globals (from `LanguagePlugin::externals()`)
-///   3. **Query builtins** — keywords extracted from tree-sitter highlights.scm at build time
+///   2. **Query builtins** — keywords extracted from tree-sitter highlights.scm at build time
+///
+/// The third source that used to live here — `LanguagePlugin::externals()`
+/// — was deleted in Phase 6. Always-external runtime globals (jest, DOM,
+/// Input/OS in GDScript, ...) now come from indexed stdlib ecosystems
+/// registered in `EcosystemRegistry`, so the resolver finds them as real
+/// symbols rather than through a hardcoded list.
 ///
 /// Dependency-gated framework globals are added separately by the resolution
 /// engine via `LanguagePlugin::framework_globals()`.
@@ -25,10 +30,6 @@ pub fn primitives_set_for_language(lang: &str) -> std::collections::HashSet<&'st
     let plugin = crate::languages::default_registry().get(lang);
     let mut set: std::collections::HashSet<&'static str> =
         plugin.primitives().iter().copied().collect();
-    // Merge in always-external runtime globals.
-    for name in plugin.externals() {
-        set.insert(name);
-    }
     // Merge in query-extracted builtins from tree-sitter .scm files.
     for name in super::query_builtins::query_builtins_for_language(lang) {
         set.insert(name);

@@ -12,7 +12,6 @@ pub mod primitives;
 pub mod extract;
 
 mod builtins;
-pub(crate) mod externals;
 pub(crate) mod resolve;
 
 pub use resolve::FortranResolver;
@@ -67,10 +66,6 @@ impl LanguagePlugin for FortranPlugin {
             "INTEGER", "REAL", "DOUBLE", "COMPLEX", "LOGICAL", "CHARACTER",
             "DOUBLEPRECISION", "double precision",
         ]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

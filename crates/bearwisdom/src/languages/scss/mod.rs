@@ -5,7 +5,6 @@
 
 pub(crate) mod builtins;
 pub mod primitives;
-pub(crate) mod externals;
 pub mod extract;
 pub mod resolve;
 
@@ -65,10 +64,6 @@ impl LanguagePlugin for ScssPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

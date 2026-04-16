@@ -2,7 +2,6 @@
 
 mod calls;
 pub(crate) mod decorators;
-pub(crate) mod externals;
 mod helpers;
 pub(crate) mod primitives;
 mod symbols;
@@ -96,10 +95,6 @@ impl LanguagePlugin for ScalaPlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

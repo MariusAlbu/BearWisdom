@@ -5,7 +5,6 @@
 //! type synonyms, imports, and function-application calls.
 
 mod builtins;
-pub(crate) mod externals;
 pub(crate) mod resolve;
 pub mod primitives;
 pub mod extract;
@@ -69,10 +68,6 @@ impl LanguagePlugin for HaskellPlugin {
             "Word8", "Word16", "Word32", "Word64",
             "Natural", "Rational", "Complex",
         ]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

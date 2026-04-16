@@ -5,7 +5,6 @@
 //! TSX and JSX use their respective grammars for JSX support.
 
 // Extraction sub-modules
-pub(crate) mod externals;
 pub mod connectors;
 mod calls;
 pub(crate) mod decorators;
@@ -122,10 +121,6 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

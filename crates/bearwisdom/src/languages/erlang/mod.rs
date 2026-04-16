@@ -11,7 +11,6 @@
 //! - `import_attribute` / `pp_include` → Imports
 
 mod builtins;
-pub(crate) mod externals;
 pub(crate) mod resolve;
 pub mod primitives;
 pub mod extract;
@@ -68,10 +67,6 @@ impl LanguagePlugin for ErlangPlugin {
             "iolist", "iodata", "string", "char", "byte", "timeout",
             "any", "none", "term", "number",
         ]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

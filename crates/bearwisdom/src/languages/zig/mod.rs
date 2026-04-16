@@ -21,7 +21,6 @@ pub mod primitives;
 pub mod extract;
 
 mod builtins;
-pub(crate) mod externals;
 pub(crate) mod resolve;
 
 pub use resolve::ZigResolver;
@@ -90,10 +89,6 @@ impl LanguagePlugin for ZigPlugin {
             "c_ushort", "c_uint", "c_ulong", "c_ulonglong",
             "c_char", "c_longdouble",
         ]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

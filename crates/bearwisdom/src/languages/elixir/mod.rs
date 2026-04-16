@@ -2,7 +2,6 @@
 
 mod helpers;
 pub(crate) mod connectors;
-pub(crate) mod externals;
 pub(crate) mod phoenix_routes;
 pub(crate) mod primitives;
 pub mod extract;
@@ -75,10 +74,6 @@ impl LanguagePlugin for ElixirPlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

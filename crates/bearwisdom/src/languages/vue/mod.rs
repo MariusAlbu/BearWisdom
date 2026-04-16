@@ -14,7 +14,6 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub(crate) mod builtins;
-pub(crate) mod externals;
 pub mod connectors;
 pub mod extract;
 
@@ -141,10 +140,6 @@ impl LanguagePlugin for VuePlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         crate::languages::typescript::primitives::PRIMITIVES
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

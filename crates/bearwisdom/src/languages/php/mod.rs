@@ -11,7 +11,6 @@ pub mod extract;
 mod builtins;
 mod chain;
 pub mod connectors;
-pub(crate) mod externals;
 pub mod resolve;
 
 #[cfg(test)]
@@ -105,10 +104,6 @@ impl LanguagePlugin for PhpPlugin {
 
     fn primitives(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

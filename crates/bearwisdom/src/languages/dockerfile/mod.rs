@@ -1,7 +1,6 @@
 //! Dockerfile language plugin.
 
 mod builtins;
-pub(crate) mod externals;
 pub mod connectors;
 pub mod primitives;
 pub mod embedded;
@@ -68,10 +67,6 @@ impl LanguagePlugin for DockerfilePlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

@@ -6,7 +6,6 @@
 pub mod extract;
 
 mod builtins;
-pub(crate) mod externals;
 pub(crate) mod resolve;
 
 #[cfg(test)]
@@ -61,10 +60,6 @@ impl LanguagePlugin for PrologPlugin {
 
     fn builtin_type_names(&self) -> &[&str] {
         &[]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

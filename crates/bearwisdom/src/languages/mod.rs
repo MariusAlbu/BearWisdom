@@ -100,12 +100,6 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// keywords, wrapper types, and generic type parameter names.
     fn primitives(&self) -> &'static [&'static str] { &[] }
 
-    /// Runtime/library globals that are always external for this language,
-    /// regardless of project dependencies. Examples: `console`, `window` for
-    /// JS/TS; `Logger` for JVM languages. NOT primitives (type names) — these
-    /// are identifiers that appear in code but are never project-defined.
-    fn externals(&self) -> &'static [&'static str] { &[] }
-
     /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
     /// be counted in the coverage denominator when it appears as a direct child of
     /// the given parent kind.

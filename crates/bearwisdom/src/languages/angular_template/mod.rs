@@ -74,10 +74,6 @@ impl LanguagePlugin for AngularTemplatePlugin {
         crate::languages::typescript::primitives::PRIMITIVES
     }
 
-    fn externals(&self) -> &'static [&'static str] {
-        crate::languages::typescript::externals::EXTERNALS
-    }
-
     fn resolver(
         &self,
     ) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

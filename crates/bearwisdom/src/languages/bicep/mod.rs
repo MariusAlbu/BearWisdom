@@ -2,7 +2,6 @@
 
 mod builtins;
 pub mod embedded;
-pub(crate) mod externals;
 pub mod extract;
 pub mod resolve;
 
@@ -88,10 +87,6 @@ impl LanguagePlugin for BicepPlugin {
             // ARM common types (frequently referenced)
             "resource",
         ]
-    }
-
-    fn externals(&self) -> &'static [&'static str] {
-        externals::EXTERNALS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
