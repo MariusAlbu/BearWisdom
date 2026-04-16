@@ -108,8 +108,13 @@ pub fn hash_diff(db: &Database, project_root: &Path) -> Result<ChangeSet> {
     // (path -> (id, hash, mtime, size))
     let mut existing: HashMap<String, (i64, String, Option<i64>, Option<i64>)> = HashMap::new();
     {
+        // Only internal (project-tree) files participate in changeset diffing.
+        // External-origin rows (from stdlib + package ecosystems) live
+        // outside the project tree and are re-discovered/re-walked on every
+        // full index; they must not appear as "deleted" here just because
+        // their path isn't found under project_root.
         let mut stmt = db
-            .prepare("SELECT id, path, hash, mtime, size FROM files")
+            .prepare("SELECT id, path, hash, mtime, size FROM files WHERE origin = 'internal'")
             .context("Failed to query files")?;
         let rows = stmt
             .query_map([], |row| {

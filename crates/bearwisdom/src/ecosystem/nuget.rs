@@ -537,6 +537,17 @@ fn largest_subdir(dir: &Path) -> Option<PathBuf> {
     subs.into_iter().next_back()
 }
 
+/// Public shim so the DotnetStdlib ecosystem can reuse this DLL→ParsedFile
+/// synthesizer for .NET reference assemblies. Identical contract to the
+/// private helper.
+pub(crate) fn parse_dotnet_dll_public(
+    dll_path: &Path,
+    package_name: &str,
+    lang_id: &str,
+) -> std::result::Result<crate::types::ParsedFile, String> {
+    parse_dotnet_dll(dll_path, package_name, lang_id)
+}
+
 fn parse_dotnet_dll(
     dll_path: &Path,
     package_name: &str,

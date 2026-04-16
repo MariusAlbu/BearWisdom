@@ -25,41 +25,77 @@ use crate::indexer::externals::ExternalDepRoot;
 use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 
+pub mod android_sdk;
 pub mod cabal;
 pub mod cargo;
+pub mod clojure_core;
 pub mod composer;
 pub mod cpan;
+pub mod cpython_stdlib;
 pub mod cran;
+pub mod dotnet_stdlib;
+pub mod elixir_stdlib;
+pub mod erlang_otp;
 pub mod go_mod;
+pub mod godot_api;
+pub mod groovy_stdlib;
 pub mod hex;
+pub mod jdk_src;
+pub mod kotlin_stdlib;
 pub mod luarocks;
 pub mod maven;
 pub mod nimble;
 pub mod npm;
 pub mod nuget;
 pub mod opam;
+pub mod php_stubs;
+pub mod posix_headers;
 pub mod pub_pkg;
 pub mod pypi;
+pub mod ruby_stdlib;
 pub mod rubygems;
+pub mod rust_stdlib;
+pub mod scala_stdlib;
 pub mod spm;
+pub mod swift_foundation;
+pub mod ts_lib_dom;
+pub mod vba_typelibs;
 pub mod zig_pkg;
+pub use android_sdk::AndroidSdkEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
+pub use clojure_core::ClojureCoreEcosystem;
 pub use composer::ComposerEcosystem;
 pub use cpan::CpanEcosystem;
+pub use cpython_stdlib::CpythonStdlibEcosystem;
 pub use cran::CranEcosystem;
+pub use dotnet_stdlib::DotnetStdlibEcosystem;
+pub use elixir_stdlib::ElixirStdlibEcosystem;
+pub use erlang_otp::ErlangOtpEcosystem;
 pub use go_mod::GoModEcosystem;
+pub use godot_api::GodotApiEcosystem;
+pub use groovy_stdlib::GroovyStdlibEcosystem;
 pub use hex::HexEcosystem;
+pub use jdk_src::JdkSrcEcosystem;
+pub use kotlin_stdlib::KotlinStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
 pub use maven::MavenEcosystem;
 pub use nimble::NimbleEcosystem;
 pub use npm::NpmEcosystem;
 pub use nuget::NugetEcosystem;
 pub use opam::OpamEcosystem;
+pub use php_stubs::PhpStubsEcosystem;
+pub use posix_headers::{MsvcHeadersEcosystem, PosixHeadersEcosystem};
 pub use pub_pkg::PubEcosystem;
 pub use pypi::PypiEcosystem;
+pub use ruby_stdlib::RubyStdlibEcosystem;
 pub use rubygems::RubygemsEcosystem;
+pub use rust_stdlib::RustStdlibEcosystem;
+pub use scala_stdlib::ScalaStdlibEcosystem;
 pub use spm::SpmEcosystem;
+pub use swift_foundation::SwiftFoundationEcosystem;
+pub use ts_lib_dom::TsLibDomEcosystem;
+pub use vba_typelibs::VbaTypelibsEcosystem;
 pub use zig_pkg::ZigPkgEcosystem;
 
 // ---------------------------------------------------------------------------
@@ -339,6 +375,25 @@ pub fn default_locator(
         "opam" => Some(Arc::new(OpamEcosystem)),
         "luarocks" => Some(Arc::new(LuarocksEcosystem)),
         "zig-pkg" => Some(Arc::new(ZigPkgEcosystem)),
+        "godot-api" => Some(Arc::new(GodotApiEcosystem)),
+        "android-sdk" => Some(Arc::new(AndroidSdkEcosystem)),
+        "kotlin-stdlib" => Some(Arc::new(KotlinStdlibEcosystem)),
+        "rust-stdlib" => Some(Arc::new(RustStdlibEcosystem)),
+        "cpython-stdlib" => Some(Arc::new(CpythonStdlibEcosystem)),
+        "jdk-src" => Some(Arc::new(JdkSrcEcosystem)),
+        "ts-lib-dom" => Some(Arc::new(TsLibDomEcosystem)),
+        "ruby-stdlib" => Some(Arc::new(RubyStdlibEcosystem)),
+        "posix-headers" => Some(Arc::new(PosixHeadersEcosystem)),
+        "msvc-headers" => Some(Arc::new(MsvcHeadersEcosystem)),
+        "dotnet-stdlib" => Some(Arc::new(DotnetStdlibEcosystem)),
+        "php-stubs" => Some(Arc::new(PhpStubsEcosystem)),
+        "scala-stdlib" => Some(Arc::new(ScalaStdlibEcosystem)),
+        "groovy-stdlib" => Some(Arc::new(GroovyStdlibEcosystem)),
+        "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
+        "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
+        "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
+        "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
+        "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
         _ => None,
     }
 }
@@ -369,6 +424,27 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(OpamEcosystem));
         reg.register(Arc::new(LuarocksEcosystem));
         reg.register(Arc::new(ZigPkgEcosystem));
+        reg.register(Arc::new(GodotApiEcosystem));
+        // Stdlib ecosystems must register AFTER their base package ecosystem
+        // (Maven) for TransitiveOn activation to resolve in a single pass.
+        reg.register(Arc::new(KotlinStdlibEcosystem));
+        reg.register(Arc::new(AndroidSdkEcosystem));
+        reg.register(Arc::new(RustStdlibEcosystem));
+        reg.register(Arc::new(CpythonStdlibEcosystem));
+        reg.register(Arc::new(JdkSrcEcosystem));
+        reg.register(Arc::new(TsLibDomEcosystem));
+        reg.register(Arc::new(RubyStdlibEcosystem));
+        reg.register(Arc::new(PosixHeadersEcosystem));
+        reg.register(Arc::new(MsvcHeadersEcosystem));
+        reg.register(Arc::new(DotnetStdlibEcosystem));
+        reg.register(Arc::new(PhpStubsEcosystem));
+        reg.register(Arc::new(ScalaStdlibEcosystem));
+        reg.register(Arc::new(GroovyStdlibEcosystem));
+        reg.register(Arc::new(ClojureCoreEcosystem));
+        reg.register(Arc::new(ErlangOtpEcosystem));
+        reg.register(Arc::new(ElixirStdlibEcosystem));
+        reg.register(Arc::new(SwiftFoundationEcosystem));
+        reg.register(Arc::new(VbaTypelibsEcosystem));
         reg
     })
 }

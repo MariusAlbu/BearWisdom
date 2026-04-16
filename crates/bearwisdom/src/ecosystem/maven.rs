@@ -123,8 +123,7 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     let Some(repo) = maven_local_repo() else {
         debug!("No Maven local repository discovered; skipping Maven externals");
-        // Still try Android SDK — it's independent of the Maven repo.
-        return discover_android_sdk_roots();
+        return Vec::new();
     };
     let cache_base = repo.parent().unwrap_or(&repo).join("bearwisdom-sources-cache");
     let _ = std::fs::create_dir_all(&cache_base);
@@ -179,9 +178,6 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
         };
         resolve_and_push(&repo, &cache_base, &coord, &mut roots, &mut seen);
     }
-
-    // --- Android SDK (Kotlin/Java Android projects) ---------------------
-    roots.extend(discover_android_sdk_roots());
 
     debug!("Maven: {} total external dep roots", roots.len());
     roots
@@ -374,73 +370,19 @@ fn collect_clojure_deps_recursive(
 }
 
 // ---------------------------------------------------------------------------
-// Android SDK discovery (moved from languages/kotlin/externals.rs)
-// Promoted to its own Ecosystem in Phase 5.
-// ---------------------------------------------------------------------------
-
-fn discover_android_sdk_roots() -> Vec<ExternalDepRoot> {
-    let Some(sdk_root) = android_home() else { return Vec::new() };
-    let platforms_dir = sdk_root.join("platforms");
-    if !platforms_dir.is_dir() { return Vec::new() }
-
-    let api_level = match highest_api_level(&platforms_dir) {
-        Some(v) => v,
-        None => return Vec::new(),
-    };
-
-    let platform_dir = platforms_dir.join(format!("android-{api_level}"));
-    let jar_path = platform_dir.join("android.jar");
-    if !jar_path.is_file() { return Vec::new() }
-
-    let cache_base = sdk_root.join("bearwisdom-android-cache");
-    let cache_dir = cache_base.join(format!("android-{api_level}"));
-    if !cache_dir.exists() || is_cache_stale(&jar_path, &cache_dir) {
-        if let Err(e) = extract_java_sources_jar(&jar_path, &cache_dir) {
-            debug!("Failed to extract android.jar: {e}");
-            return Vec::new();
-        }
-    }
-
-    debug!("Android SDK API {api_level} registered at {}", cache_dir.display());
-    vec![ExternalDepRoot {
-        module_path: format!("android-sdk:{api_level}"),
-        version: api_level.to_string(),
-        root: cache_dir,
-        ecosystem: ID.as_str(),
-        package_id: None,
-    }]
-}
-
-fn android_home() -> Option<PathBuf> {
-    for var in ["ANDROID_HOME", "ANDROID_SDK_ROOT"] {
-        if let Ok(val) = std::env::var(var) {
-            let p = PathBuf::from(val);
-            if p.is_dir() { return Some(p) }
-        }
-    }
-    None
-}
-
-fn highest_api_level(platforms_dir: &Path) -> Option<u32> {
-    let entries = std::fs::read_dir(platforms_dir).ok()?;
-    entries
-        .flatten()
-        .filter_map(|e| {
-            let name = e.file_name();
-            let s = name.to_str()?;
-            let n: u32 = s.strip_prefix("android-")?.parse().ok()?;
-            if e.path().is_dir() { Some(n) } else { None }
-        })
-        .max()
-}
-
-// ---------------------------------------------------------------------------
 // Walk: single implementation handling all JVM languages; per-file language
 // detection by extension so a Scala sources jar containing both .scala and
 // .java files tags each file correctly.
 // ---------------------------------------------------------------------------
 
 fn walk_maven_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    walk_generic_jvm_root(dep)
+}
+
+/// Walk any JVM source tree — reused by the Android SDK ecosystem whose
+/// extracted sources follow the exact same layout (Java + Kotlin + Scala +
+/// Clojure intermixed under a single cache dir).
+pub(crate) fn walk_generic_jvm_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
     walk_dir_bounded(&dep.root, &dep.root, dep, &mut out, 0);
     out

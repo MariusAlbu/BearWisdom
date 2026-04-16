@@ -11,7 +11,17 @@ fn incremental_detects_new_file() {
 
     // Full index first.
     crate::indexer::full::full_index(&mut db, dir.path(), None, None, None).unwrap();
-    let count1: u32 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+    // Count only project files — stdlib/ecosystem ecosystems may also
+    // populate the `files` table with origin='external' rows, which are
+    // not seen by incremental's changeset diff.
+    let count1: u32 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
 
     // Add a new file.
     fs::write(dir.path().join("b.cs"), "namespace App { class Bar {} }").unwrap();
@@ -20,7 +30,14 @@ fn incremental_detects_new_file() {
     assert_eq!(stats.files_added, 1);
     assert_eq!(stats.files_unchanged, count1);
 
-    let count2: u32 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+    let count2: u32 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert_eq!(count2, count1 + 1);
 }
 
@@ -55,7 +72,14 @@ fn incremental_detects_deleted_file() {
     let stats = incremental_index(&mut db, dir.path(), None).unwrap();
     assert_eq!(stats.files_deleted, 1);
 
-    let count: u32 = db.conn().query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0)).unwrap();
+    let count: u32 = db
+        .conn()
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap();
     assert_eq!(count, 1);
 }
 
@@ -101,7 +125,11 @@ fn reindex_files_handles_single_create() {
 
     let count: u32 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(count, 2);
 }
@@ -159,7 +187,11 @@ fn reindex_files_handles_delete() {
 
     let count: u32 = db
         .conn()
-        .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+        .query_row(
+            "SELECT COUNT(*) FROM files WHERE origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
         .unwrap();
     assert_eq!(count, 1);
 }
