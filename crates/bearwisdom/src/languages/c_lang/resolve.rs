@@ -1,31 +1,36 @@
 // =============================================================================
-// indexer/resolve/rules/c_lang/mod.rs — C/C++ resolution rules
+// indexer/resolve/rules/c_lang/mod.rs -- C/C++ resolution rules
 //
 // Scope rules for C/C++:
 //
-//   1. Scope chain walk: innermost namespace/class → outermost.
-//   2. `#include`-based import resolution: system headers → stdlib; user
-//      headers → project files.
-//   3. Namespace-qualified names: `std::vector` → external; `MyNS::Foo` → index.
+//   1. Scope chain walk: innermost namespace/class -> outermost.
+//   2. `#include`-based import resolution: system headers -> stdlib; user
+//      headers -> project files.
+//   3. Namespace-qualified names: `std::vector` -> external; `MyNS::Foo` -> index.
 //   4. Template parameter detection: single uppercase letters and known
 //      template-param names are classified as external (template_param namespace).
 //
 // C/C++ include model:
-//   `#include <foo.h>`   → EdgeKind::Imports, target_name = "foo.h"  (system)
-//   `#include "bar.h"`   → EdgeKind::Imports, target_name = "bar.h"  (project)
+//   `#include <foo.h>`   -> EdgeKind::Imports, target_name = "foo.h"  (system)
+//   `#include "bar.h"`   -> EdgeKind::Imports, target_name = "bar.h"  (project)
 //
 // The extractor does not always set `module` for includes; we rely on the
 // target_name (the header path) to distinguish system from project headers.
 // =============================================================================
 
-
 use super::builtins;
+use crate::indexer::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
-    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
-    SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
+
+/// Sentinel stored in `FileContext::file_namespace` for C files inside an R
+/// package (project has a DESCRIPTION manifest). Lets `resolve()` and
+/// `infer_external_namespace()` gate R C API classification without threading
+/// `ProjectContext` through the resolution hot-path.
+const R_PACKAGE_SENTINEL: &str = "__r_package__";
 
 /// C/C++ language resolver.
 pub struct CLangResolver;
@@ -38,11 +43,11 @@ impl LanguageResolver for CLangResolver {
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         let mut imports = Vec::new();
 
-        // C/C++ uses `#include` — the extractor emits these as EdgeKind::Imports.
+        // C/C++ uses `#include` -- the extractor emits these as EdgeKind::Imports.
         // target_name = the header path (e.g., "stdio.h", "vector", "mylib/foo.h").
         for r in &file.refs {
             if r.kind != EdgeKind::Imports {
@@ -59,11 +64,25 @@ impl LanguageResolver for CLangResolver {
 
         // C/C++ files belong to no named namespace by default; namespace
         // declarations are per-block, not file-level.
+        //
+        // Exception: when the project has a DESCRIPTION manifest the C file
+        // lives inside an R package. Store a sentinel in file_namespace so
+        // resolve() / infer_external_namespace() can classify R C API
+        // symbols (SEXP, PROTECT, Rf_*, ...) without ProjectContext threading.
+        let file_namespace = if project_ctx
+            .map(|ctx| ctx.manifests.contains_key(&ManifestKind::Description))
+            .unwrap_or(false)
+        {
+            Some(R_PACKAGE_SENTINEL.to_string())
+        } else {
+            None
+        };
+
         FileContext {
             file_path: file.path.clone(),
             language: file.language.clone(),
             imports,
-            file_namespace: None,
+            file_namespace,
         }
     }
 
@@ -82,6 +101,14 @@ impl LanguageResolver for CLangResolver {
 
         // Template parameters and builtins are never in the index.
         if builtins::is_template_param(target) || builtins::is_c_builtin(target) {
+            return None;
+        }
+
+        // R C API symbols (Rinternals.h, Rdefines.h, R_ext/*.h) are never in
+        // the project index. Skip the index walk for R package projects.
+        if file_ctx.file_namespace.as_deref() == Some(R_PACKAGE_SENTINEL)
+            && builtins::is_r_c_api_symbol(target)
+        {
             return None;
         }
 
@@ -138,20 +165,31 @@ impl LanguageResolver for CLangResolver {
 
     fn infer_external_namespace(
         &self,
-        _file_ctx: &FileContext,
+        file_ctx: &FileContext,
         ref_ctx: &RefContext,
         _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        // Include directives — classify system headers as external.
+        // R C API symbols (Rinternals.h, Rdefines.h, R_ext/*.h).
+        // Only classify as external when the C file is inside an R package.
+        if file_ctx.file_namespace.as_deref() == Some(R_PACKAGE_SENTINEL)
+            && builtins::is_r_c_api_symbol(target)
+        {
+            return Some("r.c.api".to_string());
+        }
+
+        // Include directives -- classify system headers as external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let header = target.trim_matches(|c| c == '<' || c == '>' || c == '"');
             if builtins::is_system_header(header) {
                 return Some("stdlib".to_string());
             }
             // boost or other known-external headers.
-            if header.starts_with("boost/") || header.starts_with("gtest/") || header.starts_with("gmock/") {
+            if header.starts_with("boost/")
+                || header.starts_with("gtest/")
+                || header.starts_with("gmock/")
+            {
                 return Some("external".to_string());
             }
             return None;
