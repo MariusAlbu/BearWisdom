@@ -208,3 +208,74 @@ class Service {
             r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
         );
     }
+
+    #[test]
+    fn function_param_name_not_emitted_as_calls_ref() {
+        // `modifier = modifier` in a named argument must not emit `modifier` as a Calls ref.
+        // `modifier` is a function parameter — a local — not a callable symbol.
+        let src = r#"
+fun BottomNavigationBar(
+    navController: NavController,
+    modifier: Modifier = Modifier,
+) {
+    NavigationBar(
+        modifier = modifier,
+    ) { }
+}
+"#;
+        let r = extract::extract(src);
+        let calls_refs: Vec<_> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| rf.target_name.clone())
+            .collect();
+        assert!(
+            !calls_refs.contains(&"modifier".to_string()),
+            "modifier (function param) must not appear as Calls ref; refs: {calls_refs:?}"
+        );
+    }
+
+    #[test]
+    fn fq_chain_intermediate_segments_not_emitted() {
+        // `com.example.foo.SomeClass.doSomething()` — only `doSomething` (Calls)
+        // and `SomeClass` (TypeRef from emit_chain_type_ref) should be emitted.
+        // Package segments like `com`, `example`, `foo` must not appear as refs.
+        let src = r#"
+fun test() {
+    com.example.foo.SomeClass.doSomething()
+}
+"#;
+        let r = extract::extract(src);
+        let all_targets: Vec<_> = r.refs.iter()
+            .map(|rf| (rf.target_name.clone(), rf.kind))
+            .collect();
+        assert!(
+            !all_targets.iter().any(|(t, _)| t == "com"),
+            "`com` must not be emitted as a ref; refs with kinds: {all_targets:?}"
+        );
+        assert!(
+            !all_targets.iter().any(|(t, _)| t == "example"),
+            "`example` must not be emitted as a ref; refs with kinds: {all_targets:?}"
+        );
+    }
+
+    #[test]
+    fn local_val_not_emitted_as_calls_ref() {
+        // `val response = httpClient.get(url)` — subsequent uses of `response`
+        // (e.g. `response.body()`) must not emit `response` as a bare Calls ref.
+        let src = r#"
+fun fetch(url: String) {
+    val response = httpClient.get(url)
+    val body = response.body()
+    println(body)
+}
+"#;
+        let r = extract::extract(src);
+        let calls_refs: Vec<_> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| rf.target_name.clone())
+            .collect();
+        assert!(
+            !calls_refs.contains(&"response".to_string()),
+            "local `response` must not appear as bare Calls ref; refs: {calls_refs:?}"
+        );
+    }

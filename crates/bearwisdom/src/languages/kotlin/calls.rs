@@ -36,13 +36,23 @@ pub(super) fn extract_calls_from_body(
                         });
                     }
                 }
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                // Recurse only into argument nodes — NOT into the callee itself.
+                // The chain builder already captures the full callee chain, and
+                // recursing into the callee's navigation_expression would re-emit
+                // every intermediate chain segment as a Calls ref.
+                extract_call_arguments(&child, src, source_symbol_index, refs);
             }
 
             // `obj.method` or `obj.method()` — emit Calls for the navigation
             // expression when it is not itself wrapped in a call_expression.
             // `call_expression` already handles the `call_expression(navigation_expression)`
             // pattern; this arm catches standalone navigation access.
+            //
+            // Do NOT recurse into the navigation expression itself — `build_chain`
+            // already traverses the full receiver chain, and recursion would
+            // re-emit every nested navigation_expression's last segment as a Calls
+            // ref (e.g. `com.foo.bar.X.method` would emit `foo`, `bar`, `X`,
+            // `method` as separate Calls refs instead of just `method`).
             "navigation_expression" => {
                 let chain = build_chain(&child, src);
                 if let Some(ref c) = chain {
@@ -61,7 +71,9 @@ pub(super) fn extract_calls_from_body(
                         }
                     }
                 }
-                extract_calls_from_body(&child, src, source_symbol_index, refs);
+                // Only recurse into argument-carrying children (value_arguments,
+                // lambda_literal), not into the chain itself.
+                extract_nav_arguments(&child, src, source_symbol_index, refs);
             }
 
             // Extract TypeRef edges from `is` checks inside when expressions.
@@ -267,27 +279,55 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
         }
 
         "navigation_expression" => {
-            let mut cursor = node.walk();
-            let mut children = node.children(&mut cursor);
-            let receiver = children.find(|c| c.is_named())?;
-            build_chain_inner(&receiver, src, segments)?;
-            let mut cursor2 = node.walk();
-            for child in node.children(&mut cursor2) {
-                if child.kind() == "navigation_suffix" {
-                    let mut nc = child.walk();
-                    for inner in child.children(&mut nc) {
-                        if inner.kind() == "simple_identifier" {
-                            segments.push(ChainSegment {
-                                name: node_text(inner, src),
-                                node_kind: "navigation_suffix".to_string(),
-                                kind: SegmentKind::Property,
-                                declared_type: None,
-                                type_args: vec![],
-                                optional_chaining: false,
-                            });
-                            break;
+            // In tree-sitter-kotlin-ng, navigation_expression children are:
+            //   named_child[0]: receiver (navigation_expression | identifier | ...)
+            //   unnamed: "."
+            //   named_child[1]: member name (identifier | simple_identifier | navigation_suffix)
+            //
+            // The grammar does NOT always wrap the member in `navigation_suffix` —
+            // the kotlin-ng 1.1 grammar uses plain `identifier` children directly.
+            // We must handle both forms.
+            let named_children: Vec<_> = {
+                let mut cursor = node.walk();
+                node.children(&mut cursor).filter(|c| c.is_named()).collect()
+            };
+            if named_children.is_empty() {
+                return None;
+            }
+            // First named child is the receiver.
+            build_chain_inner(&named_children[0], src, segments)?;
+            // Remaining named children are member access segments.
+            for member in named_children.iter().skip(1) {
+                match member.kind() {
+                    "navigation_suffix" => {
+                        // Older grammar variant: navigation_suffix wraps the member name.
+                        let mut nc = member.walk();
+                        for inner in member.children(&mut nc) {
+                            if inner.kind() == "simple_identifier" || inner.kind() == "identifier" {
+                                segments.push(ChainSegment {
+                                    name: node_text(inner, src),
+                                    node_kind: "navigation_suffix".to_string(),
+                                    kind: SegmentKind::Property,
+                                    declared_type: None,
+                                    type_args: vec![],
+                                    optional_chaining: false,
+                                });
+                                break;
+                            }
                         }
                     }
+                    "simple_identifier" | "identifier" => {
+                        // kotlin-ng 1.1 variant: plain identifier as the member name.
+                        segments.push(ChainSegment {
+                            name: node_text(*member, src),
+                            node_kind: "navigation_suffix".to_string(),
+                            kind: SegmentKind::Property,
+                            declared_type: None,
+                            type_args: vec![],
+                            optional_chaining: false,
+                        });
+                    }
+                    _ => {} // type_arguments, etc. — skip
                 }
             }
             Some(())
@@ -299,5 +339,86 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
         }
 
         _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Argument-only recursion helpers
+//
+// These replace the unconditional `extract_calls_from_body(&child, ...)` calls
+// in the `call_expression` and `navigation_expression` arms.  Instead of
+// recursing into the full node (which would re-enter every nested
+// navigation_expression and emit each chain level's last segment as a Calls
+// ref), we only recurse into the nodes that carry *arguments*:
+//   - value_arguments       — normal argument lists  `foo(a, b)`
+//   - annotated_lambda      — trailing lambda         `foo { ... }`
+//   - lambda_literal        — bare lambda inside args
+//   - function_literal      — grammar variant of lambda
+// ---------------------------------------------------------------------------
+
+/// Recurse into the argument nodes of a `call_expression` only.
+///
+/// Skips the first named child (the callee / chain), which was already handled
+/// by `build_chain`.  Only processes value_arguments and trailing lambdas so
+/// that calls *inside* argument expressions are captured without re-emitting
+/// the callee chain segments.
+fn extract_call_arguments(
+    call_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = call_node.walk();
+    // Skip the first named child (callee) — process everything else.
+    let mut first_named_skipped = false;
+    for child in call_node.children(&mut cursor) {
+        if child.is_named() && !first_named_skipped {
+            first_named_skipped = true;
+            continue; // this is the callee — already handled by build_chain
+        }
+        match child.kind() {
+            "value_arguments" | "annotated_lambda" | "lambda_literal"
+            | "function_literal" => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            // Named argument labels (`modifier =` in `foo(modifier = x)`) are
+            // simple_identifier nodes that must not be emitted as refs.
+            "simple_identifier" | "identifier" => {}
+            _ => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+        }
+    }
+}
+
+/// Recurse into the argument-bearing children of a `navigation_expression`
+/// only.  The chain itself (all nested `navigation_expression` receivers, their
+/// inner `call_expression` wrappers, and navigation suffixes) has already been
+/// consumed by `build_chain`; recursing into those would re-emit every
+/// sub-chain segment as a spurious Calls ref.
+fn extract_nav_arguments(
+    nav_node: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = nav_node.walk();
+    for child in nav_node.children(&mut cursor) {
+        match child.kind() {
+            // Receiver chain, call_expressions that ARE the receiver (e.g. the
+            // grammar may wrap the receiver in a call_expression node), and
+            // navigation suffixes — skip entirely.  All of these are fully
+            // captured by build_chain.
+            "navigation_expression" | "call_expression" | "navigation_suffix"
+            | "simple_identifier" | "identifier" | "this_expression" | "super_expression" => {}
+            // Argument nodes — recurse to capture calls inside arguments.
+            "value_arguments" | "annotated_lambda" | "lambda_literal"
+            | "function_literal" => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+            _ => {
+                extract_calls_from_body(&child, src, source_symbol_index, refs);
+            }
+        }
     }
 }

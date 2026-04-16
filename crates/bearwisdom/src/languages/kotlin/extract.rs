@@ -209,12 +209,24 @@ pub(super) fn extract_node<'a>(
 
             // Call expressions that appear outside a function body (e.g. property
             // initializers, top-level statements, delegate expressions).
-            // Also recurse with extract_node so property_declaration nodes inside
-            // lambda arguments (e.g. `run { val x = ... }`) produce Property symbols.
-            "call_expression" | "navigation_expression" => {
+            // extract_calls_from_body handles the callee chain and emits Calls refs.
+            // We then recurse with extract_node only into argument / lambda children
+            // so that property_declaration nodes inside lambda arguments
+            // (e.g. `run { val x = ... }`) produce Property symbols — WITHOUT
+            // re-entering the callee navigation_expression chain, which would
+            // re-emit every intermediate chain segment as a spurious Calls ref.
+            "call_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 extract_calls_from_body(&child, src, sym_idx, refs);
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                // Only recurse into argument-carrying children, not the callee.
+                extract_call_node_args(&child, src, scope_tree, symbols, refs, parent_index);
+            }
+            // Standalone navigation_expression (not inside call_expression) —
+            // extract calls, but do NOT recurse with extract_node since
+            // navigation_expression nodes contain no symbol declarations.
+            "navigation_expression" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                extract_calls_from_body(&child, src, sym_idx, refs);
             }
 
             // Standalone annotations at the current scope level — emit TypeRef.
@@ -228,6 +240,46 @@ pub(super) fn extract_node<'a>(
             _ => {
                 extract_node(child, src, scope_tree, symbols, refs, parent_index);
             }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Call node argument recursion helper
+// ---------------------------------------------------------------------------
+
+/// Recurse with `extract_node` into only the argument-carrying children of a
+/// `call_expression`.  This is used in the top-level `extract_node` arm for
+/// `call_expression` so that:
+///
+///   1. Property/symbol declarations inside lambda arguments are captured
+///      (e.g. `run { val x = ... }` → `x` becomes a Property symbol).
+///   2. The callee chain (navigation_expression / simple_identifier) is NOT
+///      re-entered by `extract_node`, which would cause every nested
+///      navigation_expression level to fire `extract_calls_from_body` again
+///      and emit spurious Calls refs for intermediate chain segments.
+fn extract_call_node_args<'a>(
+    call_node: &tree_sitter::Node<'a>,
+    src: &[u8],
+    scope_tree: &scope_tree::ScopeTree,
+    symbols: &mut Vec<crate::types::ExtractedSymbol>,
+    refs: &mut Vec<crate::types::ExtractedRef>,
+    parent_index: Option<usize>,
+) {
+    let mut cursor = call_node.walk();
+    let mut first_named_skipped = false;
+    for child in call_node.children(&mut cursor) {
+        if child.is_named() && !first_named_skipped {
+            first_named_skipped = true;
+            continue; // skip the callee — already handled by extract_calls_from_body
+        }
+        match child.kind() {
+            "value_arguments" | "annotated_lambda" | "lambda_literal" | "function_literal" => {
+                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+            }
+            // Type arguments and other non-argument children don't contain
+            // symbol declarations — skip them.
+            _ => {}
         }
     }
 }
@@ -390,10 +442,20 @@ fn scan_type_refs_inner(
                     chain: None,
                 });
             }
-            // Still recurse: user_type can nest type_arguments → user_type.
+            // Recurse ONLY into type_arguments children (for generic params like
+            // `List<Foo>`) — skip everything else.  FQN segments of a qualified
+            // type name (e.g. `com`, `foo`, `bar` in `com.foo.bar.T`) appear as
+            // nested user_type / simple_user_type / simple_identifier children;
+            // recursing into them would emit every segment as a TypeRef.
+            // kotlin_type_name already extracts the correct final segment.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
-                scan_type_refs_inner(child, src, source_symbol_index, refs);
+                if child.kind() == "type_arguments" {
+                    scan_type_refs_inner(child, src, source_symbol_index, refs);
+                }
+                // All other children (user_type, simple_user_type, simple_identifier,
+                // navigation_expression, etc.) are either FQN parts (skip) or
+                // non-type content (skip).
             }
         }
         "nullable_type" => {
@@ -415,19 +477,13 @@ fn scan_type_refs_inner(
                 scan_type_refs_inner(child, src, source_symbol_index, refs);
             }
         }
-        "type_identifier" => {
-            let name = helpers::node_text(node, src);
-            if !name.is_empty() && !super::builtins::is_kotlin_builtin(&name) {
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: name,
-                    kind: EdgeKind::TypeRef,
-                    line: node.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
-            }
-        }
+        // type_identifier nodes are already captured at the user_type level
+        // (kotlin_type_name returns the last segment of the qualified type).
+        // Emitting them again here would produce a ref for every segment of a
+        // qualified name — e.g. `com.foo.bar.SomeClass` would emit `com`,
+        // `foo`, `bar`, and `SomeClass` as separate TypeRefs instead of just
+        // `SomeClass`.  Let the parent user_type arm handle them exclusively.
+        "type_identifier" => {}
         // Emit a TypeRef for every annotation node so the annotation line gets
         // credited in the coverage correlation (annotation kind comes after user_type
         // in ref_node_kinds, so we need a dedicated ref at this line).
