@@ -17,6 +17,7 @@
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use super::resolve::is_cmake_builtin;
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -138,16 +139,18 @@ fn visit_def_body(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "normal_command" {
-            let cmd = command_identifier(&child, src);
-            if let Some(name) = cmd {
-                refs.push(ExtractedRef {
-                    source_symbol_index: source_idx,
-                    target_name: name,
-                    kind: EdgeKind::Calls,
-                    line: child.start_position().row as u32,
-                    module: None,
-                    chain: None,
-                });
+            if let Some(name) = command_identifier(&child, src) {
+                // Only emit Calls for user-defined (non-builtin) commands.
+                if !is_cmake_builtin(&name) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: source_idx,
+                        target_name: name,
+                        kind: EdgeKind::Calls,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                    });
+                }
             }
         }
         visit_def_body(&child, src, source_idx, refs);
@@ -181,15 +184,19 @@ fn extract_normal_command(
         None,
     ));
 
-    // Emit a Calls edge for every command call (all commands are calls in CMake).
-    refs.push(ExtractedRef {
-        source_symbol_index: sym_idx,
-        target_name: cmd.clone(),
-        kind: EdgeKind::Calls,
-        line: node.start_position().row as u32,
-        module: None,
-        chain: None,
-    });
+    // Only emit a Calls edge for non-builtin commands (user-defined functions/macros).
+    // Builtin commands are resolved to external automatically; emitting Calls refs
+    // for them produces unresolved noise against the project symbol index.
+    if !is_cmake_builtin(&cmd) {
+        refs.push(ExtractedRef {
+            source_symbol_index: sym_idx,
+            target_name: cmd.clone(),
+            kind: EdgeKind::Calls,
+            line: node.start_position().row as u32,
+            module: None,
+            chain: None,
+        });
+    }
 
     let cmd_lower = cmd.to_lowercase();
     match cmd_lower.as_str() {
@@ -402,20 +409,31 @@ fn extract_target_link_libraries(
         .unwrap_or(0);
 
     // Remaining arguments are libraries (skip keywords like PUBLIC, PRIVATE, INTERFACE).
-    let keywords = ["PUBLIC", "PRIVATE", "INTERFACE", "LINK_PUBLIC", "LINK_PRIVATE"];
-    let args = collect_arguments(node, src);
-    for (i, arg) in args.iter().enumerate() {
+    // Arguments that came from `${VAR}` expansions are TypeRef (variable refs);
+    // bare library names that resolve to known targets are Calls.
+    let raw_args = collect_raw_arguments(node, src);
+    let normalized = collect_arguments(node, src);
+
+    // Zip raw vs normalized to know which args were variable refs.
+    for (i, (raw, norm)) in raw_args.iter().zip(normalized.iter()).enumerate() {
         if i == 0 {
             continue; // Skip target name.
         }
-        let upper = arg.to_uppercase();
-        if keywords.iter().any(|&k| k == upper.as_str()) {
-            continue;
+        if norm.is_empty() {
+            continue; // Generator expression or empty.
         }
+        if is_cmake_builtin(norm) {
+            continue; // Skip keywords (PRIVATE, PUBLIC, CACHE, etc.)
+        }
+        // Was this a variable ref in the original source?
+        let was_var_ref = raw.trim_start().starts_with("${")
+            || raw.trim_start().starts_with("$ENV{")
+            || raw.trim_start().starts_with("$CACHE{");
+        let kind = if was_var_ref { EdgeKind::TypeRef } else { EdgeKind::Calls };
         refs.push(ExtractedRef {
             source_symbol_index: target_idx,
-            target_name: arg.clone(),
-            kind: EdgeKind::Calls,
+            target_name: norm.clone(),
+            kind,
             line: node.start_position().row as u32,
             module: None,
             chain: None,
@@ -457,7 +475,52 @@ fn nth_argument_from_node(node: &Node, src: &str, n: usize) -> Option<String> {
     args.into_iter().nth(n)
 }
 
+/// Collect raw (un-normalized) argument texts from a command node.
+/// Used to detect which arguments were variable refs (`${VAR}`) vs bare names.
+fn collect_raw_arguments(node: &Node, src: &str) -> Vec<String> {
+    let mut args = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "argument_list" => {
+                let mut ac = child.walk();
+                for arg in child.children(&mut ac) {
+                    let text = match arg.kind() {
+                        "unquoted_argument" | "argument" | "identifier" | "word" => {
+                            node_text(arg, src).trim().to_string()
+                        }
+                        "quoted_argument" => {
+                            node_text(arg, src).trim_matches('"').to_string()
+                        }
+                        _ => String::new(),
+                    };
+                    if !text.is_empty() {
+                        args.push(text);
+                    }
+                }
+            }
+            "argument" | "unquoted_argument" => {
+                let text = node_text(child, src).trim().to_string();
+                if !text.is_empty() {
+                    args.push(text);
+                }
+            }
+            "quoted_argument" => {
+                let raw = node_text(child, src);
+                let stripped = raw.trim_matches('"').to_string();
+                if !stripped.is_empty() {
+                    args.push(stripped);
+                }
+            }
+            _ => {}
+        }
+    }
+    args
+}
+
 /// Collect all argument texts from a command node.
+/// Variable references (`${VAR}`) are stripped to bare `VAR`.
+/// Generator expressions (`$<...>`) are skipped.
 fn collect_arguments(node: &Node, src: &str) -> Vec<String> {
     let mut args = Vec::new();
     let mut cursor = node.walk();
@@ -473,13 +536,14 @@ fn collect_arguments(node: &Node, src: &str) -> Vec<String> {
                 }
             }
             "argument" | "unquoted_argument" => {
-                let text = node_text(child, src).trim().to_string();
+                let raw = node_text(child, src).trim().to_string();
+                let text = normalize_argument(&raw);
                 if !text.is_empty() {
                     args.push(text);
                 }
             }
             "quoted_argument" => {
-                // Strip surrounding quotes.
+                // Strip surrounding quotes; quoted args with expansions are not symbol refs.
                 let raw = node_text(child, src);
                 let stripped = raw.trim_matches('"').to_string();
                 if !stripped.is_empty() {
@@ -495,7 +559,8 @@ fn collect_arguments(node: &Node, src: &str) -> Vec<String> {
 fn extract_argument_text(node: &Node, src: &str) -> String {
     match node.kind() {
         "unquoted_argument" | "argument" | "identifier" | "word" => {
-            node_text(*node, src).trim().to_string()
+            let raw = node_text(*node, src).trim().to_string();
+            normalize_argument(&raw)
         }
         "quoted_argument" => {
             let raw = node_text(*node, src);
@@ -503,6 +568,30 @@ fn extract_argument_text(node: &Node, src: &str) -> String {
         }
         _ => String::new(),
     }
+}
+
+/// Normalize a raw CMake argument:
+/// - `${VAR}` → `VAR`
+/// - `$ENV{VAR}` → `VAR`
+/// - `$CACHE{VAR}` → `VAR`
+/// - `$<...>` generator expressions → empty string (caller should skip)
+fn normalize_argument(raw: &str) -> String {
+    let s = raw.trim();
+    // Generator expression — skip entirely
+    if s.starts_with("$<") {
+        return String::new();
+    }
+    // Variable reference — strip ${ } wrappers
+    if s.starts_with("${") && s.ends_with('}') {
+        return s[2..s.len() - 1].trim().to_string();
+    }
+    if s.starts_with("$ENV{") && s.ends_with('}') {
+        return s[5..s.len() - 1].trim().to_string();
+    }
+    if s.starts_with("$CACHE{") && s.ends_with('}') {
+        return s[7..s.len() - 1].trim().to_string();
+    }
+    s.to_string()
 }
 
 // ---------------------------------------------------------------------------
@@ -535,6 +624,8 @@ fn make_symbol(
 
 /// Walk the entire tree and emit a Function symbol for every `normal_command` node
 /// not already extracted (e.g., those inside function/macro bodies).
+/// Also extracts variable symbols from `set()`, `option()`, `list(APPEND ...)`,
+/// and `mark_as_advanced()` inside function bodies.
 fn collect_all_normal_commands(
     node: Node,
     src: &str,
@@ -546,6 +637,41 @@ fn collect_all_normal_commands(
         let line = node.start_position().row as u32;
         if !existing_lines.contains(&line) {
             let cmd = command_identifier(&node, src).unwrap_or_else(|| "cmd".to_string());
+            let cmd_lower = cmd.to_ascii_lowercase();
+
+            // For variable-defining commands, extract variable symbols even inside bodies.
+            match cmd_lower.as_str() {
+                "set" | "option" => {
+                    extract_set_command(&node, src, symbols);
+                }
+                "list" => {
+                    // list(APPEND|PREPEND|INSERT|REMOVE_DUPLICATES NAME ...) — index NAME
+                    let args = collect_arguments(&node, src);
+                    let subcommand = args.first().map(|s| s.to_ascii_uppercase());
+                    if matches!(
+                        subcommand.as_deref(),
+                        Some("APPEND") | Some("PREPEND") | Some("INSERT") | Some("REMOVE_DUPLICATES") | Some("SORT") | Some("REVERSE") | Some("FILTER") | Some("TRANSFORM") | Some("GET") | Some("JOIN")
+                    ) {
+                        if let Some(var_name) = args.get(1) {
+                            if !var_name.is_empty() && !var_name.starts_with('$') {
+                                let sig = format!("list({} {} ...)", subcommand.as_deref().unwrap_or(""), var_name);
+                                symbols.push(make_symbol(var_name.clone(), var_name.clone(), SymbolKind::Variable, &node, Some(sig), None));
+                            }
+                        }
+                    }
+                }
+                "mark_as_advanced" => {
+                    // mark_as_advanced(VAR1 VAR2 ...) — index all names
+                    for var_name in collect_arguments(&node, src) {
+                        if !var_name.is_empty() && !var_name.starts_with('$') {
+                            let sig = format!("mark_as_advanced({})", var_name);
+                            symbols.push(make_symbol(var_name.clone(), var_name, SymbolKind::Variable, &node, Some(sig), None));
+                        }
+                    }
+                }
+                _ => {}
+            }
+
             let sym_idx = symbols.len();
             symbols.push(make_symbol(
                 cmd.clone(),
@@ -555,14 +681,17 @@ fn collect_all_normal_commands(
                 Some(format!("{}(...)", cmd)),
                 None,
             ));
-            refs.push(ExtractedRef {
-                source_symbol_index: sym_idx,
-                target_name: cmd,
-                kind: EdgeKind::Calls,
-                line,
-                module: None,
-                chain: None,
-            });
+            // Only emit Calls ref for user-defined (non-builtin) commands.
+            if !is_cmake_builtin(&cmd) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: cmd,
+                    kind: EdgeKind::Calls,
+                    line,
+                    module: None,
+                    chain: None,
+                });
+            }
         }
         return; // Don't recurse inside normal_command
     }
@@ -572,7 +701,8 @@ fn collect_all_normal_commands(
     }
 }
 
-/// Walk the entire tree and emit a Calls ref for every `variable_ref` node.
+/// Walk the entire tree and emit a TypeRef for every `variable_ref` node.
+/// Generator expressions (`$<...>`) are skipped.
 /// This second pass ensures coverage correlation finds a ref for every
 /// variable_ref occurrence (the ref_node_kind).
 fn collect_variable_refs(
@@ -581,15 +711,27 @@ fn collect_variable_refs(
     refs: &mut Vec<ExtractedRef>,
 ) {
     if node.kind() == "variable_ref" {
+        let raw = node_text(node, src);
+        // Skip generator expressions
+        if raw.starts_with("$<") {
+            return;
+        }
         let name = extract_variable_ref_name(&node, src);
-        refs.push(ExtractedRef {
-            source_symbol_index: 0,
-            target_name: if name.is_empty() { node_text(node, src) } else { name },
-            kind: EdgeKind::Calls,
-            line: node.start_position().row as u32,
-            module: None,
-            chain: None,
-        });
+        let target = if name.is_empty() {
+            normalize_argument(&raw)
+        } else {
+            name
+        };
+        if !target.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: 0,
+                target_name: target,
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+            });
+        }
     }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {

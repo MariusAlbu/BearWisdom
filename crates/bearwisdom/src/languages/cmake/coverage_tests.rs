@@ -238,16 +238,16 @@ fn cov_target_link_libraries_skips_keywords() {
 }
 
 // ---------------------------------------------------------------------------
-// variable_ref (${VAR}) → Calls edge
+// variable_ref (${VAR}) → TypeRef edge (not Calls)
 // ---------------------------------------------------------------------------
 
 #[test]
-fn cov_variable_ref_produces_calls() {
+fn cov_variable_ref_produces_typeref() {
     let src = "set(SRC_DIR src)\nadd_subdirectory(${SRC_DIR})";
     let r = extract::extract(src, lang());
     assert!(
-        r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "SRC_DIR"),
-        "variable_ref should produce Calls ref to 'SRC_DIR'; got: {:?}",
+        r.refs.iter().any(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "SRC_DIR"),
+        "variable_ref should produce TypeRef to 'SRC_DIR'; got: {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }

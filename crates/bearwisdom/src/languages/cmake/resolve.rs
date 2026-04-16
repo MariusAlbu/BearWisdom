@@ -99,9 +99,30 @@ fn cmake_kind_compatible(edge_kind: crate::types::EdgeKind, sym_kind: &str) -> b
 }
 
 /// CMake built-in commands, control structures, and standard variables.
-fn is_cmake_builtin(name: &str) -> bool {
+///
+/// Exposed as `pub(super)` so `extract.rs` can use it to skip emitting
+/// unresolvable `Calls` refs for built-in command names.
+pub(super) fn is_cmake_builtin(name: &str) -> bool {
+    let lower = name.to_ascii_lowercase();
+    let s = lower.as_str();
+
+    // CMake standard variable prefixes — these are never user-defined symbols
+    if s.starts_with("cmake_")
+        || s.starts_with("project_")
+        || s.starts_with("cpack_")
+        || s.starts_with("ctest_")
+        || s.starts_with("fetchcontent_")
+    {
+        return true;
+    }
+
+    // CMake special function argument variables
+    if s == "argn" || s == "argv" || s.starts_with("argv") && s[4..].parse::<u8>().is_ok() {
+        return true;
+    }
+
     matches!(
-        name.to_ascii_lowercase().as_str(),
+        s,
         // Control flow
         "if" | "else" | "elseif" | "endif"
             | "while" | "endwhile"
@@ -142,13 +163,33 @@ fn is_cmake_builtin(name: &str) -> bool {
             | "execute_process" | "try_compile" | "try_run"
             | "define_property" | "mark_as_advanced"
             | "source_group" | "aux_source_directory"
-            // FetchContent module
-            | "fetchcontent_declare"
-            | "fetchcontent_makeavailable"
-            | "fetchcontent_populate"
-            | "fetchcontent_getproperties"
+            | "enable_language" | "get_filename_component"
+            | "check_include_file" | "check_function_exists"
+            | "check_symbol_exists" | "check_library_exists"
+            | "check_cxx_source_compiles" | "check_c_source_compiles"
+            | "check_type_size" | "check_struct_has_member"
             // CPM.cmake
             | "cpmaddpackage"
             | "cpmfindpackage"
+            // Common cmake keyword arguments / scope tokens (appear as args, not commands,
+            // but may leak as Calls targets from target_link_libraries argument lists)
+            | "cache" | "internal" | "bool" | "path" | "filepath"
+            | "force" | "docstring"
+            | "interface" | "public" | "private"
+            | "link_public" | "link_private"
+            | "static" | "shared" | "module" | "object" | "alias"
+            | "required" | "quiet" | "config" | "module_" | "components"
+            | "imported" | "global" | "parent_scope"
+            | "fatal_error" | "send_error" | "warning" | "author_warning"
+            | "deprecation" | "status" | "verbose" | "debug" | "trace"
+            | "check_start" | "check_pass" | "check_fail"
+            | "not" | "and" | "or" | "defined" | "equal" | "less" | "greater"
+            | "strequal" | "matches"
+            | "version_equal" | "version_less" | "version_greater"
+            | "version_less_equal" | "version_greater_equal"
+            | "exists" | "is_directory" | "is_absolute"
+            | "name" | "command" | "args" | "append" | "prepend"
+            | "on" | "off" | "true" | "false" | "yes" | "no"
+            | "win32" | "apple" | "unix" | "msvc" | "mingw" | "ios" | "android"
     )
 }
