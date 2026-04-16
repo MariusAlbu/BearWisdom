@@ -85,11 +85,96 @@ pub(super) fn is_rust_builtin(name: &str) -> bool {
     // Also handle single-segment names in chains like "Some", "Ok"
     let simple = name.rsplit("::").next().unwrap_or(name);
 
+    // Wildcard imports (`*`) are never real call/type targets.
+    if name == "*" {
+        return true;
+    }
+
     // Single uppercase letters are generic type parameters (T, U, V, K, L, M, F, W, …).
     // They are never real symbols in the index.
     if simple.len() == 1 && simple.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
         return true;
     }
+
+    // Two-uppercase-letter generics like P1, P2, T1, T2, etc. are almost always
+    // generic type parameters, not real symbols.
+    if simple.len() == 2 {
+        let mut chars = simple.chars();
+        let (a, b) = (chars.next().unwrap(), chars.next().unwrap());
+        if a.is_ascii_uppercase() && b.is_ascii_digit() {
+            return true;
+        }
+    }
+
+    // Turbofish / generic instantiation targets like `<Vec<_>>`, `<MyMessage>`,
+    // `<i64, usize>` are not real call targets — they are type arguments that
+    // the extractor mis-emits as Calls refs. The leading `<` is the marker.
+    if name.starts_with('<') {
+        return true;
+    }
+
+    // Single-uppercase-letter namespace paths like `M::Ast`, `D::Source`, `C::Error`
+    // are generic type parameter associated type accesses — never real symbols in the index.
+    if name.contains("::") {
+        let first = name.split("::").next().unwrap_or("");
+        if first.len() == 1 && first.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+            return true;
+        }
+    }
+
+    // Multi-segment paths whose first segment is a well-known external crate
+    // (e.g. `anyhow::anyhow`, `serde_json::json`, `log::info`) are external
+    // refs, not internal symbols.  We short-circuit them here so the resolver
+    // doesn't store them in `unresolved_refs`.  The `infer_external_namespace`
+    // path handles attribution independently.
+    if name.contains("::") {
+        let first = name.split("::").next().unwrap_or("");
+        if matches!(
+            first,
+            "anyhow"
+                | "serde_json"
+                | "serde"
+                | "tokio"
+                | "tracing"
+                | "log"
+                | "futures"
+                | "async_trait"
+                | "thiserror"
+                | "clap"
+                | "axum"
+                | "actix_web"
+                | "sqlx"
+                | "reqwest"
+                | "chrono"
+                | "uuid"
+                | "rand"
+                | "regex"
+                | "once_cell"
+                | "lazy_static"
+                | "bytes"
+                | "hyper"
+                | "tower"
+                | "tonic"
+                | "prost"
+                | "rayon"
+                | "crossbeam"
+                | "dashmap"
+                | "indexmap"
+                | "itertools"
+                | "num_traits"
+                | "bitflags"
+                | "strum"
+                | "derive_more"
+                | "env_logger"
+                | "color_eyre"
+                | "miette"
+                | "napi"
+                | "wasm_bindgen"
+        ) {
+            return true;
+        }
+    }
+
     matches!(
         simple,
         // Prelude types / enums
@@ -120,6 +205,20 @@ pub(super) fn is_rust_builtin(name: &str) -> bool {
             | "cmp"
             | "partial_cmp"
             | "hash"
+            | "drop"
+            | "map_err"
+            | "map_or_else"
+            | "unwrap_err"
+            | "unwrap_or_default"
+            | "into_ok"
+            | "into_err"
+            | "copied"
+            | "cloned"
+            | "size_of"
+            | "size_of_val"
+            | "type_name"
+            | "type_id"
+            | "mem"
             // Iterator adapters / consumers
             | "map"
             | "filter"
@@ -311,6 +410,9 @@ pub(super) fn is_rust_builtin(name: &str) -> bool {
             | "assert"
             | "assert_eq"
             | "assert_ne"
+            | "debug_assert"
+            | "debug_assert_eq"
+            | "debug_assert_ne"
             | "panic"
             | "todo"
             | "unimplemented"
@@ -329,6 +431,40 @@ pub(super) fn is_rust_builtin(name: &str) -> bool {
             | "line"
             | "column"
             | "module_path"
+            | "matches"
+            | "write"
+            | "log"
+            | "trace"
+            | "info"
+            | "warn"
+            | "error"
+            | "bail"
+            | "ensure"
+            | "format_args"
+            | "try"
+            | "await"
+            // std::mem helpers
+            | "swap"
+            | "replace"
+            | "take"
+            | "forget"
+            | "transmute"
+            | "zeroed"
+            | "size_of"
+            | "align_of"
+            // Closures / fn traits — bare references to these are never real symbols
+            | "Fn"
+            | "FnMut"
+            | "FnOnce"
+            | "Send"
+            | "Sync"
+            | "Unpin"
+            | "Sized"
+            | "Iterator"
+            | "IntoIterator"
+            | "FromIterator"
+            | "ExactSizeIterator"
+            | "DoubleEndedIterator"
             // Rust attributes (emitted as TypeRef by extractor)
             | "derive"
             | "test"

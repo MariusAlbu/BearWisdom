@@ -176,6 +176,23 @@ impl LanguageResolver for RustResolver {
             }
         }
 
+        // Turbofish / generic type argument targets: `<Vec<_>>`, `<MyMessage>`,
+        // `<i64, usize>` etc. are extractor noise — type args mis-emitted as Calls.
+        // The leading `<` is the reliable marker; bail early.
+        if target.starts_with('<') {
+            return None;
+        }
+
+        // Two-uppercase-letter numeric suffix generics (P1, T2, etc.) are almost
+        // always generic type parameters, not real symbols.
+        if target.len() == 2 {
+            let mut chars = target.chars();
+            let (a, b) = (chars.next().unwrap(), chars.next().unwrap());
+            if a.is_ascii_uppercase() && b.is_ascii_digit() {
+                return None;
+            }
+        }
+
         // Rust stdlib builtins are never in our index — fast exit.
         if builtins::is_rust_builtin(target) {
             return None;
@@ -431,6 +448,72 @@ impl LanguageResolver for RustResolver {
                         });
                     }
                 }
+            }
+        }
+
+        // Step 5: Global by-name fallback for Calls.
+        // Catches bare function references across module boundaries where the
+        // caller has no `use` statement — common in test modules that call
+        // helpers defined in sibling test modules (e.g. `test_match`, `test_replace`).
+        // Only fires when there is exactly one compatible candidate (unambiguous).
+        if edge_kind == EdgeKind::Calls {
+            let candidates: Vec<&SymbolInfo> = lookup
+                .by_name(effective_target)
+                .into_iter()
+                .filter(|s| builtins::kind_compatible(edge_kind, &s.kind))
+                .collect();
+            if candidates.len() == 1 {
+                return Some(Resolution {
+                    target_symbol_id: candidates[0].id,
+                    confidence: 0.80,
+                    strategy: "rust_global_name_fallback",
+                });
+            }
+            // Multiple candidates: prefer the one in the same file as the caller.
+            // This resolves cases where each file defines the same helper function
+            // locally (e.g. `test_match` in each `crates/language/src/<lang>.rs`).
+            let same_file: Vec<&&SymbolInfo> = candidates
+                .iter()
+                .filter(|s| s.file_path.as_ref() == file_ctx.file_path.as_str())
+                .collect();
+            if same_file.len() == 1 {
+                return Some(Resolution {
+                    target_symbol_id: same_file[0].id,
+                    confidence: 0.90,
+                    strategy: "rust_same_file_name_fallback",
+                });
+            }
+            // Multiple candidates: prefer internal (crate-relative qualified names start with
+            // known crate root segments, not external crate names from Cargo deps).
+            // Use scope_path presence as a proxy for "came from this crate's source".
+            let scoped: Vec<&&SymbolInfo> = candidates
+                .iter()
+                .filter(|s| s.scope_path.is_some())
+                .collect();
+            if scoped.len() == 1 {
+                return Some(Resolution {
+                    target_symbol_id: scoped[0].id,
+                    confidence: 0.75,
+                    strategy: "rust_global_name_scoped",
+                });
+            }
+        }
+
+        // Step 6: Global by-name for TypeRef with single unambiguous match.
+        // Catches types used without `use` that exist only once in the crate
+        // (common for types pulled in through re-exports or cfg-conditional modules).
+        if edge_kind == EdgeKind::TypeRef {
+            let candidates: Vec<&SymbolInfo> = lookup
+                .by_name(effective_target)
+                .into_iter()
+                .filter(|s| builtins::kind_compatible(edge_kind, &s.kind))
+                .collect();
+            if candidates.len() == 1 {
+                return Some(Resolution {
+                    target_symbol_id: candidates[0].id,
+                    confidence: 0.75,
+                    strategy: "rust_global_typeref_fallback",
+                });
             }
         }
 

@@ -153,6 +153,14 @@ fn resolve_and_write_inner(
                 None => continue,
             };
 
+            // Wildcard imports (`use foo::*`) are scope-declaration statements, not
+            // missing-symbol references.  They cannot resolve to a single target and
+            // should not appear in the unresolved_refs table.
+            if r.kind == EdgeKind::Imports && r.target_name == "*" {
+                stats.external += 1; // count as "handled" so they don't inflate unresolved rate
+                continue;
+            }
+
             // Tier 1: Try language-specific resolver (for the effective language).
             let mut resolved_by_engine = false;
             if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {

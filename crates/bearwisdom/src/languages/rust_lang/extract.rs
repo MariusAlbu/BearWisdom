@@ -163,10 +163,13 @@ fn extract_from_node(
                 {
                     let idx = symbols.len();
                     let struct_prefix = helpers::qualify(&sym.name, qualified_prefix);
+                    let line = sym.start_line;
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     // Extract field symbols and TypeRefs for field types.
                     symbols::extract_struct_fields(&child, source, idx, &struct_prefix, symbols, refs);
+                    // Synthesize method symbols for each #[derive(...)] trait.
+                    decorators::synthesize_derive_methods(&child, source, idx, &struct_prefix, line, symbols);
                 }
             }
 
@@ -176,11 +179,14 @@ fn extract_from_node(
                 {
                     let idx = symbols.len();
                     let new_prefix = helpers::qualify(&sym.name, qualified_prefix);
+                    let line = sym.start_line;
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     if let Some(body) = child.child_by_field_name("body") {
                         symbols::extract_enum_variants(&body, source, Some(idx), &new_prefix, symbols, refs);
                     }
+                    // Synthesize method symbols for each #[derive(...)] trait.
+                    decorators::synthesize_derive_methods(&child, source, idx, &new_prefix, line, symbols);
                 }
             }
 

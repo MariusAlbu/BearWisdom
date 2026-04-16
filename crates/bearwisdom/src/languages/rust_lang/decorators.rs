@@ -23,7 +23,7 @@
 // =============================================================================
 
 use super::helpers::node_text;
-use crate::types::{EdgeKind, ExtractedRef};
+use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::Node;
 
 /// Emit one `ExtractedRef` per attribute attached to `item_node`.
@@ -179,6 +179,159 @@ fn extract_trait_names_from_token_tree(
             "token_tree" => {
                 // Nested parens; recurse
                 extract_trait_names_from_token_tree(&child, source, source_symbol_index, refs);
+            }
+            _ => {}
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Derive synthesis
+// ---------------------------------------------------------------------------
+
+/// Synthesize method/function symbols for each `#[derive(...)]` trait on a
+/// struct or enum.  The synthesized symbols are parented to the type symbol
+/// (`parent_sym_idx`) and placed under `qualified_prefix` (i.e. the type's
+/// own qualified name as prefix).
+///
+/// Only the derives with deterministic, widely-used methods are synthesized:
+///
+/// | Derive         | Synthesized symbols                          |
+/// |----------------|----------------------------------------------|
+/// | Clone          | clone → Method                               |
+/// | Copy           | (marker trait — no methods)                  |
+/// | Debug          | fmt → Method                                 |
+/// | Default        | default → Function (associated)              |
+/// | PartialEq / Eq | eq, ne → Method                              |
+/// | PartialOrd/Ord | partial_cmp, cmp → Method                    |
+/// | Hash           | hash → Method                                |
+/// | Serialize      | serialize → Method                           |
+/// | Deserialize    | deserialize → Function                       |
+/// | From / Into    | from, into → Function / Method               |
+/// | AsRef / AsMut  | as_ref, as_mut → Method                      |
+pub(super) fn synthesize_derive_methods(
+    item_node: &Node,
+    source: &str,
+    parent_sym_idx: usize,
+    qualified_prefix: &str, // the type's qualified name, e.g. "crate.models.User"
+    line: u32,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let derives = collect_derive_names(item_node, source);
+    if derives.is_empty() {
+        return;
+    }
+
+    for derive_name in &derives {
+        // Normalize: strip path prefix (e.g. "serde::Serialize" → "Serialize")
+        let bare = derive_name.rsplit("::").next().unwrap_or(derive_name.as_str());
+
+        let methods: &[(&str, SymbolKind)] = match bare {
+            "Clone" => &[("clone", SymbolKind::Method)],
+            "Copy" => &[],
+            "Debug" | "Display" => &[("fmt", SymbolKind::Method)],
+            "Default" => &[("default", SymbolKind::Function)],
+            "PartialEq" => &[("eq", SymbolKind::Method), ("ne", SymbolKind::Method)],
+            "Eq" => &[],
+            "PartialOrd" => &[("partial_cmp", SymbolKind::Method)],
+            "Ord" => &[("cmp", SymbolKind::Method)],
+            "Hash" => &[("hash", SymbolKind::Method)],
+            "Serialize" => &[("serialize", SymbolKind::Method)],
+            "Deserialize" => &[("deserialize", SymbolKind::Function)],
+            "DeserializeOwned" => &[],
+            "From" => &[("from", SymbolKind::Function)],
+            "Into" => &[("into", SymbolKind::Method)],
+            "AsRef" => &[("as_ref", SymbolKind::Method)],
+            "AsMut" => &[("as_mut", SymbolKind::Method)],
+            "Error" => &[("source", SymbolKind::Method), ("description", SymbolKind::Method)],
+            _ => &[],
+        };
+
+        for &(method_name, kind) in methods {
+            let qualified_name = if qualified_prefix.is_empty() {
+                method_name.to_string()
+            } else {
+                format!("{qualified_prefix}.{method_name}")
+            };
+
+            // Only add if not already present (avoid duplicates when impl block exists).
+            if symbols.iter().any(|s| s.qualified_name == qualified_name) {
+                continue;
+            }
+
+            symbols.push(ExtractedSymbol {
+                name: method_name.to_string(),
+                qualified_name,
+                kind,
+                visibility: Some(Visibility::Public),
+                start_line: line,
+                end_line: line,
+                start_col: 0,
+                end_col: 0,
+                signature: Some(format!("/* synthesized from #[derive({bare})] */")),
+                doc_comment: None,
+                scope_path: Some(qualified_prefix.to_string()),
+                parent_index: Some(parent_sym_idx),
+            });
+        }
+    }
+}
+
+/// Collect the bare derive trait names from preceding `attribute_item` siblings.
+/// Returns e.g. `["Clone", "Debug", "serde::Serialize"]`.
+pub(super) fn collect_derive_names(item_node: &Node, source: &str) -> Vec<String> {
+    let mut result = Vec::new();
+    let mut sib = item_node.prev_sibling();
+    while let Some(s) = sib {
+        if s.kind() != "attribute_item" {
+            break;
+        }
+        // Parse the attribute_item for `derive(...)` forms.
+        let mut ac = s.walk();
+        for attr_child in s.children(&mut ac) {
+            if attr_child.kind() != "attribute" {
+                continue;
+            }
+            let mut inner = attr_child.walk();
+            let mut children_iter = attr_child.children(&mut inner);
+            let name_node = match children_iter.next() {
+                Some(n) => n,
+                None => continue,
+            };
+            let attr_name = node_text(&name_node, source);
+            if attr_name != "derive" {
+                continue;
+            }
+            // Found #[derive(...)]; collect identifiers from the token_tree.
+            for tt_child in children_iter {
+                if tt_child.kind() == "token_tree" {
+                    collect_idents_from_token_tree(&tt_child, source, &mut result);
+                }
+            }
+        }
+        sib = s.prev_sibling();
+    }
+    result
+}
+
+fn collect_idents_from_token_tree(tt: &Node, source: &str, out: &mut Vec<String>) {
+    let mut cursor = tt.walk();
+    for child in tt.children(&mut cursor) {
+        match child.kind() {
+            "identifier" => {
+                let name = node_text(&child, source);
+                if !name.is_empty() {
+                    out.push(name);
+                }
+            }
+            "scoped_identifier" => {
+                let name = node_text(&child, source);
+                if !name.is_empty() {
+                    out.push(name);
+                }
+            }
+            "token_tree" => {
+                collect_idents_from_token_tree(&child, source, out);
             }
             _ => {}
         }
