@@ -233,47 +233,83 @@ pub(super) fn push_typedef(
     //   typedef  <source_type_node>  <declarator>  ;
     //
     // The declarator (the LAST eligible child, not the first) is the new
-    // type alias being introduced. Iterating and returning on the first
-    // match produced catastrophic false symbols — e.g.
-    //   `typedef HttpRequestPtr Request;`
-    // would emit `HttpRequestPtr` as a fresh TypeAlias (wrong — it's the
-    // source type) and never emit `Request` (correct — it's the alias),
-    // leaving libhv's hundreds of `typedef std::shared_ptr<X> XPtr;`
-    // aliases entirely unextracted.
+    // type alias being introduced.  However, C allows multiple declarators
+    // in a single typedef, e.g.:
     //
-    // Walk all children, remember the LAST eligible declarator, and emit
-    // that single TypeAlias.
+    //   typedef struct { ... } TypeA, TypeB;
+    //   typedef unsigned long size_t, ULONG_PTR;
+    //
+    // In this case there are TWO names and both should become TypeAlias
+    // symbols.  The grammar represents them as two separate `type_identifier`
+    // children after the struct/union/enum body.
+    //
+    // Strategy:
+    //   1. Find all eligible declarator children (type_identifier,
+    //      pointer_declarator, function_declarator).
+    //   2. The FIRST one is potentially the source type (e.g. `HttpRequestPtr`
+    //      in `typedef HttpRequestPtr Request;`) — only emit it if there is
+    //      no second declarator (it IS the alias in that case).
+    //   3. Always emit the LAST declarator as a TypeAlias.
+    //   4. If there are more than two declarators, emit all but the first
+    //      as TypeAlias symbols (the first is the source type).
+    //
+    // In practice this means:
+    //   typedef T Foo;          → 2 children → emit last (Foo)
+    //   typedef struct{} A, B;  → struct body + 2 type_identifiers → both A and B
     let mut cursor = node.walk();
-    let mut last_declarator: Option<Node> = None;
+    let mut declarators: Vec<Node> = Vec::new();
+    // Check whether there is a struct/union/enum/class body child (anonymous
+    // inline specifier).  If yes, ALL subsequent type_identifier nodes are new
+    // aliases.  If no, only the LAST one is the new alias.
+    let mut has_specifier_body = false;
     for child in node.children(&mut cursor) {
-        if matches!(
-            child.kind(),
-            "type_identifier" | "pointer_declarator" | "function_declarator"
-        ) {
-            last_declarator = Some(child);
+        match child.kind() {
+            // Inline specifier with body → all following identifiers are aliases
+            "struct_specifier" | "union_specifier" | "enum_specifier" | "class_specifier" => {
+                if child.child_by_field_name("body").is_some() {
+                    has_specifier_body = true;
+                }
+            }
+            "type_identifier" | "pointer_declarator" | "function_declarator" => {
+                declarators.push(child);
+            }
+            _ => {}
         }
     }
-    let Some(decl) = last_declarator else { return; };
-    let Some(name) = first_type_identifier(&decl, src) else { return; };
+
+    if declarators.is_empty() {
+        return;
+    }
 
     let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
-    let qualified_name = scope_tree::qualify(&name, scope);
     let scope_path = scope_tree::scope_path(scope);
+    let doc = extract_doc_comment(node, src);
 
-    symbols.push(ExtractedSymbol {
-        name: name.clone(),
-        qualified_name,
-        kind: SymbolKind::TypeAlias,
-        visibility: None,
-        start_line: node.start_position().row as u32,
-        end_line: node.end_position().row as u32,
-        start_col: node.start_position().column as u32,
-        end_col: node.end_position().column as u32,
-        signature: Some(format!("typedef {name}")),
-        doc_comment: extract_doc_comment(node, src),
-        scope_path,
-        parent_index,
-    });
+    // Determine which declarators represent new alias names.
+    // - If there is an inline specifier body (e.g. `typedef struct{...} A, B`)
+    //   ALL declarators in the list are alias names.
+    // - Otherwise, only the last one is the alias (the earlier ones are the
+    //   source type chain, e.g. `typedef const unsigned long * Foo`).
+    let aliases_start = if has_specifier_body { 0 } else { declarators.len().saturating_sub(1) };
+
+    for decl in &declarators[aliases_start..] {
+        let Some(name) = first_type_identifier(decl, src) else { continue; };
+        let qualified_name = scope_tree::qualify(&name, scope);
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::TypeAlias,
+            visibility: None,
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: node.end_position().column as u32,
+            signature: Some(format!("typedef {name}")),
+            doc_comment: doc.clone(),
+            scope_path: scope_path.clone(),
+            parent_index,
+        });
+    }
 }
 
 /// Returns true if `node` is or contains a `function_declarator` child,
