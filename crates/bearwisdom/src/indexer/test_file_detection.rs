@@ -1,9 +1,11 @@
 // =============================================================================
-// indexer/framework_globals.rs — Test file detection utility
+// indexer/test_file_detection.rs — test-file path classifier
 //
-// The framework_globals() function that previously lived here has been retired.
-// External symbol classification is now handled by ExternalSourceLocator
-// implementations that index real dependency source with origin='external'.
+// Renamed from framework_globals.rs in Phase 8 cleanup — the hardcoded
+// framework_globals() function that lived here predated the Ecosystem
+// trait. After Phase 5 ships indexed stdlib + package ecosystems, this
+// module is down to a single helper that flags path patterns typical of
+// test suites so `dead_code` analysis can exclude them.
 // =============================================================================
 
 /// Check if a file path looks like a test file.
