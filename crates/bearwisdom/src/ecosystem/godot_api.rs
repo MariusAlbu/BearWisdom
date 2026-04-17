@@ -55,6 +55,7 @@ impl Ecosystem for GodotApiEcosystem {
                 root: path,
                 ecosystem: LEGACY_ECOSYSTEM_TAG,
                 package_id: None,
+                requested_imports: Vec::new(),
             }],
             None => Vec::new(),
         }

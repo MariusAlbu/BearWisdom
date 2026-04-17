@@ -183,6 +183,7 @@ fn make_root(dir: &Path, tag: &'static str) -> ExternalDepRoot {
         root: dir.to_path_buf(),
         ecosystem: tag,
         package_id: None,
+        requested_imports: Vec::new(),
     }
 }
 

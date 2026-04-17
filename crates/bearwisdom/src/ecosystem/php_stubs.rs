@@ -68,6 +68,7 @@ fn discover_php_stubs() -> Vec<ExternalDepRoot> {
         root: dir,
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
+        requested_imports: Vec::new(),
     }]
 }
 

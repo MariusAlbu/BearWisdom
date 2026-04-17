@@ -161,6 +161,7 @@ pub fn discover_zig_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                         root: path,
                         ecosystem: LEGACY_ECOSYSTEM_TAG,
                         package_id: None,
+                        requested_imports: Vec::new(),
                     });
                 }
             }

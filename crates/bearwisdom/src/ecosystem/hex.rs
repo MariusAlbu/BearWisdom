@@ -139,6 +139,7 @@ fn discover_mix_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
             root: path,
             ecosystem: LEGACY_ECOSYSTEM_TAG,
             package_id: None,
+            requested_imports: Vec::new(),
         });
     }
     out
@@ -188,6 +189,7 @@ fn discover_rebar_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: dep_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 continue;
             }
@@ -204,6 +206,7 @@ fn discover_rebar_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: extracted,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 continue;
             }
@@ -453,6 +456,7 @@ fn discover_gleam_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
                 root: dep_dir,
                 ecosystem: LEGACY_ECOSYSTEM_TAG,
                 package_id: None,
+                requested_imports: Vec::new(),
             });
         }
     }
@@ -752,6 +756,7 @@ mod tests {
             root: pkg_root,
             ecosystem: LEGACY_ECOSYSTEM_TAG,
             package_id: None,
+            requested_imports: Vec::new(),
         };
         let walked = walk_hex_root(&dep);
         assert_eq!(walked.len(), 1);

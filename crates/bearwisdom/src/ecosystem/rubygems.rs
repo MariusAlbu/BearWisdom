@@ -221,6 +221,7 @@ pub fn discover_ruby_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 root: gem_root,
                 ecosystem: LEGACY_ECOSYSTEM_TAG,
                 package_id: None,
+                requested_imports: Vec::new(),
             });
         }
     }
@@ -662,6 +663,7 @@ PLATFORMS
             root,
             ecosystem: LEGACY_ECOSYSTEM_TAG,
             package_id: None,
+            requested_imports: Vec::new(),
         }
     }
 

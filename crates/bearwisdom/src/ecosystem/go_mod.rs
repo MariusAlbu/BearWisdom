@@ -47,6 +47,25 @@ impl Ecosystem for GoModEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_go_root(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        _package: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        resolve_go_requested_packages(dep)
+    }
+
+    fn resolve_symbol(
+        &self,
+        dep: &ExternalDepRoot,
+        _fqn: &str,
+    ) -> Vec<WalkedFile> {
+        resolve_go_requested_packages(dep)
+    }
 }
 
 impl ExternalSourceLocator for GoModEcosystem {
@@ -192,12 +211,14 @@ pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     for dep in &parsed.require_deps {
         if dep.indirect && !go_dep_is_imported(&dep.path, &user_imports) { continue }
         if let Some(root) = resolve_go_dep_path(&cache_root, dep) {
+            let requested = collect_module_imports(&dep.path, &user_imports);
             roots.push(ExternalDepRoot {
                 module_path: dep.path.clone(),
                 version: dep.version.clone(),
                 root,
                 ecosystem: LEGACY_ECOSYSTEM_TAG,
                 package_id: None,
+                requested_imports: requested,
             });
         } else {
             debug!(
@@ -209,6 +230,26 @@ pub fn discover_go_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         }
     }
     roots
+}
+
+/// Return the list of user import paths that live under `module_path`.
+/// Includes the module root import itself (the main package) plus every
+/// sub-package the project references. Paths are stored verbatim so
+/// `resolve_go_requested_packages` can strip the module prefix when
+/// mapping to on-disk subdirs.
+fn collect_module_imports(
+    module_path: &str,
+    user_imports: &std::collections::HashSet<String>,
+) -> Vec<String> {
+    let mut out = Vec::new();
+    let prefix = format!("{module_path}/");
+    if user_imports.contains(module_path) { out.push(module_path.to_string()) }
+    for imp in user_imports {
+        if imp.starts_with(&prefix) { out.push(imp.clone()) }
+    }
+    out.sort();
+    out.dedup();
+    out
 }
 
 fn collect_go_imports(project_root: &Path) -> std::collections::HashSet<String> {
@@ -336,6 +377,104 @@ fn escape_module_path(path: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
+// Reachability: narrow to user-requested sub-packages + transitive within-module
+// ---------------------------------------------------------------------------
+//
+// Go is unlike npm/pypi/cargo because a single module exposes many
+// independent sub-packages (flat-directory `package X { ... }` files, no
+// explicit re-export mechanism). A typical user project imports only a
+// handful of sub-packages from each module. The eager walk_root strategy
+// indexes every package in the module even when the user's surface is
+// narrow — wasteful on monster modules like `k8s.io/api` or
+// `google.golang.org/protobuf`.
+//
+// Reachability for Go: walk only the sub-directories corresponding to the
+// user's import paths (stored on the dep root at discovery time) plus any
+// within-module imports those packages pull in transitively. Each Go
+// package is flat (no recursion into subdirs — subdirs are separate
+// packages with their own imports), so the walk per package is a single
+// `read_dir` scan.
+
+const GO_SUBPKG_MAX_DEPTH: u32 = 3;
+
+fn resolve_go_requested_packages(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() {
+        // Discovery didn't populate demand data; fall back to the eager walk
+        // so behavior matches pre-R3 when user_imports scanning was absent.
+        return walk_go_root(dep);
+    }
+
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for import_path in &dep.requested_imports {
+        let Some(sub) = import_path.strip_prefix(&dep.module_path[..]) else {
+            continue;
+        };
+        let sub = sub.trim_start_matches('/');
+        let pkg_dir = if sub.is_empty() {
+            dep.root.clone()
+        } else {
+            dep.root.join(sub.replace('/', std::path::MAIN_SEPARATOR_STR.to_string().as_str()))
+        };
+        expand_go_package_into(dep, &pkg_dir, &mut out, &mut seen, 0);
+    }
+    out
+}
+
+fn expand_go_package_into(
+    dep: &ExternalDepRoot,
+    pkg_dir: &Path,
+    out: &mut Vec<WalkedFile>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    depth: u32,
+) {
+    if !pkg_dir.is_dir() { return }
+    if !seen.insert(pkg_dir.to_path_buf()) { return }
+
+    let Ok(entries) = std::fs::read_dir(pkg_dir) else { return };
+    let mut package_sources: Vec<std::path::PathBuf> = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        if !ft.is_file() { continue }
+        let path = entry.path();
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !name.ends_with(".go") { continue }
+        if name.ends_with("_test.go") { continue }
+        let rel_sub = match path.strip_prefix(&dep.root) {
+            Ok(p) => p.to_string_lossy().replace('\\', "/"),
+            Err(_) => continue,
+        };
+        out.push(WalkedFile {
+            relative_path: format!("ext:{}@{}/{}", dep.module_path, dep.version, rel_sub),
+            absolute_path: path.clone(),
+            language: "go",
+        });
+        package_sources.push(path);
+    }
+
+    if depth >= GO_SUBPKG_MAX_DEPTH { return }
+
+    // Scan this package's source for within-module imports and pull those
+    // sub-packages in too. Without this, a user-imported package that
+    // re-exports types from a sibling sub-package loses the type
+    // definitions it needs.
+    let module_prefix = format!("{}/", dep.module_path);
+    for path in &package_sources {
+        let Ok(content) = std::fs::read_to_string(path) else { continue };
+        let mut imports: std::collections::HashSet<String> = std::collections::HashSet::new();
+        extract_imports_from_go_source(&content, &mut imports);
+        for imp in imports {
+            if !imp.starts_with(&module_prefix) { continue }
+            let Some(sub) = imp.strip_prefix(&dep.module_path[..]) else { continue };
+            let sub = sub.trim_start_matches('/');
+            if sub.is_empty() { continue }
+            let sub_dir = dep.root.join(sub.replace('/', std::path::MAIN_SEPARATOR_STR.to_string().as_str()));
+            expand_go_package_into(dep, &sub_dir, out, seen, depth + 1);
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Walk
 // ---------------------------------------------------------------------------
 
@@ -449,5 +588,120 @@ require github.com/other/pkg v1.0.0
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------
+    // R3 — user-import-narrowed sub-package walking
+    // -----------------------------------------------------------------
+
+    fn mkdep(root: PathBuf, module: &str, requested: Vec<String>) -> ExternalDepRoot {
+        ExternalDepRoot {
+            module_path: module.to_string(),
+            version: "v1.0.0".to_string(),
+            root,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: requested,
+        }
+    }
+
+    #[test]
+    fn collect_module_imports_returns_matching_paths() {
+        let mut set = std::collections::HashSet::new();
+        set.insert("github.com/gin-gonic/gin".to_string());
+        set.insert("github.com/gin-gonic/gin/binding".to_string());
+        set.insert("github.com/gin-gonic/gin/render".to_string());
+        set.insert("github.com/other/pkg".to_string());
+        set.insert("github.com/gin-gonic/gink".to_string()); // prefix collision — must NOT match
+        let got = collect_module_imports("github.com/gin-gonic/gin", &set);
+        assert_eq!(
+            got,
+            vec![
+                "github.com/gin-gonic/gin".to_string(),
+                "github.com/gin-gonic/gin/binding".to_string(),
+                "github.com/gin-gonic/gin/render".to_string(),
+            ]
+        );
+    }
+
+    #[test]
+    fn resolve_walks_only_requested_sub_packages() {
+        let tmp = std::env::temp_dir().join("bw-test-go-r3-narrow");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let root = tmp.join("gin@v1.0.0");
+        let binding = root.join("binding");
+        let internal = root.join("internal");
+        std::fs::create_dir_all(&binding).unwrap();
+        std::fs::create_dir_all(&internal).unwrap();
+        std::fs::write(root.join("gin.go"), "package gin\n").unwrap();
+        std::fs::write(binding.join("binding.go"), "package binding\n").unwrap();
+        std::fs::write(internal.join("internal.go"), "package internal\n").unwrap();
+
+        let dep = mkdep(
+            root.clone(),
+            "github.com/gin-gonic/gin",
+            vec!["github.com/gin-gonic/gin/binding".to_string()],
+        );
+        let files = resolve_go_requested_packages(&dep);
+        let paths: std::collections::HashSet<_> =
+            files.iter().map(|f| f.absolute_path.clone()).collect();
+        assert!(
+            paths.contains(&binding.join("binding.go")),
+            "expected binding.go to be walked, got: {paths:?}"
+        );
+        assert!(
+            !paths.contains(&root.join("gin.go")),
+            "root package should NOT be walked when not requested: {paths:?}"
+        );
+        assert!(
+            !paths.contains(&internal.join("internal.go")),
+            "unrequested sibling should NOT be walked: {paths:?}"
+        );
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn resolve_follows_within_module_transitive_imports() {
+        let tmp = std::env::temp_dir().join("bw-test-go-r3-transitive");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let root = tmp.join("myMod@v1.0.0");
+        let a = root.join("a");
+        let b = root.join("b");
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        // a/a.go imports b, so walking a should pull in b.
+        std::fs::write(
+            a.join("a.go"),
+            "package a\nimport \"my.example/myMod/b\"\nvar _ = b.X\n",
+        ).unwrap();
+        std::fs::write(b.join("b.go"), "package b\nvar X = 1\n").unwrap();
+
+        let dep = mkdep(
+            root.clone(),
+            "my.example/myMod",
+            vec!["my.example/myMod/a".to_string()],
+        );
+        let files = resolve_go_requested_packages(&dep);
+        let paths: std::collections::HashSet<_> =
+            files.iter().map(|f| f.absolute_path.clone()).collect();
+        assert!(paths.contains(&a.join("a.go")));
+        assert!(paths.contains(&b.join("b.go")),
+            "transitive within-module import should be followed: {paths:?}");
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn resolve_falls_back_to_walk_root_when_no_requested_imports() {
+        let tmp = std::env::temp_dir().join("bw-test-go-r3-fallback");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let root = tmp.join("mod@v1.0.0");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(root.join("a.go"), "package mod\n").unwrap();
+
+        let dep = mkdep(root.clone(), "my.example/mod", Vec::new());
+        let files = resolve_go_requested_packages(&dep);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].absolute_path, root.join("a.go"));
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

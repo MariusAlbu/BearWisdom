@@ -197,6 +197,7 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 found = true;
                 break;
@@ -453,6 +454,7 @@ mod tests {
             root: pkg_dir,
             ecosystem: "r",
             package_id: None,
+            requested_imports: Vec::new(),
         };
         let walked = walk_r_root(&dep);
         assert_eq!(walked.len(), 1);

@@ -129,6 +129,7 @@ pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             }

@@ -322,6 +322,7 @@ pub fn discover_python_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 matched = true;
                 break;
@@ -335,6 +336,7 @@ pub fn discover_python_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: file,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 matched = true;
                 break;
@@ -389,6 +391,7 @@ fn python_top_level_lookup(
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 continue;
             }
@@ -401,6 +404,7 @@ fn python_top_level_lookup(
                     root: single_file,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
             }
         }
@@ -438,6 +442,7 @@ pub fn discover_python_externals_scoped(
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 matched = true;
                 break;
@@ -451,6 +456,7 @@ pub fn discover_python_externals_scoped(
                     root: file,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 matched = true;
                 break;

@@ -107,6 +107,7 @@ fn make_root(dir: &Path, tag: &str) -> ExternalDepRoot {
         root: dir.to_path_buf(),
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
+        requested_imports: Vec::new(),
     }
 }
 

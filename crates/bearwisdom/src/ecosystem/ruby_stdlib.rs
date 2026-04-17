@@ -64,6 +64,7 @@ fn discover_ruby_stdlib() -> Vec<ExternalDepRoot> {
         root: dir,
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
+        requested_imports: Vec::new(),
     }]
 }
 

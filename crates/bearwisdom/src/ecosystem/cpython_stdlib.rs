@@ -67,6 +67,7 @@ fn discover_cpython_stdlib() -> Vec<ExternalDepRoot> {
         root: stdlib_dir,
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
+        requested_imports: Vec::new(),
     }]
 }
 

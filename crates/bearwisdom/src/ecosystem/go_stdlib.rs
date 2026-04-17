@@ -76,6 +76,7 @@ fn discover_go_stdlib_roots() -> Vec<ExternalDepRoot> {
         root: src_dir,
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
+        requested_imports: Vec::new(),
     }]
 }
 

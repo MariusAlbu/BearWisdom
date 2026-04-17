@@ -126,6 +126,7 @@ pub fn discover_lua_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: as_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             } else if as_file.is_file() {
@@ -135,6 +136,7 @@ pub fn discover_lua_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: as_file.parent().unwrap_or(lib).to_path_buf(),
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             }

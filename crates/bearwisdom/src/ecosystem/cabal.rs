@@ -182,6 +182,7 @@ fn find_haskell_pkgs_in_dir(dir: &Path, declared: &[String], roots: &mut Vec<Ext
                     root: entry.path(),
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             }

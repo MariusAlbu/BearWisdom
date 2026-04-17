@@ -76,6 +76,7 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: module_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             }
@@ -87,6 +88,7 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: module_file.parent().unwrap_or(lib).to_path_buf(),
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             }

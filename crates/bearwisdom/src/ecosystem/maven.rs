@@ -156,6 +156,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: cache_dir,
                     ecosystem: ID.as_str(),
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
             }
         } else {
@@ -221,6 +222,7 @@ fn resolve_and_push(
         root: cache_dir,
         ecosystem: ID.as_str(),
         package_id: None,
+        requested_imports: Vec::new(),
     });
 }
 

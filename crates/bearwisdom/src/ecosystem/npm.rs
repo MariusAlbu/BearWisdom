@@ -251,6 +251,7 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
             }
         }
@@ -331,6 +332,7 @@ fn discover_ts_externals_scoped(
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
             }
         }
@@ -874,6 +876,7 @@ mod tests {
             root,
             ecosystem: LEGACY_ECOSYSTEM_TAG,
             package_id: None,
+            requested_imports: Vec::new(),
         }
     }
 

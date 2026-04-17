@@ -46,6 +46,14 @@ pub struct ExternalDepRoot {
     /// the `package_deps` table and attribute shared walks to multiple
     /// declaring packages.
     pub package_id: Option<i64>,
+    /// R3: the exact import specifiers from user code that drove this dep
+    /// onto the discovery result. Populated by ecosystems that can narrow
+    /// `resolve_import` walking by user-observed demand — e.g., Go's
+    /// import paths (`"github.com/gin-gonic/gin/binding"`) or Java's
+    /// fully-qualified class imports. Empty vec means "no demand data;
+    /// walk everything the module exposes". Other ecosystems leave it
+    /// empty.
+    pub requested_imports: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

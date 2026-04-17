@@ -517,6 +517,7 @@ fn discover_cargo_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: best,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
             }
         }
@@ -545,6 +546,7 @@ fn discover_cargo_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: crate_root,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
             }
         }
@@ -907,6 +909,7 @@ anyhow = "1.0"
             root,
             ecosystem: LEGACY_ECOSYSTEM_TAG,
             package_id: None,
+            requested_imports: Vec::new(),
         }
     }
 

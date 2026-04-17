@@ -99,6 +99,7 @@ fn discover_dotnet_stdlib() -> Vec<ExternalDepRoot> {
         root: framework_dir,
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
+        requested_imports: Vec::new(),
     }]
 }
 

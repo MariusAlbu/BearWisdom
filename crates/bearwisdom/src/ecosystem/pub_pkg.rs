@@ -214,6 +214,7 @@ pub fn discover_dart_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: lib_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
             }
         }
@@ -284,6 +285,7 @@ pub(crate) fn discover_dart_externals_from_cache(
                     root: candidate,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             }
@@ -310,6 +312,7 @@ pub(crate) fn discover_dart_externals_from_cache(
                     root: candidate,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
+                    requested_imports: Vec::new(),
                 });
                 break;
             }
@@ -778,6 +781,7 @@ packages:
             root,
             ecosystem: LEGACY_ECOSYSTEM_TAG,
             package_id: None,
+            requested_imports: Vec::new(),
         }
     }
 

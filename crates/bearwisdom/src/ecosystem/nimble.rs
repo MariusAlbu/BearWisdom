@@ -98,6 +98,7 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 root: best,
                 ecosystem: LEGACY_ECOSYSTEM_TAG,
                 package_id: None,
+                requested_imports: Vec::new(),
             });
         }
     }

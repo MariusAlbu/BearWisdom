@@ -86,6 +86,7 @@ fn discover_jdk_src_roots() -> Vec<ExternalDepRoot> {
         root: cache_dir,
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
+        requested_imports: Vec::new(),
     }]
 }
 
