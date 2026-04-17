@@ -305,6 +305,14 @@ pub trait Ecosystem: Send + Sync {
         Vec::new()
     }
 
+    /// Opt-in flag: has this ecosystem migrated to reachability-based
+    /// loading? When false (default), the indexer ignores
+    /// `resolve_import`/`resolve_symbol` and drives externals via
+    /// `walk_root` as before. When true, the indexer calls the
+    /// reachability methods and skips the eager walk. Set to true after
+    /// overriding `resolve_import` with a real implementation.
+    fn supports_reachability(&self) -> bool { false }
+
     /// Reachability entry point: resolve a specific import statement.
     ///
     /// Given a package name and the symbols named in an `import { X, Y } from 'pkg'`

@@ -87,6 +87,8 @@ impl Ecosystem for NpmEcosystem {
         walk_ts_external_root(dep)
     }
 
+    fn supports_reachability(&self) -> bool { true }
+
     fn resolve_import(
         &self,
         dep: &ExternalDepRoot,

@@ -711,17 +711,20 @@ fn parse_external_sources(
         };
         let eco = ecosystem_by_tag.get(root.ecosystem);
         let files = match eco {
-            // Package-kind ecosystems: reachability entry point only —
-            // resolve_import returns the package's type-declaration entry
-            // rather than walking every file under the dep root. Project
+            // Package ecosystems that opted into reachability: call
+            // resolve_import for the lazy entry-driven load. Project
             // imports drive which symbols the entry parse must surface;
             // symbols list empty is fine at this step (entry parse lands
             // every export, resolver picks what it needs).
-            Some(e) if matches!(e.kind(), crate::ecosystem::EcosystemKind::Package) => {
+            Some(e)
+                if matches!(e.kind(), crate::ecosystem::EcosystemKind::Package)
+                    && e.supports_reachability() =>
+            {
                 e.resolve_import(root, &root.module_path, &[])
             }
-            // Stdlib ecosystems keep the eager walk — stdlib types are
-            // touched by almost every project file, so pre-warming pays off.
+            // Everything else keeps the eager walk — Stdlib ecosystems
+            // (pre-warming pays off) and un-migrated Package ecosystems
+            // (preserves behavior until they also opt in).
             _ => locator.walk_root(root),
         };
         walked_owners.extend(std::iter::repeat(locator.clone()).take(files.len()));
