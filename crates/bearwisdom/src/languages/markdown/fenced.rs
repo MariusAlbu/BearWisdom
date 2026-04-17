@@ -13,11 +13,11 @@
 //!
 //! # Examples
 //!
-//! ```text
+//! ~~~text
 //! ```ts
 //! export const x = 1;
 //! ```
-//! ```
+//! ~~~
 //!
 //! …yields one `Fence { info: "ts", body: "export const x = 1;\n",
 //! body_byte_offset: N, body_line_offset: L }`.
