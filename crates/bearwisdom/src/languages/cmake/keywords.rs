@@ -1,64 +1,80 @@
 // =============================================================================
-// cmake/keywords.rs — CMake primitive and built-in types
+// cmake/keywords.rs — CMake built-in commands, scope tokens, and keyword args
+//
+// CMake is case-insensitive at the command level, so all entries are lowercase
+// and callers must lowercase input before lookup. The list comes from the
+// resolver's `is_cmake_builtin()` exact-match branch (prefix matching stays in
+// resolve.rs because `cmake_*`, `project_*`, `ctest_*`, `cpack_*`,
+// `fetchcontent_*`, and `argv<N>` are open-ended patterns, not enumerable).
 // =============================================================================
 
-/// Primitive and built-in type/function names for CMake.
 pub(crate) const KEYWORDS: &[&str] = &[
-    // project setup
-    "project", "cmake_minimum_required",
-    // targets
-    "add_executable", "add_library", "add_custom_target",
-    "target_link_libraries", "target_include_directories",
-    "target_compile_definitions", "target_compile_options",
-    "target_compile_features", "target_sources",
-    // find
-    "find_package", "find_library", "find_path", "find_program", "find_file",
-    // inclusion
-    "include", "include_directories", "link_directories", "link_libraries",
-    // variables
-    "set", "unset", "get_property", "set_property",
-    "get_target_property", "set_target_properties", "option",
-    // messages
-    "message",
-    // flow
-    "if", "elseif", "else", "endif",
-    "foreach", "endforeach",
+    // Control flow
+    "if", "else", "elseif", "endif",
     "while", "endwhile",
+    "foreach", "endforeach",
     "function", "endfunction",
     "macro", "endmacro",
     "return", "break", "continue",
-    // commands
-    "add_custom_command", "add_subdirectory", "add_definitions",
-    "add_dependencies", "add_test",
-    "enable_testing", "install",
-    // file / string / list / math
-    "configure_file", "file", "string", "list", "math",
-    "execute_process",
-    "cmake_parse_arguments", "get_filename_component",
-    "mark_as_advanced", "separate_arguments", "site_name",
-    "variable_watch", "cmake_path", "block", "endblock",
-    "cmake_policy", "cmake_host_system_information",
-    // FetchContent / ExternalProject
-    "FetchContent_Declare", "FetchContent_MakeAvailable",
-    "FetchContent_Populate", "FetchContent_GetProperties",
-    "ExternalProject_Add", "CPMAddPackage",
-    // boolean literals
-    "TRUE", "FALSE", "ON", "OFF", "YES", "NO",
-    // scope / visibility
-    "CACHE", "PARENT_SCOPE", "GLOBAL",
-    "INTERFACE", "PUBLIC", "PRIVATE",
-    // find_package options
-    "REQUIRED", "QUIET", "CONFIG", "MODULE", "COMPONENTS",
-    "IMPORTED", "ALIAS",
-    // target types
-    "OBJECT", "STATIC", "SHARED",
-    // message types
-    "FATAL_ERROR", "SEND_ERROR", "WARNING", "AUTHOR_WARNING",
-    "DEPRECATION", "STATUS", "VERBOSE", "DEBUG", "TRACE",
-    "CHECK_START", "CHECK_PASS", "CHECK_FAIL",
-    // condition operators
-    "NOT", "AND", "OR", "DEFINED", "EQUAL", "LESS", "GREATER",
-    "STREQUAL", "MATCHES",
-    "VERSION_EQUAL", "VERSION_LESS", "VERSION_GREATER",
-    "EXISTS", "IS_DIRECTORY", "IS_ABSOLUTE", "COMMAND",
+    // Configuration / project
+    "cmake_minimum_required", "project", "cmake_policy",
+    "cmake_parse_arguments", "cmake_language",
+    // Target commands
+    "add_executable", "add_library", "add_custom_target",
+    "add_custom_command", "add_test", "add_subdirectory",
+    "add_dependencies", "add_compile_options", "add_compile_definitions",
+    "add_link_options",
+    // Property commands
+    "set_target_properties", "get_target_property",
+    "set_property", "get_property",
+    "target_compile_options", "target_compile_definitions",
+    "target_include_directories", "target_link_libraries",
+    "target_link_options", "target_sources",
+    "target_compile_features", "target_precompile_headers",
+    // Find commands
+    "find_package", "find_library", "find_program",
+    "find_path", "find_file",
+    // Variable / cache
+    "set", "unset", "option", "list", "string", "math",
+    "message", "configure_file", "file", "include",
+    "include_directories", "link_directories", "link_libraries",
+    // Install
+    "install", "export",
+    // Testing
+    "enable_testing", "ctest_configure", "ctest_build",
+    "ctest_test", "set_tests_properties",
+    // String / list / misc
+    "separate_arguments", "include_guard",
+    // Misc
+    "execute_process", "try_compile", "try_run",
+    "define_property", "mark_as_advanced",
+    "source_group", "aux_source_directory",
+    "enable_language", "get_filename_component",
+    "check_include_file", "check_function_exists",
+    "check_symbol_exists", "check_library_exists",
+    "check_cxx_source_compiles", "check_c_source_compiles",
+    "check_type_size", "check_struct_has_member",
+    // CPM.cmake
+    "cpmaddpackage",
+    "cpmfindpackage",
+    // Common cmake keyword arguments / scope tokens (appear as args, not commands,
+    // but may leak as Calls targets from target_link_libraries argument lists)
+    "cache", "internal", "bool", "path", "filepath",
+    "force", "docstring",
+    "interface", "public", "private",
+    "link_public", "link_private",
+    "static", "shared", "module", "object", "alias",
+    "required", "quiet", "config", "module_", "components",
+    "imported", "global", "parent_scope",
+    "fatal_error", "send_error", "warning", "author_warning",
+    "deprecation", "status", "verbose", "debug", "trace",
+    "check_start", "check_pass", "check_fail",
+    "not", "and", "or", "defined", "equal", "less", "greater",
+    "strequal", "matches",
+    "version_equal", "version_less", "version_greater",
+    "version_less_equal", "version_greater_equal",
+    "exists", "is_directory", "is_absolute",
+    "name", "command", "args", "append", "prepend",
+    "on", "off", "true", "false", "yes", "no",
+    "win32", "apple", "unix", "msvc", "mingw", "ios", "android",
 ];

@@ -35,7 +35,7 @@
 // =============================================================================
 
 
-use super::{predicates, chain};
+use super::{keywords, predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -533,31 +533,32 @@ impl LanguageResolver for RustResolver {
             let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
             // First segment of a `::` path identifies the crate.
             let first = import_path.split("::").next().unwrap_or(import_path);
-            match first {
-                "crate" | "self" | "super" => return None, // internal
-                "std" | "core" | "alloc" => return Some("std".to_string()),
-                name => {
-                    // Manifest-driven: check Cargo.toml dependencies first.
-                    // Crate names may use hyphens in Cargo.toml but underscores in source.
-                    if let Some(ctx) = project_ctx {
-                        if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
-                            if manifest.dependencies.contains(name)
-                                || manifest.dependencies.contains(&name.replace('_', "-"))
-                            {
-                                return Some(first.to_string());
-                            }
-                        }
-                    }
-                    let is_ext = match project_ctx {
-                        Some(ctx) => is_manifest_rust_crate(ctx, name),
-                        None => true, // conservative: treat as external
-                    };
-                    if is_ext {
+            if matches!(first, "crate" | "self" | "super") {
+                return None; // internal
+            }
+            if keywords::STDLIB_CRATES.contains(&first) {
+                return Some("std".to_string());
+            }
+            let name = first;
+            // Manifest-driven: check Cargo.toml dependencies first.
+            // Crate names may use hyphens in Cargo.toml but underscores in source.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
+                    if manifest.dependencies.contains(name)
+                        || manifest.dependencies.contains(&name.replace('_', "-"))
+                    {
                         return Some(first.to_string());
                     }
-                    return None;
                 }
             }
+            let is_ext = match project_ctx {
+                Some(ctx) => is_manifest_rust_crate(ctx, name),
+                None => true, // conservative: treat as external
+            };
+            if is_ext {
+                return Some(first.to_string());
+            }
+            return None;
         }
 
         // Builtin calls / stdlib items — always external.
@@ -578,28 +579,29 @@ impl LanguageResolver for RustResolver {
                 continue;
             };
             let first = mod_path.split("::").next().unwrap_or(mod_path);
-            match first {
-                "crate" | "self" | "super" => continue,
-                "std" | "core" | "alloc" => return Some("std".to_string()),
-                name => {
-                    // Manifest-driven check.
-                    if let Some(ctx) = project_ctx {
-                        if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
-                            if manifest.dependencies.contains(name)
-                                || manifest.dependencies.contains(&name.replace('_', "-"))
-                            {
-                                return Some(first.to_string());
-                            }
-                        }
-                    }
-                    let is_ext = match project_ctx {
-                        Some(ctx) => is_manifest_rust_crate(ctx, name),
-                        None => true,
-                    };
-                    if is_ext {
+            if matches!(first, "crate" | "self" | "super") {
+                continue;
+            }
+            if keywords::STDLIB_CRATES.contains(&first) {
+                return Some("std".to_string());
+            }
+            let name = first;
+            // Manifest-driven check.
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Cargo) {
+                    if manifest.dependencies.contains(name)
+                        || manifest.dependencies.contains(&name.replace('_', "-"))
+                    {
                         return Some(first.to_string());
                     }
                 }
+            }
+            let is_ext = match project_ctx {
+                Some(ctx) => is_manifest_rust_crate(ctx, name),
+                None => true,
+            };
+            if is_ext {
+                return Some(first.to_string());
             }
         }
 
@@ -614,13 +616,15 @@ impl LanguageResolver for RustResolver {
                     }
                     if let Some(ref mod_path) = import.module_path {
                         let first = mod_path.split("::").next().unwrap_or(mod_path);
-                        let is_ext = match first {
-                            "crate" | "self" | "super" => false,
-                            "std" | "core" | "alloc" => true,
-                            name => match project_ctx {
-                                Some(ctx) => is_manifest_rust_crate(ctx, name),
+                        let is_ext = if matches!(first, "crate" | "self" | "super") {
+                            false
+                        } else if keywords::STDLIB_CRATES.contains(&first) {
+                            true
+                        } else {
+                            match project_ctx {
+                                Some(ctx) => is_manifest_rust_crate(ctx, first),
                                 None => true,
-                            },
+                            }
                         };
                         if is_ext {
                             return Some(format!("{}.*", first));
@@ -664,7 +668,7 @@ impl LanguageResolver for RustResolver {
 
 /// Check whether a Rust crate name is an external dependency using the Cargo manifest.
 fn is_manifest_rust_crate(ctx: &ProjectContext, name: &str) -> bool {
-    matches!(name, "std" | "core" | "alloc")
+    keywords::STDLIB_CRATES.contains(&name)
         || ctx.has_dependency(ManifestKind::Cargo, name)
         || ctx.has_dependency(ManifestKind::Cargo, &name.replace('_', "-"))
 }

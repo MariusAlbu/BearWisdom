@@ -68,8 +68,7 @@ impl LanguagePlugin for CMakePlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        // CMake has no type system; no builtins to exclude.
-        &[]
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

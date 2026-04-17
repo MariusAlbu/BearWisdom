@@ -19,3 +19,10 @@ pub(crate) const KEYWORDS: &[&str] = &[
     // Function traits — compiler intrinsics, no indexable source
     "Fn", "FnMut", "FnOnce",
 ];
+
+/// Stdlib crate roots that always classify as external at the resolver's
+/// "first ::-segment" decision point. `core` and `alloc` are re-exported
+/// through `std` in most builds, but also valid as direct imports in no_std
+/// crates. Callers treat any of these as the "std" ecosystem for origin
+/// classification purposes.
+pub(crate) const STDLIB_CRATES: &[&str] = &["std", "core", "alloc"];
