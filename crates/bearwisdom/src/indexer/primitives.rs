@@ -84,9 +84,10 @@ mod tests {
     fn kotlin_has_own_primitives() {
         let k = primitives_for_language("kotlin");
         let j = primitives_for_language("java");
-        // Kotlin uses "Unit" not "void", "Int" not "int"
-        assert!(k.contains(&"Unit"));
-        assert!(k.contains(&"Int"));
+        // Kotlin and Java have distinct primitive lists — Unit/Int are now
+        // indexed by KotlinStdlib, Array/Result stay as ambiguity short-circuits.
+        assert!(k.contains(&"Array"));
+        assert!(k.contains(&"Flow"));
         assert!(!std::ptr::eq(k, j));
     }
 
