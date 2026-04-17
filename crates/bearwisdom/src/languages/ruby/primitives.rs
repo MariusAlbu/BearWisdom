@@ -3,21 +3,28 @@
 // =============================================================================
 
 /// Primitive and built-in type names for Ruby.
+/// Core Ruby stdlib types with ≤10 kind-compatible external candidates
+/// (Exception/Symbol/Integer/File/Regexp/etc.) are now indexed by the
+/// RubyStdlib ecosystem and removed. High-ambiguity core types (Array,
+/// String, Object, Hash, Module, Date, Time — 11-27 candidates each) stay
+/// as disambiguation short-circuits until ecosystem-based candidate
+/// ranking lands. Rails/ActiveRecord/RSpec/Capybara DSL names stay
+/// because they're not part of Ruby stdlib — they require the Rails or
+/// RSpec gem to be resolvable.
 pub(crate) const PRIMITIVES: &[&str] = &[
-    // Core types
-    "Integer", "Float", "String", "Symbol", "Array", "Hash", "NilClass", "TrueClass",
-    "FalseClass", "Numeric", "Object", "BasicObject", "Kernel", "Comparable",
-    "Enumerable", "Regexp", "Range", "Proc", "Lambda", "Method", "IO",
-    "File", "Dir", "Time", "Date", "DateTime", "Struct", "OpenStruct",
-    "Class", "Module", "Encoding", "Complex", "Rational", "BigDecimal",
-    "Set", "SortedSet", "Queue", "SizedQueue", "Thread", "Mutex", "Fiber",
-    "Enumerator", "StopIteration", "Ractor",
-    // Exceptions
-    "Exception", "StandardError", "RuntimeError", "TypeError", "ArgumentError",
-    "NameError", "NoMethodError", "NotImplementedError", "RangeError",
-    "IOError", "Errno", "SystemCallError", "LoadError", "SyntaxError",
-    "RegexpError", "IndexError", "KeyError", "StopIteration", "SecurityError",
-    "ScriptError", "SignalException", "Interrupt", "SystemExit", "ZeroDivisionError",
+    // High-ambiguity Ruby core types — kept as short-circuits
+    "Array", "String", "Object", "Hash", "Kernel", "Module", "Date", "Time",
+    "DateTime",
+    // Types not reliably indexed (borderline or C-implemented)
+    "BasicObject", "OpenStruct", "BigDecimal",
+    "Thread", "Mutex", "Fiber", "Enumerator", "SortedSet", "SizedQueue",
+    "Ractor", "StopIteration",
+    // Exceptions — the root names aren't always indexed as classes
+    "RuntimeError", "TypeError", "NoMethodError", "IOError", "KeyError",
+    "IndexError", "Errno", "SystemCallError", "RegexpError",
+    "SecurityError", "ScriptError", "SignalException", "Interrupt",
+    "SystemExit", "ZeroDivisionError", "StandardError",
+    "ConcurrentModificationException",
     // ActiveRecord DSL
     "add_column", "remove_column", "rename_column", "change_column",
     "add_index", "remove_index", "add_reference", "remove_reference",
@@ -52,7 +59,7 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "root", "get", "post", "put", "patch", "delete", "resources", "resource",
     "namespace", "scope", "constraints", "mount",
     "permit", "require", "strong_parameters",
-    // Ruby builtins
+    // Ruby builtins (methods/keywords not reliably indexed as stdlib symbols)
     "puts", "print", "p", "pp", "warn", "raise", "fail",
     "require", "require_relative", "load", "autoload",
     "attr_accessor", "attr_reader", "attr_writer",
