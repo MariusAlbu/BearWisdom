@@ -314,20 +314,17 @@ pub trait Ecosystem: Send + Sync {
     /// stops — no recursion into unrelated parts of the package.
     ///
     /// This is the preferred interception point for `Package`-kind
-    /// ecosystems. Default returns empty (no-op); ecosystems that support
-    /// reachability override.
-    ///
-    /// The indexer iterates: after parsing a round of reached files, it
-    /// collects the new import edges and refs they introduce and calls this
-    /// method again for anything newly named. Loop terminates at fixpoint.
+    /// ecosystems. Default delegates to `walk_root` so legacy eager
+    /// behavior survives during the staged rollout; ecosystems override to
+    /// emit a narrow, import-driven slice of WalkedFiles instead.
     fn resolve_import(
         &self,
         dep: &ExternalDepRoot,
         package: &str,
         symbols: &[&str],
     ) -> Vec<WalkedFile> {
-        let _ = (dep, package, symbols);
-        Vec::new()
+        let _ = (package, symbols);
+        self.walk_root(dep)
     }
 
     /// Reachability chain step: pull a single qualified name on demand.
@@ -337,15 +334,16 @@ pub trait Ecosystem: Send + Sync {
     /// yet. Return the file(s) defining `fqn` so the indexer can parse them
     /// and extend the symbol graph.
     ///
-    /// Returns empty when `fqn` isn't in this ecosystem. Defaults to empty;
-    /// reachability-based ecosystems override.
+    /// Default delegates to `walk_root` so legacy eager behavior survives
+    /// during the staged rollout. Reachability-capable ecosystems override
+    /// to return just the file defining `fqn`.
     fn resolve_symbol(
         &self,
         dep: &ExternalDepRoot,
         fqn: &str,
     ) -> Vec<WalkedFile> {
-        let _ = (dep, fqn);
-        Vec::new()
+        let _ = fqn;
+        self.walk_root(dep)
     }
 
     /// Metadata-only extraction path. Used by NuGet (DLL metadata via

@@ -100,7 +100,7 @@ impl Ecosystem for NpmEcosystem {
         // imports in the reachability loop and drive further resolve_*
         // calls until fixpoint.
         let _ = package;
-        resolve_package_entry(dep).into_iter().collect()
+        resolve_package_entry(dep)
     }
 
     fn resolve_symbol(
@@ -114,7 +114,7 @@ impl Ecosystem for NpmEcosystem {
         // either appears directly there or is re-exported, in which case
         // the re-export produces a new import ref resolve_import handles.
         let _ = fqn;
-        resolve_package_entry(dep).into_iter().collect()
+        resolve_package_entry(dep)
     }
 
     fn post_process_parsed(&self, _dep: &ExternalDepRoot, parsed: &mut crate::types::ParsedFile) {
@@ -505,11 +505,22 @@ fn walk_ts_dir_bounded(
 ///      `.d.ts` sibling if one exists on disk
 ///   4. Conventional fallbacks — `index.d.ts`, `dist/index.d.ts`, `lib/index.d.ts`
 ///
-/// Returns at most one `WalkedFile`. The caller (reachability loop in the
-/// indexer) parses it and, if the file re-exports from elsewhere in the
-/// package, follows those re-exports through additional `resolve_symbol`
-/// calls.
-fn resolve_package_entry(dep: &ExternalDepRoot) -> Option<WalkedFile> {
+/// Returns the entry file plus any files it re-exports from WITHIN the same
+/// dep root, bounded at depth `REEXPORT_MAX_DEPTH`. Without within-package
+/// re-export expansion, entry-only parsing leaves most declaration bundles
+/// opaque (vitest's `index.d.ts` is almost entirely `export { X } from
+/// './chunks/...'` statements).
+fn resolve_package_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let Some(entry) = resolve_package_entry_path(dep) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    expand_reexports_into(dep, &entry, &mut out, &mut seen, 0);
+    out
+}
+
+fn resolve_package_entry_path(dep: &ExternalDepRoot) -> Option<PathBuf> {
     let pkg_json_path = dep.root.join("package.json");
     let json_str = std::fs::read_to_string(&pkg_json_path).ok();
     let parsed: Option<serde_json::Value> = json_str
@@ -526,8 +537,6 @@ fn resolve_package_entry(dep: &ExternalDepRoot) -> Option<WalkedFile> {
         }
         if let Some(main) = pj.get("main").and_then(|v| v.as_str()) {
             let main_path = dep.root.join(main.trim_start_matches("./"));
-            // Rewrite .js/.mjs/.cjs → .d.ts sibling. If the main already ends
-            // in .d.ts we keep it.
             if main.ends_with(".d.ts") {
                 candidates.push(main_path);
             } else {
@@ -543,23 +552,79 @@ fn resolve_package_entry(dep: &ExternalDepRoot) -> Option<WalkedFile> {
         }
     }
 
-    // Conventional fallbacks.
     for fallback in ["index.d.ts", "dist/index.d.ts", "lib/index.d.ts", "types/index.d.ts"] {
         candidates.push(dep.root.join(fallback));
     }
 
-    let entry = candidates.into_iter().find(|p| p.is_file())?;
-    let rel_sub = entry
-        .strip_prefix(&dep.root)
-        .ok()?
-        .to_string_lossy()
-        .replace('\\', "/");
-    let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
-    Some(WalkedFile {
-        relative_path: virtual_path,
-        absolute_path: entry,
-        language: "typescript",
-    })
+    candidates.into_iter().find(|p| p.is_file())
+}
+
+const REEXPORT_MAX_DEPTH: u32 = 3;
+
+fn expand_reexports_into(
+    dep: &ExternalDepRoot,
+    file: &Path,
+    out: &mut Vec<WalkedFile>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    depth: u32,
+) {
+    if !seen.insert(file.to_path_buf()) { return }
+    if !file.is_file() { return }
+    let Ok(rel) = file.strip_prefix(&dep.root) else { return };
+    let rel_s = rel.to_string_lossy().replace('\\', "/");
+    let lang = if rel_s.ends_with(".tsx") || rel_s.ends_with(".jsx") { "tsx" } else { "typescript" };
+    out.push(WalkedFile {
+        relative_path: format!("ext:ts:{}/{}", dep.module_path, rel_s),
+        absolute_path: file.to_path_buf(),
+        language: lang,
+    });
+
+    if depth >= REEXPORT_MAX_DEPTH { return }
+
+    let Ok(src) = std::fs::read_to_string(file) else { return };
+    for target in extract_relative_reexports(&src) {
+        let Some(next) = resolve_relative_ts_path(file, &target) else { continue };
+        expand_reexports_into(dep, &next, out, seen, depth + 1);
+    }
+}
+
+/// Scan line-by-line for `export ... from '...'` and `import ... from '...'`
+/// with relative specifiers. Returns the relative path strings in order.
+/// Non-relative specifiers are skipped — they're separate packages with
+/// their own dep roots.
+fn extract_relative_reexports(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let t = line.trim();
+        if !(t.starts_with("export") || t.starts_with("import")) { continue }
+        let Some(ix) = t.find(" from ") else { continue };
+        let rest = t[ix + 6..].trim_start();
+        let Some(quote) = rest.chars().next() else { continue };
+        if quote != '\'' && quote != '"' { continue }
+        let inner = &rest[1..];
+        if let Some(end) = inner.find(quote) {
+            let spec = &inner[..end];
+            if spec.starts_with("./") || spec.starts_with("../") {
+                out.push(spec.to_string());
+            }
+        }
+    }
+    out
+}
+
+fn resolve_relative_ts_path(from_file: &Path, spec: &str) -> Option<PathBuf> {
+    let base = from_file.parent()?;
+    let raw = base.join(spec);
+    for ext in [".d.ts", ".ts", ".tsx", ".mts", ".cts"] {
+        let p = PathBuf::from(format!("{}{}", raw.to_string_lossy(), ext));
+        if p.is_file() { return Some(p) }
+    }
+    for ext in ["index.d.ts", "index.ts", "index.tsx"] {
+        let p = raw.join(ext);
+        if p.is_file() { return Some(p) }
+    }
+    if raw.is_file() { return Some(raw) }
+    None
 }
 
 fn is_ts_source_file(name: &str) -> bool {

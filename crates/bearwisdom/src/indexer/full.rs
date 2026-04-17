@@ -691,11 +691,39 @@ fn parse_external_sources(
         }
     }
 
+    // Resolve each active ecosystem's id → Ecosystem trait impl so we can
+    // branch on kind() between the eager walk (Stdlib) and reachability-based
+    // resolve_import (Package). Store by the same legacy string tag used on
+    // ExternalDepRoot.ecosystem so the per-root lookup is cheap.
+    let mut ecosystem_by_tag: std::collections::HashMap<
+        &'static str,
+        Arc<dyn crate::ecosystem::Ecosystem>,
+    > = std::collections::HashMap::new();
+    for (id, locator) in &locators {
+        if let Some(eco) = crate::ecosystem::default_registry().get(*id) {
+            ecosystem_by_tag.insert(locator.ecosystem(), eco.clone());
+        }
+    }
+
     for (root, _declaring_pkgs) in &deduped {
         let Some(locator) = locator_by_ecosystem.get(root.ecosystem) else {
             continue;
         };
-        let files = locator.walk_root(root);
+        let eco = ecosystem_by_tag.get(root.ecosystem);
+        let files = match eco {
+            // Package-kind ecosystems: reachability entry point only —
+            // resolve_import returns the package's type-declaration entry
+            // rather than walking every file under the dep root. Project
+            // imports drive which symbols the entry parse must surface;
+            // symbols list empty is fine at this step (entry parse lands
+            // every export, resolver picks what it needs).
+            Some(e) if matches!(e.kind(), crate::ecosystem::EcosystemKind::Package) => {
+                e.resolve_import(root, &root.module_path, &[])
+            }
+            // Stdlib ecosystems keep the eager walk — stdlib types are
+            // touched by almost every project file, so pre-warming pays off.
+            _ => locator.walk_root(root),
+        };
         walked_owners.extend(std::iter::repeat(locator.clone()).take(files.len()));
         walked.extend(files);
     }
