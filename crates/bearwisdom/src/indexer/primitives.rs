@@ -54,8 +54,10 @@ mod tests {
         let p = primitives_for_language("rust");
         assert!(p.contains(&"i32"));
         assert!(p.contains(&"str"));
-        assert!(p.contains(&"Option"));
-        assert!(p.contains(&"Result"));
+        // Note: stdlib types (Option, Result, Vec, etc.) are indexed as external
+        // symbols by the RustStdlib ecosystem — no longer in the primitives list.
+        assert!(p.contains(&"Fn"));
+        assert!(p.contains(&"Self"));
     }
 
     #[test]
