@@ -37,6 +37,7 @@ pub mod dotnet_stdlib;
 pub mod elixir_stdlib;
 pub mod erlang_otp;
 pub mod go_mod;
+pub mod go_stdlib;
 pub mod godot_api;
 pub mod groovy_stdlib;
 pub mod hex;
@@ -73,6 +74,7 @@ pub use dotnet_stdlib::DotnetStdlibEcosystem;
 pub use elixir_stdlib::ElixirStdlibEcosystem;
 pub use erlang_otp::ErlangOtpEcosystem;
 pub use go_mod::GoModEcosystem;
+pub use go_stdlib::GoStdlibEcosystem;
 pub use godot_api::GodotApiEcosystem;
 pub use groovy_stdlib::GroovyStdlibEcosystem;
 pub use hex::HexEcosystem;
@@ -379,6 +381,7 @@ pub fn default_locator(
         "android-sdk" => Some(Arc::new(AndroidSdkEcosystem)),
         "kotlin-stdlib" => Some(Arc::new(KotlinStdlibEcosystem)),
         "rust-stdlib" => Some(Arc::new(RustStdlibEcosystem)),
+        "go-stdlib" => Some(Arc::new(GoStdlibEcosystem)),
         "cpython-stdlib" => Some(Arc::new(CpythonStdlibEcosystem)),
         "jdk-src" => Some(Arc::new(JdkSrcEcosystem)),
         "ts-lib-dom" => Some(Arc::new(TsLibDomEcosystem)),
@@ -430,6 +433,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(KotlinStdlibEcosystem));
         reg.register(Arc::new(AndroidSdkEcosystem));
         reg.register(Arc::new(RustStdlibEcosystem));
+        reg.register(Arc::new(GoStdlibEcosystem));
         reg.register(Arc::new(CpythonStdlibEcosystem));
         reg.register(Arc::new(JdkSrcEcosystem));
         reg.register(Arc::new(TsLibDomEcosystem));
