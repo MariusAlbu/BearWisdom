@@ -21,12 +21,19 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "GlobalScope", "MainScope", "CoroutineStart",
     "launch", "async", "runBlocking", "withContext", "delay",
     "Dispatchers",
-    // Android / Compose common types (no Android SDK ecosystem active here)
-    "Context", "Intent", "Bundle", "View", "Activity", "Fragment",
+    // Android / Compose common types. Activity/Fragment/Intent/Bundle/
+    // Parcelable live in android.jar sources and resolve via the
+    // android-sdk ecosystem when $ANDROID_HOME/sources/android-<N>/ is
+    // present. Context/View/Color stay as primitives — they're generic
+    // enough that non-Android Kotlin projects also carry same-name types
+    // and the ambiguity bite-back would regress those.
+    "Context", "View",
+    // Compose + androidx (live in Gradle caches, not Maven — ecosystem
+    // doesn't scan them yet)
     "ViewModel", "LiveData", "MutableLiveData",
     "Modifier", "Color", "Dp",
-    // Annotations (Kotlin/JVM + kotlinx.serialization)
-    "Parcelable", "Parcelize",
+    // kotlinx compiler plugin annotation (not in android.jar)
+    "Parcelize",
     "Suppress", "OptIn", "JvmStatic", "JvmOverloads",
     "JvmField", "JvmName", "Throws", "Volatile", "Transient",
     // Test annotations (JUnit/Kotest — not in stdlib)

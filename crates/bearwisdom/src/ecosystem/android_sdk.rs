@@ -63,6 +63,30 @@ impl ExternalSourceLocator for AndroidSdkEcosystem {
 
 pub(crate) fn discover_android_sdk_roots() -> Vec<ExternalDepRoot> {
     let Some(sdk_root) = android_home() else { return Vec::new() };
+
+    // Prefer pre-extracted sources from `sdkmanager "sources;android-<N>"`,
+    // which ships as a ready-made tree of .java files under
+    // `$ANDROID_HOME/sources/android-<N>/`. No zip extraction required.
+    //
+    // The older path (platforms/android-<N>/android.jar) contains .class
+    // bytecode, not sources, so extract_java_sources_jar yielded an empty
+    // cache. We keep that branch for forward-compat but only reach it when
+    // sources aren't installed.
+    let sources_dir = sdk_root.join("sources");
+    if let Some(api_level) = highest_api_level(&sources_dir) {
+        let root = sources_dir.join(format!("android-{api_level}"));
+        if root.is_dir() {
+            debug!("Android SDK sources API {api_level} registered at {}", root.display());
+            return vec![ExternalDepRoot {
+                module_path: format!("android-sdk:{api_level}"),
+                version: api_level.to_string(),
+                root,
+                ecosystem: LEGACY_ECOSYSTEM_TAG,
+                package_id: None,
+            }];
+        }
+    }
+
     let platforms_dir = sdk_root.join("platforms");
     if !platforms_dir.is_dir() { return Vec::new() }
 
