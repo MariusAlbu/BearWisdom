@@ -68,10 +68,10 @@ fn discover_jdk_src_roots() -> Vec<ExternalDepRoot> {
         debug!("jdk-src: no src.zip found");
         return Vec::new();
     };
-    let Some(java_home) = src_zip.parent().map(|p| p.to_path_buf()) else {
+    let Some(cache_base) = jdk_src_cache_dir() else {
+        debug!("jdk-src: no writable cache directory");
         return Vec::new();
     };
-    let cache_base = java_home.join("bearwisdom-jdk-src-cache");
     let cache_dir = cache_base.join("jdk-src");
     if !cache_dir.exists() || is_cache_stale(&src_zip, &cache_dir) {
         if let Err(e) = extract_java_sources_jar(&src_zip, &cache_dir) {
@@ -87,6 +87,23 @@ fn discover_jdk_src_roots() -> Vec<ExternalDepRoot> {
         ecosystem: LEGACY_ECOSYSTEM_TAG,
         package_id: None,
     }]
+}
+
+fn jdk_src_cache_dir() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_JDK_SRC_CACHE") {
+        let p = PathBuf::from(explicit);
+        std::fs::create_dir_all(&p).ok()?;
+        return Some(p);
+    }
+    if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+        let p = PathBuf::from(local).join("bearwisdom").join("jdk-src-cache");
+        if std::fs::create_dir_all(&p).is_ok() { return Some(p); }
+    }
+    if let Some(home) = std::env::var_os("HOME") {
+        let p = PathBuf::from(home).join(".cache").join("bearwisdom").join("jdk-src-cache");
+        if std::fs::create_dir_all(&p).is_ok() { return Some(p); }
+    }
+    None
 }
 
 fn probe_src_zip() -> Option<PathBuf> {
