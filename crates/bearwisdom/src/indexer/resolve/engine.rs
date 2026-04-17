@@ -276,17 +276,6 @@ pub trait SymbolLookup {
         None
     }
 
-    /// Per-package test-framework global check.
-    ///
-    /// Returns true when `name` is exported by a test framework declared in
-    /// the given package's own manifest — NOT a sibling's. Prefer this over
-    /// `is_external_name` when `ref_ctx.file_package_id` is available so a
-    /// non-test package doesn't inherit `describe`/`it`/etc. from a sibling
-    /// that pulls in vitest or jest.
-    fn is_test_global_for(&self, _package_id: Option<i64>, _name: &str) -> bool {
-        false
-    }
-
     /// Return the direct parent class qualified name for the given class.
     ///
     /// Built from `Inherits` edges at index construction time.  Returns `None`
@@ -366,17 +355,6 @@ pub struct SymbolIndex {
     /// global slot causes the first-resolved consumer to win and silently
     /// breaks resolution for every other file.
     module_to_file_per_source: FxHashMap<(String, String), String>,
-    /// Test-framework globals (e.g., `expect`, `describe`, `it`) computed from
-    /// manifest dependencies. Keyed by language-independent name since most test
-    /// globals are language-specific sets unioned at build time.
-    test_globals: HashSet<String>,
-    /// Per-package test-globals set. A package inherits globals only from
-    /// test frameworks declared in its own manifest — a consumer package
-    /// that never declares vitest/jest/etc. cannot smuggle `describe`/`it`
-    /// in through a sibling's dependencies. Resolvers with a package_id in
-    /// scope (via `ref_ctx.file_package_id`) should prefer
-    /// `is_test_global_for(package_id, name)` to the union-based check.
-    test_globals_by_pkg: FxHashMap<i64, HashSet<String>>,
     /// Language-intrinsic keywords keyed by language id → set of names.
     /// Built once from `keywords::keywords_set_for_language` for all languages
     /// present in the parsed files.
@@ -867,20 +845,6 @@ impl SymbolIndex {
         }
 
         // Build test-framework globals from manifest dependencies.
-        //
-        // Union set: the name is a test global if ANY package declared a
-        // framework that exports it. Used by the existing
-        // `is_external_name` / `classify_external_name` API which has no
-        // package_id parameter today.
-        //
-        // Per-package set: built separately below so resolvers can query
-        // `is_test_global_for(package_id, name)` and avoid misclassifying
-        // a bare `describe` as external inside a non-test package just
-        // because a sibling test package declared vitest.
-        let test_globals: HashSet<String> = build_test_globals_union(project_ctx);
-        let test_globals_by_pkg: FxHashMap<i64, HashSet<String>> =
-            build_test_globals_by_pkg(project_ctx);
-
         // Build per-language primitive sets for all languages present in parsed files.
         let mut primitives_by_language: FxHashMap<String, HashSet<&'static str>> =
             FxHashMap::default();
@@ -959,8 +923,6 @@ impl SymbolIndex {
             reexport_map,
             module_to_file,
             module_to_file_per_source,
-            test_globals,
-            test_globals_by_pkg,
             primitives_by_language,
             by_package,
             workspace_pkg_by_declared_name,
@@ -1471,21 +1433,14 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn is_external_name(&self, name: &str, language: &str) -> bool {
-        // 1. Language primitive check.
+        // Language primitive check. Name is not in the project index at all
+        // and is not a known local name — we intentionally do NOT call
+        // by_name here, that's for the resolution path.
         if let Some(primitives) = self.primitives_by_language.get(language) {
             if primitives.contains(name) {
                 return true;
             }
         }
-
-        // 2. Test-framework global check (language-independent).
-        if self.test_globals.contains(name) {
-            return true;
-        }
-
-        // 3. Name is not in the project index at all and is not a known local name.
-        // We intentionally do NOT call by_name here — that is used by the resolution
-        // path. This method only covers the three positive-match cases above.
         false
     }
 
@@ -1541,20 +1496,6 @@ impl SymbolLookup for SymbolIndex {
         Some(format!("{target}{remainder}"))
     }
 
-    fn is_test_global_for(&self, package_id: Option<i64>, name: &str) -> bool {
-        // Per-package check first; falls back to the union only when there's
-        // no package_id at all (root-scoped file). A known package that
-        // doesn't declare a test framework correctly answers `false` —
-        // sibling frameworks do not leak.
-        if let Some(id) = package_id {
-            return self
-                .test_globals_by_pkg
-                .get(&id)
-                .map_or(false, |s| s.contains(name));
-        }
-        self.test_globals.contains(name)
-    }
-
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.inherits_map.get(class_qname).map(|s| s.as_str())
     }
@@ -1566,15 +1507,9 @@ impl SymbolIndex {
     /// Returns:
     ///   - `Some("primitive")` for language keyword types (int, string, bool)
     ///   - `Some("builtin")` for runtime globals (console, print, len, Array)
-    ///   - `Some("test_framework")` for test globals (describe, it, expect)
     ///   - `None` if the name is not classified as external
     pub fn classify_external_name(&self, name: &str, language: &str) -> Option<&'static str> {
-        // Test globals first — most specific classification.
-        if self.test_globals.contains(name) {
-            return Some("test_framework");
-        }
-
-        // Check the merged external set (primitives + externals + query builtins).
+        // Check the merged external set (primitives + query builtins).
         if let Some(all_externals) = self.primitives_by_language.get(language) {
             if all_externals.contains(name) {
                 // Distinguish: plugin.keywords() are "primitive", everything
@@ -2563,188 +2498,4 @@ mod tests {
         assert!(index.in_namespace("N").is_empty()); // "N" is a prefix of "NS" but not "NS."
     }
 
-    #[test]
-    fn test_globals_scope_to_declaring_package() {
-        use crate::ecosystem::manifest::{ManifestData, ManifestKind};
-        use crate::indexer::project_context::ProjectContext;
-
-        // Two packages: `e2e` declares vitest; `server` declares nothing.
-        let mut ctx = ProjectContext::default();
-        let mut e2e_npm = ManifestData::default();
-        e2e_npm.dependencies.insert("vitest".to_string());
-        let mut server_npm = ManifestData::default();
-        server_npm.dependencies.insert("express".to_string());
-        ctx.by_package.insert(1, [(ManifestKind::Npm, e2e_npm)].into());
-        ctx.by_package
-            .insert(2, [(ManifestKind::Npm, server_npm)].into());
-
-        // Union must also be populated so union-based callers (no pkg_id
-        // context) still classify describe/it correctly.
-        let mut union = ManifestData::default();
-        union.dependencies.insert("vitest".to_string());
-        union.dependencies.insert("express".to_string());
-        ctx.manifests.insert(ManifestKind::Npm, union);
-
-        let index = SymbolIndex::build_with_context(&[], &HashMap::new(), Some(&ctx));
-
-        // e2e (pkg 1) sees vitest globals.
-        assert!(index.is_test_global_for(Some(1), "describe"));
-        assert!(index.is_test_global_for(Some(1), "expect"));
-        // server (pkg 2) does NOT see them — vitest wasn't declared there.
-        assert!(!index.is_test_global_for(Some(2), "describe"));
-        assert!(!index.is_test_global_for(Some(2), "expect"));
-        // Root-scoped file (no package_id) falls back to union.
-        assert!(index.is_test_global_for(None, "describe"));
-    }
-
-    #[test]
-    fn test_globals_empty_when_no_framework_declared() {
-        let index = SymbolIndex::build(&[], &HashMap::new());
-        assert!(!index.is_test_global_for(None, "describe"));
-        assert!(!index.is_test_global_for(Some(1), "describe"));
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Test-framework globals — manifest-declared → exported global set
-// ---------------------------------------------------------------------------
-
-/// Map a manifest-declared test-framework dep name to the set of globals it
-/// exposes to source files at test time.
-///
-/// Only covers the runtime-global case: frameworks whose helpers are
-/// injected as free identifiers rather than imported. Python's unittest
-/// / pytest do NOT qualify here — their helpers come through explicit
-/// imports and are resolved by the normal import-aware path.
-fn test_framework_globals(dep: &str) -> &'static [&'static str] {
-    match dep {
-        // JS/TS — vitest + jest overlap in the BDD surface.
-        // Includes assertion/mock methods that appear as bare calls after fluent chains
-        // (e.g., `expect(x).toEqual(y)` emits `toEqual` as a standalone calls ref).
-        "vitest" | "jest" | "@jest/globals" => &[
-            "describe", "xdescribe", "fdescribe", "it", "xit", "fit", "test", "expect",
-            "beforeEach", "afterEach", "beforeAll", "afterAll",
-            "vi", "jest",
-            // jest/vitest assertion methods accessed via chain
-            "toEqual", "toStrictEqual", "toBe", "toBeTrue", "toBeFalse",
-            "toBeNull", "toBeUndefined", "toBeTruthy", "toBeFalsy",
-            "toBeDefined", "toBeNaN", "toBeGreaterThan",
-            "toBeGreaterThanOrEqual", "toBeLessThan", "toBeLessThanOrEqual",
-            "toBeCloseTo", "toContain", "toContainEqual", "toHaveLength",
-            "toHaveProperty", "toMatch", "toMatchObject", "toMatchSnapshot",
-            "toMatchInlineSnapshot", "toThrow", "toThrowError",
-            "toThrowErrorMatchingSnapshot", "toThrowErrorMatchingInlineSnapshot",
-            "toBeInstanceOf",
-            "toHaveBeenCalled", "toHaveBeenCalledTimes", "toHaveBeenCalledWith",
-            "toHaveBeenCalledOnce", "toHaveBeenLastCalledWith",
-            "toHaveBeenNthCalledWith", "toHaveReturned", "toHaveReturnedTimes",
-            "toHaveReturnedWith", "toHaveLastReturnedWith", "toHaveNthReturnedWith",
-            // DOM matchers (jest-dom / @testing-library)
-            "toHaveClass", "toHaveAttr", "toHaveText", "toContainText",
-            "toBeVisible", "toBeDisabled", "toBeEnabled", "toBeInTheDocument",
-            "toHaveValue", "toHaveStyle", "toHaveFocus",
-            // asymmetric matchers
-            "anything", "any", "objectContaining", "arrayContaining",
-            "stringContaining", "stringMatching",
-            // spy/mock methods
-            "spyOn", "mockClear", "mockReset", "mockRestore",
-            "mockImplementation", "mockImplementationOnce",
-            "mockReturnValue", "mockReturnValueOnce",
-            "mockResolvedValue", "mockResolvedValueOnce",
-            "mockRejectedValue", "mockRejectedValueOnce",
-            "mockFn", "fn",
-        ],
-        "mocha" => &["describe", "it", "before", "after", "beforeEach", "afterEach"],
-        "chai" => &[
-            "expect", "assert", "should",
-            // chai BDD assertion methods — emitted as bare calls from fluent chains
-            // (e.g., `expect(x).to.equal(y)` emits `equal` as a standalone calls ref)
-            "equal", "eql", "deep", "include", "contain", "members", "keys",
-            "property", "match", "satisfy", "closeTo", "approximately",
-            "above", "below", "least", "most", "within", "instanceof",
-            "an", "ok", "true", "false", "null", "undefined", "NaN",
-            "exist", "empty", "arguments", "throw", "respondTo", "itself",
-            "change", "increase", "decrease", "lengthOf", "oneOf",
-            "equalNode", "equalDom", "equalHtml",
-        ],
-        "ava" => &["test"],
-        "jasmine" | "jasmine-core" | "karma-jasmine" | "@angular-devkit/build-angular" => &[
-            // lifecycle
-            "describe", "xdescribe", "fdescribe", "it", "xit", "fit",
-            "expect", "fail", "pending",
-            "beforeEach", "afterEach", "beforeAll", "afterAll",
-            // namespace object (jasmine.createSpy etc.)
-            "jasmine",
-            // matchers — emitted as bare chain calls
-            "toEqual", "toStrictEqual", "toBe", "toBeTrue", "toBeFalse",
-            "toBeTruthy", "toBeFalsy", "toBeDefined", "toBeUndefined",
-            "toBeNull", "toBeNaN", "toBeGreaterThan", "toBeGreaterThanOrEqual",
-            "toBeLessThan", "toBeLessThanOrEqual", "toBeCloseTo",
-            "toContain", "toContainEqual", "toMatch", "toMatchObject",
-            "toHaveLength", "toHaveProperty",
-            "toHaveBeenCalled", "toHaveBeenCalledTimes", "toHaveBeenCalledWith",
-            "toHaveBeenCalledOnce", "toHaveBeenLastCalledWith",
-            "toHaveBeenNthCalledWith",
-            "toBeInstanceOf", "toThrow", "toThrowError",
-            // DOM/Angular-testing-library matchers
-            "toHaveClass", "toHaveAttr", "toHaveText", "toContainText",
-            "toBeVisible", "toBeDisabled", "toBeEnabled",
-            // spy / mock helpers
-            "spyOn", "spyOnProperty", "createSpy", "createSpyObj",
-            "callThrough", "callFake", "returnValue", "returnValues",
-            "stub", "restore",
-            // fluent chain nodes emitted as bare refs
-            "and", "calls",
-            // asymmetric matchers
-            "anything", "any", "objectContaining", "arrayContaining",
-            "stringContaining", "stringMatching",
-        ],
-        // Bun's built-in test runner — same shape as vitest.
-        "bun-types" => &[
-            "describe", "it", "test", "expect",
-            "beforeEach", "afterEach", "beforeAll", "afterAll",
-        ],
-        _ => &[],
-    }
-}
-
-/// Build the project-wide union of test globals from every ecosystem manifest.
-fn build_test_globals_union(
-    project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
-) -> HashSet<String> {
-    let mut globals = HashSet::new();
-    let Some(ctx) = project_ctx else { return globals };
-    for manifest in ctx.manifests.values() {
-        for dep in &manifest.dependencies {
-            for g in test_framework_globals(dep) {
-                globals.insert((*g).to_string());
-            }
-        }
-    }
-    globals
-}
-
-/// Build per-package test globals keyed by `packages.id`.
-///
-/// Only packages that directly declare a test framework in their own manifest
-/// get entries — sibling packages stay clean.
-fn build_test_globals_by_pkg(
-    project_ctx: Option<&crate::indexer::project_context::ProjectContext>,
-) -> FxHashMap<i64, HashSet<String>> {
-    let mut out: FxHashMap<i64, HashSet<String>> = FxHashMap::default();
-    let Some(ctx) = project_ctx else { return out };
-    for (&pkg_id, manifests) in &ctx.by_package {
-        let mut set = HashSet::new();
-        for manifest in manifests.values() {
-            for dep in &manifest.dependencies {
-                for g in test_framework_globals(dep) {
-                    set.insert((*g).to_string());
-                }
-            }
-        }
-        if !set.is_empty() {
-            out.insert(pkg_id, set);
-        }
-    }
-    out
 }
