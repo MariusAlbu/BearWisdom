@@ -60,6 +60,33 @@ impl Ecosystem for CargoEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_cargo_root(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        _package: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        // Start from the crate's library entry (`src/lib.rs`; fall back to
+        // `src/main.rs` for binary-only crates that still get imported) and
+        // follow `mod X;` declarations bounded at depth 3. Internal `mod`
+        // declarations are included because `pub use internal::Foo` re-
+        // exports can expose items that live in non-pub modules.
+        resolve_crate_entry(dep)
+    }
+
+    fn resolve_symbol(
+        &self,
+        dep: &ExternalDepRoot,
+        _fqn: &str,
+    ) -> Vec<WalkedFile> {
+        // Same entry as resolve_import — the crate surface is fully defined
+        // by `src/lib.rs` plus its module tree; fqn-specific walking is a
+        // later optimization.
+        resolve_crate_entry(dep)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -528,6 +555,123 @@ fn discover_cargo_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
 }
 
 // ---------------------------------------------------------------------------
+// Reachability: crate entry + bounded `mod X;` expansion
+// ---------------------------------------------------------------------------
+
+const RS_MOD_MAX_DEPTH: u32 = 3;
+
+/// Start from `src/lib.rs` (falling back to `src/main.rs` for binary-only
+/// crates) and recursively follow `mod X;` declarations into the matching
+/// source files. Each file yields zero or more child modules; bounded at
+/// depth 3 so deeply nested crates still get their top surface without
+/// walking every internal module.
+fn resolve_crate_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let src = dep.root.join("src");
+    let entry = if src.join("lib.rs").is_file() {
+        src.join("lib.rs")
+    } else if src.join("main.rs").is_file() {
+        src.join("main.rs")
+    } else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    expand_rust_mods_into(dep, &dep.root, &entry, &mut out, &mut seen, 0);
+    out
+}
+
+fn expand_rust_mods_into(
+    dep: &ExternalDepRoot,
+    crate_root: &Path,
+    file: &Path,
+    out: &mut Vec<WalkedFile>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    depth: u32,
+) {
+    if !seen.insert(file.to_path_buf()) { return }
+    if !file.is_file() { return }
+
+    let rel_sub = match file.strip_prefix(crate_root) {
+        Ok(p) => p.to_string_lossy().replace('\\', "/"),
+        Err(_) => file
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("mod.rs")
+            .to_string(),
+    };
+    out.push(WalkedFile {
+        relative_path: format!("ext:rust:{}/{}", dep.module_path, rel_sub),
+        absolute_path: file.to_path_buf(),
+        language: "rust",
+    });
+
+    if depth >= RS_MOD_MAX_DEPTH { return }
+
+    let Ok(src) = std::fs::read_to_string(file) else { return };
+    for child in extract_rust_mod_decls(&src) {
+        let Some(next) = resolve_rust_mod_path(file, &child) else { continue };
+        expand_rust_mods_into(dep, crate_root, &next, out, seen, depth + 1);
+    }
+}
+
+/// Scan line-oriented for `mod X;` and `pub mod X;` (including
+/// `pub(crate) mod X;` and similar visibility modifiers). Inline `mod X {
+/// ... }` bodies are skipped — their contents are already in the same file.
+fn extract_rust_mod_decls(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for raw in src.lines() {
+        let line = raw.trim_start();
+        // Strip line comments.
+        let line = match line.find("//") {
+            Some(ix) => &line[..ix],
+            None => line,
+        };
+        let line = line.trim();
+        if !line.ends_with(';') { continue }
+
+        let mut rest = line;
+        if let Some(r) = rest.strip_prefix("pub") {
+            rest = r.trim_start();
+            // Optional visibility qualifier: pub(crate), pub(super), pub(in path)
+            if let Some(r) = rest.strip_prefix('(') {
+                let Some(close) = r.find(')') else { continue };
+                rest = r[close + 1..].trim_start();
+            }
+        }
+
+        let Some(r) = rest.strip_prefix("mod") else { continue };
+        // Ensure the next char is whitespace — avoid matching `model;` etc.
+        let after = r;
+        if !after.starts_with(|c: char| c.is_whitespace()) { continue }
+        let ident = after.trim_start().trim_end_matches(';').trim();
+        if ident.is_empty() { continue }
+        if !ident.chars().all(|c| c.is_alphanumeric() || c == '_') { continue }
+        out.push(ident.to_string());
+    }
+    out
+}
+
+/// Resolve `mod X;` declared in `from_file` to either `X.rs` or `X/mod.rs`
+/// relative to the owning module directory (file's parent for lib.rs/
+/// main.rs/mod.rs; sibling directory named after the stem otherwise).
+fn resolve_rust_mod_path(from_file: &Path, child: &str) -> Option<PathBuf> {
+    let parent = from_file.parent()?;
+    let stem = from_file.file_stem().and_then(|s| s.to_str())?;
+    let mod_dir = if stem == "lib" || stem == "main" || stem == "mod" {
+        parent.to_path_buf()
+    } else {
+        parent.join(stem)
+    };
+
+    let as_file = mod_dir.join(format!("{child}.rs"));
+    if as_file.is_file() { return Some(as_file) }
+    let as_mod = mod_dir.join(child).join("mod.rs");
+    if as_mod.is_file() { return Some(as_mod) }
+    None
+}
+
+// ---------------------------------------------------------------------------
 // Walk
 // ---------------------------------------------------------------------------
 
@@ -750,5 +894,118 @@ anyhow = "1.0"
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------
+    // R3 — reachability-based crate entry resolution
+    // -----------------------------------------------------------------
+
+    fn mkdep(root: PathBuf, name: &str, version: &str) -> ExternalDepRoot {
+        ExternalDepRoot {
+            module_path: name.to_string(),
+            version: version.to_string(),
+            root,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+        }
+    }
+
+    #[test]
+    fn extract_mod_decls_matches_pub_and_bare() {
+        let src = r#"
+pub mod a;
+mod b;
+pub(crate) mod c;
+pub(super) mod d;
+mod e; // inline comment
+use foo::bar;
+pub mod inline { pub fn f() {} }  // inline body — has no ;
+mod ok_end;
+"#;
+        let decls = extract_rust_mod_decls(src);
+        assert!(decls.contains(&"a".to_string()));
+        assert!(decls.contains(&"b".to_string()));
+        assert!(decls.contains(&"c".to_string()));
+        assert!(decls.contains(&"d".to_string()));
+        assert!(decls.contains(&"e".to_string()));
+        assert!(decls.contains(&"ok_end".to_string()));
+        assert!(!decls.contains(&"inline".to_string()));
+    }
+
+    #[test]
+    fn resolve_crate_entry_follows_mod_tree() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("serde-1.0.200");
+        let src = root.join("src");
+        std::fs::create_dir_all(src.join("de")).unwrap();
+        std::fs::write(
+            src.join("lib.rs"),
+            "pub mod ser;\nmod de;\n",
+        ).unwrap();
+        std::fs::write(src.join("ser.rs"), "pub trait Serialize {}\n").unwrap();
+        std::fs::write(src.join("de").join("mod.rs"), "pub mod inner;\n").unwrap();
+        std::fs::write(src.join("de").join("inner.rs"), "pub struct Inner;\n").unwrap();
+
+        let dep = mkdep(root.clone(), "serde", "1.0.200");
+        let files = CargoEcosystem.resolve_import(&dep, "serde", &["Serialize"]);
+        assert_eq!(files.len(), 4, "got: {:?}", files);
+        let paths: std::collections::HashSet<_> = files
+            .iter()
+            .map(|f| f.absolute_path.clone())
+            .collect();
+        assert!(paths.contains(&src.join("lib.rs")));
+        assert!(paths.contains(&src.join("ser.rs")));
+        assert!(paths.contains(&src.join("de").join("mod.rs")));
+        assert!(paths.contains(&src.join("de").join("inner.rs")));
+        for f in &files {
+            assert!(f.relative_path.starts_with("ext:rust:serde/"));
+            assert_eq!(f.language, "rust");
+        }
+    }
+
+    #[test]
+    fn resolve_crate_entry_falls_back_to_main_rs() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("bin-only-0.1.0");
+        let src = root.join("src");
+        std::fs::create_dir_all(&src).unwrap();
+        std::fs::write(src.join("main.rs"), "fn main() {}\n").unwrap();
+
+        let dep = mkdep(root.clone(), "bin-only", "0.1.0");
+        let files = CargoEcosystem.resolve_import(&dep, "bin-only", &[]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].absolute_path, src.join("main.rs"));
+    }
+
+    #[test]
+    fn resolve_crate_entry_empty_without_src_entry() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("no-entry-0.1.0");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let dep = mkdep(root, "no-entry", "0.1.0");
+        assert!(CargoEcosystem.resolve_import(&dep, "no-entry", &[]).is_empty());
+    }
+
+    #[test]
+    fn resolve_rust_mod_path_handles_both_layouts() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let src = tmp.path().join("src");
+        std::fs::create_dir_all(src.join("sub")).unwrap();
+        let lib = src.join("lib.rs");
+        std::fs::write(&lib, "").unwrap();
+
+        // sibling .rs layout
+        let a = src.join("a.rs");
+        std::fs::write(&a, "").unwrap();
+        assert_eq!(resolve_rust_mod_path(&lib, "a"), Some(a));
+
+        // directory/mod.rs layout
+        let sub_mod = src.join("sub").join("mod.rs");
+        std::fs::write(&sub_mod, "").unwrap();
+        assert_eq!(resolve_rust_mod_path(&lib, "sub"), Some(sub_mod));
+
+        // missing module
+        assert_eq!(resolve_rust_mod_path(&lib, "missing"), None);
     }
 }
