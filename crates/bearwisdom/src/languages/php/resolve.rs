@@ -27,9 +27,9 @@
 
 
 // Re-export for test visibility (php_tests.rs uses `use super::*`).
-pub(crate) use super::builtins::normalize_php_ns;
+pub(crate) use super::predicates::normalize_php_ns;
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -72,7 +72,7 @@ impl LanguageResolver for PhpResolver {
             let module = r.module.as_deref().unwrap_or(&r.target_name);
 
             // Normalize backslash separators to dots for index lookup consistency.
-            let normalized_module = builtins::normalize_php_ns(module);
+            let normalized_module = predicates::normalize_php_ns(module);
 
             imports.push(ImportEntry {
                 imported_name: r.target_name.clone(),
@@ -122,7 +122,7 @@ impl LanguageResolver for PhpResolver {
             .unwrap_or(target);
 
         // Also normalize any backslash separators in the target itself.
-        let normalized_target = builtins::normalize_php_ns(effective_target);
+        let normalized_target = predicates::normalize_php_ns(effective_target);
         let effective_target = normalized_target.as_str();
 
         // Step 1: Scope chain walk (innermost → outermost).
@@ -133,7 +133,7 @@ impl LanguageResolver for PhpResolver {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -150,7 +150,7 @@ impl LanguageResolver for PhpResolver {
             let candidate = format!("{ns}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -167,7 +167,7 @@ impl LanguageResolver for PhpResolver {
             if import.imported_name == effective_target {
                 if let Some(module) = &import.module_path {
                     if let Some(sym) = lookup.by_qualified_name(module) {
-                        if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
                                 confidence: 1.0,
@@ -182,7 +182,7 @@ impl LanguageResolver for PhpResolver {
         // Step 4: Fully qualified name (target contains "\" or ".").
         if effective_target.contains('.') || effective_target.contains('\\') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -265,7 +265,7 @@ impl LanguageResolver for PhpResolver {
                             let candidate = format!("{parent_qname}.{effective_target}");
                             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                                 if self.is_visible(file_ctx, ref_ctx, sym)
-                                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                                    && predicates::kind_compatible(edge_kind, &sym.kind)
                                 {
                                     return Some(Resolution {
                                         target_symbol_id: sym.id,
@@ -300,7 +300,7 @@ impl LanguageResolver for PhpResolver {
                 .module
                 .as_deref()
                 .unwrap_or(target);
-            let normalized = builtins::normalize_php_ns(import_path);
+            let normalized = predicates::normalize_php_ns(import_path);
 
             // Manifest-driven: check composer.json dependencies first.
             // Composer packages use `"vendor/package"` format (e.g., `"intervention/image"`).
@@ -314,14 +314,14 @@ impl LanguageResolver for PhpResolver {
                 }
             }
 
-            if builtins::is_external_php_namespace(&normalized, project_ctx) {
+            if predicates::is_external_php_namespace(&normalized, project_ctx) {
                 return Some(normalized);
             }
             return None;
         }
 
         // PHP built-in functions — always external.
-        if builtins::is_php_builtin(target) {
+        if predicates::is_php_builtin(target) {
             return Some("php_core".to_string());
         }
 
@@ -341,13 +341,13 @@ impl LanguageResolver for PhpResolver {
                     if is_composer_package_match(ns_root, &manifest.dependencies) {
                         true
                     } else {
-                        builtins::is_external_php_namespace(ns, project_ctx)
+                        predicates::is_external_php_namespace(ns, project_ctx)
                     }
                 } else {
-                    builtins::is_external_php_namespace(ns, project_ctx)
+                    predicates::is_external_php_namespace(ns, project_ctx)
                 }
             } else {
-                builtins::is_external_php_namespace(ns, project_ctx)
+                predicates::is_external_php_namespace(ns, project_ctx)
             };
 
             if is_ext {

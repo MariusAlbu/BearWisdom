@@ -1,6 +1,6 @@
 //! Bicep (Azure IaC) language plugin.
 
-mod builtins;
+mod predicates;
 pub mod embedded;
 pub mod extract;
 pub mod resolve;

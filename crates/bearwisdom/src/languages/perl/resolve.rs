@@ -15,7 +15,7 @@
 // The extractor emits EdgeKind::Imports with target_name = the module name.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -72,11 +72,11 @@ impl LanguageResolver for PerlResolver {
         }
 
         // Perl builtins are never in the index.
-        if builtins::is_perl_builtin(target) {
+        if predicates::is_perl_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("perl", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("perl", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -85,6 +85,6 @@ impl LanguageResolver for PerlResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_perl_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_perl_builtin)
     }
 }

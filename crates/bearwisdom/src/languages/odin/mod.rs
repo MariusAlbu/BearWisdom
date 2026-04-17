@@ -12,10 +12,10 @@
 //! - `import "path"` / `import name "path"` → Imports edges
 //! - `using expr` → TypeRef edge
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub mod resolve;
 
 #[cfg(test)]

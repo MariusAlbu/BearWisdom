@@ -20,7 +20,7 @@
 //      classified as external without index lookup.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -63,13 +63,13 @@ impl LanguageResolver for PuppetResolver {
         }
 
         // Built-in Puppet resource types never live in the project index.
-        if builtins::is_puppet_builtin(target) {
+        if predicates::is_puppet_builtin(target) {
             return None;
         }
 
         // Forge module references are external — skip index lookup.
         if let Some(prefix) = target.split("::").next() {
-            if builtins::is_forge_module(prefix) {
+            if predicates::is_forge_module(prefix) {
                 return None;
             }
         }
@@ -83,7 +83,7 @@ impl LanguageResolver for PuppetResolver {
             let last_segment = target.split("::").last().unwrap_or(target.as_str());
             for sym in lookup.in_file(&file_ctx.file_path) {
                 if (sym.name == *target || sym.name == last_segment || sym.qualified_name == *target)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -96,7 +96,7 @@ impl LanguageResolver for PuppetResolver {
             // Cross-file: try exact qualified name, then just last segment
             // (handles classes declared without module prefix in their own file).
             if let Some(sym) = lookup.by_qualified_name(target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -105,7 +105,7 @@ impl LanguageResolver for PuppetResolver {
                 }
             }
             for sym in lookup.by_name(last_segment) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 0.9,
@@ -115,7 +115,7 @@ impl LanguageResolver for PuppetResolver {
             }
         }
 
-        engine::resolve_common("puppet", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("puppet", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -128,13 +128,13 @@ impl LanguageResolver for PuppetResolver {
 
         // Forge module: first `::` segment is a known forge module prefix.
         if let Some(prefix) = target.split("::").next() {
-            if builtins::is_forge_module(prefix) {
+            if predicates::is_forge_module(prefix) {
                 return Some(format!("puppet_forge::{prefix}"));
             }
         }
 
         // Built-in resource types and functions.
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_puppet_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_puppet_builtin)
             .map(|_| "puppet".to_string())
     }
 }

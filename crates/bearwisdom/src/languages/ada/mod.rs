@@ -9,10 +9,10 @@
 //! - `full_type_declaration` → Struct or Enum
 //! - `with_clause` → Imports edge
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 pub use resolve::AdaResolver;

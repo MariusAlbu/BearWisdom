@@ -25,7 +25,7 @@
 //   ref with target_name = "~", which is classified as builtin here.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -116,14 +116,14 @@ impl LanguageResolver for RResolver {
         let target = &ref_ctx.extracted_ref.target_name;
 
         // R builtins (including formula operator `~`) are never in the index.
-        if builtins::is_r_builtin(target) {
+        if predicates::is_r_builtin(target) {
             return None;
         }
 
         // Namespace-qualified call to a known external package (e.g. dplyr::filter).
         // Skip index lookup — the function is defined in the package, not the project.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if builtins::is_r_package(module) {
+            if predicates::is_r_package(module) {
                 return None;
             }
         }
@@ -146,7 +146,7 @@ impl LanguageResolver for RResolver {
 
         // Namespace-qualified ref to a known R package (pkg::fn).
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if builtins::is_r_package(module) {
+            if predicates::is_r_package(module) {
                 return Some(module.clone());
             }
         }
@@ -166,7 +166,7 @@ fn resolve_r(
     ref_ctx: &RefContext,
     lookup: &dyn SymbolLookup,
 ) -> Option<Resolution> {
-    engine::resolve_common(lang_prefix, file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+    engine::resolve_common(lang_prefix, file_ctx, ref_ctx, lookup, predicates::kind_compatible)
 }
 
 fn infer_r_external(
@@ -174,5 +174,5 @@ fn infer_r_external(
     ref_ctx: &RefContext,
     project_ctx: Option<&ProjectContext>,
 ) -> Option<String> {
-    engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_r_builtin)
+    engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_r_builtin)
 }

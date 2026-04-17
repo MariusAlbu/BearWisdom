@@ -18,7 +18,7 @@
 // External namespace: `"bazel"` for native Bazel rules and built-in functions.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -76,7 +76,7 @@ impl LanguageResolver for StarlarkResolver {
         }
 
         // Bazel native rules and Starlark built-ins are external.
-        if builtins::is_starlark_builtin(target) {
+        if predicates::is_starlark_builtin(target) {
             return None;
         }
 
@@ -174,7 +174,7 @@ impl LanguageResolver for StarlarkResolver {
             return Some("bazel_native".to_string());
         }
 
-        if builtins::is_starlark_builtin(target) {
+        if predicates::is_starlark_builtin(target) {
             return Some("bazel".to_string());
         }
 

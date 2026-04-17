@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
-use super::builtins::kind_compatible;
+use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
 /// Walk a MemberChain step-by-step, following field types to resolve the final segment.

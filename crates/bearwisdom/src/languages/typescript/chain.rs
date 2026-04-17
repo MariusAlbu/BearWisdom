@@ -5,7 +5,7 @@
 use crate::indexer::resolve::chain_walker::external_type_qname;
 use crate::indexer::resolve::engine::{RefContext, Resolution, SymbolLookup};
 use crate::indexer::resolve::type_env::TypeEnvironment;
-use super::builtins::kind_compatible;
+use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
 

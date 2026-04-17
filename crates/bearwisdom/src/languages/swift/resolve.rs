@@ -20,7 +20,7 @@
 // =============================================================================
 
 
-use super::builtins;
+use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::chain_walker::{
     self, ChainConfig, NamespaceLookup, identity_normalize,
@@ -82,7 +82,7 @@ impl LanguageResolver for SwiftResolver {
         }
 
         // Swift builtins are never in the project index.
-        if builtins::is_swift_builtin(target) {
+        if predicates::is_swift_builtin(target) {
             return None;
         }
 
@@ -97,7 +97,7 @@ impl LanguageResolver for SwiftResolver {
                 static_type_kinds: &["class", "struct", "enum", "protocol", "type_alias"],
                 use_generics: true,
                 namespace_lookup: NamespaceLookup::None,
-                kind_compatible: builtins::kind_compatible,
+                kind_compatible: predicates::kind_compatible,
             };
             if let Some(res) = chain_walker::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
@@ -114,7 +114,7 @@ impl LanguageResolver for SwiftResolver {
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -126,7 +126,7 @@ impl LanguageResolver for SwiftResolver {
 
         // Step 2: Same-file resolution.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == effective_target && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
@@ -138,7 +138,7 @@ impl LanguageResolver for SwiftResolver {
         // Step 3: Fully qualified name.
         if effective_target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -150,7 +150,7 @@ impl LanguageResolver for SwiftResolver {
 
         // Step 4: Simple name lookup.
         for sym in lookup.by_name(effective_target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
+            if predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 0.85,
@@ -192,14 +192,14 @@ impl LanguageResolver for SwiftResolver {
                 }
             }
 
-            if builtins::is_external_swift_module(root) {
+            if predicates::is_external_swift_module(root) {
                 return Some(root.to_string());
             }
             return None;
         }
 
         // Swift stdlib builtins.
-        if builtins::is_swift_builtin(target) {
+        if predicates::is_swift_builtin(target) {
             return Some("Swift".to_string());
         }
 
@@ -226,7 +226,7 @@ impl LanguageResolver for SwiftResolver {
                 }
             }
 
-            if builtins::is_external_swift_module(root) {
+            if predicates::is_external_swift_module(root) {
                 return Some(root.to_string());
             }
         }
@@ -249,7 +249,7 @@ impl LanguageResolver for SwiftResolver {
                 }
             }
 
-            if builtins::is_external_swift_module(root) {
+            if predicates::is_external_swift_module(root) {
                 return Some(root.to_string());
             }
         }

@@ -72,7 +72,7 @@ impl LanguagePlugin for AngularPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        crate::languages::typescript::primitives::PRIMITIVES
+        crate::languages::typescript::keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

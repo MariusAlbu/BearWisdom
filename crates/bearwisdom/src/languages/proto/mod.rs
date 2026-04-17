@@ -1,7 +1,7 @@
 //! Protocol Buffers language plugin.
 
 pub mod connectors;
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 pub mod resolve;
 

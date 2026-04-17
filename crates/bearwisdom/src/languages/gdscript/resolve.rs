@@ -16,7 +16,7 @@
 //   3. Project-wide name lookup (global class_name registrations).
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -76,11 +76,11 @@ impl LanguageResolver for GDScriptResolver {
         }
 
         // GDScript builtins are never in the index.
-        if builtins::is_gdscript_builtin(target) {
+        if predicates::is_gdscript_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("gdscript", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("gdscript", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -89,6 +89,6 @@ impl LanguageResolver for GDScriptResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_gdscript_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_gdscript_builtin)
     }
 }

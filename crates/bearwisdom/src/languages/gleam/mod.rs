@@ -14,7 +14,7 @@
 
 pub mod extract;
 pub mod resolve;
-mod builtins;
+mod predicates;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]

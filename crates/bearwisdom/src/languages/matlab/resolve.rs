@@ -14,7 +14,7 @@
 //   3. Project-wide name lookup (each .m file is a callable unit).
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -71,11 +71,11 @@ impl LanguageResolver for MatlabResolver {
         }
 
         // MATLAB builtins are never in the index.
-        if builtins::is_matlab_builtin(&ref_ctx.extracted_ref.target_name) {
+        if predicates::is_matlab_builtin(&ref_ctx.extracted_ref.target_name) {
             return None;
         }
 
-        engine::resolve_common("matlab", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("matlab", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -84,6 +84,6 @@ impl LanguageResolver for MatlabResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_matlab_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_matlab_builtin)
     }
 }

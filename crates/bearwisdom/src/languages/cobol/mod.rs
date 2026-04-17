@@ -4,10 +4,10 @@
 //! `grammar()` returns `None`; extraction uses a line-oriented scanner that
 //! recognises COBOL's division/section/paragraph structure.
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 #[cfg(test)]

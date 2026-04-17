@@ -18,7 +18,7 @@
 // target_name (the header path) to distinguish system from project headers.
 // =============================================================================
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -100,7 +100,7 @@ impl LanguageResolver for CLangResolver {
         }
 
         // Template parameters and builtins are never in the index.
-        if builtins::is_template_param(target) || builtins::is_c_builtin(target) {
+        if predicates::is_template_param(target) || predicates::is_c_builtin(target) {
             return None;
         }
 
@@ -115,7 +115,7 @@ impl LanguageResolver for CLangResolver {
         // R C API symbols (Rinternals.h, Rdefines.h, R_ext/*.h) are never in
         // the project index. Skip the index walk for R package projects.
         if file_ctx.file_namespace.as_deref() == Some(R_PACKAGE_SENTINEL)
-            && builtins::is_r_c_api_symbol(target)
+            && predicates::is_r_c_api_symbol(target)
         {
             return None;
         }
@@ -130,7 +130,7 @@ impl LanguageResolver for CLangResolver {
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}::{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -143,7 +143,7 @@ impl LanguageResolver for CLangResolver {
         // Step 2 (C-specific): Namespace-qualified lookup (e.g., `MyNS::Foo`).
         if effective_target.contains("::") {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -159,7 +159,7 @@ impl LanguageResolver for CLangResolver {
         // resolve_common uses ref_ctx.extracted_ref.target_name directly, which is
         // the unstripped `target`. Re-check with the stripped name via same-file lookup.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == effective_target && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
@@ -168,7 +168,7 @@ impl LanguageResolver for CLangResolver {
             }
         }
 
-        engine::resolve_common("c", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("c", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -182,7 +182,7 @@ impl LanguageResolver for CLangResolver {
         // R C API symbols (Rinternals.h, Rdefines.h, R_ext/*.h).
         // Only classify as external when the C file is inside an R package.
         if file_ctx.file_namespace.as_deref() == Some(R_PACKAGE_SENTINEL)
-            && builtins::is_r_c_api_symbol(target)
+            && predicates::is_r_c_api_symbol(target)
         {
             return Some("r.c.api".to_string());
         }
@@ -190,7 +190,7 @@ impl LanguageResolver for CLangResolver {
         // Include directives -- classify system headers as external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let header = target.trim_matches(|c| c == '<' || c == '>' || c == '"');
-            if builtins::is_system_header(header) {
+            if predicates::is_system_header(header) {
                 return Some("stdlib".to_string());
             }
             // boost or other known-external headers.
@@ -204,12 +204,12 @@ impl LanguageResolver for CLangResolver {
         }
 
         // Template parameters get their own namespace.
-        if builtins::is_template_param(target) {
+        if predicates::is_template_param(target) {
             return Some("template_param".to_string());
         }
 
         // C/C++ builtins (stdlib functions, types, macros).
-        if builtins::is_c_builtin(target) {
+        if predicates::is_c_builtin(target) {
             return Some("c.stdlib".to_string());
         }
 
@@ -225,7 +225,7 @@ impl LanguageResolver for CLangResolver {
             .split("::")
             .next()
             .unwrap_or(target);
-        if builtins::is_external_c_namespace(root) {
+        if predicates::is_external_c_namespace(root) {
             return Some(root.to_string());
         }
 

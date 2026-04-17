@@ -27,7 +27,7 @@
 //     walk handles them automatically.
 // =============================================================================
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
@@ -37,7 +37,7 @@ use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 use tracing::debug;
 
-pub use builtins::is_bare_specifier;
+pub use predicates::is_bare_specifier;
 
 /// TypeScript and JavaScript language resolver.
 pub struct TypeScriptResolver;
@@ -118,7 +118,7 @@ impl LanguageResolver for TypeScriptResolver {
         // symbol set and emit at confidence 1.0. Also handles deep imports
         // like `@myorg/utils/sub/mod` by stripping the trailing path.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if builtins::is_bare_specifier(module) {
+            if predicates::is_bare_specifier(module) {
                 if let Some(res) =
                     resolve_workspace_package(module, target, edge_kind, lookup)
                 {
@@ -133,7 +133,7 @@ impl LanguageResolver for TypeScriptResolver {
                 let Some(module_path) = &import.module_path else {
                     continue;
                 };
-                if !builtins::is_bare_specifier(module_path) {
+                if !predicates::is_bare_specifier(module_path) {
                     continue;
                 }
                 if let Some(res) =
@@ -181,7 +181,7 @@ impl LanguageResolver for TypeScriptResolver {
             // Use per-source resolution so `./utils` gets the correct file
             // for THIS source rather than whoever resolved it first.
             for sym in lookup.in_module_from(&file_ctx.file_path, module) {
-                if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+                if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_import_file",
                         file = %module,
@@ -199,7 +199,7 @@ impl LanguageResolver for TypeScriptResolver {
             // Also try {module}.{target} as a qualified name (parser may use this form).
             let candidate = format!("{module}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_import",
                         candidate = %candidate,
@@ -258,10 +258,10 @@ impl LanguageResolver for TypeScriptResolver {
             // same-file / heuristic still get a shot — without this,
             // shadowed locals and variables that happen to share an
             // imported name lose their edges.
-            if !builtins::is_bare_specifier(module_path) {
+            if !predicates::is_bare_specifier(module_path) {
                 for sym in lookup.in_module_from(&file_ctx.file_path, module_path) {
                     if sym.name == *target
-                        && builtins::kind_compatible(edge_kind, &sym.kind)
+                        && predicates::kind_compatible(edge_kind, &sym.kind)
                     {
                         debug!(
                             strategy = "ts_relative_import",
@@ -302,7 +302,7 @@ impl LanguageResolver for TypeScriptResolver {
 
             let candidate = format!("{module_path}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_bare_import_qname",
                         candidate = %candidate,
@@ -346,7 +346,7 @@ impl LanguageResolver for TypeScriptResolver {
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_scope_chain",
                         candidate = %candidate,
@@ -364,7 +364,7 @@ impl LanguageResolver for TypeScriptResolver {
         // Step 2: Same-file resolution.
         // In TS/JS, symbols in the same file are visible at module scope.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == effective_target && predicates::kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "ts_same_file",
                     qualified_name = %sym.qualified_name,
@@ -381,7 +381,7 @@ impl LanguageResolver for TypeScriptResolver {
         // Step 3: Fully qualified name (target contains dots).
         if effective_target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_qualified_name",
                         target = %target,
@@ -410,7 +410,7 @@ impl LanguageResolver for TypeScriptResolver {
                     // Found field type. Try {TypeName}.{rest} in the index.
                     let candidate = format!("{type_name}.{rest}");
                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                        if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
                                 confidence: 0.95,
@@ -423,7 +423,7 @@ impl LanguageResolver for TypeScriptResolver {
                     let method_name = rest.split('.').next().unwrap_or(rest);
                     for sym in lookup.by_name(method_name) {
                         if sym.qualified_name.starts_with(type_name)
-                            && builtins::kind_compatible(edge_kind, &sym.kind)
+                            && predicates::kind_compatible(edge_kind, &sym.kind)
                         {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
@@ -453,7 +453,7 @@ impl LanguageResolver for TypeScriptResolver {
         let target = &ref_ctx.extracted_ref.target_name;
 
         // Browser/JS runtime globals — always external.
-        if builtins::is_js_runtime_global(target) {
+        if predicates::is_js_runtime_global(target) {
             return Some("runtime".to_string());
         }
 
@@ -463,14 +463,14 @@ impl LanguageResolver for TypeScriptResolver {
         // often used without an import (script-setup macros) or as this.$x
         // template sugar.  Classify as "builtin" when the host file is .vue.
         if file_ctx.file_path.ends_with(".vue")
-            && crate::languages::vue::builtins::is_vue_builtin(target)
+            && crate::languages::vue::predicates::is_vue_builtin(target)
         {
             return Some("builtin".to_string());
         }
 
         // If the ref itself carries a module path, check it directly.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if builtins::is_bare_specifier(module) {
+            if predicates::is_bare_specifier(module) {
                 // Workspace package: not external. The resolver's main path
                 // already handles this at confidence 1.0 — here we just
                 // prevent the fallback from reclassifying it as external
@@ -510,7 +510,7 @@ impl LanguageResolver for TypeScriptResolver {
             let Some(module_path) = &import.module_path else {
                 continue;
             };
-            if !builtins::is_bare_specifier(module_path) {
+            if !predicates::is_bare_specifier(module_path) {
                 continue;
             }
             // Workspace package — not external; let the main resolver path own it.
@@ -547,7 +547,7 @@ impl LanguageResolver for TypeScriptResolver {
                         continue;
                     }
                     if let Some(module_path) = &import.module_path {
-                        if builtins::is_bare_specifier(module_path) {
+                        if predicates::is_bare_specifier(module_path) {
                             if let Some(ctx) = project_ctx {
                                 if ctx.workspace_package_id(module_path).is_some() {
                                     return None;
@@ -569,7 +569,7 @@ impl LanguageResolver for TypeScriptResolver {
         // Last resort: common built-in method names that appear on Array, String,
         // Promise, and Object instances. Only classify when we have no other
         // information — all import-based checks have already failed above.
-        if builtins::is_common_builtin_method(target) {
+        if predicates::is_common_builtin_method(target) {
             return Some("runtime".to_string());
         }
 
@@ -679,7 +679,7 @@ fn classify_passthrough_alias(
         // and points at a bare specifier. That bare spec is the external
         // namespace this ref resolves through.
         for (exported_name, source_module) in reexports {
-            if !builtins::is_bare_specifier(source_module) {
+            if !predicates::is_bare_specifier(source_module) {
                 continue;
             }
             if exported_name != target && exported_name != "*" {
@@ -704,7 +704,7 @@ fn resolve_via_alias(
     // Try the rewritten path directly first — this catches
     // `module_to_file` hits populated by the TS ecosystem resolver.
     for sym in lookup.in_file(rewritten) {
-        if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+        if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 1.0,
@@ -732,7 +732,7 @@ fn resolve_via_alias(
 
     for candidate in &candidates {
         for sym in lookup.in_file(candidate) {
-            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
@@ -782,7 +782,7 @@ fn resolve_workspace_package(
         if sym.name != target {
             continue;
         }
-        if !builtins::kind_compatible(edge_kind, &sym.kind) {
+        if !predicates::kind_compatible(edge_kind, &sym.kind) {
             continue;
         }
         if let Some(sub) = &sub_path {
@@ -877,7 +877,7 @@ fn follow_reexports(
     let mut wildcard_sources: Vec<&str> = Vec::new();
 
     for (exported_name, source_module) in reexports {
-        if builtins::is_bare_specifier(source_module) {
+        if predicates::is_bare_specifier(source_module) {
             continue;
         }
 
@@ -895,7 +895,7 @@ fn follow_reexports(
         // `apps/web/.../index.ts` resolves to a different file than the
         // same spec from elsewhere — per-source resolution is mandatory.
         for sym in lookup.in_module_from(module_path, source_module) {
-            if sym.name == target_name && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == target_name && predicates::kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "ts_reexport_chain",
                     via = %module_path,
@@ -927,7 +927,7 @@ fn follow_reexports(
     // No named match. Try wildcard sources in order.
     for source_module in wildcard_sources {
         for sym in lookup.in_module_from(module_path, source_module) {
-            if sym.name == target_name && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == target_name && predicates::kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "ts_reexport_star",
                     via = %module_path,

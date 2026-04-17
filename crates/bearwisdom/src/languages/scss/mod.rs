@@ -3,8 +3,8 @@
 //! Uses the dedicated SCSS tree-sitter grammar (tree-sitter-scss-local),
 //! compiled from MSVC-compatible pre-expanded C source.
 
-pub(crate) mod builtins;
-pub mod primitives;
+pub(crate) mod predicates;
+pub mod keywords;
 pub mod extract;
 pub mod resolve;
 

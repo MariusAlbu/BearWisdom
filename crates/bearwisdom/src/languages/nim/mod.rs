@@ -15,10 +15,10 @@
 //! - `type` section → scope; `TypeName = object/enum/concept/...` → Class/Struct/Enum/Interface/TypeAlias
 //! - `import`, `from ... import` → Imports edges
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 pub use resolve::NimResolver;

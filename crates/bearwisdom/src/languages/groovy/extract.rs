@@ -24,7 +24,7 @@
 // =============================================================================
 
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
-use super::builtins;
+use super::predicates;
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str) -> ExtractionResult {
@@ -189,7 +189,7 @@ fn scan_methods_from_source(
         if method_name.is_empty()
             || seen.contains(method_name)
             || !method_name.chars().next().map_or(false, |c| c.is_lowercase() || c == '_')
-            || builtins::is_groovy_keyword(method_name)
+            || predicates::is_groovy_keyword(method_name)
         {
             continue;
         }
@@ -753,7 +753,7 @@ fn extract_call(
     };
 
     // Skip control flow keywords that the grammar sometimes parses as method_invocation.
-    if builtins::is_groovy_keyword(&name) {
+    if predicates::is_groovy_keyword(&name) {
         return;
     }
 

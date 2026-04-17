@@ -14,7 +14,7 @@
 //   module      = None (Ada imports are always the package name itself)
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -72,7 +72,7 @@ impl LanguageResolver for AdaResolver {
             return None;
         }
 
-        if builtins::is_ada_builtin(target) {
+        if predicates::is_ada_builtin(target) {
             return None;
         }
 
@@ -81,7 +81,7 @@ impl LanguageResolver for AdaResolver {
         let simple = target.split('.').last().unwrap_or(target);
         for sym in lookup.in_file(&file_ctx.file_path) {
             if sym.name.to_lowercase() == simple.to_lowercase()
-                && builtins::kind_compatible(edge_kind, &sym.kind)
+                && predicates::kind_compatible(edge_kind, &sym.kind)
             {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -91,7 +91,7 @@ impl LanguageResolver for AdaResolver {
             }
         }
 
-        engine::resolve_common("ada", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("ada", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -111,6 +111,6 @@ impl LanguageResolver for AdaResolver {
             // Non-stdlib imports: fall through to common handler.
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_ada_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_ada_builtin)
     }
 }

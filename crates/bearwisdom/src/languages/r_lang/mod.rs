@@ -3,10 +3,10 @@
 //! Grammar: tree-sitter-r (in Cargo.toml).
 //! Extraction covers function assignments, S4/R6 class patterns, library imports, and calls.
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 use crate::languages::LanguagePlugin;
@@ -57,7 +57,7 @@ impl LanguagePlugin for RLangPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

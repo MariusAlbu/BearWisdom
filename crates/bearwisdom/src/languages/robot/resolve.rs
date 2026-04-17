@@ -27,7 +27,7 @@
 //   6. Library keywords and BuiltIn are external.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolInfo, SymbolLookup,
@@ -58,7 +58,7 @@ fn variable_inner_normalized(name: &str) -> Option<String> {
     if inner.is_empty() {
         return None;
     }
-    Some(builtins::normalize_robot_name(inner))
+    Some(predicates::normalize_robot_name(inner))
 }
 
 /// Extract the library prefix from a qualified `Library.Keyword Name` target.
@@ -77,12 +77,12 @@ fn qualified_library_prefix(target: &str) -> Option<&str> {
 
 /// Check if `library_name` is imported as a Library (not a Resource) in this file.
 fn is_library_import(file_ctx: &FileContext, library_name: &str) -> bool {
-    let norm_lib = builtins::normalize_robot_name(library_name);
+    let norm_lib = predicates::normalize_robot_name(library_name);
     file_ctx.imports.iter().any(|imp| {
         // Library imports have is_wildcard=false (set below) but we identify them
         // by the fact that their module_path does NOT end with .robot/.resource/.yaml/.py.
         // We also match directly on the imported_name (the library name).
-        let norm_imp = builtins::normalize_robot_name(&imp.imported_name);
+        let norm_imp = predicates::normalize_robot_name(&imp.imported_name);
         norm_imp == norm_lib
             && imp.module_path.as_deref().map_or(true, |p| {
                 !p.ends_with(".robot") && !p.ends_with(".resource")
@@ -97,7 +97,7 @@ fn resolve_variable<'a>(
 ) -> Option<&'a SymbolInfo> {
     symbols.iter().find(|s| {
         s.kind == SymbolKind::Variable.as_str()
-            && builtins::normalize_robot_name(&s.name) == normalized_inner
+            && predicates::normalize_robot_name(&s.name) == normalized_inner
     })
 }
 
@@ -164,7 +164,7 @@ impl LanguageResolver for RobotResolver {
             .filter(|m| !m.ends_with(".robot") && !m.ends_with(".resource"))
             .or_else(|| qualified_library_prefix(target));
         if let Some(lib) = library_module {
-            if is_library_import(file_ctx, lib) || builtins::is_robot_builtin_library(lib) {
+            if is_library_import(file_ctx, lib) || predicates::is_robot_builtin_library(lib) {
                 return None;
             }
         }
@@ -200,13 +200,13 @@ impl LanguageResolver for RobotResolver {
         }
 
         // Robot keyword names are compared normalized (lowercase, spaces → underscores).
-        let normalized_target = builtins::normalize_robot_name(target);
+        let normalized_target = predicates::normalize_robot_name(target);
 
         // Step 3: Same-file keyword resolution.
         // Checked BEFORE the builtin guard — project keywords shadow library keywords.
         for sym in lookup.in_file(&file_ctx.file_path) {
             if sym.kind == SymbolKind::Function.as_str()
-                && builtins::normalize_robot_name(&sym.name) == normalized_target
+                && predicates::normalize_robot_name(&sym.name) == normalized_target
             {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -227,7 +227,7 @@ impl LanguageResolver for RobotResolver {
             }
             for sym in lookup.in_file(path) {
                 if sym.kind == SymbolKind::Function.as_str()
-                    && builtins::normalize_robot_name(&sym.name) == normalized_target
+                    && predicates::normalize_robot_name(&sym.name) == normalized_target
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -240,7 +240,7 @@ impl LanguageResolver for RobotResolver {
 
         // Robot BuiltIn / SeleniumLibrary keywords that were not shadowed by project code
         // are external — return None here so infer_external_namespace classifies them.
-        if builtins::is_robot_builtin(target) {
+        if predicates::is_robot_builtin(target) {
             return None;
         }
 
@@ -250,7 +250,7 @@ impl LanguageResolver for RobotResolver {
         let by_name = lookup.by_name(target);
         for sym in by_name {
             if sym.kind == SymbolKind::Function.as_str()
-                && builtins::normalize_robot_name(&sym.name) == normalized_target
+                && predicates::normalize_robot_name(&sym.name) == normalized_target
             {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -265,7 +265,7 @@ impl LanguageResolver for RobotResolver {
             let by_snake = lookup.by_name(&normalized_snake);
             for sym in by_snake {
                 if sym.kind == SymbolKind::Function.as_str()
-                    && builtins::normalize_robot_name(&sym.name) == normalized_target
+                    && predicates::normalize_robot_name(&sym.name) == normalized_target
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -307,7 +307,7 @@ impl LanguageResolver for RobotResolver {
             .filter(|m| !m.ends_with(".robot") && !m.ends_with(".resource"))
             .or_else(|| qualified_library_prefix(target));
         if let Some(lib) = library_module {
-            if is_library_import(file_ctx, lib) || builtins::is_robot_builtin_library(lib) {
+            if is_library_import(file_ctx, lib) || predicates::is_robot_builtin_library(lib) {
                 return Some(lib.to_string());
             }
         }
@@ -318,7 +318,7 @@ impl LanguageResolver for RobotResolver {
         }
 
         // Known BuiltIn keywords.
-        if builtins::is_robot_builtin(target) {
+        if predicates::is_robot_builtin(target) {
             return Some("robot".to_string());
         }
 

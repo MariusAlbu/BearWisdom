@@ -1,0 +1,110 @@
+// =============================================================================
+// ruby/keywords.rs — Ruby primitive types
+// =============================================================================
+
+/// Primitive and built-in type names for Ruby.
+/// Core Ruby stdlib types with ≤10 kind-compatible external candidates
+/// (Exception/Symbol/Integer/File/Regexp/etc.) are now indexed by the
+/// RubyStdlib ecosystem and removed. High-ambiguity core types (Array,
+/// String, Object, Hash, Module, Date, Time — 11-27 candidates each) stay
+/// as disambiguation short-circuits until ecosystem-based candidate
+/// ranking lands. Rails/ActiveRecord/RSpec/Capybara DSL names stay
+/// because they're not part of Ruby stdlib — they require the Rails or
+/// RSpec gem to be resolvable.
+pub(crate) const KEYWORDS: &[&str] = &[
+    // High-ambiguity Ruby core types — kept as short-circuits
+    "Array", "String", "Object", "Hash", "Kernel", "Module", "Date", "Time",
+    "DateTime",
+    // Types not reliably indexed (borderline or C-implemented)
+    "BasicObject", "OpenStruct", "BigDecimal",
+    "Thread", "Mutex", "Fiber", "Enumerator", "SortedSet", "SizedQueue",
+    "Ractor", "StopIteration",
+    // Exceptions — the root names aren't always indexed as classes
+    "RuntimeError", "TypeError", "NoMethodError", "IOError", "KeyError",
+    "IndexError", "Errno", "SystemCallError", "RegexpError",
+    "SecurityError", "ScriptError", "SignalException", "Interrupt",
+    "SystemExit", "ZeroDivisionError", "StandardError",
+    "ConcurrentModificationException",
+    // ActiveRecord DSL
+    "add_column", "remove_column", "rename_column", "change_column",
+    "add_index", "remove_index", "add_reference", "remove_reference",
+    "create_table", "drop_table", "rename_table", "change_table",
+    "add_foreign_key", "remove_foreign_key",
+    "belongs_to", "has_many", "has_one", "has_and_belongs_to_many",
+    "validates", "validates_presence_of", "validates_uniqueness_of",
+    "validates_format_of", "validates_length_of", "validates_numericality_of",
+    "scope", "default_scope", "enum",
+    "before_action", "after_action", "around_action", "skip_before_action",
+    "before_validation", "after_validation", "before_save", "after_save",
+    "before_create", "after_create", "before_update", "after_update",
+    "before_destroy", "after_destroy", "after_commit", "after_rollback",
+    "where", "find", "find_by", "find_or_create_by", "find_or_initialize_by",
+    "first", "last", "all", "count", "sum", "average", "minimum", "maximum",
+    "pluck", "select", "distinct", "limit", "offset", "order", "group",
+    "having", "joins", "includes", "eager_load", "preload", "references",
+    "reorder", "reverse_order", "unscoped", "merge",
+    "create", "create!", "new", "save", "save!", "update", "update!",
+    "destroy", "destroy!", "delete", "delete_all", "destroy_all",
+    "transaction", "lock", "reload",
+    "attributes", "attribute_names", "column_names", "columns",
+    // ActiveRecord::Migration
+    "ActiveRecord::Migration[4.2]", "ActiveRecord::Migration[5.0]",
+    "ActiveRecord::Migration[5.1]", "ActiveRecord::Migration[5.2]",
+    "ActiveRecord::Migration[6.0]", "ActiveRecord::Migration[6.1]",
+    "ActiveRecord::Migration[7.0]", "ActiveRecord::Migration[7.1]",
+    "ActiveRecord::Migration[7.2]", "ActiveRecord::Migration[8.0]",
+    // Rails
+    "render", "redirect_to", "respond_to", "head", "send_data", "send_file",
+    "params", "session", "cookies", "flash", "request", "response",
+    "root", "get", "post", "put", "patch", "delete", "resources", "resource",
+    "namespace", "scope", "constraints", "mount",
+    "permit", "require", "strong_parameters",
+    // Ruby builtins (methods/keywords not reliably indexed as stdlib symbols)
+    "puts", "print", "p", "pp", "warn", "raise", "fail",
+    "require", "require_relative", "load", "autoload",
+    "attr_accessor", "attr_reader", "attr_writer",
+    "include", "extend", "prepend", "using",
+    "public", "private", "protected",
+    "define_method", "method_missing", "respond_to_missing?",
+    "send", "public_send", "instance_variable_get", "instance_variable_set",
+    "class_eval", "module_eval", "instance_eval", "instance_exec",
+    "freeze", "frozen?", "dup", "clone", "taint", "untaint",
+    "nil?", "is_a?", "kind_of?", "instance_of?", "respond_to?",
+    "equal?", "eql?", "hash", "inspect", "to_s", "to_i", "to_f", "to_a", "to_h",
+    "map", "select", "reject", "find", "detect", "collect", "each",
+    "each_with_index", "each_with_object", "inject", "reduce",
+    "flat_map", "compact", "compact_map", "zip", "sort_by", "group_by",
+    "min_by", "max_by", "count", "sum", "any?", "all?", "none?", "empty?",
+    "first", "last", "take", "drop", "reverse", "uniq", "flatten",
+    "push", "pop", "shift", "unshift", "append", "prepend", "delete",
+    "include?", "index", "rindex", "length", "size",
+    "split", "join", "strip", "lstrip", "rstrip", "chomp", "chop",
+    "upcase", "downcase", "capitalize", "swapcase", "gsub", "gsub!", "sub", "sub!",
+    "match", "match?", "scan", "tr", "squeeze", "replace", "encode", "force_encoding",
+    "start_with?", "end_with?", "include?", "empty?", "blank?", "present?",
+    "to_sym", "to_str", "to_proc", "to_json", "to_yaml",
+    "tap", "then", "yield_self",
+    "open", "read", "write", "close", "each_line", "readlines",
+    "sleep", "exit", "abort", "at_exit", "trap",
+    "lambda", "proc", "block_given?", "yield",
+    // RSpec / Capybara / test
+    "describe", "context", "it", "specify", "example",
+    "before", "after", "around", "let", "let!", "subject",
+    "expect", "allow", "receive", "and_return", "and_raise",
+    "eq", "eql", "equal", "be", "be_a", "be_an", "be_truthy", "be_falsey",
+    "be_nil", "be_empty", "be_valid", "be_present", "be_blank",
+    "include", "match", "match_array", "contain_exactly",
+    "have_attributes", "have_key", "have_css", "have_content",
+    "have_selector", "have_text", "have_link", "have_button", "have_field",
+    "has_css?", "has_no_css?", "has_content?", "has_no_content?",
+    "has_selector?", "has_no_selector?", "has_text?", "has_no_text?",
+    "have_http_status", "change", "raise_error", "output",
+    "visit", "click_on", "click_link", "click_button", "fill_in",
+    "find", "within", "page", "current_path",
+    "instance_double", "class_double", "object_double",
+    "spy", "have_received",
+    "shared_examples", "shared_context", "it_behaves_like",
+    "aggregate_failures", "pending", "skip", "xit", "xdescribe", "xcontext",
+    // Generic type parameters
+    "T", "U", "K", "V",
+];

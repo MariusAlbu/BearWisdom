@@ -13,7 +13,7 @@
 //   module      = None (Pascal `uses` clauses always name the unit directly)
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -66,7 +66,7 @@ impl LanguageResolver for PascalResolver {
             return None;
         }
 
-        if builtins::is_pascal_builtin(&ref_ctx.extracted_ref.target_name) {
+        if predicates::is_pascal_builtin(&ref_ctx.extracted_ref.target_name) {
             return None;
         }
 
@@ -75,7 +75,7 @@ impl LanguageResolver for PascalResolver {
         let target_lower = ref_ctx.extracted_ref.target_name.to_lowercase();
         for sym in lookup.in_file(&file_ctx.file_path) {
             if sym.name.to_lowercase() == target_lower
-                && builtins::kind_compatible(ref_ctx.extracted_ref.kind, &sym.kind)
+                && predicates::kind_compatible(ref_ctx.extracted_ref.kind, &sym.kind)
             {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -85,7 +85,7 @@ impl LanguageResolver for PascalResolver {
             }
         }
 
-        engine::resolve_common("pascal", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("pascal", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -94,6 +94,6 @@ impl LanguageResolver for PascalResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_pascal_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_pascal_builtin)
     }
 }

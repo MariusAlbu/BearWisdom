@@ -9,9 +9,9 @@
 //! - `def` → Variable
 //! - `defmacro` → Function (macro)
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
 #[cfg(test)]

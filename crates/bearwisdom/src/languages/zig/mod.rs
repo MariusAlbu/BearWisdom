@@ -17,10 +17,10 @@
 //! - `identifier(` patterns in bodies → Calls edges
 //! - `@builtin(` patterns (everywhere) → Calls edges
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 pub use resolve::ZigResolver;

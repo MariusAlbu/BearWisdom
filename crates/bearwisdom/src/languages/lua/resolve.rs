@@ -14,7 +14,7 @@
 // The extractor emits EdgeKind::Imports with target_name = the module string.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -74,11 +74,11 @@ impl LanguageResolver for LuaResolver {
         }
 
         // Lua builtins are never in the index.
-        if builtins::is_lua_builtin(target) {
+        if predicates::is_lua_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("lua", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("lua", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -87,6 +87,6 @@ impl LanguageResolver for LuaResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_lua_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_lua_builtin)
     }
 }

@@ -5,7 +5,7 @@
 
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 #[cfg(test)]

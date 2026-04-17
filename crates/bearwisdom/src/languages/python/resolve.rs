@@ -27,7 +27,7 @@
 // =============================================================================
 
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -103,7 +103,7 @@ impl LanguageResolver for PythonResolver {
         }
 
         // Python builtins are never in our index.
-        if builtins::is_python_builtin(target) {
+        if predicates::is_python_builtin(target) {
             return None;
         }
 
@@ -123,10 +123,10 @@ impl LanguageResolver for PythonResolver {
         //     `Person.objects.filter()` → module="posthog.models"): use the module
         //     to locate the target before falling through to scope chain walk.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if builtins::is_relative_import(module) {
+            if predicates::is_relative_import(module) {
                 // Relative import — try to resolve in the target file.
                 for sym in lookup.in_file(module) {
-                    if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
                         debug!(
                             strategy = "python_import_file",
                             file = %module,
@@ -143,7 +143,7 @@ impl LanguageResolver for PythonResolver {
 
                 let candidate = format!("{module}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -156,7 +156,7 @@ impl LanguageResolver for PythonResolver {
                 // Try "{module}.{target}" as a qualified name.
                 let candidate = format!("{module}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         debug!(
                             strategy = "python_ref_module",
                             candidate = %candidate,
@@ -173,7 +173,7 @@ impl LanguageResolver for PythonResolver {
                 let module_as_path = module.replace('.', "/");
                 for sym in lookup.by_name(target) {
                     if sym.file_path.contains(&module_as_path)
-                        && builtins::kind_compatible(edge_kind, &sym.kind)
+                        && predicates::kind_compatible(edge_kind, &sym.kind)
                     {
                         debug!(
                             strategy = "python_ref_module_path",
@@ -209,7 +209,7 @@ impl LanguageResolver for PythonResolver {
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "python_scope_chain",
                         candidate = %candidate,
@@ -226,7 +226,7 @@ impl LanguageResolver for PythonResolver {
 
         // Step 2: Same-file resolution.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == effective_target && predicates::kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "python_same_file",
                     qualified_name = %sym.qualified_name,
@@ -243,7 +243,7 @@ impl LanguageResolver for PythonResolver {
         // Step 3: Fully qualified name (dotted target like "models.User").
         if effective_target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -268,7 +268,7 @@ impl LanguageResolver for PythonResolver {
 
                     let candidate = format!("{mod_path}.{rest}");
                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                        if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
                                 confidence: 1.0,
@@ -287,7 +287,7 @@ impl LanguageResolver for PythonResolver {
                             || norm_path.contains(&format!("{mod_dir}/"))
                             || norm_path.ends_with(&format!("/{mod_dir}.py"))
                             || norm_path == format!("{mod_dir}.py");
-                        if in_mod && builtins::kind_compatible(edge_kind, &sym.kind) {
+                        if in_mod && predicates::kind_compatible(edge_kind, &sym.kind) {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
                                 confidence: 0.90,
@@ -304,12 +304,12 @@ impl LanguageResolver for PythonResolver {
         for import in &file_ctx.imports {
             if import.is_wildcard {
                 if let Some(ref mod_path) = import.module_path {
-                    if !builtins::is_relative_import(mod_path) {
+                    if !predicates::is_relative_import(mod_path) {
                         continue;
                     }
                     let candidate = format!("{mod_path}.{effective_target}");
                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                        if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
                                 confidence: 0.90,
@@ -331,7 +331,7 @@ impl LanguageResolver for PythonResolver {
             // `from foo.bar import Baz` → try `foo.bar.Baz`
             let candidate = format!("{mod_path}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "python_from_import",
                         candidate = %candidate,
@@ -357,7 +357,7 @@ impl LanguageResolver for PythonResolver {
                     || norm_path.ends_with(&format!("/{module_dir}.py"))
                     || norm_path == format!("{module_dir}.py");
                 if (sym.qualified_name.starts_with(mod_path.as_str()) || in_module_dir)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -383,11 +383,11 @@ impl LanguageResolver for PythonResolver {
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
             // Relative imports are internal.
-            if builtins::is_relative_import(module) {
+            if predicates::is_relative_import(module) {
                 return None;
             }
             let root = module.split('.').next().unwrap_or(module);
-            if builtins::is_python_stdlib(root) {
+            if predicates::is_python_stdlib(root) {
                 return Some("stdlib".to_string());
             }
             // Manifest-driven: check pyproject.toml / requirements.txt dependencies first.
@@ -412,7 +412,7 @@ impl LanguageResolver for PythonResolver {
         }
 
         // Python builtins (built-in functions, types, and common method names).
-        if builtins::is_python_builtin(target) {
+        if predicates::is_python_builtin(target) {
             return Some("python_builtins".to_string());
         }
 
@@ -425,11 +425,11 @@ impl LanguageResolver for PythonResolver {
             let Some(ref mod_path) = import.module_path else {
                 continue;
             };
-            if builtins::is_relative_import(mod_path) {
+            if predicates::is_relative_import(mod_path) {
                 continue;
             }
             let root = mod_path.split('.').next().unwrap_or(mod_path);
-            if builtins::is_python_stdlib(root) {
+            if predicates::is_python_stdlib(root) {
                 return Some("stdlib".to_string());
             }
             // Manifest-driven check.

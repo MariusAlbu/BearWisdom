@@ -16,7 +16,7 @@
 //   3. Project-wide name lookup (exported predicates from other modules).
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -76,7 +76,7 @@ impl LanguageResolver for PrologResolver {
         }
 
         // Prolog standard builtins are never in the index.
-        if builtins::is_prolog_builtin(target) {
+        if predicates::is_prolog_builtin(target) {
             return None;
         }
 
@@ -90,7 +90,7 @@ impl LanguageResolver for PrologResolver {
             for scope in &ref_ctx.scope_chain {
                 let candidate = format!("{scope}.{effective_target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -100,7 +100,7 @@ impl LanguageResolver for PrologResolver {
                 }
             }
             for sym in lookup.in_file(&file_ctx.file_path) {
-                if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
+                if sym.name == effective_target && predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -111,7 +111,7 @@ impl LanguageResolver for PrologResolver {
             return None;
         }
 
-        engine::resolve_common("prolog", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("prolog", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -120,6 +120,6 @@ impl LanguageResolver for PrologResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_prolog_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_prolog_builtin)
     }
 }

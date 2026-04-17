@@ -14,7 +14,7 @@
 //   module      = module name when target_name is a renamed/only symbol
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -28,7 +28,7 @@ pub struct FortranResolver;
 /// so normalise here to satisfy the `fn(&str) -> bool` signature required by
 /// `infer_external_common`.
 fn is_fortran_builtin_ci(name: &str) -> bool {
-    builtins::is_fortran_builtin(name) || builtins::is_fortran_builtin(&name.to_lowercase())
+    predicates::is_fortran_builtin(name) || predicates::is_fortran_builtin(&name.to_lowercase())
 }
 
 impl LanguageResolver for FortranResolver {
@@ -81,7 +81,7 @@ impl LanguageResolver for FortranResolver {
         // Fortran is case-insensitive; check both as-is and lowercased.
         let target = &ref_ctx.extracted_ref.target_name;
         let target_lower = target.to_lowercase();
-        if builtins::is_fortran_builtin(target) || builtins::is_fortran_builtin(&target_lower) {
+        if predicates::is_fortran_builtin(target) || predicates::is_fortran_builtin(&target_lower) {
             return None;
         }
 
@@ -89,7 +89,7 @@ impl LanguageResolver for FortranResolver {
         // before delegating to resolve_common (which is case-sensitive).
         for sym in lookup.in_file(&file_ctx.file_path) {
             if sym.name.to_lowercase() == target_lower
-                && builtins::kind_compatible(ref_ctx.extracted_ref.kind, &sym.kind)
+                && predicates::kind_compatible(ref_ctx.extracted_ref.kind, &sym.kind)
             {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
@@ -99,7 +99,7 @@ impl LanguageResolver for FortranResolver {
             }
         }
 
-        engine::resolve_common("fortran", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("fortran", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(

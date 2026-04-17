@@ -3,7 +3,7 @@
 // =============================================================================
 
 use super::helpers::{call_target_name, node_text};
-use super::builtins;
+use super::predicates;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
 
@@ -184,7 +184,7 @@ fn extract_all_type_identifiers(
                 let name = node_text(child, src);
                 let line = child.start_position().row as u32;
                 // Only emit if not a builtin (builtins are always available).
-                if !name.is_empty() && !builtins::is_swift_builtin(&name) {
+                if !name.is_empty() && !predicates::is_swift_builtin(&name) {
                     // Deduplicate only if same name AND same line — different lines
                     // need separate refs so coverage correlation matches by line.
                     let already_emitted = refs.iter().rev().take(5).any(|r| {

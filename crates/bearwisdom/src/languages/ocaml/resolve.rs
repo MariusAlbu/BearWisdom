@@ -15,7 +15,7 @@
 //   module      = the source module when an alias is introduced
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -81,11 +81,11 @@ impl LanguageResolver for OcamlResolver {
         }
 
         // OCaml Stdlib is always in scope and not in the project index.
-        if builtins::is_ocaml_builtin(target) {
+        if predicates::is_ocaml_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("ocaml", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("ocaml", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -94,6 +94,6 @@ impl LanguageResolver for OcamlResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_ocaml_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_ocaml_builtin)
     }
 }

@@ -13,7 +13,7 @@
 //! The <script> block's JS/TS symbols are handled by the JS/TS extractor when
 //! the indexer processes the embedded text as a separate extraction target.
 
-pub(crate) mod builtins;
+pub(crate) mod predicates;
 pub mod connectors;
 pub mod extract;
 
@@ -135,7 +135,7 @@ impl LanguagePlugin for VuePlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        crate::languages::typescript::primitives::PRIMITIVES
+        crate::languages::typescript::keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

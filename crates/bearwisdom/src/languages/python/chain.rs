@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{RefContext, Resolution, SymbolLookup};
-use super::builtins::kind_compatible;
+use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
 

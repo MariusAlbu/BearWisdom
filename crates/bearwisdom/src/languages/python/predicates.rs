@@ -1,0 +1,276 @@
+// =============================================================================
+// python/predicates.rs — Python builtin and helper predicates
+// =============================================================================
+
+use crate::types::EdgeKind;
+
+/// Check that the edge kind is compatible with the symbol kind.
+pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    match edge_kind {
+        EdgeKind::Calls => matches!(
+            sym_kind,
+            "method" | "function" | "constructor" | "test" | "class"
+        ),
+        EdgeKind::Inherits => matches!(sym_kind, "class"),
+        EdgeKind::Implements => matches!(sym_kind, "class" | "interface"),
+        EdgeKind::TypeRef => matches!(
+            sym_kind,
+            "class" | "interface" | "enum" | "type_alias" | "function" | "variable"
+        ),
+        EdgeKind::Instantiates => matches!(sym_kind, "class" | "function"),
+        _ => true,
+    }
+}
+
+/// A relative import starts with a dot (`./`, `../`) or is an internal module
+/// path (no domain-style host segment, not a stdlib name).
+///
+/// We approximate: if the module path starts with `.` or contains a `/` it's
+/// relative/local. Otherwise it might be an installed package.
+pub(super) fn is_relative_import(module: &str) -> bool {
+    module.starts_with('.') || module.starts_with('/')
+}
+
+/// Python standard library top-level module names.
+pub(super) fn is_python_stdlib(name: &str) -> bool {
+    matches!(
+        name,
+        "os"
+            | "sys"
+            | "json"
+            | "re"
+            | "datetime"
+            | "pathlib"
+            | "typing"
+            | "collections"
+            | "functools"
+            | "itertools"
+            | "logging"
+            | "unittest"
+            | "dataclasses"
+            | "abc"
+            | "io"
+            | "math"
+            | "hashlib"
+            | "uuid"
+            | "copy"
+            | "enum"
+            | "http"
+            | "urllib"
+            | "socket"
+            | "threading"
+            | "multiprocessing"
+            | "subprocess"
+            | "argparse"
+            | "configparser"
+            | "csv"
+            | "sqlite3"
+            // Additional commonly imported stdlib modules
+            | "time"
+            | "random"
+            | "string"
+            | "struct"
+            | "base64"
+            | "pickle"
+            | "shutil"
+            | "tempfile"
+            | "glob"
+            | "fnmatch"
+            | "traceback"
+            | "warnings"
+            | "weakref"
+            | "contextlib"
+            | "inspect"
+            | "ast"
+            | "dis"
+            | "types"
+            | "operator"
+            | "decimal"
+            | "fractions"
+            | "statistics"
+            | "textwrap"
+            | "pprint"
+            | "heapq"
+            | "bisect"
+            | "array"
+            | "queue"
+            | "asyncio"
+            | "concurrent"
+            | "signal"
+            | "mimetypes"
+            | "email"
+            | "html"
+            | "xml"
+            | "zipfile"
+            | "tarfile"
+            | "gzip"
+            | "bz2"
+            | "lzma"
+            | "zlib"
+            | "platform"
+    )
+}
+
+/// Python built-in functions, types, and common method names.
+///
+/// Covers the built-in namespace (functions/types always in scope), common
+/// str/list/dict instance methods, unittest assert helpers, and a few Django
+/// model convenience methods. Used both in `resolve` (fast exit) and in
+/// `infer_external_namespace` (classify as `python_builtins`).
+pub(super) fn is_python_builtin(name: &str) -> bool {
+    // Strip `self.` prefix if present.
+    let name = name.strip_prefix("self.").unwrap_or(name);
+    matches!(
+        name,
+        // Built-in functions always in scope
+        "len"
+            | "print"
+            | "str"
+            | "int"
+            | "float"
+            | "bool"
+            | "list"
+            | "dict"
+            | "set"
+            | "tuple"
+            | "range"
+            | "enumerate"
+            | "zip"
+            | "map"
+            | "filter"
+            | "sorted"
+            | "reversed"
+            | "isinstance"
+            | "issubclass"
+            | "hasattr"
+            | "getattr"
+            | "setattr"
+            | "delattr"
+            | "super"
+            | "type"
+            | "property"
+            | "staticmethod"
+            | "classmethod"
+            | "object"
+            | "open"
+            | "input"
+            | "repr"
+            | "hash"
+            | "id"
+            | "abs"
+            | "max"
+            | "min"
+            | "sum"
+            | "any"
+            | "all"
+            | "next"
+            | "iter"
+            | "callable"
+            | "vars"
+            | "dir"
+            | "globals"
+            | "locals"
+            | "exec"
+            | "eval"
+            | "compile"
+            | "breakpoint"
+            | "round"
+            | "pow"
+            | "divmod"
+            | "chr"
+            | "ord"
+            | "hex"
+            | "oct"
+            | "bin"
+            | "bytes"
+            | "bytearray"
+            | "memoryview"
+            | "frozenset"
+            | "complex"
+            | "format"
+            | "NotImplemented"
+            | "Ellipsis"
+            | "None"
+            | "True"
+            | "False"
+            // Common exception types
+            | "Exception"
+            | "ValueError"
+            | "TypeError"
+            | "KeyError"
+            | "IndexError"
+            | "AttributeError"
+            | "RuntimeError"
+            | "StopIteration"
+            | "OSError"
+            | "IOError"
+            | "ImportError"
+            | "NameError"
+            | "NotImplementedError"
+            | "AssertionError"
+            | "OverflowError"
+            | "ZeroDivisionError"
+            | "FileNotFoundError"
+            | "PermissionError"
+            // str instance methods
+            | "strip"
+            | "lstrip"
+            | "rstrip"
+            | "split"
+            | "rsplit"
+            | "join"
+            | "replace"
+            | "lower"
+            | "upper"
+            | "title"
+            | "capitalize"
+            | "startswith"
+            | "endswith"
+            | "find"
+            | "rfind"
+            | "index"
+            | "count"
+            | "encode"
+            | "decode"
+            | "isdigit"
+            | "isalpha"
+            | "isnumeric"
+            // list / dict instance methods
+            | "append"
+            | "extend"
+            | "insert"
+            | "remove"
+            | "pop"
+            | "clear"
+            | "sort"
+            | "reverse"
+            | "copy"
+            | "get"
+            | "keys"
+            | "values"
+            | "items"
+            | "update"
+            | "setdefault"
+            // unittest assert helpers
+            | "assertEqual"
+            | "assertIn"
+            | "assertTrue"
+            | "assertFalse"
+            | "assertIsNone"
+            | "assertIsNotNone"
+            | "assertRaises"
+            | "assertAlmostEqual"
+            | "assertGreater"
+            | "assertLess"
+            | "assert_called_once"
+            | "assert_called_with"
+            | "assert_not_called"
+            // Django model convenience methods
+            | "refresh_from_db"
+            | "save"
+            | "delete"
+            | "get_absolute_url"
+            | "full_clean"
+            | "clean"
+    )
+}

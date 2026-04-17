@@ -16,7 +16,7 @@
 //   module      = the canonical namespace when an alias is present
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -83,11 +83,11 @@ impl LanguageResolver for ClojureResolver {
         }
 
         // clojure.core and special forms are not in the project index.
-        if builtins::is_clojure_builtin(target) {
+        if predicates::is_clojure_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("clojure", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("clojure", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -102,14 +102,14 @@ impl LanguageResolver for ClojureResolver {
         // and constructor calls end with `.` (e.g. `File.`, `ArrayList.`).
         // Neither can resolve to a project symbol, so classify them immediately
         // as Java interop externals rather than leaving them unresolved.
-        if builtins::is_java_interop(target) {
+        if predicates::is_java_interop(target) {
             return Some("java".to_string());
         }
 
         // Fully-qualified Java class references (contain a `.` that isn't a
         // Clojure namespace separator we already know about, e.g.
         // `java.io.ByteArrayOutputStream.` or `java.lang.Thread`).
-        if builtins::is_java_class_ref(target) {
+        if predicates::is_java_class_ref(target) {
             return Some("java".to_string());
         }
 
@@ -128,13 +128,13 @@ impl LanguageResolver for ClojureResolver {
             && !target.contains('/');
         if is_camel {
             let has_java_import = file_ctx.imports.iter().any(|imp| {
-                imp.module_path.as_deref().map(builtins::is_java_class_ref).unwrap_or(false)
+                imp.module_path.as_deref().map(predicates::is_java_class_ref).unwrap_or(false)
             });
             if has_java_import {
                 return Some("java".to_string());
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_clojure_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_clojure_builtin)
     }
 }

@@ -15,7 +15,7 @@
 //   3. Project-wide name lookup (Public symbols from other modules).
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -75,11 +75,11 @@ impl LanguageResolver for VbaResolver {
         }
 
         // VBA builtins are never in the index.
-        if builtins::is_vba_builtin(target) {
+        if predicates::is_vba_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("vba", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("vba", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -88,6 +88,6 @@ impl LanguageResolver for VbaResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_vba_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_vba_builtin)
     }
 }

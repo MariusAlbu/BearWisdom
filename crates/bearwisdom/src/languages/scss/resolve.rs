@@ -22,7 +22,7 @@
 //      external without entering the index.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -81,19 +81,19 @@ impl LanguageResolver for ScssResolver {
         }
 
         // Skip CSS built-in functions.
-        if builtins::is_scss_builtin(target) {
+        if predicates::is_scss_builtin(target) {
             return None;
         }
 
         // Skip references into Sass built-in modules (sass:math, sass:color …).
         // These are module-qualified accesses like `math.$pi` or `math.div(…)`.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if builtins::is_sass_builtin_module(module) {
+            if predicates::is_sass_builtin_module(module) {
                 return None;
             }
         }
 
-        engine::resolve_common("scss", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("scss", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -112,21 +112,21 @@ impl LanguageResolver for ScssResolver {
                 .module
                 .as_deref()
                 .unwrap_or(target.as_str());
-            if builtins::is_sass_builtin_module(path) {
+            if predicates::is_sass_builtin_module(path) {
                 return Some(path.to_string());
             }
         }
 
         // Module-qualified access where the module is a Sass built-in.
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if builtins::is_sass_builtin_module(module) {
+            if predicates::is_sass_builtin_module(module) {
                 return Some(format!("sass:{module}"));
             }
             // Also check if an import entry for this module is a sass:* path.
             for import in &file_ctx.imports {
                 if let Some(mp) = &import.module_path {
                     if (import.imported_name == *module || mp.contains(module.as_str()))
-                        && builtins::is_sass_builtin_module(mp)
+                        && predicates::is_sass_builtin_module(mp)
                     {
                         return Some(mp.clone());
                     }
@@ -134,6 +134,6 @@ impl LanguageResolver for ScssResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_scss_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_scss_builtin)
     }
 }

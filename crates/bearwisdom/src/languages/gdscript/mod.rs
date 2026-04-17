@@ -11,10 +11,10 @@
 //! - `variable_statement` / `const_statement` → Variable / Field
 //! - `enum_definition` → Enum
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 #[cfg(test)]

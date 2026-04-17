@@ -34,7 +34,7 @@
 // =============================================================================
 
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -154,7 +154,7 @@ impl LanguageResolver for GoResolver {
             let candidate = format!("{scope}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -172,7 +172,7 @@ impl LanguageResolver for GoResolver {
             let candidate = format!("{pkg}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -190,7 +190,7 @@ impl LanguageResolver for GoResolver {
             for sym in lookup.members_of(pkg) {
                 if sym.name == *target
                     && self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -216,7 +216,7 @@ impl LanguageResolver for GoResolver {
                 let candidate = format!("{last_seg}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
                     if self.is_visible(file_ctx, ref_ctx, sym)
-                        && builtins::kind_compatible(edge_kind, &sym.kind)
+                        && predicates::kind_compatible(edge_kind, &sym.kind)
                     {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
@@ -241,7 +241,7 @@ impl LanguageResolver for GoResolver {
             let candidate = format!("{last_seg}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -256,7 +256,7 @@ impl LanguageResolver for GoResolver {
                 let candidate = format!("{pkg_alias}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
                     if self.is_visible(file_ctx, ref_ctx, sym)
-                        && builtins::kind_compatible(edge_kind, &sym.kind)
+                        && predicates::kind_compatible(edge_kind, &sym.kind)
                     {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
@@ -271,7 +271,7 @@ impl LanguageResolver for GoResolver {
         // Step 4: Fully qualified name (target contains dots, e.g., "pkg.Func").
         if target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -303,12 +303,12 @@ impl LanguageResolver for GoResolver {
         }
 
         // Go built-in functions and types — always external (runtime/stdlib).
-        if builtins::is_go_builtin(target) {
+        if predicates::is_go_builtin(target) {
             return Some("builtin".to_string());
         }
 
         // Go composite literal types: []string, map[string]int, []*Foo, etc.
-        if builtins::is_go_composite_type(target) {
+        if predicates::is_go_composite_type(target) {
             return Some("builtin".to_string());
         }
 
@@ -334,7 +334,7 @@ impl LanguageResolver for GoResolver {
             let external = if let Some(ctx) = project_ctx {
                 is_manifest_go_external(ctx, full_path)
             } else {
-                builtins::is_external_go_import_fallback(full_path)
+                predicates::is_external_go_import_fallback(full_path)
             };
 
             if external {
@@ -365,8 +365,8 @@ impl LanguageResolver for GoResolver {
                 return true;
             }
             // Same package: compare directories.
-            let target_dir = builtins::parent_dir(&target.file_path);
-            let source_dir = builtins::parent_dir(&file_ctx.file_path);
+            let target_dir = predicates::parent_dir(&target.file_path);
+            let source_dir = predicates::parent_dir(&file_ctx.file_path);
             return target_dir == source_dir;
         }
 
@@ -408,7 +408,7 @@ impl GoResolver {
             let pkg_name = full_path.rsplit('/').next().unwrap_or(full_path.as_str());
             let candidate = format!("{pkg_name}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -421,7 +421,7 @@ impl GoResolver {
             if alias != pkg_name {
                 let candidate = format!("{alias}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,

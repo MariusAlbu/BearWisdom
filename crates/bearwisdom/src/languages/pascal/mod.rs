@@ -2,10 +2,10 @@
 //!
 //! Grammar: tree-sitter-pascal 0.10.2 — real grammar, LANGUAGE constant available.
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 pub use resolve::PascalResolver;
@@ -67,7 +67,7 @@ impl LanguagePlugin for PascalPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

@@ -22,7 +22,7 @@
 // =============================================================================
 
 
-use super::builtins;
+use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -114,7 +114,7 @@ impl LanguageResolver for ElixirResolver {
         }
 
         // Elixir builtins (Kernel functions, ExUnit macros, etc.).
-        if builtins::is_elixir_builtin(target) {
+        if predicates::is_elixir_builtin(target) {
             return None;
         }
 
@@ -122,7 +122,7 @@ impl LanguageResolver for ElixirResolver {
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -136,7 +136,7 @@ impl LanguageResolver for ElixirResolver {
         if let Some(module) = &file_ctx.file_namespace {
             let candidate = format!("{module}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -153,7 +153,7 @@ impl LanguageResolver for ElixirResolver {
             }
             if let Some(full_module) = &import.module_path {
                 if let Some(sym) = lookup.by_qualified_name(full_module) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -167,7 +167,7 @@ impl LanguageResolver for ElixirResolver {
         // Step 4: Fully qualified module reference.
         if target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -179,7 +179,7 @@ impl LanguageResolver for ElixirResolver {
 
         // Step 5: Simple name lookup.
         for sym in lookup.by_name(target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
+            if predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 0.85,
@@ -215,14 +215,14 @@ impl LanguageResolver for ElixirResolver {
                 }
             }
 
-            if builtins::is_external_elixir_module(module) {
+            if predicates::is_external_elixir_module(module) {
                 return Some(root.to_string());
             }
             return None;
         }
 
         // Elixir builtins (Kernel functions).
-        if builtins::is_elixir_builtin(target) {
+        if predicates::is_elixir_builtin(target) {
             return Some("Kernel".to_string());
         }
 
@@ -237,7 +237,7 @@ impl LanguageResolver for ElixirResolver {
                     }
                 }
             }
-            if builtins::is_external_elixir_module(module) {
+            if predicates::is_external_elixir_module(module) {
                 return Some(root.to_string());
             }
         }
@@ -259,7 +259,7 @@ impl LanguageResolver for ElixirResolver {
                 }
             }
 
-            if builtins::is_external_elixir_module(module) {
+            if predicates::is_external_elixir_module(module) {
                 return Some(root.to_string());
             }
         }
@@ -276,7 +276,7 @@ impl LanguageResolver for ElixirResolver {
                 }
             }
 
-            if builtins::is_external_elixir_module(root) {
+            if predicates::is_external_elixir_module(root) {
                 return Some(root.to_string());
             }
         } else {
@@ -289,7 +289,7 @@ impl LanguageResolver for ElixirResolver {
                 }
             }
 
-            if builtins::is_external_elixir_module(target) {
+            if predicates::is_external_elixir_module(target) {
                 return Some(target.clone());
             }
         }
@@ -314,7 +314,7 @@ impl LanguageResolver for ElixirResolver {
                 }
                 // Case 3: web wrapper module — `Routes` is injected by the
                 // web module's `quote do` block; we can't see the alias itself.
-                if builtins::is_internal_web_module(mp) {
+                if predicates::is_internal_web_module(mp) {
                     return Some("Phoenix".to_string());
                 }
             }
@@ -338,8 +338,8 @@ impl LanguageResolver for ElixirResolver {
             // that import `Phoenix.ConnTest` and alias `Router.Helpers` as
             // `Routes`. BearWisdom can't expand macros, so we detect the
             // wrapper by name convention and apply the ConnTest injection set.
-            if builtins::is_phoenix_test_case_wrapper(module)
-                && builtins::is_conn_case_injected(target)
+            if predicates::is_phoenix_test_case_wrapper(module)
+                && predicates::is_conn_case_injected(target)
             {
                 return Some("Phoenix".to_string());
             }
@@ -350,8 +350,8 @@ impl LanguageResolver for ElixirResolver {
             // these macros, so the injected functions never appear as
             // top-level symbols. Detect by module name convention and apply
             // the known injection set.
-            if builtins::is_internal_schema_module(module)
-                && builtins::is_schema_using_injected(target)
+            if predicates::is_internal_schema_module(module)
+                && predicates::is_schema_using_injected(target)
             {
                 // Attribute to the module's namespace root as an internal
                 // origin (no external package). Use the full module path as
@@ -364,8 +364,8 @@ impl LanguageResolver for ElixirResolver {
             // shared helpers via a `def controller do quote do ... end end`
             // pattern. Any controller that does `use ChangelogWeb, :controller`
             // gets these helpers without them appearing as defined symbols.
-            if builtins::is_internal_web_module(module)
-                && builtins::is_web_controller_injected(target)
+            if predicates::is_internal_web_module(module)
+                && predicates::is_web_controller_injected(target)
             {
                 return Some(module.split('.').next().unwrap_or(module).to_string());
             }
@@ -376,16 +376,16 @@ impl LanguageResolver for ElixirResolver {
                 if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix) {
                     is_mix_dep_match(root, &manifest.dependencies)
                 } else {
-                    builtins::is_external_elixir_module(module)
+                    predicates::is_external_elixir_module(module)
                 }
             } else {
-                builtins::is_external_elixir_module(module)
+                predicates::is_external_elixir_module(module)
             };
             if !is_external_module {
                 continue;
             }
             // Check if this external module injects the target name via `use`.
-            if builtins::is_use_injected(module, target) {
+            if predicates::is_use_injected(module, target) {
                 return Some(root.to_string());
             }
         }

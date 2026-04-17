@@ -1,8 +1,8 @@
 //! javascript language plugin.
 
 mod helpers;
-pub(crate) mod builtins;
-pub(crate) mod primitives;
+pub(crate) mod predicates;
+pub(crate) mod keywords;
 pub mod extract;
 
 #[cfg(test)]
@@ -68,7 +68,7 @@ impl LanguagePlugin for JavascriptPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

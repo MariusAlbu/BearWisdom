@@ -13,14 +13,14 @@ mod helpers;
 mod imports;
 mod narrowing;
 mod params;
-pub(crate) mod primitives;
+pub(crate) mod keywords;
 mod symbols;
 mod types;
 
 pub mod extract;
 
 // Resolution sub-modules
-pub(crate) mod builtins;
+pub(crate) mod predicates;
 mod chain;
 pub mod resolve;
 
@@ -116,7 +116,7 @@ impl LanguagePlugin for TypeScriptPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

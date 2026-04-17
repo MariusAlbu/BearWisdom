@@ -17,7 +17,7 @@
 // =============================================================================
 
 
-use super::builtins;
+use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::chain_walker::{
     self, ChainConfig, NamespaceLookup, identity_normalize,
@@ -99,7 +99,7 @@ impl LanguageResolver for KotlinResolver {
         }
 
         // Kotlin builtins are never in the project index.
-        if builtins::is_kotlin_builtin(target) {
+        if predicates::is_kotlin_builtin(target) {
             return None;
         }
 
@@ -114,7 +114,7 @@ impl LanguageResolver for KotlinResolver {
                 static_type_kinds: &["class", "interface", "enum", "type_alias", "object"],
                 use_generics: true,
                 namespace_lookup: NamespaceLookup::WildcardOnly,
-                kind_compatible: builtins::kind_compatible,
+                kind_compatible: predicates::kind_compatible,
             };
             if let Some(res) = chain_walker::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
@@ -130,7 +130,7 @@ impl LanguageResolver for KotlinResolver {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -146,7 +146,7 @@ impl LanguageResolver for KotlinResolver {
             let candidate = format!("{pkg}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -170,7 +170,7 @@ impl LanguageResolver for KotlinResolver {
             }
             if let Some(module) = &import.module_path {
                 if let Some(sym) = lookup.by_qualified_name(module) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -189,7 +189,7 @@ impl LanguageResolver for KotlinResolver {
             if let Some(module) = &import.module_path {
                 let candidate = format!("{module}.{effective_target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -203,7 +203,7 @@ impl LanguageResolver for KotlinResolver {
         // Step 5: Fully qualified name.
         if effective_target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -232,7 +232,7 @@ impl LanguageResolver for KotlinResolver {
                     file_ctx,
                     ref_ctx,
                     lookup,
-                    builtins::kind_compatible,
+                    predicates::kind_compatible,
                     |fc, rc, sym| self.is_visible(fc, rc, sym),
                     "kotlin_inherited_method",
                 ) {
@@ -272,14 +272,14 @@ impl LanguageResolver for KotlinResolver {
                 }
             }
 
-            if builtins::is_external_kotlin_namespace(import_path, project_ctx) {
+            if predicates::is_external_kotlin_namespace(import_path, project_ctx) {
                 return Some(import_path.to_string());
             }
             return None;
         }
 
         // Kotlin builtins (includes Compose test DSL).
-        if builtins::is_kotlin_builtin(target) {
+        if predicates::is_kotlin_builtin(target) {
             return Some("kotlin.stdlib".to_string());
         }
 
@@ -333,13 +333,13 @@ impl LanguageResolver for KotlinResolver {
                 }
             }
 
-            if builtins::is_external_kotlin_namespace(ns, project_ctx) {
+            if predicates::is_external_kotlin_namespace(ns, project_ctx) {
                 return Some(ns.to_string());
             }
         }
 
         // Fully-qualified target.
-        if builtins::effective_target_is_external(target, project_ctx) {
+        if predicates::effective_target_is_external(target, project_ctx) {
             return Some(target.clone());
         }
 

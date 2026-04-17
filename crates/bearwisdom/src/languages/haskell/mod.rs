@@ -4,9 +4,9 @@
 //! Extraction covers top-level functions, data/newtype, type classes, instances,
 //! type synonyms, imports, and function-application calls.
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
 use crate::languages::LanguagePlugin;

@@ -19,7 +19,7 @@
 //   4. Nix built-ins (builtins.*, lib.*): mark external.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -77,7 +77,7 @@ impl LanguageResolver for NixResolver {
         }
 
         // Skip Nix built-in attribute paths.
-        if builtins::is_nix_builtin(target) {
+        if predicates::is_nix_builtin(target) {
             return None;
         }
 
@@ -127,6 +127,6 @@ impl LanguageResolver for NixResolver {
             return None;
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_nix_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_nix_builtin)
     }
 }

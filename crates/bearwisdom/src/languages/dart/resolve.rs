@@ -21,7 +21,7 @@
 // =============================================================================
 
 
-use super::builtins;
+use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::chain_walker::{
     self, ChainConfig, NamespaceLookup, identity_normalize,
@@ -90,7 +90,7 @@ impl LanguageResolver for DartResolver {
         }
 
         // Dart builtins are never in the index.
-        if builtins::is_dart_builtin(target) {
+        if predicates::is_dart_builtin(target) {
             return None;
         }
 
@@ -105,7 +105,7 @@ impl LanguageResolver for DartResolver {
                 static_type_kinds: &["class", "enum", "mixin", "type_alias", "extension"],
                 use_generics: true,
                 namespace_lookup: NamespaceLookup::None,
-                kind_compatible: builtins::kind_compatible,
+                kind_compatible: predicates::kind_compatible,
             };
             if let Some(res) = chain_walker::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
@@ -120,7 +120,7 @@ impl LanguageResolver for DartResolver {
         for scope in &ref_ctx.scope_chain {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -132,7 +132,7 @@ impl LanguageResolver for DartResolver {
 
         // Step 2: Same-file resolution.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == effective_target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == effective_target && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
@@ -143,7 +143,7 @@ impl LanguageResolver for DartResolver {
 
         // Step 3: Simple name lookup across the project.
         for sym in lookup.by_name(effective_target) {
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
+            if predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 0.85,
@@ -166,7 +166,7 @@ impl LanguageResolver for DartResolver {
         // Import refs — classify the URI.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let uri = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            if builtins::is_external_dart_import(uri) {
+            if predicates::is_external_dart_import(uri) {
                 // Return just the package/library root.
                 let ns = if uri.starts_with("dart:") {
                     "dart.stdlib"
@@ -198,7 +198,7 @@ impl LanguageResolver for DartResolver {
         }
 
         // Dart builtins.
-        if builtins::is_dart_builtin(target) {
+        if predicates::is_dart_builtin(target) {
             return Some("dart.core".to_string());
         }
 
@@ -229,7 +229,7 @@ impl LanguageResolver for DartResolver {
             // Alias-qualified: `u.Foo` where `import '...' as u`
             if let Some(alias) = &import.alias {
                 if alias == simple {
-                    if is_manifest_external || builtins::is_external_dart_import(uri) {
+                    if is_manifest_external || predicates::is_external_dart_import(uri) {
                         if uri.starts_with("package:") {
                             return Some(pkg_name_from_uri.to_string());
                         }
@@ -242,7 +242,7 @@ impl LanguageResolver for DartResolver {
                 if is_manifest_external {
                     return Some(pkg_name_from_uri.to_string());
                 }
-                if builtins::is_external_dart_import(uri) {
+                if predicates::is_external_dart_import(uri) {
                     if uri.starts_with("package:") {
                         return Some(pkg_name_from_uri.to_string());
                     }

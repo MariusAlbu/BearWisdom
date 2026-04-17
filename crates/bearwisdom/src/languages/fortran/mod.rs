@@ -8,10 +8,10 @@
 //! - `derived_type_definition` → Struct
 //! - `use_statement` → Imports edge
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 pub use resolve::FortranResolver;

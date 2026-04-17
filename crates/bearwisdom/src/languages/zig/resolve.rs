@@ -14,7 +14,7 @@
 //   module      = the @import argument string (e.g., "std", "module.zig")
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -78,11 +78,11 @@ impl LanguageResolver for ZigResolver {
             return None;
         }
 
-        if builtins::is_zig_builtin(target) {
+        if predicates::is_zig_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("zig", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("zig", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -103,7 +103,7 @@ impl LanguageResolver for ZigResolver {
         }
 
         // Delegate builtin detection to the common helper.
-        if let Some(ns) = engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_zig_builtin) {
+        if let Some(ns) = engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_zig_builtin) {
             // Common returns "builtin"; remap to zig's "zig.builtin" label.
             return Some(if ns == "builtin" { "zig.builtin".to_string() } else { ns });
         }

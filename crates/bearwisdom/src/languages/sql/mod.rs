@@ -1,6 +1,6 @@
 //! SQL language plugin.
 
-pub(crate) mod primitives;
+pub(crate) mod keywords;
 pub mod extract;
 pub mod resolve;
 
@@ -63,7 +63,7 @@ impl LanguagePlugin for SqlPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

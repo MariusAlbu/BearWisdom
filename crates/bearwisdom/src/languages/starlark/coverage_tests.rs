@@ -8,7 +8,7 @@
 // ref_node_kinds:    call
 // =============================================================================
 
-use super::{builtins, extract};
+use super::{predicates, extract};
 use crate::types::{EdgeKind, SymbolKind};
 
 // ---------------------------------------------------------------------------
@@ -180,34 +180,34 @@ fn cov_native_attribute_call_produces_calls() {
 /// `native.*` prefix always matches regardless of the specific method name.
 #[test]
 fn builtin_native_prefix_matches_any_method() {
-    assert!(builtins::is_starlark_builtin("native.cc_binary"));
-    assert!(builtins::is_starlark_builtin("native.cc_library"));
-    assert!(builtins::is_starlark_builtin("native.cc_test"));
-    assert!(builtins::is_starlark_builtin("native.py_library"));
-    assert!(builtins::is_starlark_builtin("native.java_test"));
-    assert!(builtins::is_starlark_builtin("native.genrule"));
-    assert!(builtins::is_starlark_builtin("native.some_future_rule"));
-    assert!(builtins::is_starlark_builtin("native"));
+    assert!(predicates::is_starlark_builtin("native.cc_binary"));
+    assert!(predicates::is_starlark_builtin("native.cc_library"));
+    assert!(predicates::is_starlark_builtin("native.cc_test"));
+    assert!(predicates::is_starlark_builtin("native.py_library"));
+    assert!(predicates::is_starlark_builtin("native.java_test"));
+    assert!(predicates::is_starlark_builtin("native.genrule"));
+    assert!(predicates::is_starlark_builtin("native.some_future_rule"));
+    assert!(predicates::is_starlark_builtin("native"));
 }
 
 /// Bazel built-in `select(...)` is recognised.
 #[test]
 fn builtin_select_is_external() {
-    assert!(builtins::is_starlark_builtin("select"));
+    assert!(predicates::is_starlark_builtin("select"));
 }
 
 /// `Label(...)` constructor is recognised.
 #[test]
 fn builtin_label_is_external() {
-    assert!(builtins::is_starlark_builtin("Label"));
+    assert!(predicates::is_starlark_builtin("Label"));
 }
 
 /// Project-defined names are not falsely classified as builtins.
 #[test]
 fn builtin_user_function_is_not_external() {
-    assert!(!builtins::is_starlark_builtin("my_custom_rule"));
-    assert!(!builtins::is_starlark_builtin("_impl"));
-    assert!(!builtins::is_starlark_builtin("build_target"));
+    assert!(!predicates::is_starlark_builtin("my_custom_rule"));
+    assert!(!predicates::is_starlark_builtin("_impl"));
+    assert!(!predicates::is_starlark_builtin("build_target"));
 }
 
 // ---------------------------------------------------------------------------

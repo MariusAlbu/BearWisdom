@@ -35,7 +35,7 @@
 // =============================================================================
 
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -62,7 +62,7 @@ impl LanguageResolver for RustResolver {
         // scope_path on top-level symbols to reflect the module path
         // (e.g., "crate::models" for a symbol in src/models.rs).
         // We take it from the first top-level symbol's scope_path.
-        let file_namespace = builtins::extract_module_path(file);
+        let file_namespace = predicates::extract_module_path(file);
 
         // Build import entries from EdgeKind::Imports refs.
         // The Rust extractor emits one ref per `use` item brought into scope:
@@ -136,7 +136,7 @@ impl LanguageResolver for RustResolver {
         if target == "Self" {
             let enclosing = chain::find_enclosing_type(&ref_ctx.scope_chain, lookup)?;
             let sym = lookup.by_qualified_name(&enclosing)?;
-            if builtins::kind_compatible(edge_kind, &sym.kind) {
+            if predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
@@ -194,7 +194,7 @@ impl LanguageResolver for RustResolver {
         }
 
         // Rust stdlib builtins are never in our index — fast exit.
-        if builtins::is_rust_builtin(target) {
+        if predicates::is_rust_builtin(target) {
             return None;
         }
 
@@ -216,7 +216,7 @@ impl LanguageResolver for RustResolver {
                         // "{type_name}.{target}" — standard Rust method storage form.
                         let candidate = format!("{type_name}.{target}");
                         if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                            if predicates::kind_compatible(edge_kind, &sym.kind) {
                                 return Some(Resolution {
                                     target_symbol_id: sym.id,
                                     confidence: 1.0,
@@ -228,7 +228,7 @@ impl LanguageResolver for RustResolver {
                         let last_seg = module.rsplit("::").next().unwrap_or(module.as_str());
                         let candidate2 = format!("{last_seg}.{type_name}.{target}");
                         if let Some(sym) = lookup.by_qualified_name(&candidate2) {
-                            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                            if predicates::kind_compatible(edge_kind, &sym.kind) {
                                 return Some(Resolution {
                                     target_symbol_id: sym.id,
                                     confidence: 1.0,
@@ -242,7 +242,7 @@ impl LanguageResolver for RustResolver {
         }
 
         // Normalize `::` separators to `.` for index lookup.
-        let normalized = builtins::normalize_path(target);
+        let normalized = predicates::normalize_path(target);
         let effective_target = &normalized;
 
         // Step 1: Scope chain walk (innermost → outermost).
@@ -250,7 +250,7 @@ impl LanguageResolver for RustResolver {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -267,7 +267,7 @@ impl LanguageResolver for RustResolver {
             let candidate = format!("{module}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -280,9 +280,9 @@ impl LanguageResolver for RustResolver {
             // By simple name, preferring same module.
             let candidates = lookup.by_name(effective_target);
             for sym in candidates {
-                if builtins::sym_module(sym) == module.as_str()
+                if predicates::sym_module(sym) == module.as_str()
                     && self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -300,11 +300,11 @@ impl LanguageResolver for RustResolver {
             if import.is_wildcard {
                 // Wildcard: find anything in the imported module matching the name.
                 if let Some(ref mod_path) = import.module_path {
-                    let dot_mod = builtins::normalize_path(mod_path);
+                    let dot_mod = predicates::normalize_path(mod_path);
                     let candidate = format!("{dot_mod}.{effective_target}");
                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
                         if self.is_visible(file_ctx, ref_ctx, sym)
-                            && builtins::kind_compatible(edge_kind, &sym.kind)
+                            && predicates::kind_compatible(edge_kind, &sym.kind)
                         {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
@@ -326,13 +326,13 @@ impl LanguageResolver for RustResolver {
                 continue;
             };
 
-            let dot_mod = builtins::normalize_path(mod_path);
+            let dot_mod = predicates::normalize_path(mod_path);
 
             // Try {module}.{name} — most common Rust qualified name form.
             let candidate = format!("{dot_mod}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -357,7 +357,7 @@ impl LanguageResolver for RustResolver {
                     || qn.starts_with(dot_mod_stripped_prefix.as_str());
                 if prefix_match
                     && self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -395,7 +395,7 @@ impl LanguageResolver for RustResolver {
                             let fp = sym.file_path.replace('\\', "/");
                             fp.contains(dir_suffix.as_str())
                                 && self.is_visible(file_ctx, ref_ctx, sym)
-                                && builtins::kind_compatible(edge_kind, &sym.kind)
+                                && predicates::kind_compatible(edge_kind, &sym.kind)
                         })
                         .collect();
                 if candidates.len() == 1 {
@@ -425,7 +425,7 @@ impl LanguageResolver for RustResolver {
         // `crate::foo::Bar` or `foo::Bar` with `::` separators.
         if target.contains("::") || effective_target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -440,7 +440,7 @@ impl LanguageResolver for RustResolver {
                 .unwrap_or(effective_target);
             if stripped != effective_target {
                 if let Some(sym) = lookup.by_qualified_name(stripped) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -460,7 +460,7 @@ impl LanguageResolver for RustResolver {
             let candidates: Vec<&SymbolInfo> = lookup
                 .by_name(effective_target)
                 .into_iter()
-                .filter(|s| builtins::kind_compatible(edge_kind, &s.kind))
+                .filter(|s| predicates::kind_compatible(edge_kind, &s.kind))
                 .collect();
             if candidates.len() == 1 {
                 return Some(Resolution {
@@ -506,7 +506,7 @@ impl LanguageResolver for RustResolver {
             let candidates: Vec<&SymbolInfo> = lookup
                 .by_name(effective_target)
                 .into_iter()
-                .filter(|s| builtins::kind_compatible(edge_kind, &s.kind))
+                .filter(|s| predicates::kind_compatible(edge_kind, &s.kind))
                 .collect();
             if candidates.len() == 1 {
                 return Some(Resolution {
@@ -561,13 +561,13 @@ impl LanguageResolver for RustResolver {
         }
 
         // Builtin calls / stdlib items — always external.
-        if builtins::is_rust_builtin(target) {
+        if predicates::is_rust_builtin(target) {
             return Some("std".to_string());
         }
 
         // For non-import refs, check if the target came from an external import.
         // Walk the file's import list for a matching imported_name.
-        let normalized = builtins::normalize_path(target);
+        let normalized = predicates::normalize_path(target);
         let simple = normalized.split('.').next_back().unwrap_or(&normalized);
 
         for import in &file_ctx.imports {
@@ -649,8 +649,8 @@ impl LanguageResolver for RustResolver {
             }
             "internal" => {
                 // pub(crate) / pub(super) — same directory as an approximation.
-                let target_dir = builtins::parent_dir(&target.file_path);
-                let source_dir = builtins::parent_dir(&file_ctx.file_path);
+                let target_dir = predicates::parent_dir(&target.file_path);
+                let source_dir = predicates::parent_dir(&file_ctx.file_path);
                 target_dir == source_dir || &*target.file_path == file_ctx.file_path
             }
             _ => true, // public

@@ -13,7 +13,7 @@
 //   `open type TypeName`      → static members of a type in scope
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
@@ -72,11 +72,11 @@ impl LanguageResolver for FSharpResolver {
         }
 
         // F# stdlib and language keywords are not in the project index.
-        if builtins::is_fsharp_builtin(target) {
+        if predicates::is_fsharp_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("fsharp", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("fsharp", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -91,7 +91,7 @@ impl LanguageResolver for FSharpResolver {
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             let external = match project_ctx {
                 Some(ctx) => is_manifest_external_namespace(ctx, target),
-                None => builtins::is_external_namespace_fallback(target),
+                None => predicates::is_external_namespace_fallback(target),
             };
             if external {
                 let root = target.split('.').next().unwrap_or(target);
@@ -101,7 +101,7 @@ impl LanguageResolver for FSharpResolver {
         }
 
         // F# core builtins (printfn, Seq.map, etc.).
-        if builtins::is_fsharp_builtin(target) {
+        if predicates::is_fsharp_builtin(target) {
             return Some("FSharp.Core".to_string());
         }
 
@@ -110,7 +110,7 @@ impl LanguageResolver for FSharpResolver {
         if let Some(module) = &ref_ctx.extracted_ref.module {
             let external = match project_ctx {
                 Some(ctx) => is_manifest_external_namespace(ctx, module),
-                None => builtins::is_external_namespace_fallback(module),
+                None => predicates::is_external_namespace_fallback(module),
             };
             if external {
                 let root = module.split('.').next().unwrap_or(module);
@@ -124,7 +124,7 @@ impl LanguageResolver for FSharpResolver {
             let Some(module_path) = &import.module_path else { continue };
             let external = match project_ctx {
                 Some(ctx) => is_manifest_external_namespace(ctx, module_path),
-                None => builtins::is_external_namespace_fallback(module_path),
+                None => predicates::is_external_namespace_fallback(module_path),
             };
             if external {
                 let root = module_path.split('.').next().unwrap_or(module_path);

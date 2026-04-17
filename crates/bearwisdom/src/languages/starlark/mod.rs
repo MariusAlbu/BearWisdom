@@ -4,10 +4,10 @@
 //! recognises Starlark's `def`, `load()`, rule assignments, and calls.
 
 pub mod embedded;
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 pub mod resolve;
-mod builtins;
+mod predicates;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]

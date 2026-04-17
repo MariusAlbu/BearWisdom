@@ -25,7 +25,7 @@
 // =============================================================================
 
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -132,7 +132,7 @@ impl LanguageResolver for JavaResolver {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -149,7 +149,7 @@ impl LanguageResolver for JavaResolver {
             let candidate = format!("{pkg}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -169,7 +169,7 @@ impl LanguageResolver for JavaResolver {
             if import.imported_name == effective_target {
                 if let Some(module) = &import.module_path {
                     if let Some(sym) = lookup.by_qualified_name(module) {
-                        if builtins::kind_compatible(edge_kind, &sym.kind) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
                                 confidence: 1.0,
@@ -190,7 +190,7 @@ impl LanguageResolver for JavaResolver {
             if let Some(module) = &import.module_path {
                 let candidate = format!("{module}.{effective_target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                    if builtins::kind_compatible(edge_kind, &sym.kind) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
                         return Some(Resolution {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
@@ -204,7 +204,7 @@ impl LanguageResolver for JavaResolver {
         // Step 5: Fully qualified name (target contains dots).
         if effective_target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -234,7 +234,7 @@ impl LanguageResolver for JavaResolver {
                     file_ctx,
                     ref_ctx,
                     lookup,
-                    builtins::kind_compatible,
+                    predicates::kind_compatible,
                     |fc, rc, sym| self.is_visible(fc, rc, sym),
                     "java_inherited_method",
                 ) {
@@ -277,14 +277,14 @@ impl LanguageResolver for JavaResolver {
                 }
             }
 
-            if builtins::is_external_java_namespace(import_path, project_ctx) {
+            if predicates::is_external_java_namespace(import_path, project_ctx) {
                 return Some(import_path.to_string());
             }
             return None;
         }
 
         // Java builtins (methods always in scope without import).
-        if builtins::is_java_builtin(target) {
+        if predicates::is_java_builtin(target) {
             return Some("java.lang".to_string());
         }
 
@@ -317,13 +317,13 @@ impl LanguageResolver for JavaResolver {
 
             // For wildcard imports: the candidate would be `ns.target`.
             // Either way, check if the namespace is external.
-            if builtins::is_external_java_namespace(ns, project_ctx) {
+            if predicates::is_external_java_namespace(ns, project_ctx) {
                 return Some(ns.to_string());
             }
         }
 
         // Check if the target itself looks like a fully-qualified external name.
-        if builtins::effective_target_is_external(target, project_ctx) {
+        if predicates::effective_target_is_external(target, project_ctx) {
             return Some(target.clone());
         }
 
@@ -342,8 +342,8 @@ impl LanguageResolver for JavaResolver {
             // package-private (no modifier): visible within the same package.
             "package" => {
                 // Approximate: same top-level package prefix.
-                let target_pkg = builtins::first_segment(&target.file_path);
-                let source_pkg = builtins::first_segment(&file_ctx.file_path);
+                let target_pkg = predicates::first_segment(&target.file_path);
+                let source_pkg = predicates::first_segment(&file_ctx.file_path);
                 target_pkg == source_pkg
             }
             "protected" => {

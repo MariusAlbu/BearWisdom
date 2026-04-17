@@ -26,7 +26,7 @@
 // =============================================================================
 
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -142,7 +142,7 @@ impl LanguageResolver for RubyResolver {
             // Try dotted form (how the extractor stores qualified names).
             let candidate = format!("{scope}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -155,7 +155,7 @@ impl LanguageResolver for RubyResolver {
         // Step 2: Same-file resolution.
         // In Ruby, classes/methods in the same file are visible at module scope.
         for sym in lookup.in_file(&file_ctx.file_path) {
-            if sym.name == *target && builtins::kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == *target && predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
@@ -169,7 +169,7 @@ impl LanguageResolver for RubyResolver {
         if let Some(ns) = &file_ctx.file_namespace {
             let candidate = format!("{ns}.{target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -184,7 +184,7 @@ impl LanguageResolver for RubyResolver {
             // Normalize "::" to "." for index lookup.
             let normalized = target.replace("::", ".");
             if let Some(sym) = lookup.by_qualified_name(&normalized) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -193,7 +193,7 @@ impl LanguageResolver for RubyResolver {
                 }
             }
             if let Some(sym) = lookup.by_qualified_name(target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -235,7 +235,7 @@ impl LanguageResolver for RubyResolver {
                 if !sym.file_path.starts_with("ext:ruby:") {
                     continue;
                 }
-                if !builtins::kind_compatible(edge_kind, &sym.kind) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
                     continue;
                 }
                 // Extract the gem name from the virtual path: "ext:ruby:<gem>/..."
@@ -282,14 +282,14 @@ impl LanguageResolver for RubyResolver {
                 }
             }
 
-            if builtins::is_external_ruby_require(require_path, project_ctx) {
+            if predicates::is_external_ruby_require(require_path, project_ctx) {
                 return Some(require_path.to_string());
             }
             return None;
         }
 
         // Ruby built-ins — always external.
-        if builtins::is_ruby_builtin(target) {
+        if predicates::is_ruby_builtin(target) {
             return Some("ruby_core".to_string());
         }
 
@@ -317,7 +317,7 @@ impl LanguageResolver for RubyResolver {
                 }
             }
 
-            if builtins::is_external_ruby_require(module_path, project_ctx) {
+            if predicates::is_external_ruby_require(module_path, project_ctx) {
                 return Some(module_path.clone());
             }
         }

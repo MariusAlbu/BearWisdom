@@ -11,10 +11,10 @@
 //! - `method_invocation` → Calls
 
 pub(crate) mod connectors;
-pub(crate) mod primitives;
+pub(crate) mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -60,7 +60,7 @@ impl LanguagePlugin for GroovyPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

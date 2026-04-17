@@ -12,8 +12,8 @@
 //! - `module_defn` / `named_module` / `namespace` → Namespace
 //! - `import_decl` → Imports (open declarations)
 
-pub(crate) mod primitives;
-mod builtins;
+pub(crate) mod keywords;
+mod predicates;
 pub(crate) mod connectors;
 pub(crate) mod resolve;
 pub mod extract;
@@ -64,7 +64,7 @@ impl LanguagePlugin for FSharpPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

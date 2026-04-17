@@ -15,7 +15,7 @@
 //   Module:function()               → remote call (not an import)
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -78,12 +78,12 @@ impl LanguageResolver for ErlangResolver {
         }
 
         // Erlang BIFs, stdlib modules, and primitive types are not in the index.
-        if builtins::is_erlang_builtin(target) {
+        if predicates::is_erlang_builtin(target) {
             return None;
         }
 
         // Run common resolution first.
-        if let Some(res) = engine::resolve_common("erlang", file_ctx, ref_ctx, lookup, builtins::kind_compatible) {
+        if let Some(res) = engine::resolve_common("erlang", file_ctx, ref_ctx, lookup, predicates::kind_compatible) {
             return Some(res);
         }
 
@@ -97,7 +97,7 @@ impl LanguageResolver for ErlangResolver {
         if edge_kind == EdgeKind::Calls {
             let mut best: Option<Resolution> = None;
             for sym in lookup.in_file(&file_ctx.file_path) {
-                if !builtins::kind_compatible(edge_kind, &sym.kind) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
                     continue;
                 }
                 // sym.name is "foo/N" for Erlang functions.
@@ -128,6 +128,6 @@ impl LanguageResolver for ErlangResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_erlang_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_erlang_builtin)
     }
 }

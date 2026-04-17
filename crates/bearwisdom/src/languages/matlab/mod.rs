@@ -9,10 +9,10 @@
 //!
 //! MATLAB files are typically one function or class per `.m` file.
 
-pub mod primitives;
+pub mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub(crate) mod resolve;
 
 #[cfg(test)]
@@ -57,7 +57,7 @@ impl LanguagePlugin for MatlabPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

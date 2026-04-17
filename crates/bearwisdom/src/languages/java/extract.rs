@@ -410,7 +410,7 @@ fn scan_all_type_identifiers(
     sym_idx: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    use super::builtins::is_java_builtin;
+    use super::predicates::is_java_builtin;
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {

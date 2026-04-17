@@ -22,7 +22,7 @@
 //   - Bicep built-in functions are classified as `"bicep"`.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -83,7 +83,7 @@ impl LanguageResolver for BicepResolver {
             return None;
         }
 
-        engine::resolve_common("bicep", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("bicep", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -99,7 +99,7 @@ impl LanguageResolver for BicepResolver {
             return Some("azure".to_string());
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_bicep_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_bicep_builtin)
     }
 }
 

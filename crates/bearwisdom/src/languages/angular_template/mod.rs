@@ -71,7 +71,7 @@ impl LanguagePlugin for AngularTemplatePlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        crate::languages::typescript::primitives::PRIMITIVES
+        crate::languages::typescript::keywords::KEYWORDS
     }
 
     fn resolver(

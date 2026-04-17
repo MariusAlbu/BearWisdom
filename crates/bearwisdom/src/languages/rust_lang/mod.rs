@@ -6,11 +6,11 @@ pub(crate) mod decorators;
 mod embedded;
 mod helpers;
 mod patterns;
-pub(crate) mod primitives;
+pub(crate) mod keywords;
 mod symbols;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 mod chain;
 pub mod resolve;
 
@@ -101,7 +101,7 @@ impl LanguagePlugin for RustLangPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

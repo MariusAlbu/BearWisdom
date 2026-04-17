@@ -1,8 +1,8 @@
 //! Dockerfile language plugin.
 
-mod builtins;
+mod predicates;
 pub mod connectors;
-pub mod primitives;
+pub mod keywords;
 pub mod embedded;
 pub mod extract;
 pub mod resolve;

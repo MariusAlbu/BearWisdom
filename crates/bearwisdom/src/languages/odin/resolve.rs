@@ -19,7 +19,7 @@
 //   3. Scope chain walk for methods.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -89,12 +89,12 @@ impl LanguageResolver for OdinResolver {
         }
 
         // Skip Odin built-in types.
-        if builtins::is_odin_builtin(target) {
+        if predicates::is_odin_builtin(target) {
             return None;
         }
 
         // Try resolve_common first (scope chain, same-file, import-based).
-        if let Some(res) = engine::resolve_common("odin", file_ctx, ref_ctx, lookup, builtins::kind_compatible) {
+        if let Some(res) = engine::resolve_common("odin", file_ctx, ref_ctx, lookup, predicates::kind_compatible) {
             return Some(res);
         }
 
@@ -107,7 +107,7 @@ impl LanguageResolver for OdinResolver {
             for sym in lookup.by_name(target) {
                 let sym_normalized = sym.file_path.replace('\\', "/");
                 let sym_dir = sym_normalized.rsplit('/').nth(1).unwrap_or("");
-                if sym_dir == source_dir && builtins::kind_compatible(edge_kind, &sym.kind) {
+                if sym_dir == source_dir && predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
@@ -135,6 +135,6 @@ impl LanguageResolver for OdinResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_odin_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_odin_builtin)
     }
 }

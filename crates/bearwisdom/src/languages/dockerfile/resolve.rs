@@ -15,7 +15,7 @@
 // External namespace: `"docker"` for base images from registries.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -64,7 +64,7 @@ impl LanguageResolver for DockerfileResolver {
             file_ctx,
             ref_ctx,
             lookup,
-            builtins::kind_compatible,
+            predicates::kind_compatible,
         )
     }
 
@@ -82,7 +82,7 @@ impl LanguageResolver for DockerfileResolver {
         // Base image references in FROM (Imports) are always external; common
         // handler returns Some(ns) for Imports edges, using "builtin" fallback.
         // Override the namespace label to "docker" for all Dockerfile externals.
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_dockerfile_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_dockerfile_builtin)
             .map(|_| "docker".to_string())
     }
 }

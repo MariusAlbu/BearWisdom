@@ -21,7 +21,7 @@
 //   3. Provider resource types and built-in functions are external.
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -66,7 +66,7 @@ impl LanguageResolver for HclResolver {
         }
 
         // Built-in Terraform/HCL functions are never in the project index.
-        if builtins::is_hcl_builtin(target) {
+        if predicates::is_hcl_builtin(target) {
             return None;
         }
 
@@ -133,7 +133,7 @@ impl LanguageResolver for HclResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        if builtins::is_hcl_builtin(target) {
+        if predicates::is_hcl_builtin(target) {
             return Some("hcl".to_string());
         }
 
@@ -165,7 +165,7 @@ impl LanguageResolver for HclResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_hcl_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_hcl_builtin)
     }
 }
 

@@ -5,9 +5,9 @@ mod chain;
 mod helpers;
 mod symbols;
 pub mod extract;
-pub mod primitives;
+pub mod keywords;
 
-mod builtins;
+mod predicates;
 pub mod resolve;
 
 #[cfg(test)]

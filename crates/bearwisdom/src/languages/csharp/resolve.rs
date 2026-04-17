@@ -17,7 +17,7 @@
 // =============================================================================
 
 
-use super::{builtins, chain};
+use super::{predicates, chain};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -105,7 +105,7 @@ impl LanguageResolver for CSharpResolver {
         }
 
         // C# / .NET built-ins are never in our index — skip resolution entirely.
-        if builtins::is_csharp_builtin(target) {
+        if predicates::is_csharp_builtin(target) {
             return None;
         }
 
@@ -129,7 +129,7 @@ impl LanguageResolver for CSharpResolver {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -146,7 +146,7 @@ impl LanguageResolver for CSharpResolver {
             let candidate = format!("{ns}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && builtins::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
                 {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
@@ -165,7 +165,7 @@ impl LanguageResolver for CSharpResolver {
                     let candidate = format!("{module}.{effective_target}");
                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
                         if self.is_visible(file_ctx, ref_ctx, sym)
-                            && builtins::kind_compatible(edge_kind, &sym.kind)
+                            && predicates::kind_compatible(edge_kind, &sym.kind)
                         {
                             return Some(Resolution {
                                 target_symbol_id: sym.id,
@@ -181,7 +181,7 @@ impl LanguageResolver for CSharpResolver {
         // Step 4: Fully qualified name (target contains dots).
         if effective_target.contains('.') {
             if let Some(sym) = lookup.by_qualified_name(effective_target) {
-                if builtins::kind_compatible(edge_kind, &sym.kind) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
@@ -203,7 +203,7 @@ impl LanguageResolver for CSharpResolver {
                     if let Some(type_name) = lookup.field_type_name(&field_qname) {
                         let candidate = format!("{type_name}.{rest}");
                         if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                            if builtins::kind_compatible(edge_kind, &sym.kind) {
+                            if predicates::kind_compatible(edge_kind, &sym.kind) {
                                 return Some(Resolution {
                                     target_symbol_id: sym.id,
                                     confidence: 0.95,
@@ -217,7 +217,7 @@ impl LanguageResolver for CSharpResolver {
                                 if let Some(module) = &import.module_path {
                                     let candidate = format!("{module}.{type_name}.{rest}");
                                     if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                                        if builtins::kind_compatible(edge_kind, &sym.kind) {
+                                        if predicates::kind_compatible(edge_kind, &sym.kind) {
                                             return Some(Resolution {
                                                 target_symbol_id: sym.id,
                                                 confidence: 0.90,
@@ -254,7 +254,7 @@ impl LanguageResolver for CSharpResolver {
                     file_ctx,
                     ref_ctx,
                     lookup,
-                    builtins::kind_compatible,
+                    predicates::kind_compatible,
                     |fc, rc, sym| self.is_visible(fc, rc, sym),
                     "csharp_inherited_method",
                 ) {
@@ -287,7 +287,7 @@ impl LanguageResolver for CSharpResolver {
             }
             let external = match project_ctx {
                 Some(ctx) => is_manifest_external_namespace(ctx, target),
-                None => builtins::is_external_namespace_fallback(target),
+                None => predicates::is_external_namespace_fallback(target),
             };
             if external {
                 return Some(target.clone());
@@ -320,7 +320,7 @@ impl LanguageResolver for CSharpResolver {
 
             let external = match project_ctx {
                 Some(ctx) => is_manifest_external_namespace(ctx, ns),
-                None => builtins::is_external_namespace_fallback(ns),
+                None => predicates::is_external_namespace_fallback(ns),
             };
 
             if external {
@@ -338,7 +338,7 @@ impl LanguageResolver for CSharpResolver {
         // built-in, classify it as external without needing a ProjectContext or
         // any using directive.  This handles unit-test and partial-indexing
         // scenarios where no SDK context is injected.
-        if builtins::is_csharp_builtin(target) {
+        if predicates::is_csharp_builtin(target) {
             return Some("dotnet_builtins".to_string());
         }
 

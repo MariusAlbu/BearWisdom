@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::{RefContext, Resolution, SymbolLookup};
-use super::builtins::{kind_compatible, normalize_path};
+use super::predicates::{kind_compatible, normalize_path};
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
 /// Walk a MemberChain step-by-step following field/return types.

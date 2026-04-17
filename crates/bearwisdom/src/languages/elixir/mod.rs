@@ -3,10 +3,10 @@
 mod helpers;
 pub(crate) mod connectors;
 pub(crate) mod phoenix_routes;
-pub(crate) mod primitives;
+pub(crate) mod keywords;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 pub mod resolve;
 
 #[cfg(test)]
@@ -69,7 +69,7 @@ impl LanguagePlugin for ElixirPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

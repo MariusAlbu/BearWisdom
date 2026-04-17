@@ -15,7 +15,7 @@
 //   3. Project-wide name lookup (external program names from CALL statements).
 // =============================================================================
 
-use super::builtins;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
     SymbolLookup,
@@ -75,11 +75,11 @@ impl LanguageResolver for CobolResolver {
         }
 
         // COBOL standard verbs / intrinsics are never in the index.
-        if builtins::is_cobol_builtin(target) {
+        if predicates::is_cobol_builtin(target) {
             return None;
         }
 
-        engine::resolve_common("cobol", file_ctx, ref_ctx, lookup, builtins::kind_compatible)
+        engine::resolve_common("cobol", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -88,6 +88,6 @@ impl LanguageResolver for CobolResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, builtins::is_cobol_builtin)
+        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_cobol_builtin)
     }
 }

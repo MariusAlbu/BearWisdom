@@ -3,11 +3,11 @@
 mod calls;
 mod helpers;
 mod params;
-pub(crate) mod primitives;
+pub(crate) mod keywords;
 mod symbols;
 pub mod extract;
 
-mod builtins;
+mod predicates;
 mod chain;
 pub mod connectors;
 pub mod resolve;
@@ -70,7 +70,7 @@ impl LanguagePlugin for RubyPlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        primitives::PRIMITIVES
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

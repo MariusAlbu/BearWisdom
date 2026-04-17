@@ -3,7 +3,7 @@
 // =============================================================================
 
 
-use super::builtins;
+use super::predicates;
 use super::calls::extract_dart_calls;
 use super::decorators::{extract_cascade_calls, extract_decorators};
 use super::symbols::{
@@ -151,7 +151,7 @@ fn visit(
             // Emit TypeRef unless it's a Dart builtin.
             "type_identifier" => {
                 let name = node_text(child, src);
-                if !name.is_empty() && !builtins::is_dart_builtin(&name) {
+                if !name.is_empty() && !predicates::is_dart_builtin(&name) {
                     if let Some(sym_idx) = parent_index {
                         refs.push(ExtractedRef {
                             source_symbol_index: sym_idx,
@@ -175,7 +175,7 @@ fn visit(
                 for grandchild in child.children(&mut tc) {
                     if grandchild.kind() == "type_identifier" && grandchild.is_named() {
                         let name = node_text(grandchild, src);
-                        if !name.is_empty() && !builtins::is_dart_builtin(&name) {
+                        if !name.is_empty() && !predicates::is_dart_builtin(&name) {
                             if let Some(idx) = parent_index {
                                 refs.push(ExtractedRef {
                                     source_symbol_index: idx,
@@ -288,7 +288,7 @@ fn extract_factory_constructor_at_visit(
     for child in node.children(&mut tc) {
         if child.kind() == "type_identifier" && child.is_named() {
             let t = nt(child, src);
-            if !t.is_empty() && !builtins::is_dart_builtin(&t) {
+            if !t.is_empty() && !predicates::is_dart_builtin(&t) {
                 refs.push(ExtractedRef {
                     source_symbol_index: idx,
                     target_name: t,
@@ -315,7 +315,7 @@ fn scan_all_type_identifiers(
     for child in node.children(&mut cursor) {
         if child.kind() == "type_identifier" && child.is_named() {
             let name = node_text(child, src);
-            if !name.is_empty() && !builtins::is_dart_builtin(&name) {
+            if !name.is_empty() && !predicates::is_dart_builtin(&name) {
                 refs.push(ExtractedRef {
                     source_symbol_index: sym_idx,
                     target_name: name,
