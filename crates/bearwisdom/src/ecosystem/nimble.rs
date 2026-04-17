@@ -44,6 +44,14 @@ impl Ecosystem for NimbleEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_nim_root(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+    fn resolve_import(
+        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
+    ) -> Vec<WalkedFile> { walk_nim_narrowed(dep) }
+    fn resolve_symbol(
+        &self, dep: &ExternalDepRoot, _f: &str,
+    ) -> Vec<WalkedFile> { walk_nim_narrowed(dep) }
 }
 
 impl ExternalSourceLocator for NimbleEcosystem {
@@ -70,6 +78,10 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let declared = parse_nimble_requires(project_root);
     if declared.is_empty() { return Vec::new() }
     let Some(pkgs_dir) = find_nimble_pkgs_dir() else { return Vec::new() };
+
+    let user_imports: Vec<String> = collect_nim_user_imports(project_root)
+        .into_iter()
+        .collect();
 
     let mut roots = Vec::new();
     let Ok(entries) = std::fs::read_dir(&pkgs_dir) else { return Vec::new() };
@@ -98,12 +110,151 @@ pub fn discover_nim_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 root: best,
                 ecosystem: LEGACY_ECOSYSTEM_TAG,
                 package_id: None,
-                requested_imports: Vec::new(),
+                requested_imports: user_imports.clone(),
             });
         }
     }
     debug!("Nim: {} external package roots", roots.len());
     roots
+}
+
+// R3 — `import strutils` / `import std/strutils` / `import foo/[bar, baz]`
+// scanner + narrowed walk. Stored as the leaf module name plus the dotted
+// path; narrowing maps both to file tails (`strutils.nim` / `foo/bar.nim`).
+
+fn collect_nim_user_imports(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    scan_nim_imports(project_root, &mut out, 0);
+    out
+}
+
+fn scan_nim_imports(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".git" | "nimcache" | "tests" | "test" | "examples")
+                    || name.starts_with('.') { continue }
+            }
+            scan_nim_imports(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".nim") { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            extract_nim_imports(&content, out);
+        }
+    }
+}
+
+fn extract_nim_imports(content: &str, out: &mut std::collections::HashSet<String>) {
+    for raw in content.lines() {
+        let line = raw.trim();
+        let rest = match line
+            .strip_prefix("import ")
+            .or_else(|| line.strip_prefix("from "))
+        {
+            Some(r) => r,
+            None => continue,
+        };
+        // Strip trailing `; comment` pieces.
+        let rest = rest.split('#').next().unwrap_or("").trim();
+        // `from x import y` — only the `x` part matters.
+        let rest = rest.split(" import ").next().unwrap_or("").trim();
+        // Group form: `import foo/[a, b, c]`
+        if let Some(open) = rest.find('[') {
+            if let Some(close) = rest.find(']') {
+                let prefix = rest[..open].trim_end_matches('/').trim();
+                let inner = &rest[open + 1..close];
+                for sel in inner.split(',') {
+                    let sel = sel.trim();
+                    if sel.is_empty() { continue }
+                    out.insert(if prefix.is_empty() { sel.to_string() } else { format!("{prefix}/{sel}") });
+                }
+                continue;
+            }
+        }
+        // Comma-separated: `import foo, bar`
+        for part in rest.split(',') {
+            let part = part.trim();
+            if part.is_empty() { continue }
+            // `foo as F` → drop alias
+            let head = part.split(" as ").next().unwrap_or("").trim();
+            if head.is_empty() { continue }
+            out.insert(head.to_string());
+        }
+    }
+}
+
+fn nim_module_to_path_tail(module: &str) -> Option<String> {
+    let cleaned = module.trim();
+    if cleaned.is_empty() { return None }
+    // `std/strutils` / `pkg/foo` / `foo` → all map to file paths.
+    Some(format!("{}.nim", cleaned.replace('.', "/")))
+}
+
+fn walk_nim_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() { return walk_nim_root(dep); }
+    let tails: std::collections::HashSet<String> = dep
+        .requested_imports
+        .iter()
+        .filter_map(|m| nim_module_to_path_tail(m))
+        .collect();
+    if tails.is_empty() { return walk_nim_root(dep); }
+
+    let mut out = Vec::new();
+    walk_nim_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
+    out
+}
+
+fn walk_nim_narrowed_dir(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    tails: &std::collections::HashSet<String>,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
+    let mut any_match = false;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "tests" | "test" | "examples" | "docs" | "nimcache") || name.starts_with('.') { continue }
+            }
+            subdirs.push(path);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".nim") { continue }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            if tails.iter().any(|t| rel_sub.ends_with(t)) { any_match = true; }
+            dir_files.push((path, rel_sub));
+        }
+    }
+
+    if any_match {
+        for (path, rel_sub) in dir_files {
+            out.push(WalkedFile {
+                relative_path: format!("ext:nim:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "nim",
+            });
+        }
+    }
+    for sub in subdirs {
+        walk_nim_narrowed_dir(&sub, root, dep, tails, out, depth + 1);
+    }
 }
 
 pub fn parse_nimble_requires(project_root: &Path) -> Vec<String> {
@@ -230,5 +381,26 @@ requires "karax#5cf360c"
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    #[test]
+    fn nim_extract_imports_handles_group_form() {
+        let mut out = std::collections::HashSet::new();
+        extract_nim_imports(
+            "import strutils\nimport std/strformat\nimport pkg/foo/[bar, baz]\nfrom os import getEnv\nimport other as O\n",
+            &mut out,
+        );
+        assert!(out.contains("strutils"));
+        assert!(out.contains("std/strformat"));
+        assert!(out.contains("pkg/foo/bar"));
+        assert!(out.contains("pkg/foo/baz"));
+        assert!(out.contains("os"));
+        assert!(out.contains("other"));
+    }
+
+    #[test]
+    fn nim_module_to_path_tail_converts() {
+        assert_eq!(nim_module_to_path_tail("strutils"), Some("strutils.nim".to_string()));
+        assert_eq!(nim_module_to_path_tail("std/strutils"), Some("std/strutils.nim".to_string()));
     }
 }

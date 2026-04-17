@@ -38,6 +38,13 @@ impl Ecosystem for CpanEcosystem {
         discover_perl_externals(ctx.project_root)
     }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_perl_root(dep) }
+    fn supports_reachability(&self) -> bool { true }
+    fn resolve_import(
+        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
+    ) -> Vec<WalkedFile> { walk_perl_narrowed(dep) }
+    fn resolve_symbol(
+        &self, dep: &ExternalDepRoot, _f: &str,
+    ) -> Vec<WalkedFile> { walk_perl_narrowed(dep) }
 }
 
 impl ExternalSourceLocator for CpanEcosystem {
@@ -64,6 +71,10 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let lib_dirs = perl_lib_dirs(project_root);
     if lib_dirs.is_empty() { return Vec::new() }
 
+    let user_uses: Vec<String> = collect_perl_user_uses(project_root)
+        .into_iter()
+        .collect();
+
     let mut roots = Vec::new();
     for module_name in &declared {
         let path_fragment = module_name.replace("::", std::path::MAIN_SEPARATOR_STR);
@@ -76,7 +87,7 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: module_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports: user_uses.clone(),
                 });
                 break;
             }
@@ -88,7 +99,7 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: module_file.parent().unwrap_or(lib).to_path_buf(),
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports: user_uses.clone(),
                 });
                 break;
             }
@@ -96,6 +107,114 @@ pub fn discover_perl_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
     debug!("Perl: {} external module roots", roots.len());
     roots
+}
+
+fn collect_perl_user_uses(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    scan_perl_uses(project_root, &mut out, 0);
+    out
+}
+
+fn scan_perl_uses(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".git" | "local" | "blib" | "t" | "xt") || name.starts_with('.') { continue }
+            }
+            scan_perl_uses(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !(name.ends_with(".pm") || name.ends_with(".pl") || name.ends_with(".t")) { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            for raw in content.lines() {
+                let line = raw.trim();
+                let rest = match line.strip_prefix("use ").or_else(|| line.strip_prefix("require ")) {
+                    Some(r) => r,
+                    None => continue,
+                };
+                let head = rest
+                    .split(|c: char| c == ';' || c == ' ' || c == '\t' || c == '(')
+                    .next()
+                    .unwrap_or("")
+                    .trim();
+                if head.is_empty() || !head.chars().next().map_or(false, |c| c.is_ascii_alphabetic()) { continue }
+                if matches!(head, "strict" | "warnings" | "utf8" | "feature" | "lib" | "vars" | "constant") { continue }
+                out.insert(head.to_string());
+            }
+        }
+    }
+}
+
+fn perl_fqn_to_path_tail(fqn: &str) -> Option<String> {
+    let cleaned = fqn.trim();
+    if cleaned.is_empty() { return None }
+    Some(format!("{}.pm", cleaned.replace("::", "/")))
+}
+
+fn walk_perl_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() { return walk_perl_root(dep); }
+    let tails: std::collections::HashSet<String> = dep
+        .requested_imports
+        .iter()
+        .filter_map(|f| perl_fqn_to_path_tail(f))
+        .collect();
+    if tails.is_empty() { return walk_perl_root(dep); }
+
+    let mut out = Vec::new();
+    walk_perl_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
+    out
+}
+
+fn walk_perl_narrowed_dir(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    tails: &std::collections::HashSet<String>,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
+    let mut any_match = false;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "t" | "xt" | "blib" | "examples") || name.starts_with('.') { continue }
+            }
+            subdirs.push(path);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !(name.ends_with(".pm") || name.ends_with(".pl")) { continue }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            if tails.iter().any(|t| rel_sub.ends_with(t)) { any_match = true; }
+            dir_files.push((path, rel_sub));
+        }
+    }
+
+    if any_match {
+        for (path, rel_sub) in dir_files {
+            out.push(WalkedFile {
+                relative_path: format!("ext:perl:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "perl",
+            });
+        }
+    }
+    for sub in subdirs {
+        walk_perl_narrowed_dir(&sub, root, dep, tails, out, depth + 1);
+    }
 }
 
 pub fn parse_cpanfile_requires(content: &str) -> Vec<String> {
@@ -191,5 +310,35 @@ requires 'Data::Censor' => '0.04';
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    #[test]
+    fn perl_fqn_to_path_tail_converts_colons() {
+        assert_eq!(perl_fqn_to_path_tail("Foo::Bar"), Some("Foo/Bar.pm".to_string()));
+        assert_eq!(perl_fqn_to_path_tail("Carp"), Some("Carp.pm".to_string()));
+    }
+
+    #[test]
+    fn perl_narrowed_walk_excludes_unreferenced() {
+        let tmp = std::env::temp_dir().join("bw-test-cpan-r3");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let dep_root = tmp.join("Carp");
+        std::fs::create_dir_all(&dep_root).unwrap();
+        std::fs::write(dep_root.join("Carp.pm"), "package Carp; 1;\n").unwrap();
+        std::fs::write(dep_root.join("Heavy.pm"), "package Carp::Heavy; 1;\n").unwrap();
+
+        let dep = ExternalDepRoot {
+            module_path: "Carp".to_string(),
+            version: String::new(),
+            root: dep_root.clone(),
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: vec!["Carp".to_string()],
+        };
+        let files = walk_perl_narrowed(&dep);
+        // Sibling rule walks both Carp.pm and Heavy.pm since they're in
+        // the same directory and Carp.pm matched.
+        assert_eq!(files.len(), 2);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

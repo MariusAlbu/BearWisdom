@@ -39,6 +39,13 @@ impl Ecosystem for LuarocksEcosystem {
         discover_lua_externals(ctx.project_root)
     }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_lua_root(dep) }
+    fn supports_reachability(&self) -> bool { true }
+    fn resolve_import(
+        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
+    ) -> Vec<WalkedFile> { walk_lua_narrowed(dep) }
+    fn resolve_symbol(
+        &self, dep: &ExternalDepRoot, _f: &str,
+    ) -> Vec<WalkedFile> { walk_lua_narrowed(dep) }
 }
 
 impl ExternalSourceLocator for LuarocksEcosystem {
@@ -112,6 +119,10 @@ pub fn discover_lua_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     if declared.is_empty() { return Vec::new() }
 
     let lua_dirs = lua_module_dirs(project_root);
+    let user_requires: Vec<String> = collect_lua_user_requires(project_root)
+        .into_iter()
+        .collect();
+
     let mut roots = Vec::new();
     for dep in &declared {
         let dep_file = format!("{}.lua", dep.replace('.', std::path::MAIN_SEPARATOR_STR));
@@ -126,7 +137,7 @@ pub fn discover_lua_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: as_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports: user_requires.clone(),
                 });
                 break;
             } else if as_file.is_file() {
@@ -136,7 +147,7 @@ pub fn discover_lua_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: as_file.parent().unwrap_or(lib).to_path_buf(),
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports: user_requires.clone(),
                 });
                 break;
             }
@@ -144,6 +155,141 @@ pub fn discover_lua_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
     debug!("Lua: {} external module roots", roots.len());
     roots
+}
+
+// R3 — `require "foo.bar"` / `require("foo.bar")` scanner + narrowed walk.
+
+fn collect_lua_user_requires(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    scan_lua_requires(project_root, &mut out, 0);
+    out
+}
+
+fn scan_lua_requires(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".git" | "lua_modules" | "build" | "out" | "spec" | "test")
+                    || name.starts_with('.') { continue }
+            }
+            scan_lua_requires(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".lua") { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            extract_lua_requires(&content, out);
+        }
+    }
+}
+
+fn extract_lua_requires(content: &str, out: &mut std::collections::HashSet<String>) {
+    // Match `require "x.y"` and `require('x.y')` and `require("x.y")`.
+    let bytes = content.as_bytes();
+    let mut i = 0;
+    let needle = b"require";
+    while i + needle.len() < bytes.len() {
+        if &bytes[i..i + needle.len()] == needle {
+            // Must not be part of a larger identifier.
+            let preceded_ok = i == 0 || !is_ident_byte(bytes[i - 1]);
+            let after = i + needle.len();
+            let followed_ok = after < bytes.len() && !is_ident_byte(bytes[after]);
+            if preceded_ok && followed_ok {
+                let mut j = after;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'(') {
+                    j += 1;
+                }
+                if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
+                    let quote = bytes[j];
+                    let start = j + 1;
+                    let mut end = start;
+                    while end < bytes.len() && bytes[end] != quote { end += 1; }
+                    if end < bytes.len() && start < end {
+                        let module = std::str::from_utf8(&bytes[start..end]).unwrap_or("").trim();
+                        if !module.is_empty() { out.insert(module.to_string()); }
+                    }
+                    i = end + 1;
+                    continue;
+                }
+            }
+        }
+        i += 1;
+    }
+}
+
+fn is_ident_byte(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
+}
+
+fn lua_module_to_path_tail(module: &str) -> Option<String> {
+    let cleaned = module.trim();
+    if cleaned.is_empty() { return None }
+    Some(format!("{}.lua", cleaned.replace('.', "/")))
+}
+
+fn walk_lua_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() { return walk_lua_root(dep); }
+    let tails: std::collections::HashSet<String> = dep
+        .requested_imports
+        .iter()
+        .filter_map(|m| lua_module_to_path_tail(m))
+        .collect();
+    if tails.is_empty() { return walk_lua_root(dep); }
+
+    let mut out = Vec::new();
+    walk_lua_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
+    out
+}
+
+fn walk_lua_narrowed_dir(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    tails: &std::collections::HashSet<String>,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
+    let mut any_match = false;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "tests" | "test" | "spec" | "examples") || name.starts_with('.') { continue }
+            }
+            subdirs.push(path);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".lua") { continue }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            if tails.iter().any(|t| rel_sub.ends_with(t)) { any_match = true; }
+            dir_files.push((path, rel_sub));
+        }
+    }
+
+    if any_match {
+        for (path, rel_sub) in dir_files {
+            out.push(WalkedFile {
+                relative_path: format!("ext:lua:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "lua",
+            });
+        }
+    }
+    for sub in subdirs {
+        walk_lua_narrowed_dir(&sub, root, dep, tails, out, depth + 1);
+    }
 }
 
 fn lua_module_dirs(project_root: &Path) -> Vec<PathBuf> {
@@ -220,5 +366,23 @@ dependencies = {
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    #[test]
+    fn lua_extract_require_handles_quotes_and_parens() {
+        let mut out = std::collections::HashSet::new();
+        extract_lua_requires(
+            "local m = require 'foo.bar'\nlocal n = require(\"baz.qux\")\n-- require 'commented' is a string only when active\nlocal r = require\"plenary\"\n",
+            &mut out,
+        );
+        assert!(out.contains("foo.bar"));
+        assert!(out.contains("baz.qux"));
+        assert!(out.contains("plenary"));
+    }
+
+    #[test]
+    fn lua_module_to_path_tail_dots_to_slashes() {
+        assert_eq!(lua_module_to_path_tail("foo.bar"), Some("foo/bar.lua".to_string()));
+        assert_eq!(lua_module_to_path_tail("plenary"), Some("plenary.lua".to_string()));
     }
 }
