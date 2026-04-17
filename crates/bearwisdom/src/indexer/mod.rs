@@ -3,7 +3,7 @@ pub mod full;
 pub mod incremental;
 pub mod module_resolution;
 pub mod post_index;
-pub mod primitives;
+pub mod keywords;
 pub mod query_builtins;
 pub mod project_context;
 pub mod ref_cache;

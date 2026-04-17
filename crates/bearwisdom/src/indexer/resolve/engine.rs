@@ -377,8 +377,8 @@ pub struct SymbolIndex {
     /// scope (via `ref_ctx.file_package_id`) should prefer
     /// `is_test_global_for(package_id, name)` to the union-based check.
     test_globals_by_pkg: FxHashMap<i64, HashSet<String>>,
-    /// Primitive type names keyed by language id → set of primitive names.
-    /// Built once from `primitives::primitives_for_language` for all languages
+    /// Language-intrinsic keywords keyed by language id → set of names.
+    /// Built once from `keywords::keywords_set_for_language` for all languages
     /// present in the parsed files.
     primitives_by_language: FxHashMap<String, HashSet<&'static str>>,
     /// All symbols grouped by their owning workspace `package_id`. Empty for
@@ -886,7 +886,7 @@ impl SymbolIndex {
             FxHashMap::default();
         for pf in parsed {
             if !primitives_by_language.contains_key(&pf.language) {
-                let set = crate::indexer::primitives::primitives_set_for_language(&pf.language);
+                let set = crate::indexer::keywords::keywords_set_for_language(&pf.language);
                 if !set.is_empty() {
                     primitives_by_language.insert(pf.language.clone(), set);
                 }
@@ -1580,7 +1580,7 @@ impl SymbolIndex {
                 // Distinguish: plugin.keywords() are "primitive", everything
                 // else (query builtins) is "builtin".
                 let plugin_keywords =
-                    crate::indexer::primitives::primitives_for_language(language);
+                    crate::indexer::keywords::keywords_for_language(language);
                 if plugin_keywords.contains(&name) {
                     return Some("primitive");
                 }
