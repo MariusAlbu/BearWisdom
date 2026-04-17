@@ -48,6 +48,25 @@ impl Ecosystem for SpmEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_swift_root(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        _package: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        walk_swift_narrowed(dep)
+    }
+
+    fn resolve_symbol(
+        &self,
+        dep: &ExternalDepRoot,
+        _fqn: &str,
+    ) -> Vec<WalkedFile> {
+        walk_swift_narrowed(dep)
+    }
 }
 
 impl ExternalSourceLocator for SpmEcosystem {
@@ -182,6 +201,13 @@ pub fn discover_swift_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         return Vec::new();
     }
 
+    // R3: collect Swift `import Foo` statements once. Each dep root carries
+    // the set; walk_swift_narrowed walks only Sources/<TargetName>/ dirs
+    // whose name matches an imported module.
+    let user_imports: Vec<String> = collect_swift_user_imports(project_root)
+        .into_iter()
+        .collect();
+
     let mut roots = Vec::new();
     for (identity, version) in &pins {
         for checkout_root in &checkout_roots {
@@ -193,7 +219,7 @@ pub fn discover_swift_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: dep_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports: user_imports.clone(),
                 });
                 break;
             }
@@ -255,6 +281,120 @@ fn find_checkout_roots(project_root: &Path) -> Vec<PathBuf> {
         if win_sp.is_dir() { roots.push(win_sp) }
     }
     roots
+}
+
+// ---------------------------------------------------------------------------
+// R3 reachability — module-level narrowing
+// ---------------------------------------------------------------------------
+//
+// Swift imports are module-granular (`import Foundation` brings in an entire
+// SPM target). We scan project .swift files for `import X`/`@_exported import X`
+// statements, collect the module set, and at walk time keep only files
+// under Sources/<TargetName>/ whose target name matches an imported module.
+// Sub-target file scoping doesn't apply — within a target every type is
+// visible without explicit qualification — so the granularity of "either
+// walk this whole target or none of it" matches Swift semantics.
+
+fn collect_swift_user_imports(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    scan_swift_imports_recursive(project_root, &mut out, 0);
+    out
+}
+
+fn scan_swift_imports_recursive(
+    dir: &Path,
+    out: &mut std::collections::HashSet<String>,
+    depth: usize,
+) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(
+                    name,
+                    ".git" | ".build" | "DerivedData" | "Carthage" | "Pods"
+                        | "build" | "node_modules"
+                ) || name.starts_with('.') { continue }
+            }
+            scan_swift_imports_recursive(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".swift") { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            extract_swift_imports_from_source(&content, out);
+        }
+    }
+}
+
+/// Parse `import Foo`, `import struct Foo.Bar`, `@_exported import Foo`,
+/// `@testable import Foo`. Stores just the top-level module name.
+fn extract_swift_imports_from_source(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
+    for raw in content.lines() {
+        let mut line = raw.trim();
+        // Drop attribute prefixes: `@_exported`, `@testable`.
+        while let Some(attr_end) = line.strip_prefix('@') {
+            let after = attr_end.split_whitespace().next().unwrap_or("");
+            line = line.strip_prefix(&format!("@{after}")).unwrap_or(line).trim();
+        }
+        let Some(rest) = line.strip_prefix("import ") else { continue };
+        let rest = rest
+            .trim_start_matches("struct ")
+            .trim_start_matches("class ")
+            .trim_start_matches("enum ")
+            .trim_start_matches("protocol ")
+            .trim_start_matches("typealias ")
+            .trim_start_matches("func ")
+            .trim_start_matches("var ")
+            .trim_start_matches("let ")
+            .trim();
+        let module = rest.split('.').next().unwrap_or("").trim();
+        if module.is_empty() { continue }
+        if !module.chars().next().map_or(false, |c| c.is_alphabetic()) { continue }
+        out.insert(module.to_string());
+    }
+}
+
+fn walk_swift_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() {
+        return walk_swift_root(dep);
+    }
+    let modules: std::collections::HashSet<&String> = dep.requested_imports.iter().collect();
+
+    let sources = dep.root.join("Sources");
+    if !sources.is_dir() {
+        // Flat-layout package: SPM permits omitting Sources/ for single-target
+        // packages; in that case the whole package = one target and the user
+        // either imported it (walk it) or didn't (skip).
+        let pkg_name_match = modules.iter().any(|m| {
+            m.eq_ignore_ascii_case(&dep.module_path)
+                || dep.module_path
+                    .trim_end_matches(".git")
+                    .ends_with(m.as_str())
+        });
+        if !pkg_name_match { return Vec::new() }
+        return walk_swift_root(dep);
+    }
+
+    let mut out = Vec::new();
+    let Ok(entries) = std::fs::read_dir(&sources) else { return walk_swift_root(dep) };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Some(target_name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !path.is_dir() { continue }
+        // Match by exact name OR case-insensitive (a few packages camelCase
+        // their target dir while user imports the module by exact name).
+        if !modules.contains(&target_name.to_string())
+            && !modules.iter().any(|m| m.eq_ignore_ascii_case(target_name))
+        { continue }
+        walk_dir_bounded(&path, &dep.root, dep, &mut out, 0);
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -382,5 +522,74 @@ mod tests {
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------
+    // R3 — module narrowing
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn swift_import_extracts_module() {
+        let mut out = std::collections::HashSet::new();
+        extract_swift_imports_from_source(
+            "import Foundation\n@_exported import Combine\n@testable import MyModule\nimport struct OtherModule.Thing\n",
+            &mut out,
+        );
+        assert!(out.contains("Foundation"));
+        assert!(out.contains("Combine"));
+        assert!(out.contains("MyModule"));
+        assert!(out.contains("OtherModule"));
+    }
+
+    #[test]
+    fn swift_narrowed_walk_keeps_only_imported_targets() {
+        let tmp = std::env::temp_dir().join("bw-test-spm-r3-narrow");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let dep_root = tmp.join("vapor");
+        let sources = dep_root.join("Sources");
+        std::fs::create_dir_all(sources.join("Vapor")).unwrap();
+        std::fs::create_dir_all(sources.join("RoutingKit")).unwrap();
+        std::fs::create_dir_all(sources.join("Internal")).unwrap();
+        std::fs::write(sources.join("Vapor/Application.swift"), "class Application {}\n").unwrap();
+        std::fs::write(sources.join("RoutingKit/Router.swift"), "class Router {}\n").unwrap();
+        std::fs::write(sources.join("Internal/Hidden.swift"), "class Hidden {}\n").unwrap();
+
+        let dep = ExternalDepRoot {
+            module_path: "vapor".to_string(),
+            version: "4.0".to_string(),
+            root: dep_root.clone(),
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: vec!["Vapor".to_string()],
+        };
+        let files = walk_swift_narrowed(&dep);
+        let paths: std::collections::HashSet<_> =
+            files.iter().map(|f| f.absolute_path.clone()).collect();
+        assert!(paths.contains(&sources.join("Vapor/Application.swift")));
+        assert!(!paths.contains(&sources.join("RoutingKit/Router.swift")));
+        assert!(!paths.contains(&sources.join("Internal/Hidden.swift")));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn swift_narrowed_walk_falls_back_when_no_imports() {
+        let tmp = std::env::temp_dir().join("bw-test-spm-r3-fallback");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let dep_root = tmp.join("foo");
+        let sources = dep_root.join("Sources");
+        std::fs::create_dir_all(sources.join("Foo")).unwrap();
+        std::fs::write(sources.join("Foo/A.swift"), "class A {}\n").unwrap();
+
+        let dep = ExternalDepRoot {
+            module_path: "foo".to_string(),
+            version: "1.0".to_string(),
+            root: dep_root.clone(),
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        };
+        let files = walk_swift_narrowed(&dep);
+        assert_eq!(files.len(), 1);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
