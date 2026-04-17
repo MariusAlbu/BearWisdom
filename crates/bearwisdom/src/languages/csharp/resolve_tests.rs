@@ -449,7 +449,7 @@ fn test_falls_back_for_unknown() {
 
 /// Build a ProjectContext simulating a Web SDK project with some packages.
 fn make_web_project_ctx() -> ProjectContext {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     use crate::indexer::project_context::DotnetSdkType;
     let mut ctx = ProjectContext::default();
     let mut nuget = ManifestData::default();
@@ -717,7 +717,7 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
     // named `Shared.Utility`. A consumer writes `using Shared.Something;`.
     // The NuGet root-prefix classifier would normally say external; the
     // workspace guard must win.
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let make_import_ref = |source_idx, target: &str, line| ExtractedRef {
         source_symbol_index: source_idx,
         target_name: target.to_string(),

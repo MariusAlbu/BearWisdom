@@ -13,7 +13,7 @@
 // still implements `ManifestReader` so the existing manifest registry
 // (`indexer/manifest/mod.rs::all_readers()`) keeps working. Module path
 // for the manifest reader and parser functions updates from
-// `crate::indexer::manifest::cargo` → `crate::ecosystem::cargo`.
+// `crate::ecosystem::manifest::cargo` → `crate::ecosystem::cargo`.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -24,8 +24,8 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
 };
-use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
-use crate::indexer::manifest::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
+use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("cargo");

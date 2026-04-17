@@ -15,7 +15,7 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
 };
-use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("cabal");

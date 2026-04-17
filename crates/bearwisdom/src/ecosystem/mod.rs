@@ -21,9 +21,12 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use crate::indexer::externals::ExternalDepRoot;
+use crate::ecosystem::externals::ExternalDepRoot;
 use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
+
+pub mod externals;
+pub mod manifest;
 
 pub mod android_sdk;
 pub mod cabal;
@@ -167,7 +170,7 @@ pub struct ManifestSpec {
     /// `ManifestData` payload (deps, module path, SDK info, etc.). Errors
     /// degrade gracefully to an empty `ManifestData`; they are logged but
     /// don't abort indexing.
-    pub parse: fn(&Path) -> std::io::Result<crate::indexer::manifest::ManifestData>,
+    pub parse: fn(&Path) -> std::io::Result<crate::ecosystem::manifest::ManifestData>,
 }
 
 // ---------------------------------------------------------------------------
@@ -357,7 +360,7 @@ impl EcosystemRegistry {
 /// call sites consume the new trait directly this helper goes away.
 pub fn default_locator(
     id: EcosystemId,
-) -> Option<Arc<dyn crate::indexer::externals::ExternalSourceLocator>> {
+) -> Option<Arc<dyn crate::ecosystem::externals::ExternalSourceLocator>> {
     match id.as_str() {
         "maven" => Some(Arc::new(MavenEcosystem)),
         "npm" => Some(Arc::new(NpmEcosystem)),

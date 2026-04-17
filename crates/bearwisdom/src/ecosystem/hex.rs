@@ -29,7 +29,7 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
 };
-use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("hex");
@@ -432,7 +432,7 @@ fn extract_hex_tarball(tar_path: &Path, dest: &Path) -> std::io::Result<()> {
 // ---------------------------------------------------------------------------
 
 fn discover_gleam_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
-    use crate::indexer::manifest::gleam::parse_gleam_deps;
+    use crate::ecosystem::manifest::gleam::parse_gleam_deps;
 
     let gleam_toml = project_root.join("gleam.toml");
     if !gleam_toml.is_file() { return Vec::new() }

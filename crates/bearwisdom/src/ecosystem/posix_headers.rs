@@ -19,7 +19,7 @@ use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
     Platform,
 };
-use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
 // ---------------------------------------------------------------------------

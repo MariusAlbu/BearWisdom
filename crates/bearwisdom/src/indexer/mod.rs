@@ -1,8 +1,6 @@
 pub mod changeset;
-pub mod externals;
 pub mod full;
 pub mod incremental;
-pub mod manifest;
 pub mod module_resolution;
 pub mod post_index;
 pub mod primitives;

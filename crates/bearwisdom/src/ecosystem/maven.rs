@@ -29,12 +29,12 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
 };
-use crate::indexer::externals::{
+use crate::ecosystem::externals::{
     collect_pom_files_bounded, extract_java_sources_jar, is_cache_stale, maven_local_repo,
     resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
 };
-use crate::indexer::manifest::maven::{parse_pom_xml_coords, MavenCoord};
-use crate::indexer::manifest::{clojure as clojure_manifest, sbt as sbt_manifest};
+use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
+use crate::ecosystem::manifest::{clojure as clojure_manifest, sbt as sbt_manifest};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("maven");

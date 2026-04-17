@@ -15,7 +15,7 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
 };
-use crate::indexer::externals::{
+use crate::ecosystem::externals::{
     extract_java_sources_jar, is_cache_stale, maven_local_repo, ExternalDepRoot,
     ExternalSourceLocator,
 };

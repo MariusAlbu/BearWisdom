@@ -2,7 +2,7 @@
 // ruby/builtins.rs — Ruby builtin and helper predicates
 // =============================================================================
 
-use crate::indexer::manifest::ManifestKind;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::EdgeKind;
 

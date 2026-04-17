@@ -19,7 +19,7 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
 };
-use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("swift-foundation");

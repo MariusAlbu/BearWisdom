@@ -1,0 +1,570 @@
+<!DOCTYPE html>
+
+<html>
+
+<head>
+
+<meta charset="utf-8" />
+<meta name="generator" content="pandoc" />
+<meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
+
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+
+
+
+<title>Usage of the lifecycle package</title>
+
+<script>// Pandoc 2.9 adds attributes on both header and div. We remove the former (to
+// be compatible with the behavior of Pandoc < 2.8).
+document.addEventListener('DOMContentLoaded', function(e) {
+  var hs = document.querySelectorAll("div.section[class*='level'] > :first-child");
+  var i, h, a;
+  for (i = 0; i < hs.length; i++) {
+    h = hs[i];
+    if (!/^h[1-6]$/i.test(h.tagName)) continue;  // it should be a header h1-h6
+    a = h.attributes;
+    while (a.length > 0) h.removeAttribute(a[0].name);
+  }
+});
+</script>
+<script>// Hide empty <a> tag within highlighted CodeBlock for screen reader accessibility (see https://github.com/jgm/pandoc/issues/6352#issuecomment-626106786) -->
+// v0.0.1
+// Written by JooYoung Seo (jooyoung@psu.edu) and Atsushi Yasumoto on June 1st, 2020.
+
+document.addEventListener('DOMContentLoaded', function() {
+  const codeList = document.getElementsByClassName("sourceCode");
+  for (var i = 0; i < codeList.length; i++) {
+    var linkList = codeList[i].getElementsByTagName('a');
+    for (var j = 0; j < linkList.length; j++) {
+      if (linkList[j].innerHTML === "") {
+        linkList[j].setAttribute('aria-hidden', 'true');
+      }
+    }
+  }
+});
+</script>
+<style type="text/css">
+a.anchor-section {margin-left: 10px; visibility: hidden; color: inherit;}
+a.anchor-section::before {content: '#';}
+.hasAnchor:hover a.anchor-section {visibility: visible;}
+</style>
+<script>// Anchor sections v1.0 written by Atsushi Yasumoto on Oct 3rd, 2020.
+document.addEventListener('DOMContentLoaded', function() {
+  // Do nothing if AnchorJS is used
+  if (typeof window.anchors === 'object' && anchors.hasOwnProperty('hasAnchorJSLink')) {
+    return;
+  }
+
+  const h = document.querySelectorAll('h1, h2, h3, h4, h5, h6');
+
+  // Do nothing if sections are already anchored
+  if (Array.from(h).some(x => x.classList.contains('hasAnchor'))) {
+    return null;
+  }
+
+  // Use section id when pandoc runs with --section-divs
+  const section_id = function(x) {
+    return ((x.classList.contains('section') || (x.tagName === 'SECTION'))
+            ? x.id : '');
+  };
+
+  // Add anchors
+  h.forEach(function(x) {
+    const id = x.id || section_id(x.parentElement);
+    if (id === '') {
+      return null;
+    }
+    let anchor = document.createElement('a');
+    anchor.href = '#' + id;
+    anchor.classList = ['anchor-section'];
+    x.classList.add('hasAnchor');
+    x.appendChild(anchor);
+  });
+});
+</script>
+
+<style type="text/css">
+  code{white-space: pre-wrap;}
+  span.smallcaps{font-variant: small-caps;}
+  span.underline{text-decoration: underline;}
+  div.column{display: inline-block; vertical-align: top; width: 50%;}
+  div.hanging-indent{margin-left: 1.5em; text-indent: -1.5em;}
+  ul.task-list{list-style: none;}
+    </style>
+
+
+<style type="text/css">code{white-space: pre;}</style>
+<style type="text/css" data-origin="pandoc">
+pre > code.sourceCode { white-space: pre; position: relative; }
+pre > code.sourceCode > span { display: inline-block; line-height: 1.25; }
+pre > code.sourceCode > span:empty { height: 1.2em; }
+code.sourceCode > span { color: inherit; text-decoration: inherit; }
+div.sourceCode { margin: 1em 0; }
+pre.sourceCode { margin: 0; }
+@media screen {
+div.sourceCode { overflow: auto; }
+}
+@media print {
+pre > code.sourceCode { white-space: pre-wrap; }
+pre > code.sourceCode > span { text-indent: -5em; padding-left: 5em; }
+}
+pre.numberSource code
+  { counter-reset: source-line 0; }
+pre.numberSource code > span
+  { position: relative; left: -4em; counter-increment: source-line; }
+pre.numberSource code > span > a:first-child::before
+  { content: counter(source-line);
+    position: relative; left: -1em; text-align: right; vertical-align: baseline;
+    border: none; display: inline-block;
+    -webkit-touch-callout: none; -webkit-user-select: none;
+    -khtml-user-select: none; -moz-user-select: none;
+    -ms-user-select: none; user-select: none;
+    padding: 0 4px; width: 4em;
+    color: #aaaaaa;
+  }
+pre.numberSource { margin-left: 3em; border-left: 1px solid #aaaaaa;  padding-left: 4px; }
+div.sourceCode
+  {   }
+@media screen {
+pre > code.sourceCode > span > a:first-child::before { text-decoration: underline; }
+}
+code span.al { color: #ff0000; font-weight: bold; } /* Alert */
+code span.an { color: #60a0b0; font-weight: bold; font-style: italic; } /* Annotation */
+code span.at { color: #7d9029; } /* Attribute */
+code span.bn { color: #40a070; } /* BaseN */
+code span.bu { } /* BuiltIn */
+code span.cf { color: #007020; font-weight: bold; } /* ControlFlow */
+code span.ch { color: #4070a0; } /* Char */
+code span.cn { color: #880000; } /* Constant */
+code span.co { color: #60a0b0; font-style: italic; } /* Comment */
+code span.cv { color: #60a0b0; font-weight: bold; font-style: italic; } /* CommentVar */
+code span.do { color: #ba2121; font-style: italic; } /* Documentation */
+code span.dt { color: #902000; } /* DataType */
+code span.dv { color: #40a070; } /* DecVal */
+code span.er { color: #ff0000; font-weight: bold; } /* Error */
+code span.ex { } /* Extension */
+code span.fl { color: #40a070; } /* Float */
+code span.fu { color: #06287e; } /* Function */
+code span.im { } /* Import */
+code span.in { color: #60a0b0; font-weight: bold; font-style: italic; } /* Information */
+code span.kw { color: #007020; font-weight: bold; } /* Keyword */
+code span.op { color: #666666; } /* Operator */
+code span.ot { color: #007020; } /* Other */
+code span.pp { color: #bc7a00; } /* Preprocessor */
+code span.sc { color: #4070a0; } /* SpecialChar */
+code span.ss { color: #bb6688; } /* SpecialString */
+code span.st { color: #4070a0; } /* String */
+code span.va { color: #19177c; } /* Variable */
+code span.vs { color: #4070a0; } /* VerbatimString */
+code span.wa { color: #60a0b0; font-weight: bold; font-style: italic; } /* Warning */
+
+</style>
+<script>
+// apply pandoc div.sourceCode style to pre.sourceCode instead
+(function() {
+  var sheets = document.styleSheets;
+  for (var i = 0; i < sheets.length; i++) {
+    if (sheets[i].ownerNode.dataset["origin"] !== "pandoc") continue;
+    try { var rules = sheets[i].cssRules; } catch (e) { continue; }
+    for (var j = 0; j < rules.length; j++) {
+      var rule = rules[j];
+      // check if there is a div.sourceCode rule
+      if (rule.type !== rule.STYLE_RULE || rule.selectorText !== "div.sourceCode") continue;
+      var style = rule.style.cssText;
+      // check if color or background-color is set
+      if (rule.style.color === '' && rule.style.backgroundColor === '') continue;
+      // replace div.sourceCode by a pre.sourceCode rule
+      sheets[i].deleteRule(j);
+      sheets[i].insertRule('pre.sourceCode{' + style + '}', j);
+    }
+  }
+})();
+</script>
+
+
+
+<style type="text/css">body {
+background-color: #fff;
+margin: 1em auto;
+max-width: 700px;
+overflow: visible;
+padding-left: 2em;
+padding-right: 2em;
+font-family: "Open Sans", "Helvetica Neue", Helvetica, Arial, sans-serif;
+font-size: 14px;
+line-height: 1.35;
+}
+#TOC {
+clear: both;
+margin: 0 0 10px 10px;
+padding: 4px;
+width: 400px;
+border: 1px solid #CCCCCC;
+border-radius: 5px;
+background-color: #f6f6f6;
+font-size: 13px;
+line-height: 1.3;
+}
+#TOC .toctitle {
+font-weight: bold;
+font-size: 15px;
+margin-left: 5px;
+}
+#TOC ul {
+padding-left: 40px;
+margin-left: -1.5em;
+margin-top: 5px;
+margin-bottom: 5px;
+}
+#TOC ul ul {
+margin-left: -2em;
+}
+#TOC li {
+line-height: 16px;
+}
+table {
+margin: 1em auto;
+border-width: 1px;
+border-color: #DDDDDD;
+border-style: outset;
+border-collapse: collapse;
+}
+table th {
+border-width: 2px;
+padding: 5px;
+border-style: inset;
+}
+table td {
+border-width: 1px;
+border-style: inset;
+line-height: 18px;
+padding: 5px 5px;
+}
+table, table th, table td {
+border-left-style: none;
+border-right-style: none;
+}
+table thead, table tr.even {
+background-color: #f7f7f7;
+}
+p {
+margin: 0.5em 0;
+}
+blockquote {
+background-color: #f6f6f6;
+padding: 0.25em 0.75em;
+}
+hr {
+border-style: solid;
+border: none;
+border-top: 1px solid #777;
+margin: 28px 0;
+}
+dl {
+margin-left: 0;
+}
+dl dd {
+margin-bottom: 13px;
+margin-left: 13px;
+}
+dl dt {
+font-weight: bold;
+}
+ul {
+margin-top: 0;
+}
+ul li {
+list-style: circle outside;
+}
+ul ul {
+margin-bottom: 0;
+}
+pre, code {
+background-color: #f7f7f7;
+border-radius: 3px;
+color: #333;
+white-space: pre-wrap; 
+}
+pre {
+border-radius: 3px;
+margin: 5px 0px 10px 0px;
+padding: 10px;
+}
+pre:not([class]) {
+background-color: #f7f7f7;
+}
+code {
+font-family: Consolas, Monaco, 'Courier New', monospace;
+font-size: 85%;
+}
+p > code, li > code {
+padding: 2px 0px;
+}
+div.figure {
+text-align: center;
+}
+img {
+background-color: #FFFFFF;
+padding: 2px;
+border: 1px solid #DDDDDD;
+border-radius: 3px;
+border: 1px solid #CCCCCC;
+margin: 0 5px;
+}
+h1 {
+margin-top: 0;
+font-size: 35px;
+line-height: 40px;
+}
+h2 {
+border-bottom: 4px solid #f7f7f7;
+padding-top: 10px;
+padding-bottom: 2px;
+font-size: 145%;
+}
+h3 {
+border-bottom: 2px solid #f7f7f7;
+padding-top: 10px;
+font-size: 120%;
+}
+h4 {
+border-bottom: 1px solid #f7f7f7;
+margin-left: 8px;
+font-size: 105%;
+}
+h5, h6 {
+border-bottom: 1px solid #ccc;
+font-size: 105%;
+}
+a {
+color: #0033dd;
+text-decoration: none;
+}
+a:hover {
+color: #6666ff; }
+a:visited {
+color: #800080; }
+a:visited:hover {
+color: #BB00BB; }
+a[href^="http:"] {
+text-decoration: underline; }
+a[href^="https:"] {
+text-decoration: underline; }
+
+code > span.kw { color: #555; font-weight: bold; } 
+code > span.dt { color: #902000; } 
+code > span.dv { color: #40a070; } 
+code > span.bn { color: #d14; } 
+code > span.fl { color: #d14; } 
+code > span.ch { color: #d14; } 
+code > span.st { color: #d14; } 
+code > span.co { color: #888888; font-style: italic; } 
+code > span.ot { color: #007020; } 
+code > span.al { color: #ff0000; font-weight: bold; } 
+code > span.fu { color: #900; font-weight: bold; } 
+code > span.er { color: #a61717; background-color: #e3d2d2; } 
+</style>
+
+
+
+
+</head>
+
+<body>
+
+
+
+
+<h1 class="title toc-ignore">Usage of the lifecycle package</h1>
+
+
+
+<div class="sourceCode" id="cb1"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb1-1"><a href="#cb1-1"></a><span class="kw">library</span>(lifecycle)</span></code></pre></div>
+<p>Use lifecycle to document the status of your exported functions and arguments. It provides a standard way to describe lifecycle stage in the documentation, and tools to encourage users away from deprecated functions.</p>
+<div id="stages" class="section level2">
+<h2>Stages</h2>
+<p>The lifecycle stages for functions<a href="#fn1" class="footnote-ref" id="fnref1"><sup>1</sup></a> are summarised in the figure below.</p>
+<p><img src="data:image/svg+xml;base64,PD94bWwgdmVyc2lvbj0iMS4wIiBlbmNvZGluZz0iVVRGLTgiIHN0YW5kYWxvbmU9Im5vIj8+CjwhRE9DVFlQRSBzdmcgUFVCTElDICItLy9XM0MvL0RURCBTVkcgMS4xLy9FTiIgImh0dHA6Ly93d3cudzMub3JnL0dyYXBoaWNzL1NWRy8xLjEvRFREL3N2ZzExLmR0ZCI+CjxzdmcgdmVyc2lvbj0iMS4xIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB4bWxuczpkYz0iaHR0cDovL3B1cmwub3JnL2RjL2VsZW1lbnRzLzEuMS8iIHZpZXdCb3g9IjAgMCA2ODAuMzE0OTYgNDUzLjU0MzMiIHdpZHRoPSI2ODAuMzE0OTYiIGhlaWdodD0iNDUzLjU0MzMiPgogIDxkZWZzPgogICAgPG1hcmtlciBvcmllbnQ9ImF1dG8iIG92ZXJmbG93PSJ2aXNpYmxlIiBtYXJrZXJVbml0cz0ic3Ryb2tlV2lkdGgiIGlkPSJGaWxsZWRBcnJvd19NYXJrZXIiIHN0cm9rZS1saW5lam9pbj0ibWl0ZXIiIHN0cm9rZS1taXRlcmxpbWl0PSIxMCIgdmlld0JveD0iLTEgLTMgNyA2IiBtYXJrZXJXaWR0aD0iNyIgbWFya2VySGVpZ2h0PSI2IiBjb2xvcj0iIzkyOTI5MiI+CiAgICAgIDxnPgogICAgICAgIDxwYXRoIGQ9Ik0gNC44IDAgTCAwIC0xLjggTCAwIDEuOCBaIiBmaWxsPSJjdXJyZW50Q29sb3IiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2Utd2lkdGg9IjEiLz4KICAgICAgPC9nPgogICAgPC9tYXJrZXI+CiAgICA8Zm9udC1mYWNlIGZvbnQtZmFtaWx5PSJIZWx2ZXRpY2EgTmV1ZSIgZm9udC1zaXplPSIxNiIgcGFub3NlLTE9IjIgMCA1IDMgMCAwIDAgMiAwIDQiIHVuaXRzLXBlci1lbT0iMTAwMCIgdW5kZXJsaW5lLXBvc2l0aW9uPSItMTAwIiB1bmRlcmxpbmUtdGhpY2tuZXNzPSI1MCIgc2xvcGU9IjAiIHgtaGVpZ2h0PSI1MTciIGNhcC1oZWlnaHQ9IjcxNCIgYXNjZW50PSI5NTEuOTk1OCIgZGVzY2VudD0iLTIxMi45OTc0NCIgZm9udC13ZWlnaHQ9IjQwMCI+CiAgICAgIDxmb250LWZhY2Utc3JjPgogICAgICAgIDxmb250LWZhY2UtbmFtZSBuYW1lPSJIZWx2ZXRpY2FOZXVlIi8+CiAgICAgIDwvZm9udC1mYWNlLXNyYz4KICAgIDwvZm9udC1mYWNlPgogICAgPG1hcmtlciBvcmllbnQ9ImF1dG8iIG92ZXJmbG93PSJ2aXNpYmxlIiBtYXJrZXJVbml0cz0ic3Ryb2tlV2lkdGgiIGlkPSJGaWxsZWRBcnJvd19NYXJrZXJfMiIgc3Ryb2tlLWxpbmVqb2luPSJtaXRlciIgc3Ryb2tlLW1pdGVybGltaXQ9IjEwIiB2aWV3Qm94PSItMSAtMyA3IDYiIG1hcmtlcldpZHRoPSI3IiBtYXJrZXJIZWlnaHQ9IjYiIGNvbG9yPSJibGFjayI+CiAgICAgIDxnPgogICAgICAgIDxwYXRoIGQ9Ik0gNC44IDAgTCAwIC0xLjggTCAwIDEuOCBaIiBmaWxsPSJjdXJyZW50Q29sb3IiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2Utd2lkdGg9IjEiLz4KICAgICAgPC9nPgogICAgPC9tYXJrZXI+CiAgICA8bWFya2VyIG9yaWVudD0iYXV0byIgb3ZlcmZsb3c9InZpc2libGUiIG1hcmtlclVuaXRzPSJzdHJva2VXaWR0aCIgaWQ9IkZpbGxlZEFycm93X01hcmtlcl8zIiBzdHJva2UtbGluZWpvaW49Im1pdGVyIiBzdHJva2UtbWl0ZXJsaW1pdD0iMTAiIHZpZXdCb3g9Ii02IC0zIDcgNiIgbWFya2VyV2lkdGg9IjciIG1hcmtlckhlaWdodD0iNiIgY29sb3I9ImJsYWNrIj4KICAgICAgPGc+CiAgICAgICAgPHBhdGggZD0iTSAtNC44IDAgTCAwIDEuOCBMIDAgLTEuOCBaIiBmaWxsPSJjdXJyZW50Q29sb3IiIHN0cm9rZT0iY3VycmVudENvbG9yIiBzdHJva2Utd2lkdGg9IjEiLz4KICAgICAgPC9nPgogICAgPC9tYXJrZXI+CiAgPC9kZWZzPgogIDxtZXRhZGF0YT4gUHJvZHVjZWQgYnkgT21uaUdyYWZmbGUgNy4xMyAKICAgIDxkYzpkYXRlPjIwMjAtMDMtMTMgMTY6NTU6NTMgKzAwMDA8L2RjOmRhdGU+CiAgPC9tZXRhZGF0YT4KICA8ZyBpZD0iQ2FudmFzXzEiIHN0cm9rZS1kYXNoYXJyYXk9Im5vbmUiIGZpbGw9Im5vbmUiIHN0cm9rZS1vcGFjaXR5PSIxIiBzdHJva2U9Im5vbmUiIGZpbGwtb3BhY2l0eT0iMSI+CiAgICA8dGl0bGU+Q2FudmFzIDE8L3RpdGxlPgogICAgPGcgaWQ9IkNhbnZhc18xOiBMYXllciAxIj4KICAgICAgPHRpdGxlPkxheWVyIDE8L3RpdGxlPgogICAgICA8ZyBpZD0iTGluZV8yMyI+CiAgICAgICAgPGxpbmUgeDE9IjI1OC4xMTQxIiB5MT0iNTguMTkyOTEiIHgyPSIzODYuMTMzNTQiIHkyPSIyODYuNzcyNTQiIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyKSIgc3Ryb2tlPSIjOTI5MjkyIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS1kYXNoYXJyYXk9IjQuMCw0LjAiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJHcmFwaGljXzMiPgogICAgICAgIDxyZWN0IHg9IjExLjMzODU4MyIgeT0iMjk3LjYzNzgiIHdpZHRoPSIxMzguODk3NjQiIGhlaWdodD0iNDguMTg4OTc2IiBmaWxsPSJ3aGl0ZSIvPgogICAgICAgIDxyZWN0IHg9IjExLjMzODU4MyIgeT0iMjk3LjYzNzgiIHdpZHRoPSIxMzguODk3NjQiIGhlaWdodD0iNDguMTg4OTc2IiBzdHJva2U9IiNmZjkzMDAiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgICAgICAgPHRleHQgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTYuMzM4NTgzIDMxMi41MDgzKSIgZmlsbD0iYmxhY2siPgogICAgICAgICAgPHRzcGFuIGZvbnQtZmFtaWx5PSJIZWx2ZXRpY2EgTmV1ZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9IjQwMCIgZmlsbD0iYmxhY2siIHg9IjE4LjM2ODgyMiIgeT0iMTUiPmV4cGVyaW1lbnRhbDwvdHNwYW4+CiAgICAgICAgPC90ZXh0PgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJHcmFwaGljXzQiPgogICAgICAgIDxyZWN0IHg9IjExLjMzODU4MyIgeT0iMTEwLjU1MTE4IiB3aWR0aD0iMTM4Ljg5NzY0IiBoZWlnaHQ9IjQ4LjE4ODk3NiIgZmlsbD0id2hpdGUiLz4KICAgICAgICA8cmVjdCB4PSIxMS4zMzg1ODMiIHk9IjExMC41NTExOCIgd2lkdGg9IjEzOC44OTc2NCIgaGVpZ2h0PSI0OC4xODg5NzYiIHN0cm9rZT0iIzAwN2VjNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjMiLz4KICAgICAgICA8dGV4dCB0cmFuc2Zvcm09InRyYW5zbGF0ZSgxNi4zMzg1ODMgMTI1LjQyMTY3KSIgZmlsbD0iYmxhY2siPgogICAgICAgICAgPHRzcGFuIGZvbnQtZmFtaWx5PSJIZWx2ZXRpY2EgTmV1ZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9IjQwMCIgZmlsbD0iYmxhY2siIHg9IjMyLjg4MDgyMiIgeT0iMTUiPm1hdHVyaW5nPC90c3Bhbj4KICAgICAgICA8L3RleHQ+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IkdyYXBoaWNfNSI+CiAgICAgICAgPHJlY3QgeD0iMTc0LjMzMDciIHk9IjguNTAzOTM3IiB3aWR0aD0iMTM4Ljg5NzY0IiBoZWlnaHQ9IjQ4LjE4ODk3NiIgZmlsbD0id2hpdGUiLz4KICAgICAgICA8cmVjdCB4PSIxNzQuMzMwNyIgeT0iOC41MDM5MzciIHdpZHRoPSIxMzguODk3NjQiIGhlaWdodD0iNDguMTg4OTc2IiBzdHJva2U9IiMwMDkwNTEiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgICAgICAgPHRleHQgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMTc5LjMzMDcgMjMuMzc0NDI2KSIgZmlsbD0iYmxhY2siPgogICAgICAgICAgPHRzcGFuIGZvbnQtZmFtaWx5PSJIZWx2ZXRpY2EgTmV1ZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9IjQwMCIgZmlsbD0iYmxhY2siIHg9IjQyLjgxNjgyIiB5PSIxNSI+c3RhYmxlPC90c3Bhbj4KICAgICAgICA8L3RleHQ+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IkdyYXBoaWNfNyI+CiAgICAgICAgPHJlY3QgeD0iMzM3LjMyMjgzIiB5PSIyMDUuMDM5MzciIHdpZHRoPSIxMzguODk3NjQiIGhlaWdodD0iNDguMTg4OTc2IiBmaWxsPSJ3aGl0ZSIvPgogICAgICAgIDxyZWN0IHg9IjMzNy4zMjI4MyIgeT0iMjA1LjAzOTM3IiB3aWR0aD0iMTM4Ljg5NzY0IiBoZWlnaHQ9IjQ4LjE4ODk3NiIgc3Ryb2tlPSIjZmY5MzAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMyIvPgogICAgICAgIDx0ZXh0IHRyYW5zZm9ybT0idHJhbnNsYXRlKDM0Mi4zMjI4MyAyMTkuOTA5ODYpIiBmaWxsPSJibGFjayI+CiAgICAgICAgICA8dHNwYW4gZm9udC1mYW1pbHk9IkhlbHZldGljYSBOZXVlIiBmb250LXNpemU9IjE2IiBmb250LXdlaWdodD0iNDAwIiBmaWxsPSJibGFjayIgeD0iNy4xMDQ4MjIiIHk9IjE1Ij5zb2Z0LWRlcHJlY2F0ZWQ8L3RzcGFuPgogICAgICAgIDwvdGV4dD4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JhcGhpY184Ij4KICAgICAgICA8cmVjdCB4PSIzMzcuMzIyODMiIHk9IjI5OS41Mjc1NiIgd2lkdGg9IjEzOC44OTc2NCIgaGVpZ2h0PSI0OC4xODg5NzYiIGZpbGw9IndoaXRlIi8+CiAgICAgICAgPHJlY3QgeD0iMzM3LjMyMjgzIiB5PSIyOTkuNTI3NTYiIHdpZHRoPSIxMzguODk3NjQiIGhlaWdodD0iNDguMTg4OTc2IiBzdHJva2U9IiNmZjkzMDAiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIzIi8+CiAgICAgICAgPHRleHQgdHJhbnNmb3JtPSJ0cmFuc2xhdGUoMzQyLjMyMjgzIDMxNC4zOTgwNSkiIGZpbGw9ImJsYWNrIj4KICAgICAgICAgIDx0c3BhbiBmb250LWZhbWlseT0iSGVsdmV0aWNhIE5ldWUiIGZvbnQtc2l6ZT0iMTYiIGZvbnQtd2VpZ2h0PSI0MDAiIGZpbGw9ImJsYWNrIiB4PSIyMy42OTY4MjIiIHk9IjE1Ij5kZXByZWNhdGVkPC90c3Bhbj4KICAgICAgICA8L3RleHQ+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IkdyYXBoaWNfOSI+CiAgICAgICAgPHJlY3QgeD0iMzM3LjMyMjgzIiB5PSIzOTQuMDE1NzUiIHdpZHRoPSIxMzguODk3NjQiIGhlaWdodD0iNDguMTg4OTc2IiBmaWxsPSJ3aGl0ZSIvPgogICAgICAgIDxyZWN0IHg9IjMzNy4zMjI4MyIgeT0iMzk0LjAxNTc1IiB3aWR0aD0iMTM4Ljg5NzY0IiBoZWlnaHQ9IjQ4LjE4ODk3NiIgc3Ryb2tlPSIjZmYyNjAwIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMyIvPgogICAgICAgIDx0ZXh0IHRyYW5zZm9ybT0idHJhbnNsYXRlKDM0Mi4zMjI4MyA0MDguODg2MjMpIiBmaWxsPSJibGFjayI+CiAgICAgICAgICA8dHNwYW4gZm9udC1mYW1pbHk9IkhlbHZldGljYSBOZXVlIiBmb250LXNpemU9IjE2IiBmb250LXdlaWdodD0iNDAwIiBmaWxsPSJibGFjayIgeD0iMzcuMzI4ODIiIHk9IjE1Ij5kZWZ1bmN0PC90c3Bhbj4KICAgICAgICA8L3RleHQ+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IkxpbmVfMTAiPgogICAgICAgIDxsaW5lIHgxPSI4MC43ODc0IiB5MT0iMjk2LjEzNzgiIHgyPSI4MC43ODc0IiB5Mj0iMTczLjE0MDE2IiBtYXJrZXItZW5kPSJ1cmwoI0ZpbGxlZEFycm93X01hcmtlcl8yKSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iTGluZV8xMSI+CiAgICAgICAgPGxpbmUgeDE9IjEyMS42Njc0OSIgeTE9IjEwOS4wNTExOCIgeDI9IjE5MS45NjU2IiB5Mj0iNjUuMDM4NDQiIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzIpIiBzdHJva2U9ImJsYWNrIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJMaW5lXzEyIj4KICAgICAgICA8bGluZSB4MT0iMjY1LjAwNTcyIiB5MT0iNTguMTkyOTEiIHgyPSIzNzcuMzEwNTgiIHkyPSIxOTMuNjA5NzgiIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzIpIiBzdHJva2U9ImJsYWNrIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJMaW5lXzEzIj4KICAgICAgICA8bGluZSB4MT0iMjk1LjU5MzQ0IiB5MT0iNjUuMDM4NDQiIHgyPSIzNTQuOTU3NzMiIHkyPSIxMDIuMjA1NjUiIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzIpIiBtYXJrZXItc3RhcnQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzMpIiBzdHJva2U9ImJsYWNrIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJMaW5lXzE3Ij4KICAgICAgICA8bGluZSB4MT0iNDA2Ljc3MTY1IiB5MT0iMjU0LjcyODM0IiB4Mj0iNDA2Ljc3MTY1IiB5Mj0iMjg1LjEyNzU2IiBtYXJrZXItZW5kPSJ1cmwoI0ZpbGxlZEFycm93X01hcmtlcl8yKSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iTGluZV8xOCI+CiAgICAgICAgPGxpbmUgeDE9IjQwNi43NzE2NSIgeTE9IjM0OS4yMTY1MyIgeDI9IjQwNi43NzE2NSIgeTI9IjM3OS42MTU3NSIgbWFya2VyLWVuZD0idXJsKCNGaWxsZWRBcnJvd19NYXJrZXJfMikiIHN0cm9rZT0iYmxhY2siIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIgc3Ryb2tlLXdpZHRoPSIyIi8+CiAgICAgIDwvZz4KICAgICAgPGcgaWQ9IkxpbmVfMTkiPgogICAgICAgIDxsaW5lIHgxPSI0MDYuNzcxNjUiIHkxPSIxNjAuMjQwMTYiIHgyPSI0MDYuNzcxNjUiIHkyPSIxOTAuNjM5MzciIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzIpIiBzdHJva2U9ImJsYWNrIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJMaW5lXzIxIj4KICAgICAgICA8bGluZSB4MT0iMTUxLjczNjIyIiB5MT0iMzIyLjE0MzU4IiB4Mj0iMzIyLjkyMzA1IiB5Mj0iMzIzLjEzNTk3IiBtYXJrZXItZW5kPSJ1cmwoI0ZpbGxlZEFycm93X01hcmtlcl8yKSIgc3Ryb2tlPSJibGFjayIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iTGluZV8yMiI+CiAgICAgICAgPGxpbmUgeDE9IjEyNC45Mzc5IiB5MT0iMTYwLjI0MDE2IiB4Mj0iMzUxLjQ2MDg1IiB5Mj0iMjkxLjU1NzgiIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzIpIiBzdHJva2U9ImJsYWNrIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJMaW5lXzI0Ij4KICAgICAgICA8bGluZSB4MT0iMTUxLjczNjIyIiB5MT0iMzQyLjcwODQ1IiB4Mj0iMzIzLjQ1MjE3IiB5Mj0iMzkzLjQ3NjY1IiBtYXJrZXItZW5kPSJ1cmwoI0ZpbGxlZEFycm93X01hcmtlcikiIHN0cm9rZT0iIzkyOTI5MiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2UtZGFzaGFycmF5PSI0LjAsNC4wIiBzdHJva2Utd2lkdGg9IjIiLz4KICAgICAgPC9nPgogICAgICA8ZyBpZD0iR3JhcGhpY18yNSI+CiAgICAgICAgPHJlY3QgeD0iNTMyLjkxMzQiIHk9IjExMC41NTExOCIgd2lkdGg9IjEzOC44OTc2NCIgaGVpZ2h0PSI0OC4xODg5NzYiIGZpbGw9IndoaXRlIi8+CiAgICAgICAgPHJlY3QgeD0iNTMyLjkxMzQiIHk9IjExMC41NTExOCIgd2lkdGg9IjEzOC44OTc2NCIgaGVpZ2h0PSI0OC4xODg5NzYiIHN0cm9rZT0iIzAwN2VjNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjMiLz4KICAgICAgICA8dGV4dCB0cmFuc2Zvcm09InRyYW5zbGF0ZSg1MzcuOTEzNCAxMjUuNDIxNjcpIiBmaWxsPSJibGFjayI+CiAgICAgICAgICA8dHNwYW4gZm9udC1mYW1pbHk9IkhlbHZldGljYSBOZXVlIiBmb250LXNpemU9IjE2IiBmb250LXdlaWdodD0iNDAwIiBmaWxsPSJibGFjayIgeD0iMjIuMjE2ODIyIiB5PSIxNSI+c3VwZXJzZWRlZDwvdHNwYW4+CiAgICAgICAgPC90ZXh0PgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJMaW5lXzI2Ij4KICAgICAgICA8cGF0aCBkPSJNIDMxNC43MjgzNCAzMi41OTg0MjUgTCA0OTMuMjI4MzQgMzIuNTk4NDI1IEwgNDkzLjIyODM0IDM0LjAxNTc0OCBMIDQ5My4yMjgzNCAxMzQuNjQ1NjcgTCA1MTguNTEzNCAxMzQuNjQ1NjciIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzIpIiBzdHJva2U9ImJsYWNrIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJMaW5lXzI3Ij4KICAgICAgICA8bGluZSB4MT0iNDc3LjcyMDQ3IiB5MT0iMTM0LjY0NTY3IiB4Mj0iNTE4LjUxMzQiIHkyPSIxMzQuNjQ1NjciIG1hcmtlci1lbmQ9InVybCgjRmlsbGVkQXJyb3dfTWFya2VyXzIpIiBzdHJva2U9ImJsYWNrIiBzdHJva2UtbGluZWNhcD0icm91bmQiIHN0cm9rZS1saW5lam9pbj0icm91bmQiIHN0cm9rZS13aWR0aD0iMiIvPgogICAgICA8L2c+CiAgICAgIDxnIGlkPSJHcmFwaGljXzYiPgogICAgICAgIDxyZWN0IHg9IjMzNy4zMjI4MyIgeT0iMTEwLjU1MTE4IiB3aWR0aD0iMTM4Ljg5NzY0IiBoZWlnaHQ9IjQ4LjE4ODk3NiIgZmlsbD0id2hpdGUiLz4KICAgICAgICA8cmVjdCB4PSIzMzcuMzIyODMiIHk9IjExMC41NTExOCIgd2lkdGg9IjEzOC44OTc2NCIgaGVpZ2h0PSI0OC4xODg5NzYiIHN0cm9rZT0iIzAwN2VjNiIgc3Ryb2tlLWxpbmVjYXA9InJvdW5kIiBzdHJva2UtbGluZWpvaW49InJvdW5kIiBzdHJva2Utd2lkdGg9IjMiLz4KICAgICAgICA8dGV4dCB0cmFuc2Zvcm09InRyYW5zbGF0ZSgzNDIuMzIyODMgMTI1LjQyMTY3KSIgZmlsbD0iYmxhY2siPgogICAgICAgICAgPHRzcGFuIGZvbnQtZmFtaWx5PSJIZWx2ZXRpY2EgTmV1ZSIgZm9udC1zaXplPSIxNiIgZm9udC13ZWlnaHQ9IjQwMCIgZmlsbD0iYmxhY2siIHg9IjIyLjgwODgyMiIgeT0iMTUiPnF1ZXN0aW9uaW5nPC90c3Bhbj4KICAgICAgICA8L3RleHQ+CiAgICAgIDwvZz4KICAgIDwvZz4KICA8L2c+Cjwvc3ZnPgo=" width="75%" /></p>
+<p>The default development stage is <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iOTYiIGhlaWdodD0iMjAiPjxsaW5lYXJHcmFkaWVudCBpZD0iYiIgeDI9IjAiIHkyPSIxMDAlIj48c3RvcCBvZmZzZXQ9IjAiIHN0b3AtY29sb3I9IiNiYmIiIHN0b3Atb3BhY2l0eT0iLjEiLz48c3RvcCBvZmZzZXQ9IjEiIHN0b3Atb3BhY2l0eT0iLjEiLz48L2xpbmVhckdyYWRpZW50PjxjbGlwUGF0aCBpZD0iYSI+PHJlY3Qgd2lkdGg9Ijk2IiBoZWlnaHQ9IjIwIiByeD0iMyIgZmlsbD0iI2ZmZiIvPjwvY2xpcFBhdGg+PGcgY2xpcC1wYXRoPSJ1cmwoI2EpIj48cGF0aCBmaWxsPSIjNTU1IiBkPSJNMCAwaDUzdjIwSDB6Ii8+PHBhdGggZmlsbD0iIzRjMSIgZD0iTTUzIDBoNDN2MjBINTN6Ii8+PHBhdGggZmlsbD0idXJsKCNiKSIgZD0iTTAgMGg5NnYyMEgweiIvPjwvZz48ZyBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iRGVqYVZ1IFNhbnMsVmVyZGFuYSxHZW5ldmEsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMTAiPjx0ZXh0IHg9IjI3NSIgeT0iMTUwIiBmaWxsPSIjMDEwMTAxIiBmaWxsLW9wYWNpdHk9Ii4zIiB0cmFuc2Zvcm09InNjYWxlKC4xKSIgdGV4dExlbmd0aD0iNDMwIj5saWZlY3ljbGU8L3RleHQ+PHRleHQgeD0iMjc1IiB5PSIxNDAiIHRyYW5zZm9ybT0ic2NhbGUoLjEpIiB0ZXh0TGVuZ3RoPSI0MzAiPmxpZmVjeWNsZTwvdGV4dD48dGV4dCB4PSI3MzUiIHk9IjE1MCIgZmlsbD0iIzAxMDEwMSIgZmlsbC1vcGFjaXR5PSIuMyIgdHJhbnNmb3JtPSJzY2FsZSguMSkiIHRleHRMZW5ndGg9IjMzMCI+c3RhYmxlPC90ZXh0Pjx0ZXh0IHg9IjczNSIgeT0iMTQwIiB0cmFuc2Zvcm09InNjYWxlKC4xKSIgdGV4dExlbmd0aD0iMzMwIj5zdGFibGU8L3RleHQ+PC9nPiA8L3N2Zz4=" style="vertical-align:middle" alt="Stable" />. A function is considered stable when the author is sufficiently happy with its interface and behaviour to share it with a large number of users. Stable features come with guarantees. If breaking changes are needed, they will occur gradually, through the deprecation process described below.</p>
+<p>The stability of exported functions can be further refined based on the version number of the package they are exported from. In &gt;=1.0.0 packages, the main functionality is considered “done” by the author. Breaking changes and deprecations are unlikely. In sub-1.0.0 packages, some parts of the package (internal backend, external UI, …) still need some work and changes are possible. Stable &gt;=1.0.0 packages are the safest to depend and rely on.</p>
+<p>Some packages and functions are published in an <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMTM2IiBoZWlnaHQ9IjIwIj48bGluZWFyR3JhZGllbnQgaWQ9ImIiIHgyPSIwIiB5Mj0iMTAwJSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjYmJiIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PC9saW5lYXJHcmFkaWVudD48Y2xpcFBhdGggaWQ9ImEiPjxyZWN0IHdpZHRoPSIxMzYiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjZmZmIi8+PC9jbGlwUGF0aD48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGw9IiM1NTUiIGQ9Ik0wIDBoNTN2MjBIMHoiLz48cGF0aCBmaWxsPSIjZmU3ZDM3IiBkPSJNNTMgMGg4M3YyMEg1M3oiLz48cGF0aCBmaWxsPSJ1cmwoI2IpIiBkPSJNMCAwaDEzNnYyMEgweiIvPjwvZz48ZyBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iRGVqYVZ1IFNhbnMsVmVyZGFuYSxHZW5ldmEsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMTAiPjx0ZXh0IHg9IjI3NSIgeT0iMTUwIiBmaWxsPSIjMDEwMTAxIiBmaWxsLW9wYWNpdHk9Ii4zIiB0cmFuc2Zvcm09InNjYWxlKC4xKSIgdGV4dExlbmd0aD0iNDMwIj5saWZlY3ljbGU8L3RleHQ+PHRleHQgeD0iMjc1IiB5PSIxNDAiIHRyYW5zZm9ybT0ic2NhbGUoLjEpIiB0ZXh0TGVuZ3RoPSI0MzAiPmxpZmVjeWNsZTwvdGV4dD48dGV4dCB4PSI5MzUiIHk9IjE1MCIgZmlsbD0iIzAxMDEwMSIgZmlsbC1vcGFjaXR5PSIuMyIgdHJhbnNmb3JtPSJzY2FsZSguMSkiIHRleHRMZW5ndGg9IjczMCI+ZXhwZXJpbWVudGFsPC90ZXh0Pjx0ZXh0IHg9IjkzNSIgeT0iMTQwIiB0cmFuc2Zvcm09InNjYWxlKC4xKSIgdGV4dExlbmd0aD0iNzMwIj5leHBlcmltZW50YWw8L3RleHQ+PC9nPiA8L3N2Zz4=" style="vertical-align:middle" alt="Experimental" /> stage. Experimental features are made available so people can try them out and provide feedback, but the author makes no promises to avoid breaking changes. A deprecation process for breaking changes is not guaranteed (but may still happen if sufficiently many users depend on the feature).</p>
+<div id="end-of-life" class="section level3">
+<h3>End of life</h3>
+<p>There are two ways that a function might reach the end of its life: it might be superseded or deprecated.</p>
+<ul>
+<li>A <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMTI4IiBoZWlnaHQ9IjIwIj48bGluZWFyR3JhZGllbnQgaWQ9ImIiIHgyPSIwIiB5Mj0iMTAwJSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjYmJiIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PC9saW5lYXJHcmFkaWVudD48Y2xpcFBhdGggaWQ9ImEiPjxyZWN0IHdpZHRoPSIxMjgiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjZmZmIi8+PC9jbGlwUGF0aD48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGw9IiM1NTUiIGQ9Ik0wIDBoNTV2MjBIMHoiLz48cGF0aCBmaWxsPSIjMDA3ZWM2IiBkPSJNNTUgMGg3M3YyMEg1NXoiLz48cGF0aCBmaWxsPSJ1cmwoI2IpIiBkPSJNMCAwaDEyOHYyMEgweiIvPjwvZz48ZyBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iRGVqYVZ1IFNhbnMsVmVyZGFuYSxHZW5ldmEsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMTAiPiA8dGV4dCB4PSIyODUiIHk9IjE1MCIgZmlsbD0iIzAxMDEwMSIgZmlsbC1vcGFjaXR5PSIuMyIgdHJhbnNmb3JtPSJzY2FsZSguMSkiIHRleHRMZW5ndGg9IjQ1MCI+bGlmZWN5Y2xlPC90ZXh0Pjx0ZXh0IHg9IjI4NSIgeT0iMTQwIiB0cmFuc2Zvcm09InNjYWxlKC4xKSIgdGV4dExlbmd0aD0iNDUwIj5saWZlY3ljbGU8L3RleHQ+PHRleHQgeD0iOTA1IiB5PSIxNTAiIGZpbGw9IiMwMTAxMDEiIGZpbGwtb3BhY2l0eT0iLjMiIHRyYW5zZm9ybT0ic2NhbGUoLjEpIiB0ZXh0TGVuZ3RoPSI2MzAiPnN1cGVyc2VkZWQ8L3RleHQ+PHRleHQgeD0iOTA1IiB5PSIxNDAiIHRyYW5zZm9ybT0ic2NhbGUoLjEpIiB0ZXh0TGVuZ3RoPSI2MzAiPnN1cGVyc2VkZWQ8L3RleHQ+PC9nPiA8L3N2Zz4K" alt="Superseded" /><a href="#fn2" class="footnote-ref" id="fnref2"><sup>2</sup></a> function has a better alternative available, but the function itself is not going away. While a superseded function will not receive new features, it will be kept working for the foreseeable future so that existing code does not need to change. A superseded feature preserves all the guarantees of a stable feature, and is just as safe to use.</li>
+<li>A <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMTI0IiBoZWlnaHQ9IjIwIj48bGluZWFyR3JhZGllbnQgaWQ9ImIiIHgyPSIwIiB5Mj0iMTAwJSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjYmJiIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PC9saW5lYXJHcmFkaWVudD48Y2xpcFBhdGggaWQ9ImEiPjxyZWN0IHdpZHRoPSIxMjQiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjZmZmIi8+PC9jbGlwUGF0aD48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGw9IiM1NTUiIGQ9Ik0wIDBoNTN2MjBIMHoiLz48cGF0aCBmaWxsPSIjZmU3ZDM3IiBkPSJNNTMgMGg3MXYyMEg1M3oiLz48cGF0aCBmaWxsPSJ1cmwoI2IpIiBkPSJNMCAwaDEyNHYyMEgweiIvPjwvZz48ZyBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iRGVqYVZ1IFNhbnMsVmVyZGFuYSxHZW5ldmEsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMTAiPjx0ZXh0IHg9IjI3NSIgeT0iMTUwIiBmaWxsPSIjMDEwMTAxIiBmaWxsLW9wYWNpdHk9Ii4zIiB0cmFuc2Zvcm09InNjYWxlKC4xKSIgdGV4dExlbmd0aD0iNDMwIj5saWZlY3ljbGU8L3RleHQ+PHRleHQgeD0iMjc1IiB5PSIxNDAiIHRyYW5zZm9ybT0ic2NhbGUoLjEpIiB0ZXh0TGVuZ3RoPSI0MzAiPmxpZmVjeWNsZTwvdGV4dD48dGV4dCB4PSI4NzUiIHk9IjE1MCIgZmlsbD0iIzAxMDEwMSIgZmlsbC1vcGFjaXR5PSIuMyIgdHJhbnNmb3JtPSJzY2FsZSguMSkiIHRleHRMZW5ndGg9IjYxMCI+ZGVwcmVjYXRlZDwvdGV4dD48dGV4dCB4PSI4NzUiIHk9IjE0MCIgdHJhbnNmb3JtPSJzY2FsZSguMSkiIHRleHRMZW5ndGg9IjYxMCI+ZGVwcmVjYXRlZDwvdGV4dD48L2c+IDwvc3ZnPg==" style="vertical-align:middle" alt="Deprecated" /> function has a better alternative available and will be removed in the near future. Deprecated functions should also produce a message describing the alternative, and whenever you encounter a deprecation message in your code, you should make fixing it a priority.</li>
+</ul>
+<p>Particularly important functions can have two additional stages in the deprecation cycle:</p>
+<ul>
+<li><p>Soft-deprecated comes before deprecated. It’s a gentler form of deprecated designed to prevent new uses of a function and encourage package developers to move to a new for. Soft deprecated allows a package to change its extension interface in a way that downstream dependencies can adapt to before users are forced to change.</p></li>
+<li><p>Defunct comes after deprecated. A defunct function is still exported, and a defunct argument is still part of the signature, but their usage will generate informative errors.</p></li>
+</ul>
+<p>Sometimes the author of function is no longer certain that a function is the optimal approach, but doesn’t yet know how to do it better. These functions can be marked as <img src="data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHhtbG5zOnhsaW5rPSJodHRwOi8vd3d3LnczLm9yZy8xOTk5L3hsaW5rIiB3aWR0aD0iMTI2IiBoZWlnaHQ9IjIwIj48bGluZWFyR3JhZGllbnQgaWQ9ImIiIHgyPSIwIiB5Mj0iMTAwJSI+PHN0b3Agb2Zmc2V0PSIwIiBzdG9wLWNvbG9yPSIjYmJiIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PHN0b3Agb2Zmc2V0PSIxIiBzdG9wLW9wYWNpdHk9Ii4xIi8+PC9saW5lYXJHcmFkaWVudD48Y2xpcFBhdGggaWQ9ImEiPjxyZWN0IHdpZHRoPSIxMjYiIGhlaWdodD0iMjAiIHJ4PSIzIiBmaWxsPSIjZmZmIi8+PC9jbGlwUGF0aD48ZyBjbGlwLXBhdGg9InVybCgjYSkiPjxwYXRoIGZpbGw9IiM1NTUiIGQ9Ik0wIDBoNTN2MjBIMHoiLz48cGF0aCBmaWxsPSIjMDA3ZWM2IiBkPSJNNTMgMGg3M3YyMEg1M3oiLz48cGF0aCBmaWxsPSJ1cmwoI2IpIiBkPSJNMCAwaDEyNnYyMEgweiIvPjwvZz48ZyBmaWxsPSIjZmZmIiB0ZXh0LWFuY2hvcj0ibWlkZGxlIiBmb250LWZhbWlseT0iRGVqYVZ1IFNhbnMsVmVyZGFuYSxHZW5ldmEsc2Fucy1zZXJpZiIgZm9udC1zaXplPSIxMTAiPjx0ZXh0IHg9IjI3NSIgeT0iMTUwIiBmaWxsPSIjMDEwMTAxIiBmaWxsLW9wYWNpdHk9Ii4zIiB0cmFuc2Zvcm09InNjYWxlKC4xKSIgdGV4dExlbmd0aD0iNDMwIj5saWZlY3ljbGU8L3RleHQ+PHRleHQgeD0iMjc1IiB5PSIxNDAiIHRyYW5zZm9ybT0ic2NhbGUoLjEpIiB0ZXh0TGVuZ3RoPSI0MzAiPmxpZmVjeWNsZTwvdGV4dD48dGV4dCB4PSI4ODUiIHk9IjE1MCIgZmlsbD0iIzAxMDEwMSIgZmlsbC1vcGFjaXR5PSIuMyIgdHJhbnNmb3JtPSJzY2FsZSguMSkiIHRleHRMZW5ndGg9IjYzMCI+cXVlc3Rpb25pbmc8L3RleHQ+PHRleHQgeD0iODg1IiB5PSIxNDAiIHRyYW5zZm9ybT0ic2NhbGUoLjEpIiB0ZXh0TGVuZ3RoPSI2MzAiPnF1ZXN0aW9uaW5nPC90ZXh0PjwvZz4gPC9zdmc+" style="vertical-align:middle" alt="Questioning" /> to give users a heads up that the author has doubts about the function.</p>
+</div>
+</div>
+<div id="rd-badges" class="section level2">
+<h2>Documentation</h2>
+<p>Experimental, questioning, superseded, and deprecated (including soft-deprecated and defunct functions) should be clearly labelled in the document with a badge:</p>
+<ul>
+<li><p>Call <code>usethis::use_lifecycle()</code> to import the badges in your package. Then use <code>lifecycle::badge()</code> to insert a badge:</p>
+<div class="sourceCode" id="cb2"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb2-1"><a href="#cb2-1"></a><span class="co">#&#39; `r lifecycle::badge(&quot;experimental&quot;)</span></span>
+<span id="cb2-2"><a href="#cb2-2"></a><span class="co">#&#39; `r lifecycle::badge(&quot;deprecated&quot;)</span></span></code></pre></div>
+<p>This badge renders as text in non-HTML documentation. To document the status of a whole function, a good place to include the badge is at the top of the <code>@description</code> block. To document an argument, you can put the badge in the argument description.</p>
+<p><code>lifecycle::badge()</code> is only ran by roxygen, so this is a build-time dependency. You don’t need to import lifecycle just to include badges in your documentation.</p></li>
+<li><p>You should also include a brief description of why the function is in that state.</p></li>
+<li><p>For superseded and deprecated functions, rewrite the examples showing how to translate from the old to new syntax.</p></li>
+<li><p>For deprecated functions, add <code>@keywords internal</code> and update <code>_pkgdown.yaml</code> (if you use pkgdown), so that they’re no longer listed in documentation indexes.</p></li>
+</ul>
+</div>
+<div id="signals" class="section level2">
+<h2>Signals</h2>
+<p>Deprecated functions should clearly signal their deprecation status. There are three levels of verbosity:</p>
+<ul>
+<li><p><strong>Soft deprecation</strong>: Call <code>deprecate_soft()</code> to start warning users about the deprecation in the least disruptive way. This function only warns (a) users who try the feature from the global workspace (at most once every 8 hours), and (b) developers who directly use the feature (when running testthat tests). No warning is when the deprecated feature is called indirectly by another package.</p></li>
+<li><p><strong>Deprecation</strong>: Call <code>deprecate_warn()</code> to warn unconditionally about the deprecated feature. The warning is issued only once every 8 hours.</p></li>
+<li><p><strong>Defunct</strong>: Call <code>deprecate_stop()</code> to fail with an error.</p></li>
+</ul>
+<p>The following sections describe the details when deprecating functions and arguments.</p>
+<div id="functions" class="section level3">
+<h3>Functions</h3>
+<p>The first two arguments give the version where deprecation occurred<a href="#fn3" class="footnote-ref" id="fnref3"><sup>3</sup></a> and a description of what is deprecated:</p>
+<div class="sourceCode" id="cb3"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb3-1"><a href="#cb3-1"></a><span class="kw">deprecate_warn</span>(<span class="st">&quot;1.0.0&quot;</span>, <span class="st">&quot;mypkg::foo()&quot;</span>)</span>
+<span id="cb3-2"><a href="#cb3-2"></a><span class="co">#&gt; Warning: `foo()` is deprecated as of mypkg 1.0.0.</span></span>
+<span id="cb3-3"><a href="#cb3-3"></a><span class="co">#&gt; This warning is displayed once every 8 hours.</span></span>
+<span id="cb3-4"><a href="#cb3-4"></a><span class="co">#&gt; Call `lifecycle::last_warnings()` to see where this warning was generated.</span></span></code></pre></div>
+<p>Where possible, describe the replacement in the third argument:</p>
+<div class="sourceCode" id="cb4"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb4-1"><a href="#cb4-1"></a><span class="kw">deprecate_warn</span>(<span class="st">&quot;1.0.0&quot;</span>, <span class="st">&quot;mypkg::foo()&quot;</span>, <span class="st">&quot;new()&quot;</span>)</span>
+<span id="cb4-2"><a href="#cb4-2"></a><span class="co">#&gt; Warning: `foo()` is deprecated as of mypkg 1.0.0.</span></span>
+<span id="cb4-3"><a href="#cb4-3"></a><span class="co">#&gt; Please use `new()` instead.</span></span>
+<span id="cb4-4"><a href="#cb4-4"></a><span class="co">#&gt; This warning is displayed once every 8 hours.</span></span>
+<span id="cb4-5"><a href="#cb4-5"></a><span class="co">#&gt; Call `lifecycle::last_warnings()` to see where this warning was generated.</span></span></code></pre></div>
+<p>We explicitly mention the namespace in these examples, but you can typically omit the namespace because lifecycle will infer it from the calling environment. Specifying the namespace is mostly useful when the replacement is implemented in a different package.</p>
+<div class="sourceCode" id="cb5"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb5-1"><a href="#cb5-1"></a><span class="co"># The new replacement</span></span>
+<span id="cb5-2"><a href="#cb5-2"></a>foobar_adder &lt;-<span class="st"> </span><span class="cf">function</span>(foo, bar) {</span>
+<span id="cb5-3"><a href="#cb5-3"></a>  foo <span class="op">+</span><span class="st"> </span>bar</span>
+<span id="cb5-4"><a href="#cb5-4"></a>}</span>
+<span id="cb5-5"><a href="#cb5-5"></a></span>
+<span id="cb5-6"><a href="#cb5-6"></a><span class="co"># The old function still exported for compatibility</span></span>
+<span id="cb5-7"><a href="#cb5-7"></a>foobaz_adder &lt;-<span class="st"> </span><span class="cf">function</span>(foo, bar) {</span>
+<span id="cb5-8"><a href="#cb5-8"></a>  <span class="kw">deprecate_warn</span>(<span class="st">&quot;1.0.0&quot;</span>, <span class="st">&quot;foobaz_adder()&quot;</span>, <span class="st">&quot;foobar_adder()&quot;</span>)</span>
+<span id="cb5-9"><a href="#cb5-9"></a>  <span class="kw">foobar_adder</span>(foo, bar)</span>
+<span id="cb5-10"><a href="#cb5-10"></a>}</span></code></pre></div>
+</div>
+<div id="arguments" class="section level3">
+<h3>Arguments</h3>
+<p>The syntax for deprecating arguments is similar:</p>
+<div class="sourceCode" id="cb6"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb6-1"><a href="#cb6-1"></a><span class="kw">deprecate_warn</span>(<span class="st">&quot;1.0.0&quot;</span>, <span class="st">&quot;mypkg::foo(arg = )&quot;</span>)</span>
+<span id="cb6-2"><a href="#cb6-2"></a><span class="co">#&gt; Warning: The `arg` argument of `foo()` is deprecated as of mypkg 1.0.0.</span></span>
+<span id="cb6-3"><a href="#cb6-3"></a><span class="co">#&gt; This warning is displayed once every 8 hours.</span></span>
+<span id="cb6-4"><a href="#cb6-4"></a><span class="co">#&gt; Call `lifecycle::last_warnings()` to see where this warning was generated.</span></span>
+<span id="cb6-5"><a href="#cb6-5"></a></span>
+<span id="cb6-6"><a href="#cb6-6"></a><span class="kw">deprecate_warn</span>(<span class="st">&quot;1.0.0&quot;</span>, <span class="st">&quot;mypkg::foo(arg = )&quot;</span>, <span class="st">&quot;mypkg::foo(new = )&quot;</span>)</span>
+<span id="cb6-7"><a href="#cb6-7"></a><span class="co">#&gt; Warning: The `arg` argument of `foo()` is deprecated as of mypkg 1.0.0.</span></span>
+<span id="cb6-8"><a href="#cb6-8"></a><span class="co">#&gt; Please use the `new` argument instead.</span></span>
+<span id="cb6-9"><a href="#cb6-9"></a><span class="co">#&gt; This warning is displayed once every 8 hours.</span></span>
+<span id="cb6-10"><a href="#cb6-10"></a><span class="co">#&gt; Call `lifecycle::last_warnings()` to see where this warning was generated.</span></span></code></pre></div>
+<p>An argument can be partially deprecated by disallowing certain input types:</p>
+<div class="sourceCode" id="cb7"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb7-1"><a href="#cb7-1"></a><span class="kw">deprecate_warn</span>(<span class="st">&quot;1.0.0&quot;</span>, <span class="st">&quot;mypkg::foo(arg = &#39;must be a scalar integer&#39;)&quot;</span>)</span>
+<span id="cb7-2"><a href="#cb7-2"></a><span class="co">#&gt; Warning: The `arg` argument of `foo()` must be a scalar integer as of mypkg 1.0.0.</span></span>
+<span id="cb7-3"><a href="#cb7-3"></a><span class="co">#&gt; This warning is displayed once every 8 hours.</span></span>
+<span id="cb7-4"><a href="#cb7-4"></a><span class="co">#&gt; Call `lifecycle::last_warnings()` to see where this warning was generated.</span></span></code></pre></div>
+<p>lifecycle also provides the <code>deprecated()</code> sentinel to use as default argument. This provides self-documentation for your users and makes it possible for external tools to determine which arguments are deprecated. Test whether the argument was supplied by the caller with <code>lifecycle::is_present()</code>:</p>
+<div class="sourceCode" id="cb8"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb8-1"><a href="#cb8-1"></a>foobar_adder &lt;-<span class="st"> </span><span class="cf">function</span>(foo, bar, <span class="dt">baz =</span> <span class="kw">deprecated</span>()) {</span>
+<span id="cb8-2"><a href="#cb8-2"></a>  <span class="co"># Check if user has supplied `baz` instead of `bar`</span></span>
+<span id="cb8-3"><a href="#cb8-3"></a>  <span class="cf">if</span> (lifecycle<span class="op">::</span><span class="kw">is_present</span>(baz)) {</span>
+<span id="cb8-4"><a href="#cb8-4"></a></span>
+<span id="cb8-5"><a href="#cb8-5"></a>    <span class="co"># Signal the deprecation to the user</span></span>
+<span id="cb8-6"><a href="#cb8-6"></a>    <span class="kw">deprecate_warn</span>(<span class="st">&quot;1.0.0&quot;</span>, <span class="st">&quot;foobar_adder(baz = )&quot;</span>, <span class="st">&quot;foobar_adder(bar = )&quot;</span>)</span>
+<span id="cb8-7"><a href="#cb8-7"></a></span>
+<span id="cb8-8"><a href="#cb8-8"></a>    <span class="co"># Deal with the deprecated argument for compatibility</span></span>
+<span id="cb8-9"><a href="#cb8-9"></a>    bar &lt;-<span class="st"> </span>baz</span>
+<span id="cb8-10"><a href="#cb8-10"></a>  }</span>
+<span id="cb8-11"><a href="#cb8-11"></a></span>
+<span id="cb8-12"><a href="#cb8-12"></a>  foo <span class="op">+</span><span class="st"> </span>bar</span>
+<span id="cb8-13"><a href="#cb8-13"></a>}</span></code></pre></div>
+</div>
+</div>
+<div id="workflow" class="section level2">
+<h2>Workflow</h2>
+<div id="where-do-these-deprecation-warnings-come-from" class="section level3">
+<h3>Where do these deprecation warnings come from?</h3>
+<p>Call <code>lifecycle::last_warnings()</code> to see backtraces for all the deprecation warnings that were issued during the last top-level command.</p>
+</div>
+<div id="bumping-deprecation-stage" class="section level3">
+<h3>Bumping deprecation stage</h3>
+<p>Some manual search and replace is needed to bump the status of deprecated features. We recommend starting with defunct features and work your way up:</p>
+<ol style="list-style-type: decimal">
+<li><p>Search for <code>deprecate_stop()</code> and remove the feature from the package. The feature is now archived.</p></li>
+<li><p>Search for <code>deprecate_warn()</code> and replace with <code>deprecate_stop()</code>.</p></li>
+<li><p>Search for <code>deprecate_soft()</code> and replace with <code>deprecate_warn()</code>.</p></li>
+<li><p>Call <code>deprecate_soft()</code> from newly deprecated functions.</p></li>
+</ol>
+<p>Don’t forget to update the badges in the documentation topics.</p>
+</div>
+<div id="find-out-what-deprecated-features-you-rely-on" class="section level3">
+<h3>Find out what deprecated features you rely on</h3>
+<p>Test whether your package depends on deprecated features directly or indirectly by setting the verbosity option in the <code>tests/testthat.R</code> file just before <code>test_check()</code> is called:</p>
+<div class="sourceCode" id="cb9"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb9-1"><a href="#cb9-1"></a><span class="kw">library</span>(testthat)</span>
+<span id="cb9-2"><a href="#cb9-2"></a><span class="kw">library</span>(mypackage)</span>
+<span id="cb9-3"><a href="#cb9-3"></a></span>
+<span id="cb9-4"><a href="#cb9-4"></a><span class="kw">options</span>(<span class="dt">lifecycle_verbosity =</span> <span class="st">&quot;error&quot;</span>)</span>
+<span id="cb9-5"><a href="#cb9-5"></a><span class="kw">test_check</span>(<span class="st">&quot;mypackage&quot;</span>)</span></code></pre></div>
+<p>This forces all deprecated features to fail. You can also set the relevant options manually to force warnings or errors in your session:</p>
+<div class="sourceCode" id="cb10"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb10-1"><a href="#cb10-1"></a><span class="co"># Force silence</span></span>
+<span id="cb10-2"><a href="#cb10-2"></a><span class="kw">options</span>(<span class="dt">lifecycle_verbosity =</span> <span class="st">&quot;quiet&quot;</span>)</span>
+<span id="cb10-3"><a href="#cb10-3"></a></span>
+<span id="cb10-4"><a href="#cb10-4"></a><span class="co"># Force warnings</span></span>
+<span id="cb10-5"><a href="#cb10-5"></a><span class="kw">options</span>(<span class="dt">lifecycle_verbosity =</span> <span class="st">&quot;warning&quot;</span>)</span>
+<span id="cb10-6"><a href="#cb10-6"></a></span>
+<span id="cb10-7"><a href="#cb10-7"></a><span class="co"># Force errors</span></span>
+<span id="cb10-8"><a href="#cb10-8"></a><span class="kw">options</span>(<span class="dt">lifecycle_verbosity =</span> <span class="st">&quot;error&quot;</span>)</span></code></pre></div>
+<p>Forcing warnings can be useful in conjuction with <code>last_warnings()</code>, which prints backtraces for all the deprecation warnings issued during the last top-level command.</p>
+</div>
+<div id="test-deprecated-features" class="section level3">
+<h3>Test deprecated features</h3>
+<p>Test whether a deprecated feature still works by setting <code>lifecycle_verbosity</code> to <code>&quot;quiet&quot;</code>:</p>
+<div class="sourceCode" id="cb11"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb11-1"><a href="#cb11-1"></a><span class="kw">test_that</span>(<span class="st">&quot;`baz` argument of `foobar_adder()` still works&quot;</span>, {</span>
+<span id="cb11-2"><a href="#cb11-2"></a>  withr<span class="op">::</span><span class="kw">local_options</span>(<span class="kw">list</span>(<span class="dt">lifecycle_verbosity =</span> <span class="st">&quot;quiet&quot;</span>))</span>
+<span id="cb11-3"><a href="#cb11-3"></a>  <span class="kw">foobar_adder</span>(<span class="dv">1</span>, <span class="dt">baz =</span> <span class="dv">2</span>)</span>
+<span id="cb11-4"><a href="#cb11-4"></a>})</span></code></pre></div>
+<p>You can also set up verbosity for a whole testthat file within <code>setup()</code> and <code>teardown()</code> blocks:</p>
+<div class="sourceCode" id="cb12"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb12-1"><a href="#cb12-1"></a><span class="kw">setup</span>(<span class="kw">options</span>(<span class="dt">lifecycle_verbosity =</span> <span class="st">&quot;quiet&quot;</span>))</span>
+<span id="cb12-2"><a href="#cb12-2"></a><span class="kw">teardown</span>(<span class="kw">options</span>(<span class="dt">lifecycle_verbosity =</span> <span class="ot">NULL</span>))</span></code></pre></div>
+<p>Test that a feature is correctly deprecated with <code>expect_deprecated()</code> or <code>expect_defunct()</code>:</p>
+<div class="sourceCode" id="cb13"><pre class="sourceCode r"><code class="sourceCode r"><span id="cb13-1"><a href="#cb13-1"></a><span class="kw">test_that</span>(<span class="st">&quot;`baz` argument of `foobar_adder()` is deprecated&quot;</span>, {</span>
+<span id="cb13-2"><a href="#cb13-2"></a>  <span class="kw">expect_deprecated</span>(<span class="kw">foobar_adder</span>(<span class="dv">1</span>, <span class="dt">baz =</span> <span class="dv">2</span>))</span>
+<span id="cb13-3"><a href="#cb13-3"></a>})</span>
+<span id="cb13-4"><a href="#cb13-4"></a></span>
+<span id="cb13-5"><a href="#cb13-5"></a><span class="kw">test_that</span>(<span class="st">&quot;`foo()` is defunct&quot;</span>, {</span>
+<span id="cb13-6"><a href="#cb13-6"></a>  <span class="kw">expect_defunct</span>(<span class="kw">foo</span>())</span>
+<span id="cb13-7"><a href="#cb13-7"></a>})</span></code></pre></div>
+<p>More control over verbosity can be exercised with the <code>lifecycle_verbosity</code> option. See <code>?verbosity</code>.</p>
+</div>
+</div>
+<div class="footnotes">
+<hr />
+<ol>
+<li id="fn1"><p>They can also be applied to individual arguments, or combinations of argument values.<a href="#fnref1" class="footnote-back">↩︎</a></p></li>
+<li id="fn2"><p>This stage was previously called retired.<a href="#fnref2" class="footnote-back">↩︎</a></p></li>
+<li id="fn3"><p>If the function goes through multiple deprecation stages, this stays the same.<a href="#fnref3" class="footnote-back">↩︎</a></p></li>
+</ol>
+</div>
+
+
+
+<!-- code folding -->
+
+
+<!-- dynamically load mathjax for compatibility with self-contained -->
+<script>
+  (function () {
+    var script = document.createElement("script");
+    script.type = "text/javascript";
+    script.src  = "https://mathjax.rstudio.com/latest/MathJax.js?config=TeX-AMS-MML_HTMLorMML";
+    document.getElementsByTagName("head")[0].appendChild(script);
+  })();
+</script>
+
+</body>
+</html>

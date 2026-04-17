@@ -21,7 +21,7 @@ mod extract_tests;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
-use crate::indexer::manifest::ManifestKind;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 use crate::parser::scope_tree::ScopeKind;

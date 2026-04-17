@@ -30,7 +30,7 @@
 pub(crate) use super::builtins::normalize_php_ns;
 
 use super::{builtins, chain};
-use crate::indexer::manifest::ManifestKind;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };

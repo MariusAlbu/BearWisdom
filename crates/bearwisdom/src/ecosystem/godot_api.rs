@@ -28,7 +28,7 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
 };
-use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use crate::walker::WalkedFile;
 

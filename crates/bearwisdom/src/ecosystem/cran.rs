@@ -15,8 +15,8 @@ use tracing::{debug, info, warn};
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
 };
-use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator};
-use crate::indexer::manifest::{ManifestData, ManifestKind, ManifestReader};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
+use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("cran");

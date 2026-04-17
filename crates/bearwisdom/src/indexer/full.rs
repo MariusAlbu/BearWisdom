@@ -482,9 +482,9 @@ fn log_language_breakdown(parsed: &[ParsedFile]) {
 /// rows for manifests whose ecosystem has no locator today (e.g. Sbt,
 /// Opam when those locators haven't been wired in yet).
 fn manifest_kind_to_ecosystem(
-    kind: crate::indexer::manifest::ManifestKind,
+    kind: crate::ecosystem::manifest::ManifestKind,
 ) -> Option<&'static str> {
-    use crate::indexer::manifest::ManifestKind;
+    use crate::ecosystem::manifest::ManifestKind;
     Some(match kind {
         ManifestKind::Npm => "typescript",
         ManifestKind::Cargo => "rust",
@@ -561,7 +561,7 @@ fn parse_external_sources(
     ctx: &super::project_context::ProjectContext,
     packages: &[crate::types::PackageInfo],
 ) -> Vec<ParsedFile> {
-    use crate::indexer::externals::{ExternalDepRoot, ExternalSourceLocator};
+    use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
     use std::sync::Arc;
 
     // Resolve every active ecosystem to its legacy locator adapter. The

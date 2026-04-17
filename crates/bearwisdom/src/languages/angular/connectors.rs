@@ -18,7 +18,7 @@ use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
-use crate::indexer::manifest::ManifestKind;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -257,7 +257,7 @@ export class DashboardComponent {
 
         assert!(!c.detect(&ctx), "should not detect without @angular/core");
 
-        use crate::indexer::manifest::{ManifestData, ManifestKind};
+        use crate::ecosystem::manifest::{ManifestData, ManifestKind};
         let mut npm = ManifestData::default();
         npm.dependencies.insert("@angular/core".to_string());
         ctx.manifests.insert(ManifestKind::Npm, npm);
@@ -294,7 +294,7 @@ export class DashboardComponent {
 
         let connector = AngularDiConnector;
         let mut ctx = ProjectContext::default();
-        use crate::indexer::manifest::{ManifestData, ManifestKind};
+        use crate::ecosystem::manifest::{ManifestData, ManifestKind};
         let mut npm = ManifestData::default();
         npm.dependencies.insert("@angular/core".to_string());
         ctx.manifests.insert(ManifestKind::Npm, npm);

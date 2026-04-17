@@ -65,7 +65,7 @@ namespace App {
 
     #[test]
     fn m3_collect_package_dep_rows_emits_one_row_per_declared_dep() {
-        use crate::indexer::manifest::{ManifestData, ManifestKind};
+        use crate::ecosystem::manifest::{ManifestData, ManifestKind};
         use std::collections::{HashMap, HashSet};
 
         let mut by_package: HashMap<i64, HashMap<ManifestKind, ManifestData>> = HashMap::new();
@@ -105,7 +105,7 @@ namespace App {
 
     #[test]
     fn m3_manifest_kind_to_ecosystem_covers_common_kinds() {
-        use crate::indexer::manifest::ManifestKind;
+        use crate::ecosystem::manifest::ManifestKind;
         assert_eq!(manifest_kind_to_ecosystem(ManifestKind::Npm), Some("typescript"));
         assert_eq!(manifest_kind_to_ecosystem(ManifestKind::PyProject), Some("python"));
         assert_eq!(manifest_kind_to_ecosystem(ManifestKind::NuGet), Some("dotnet"));

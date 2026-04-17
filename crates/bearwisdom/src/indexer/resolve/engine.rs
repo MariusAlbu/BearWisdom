@@ -816,7 +816,7 @@ impl SymbolIndex {
         // consumer to "win the slot" for `./utils` and silently breaks
         // resolution for every other file with a same-named neighbour.
         let go_module_path = project_ctx
-            .and_then(|ctx| ctx.manifest(crate::indexer::manifest::ManifestKind::GoMod))
+            .and_then(|ctx| ctx.manifest(crate::ecosystem::manifest::ManifestKind::GoMod))
             .and_then(|m| m.module_path.as_deref());
         let resolvers =
             crate::indexer::module_resolution::all_resolvers_with_go_module(go_module_path);
@@ -925,11 +925,11 @@ impl SymbolIndex {
         let mut tsconfig_paths_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
         let mut tsconfig_paths_union: Vec<(String, String)> = Vec::new();
         if let Some(ctx) = project_ctx {
-            if let Some(npm) = ctx.manifest(crate::indexer::manifest::ManifestKind::Npm) {
+            if let Some(npm) = ctx.manifest(crate::ecosystem::manifest::ManifestKind::Npm) {
                 tsconfig_paths_union = npm.tsconfig_paths.clone();
             }
             for (&pkg_id, manifests) in &ctx.by_package {
-                if let Some(npm) = manifests.get(&crate::indexer::manifest::ManifestKind::Npm) {
+                if let Some(npm) = manifests.get(&crate::ecosystem::manifest::ManifestKind::Npm) {
                     if !npm.tsconfig_paths.is_empty() {
                         let pkg_path = ctx.workspace_pkg_paths.get(&pkg_id);
                         let rewritten: Vec<(String, String)> = npm
@@ -2565,7 +2565,7 @@ mod tests {
 
     #[test]
     fn test_globals_scope_to_declaring_package() {
-        use crate::indexer::manifest::{ManifestData, ManifestKind};
+        use crate::ecosystem::manifest::{ManifestData, ManifestKind};
         use crate::indexer::project_context::ProjectContext;
 
         // Two packages: `e2e` declares vitest; `server` declares nothing.

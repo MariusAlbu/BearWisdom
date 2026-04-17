@@ -24,7 +24,7 @@ use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
-use crate::indexer::manifest::ManifestKind;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================

@@ -113,7 +113,7 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
 
 /// Build a minimal ProjectContext with react and @tanstack/react-query as packages.
 fn make_ts_project_ctx() -> ProjectContext {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
     let mut npm = ManifestData::default();
     npm.dependencies.insert("react".to_string());
@@ -1384,7 +1384,7 @@ fn symbol_lookup_symbols_in_package_groups_by_pkg_id() {
 
 #[test]
 fn tsconfig_alias_resolves_bare_specifier() {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 
     // Producer at src/utils/format.ts exports `formatDate`.
     let producer = make_ts_file_in_pkg(
@@ -1449,7 +1449,7 @@ fn tsconfig_alias_resolves_bare_specifier() {
 
 #[test]
 fn tsconfig_alias_prepends_package_path_in_monorepo() {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 
     // Monorepo layout: `apps/landing/tsconfig.json` declares `@/* -> src/*`.
     // The producer lives at `apps/landing/src/components/Button.tsx`. The
@@ -1533,7 +1533,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
     // the name from a neighbour file. The alias rewrite lands in the
     // index.ts — but that file has no own symbols, only re-exports.
     // `resolve_via_alias` must walk the barrel chain.
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 
     let producer = make_ts_file_in_pkg(
         "apps/web/src/features/quick-create/quick-create-button.tsx",
@@ -1628,7 +1628,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
 
 #[test]
 fn tsconfig_alias_longest_prefix_wins() {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 
     // Two aliases: @/ → src/ and @/components/ → packages/ui/src/.
     // An import of `@/components/Button` must use the longer mapping.
@@ -1778,7 +1778,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
     // The consumer ref must classify as external `react-i18next`, NOT
     // fall through to the heuristic which would pick a wrong same-named
     // symbol elsewhere in the project.
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     use crate::indexer::resolve::engine::SymbolIndex;
 
     // Barrel: zero own symbols, one re-export ref pointing at a bare spec.
@@ -1859,7 +1859,7 @@ fn tsconfig_alias_parser_handles_realworld_landing_shape() {
     // Exact shape from ts-rallly's apps/landing/tsconfig.json — the wild
     // case we missed. Has `extends`, `baseUrl`, mixed-type compilerOptions,
     // and trailing commas may or may not appear.
-    use crate::indexer::manifest::npm::parse_tsconfig_paths;
+    use crate::ecosystem::manifest::npm::parse_tsconfig_paths;
     let content = r##"{
         "extends": "@rallly/tsconfig/next.json",
         "compilerOptions": {
@@ -1883,7 +1883,7 @@ fn tsconfig_alias_parser_handles_realworld_landing_shape() {
 
 #[test]
 fn tsconfig_alias_parser_extracts_wildcard_mappings() {
-    use crate::indexer::manifest::npm::parse_tsconfig_paths;
+    use crate::ecosystem::manifest::npm::parse_tsconfig_paths;
 
     let tsconfig = r##"{
         // top-of-file comment

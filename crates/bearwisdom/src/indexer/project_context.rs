@@ -15,7 +15,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use tracing::{debug, info};
 
-use super::manifest::{self, ManifestData, ManifestKind, PackageManifest};
+use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManifest};
 use crate::ecosystem::{
     self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
 };
@@ -29,9 +29,9 @@ pub use crate::ecosystem::cargo::parse_cargo_dependencies;
 pub use crate::ecosystem::composer::parse_composer_json_deps;
 pub use crate::ecosystem::rubygems::parse_gemfile_gems;
 pub use crate::ecosystem::go_mod::{find_go_mod, parse_go_mod, GoModData};
-pub use super::manifest::gradle::parse_gradle_dependencies;
-pub use super::manifest::maven::{extract_xml_text, parse_pom_xml_dependencies};
-pub use super::manifest::npm::parse_package_json_deps;
+pub use crate::ecosystem::manifest::gradle::parse_gradle_dependencies;
+pub use crate::ecosystem::manifest::maven::{extract_xml_text, parse_pom_xml_dependencies};
+pub use crate::ecosystem::manifest::npm::parse_package_json_deps;
 pub use crate::ecosystem::nuget::{
     implicit_usings_for_sdk, most_capable_sdk, parse_global_usings, parse_package_references,
     parse_project_references, parse_sdk_type, DotnetSdkType,

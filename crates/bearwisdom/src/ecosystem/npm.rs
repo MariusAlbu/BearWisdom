@@ -26,11 +26,11 @@ use tracing::debug;
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
 };
-use crate::indexer::externals::{
+use crate::ecosystem::externals::{
     ts_package_from_virtual_path, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
 };
-use crate::indexer::manifest::npm::NpmManifest;
-use crate::indexer::manifest::ManifestReader;
+use crate::ecosystem::manifest::npm::NpmManifest;
+use crate::ecosystem::manifest::ManifestReader;
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("npm");

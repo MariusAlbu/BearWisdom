@@ -22,7 +22,7 @@
 
 
 use super::builtins;
-use crate::indexer::manifest::ManifestKind;
+use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::chain_walker::{
     self, ChainConfig, NamespaceLookup, identity_normalize,
 };

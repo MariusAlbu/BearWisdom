@@ -1,0 +1,88 @@
+PKG_CPPFLAGS = -I./rlang/
+PKG_CFLAGS = $(C_VISIBILITY)
+
+lib-files = \
+        rlang/rlang.h \
+        rlang/arg.c \
+        rlang/attrib.c \
+        rlang/call.c \
+        rlang/cnd.c \
+        rlang/c-utils.c \
+        rlang/debug.c \
+        rlang/dict.c \
+        rlang/df.c \
+        rlang/dots-info.c \
+        rlang/dyn-array.c \
+        rlang/dyn-list-of.c \
+        rlang/env.c \
+        rlang/env-binding.c \
+        rlang/eval.c \
+        rlang/export.c \
+        rlang/fn.c \
+        rlang/formula.c \
+        rlang/globals.c \
+        rlang/node.c \
+        rlang/parse.c \
+        rlang/quo.c \
+        rlang/rlang.c \
+        rlang/obj.c \
+        rlang/stack.c \
+        rlang/sym.c \
+        rlang/vec.c \
+        rlang/vec-chr.c \
+        rlang/vec-lgl.c \
+        rlang/vendor.c \
+        rlang/walk.c
+
+lib-cpp-files = \
+        rlang/cpp/rlang.cpp \
+        rlang/cpp/vec.cpp
+
+internal-files = \
+        internal/arg.c \
+        internal/ast-rotate.c \
+        internal/attr.c \
+        internal/call.c \
+        internal/cnd.c \
+        internal/cnd-handlers.c \
+        internal/dots.c \
+        internal/dots-ellipsis.c \
+        internal/encoding.c \
+        internal/env.c \
+        internal/env-binding.c \
+        internal/eval.c \
+        internal/eval-tidy.c \
+        internal/exported.c \
+        internal/file.c \
+        internal/fn.c \
+        internal/globals.c \
+        internal/hash.c \
+        internal/internal.c \
+        internal/names.c \
+        internal/nse-defuse.c \
+        internal/nse-inject.c \
+        internal/parse.c \
+        internal/quo.c \
+        internal/replace-na.c \
+        internal/squash.c \
+        internal/standalone-types-check.c \
+        internal/sym-unescape.c \
+        internal/tests.c \
+        internal/utils.c \
+        internal/vec.c \
+        internal/vec-raw.c \
+        internal/weakref.c
+
+
+all: $(SHLIB)
+
+$(SHLIB): rlang.o internal.o
+
+rlang.c: $(lib-files)
+	touch rlang.c
+internal.c: $(internal-files)
+	touch internal.c
+export.c: $(export-files)
+	touch export.c
+
+.PHONY: all

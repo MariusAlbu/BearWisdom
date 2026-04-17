@@ -205,7 +205,7 @@ go 1.21
 
 #[test]
 fn test_is_external_go_import_with_module_path() {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
     let mut go_mod = ManifestData::default();
     go_mod.module_path = Some("code.gitea.io/gitea".to_string());
@@ -239,7 +239,7 @@ fn test_is_external_go_import_no_module_path_fallback() {
 
 #[test]
 fn test_is_external_go_import_prefix_boundary() {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
     let mut go_mod = ManifestData::default();
     go_mod.module_path = Some("github.com/myorg/myrepo".to_string());
@@ -779,7 +779,7 @@ fn test_falls_back_for_unknown() {
 
 #[test]
 fn test_infer_external_namespace_exported_symbol() {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
     let mut go_mod = ManifestData::default();
     go_mod.module_path = Some("code.gitea.io/gitea".to_string());
@@ -817,7 +817,7 @@ fn test_infer_external_namespace_exported_symbol() {
 #[test]
 fn test_infer_external_namespace_unexported_returns_none() {
     // Unexported names can't come from external packages.
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
     let mut go_mod = ManifestData::default();
     go_mod.module_path = Some("example.com/app".to_string());
@@ -858,7 +858,7 @@ fn test_infer_external_namespace_unexported_returns_none() {
 fn test_infer_external_namespace_internal_import_not_returned() {
     // An import that is internal (starts with the project module path) should not be
     // returned as external namespace.
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
     let mut go_mod = ManifestData::default();
     go_mod.module_path = Some("code.gitea.io/gitea".to_string());
@@ -925,7 +925,7 @@ fn test_infer_no_imports_returns_none() {
 
 #[test]
 fn test_infer_external_namespace_import_ref_skipped() {
-    use crate::indexer::manifest::{ManifestData, ManifestKind};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
     let mut ctx = ProjectContext::default();
     let mut go_mod = ManifestData::default();
     go_mod.module_path = Some("example.com/app".to_string());
