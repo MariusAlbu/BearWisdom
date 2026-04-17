@@ -33,7 +33,7 @@ pub(super) fn resolve_via_chain(
 
             // Is it a known class/type? (static access: `ClassName::method()`)
             // PHP traits use "class" kind in the index.
-            let is_type = lookup.by_name(name).iter().any(|s| {
+            let is_type = lookup.types_by_name(name).iter().any(|s| {
                 matches!(
                     s.kind.as_str(),
                     "class" | "interface" | "enum" | "type_alias"
@@ -150,12 +150,8 @@ pub(super) fn resolve_via_chain(
         }
     }
 
-    let type_prefix = format!("{effective_type}.");
-    for sym in lookup.by_name(&last.name) {
-        if (sym.qualified_name == effective_type
-            || sym.qualified_name.starts_with(&type_prefix))
-            && kind_compatible(edge_kind, &sym.kind)
-        {
+    for sym in lookup.members_of(&effective_type) {
+        if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 0.90,

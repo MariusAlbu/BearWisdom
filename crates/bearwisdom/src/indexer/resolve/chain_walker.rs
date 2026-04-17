@@ -113,7 +113,11 @@ pub fn resolve_via_chain(
             let name = &segments[0].name;
 
             // Static type access: `ClassName.method()` or `EnumType.Variant`.
-            let is_type = lookup.by_name(name).iter().any(|s| {
+            // Use types_by_name (pre-filtered to type-kind symbols) instead of
+            // by_name — with externals indexed, common names like "Error" or
+            // "Context" collect tens of thousands of non-type candidates that
+            // .any() would scan in the worst case.
+            let is_type = lookup.types_by_name(name).iter().any(|s| {
                 config
                     .static_type_kinds
                     .iter()
@@ -210,36 +214,39 @@ pub fn resolve_via_chain(
             }
         }
 
-        // by_name fallback: find the segment in symbols scoped to current_type.
+        // Members fallback: find the segment among direct children of current_type.
+        // Using members_of avoids the O(total-symbols-named-seg.name) fan-out that
+        // by_name produces once external ecosystems are indexed.
         let mut found = false;
-        for sym in lookup.by_name(&seg.name) {
-            if sym.qualified_name.starts_with(&current_type) {
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    let resolved = resolve_and_enter_generics(
-                        ft,
-                        &sym.qualified_name,
-                        config,
-                        lookup,
-                        env.as_mut(),
-                        true,
-                    );
-                    current_type = resolved;
-                    found = true;
-                    break;
-                }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    let resolved = resolve_and_enter_generics(
-                        rt,
-                        &sym.qualified_name,
-                        config,
-                        lookup,
-                        env.as_mut(),
-                        false,
-                    );
-                    current_type = resolved;
-                    found = true;
-                    break;
-                }
+        for sym in lookup.members_of(&current_type) {
+            if sym.name != seg.name {
+                continue;
+            }
+            if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                let resolved = resolve_and_enter_generics(
+                    ft,
+                    &sym.qualified_name,
+                    config,
+                    lookup,
+                    env.as_mut(),
+                    true,
+                );
+                current_type = resolved;
+                found = true;
+                break;
+            }
+            if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                let resolved = resolve_and_enter_generics(
+                    rt,
+                    &sym.qualified_name,
+                    config,
+                    lookup,
+                    env.as_mut(),
+                    false,
+                );
+                current_type = resolved;
+                found = true;
+                break;
             }
         }
         if found {
@@ -344,8 +351,12 @@ pub fn resolve_via_chain(
 /// Returns `None` when no external symbol owns this short name, preserving
 /// the existing bail-out behaviour.
 pub fn external_type_qname(current_type: &str, lookup: &dyn SymbolLookup) -> Option<String> {
+    // types_by_name is the pre-filtered type-kind subset — the external-qname
+    // fallback only cares about type-like symbols anyway, and the smaller
+    // candidate pool keeps this fast even when externals collide on common
+    // type names ("Builder", "Context", "Request", ...).
     lookup
-        .by_name(current_type)
+        .types_by_name(current_type)
         .iter()
         .find(|s| s.file_path.starts_with("ext:"))
         .map(|s| s.qualified_name.clone())

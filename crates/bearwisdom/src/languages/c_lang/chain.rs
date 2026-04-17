@@ -61,7 +61,7 @@ pub(super) fn resolve_via_chain(
             let name = &segments[0].name;
 
             // Is it a known class/struct type? (static access: `ClassName::method()`)
-            let is_type = lookup.by_name(name).iter().any(|s| {
+            let is_type = lookup.types_by_name(name).iter().any(|s| {
                 matches!(
                     s.kind.as_str(),
                     "class" | "struct" | "interface" | "enum" | "type_alias"
@@ -126,22 +126,23 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
-        // by_name fallback scoped to the resolved type.
+        // Members fallback scoped to the resolved type.
         let mut found = false;
-        for sym in lookup.by_name(&seg.name) {
-            if sym.qualified_name.starts_with(&current_type) {
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    current_type = normalize_type(ft);
-                    current_type = dereference_typedef(&current_type, lookup);
-                    found = true;
-                    break;
-                }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    current_type = normalize_type(rt);
-                    current_type = dereference_typedef(&current_type, lookup);
-                    found = true;
-                    break;
-                }
+        for sym in lookup.members_of(&current_type) {
+            if sym.name != seg.name {
+                continue;
+            }
+            if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                current_type = normalize_type(ft);
+                current_type = dereference_typedef(&current_type, lookup);
+                found = true;
+                break;
+            }
+            if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                current_type = normalize_type(rt);
+                current_type = dereference_typedef(&current_type, lookup);
+                found = true;
+                break;
             }
         }
         if found {
@@ -177,16 +178,11 @@ pub(super) fn resolve_via_chain(
         }
     }
 
-    // by_name scoped to the resolved type — unique match wins at 1.0.
-    let type_prefix = format!("{current_type}.");
+    // Members scoped to the resolved type — unique match wins at 1.0.
     let matches: Vec<_> = lookup
-        .by_name(&last.name)
+        .members_of(&current_type)
         .iter()
-        .filter(|sym| {
-            (sym.qualified_name == current_type
-                || sym.qualified_name.starts_with(&type_prefix))
-                && kind_compatible(edge_kind, &sym.kind)
-        })
+        .filter(|sym| sym.name == last.name && kind_compatible(edge_kind, &sym.kind))
         .cloned()
         .collect();
 
@@ -255,7 +251,7 @@ fn normalize_type(name: &str) -> String {
 /// common case (project-defined pointer typedefs).
 fn dereference_typedef(type_name: &str, lookup: &dyn SymbolLookup) -> String {
     // Check if type_name is a type_alias symbol.
-    for sym in lookup.by_name(type_name) {
+    for sym in lookup.types_by_name(type_name) {
         if sym.kind == "type_alias" {
             // Look up the typedef's own field_type (populated from its TypeRef
             // by the type_info pass, e.g., TSocketChannelPtr → TSocketChannel).

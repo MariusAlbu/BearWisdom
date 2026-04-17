@@ -31,7 +31,7 @@ pub(super) fn resolve_via_chain(
             let name = &segments[0].name;
 
             // Is it a known class/type? (static access: `ClassName.method()`)
-            let is_type = lookup.by_name(name).iter().any(|s| {
+            let is_type = lookup.types_by_name(name).iter().any(|s| {
                 matches!(
                     s.kind.as_str(),
                     "class" | "interface" | "enum" | "type_alias"
@@ -128,9 +128,9 @@ pub(super) fn resolve_via_chain(
         }
     }
 
-    // Try by name, scoped to the resolved type.
-    for sym in lookup.by_name(&last.name) {
-        if sym.qualified_name.starts_with(&current_type) && kind_compatible(edge_kind, &sym.kind) {
+    // Members scoped to the resolved type.
+    for sym in lookup.members_of(&current_type) {
+        if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 0.90,

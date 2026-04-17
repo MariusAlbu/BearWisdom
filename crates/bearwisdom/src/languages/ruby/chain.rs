@@ -26,7 +26,7 @@ pub(super) fn resolve_via_chain(
 
             // Is it a known class/namespace? (constant access: `ClassName.method`)
             // Ruby modules are stored as "namespace".
-            let is_type = lookup.by_name(name).iter().any(|s| {
+            let is_type = lookup.types_by_name(name).iter().any(|s| {
                 matches!(s.kind.as_str(), "class" | "namespace" | "interface" | "type_alias")
             });
             if is_type {
@@ -62,20 +62,21 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
-        // Try by_name fallback.
+        // Members fallback scoped to the resolved type.
         let mut found = false;
-        for sym in lookup.by_name(&seg.name) {
-            if sym.qualified_name.starts_with(&current_type) {
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    current_type = ft.to_string();
-                    found = true;
-                    break;
-                }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    current_type = rt.to_string();
-                    found = true;
-                    break;
-                }
+        for sym in lookup.members_of(&current_type) {
+            if sym.name != seg.name {
+                continue;
+            }
+            if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                current_type = ft.to_string();
+                found = true;
+                break;
+            }
+            if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                current_type = rt.to_string();
+                found = true;
+                break;
             }
         }
         if found {
@@ -99,8 +100,8 @@ pub(super) fn resolve_via_chain(
         }
     }
 
-    for sym in lookup.by_name(&last.name) {
-        if sym.qualified_name.starts_with(&current_type) && kind_compatible(edge_kind, &sym.kind) {
+    for sym in lookup.members_of(&current_type) {
+        if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 0.90,

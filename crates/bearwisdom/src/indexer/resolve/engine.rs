@@ -20,6 +20,35 @@ use std::sync::Arc;
 /// Count the number of leading dotted-path segments shared between two qualified
 /// names (e.g. `"App.Services"` and `"App.Services.Foo"` → 2).  Used to pick
 /// the best parent-class candidate when multiple symbols share the same short name.
+/// Kinds a chain walker's `is-this-a-type?` probe cares about.
+/// Superset across all languages — individual language configs' own
+/// `static_type_kinds` still filter to the subset they consider valid as a
+/// static-access root.
+///
+/// Most entries come straight from `SymbolKind::as_str` (strum snake_case);
+/// the extras (`trait`, `protocol`, `object`, `mixin`, `extension`,
+/// `record`) are the strings language configs reference in
+/// `static_type_kinds`/`enclosing_type_kinds`, kept here so the pre-filter
+/// stays a superset even when extractors start emitting those strings
+/// directly (via `kind_str` overrides in future language plugins).
+fn is_type_like_kind(kind: &str) -> bool {
+    matches!(
+        kind,
+        "class"
+            | "struct"
+            | "interface"
+            | "enum"
+            | "type_alias"
+            | "namespace"
+            | "record"
+            | "trait"
+            | "protocol"
+            | "object"
+            | "mixin"
+            | "extension"
+    )
+}
+
 fn common_prefix_len(a: &str, b: &str) -> usize {
     a.split('.').zip(b.split('.')).take_while(|(x, y)| x == y).count()
 }
@@ -128,6 +157,24 @@ pub trait SymbolLookup {
 
     /// Find a symbol by exact qualified name.
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo>;
+
+    /// Find the direct children of a type/namespace by exact parent qualified name.
+    ///
+    /// For `parent_qname = "context.Context"`, returns all symbols whose
+    /// qualified_name is `context.Context.X` (one dot deeper) — methods,
+    /// fields, nested types. Chain walkers use this to locate the next
+    /// segment of a member chain without scanning every candidate that
+    /// shares a simple name across the project + externals.
+    fn members_of(&self, parent_qname: &str) -> &[SymbolInfo];
+
+    /// Find all type-kind symbols (class, struct, interface, enum, ...) with
+    /// the given simple name.
+    ///
+    /// Exists so `is-this-name-a-type?` checks in chain walkers don't iterate
+    /// every non-type symbol that happens to share the name (common words
+    /// like `String`, `Error`, `Context` collect thousands of non-type
+    /// candidates across an indexed stdlib/externals set).
+    fn types_by_name(&self, name: &str) -> &[SymbolInfo];
 
     /// Find all symbols whose qualified name starts with the given prefix + ".".
     fn in_namespace(&self, namespace: &str) -> Vec<&SymbolInfo>;
@@ -289,6 +336,19 @@ pub struct SymbolIndex {
     /// BTreeMap gives sorted iteration for free — used by `in_namespace` via `.range()`.
     by_qname: BTreeMap<String, SymbolInfo>,
     by_file: FxHashMap<String, Vec<SymbolInfo>>,
+    /// Direct-children index keyed on the parent qualified name.
+    /// For a symbol `a.b.c.Foo`, the entry sits under `"a.b.c"`. Top-level
+    /// symbols (no dot in qname) are keyed on the empty string.
+    ///
+    /// Exists so chain walkers can jump to members of a specific type in
+    /// O(1) hash + small-vec scan, instead of iterating every symbol that
+    /// happens to share a simple name across the whole index (tens of
+    /// thousands of candidates once external ecosystems are indexed).
+    members_by_parent: FxHashMap<String, Vec<SymbolInfo>>,
+    /// Type-kind subset of `by_name` — only entries whose `kind` is in
+    /// `TYPE_LIKE_KINDS`. Lets chain walkers' `is-this-a-type?` check hit a
+    /// much smaller pool than `by_name` once externals are indexed.
+    types_by_name: FxHashMap<String, Vec<SymbolInfo>>,
     /// Unified per-symbol type metadata (replaces 4 separate maps).
     type_info: FxHashMap<String, TypeInfo>,
     /// Re-export map: file_path → Vec<(original_name, source_module)>.
@@ -368,6 +428,9 @@ impl SymbolIndex {
         let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_qname: BTreeMap<String, SymbolInfo> = BTreeMap::new();
         let mut by_file: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
+        let mut members_by_parent: FxHashMap<String, Vec<SymbolInfo>> =
+            FxHashMap::default();
+        let mut types_by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
 
         for pf in parsed {
             // One Arc<str> per file — all symbols in this file share the same
@@ -404,6 +467,23 @@ impl SymbolIndex {
                 by_file
                     .entry(pf.path.clone())
                     .or_default()
+                    .push(info.clone());
+
+                // Direct-children index: everything before the last '.' is the
+                // parent qname; top-level symbols go under "".
+                let parent_key: &str = match sym.qualified_name.rfind('.') {
+                    Some(idx) => &sym.qualified_name[..idx],
+                    None => "",
+                };
+                if is_type_like_kind(&info.kind) {
+                    types_by_name
+                        .entry(sym.name.clone())
+                        .or_default()
+                        .push(info.clone());
+                }
+                members_by_parent
+                    .entry(parent_key.to_string())
+                    .or_default()
                     .push(info);
             }
         }
@@ -415,19 +495,24 @@ impl SymbolIndex {
         let mut generic_params: FxHashMap<String, Vec<String>> = FxHashMap::default();
 
         for pf in parsed {
-            for (sym_idx, sym) in pf.symbols.iter().enumerate() {
-                // Collect TypeRef refs from this symbol (no module = not an import).
-                let type_refs: Vec<&str> = pf
-                    .refs
-                    .iter()
-                    .filter(|r| {
-                        r.source_symbol_index == sym_idx
-                            && r.kind == EdgeKind::TypeRef
-                            && r.module.is_none()
-                    })
-                    .map(|r| r.target_name.as_str())
-                    .collect();
+            // Group TypeRef (non-import) refs by source_symbol_index in one
+            // pass over pf.refs — avoids the O(symbols × refs) cost of
+            // re-scanning the full ref list for each symbol. At 869k total
+            // symbols with 2k-3k refs per external Go stdlib file this
+            // inner scan was the dominant term in build_with_context.
+            let mut type_refs_by_sym: Vec<Vec<&str>> = vec![Vec::new(); pf.symbols.len()];
+            for r in &pf.refs {
+                if r.kind != EdgeKind::TypeRef || r.module.is_some() {
+                    continue;
+                }
+                let idx = r.source_symbol_index;
+                if idx < type_refs_by_sym.len() {
+                    type_refs_by_sym[idx].push(r.target_name.as_str());
+                }
+            }
 
+            for (sym_idx, sym) in pf.symbols.iter().enumerate() {
+                let type_refs = &type_refs_by_sym[sym_idx];
                 if type_refs.is_empty() {
                     continue;
                 }
@@ -594,7 +679,24 @@ impl SymbolIndex {
         // type annotation, try to infer the type from chain-bearing TypeRef refs.
         // These are emitted by the extractor for `const x = this.repo.findOne()`.
         // We resolve the chain to get the method's return type.
+        //
+        // Per-file, we group the first chain-bearing TypeRef by symbol index in
+        // one O(refs) pass so the Variable loop avoids the O(variables × refs)
+        // filter that dominated build_with_context on the external Go stdlib
+        // (hundreds of top-level `var _ = …` decls × thousands of refs each).
         for pf in parsed {
+            let mut first_chain_typeref: Vec<Option<&crate::types::ExtractedRef>> =
+                vec![None; pf.symbols.len()];
+            for r in &pf.refs {
+                if r.kind != EdgeKind::TypeRef || r.chain.is_none() {
+                    continue;
+                }
+                let idx = r.source_symbol_index;
+                if idx < first_chain_typeref.len() && first_chain_typeref[idx].is_none() {
+                    first_chain_typeref[idx] = Some(r);
+                }
+            }
+
             for (sym_idx, sym) in pf.symbols.iter().enumerate() {
                 if sym.kind != SymbolKind::Variable {
                     continue;
@@ -607,25 +709,17 @@ impl SymbolIndex {
                 {
                     continue;
                 }
-                // Find a chain-bearing TypeRef from this variable.
-                for r in &pf.refs {
-                    if r.source_symbol_index != sym_idx
-                        || r.kind != EdgeKind::TypeRef
-                        || r.chain.is_none()
-                    {
-                        continue;
-                    }
-                    let chain = r.chain.as_ref().unwrap();
-                    // Walk the chain to infer the type.
-                    if let Some(inferred) =
-                        infer_type_from_chain(chain, &sym.scope_path, &type_info, &by_name, &by_qname)
-                    {
-                        type_info
-                            .entry(sym.qualified_name.clone())
-                            .or_default()
-                            .field_type = Some(inferred);
-                        break;
-                    }
+                let Some(r) = first_chain_typeref[sym_idx] else {
+                    continue;
+                };
+                let chain = r.chain.as_ref().unwrap();
+                if let Some(inferred) =
+                    infer_type_from_chain(chain, &sym.scope_path, &type_info, &by_name, &by_qname)
+                {
+                    type_info
+                        .entry(sym.qualified_name.clone())
+                        .or_default()
+                        .field_type = Some(inferred);
                 }
             }
         }
@@ -859,6 +953,8 @@ impl SymbolIndex {
             by_name,
             by_qname,
             by_file,
+            members_by_parent,
+            types_by_name,
             type_info,
             reexport_map,
             module_to_file,
@@ -938,11 +1034,25 @@ impl SymbolIndex {
                 package_id,
             };
 
-            self.by_name.entry(name).or_default().push(info.clone());
-            self.by_qname.insert(qname, info.clone());
+            self.by_name.entry(name.clone()).or_default().push(info.clone());
+            self.by_qname.insert(qname.clone(), info.clone());
             if let Some(pkg_id) = info.package_id {
                 self.by_package.entry(pkg_id).or_default().push(info.clone());
             }
+            let parent_key: String = match qname.rfind('.') {
+                Some(idx) => qname[..idx].to_string(),
+                None => String::new(),
+            };
+            if is_type_like_kind(&info.kind) {
+                self.types_by_name
+                    .entry(name)
+                    .or_default()
+                    .push(info.clone());
+            }
+            self.members_by_parent
+                .entry(parent_key)
+                .or_default()
+                .push(info.clone());
             // by_file key stays String (one allocation per file, not per symbol)
             self.by_file.entry(file_path).or_default().push(info);
         }
@@ -1228,6 +1338,20 @@ impl SymbolLookup for SymbolIndex {
 
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo> {
         self.by_qname.get(qname)
+    }
+
+    fn members_of(&self, parent_qname: &str) -> &[SymbolInfo] {
+        self.members_by_parent
+            .get(parent_qname)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
+    }
+
+    fn types_by_name(&self, name: &str) -> &[SymbolInfo] {
+        self.types_by_name
+            .get(name)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// O(log N) prefix search via BTreeMap::range — no extra Vec needed.
@@ -2066,20 +2190,32 @@ pub fn infer_external_from_chain(
         None => {
             if segments[0].kind == SegmentKind::Identifier {
                 let name = &segments[0].name;
-                let symbols = lookup.by_name(name);
-                let has_type_or_class = symbols.iter().filter(|s| is_internal(s)).any(|s| {
+                // Type-like kinds (class/struct/interface/enum/type_alias) are
+                // pre-indexed in types_by_name — avoids scanning the full
+                // by_name candidate pool (externals can collide by the tens of
+                // thousands on common names like "Context"/"Error"/"Request").
+                let has_type = lookup.types_by_name(name).iter().filter(|s| is_internal(s)).any(|s| {
                     matches!(
                         s.kind.as_str(),
-                        "class" | "struct" | "interface" | "enum"
-                            | "type_alias" | "function" | "method"
+                        "class" | "struct" | "interface" | "enum" | "type_alias"
                     )
                 });
-                if has_type_or_class {
-                    // It's a known type/function — can't determine as external.
+                if has_type {
                     return None;
                 }
-                // Either not in index at all, or only a variable/namespace
-                // with no resolvable type → treat as external.
+                // Function/method presence still needs the full by_name pool
+                // since those aren't type-kinds — but here we only care whether
+                // any exists, and `.any()` short-circuits. `has_in_namespace`
+                // would be even cheaper but a bare-name function doesn't live
+                // under a namespace prefix. Fall through to by_name but gate
+                // behind the cheaper type check above so the fast path wins
+                // on hot type names.
+                let has_func = lookup.by_name(name).iter().filter(|s| is_internal(s)).any(|s| {
+                    matches!(s.kind.as_str(), "function" | "method")
+                });
+                if has_func {
+                    return None;
+                }
                 return Some(name.clone());
             }
             return None;
@@ -2088,13 +2224,14 @@ pub fn infer_external_from_chain(
 
     for seg in &segments[1..] {
         // If the current type isn't in the index → it's external.
-        // Filter by_name to internal-only so a Python external with the
-        // same simple name doesn't convince us the type is project-local.
+        // Use types_by_name (pre-filtered type-kind pool) so common external
+        // type names like "Context"/"Request"/"Error" don't drag in tens of
+        // thousands of non-type candidates on every ref.
         let type_in_index = lookup
             .by_qualified_name(&current_type)
             .filter(|s| is_internal(s))
             .is_some()
-            || lookup.by_name(&current_type).iter().filter(|s| is_internal(s)).any(|s| {
+            || lookup.types_by_name(&current_type).iter().filter(|s| is_internal(s)).any(|s| {
                 matches!(
                     s.kind.as_str(),
                     "class" | "struct" | "interface" | "enum" | "type_alias"

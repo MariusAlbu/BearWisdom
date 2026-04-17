@@ -30,7 +30,7 @@ pub(super) fn resolve_via_chain(
         SegmentKind::Identifier => {
             let name = &segments[0].name;
 
-            let is_type = lookup.by_name(name).iter().any(|s| {
+            let is_type = lookup.types_by_name(name).iter().any(|s| {
                 matches!(
                     s.kind.as_str(),
                     "class" | "struct" | "interface" | "enum" | "type_alias"
@@ -69,18 +69,19 @@ pub(super) fn resolve_via_chain(
         }
 
         let mut found = false;
-        for sym in lookup.by_name(&seg.name) {
-            if sym.qualified_name.starts_with(&current_type) {
-                if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
-                    current_type = ft.to_string();
-                    found = true;
-                    break;
-                }
-                if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    current_type = rt.to_string();
-                    found = true;
-                    break;
-                }
+        for sym in lookup.members_of(&current_type) {
+            if sym.name != seg.name {
+                continue;
+            }
+            if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                current_type = ft.to_string();
+                found = true;
+                break;
+            }
+            if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                current_type = rt.to_string();
+                found = true;
+                break;
             }
         }
         if found {
@@ -111,8 +112,8 @@ pub(super) fn resolve_via_chain(
         }
     }
 
-    for sym in lookup.by_name(&last.name) {
-        if sym.qualified_name.starts_with(&current_type) && kind_compatible(edge_kind, &sym.kind) {
+    for sym in lookup.members_of(&current_type) {
+        if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 0.95,

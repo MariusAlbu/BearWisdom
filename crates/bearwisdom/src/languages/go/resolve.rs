@@ -182,11 +182,13 @@ impl LanguageResolver for GoResolver {
                 }
             }
 
-            // Also check: if file_namespace is available, look at all symbols
-            // by simple name and prefer ones in the same package.
-            let candidates = lookup.by_name(target);
-            for sym in candidates {
-                if builtins::sym_package(sym) == pkg.as_str()
+            // Also check: direct children of the current package — top-level
+            // functions / types / vars that can be called bare from the same
+            // package. Uses members_of(pkg) so we scan the package's O(tens)
+            // of direct children, not the O(all-symbols-named-target) pool
+            // that by_name returns once externals are indexed.
+            for sym in lookup.members_of(pkg) {
+                if sym.name == *target
                     && self.is_visible(file_ctx, ref_ctx, sym)
                     && builtins::kind_compatible(edge_kind, &sym.kind)
                 {
