@@ -84,11 +84,7 @@ impl LanguagePlugin for PythonPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &["int", "float", "str", "bool", "bytes", "None", "list", "dict", "set", "tuple", "type", "object", "complex"]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

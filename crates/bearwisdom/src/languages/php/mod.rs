@@ -98,11 +98,7 @@ impl LanguagePlugin for PhpPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &["int", "float", "string", "bool", "void", "null", "array", "object", "mixed", "never", "callable", "iterable", "self", "static", "parent", "true", "false"]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

@@ -60,7 +60,7 @@ impl LanguagePlugin for FortranPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "integer", "real", "double", "complex", "logical", "character",
             "INTEGER", "REAL", "DOUBLE", "COMPLEX", "LOGICAL", "CHARACTER",

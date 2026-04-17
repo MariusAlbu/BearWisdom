@@ -60,7 +60,7 @@ impl LanguagePlugin for HaskellPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "Int", "Integer", "Float", "Double", "Bool", "Char", "String",
             "IO", "Maybe", "Either", "List", "Ordering", "Word",

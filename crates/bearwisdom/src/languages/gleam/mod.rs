@@ -70,7 +70,7 @@ impl LanguagePlugin for GleamPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "Int", "Float", "Bool", "String", "BitArray",
             "List", "Result", "Option", "Nil",

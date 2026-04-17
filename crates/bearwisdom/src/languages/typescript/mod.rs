@@ -115,11 +115,7 @@ impl LanguagePlugin for TypeScriptPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &["string", "number", "boolean", "void", "any", "unknown", "never", "undefined", "null", "object", "symbol", "bigint"]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

@@ -77,7 +77,7 @@ impl LanguagePlugin for ZigPlugin {
         &["call_expression", "builtin_function"]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         // Zig primitive types
         &[
             "bool", "void", "noreturn", "type", "anyerror", "anyframe", "anytype",

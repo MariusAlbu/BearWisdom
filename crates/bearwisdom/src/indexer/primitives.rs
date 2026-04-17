@@ -9,7 +9,7 @@
 /// Return the slice of primitive/built-in type names for a language.
 /// Dispatches through the plugin registry — no hardcoded match arms.
 pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
-    crate::languages::default_registry().get(lang).primitives()
+    crate::languages::default_registry().get(lang).keywords()
 }
 
 /// Build a `HashSet<&'static str>` of ALL names that should be classified as
@@ -29,7 +29,7 @@ pub fn primitives_for_language(lang: &str) -> &'static [&'static str] {
 pub fn primitives_set_for_language(lang: &str) -> std::collections::HashSet<&'static str> {
     let plugin = crate::languages::default_registry().get(lang);
     let mut set: std::collections::HashSet<&'static str> =
-        plugin.primitives().iter().copied().collect();
+        plugin.keywords().iter().copied().collect();
     // Merge in query-extracted builtins from tree-sitter .scm files.
     for name in super::query_builtins::query_builtins_for_language(lang) {
         set.insert(name);

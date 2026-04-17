@@ -40,4 +40,7 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "Test", "BeforeEach", "AfterEach", "BeforeAll", "AfterAll",
     // Generic type parameters
     "T", "U", "K", "V", "E", "R", "S",
+    // From former builtin_type_names:
+    "Int", "Long", "Double", "Float", "String", "Boolean", "Unit",
+    "Any", "Nothing", "Char", "Byte", "Short",
 ];

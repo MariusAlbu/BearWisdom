@@ -89,16 +89,15 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Used by `bw coverage` to measure extraction completeness.
     fn ref_node_kinds(&self) -> &[&str] { &[] }
 
-    /// Type names that are language builtins and should NOT produce TypeRef.
-    /// Used by `bw coverage` to exclude builtin type_identifiers from the
-    /// denominator — they're correctly skipped by extractors.
-    fn builtin_type_names(&self) -> &[&str] { &[] }
-
-    /// Primitive and built-in type names that can never appear in a project's
-    /// symbol index. Used by the resolution engine to classify unresolvable
-    /// references as "external" rather than "unresolved". Includes primitive
-    /// keywords, wrapper types, and generic type parameter names.
-    fn primitives(&self) -> &'static [&'static str] { &[] }
+    /// Language-intrinsic names: keywords, operators, compiler intrinsics,
+    /// primitive types without indexable source, syntax literals, and
+    /// generic type parameter conventions. Used by the resolution engine to
+    /// classify unresolvable references as "external" rather than
+    /// "unresolved", and by `bw coverage` to exclude these identifiers from
+    /// the TypeRef denominator. Never includes stdlib function names,
+    /// framework DSL names, or package-API names — those come from indexed
+    /// ecosystems.
+    fn keywords(&self) -> &'static [&'static str] { &[] }
 
     /// (child_kind, parent_kind) pairs where a ref-producing CST node should NOT
     /// be counted in the coverage denominator when it appears as a direct child of

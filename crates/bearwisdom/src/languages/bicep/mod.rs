@@ -73,7 +73,7 @@ impl LanguagePlugin for BicepPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             // Bicep primitive types
             "string",

@@ -50,4 +50,11 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     // Common protocol names
     "Hashable", "Equatable", "Comparable", "Identifiable", "CustomStringConvertible",
     "Sendable", "Actor",
+    // From former builtin_type_names:
+    "Substring", "StaticString", "AnyClass", "Result",
+    "CountableRange", "AnySequence", "AnyCollection",
+    "AnyBidirectionalCollection", "AnyRandomAccessCollection",
+    "KeyPath", "WritableKeyPath", "ReferenceWritableKeyPath",
+    "UIView", "UIViewController", "NavigationStack",
+    "some", "self",
 ];

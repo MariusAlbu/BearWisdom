@@ -13,4 +13,6 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "def",
     // Generic type parameters
     "T", "U", "K", "V", "E", "R", "S",
+    // From former builtin_type_names:
+    "String", "Object", "List", "Map", "GString", "BigDecimal", "BigInteger",
 ];

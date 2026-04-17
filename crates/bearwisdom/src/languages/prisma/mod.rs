@@ -67,7 +67,7 @@ impl LanguagePlugin for PrismaPlugin {
         &["column_declaration", "enumeral"]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         // Prisma scalar types — no TypeRef should be emitted for these.
         &[
             "String", "Int", "Float", "Boolean", "DateTime",

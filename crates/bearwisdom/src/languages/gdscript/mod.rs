@@ -65,7 +65,7 @@ impl LanguagePlugin for GDScriptPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "int", "float", "bool", "String", "StringName", "NodePath",
             "Vector2", "Vector2i", "Vector3", "Vector3i", "Vector4", "Vector4i",

@@ -54,7 +54,7 @@ impl LanguagePlugin for LuaPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "string", "number", "boolean", "nil", "table", "function",
             "thread", "userdata", "integer", "float",

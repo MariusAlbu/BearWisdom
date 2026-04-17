@@ -89,11 +89,7 @@ impl LanguagePlugin for KotlinPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &["Int", "Long", "Double", "Float", "String", "Boolean", "Unit", "Any", "Nothing", "Char", "Byte", "Short"]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

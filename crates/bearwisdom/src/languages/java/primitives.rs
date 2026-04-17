@@ -12,4 +12,6 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "int", "long", "float", "double", "boolean", "char", "byte", "short", "void",
     // Generic type parameters
     "T", "U", "K", "V", "E", "R", "S",
+    // From former builtin_type_names:
+    "var",
 ];

@@ -105,11 +105,7 @@ impl LanguagePlugin for CSharpPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &["int", "string", "bool", "void", "float", "double", "decimal", "byte", "sbyte", "short", "ushort", "uint", "long", "ulong", "char", "object", "dynamic", "var", "nint", "nuint"]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

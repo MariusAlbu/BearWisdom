@@ -72,16 +72,7 @@ impl LanguagePlugin for VbNetPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "Boolean", "Byte", "SByte", "Char", "Decimal",
-            "Double", "Single", "Integer", "UInteger",
-            "Long", "ULong", "Short", "UShort",
-            "String", "Object", "Date", "Void",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

@@ -61,15 +61,7 @@ impl LanguagePlugin for PowerShellPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "string", "int", "long", "double", "float", "bool", "char", "byte",
-            "object", "void", "hashtable", "array", "psobject", "pscustomobject",
-            "switch", "datetime", "timespan", "guid", "uri", "regex",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

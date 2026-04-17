@@ -56,15 +56,7 @@ impl LanguagePlugin for MatlabPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "double", "single", "int8", "int16", "int32", "int64",
-            "uint8", "uint16", "uint32", "uint64",
-            "char", "string", "logical", "cell", "struct", "table",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

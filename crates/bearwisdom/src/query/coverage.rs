@@ -106,7 +106,7 @@ pub fn analyze_coverage(project_root: &Path) -> Vec<LanguageCoverage> {
 
         let sym_kinds: FxHashSet<&str> = plugin.symbol_node_kinds().iter().copied().collect();
         let ref_kinds: FxHashSet<&str> = plugin.ref_node_kinds().iter().copied().collect();
-        let builtins: FxHashSet<&str> = plugin.builtin_type_names().iter().copied().collect();
+        let builtins: FxHashSet<&str> = plugin.keywords().iter().copied().collect();
         // (child_kind, parent_kind) pairs: skip counting the child as a ref site
         // when its direct parent has the given kind (e.g., Nix inner apply nodes
         // inside curried application chains).

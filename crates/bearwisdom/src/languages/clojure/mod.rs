@@ -56,7 +56,7 @@ impl LanguagePlugin for ClojurePlugin {
         &["sym_name"]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "String", "Integer", "Long", "Double", "Float", "Boolean",
             "Character", "Byte", "Short", "Number",

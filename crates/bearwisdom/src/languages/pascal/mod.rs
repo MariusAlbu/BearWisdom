@@ -66,48 +66,7 @@ impl LanguagePlugin for PascalPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "Integer",
-            "Cardinal",
-            "Int64",
-            "UInt64",
-            "LongInt",
-            "ShortInt",
-            "SmallInt",
-            "Byte",
-            "Word",
-            "LongWord",
-            "Single",
-            "Double",
-            "Extended",
-            "Real",
-            "Comp",
-            "Currency",
-            "Boolean",
-            "ByteBool",
-            "WordBool",
-            "LongBool",
-            "Char",
-            "WideChar",
-            "AnsiChar",
-            "String",
-            "AnsiString",
-            "WideString",
-            "UnicodeString",
-            "ShortString",
-            "PChar",
-            "Pointer",
-            "TObject",
-            "TClass",
-            "IInterface",
-            "IUnknown",
-            "Variant",
-            "OleVariant",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

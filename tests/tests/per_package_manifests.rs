@@ -9,7 +9,7 @@ use std::collections::HashSet;
 use std::fs;
 use std::path::Path;
 
-use bearwisdom::indexer::manifest::{
+use bearwisdom::ecosystem::manifest::{
     read_all_manifests, read_all_manifests_per_package, ManifestKind, PackageManifest,
 };
 use tempfile::TempDir;

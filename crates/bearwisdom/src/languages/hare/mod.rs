@@ -70,7 +70,7 @@ impl LanguagePlugin for HarePlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "bool", "void", "never",
             "int", "i8", "i16", "i32", "i64",

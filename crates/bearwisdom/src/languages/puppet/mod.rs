@@ -62,7 +62,7 @@ impl LanguagePlugin for PuppetPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             // Puppet core types
             "String",

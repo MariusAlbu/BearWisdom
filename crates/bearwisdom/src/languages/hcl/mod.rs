@@ -67,7 +67,7 @@ impl LanguagePlugin for HclPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[]
     }
 

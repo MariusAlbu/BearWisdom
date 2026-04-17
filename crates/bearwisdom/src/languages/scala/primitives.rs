@@ -41,4 +41,11 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "assertThrows", "assert",
     // Generic type parameters
     "T", "U", "K", "V", "E", "R", "S", "A", "B", "F",
+    // From former builtin_type_names:
+    "Int", "Long", "Double", "Float", "String", "Boolean", "Unit",
+    "Any", "AnyRef", "AnyVal", "Nothing", "Null", "Char", "Byte", "Short",
+    "Some", "None", "Left", "Right", "Nil",
+    "List", "Vector", "Set", "Seq", "Either",
+    "Try", "Success", "Failure", "Future", "Promise",
+    "Tuple", "BigInt", "BigDecimal",
 ];

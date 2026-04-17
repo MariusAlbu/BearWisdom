@@ -63,18 +63,7 @@ impl LanguagePlugin for FSharpPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "int", "int8", "int16", "int32", "int64",
-            "uint8", "uint16", "uint32", "uint64",
-            "float", "float32", "double", "decimal",
-            "bool", "char", "string", "unit", "obj", "byte",
-            "sbyte", "nativeint", "unativeint", "bigint",
-            "exn", "void",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

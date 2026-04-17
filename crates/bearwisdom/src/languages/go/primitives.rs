@@ -10,4 +10,6 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "error", "any", "complex64", "complex128", "uintptr",
     // Generic type parameters
     "T", "K", "V", "E",
+    // From former builtin_type_names:
+    "comparable",
 ];

@@ -55,7 +55,7 @@ impl LanguagePlugin for PerlPlugin {
         &["use_statement", "function_call"]
     }
 
-    fn builtin_type_names(&self) -> &[&str] { &[] }
+    fn keywords(&self) -> &'static [&'static str] { &[] }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::PerlResolver))

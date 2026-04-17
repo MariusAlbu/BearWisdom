@@ -51,4 +51,7 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "T", "E", "K", "V", "S", "R",
     // Synthetic
     "absent",
+    // From former builtin_type_names:
+    "Iterator", "MapEntry", "StackTrace", "StringBuffer", "StringSink",
+    "Isolate", "TypedData", "Uint64List", "Int64List", "Uint8ClampedList",
 ];

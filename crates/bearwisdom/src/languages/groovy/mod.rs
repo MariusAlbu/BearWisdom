@@ -59,15 +59,7 @@ impl LanguagePlugin for GroovyPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "void", "boolean", "byte", "char", "short", "int", "long",
-            "float", "double", "def", "String", "Object", "List", "Map",
-            "GString", "BigDecimal", "BigInteger",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

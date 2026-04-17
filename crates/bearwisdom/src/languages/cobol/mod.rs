@@ -65,7 +65,7 @@ impl LanguagePlugin for CobolPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[]
     }
 

@@ -60,7 +60,7 @@ impl LanguagePlugin for OcamlPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "int", "float", "bool", "char", "string", "unit",
             "bytes", "exn", "format",

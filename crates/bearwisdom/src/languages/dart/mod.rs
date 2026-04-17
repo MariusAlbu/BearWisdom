@@ -75,22 +75,7 @@ impl LanguagePlugin for DartPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "int", "double", "String", "bool", "void", "dynamic", "num",
-            "Object", "Null", "Never", "Function", "Type",
-            "Comparable", "Iterable", "Iterator", "MapEntry", "RegExp",
-            "StackTrace", "StringBuffer", "StringSink", "Uri", "Zone",
-            "Completer", "FutureOr", "Timer", "Isolate",
-            "TypedData", "ByteBuffer", "ByteData",
-            "Uint8List", "Uint16List", "Uint32List", "Uint64List",
-            "Int8List", "Int16List", "Int32List", "Int64List",
-            "Float32List", "Float64List",
-            "Endian", "Uint8ClampedList",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

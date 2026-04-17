@@ -60,7 +60,7 @@ impl LanguagePlugin for ErlangPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "atom", "integer", "float", "boolean", "binary", "bitstring",
             "list", "tuple", "map", "pid", "port", "reference", "fun",

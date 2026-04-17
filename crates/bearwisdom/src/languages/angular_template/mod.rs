@@ -70,7 +70,7 @@ impl LanguagePlugin for AngularTemplatePlugin {
         &["element", "self_closing_element", "attribute"]
     }
 
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         crate::languages::typescript::primitives::PRIMITIVES
     }
 

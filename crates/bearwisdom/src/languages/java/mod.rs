@@ -96,11 +96,7 @@ impl LanguagePlugin for JavaPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &["int", "long", "short", "byte", "float", "double", "boolean", "char", "void", "var"]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

@@ -62,7 +62,7 @@ impl LanguagePlugin for ProtoPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         // Proto primitive types — these should not produce TypeRef edges
         &[
             "double", "float", "int32", "int64", "uint32", "uint64",

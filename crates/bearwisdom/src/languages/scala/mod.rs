@@ -82,18 +82,7 @@ impl LanguagePlugin for ScalaPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "Int", "Long", "Double", "Float", "String", "Boolean", "Unit",
-            "Any", "AnyRef", "AnyVal", "Nothing", "Null", "Char", "Byte", "Short",
-            "Some", "None", "Left", "Right", "Nil",
-            "List", "Vector", "Map", "Set", "Seq", "Array", "Option", "Either",
-            "Try", "Success", "Failure", "Future", "Promise",
-            "Tuple", "BigInt", "BigDecimal",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

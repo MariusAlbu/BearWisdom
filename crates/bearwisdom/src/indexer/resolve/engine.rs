@@ -1577,11 +1577,11 @@ impl SymbolIndex {
         // Check the merged external set (primitives + externals + query builtins).
         if let Some(all_externals) = self.primitives_by_language.get(language) {
             if all_externals.contains(name) {
-                // Distinguish: plugin.primitives() are "primitive", everything
-                // else (externals + query builtins) is "builtin".
-                let plugin_primitives =
+                // Distinguish: plugin.keywords() are "primitive", everything
+                // else (query builtins) is "builtin".
+                let plugin_keywords =
                     crate::indexer::primitives::primitives_for_language(language);
-                if plugin_primitives.contains(&name) {
+                if plugin_keywords.contains(&name) {
                     return Some("primitive");
                 }
                 return Some("builtin");

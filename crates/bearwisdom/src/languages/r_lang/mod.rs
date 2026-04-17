@@ -56,15 +56,7 @@ impl LanguagePlugin for RLangPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[
-            "numeric", "integer", "double", "complex", "character",
-            "logical", "list", "vector", "matrix", "data.frame",
-            "factor", "NULL", "NA", "TRUE", "FALSE", "Inf", "NaN",
-        ]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         primitives::PRIMITIVES
     }
 

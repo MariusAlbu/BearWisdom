@@ -43,4 +43,7 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "Assert", "Halt", "Exit", "Break", "Continue",
     // keywords used as references
     "Result", "Self", "inherited", "nil", "True", "False",
+    // From former builtin_type_names:
+    "UInt64", "LongWord", "ByteBool", "WordBool", "LongBool",
+    "WideChar", "AnsiChar", "UnicodeString", "ShortString", "TClass",
 ];

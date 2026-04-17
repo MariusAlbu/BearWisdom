@@ -8,4 +8,6 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "int", "long", "float", "double", "bool", "char", "byte", "string", "object",
     "void", "decimal", "dynamic", "short", "ushort", "uint", "ulong", "sbyte",
     "nint", "nuint",
+    // From former builtin_type_names:
+    "var",
 ];

@@ -62,7 +62,7 @@ impl LanguagePlugin for AdaPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "Integer", "Natural", "Positive", "Long_Integer", "Short_Integer",
             "Float", "Long_Float", "Short_Float",

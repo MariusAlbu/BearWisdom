@@ -72,7 +72,7 @@ impl LanguagePlugin for OdinPlugin {
         ]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
+    fn keywords(&self) -> &'static [&'static str] {
         &[
             "bool", "b8", "b16", "b32", "b64",
             "int", "i8", "i16", "i32", "i64", "i128",

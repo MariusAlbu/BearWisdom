@@ -76,4 +76,8 @@ pub(crate) const PRIMITIVES: &[&str] = &[
     "-Contain", "-Exist", "-FileContentMatch",
     "-HaveCount", "-HaveParameter",
     "-Match", "-MatchExactly", "-Throw", "-Not", "-BeNull",
+    // From former builtin_type_names:
+    "string", "int", "long", "double", "float", "bool", "char", "byte",
+    "object", "void", "hashtable", "array", "psobject", "pscustomobject",
+    "switch", "datetime", "timespan", "guid", "uri", "regex",
 ];

@@ -134,11 +134,7 @@ impl LanguagePlugin for VuePlugin {
         &["element", "self_closing_tag", "directive_attribute"]
     }
 
-    fn builtin_type_names(&self) -> &[&str] {
-        &[]
-    }
-
-    fn primitives(&self) -> &'static [&'static str] {
+    fn keywords(&self) -> &'static [&'static str] {
         crate::languages::typescript::primitives::PRIMITIVES
     }
 
