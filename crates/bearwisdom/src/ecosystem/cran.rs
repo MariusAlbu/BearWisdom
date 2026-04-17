@@ -47,6 +47,14 @@ impl Ecosystem for CranEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_r_root(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+    fn resolve_import(
+        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
+    ) -> Vec<WalkedFile> { walk_r_narrowed(dep) }
+    fn resolve_symbol(
+        &self, dep: &ExternalDepRoot, _f: &str,
+    ) -> Vec<WalkedFile> { walk_r_narrowed(dep) }
 }
 
 impl ExternalSourceLocator for CranEcosystem {
@@ -180,6 +188,10 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         "R: using library search paths"
     );
 
+    let user_uses: Vec<String> = collect_r_user_uses(project_root)
+        .into_iter()
+        .collect();
+
     let mut result = Vec::with_capacity(declared.len());
     let mut seen = std::collections::HashSet::new();
     let mut not_found: Vec<&str> = Vec::new();
@@ -197,7 +209,7 @@ pub fn discover_r_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports: user_uses.clone(),
                 });
                 found = true;
                 break;
@@ -388,6 +400,87 @@ fn walk_r_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     }]
 }
 
+// R3 — `library(pkg)` / `requireNamespace("pkg")` / `pkg::func()` scanner.
+// Module-granular: walk_r_narrowed only emits a dep's NAMESPACE when the
+// project's R source actually references it. Skips deps that are declared
+// in DESCRIPTION but never used.
+
+fn collect_r_user_uses(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    scan_r_uses(project_root, &mut out, 0);
+    out
+}
+
+fn scan_r_uses(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".git" | "renv" | "packrat" | "tests") || name.starts_with('.') { continue }
+            }
+            scan_r_uses(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !(name.ends_with(".R") || name.ends_with(".r")
+                || name.ends_with(".Rmd") || name.ends_with(".rmd"))
+            { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            extract_r_uses(&content, out);
+        }
+    }
+}
+
+fn extract_r_uses(content: &str, out: &mut std::collections::HashSet<String>) {
+    for raw in content.lines() {
+        let line = raw.trim();
+        // `library(pkg)` / `library("pkg")`
+        if let Some(rest) = line.strip_prefix("library(") {
+            let arg = rest.split(')').next().unwrap_or("").trim()
+                .trim_matches(|c: char| c == '"' || c == '\'');
+            if !arg.is_empty() && arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_') {
+                out.insert(arg.to_string());
+            }
+        }
+        if let Some(rest) = line.strip_prefix("require(") {
+            let arg = rest.split(')').next().unwrap_or("").trim()
+                .trim_matches(|c: char| c == '"' || c == '\'');
+            if !arg.is_empty() && arg.chars().all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '_') {
+                out.insert(arg.to_string());
+            }
+        }
+        // `pkg::func(...)` and `pkg:::func(...)`
+        let bytes = line.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i].is_ascii_alphabetic() {
+                let start = i;
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'.' || bytes[i] == b'_') {
+                    i += 1;
+                }
+                if i + 1 < bytes.len() && bytes[i] == b':' && bytes[i + 1] == b':' {
+                    let pkg = &line[start..i];
+                    if !pkg.is_empty() {
+                        out.insert(pkg.to_string());
+                    }
+                }
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+fn walk_r_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() { return walk_r_root(dep); }
+    if !dep.requested_imports.iter().any(|m| m == &dep.module_path) {
+        return Vec::new();
+    }
+    walk_r_root(dep)
+}
+
 pub fn parse_renv_lock_packages(renv_lock: &Path) -> Option<Vec<String>> {
     let content = std::fs::read_to_string(renv_lock).ok()?;
     let val: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -481,5 +574,49 @@ mod tests {
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    #[test]
+    fn r_extract_uses_handles_library_and_double_colon() {
+        let mut out = std::collections::HashSet::new();
+        extract_r_uses(
+            "library(dplyr)\nrequire('tidyr')\nx <- ggplot2::ggplot(data)\ny <- stats:::internal(z)\n",
+            &mut out,
+        );
+        assert!(out.contains("dplyr"));
+        assert!(out.contains("tidyr"));
+        assert!(out.contains("ggplot2"));
+        assert!(out.contains("stats"));
+    }
+
+    #[test]
+    fn r_narrowed_walk_skips_unused_packages() {
+        let tmp = std::env::temp_dir().join("bw-test-cran-r3");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let pkg_dir = tmp.join("dplyr");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        std::fs::write(pkg_dir.join("NAMESPACE"), "export(filter)\n").unwrap();
+
+        let used = ExternalDepRoot {
+            module_path: "dplyr".to_string(),
+            version: "1.0".to_string(),
+            root: pkg_dir.clone(),
+            ecosystem: "r",
+            package_id: None,
+            requested_imports: vec!["dplyr".to_string()],
+        };
+        assert_eq!(walk_r_narrowed(&used).len(), 1);
+
+        let unused = ExternalDepRoot {
+            module_path: "dplyr".to_string(),
+            version: "1.0".to_string(),
+            root: pkg_dir.clone(),
+            ecosystem: "r",
+            package_id: None,
+            requested_imports: vec!["other".to_string()],
+        };
+        assert!(walk_r_narrowed(&unused).is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }

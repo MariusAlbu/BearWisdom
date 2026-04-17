@@ -39,6 +39,13 @@ impl Ecosystem for OpamEcosystem {
         discover_ocaml_externals(ctx.project_root)
     }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_ocaml_root(dep) }
+    fn supports_reachability(&self) -> bool { true }
+    fn resolve_import(
+        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
+    ) -> Vec<WalkedFile> { walk_ocaml_narrowed(dep) }
+    fn resolve_symbol(
+        &self, dep: &ExternalDepRoot, _f: &str,
+    ) -> Vec<WalkedFile> { walk_ocaml_narrowed(dep) }
 }
 
 impl ExternalSourceLocator for OpamEcosystem {
@@ -118,6 +125,10 @@ pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     if declared.is_empty() { return Vec::new() }
 
     let lib_dirs = ocaml_lib_dirs(project_root);
+    let user_modules: Vec<String> = collect_ocaml_user_modules(project_root)
+        .into_iter()
+        .collect();
+
     let mut roots = Vec::new();
     for dep in &declared {
         for lib in &lib_dirs {
@@ -129,7 +140,7 @@ pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
                     package_id: None,
-                    requested_imports: Vec::new(),
+                    requested_imports: user_modules.clone(),
                 });
                 break;
             }
@@ -137,6 +148,146 @@ pub fn discover_ocaml_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
     debug!("OCaml: {} external package roots", roots.len());
     roots
+}
+
+// R3 — `open Foo`, `Foo.Bar.func`, `module M = Foo.Bar` scanner. OCaml
+// module names are CamelCase; the corresponding source file is lowercase
+// (`foo.ml` for module `Foo`).
+
+fn collect_ocaml_user_modules(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    scan_ocaml_modules(project_root, &mut out, 0);
+    out
+}
+
+fn scan_ocaml_modules(dir: &Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".git" | "_build" | "_opam" | "test" | "tests" | "bench")
+                    || name.starts_with('.') { continue }
+            }
+            scan_ocaml_modules(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !(name.ends_with(".ml") || name.ends_with(".mli")) { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            extract_ocaml_modules(&content, out);
+        }
+    }
+}
+
+fn extract_ocaml_modules(content: &str, out: &mut std::collections::HashSet<String>) {
+    for raw in content.lines() {
+        let line = raw.trim();
+        if let Some(rest) = line.strip_prefix("open ") {
+            let head = rest
+                .split(|c: char| c == ' ' || c == '\t' || c == ';')
+                .next()
+                .unwrap_or("")
+                .trim();
+            if let Some(top) = head.split('.').next() {
+                if !top.is_empty() && top.chars().next().map_or(false, |c| c.is_ascii_uppercase()) {
+                    out.insert(top.to_string());
+                }
+            }
+            continue;
+        }
+        // Bare `Foo.Bar.x` style references — pull the leading capitalized run.
+        let bytes = line.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i].is_ascii_uppercase() {
+                let start = i;
+                while i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                    i += 1;
+                }
+                let tok = &line[start..i];
+                // Only keep if followed by `.` — that's the marker of "use as module".
+                if i < bytes.len() && bytes[i] == b'.' {
+                    out.insert(tok.to_string());
+                }
+            } else {
+                i += 1;
+            }
+        }
+    }
+}
+
+fn ocaml_module_to_path_tail(module: &str) -> Option<String> {
+    let cleaned = module.trim();
+    if cleaned.is_empty() { return None }
+    Some(format!("{}.ml", cleaned.to_ascii_lowercase()))
+}
+
+fn walk_ocaml_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() { return walk_ocaml_root(dep); }
+    let tails: std::collections::HashSet<String> = dep
+        .requested_imports
+        .iter()
+        .filter_map(|m| ocaml_module_to_path_tail(m))
+        .collect();
+    if tails.is_empty() { return walk_ocaml_root(dep); }
+
+    let mut out = Vec::new();
+    walk_ocaml_narrowed_dir(&dep.root, &dep.root, dep, &tails, &mut out, 0);
+    out
+}
+
+fn walk_ocaml_narrowed_dir(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    tails: &std::collections::HashSet<String>,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut subdirs: Vec<PathBuf> = Vec::new();
+    let mut dir_files: Vec<(PathBuf, String)> = Vec::new();
+    let mut any_match = false;
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "test" | "tests" | "bench") || name.starts_with('.') { continue }
+            }
+            subdirs.push(path);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !(name.ends_with(".ml") || name.ends_with(".mli")) { continue }
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            // Match using `.ml` as the canonical tail; .mli pairs the .ml so
+            // include both via basename comparison.
+            let basename = rel_sub.rsplit('/').next().unwrap_or(&rel_sub);
+            let stem = basename.trim_end_matches(".mli").trim_end_matches(".ml");
+            if tails.iter().any(|t| t.trim_end_matches(".ml") == stem) { any_match = true; }
+            dir_files.push((path, rel_sub));
+        }
+    }
+
+    if any_match {
+        for (path, rel_sub) in dir_files {
+            out.push(WalkedFile {
+                relative_path: format!("ext:ocaml:{}/{}", dep.module_path, rel_sub),
+                absolute_path: path,
+                language: "ocaml",
+            });
+        }
+    }
+    for sub in subdirs {
+        walk_ocaml_narrowed_dir(&sub, root, dep, tails, out, depth + 1);
+    }
 }
 
 fn ocaml_lib_dirs(project_root: &Path) -> Vec<PathBuf> {
@@ -227,5 +378,23 @@ depends: [
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    #[test]
+    fn ocaml_extracts_open_and_dotted() {
+        let mut out = std::collections::HashSet::new();
+        extract_ocaml_modules(
+            "open Core\nopen Lwt.Infix\nlet x = Cohttp_lwt_unix.Client.get url\n",
+            &mut out,
+        );
+        assert!(out.contains("Core"));
+        assert!(out.contains("Lwt"));
+        assert!(out.contains("Cohttp_lwt_unix"));
+    }
+
+    #[test]
+    fn ocaml_module_path_tail_is_lowercase_ml() {
+        assert_eq!(ocaml_module_to_path_tail("Core"), Some("core.ml".to_string()));
+        assert_eq!(ocaml_module_to_path_tail("Cohttp_lwt_unix"), Some("cohttp_lwt_unix.ml".to_string()));
     }
 }

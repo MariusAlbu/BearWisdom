@@ -44,6 +44,13 @@ impl Ecosystem for ZigPkgEcosystem {
         discover_zig_externals(ctx.project_root)
     }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk_zig_root(dep) }
+    fn supports_reachability(&self) -> bool { true }
+    fn resolve_import(
+        &self, dep: &ExternalDepRoot, _p: &str, _s: &[&str],
+    ) -> Vec<WalkedFile> { walk_zig_narrowed(dep) }
+    fn resolve_symbol(
+        &self, dep: &ExternalDepRoot, _f: &str,
+    ) -> Vec<WalkedFile> { walk_zig_narrowed(dep) }
 }
 
 impl ExternalSourceLocator for ZigPkgEcosystem {
@@ -146,6 +153,10 @@ pub fn discover_zig_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     let cache = project_root.join(".zig-cache").join("p");
     if !cache.is_dir() { return Vec::new() }
 
+    let user_imports: Vec<String> = collect_zig_user_imports(project_root)
+        .into_iter()
+        .collect();
+
     let Ok(entries) = std::fs::read_dir(&cache) else { return Vec::new() };
     let mut roots = Vec::new();
     for entry in entries.flatten() {
@@ -161,7 +172,7 @@ pub fn discover_zig_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                         root: path,
                         ecosystem: LEGACY_ECOSYSTEM_TAG,
                         package_id: None,
-                        requested_imports: Vec::new(),
+                        requested_imports: user_imports.clone(),
                     });
                 }
             }
@@ -169,6 +180,79 @@ pub fn discover_zig_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
     debug!("Zig: {} external package roots", roots.len());
     roots
+}
+
+// R3 — `@import("X")` scanner + module-granular narrowed walk. Dep's
+// module_path (set at discovery from the dep's own zon `.name = ...`)
+// is matched against `@import` arguments; if any user `@import` names
+// this dep, walk it fully — dep packages are typically small enough
+// that intra-package narrowing isn't worth it, and Zig's `@import`
+// targets a file-scoped namespace anyway.
+
+fn collect_zig_user_imports(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    scan_zig_imports(project_root, &mut out, 0);
+    out
+}
+
+fn scan_zig_imports(dir: &std::path::Path, out: &mut std::collections::HashSet<String>, depth: usize) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".git" | ".zig-cache" | "zig-cache" | "zig-out" | "build")
+                    || name.starts_with('.') { continue }
+            }
+            scan_zig_imports(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".zig") { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            extract_zig_imports(&content, out);
+        }
+    }
+}
+
+fn extract_zig_imports(content: &str, out: &mut std::collections::HashSet<String>) {
+    let bytes = content.as_bytes();
+    let needle = b"@import(";
+    let mut i = 0;
+    while i + needle.len() < bytes.len() {
+        if &bytes[i..i + needle.len()] == needle {
+            let mut j = i + needle.len();
+            // Skip whitespace.
+            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') { j += 1; }
+            if j < bytes.len() && bytes[j] == b'"' {
+                let start = j + 1;
+                let mut end = start;
+                while end < bytes.len() && bytes[end] != b'"' { end += 1; }
+                if end < bytes.len() && start < end {
+                    let arg = std::str::from_utf8(&bytes[start..end]).unwrap_or("").trim();
+                    // We only care about declared dep names (alphanumeric+`_-`),
+                    // not relative paths like `"foo/bar.zig"`.
+                    if !arg.is_empty() && !arg.contains('/') && !arg.contains('\\') {
+                        let trimmed = arg.trim_end_matches(".zig");
+                        if !trimmed.is_empty() { out.insert(trimmed.to_string()); }
+                    }
+                }
+                i = end + 1;
+                continue;
+            }
+        }
+        i += 1;
+    }
+}
+
+fn walk_zig_narrowed(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    if dep.requested_imports.is_empty() { return walk_zig_root(dep); }
+    // Module-granular: walk the dep iff its name was @imported anywhere.
+    if !dep.requested_imports.iter().any(|m| m == &dep.module_path) {
+        return Vec::new();
+    }
+    walk_zig_root(dep)
 }
 
 fn extract_zig_zon_name(content: &str) -> Option<String> {
@@ -244,5 +328,51 @@ mod tests {
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    #[test]
+    fn zig_extracts_at_import_names() {
+        let mut out = std::collections::HashSet::new();
+        extract_zig_imports(
+            "const std = @import(\"std\");\nconst clap = @import(\"clap\");\nconst local = @import(\"foo/bar.zig\");\n",
+            &mut out,
+        );
+        assert!(out.contains("std"));
+        assert!(out.contains("clap"));
+        // Relative-path imports are project-internal, not dep names.
+        assert!(!out.contains("foo/bar"));
+    }
+
+    #[test]
+    fn zig_narrowed_walk_skips_unimported_deps() {
+        let tmp = std::env::temp_dir().join("bw-test-zig-r3");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let dep_root = tmp.join("clap-pkg");
+        std::fs::create_dir_all(&dep_root).unwrap();
+        std::fs::write(dep_root.join("clap.zig"), "// pkg\n").unwrap();
+
+        // Imported: walk happens.
+        let yes = ExternalDepRoot {
+            module_path: "clap".to_string(),
+            version: String::new(),
+            root: dep_root.clone(),
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: vec!["clap".to_string()],
+        };
+        assert_eq!(walk_zig_narrowed(&yes).len(), 1);
+
+        // Not imported: skip.
+        let no = ExternalDepRoot {
+            module_path: "clap".to_string(),
+            version: String::new(),
+            root: dep_root.clone(),
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: vec!["other".to_string()],
+        };
+        assert!(walk_zig_narrowed(&no).is_empty());
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
