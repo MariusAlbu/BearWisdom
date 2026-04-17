@@ -48,6 +48,25 @@ impl Ecosystem for RubygemsEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_ruby_root(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        _package: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        resolve_ruby_gem_entry(dep)
+    }
+
+    fn resolve_symbol(
+        &self,
+        dep: &ExternalDepRoot,
+        _fqn: &str,
+    ) -> Vec<WalkedFile> {
+        resolve_ruby_gem_entry(dep)
+    }
 }
 
 impl ExternalSourceLocator for RubygemsEcosystem {
@@ -305,6 +324,124 @@ fn find_gem_dir_entry(candidates: &[PathBuf], entry: &GemEntry) -> Option<PathBu
 }
 
 // ---------------------------------------------------------------------------
+// Reachability: gem entry + bounded require expansion
+// ---------------------------------------------------------------------------
+
+const RB_REQUIRE_MAX_DEPTH: u32 = 3;
+
+/// Start from the gem's primary entry file (`lib/<gem-name>.rb`, with a
+/// fallback to `lib/<dash-to-slash>.rb` for namespaced gems like
+/// `rails-html-sanitizer` → `lib/rails/html/sanitizer.rb`) and follow
+/// `require "<gem>/..."` + `require_relative "..."` calls bounded at
+/// depth 3. Cross-gem requires are skipped — they're separate dep roots.
+fn resolve_ruby_gem_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let lib = dep.root.join("lib");
+    if !lib.is_dir() { return Vec::new() }
+
+    let primary = lib.join(format!("{}.rb", dep.module_path));
+    let dashed = lib.join(format!("{}.rb", dep.module_path.replace('-', "/")));
+    let entry = if primary.is_file() {
+        primary
+    } else if dashed.is_file() {
+        dashed
+    } else {
+        return Vec::new();
+    };
+
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    expand_ruby_requires_into(dep, &lib, &entry, &mut out, &mut seen, 0);
+    out
+}
+
+fn expand_ruby_requires_into(
+    dep: &ExternalDepRoot,
+    lib_root: &Path,
+    file: &Path,
+    out: &mut Vec<WalkedFile>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    depth: u32,
+) {
+    if !seen.insert(file.to_path_buf()) { return }
+    if !file.is_file() { return }
+
+    let rel_sub = match file.strip_prefix(&dep.root) {
+        Ok(p) => p.to_string_lossy().replace('\\', "/"),
+        Err(_) => return,
+    };
+    out.push(WalkedFile {
+        relative_path: format!("ext:ruby:{}/{}", dep.module_path, rel_sub),
+        absolute_path: file.to_path_buf(),
+        language: "ruby",
+    });
+
+    if depth >= RB_REQUIRE_MAX_DEPTH { return }
+
+    let Ok(src) = std::fs::read_to_string(file) else { return };
+    for (kind, target) in extract_ruby_requires(&src) {
+        let next = match kind {
+            // Ruby's $LOAD_PATH prepends every gem's lib/, so
+            // `require "devise/version"` resolves to `lib/devise/version.rb`
+            // in whichever gem ships it. Probe this gem's lib first; if the
+            // file isn't here, treat it as a separate dep root (skip).
+            RubyRequireKind::Absolute => resolve_ruby_lib_path(lib_root, &target),
+            RubyRequireKind::Relative => resolve_ruby_relative_path(file, &target),
+        };
+        let Some(next) = next else { continue };
+        expand_ruby_requires_into(dep, lib_root, &next, out, seen, depth + 1);
+    }
+}
+
+enum RubyRequireKind { Absolute, Relative }
+
+/// Scan line-oriented for `require "..."`, `require '...'`,
+/// `require_relative "..."`, `require_relative '...'`. Returns
+/// (kind, spec) for each match. Ignores string interpolation and
+/// dynamic requires (heredocs, variables).
+fn extract_ruby_requires(src: &str) -> Vec<(RubyRequireKind, String)> {
+    let mut out = Vec::new();
+    for raw in src.lines() {
+        let line = raw.trim_start();
+        // Strip inline comments (Ruby's `#` but not inside strings).
+        // Line-oriented, conservative — stop at first `#` that's not at a word-char boundary.
+        let (kind, rest) = if let Some(r) = line.strip_prefix("require_relative ") {
+            (RubyRequireKind::Relative, r)
+        } else if let Some(r) = line.strip_prefix("require ") {
+            (RubyRequireKind::Absolute, r)
+        } else {
+            continue;
+        };
+        let rest = rest.trim_start();
+        let Some(q) = rest.chars().next() else { continue };
+        if q != '\'' && q != '"' { continue }
+        let inner = &rest[1..];
+        let Some(end) = inner.find(q) else { continue };
+        let spec = &inner[..end];
+        if spec.is_empty() { continue }
+        out.push((kind, spec.to_string()));
+    }
+    out
+}
+
+/// Resolve a `require "foo/bar"` spec to `<lib_root>/foo/bar.rb` within
+/// this gem. Returns None if the file isn't under this gem's lib — that
+/// means the require targets a different gem and will be handled by its
+/// own dep root.
+fn resolve_ruby_lib_path(lib_root: &Path, spec: &str) -> Option<PathBuf> {
+    if spec.is_empty() { return None }
+    let candidate = lib_root.join(format!("{spec}.rb"));
+    if candidate.is_file() { Some(candidate) } else { None }
+}
+
+/// Resolve `require_relative "X"` against the file's directory. Spec is
+/// a path without the `.rb` suffix; resolves to `<dir>/<X>.rb`.
+fn resolve_ruby_relative_path(from_file: &Path, spec: &str) -> Option<PathBuf> {
+    let base = from_file.parent()?;
+    let candidate = base.join(format!("{spec}.rb"));
+    if candidate.is_file() { Some(candidate) } else { None }
+}
+
+// ---------------------------------------------------------------------------
 // Walk
 // ---------------------------------------------------------------------------
 
@@ -512,5 +649,92 @@ PLATFORMS
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------
+    // R3 — reachability-based entry resolution
+    // -----------------------------------------------------------------
+
+    fn mkdep(root: PathBuf, name: &str) -> ExternalDepRoot {
+        ExternalDepRoot {
+            module_path: name.to_string(),
+            version: String::new(),
+            root,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+        }
+    }
+
+    #[test]
+    fn extract_ruby_requires_finds_both_forms() {
+        let src = r#"
+require "active_support/core_ext"
+require_relative "helpers"
+require 'devise/rails'
+require_relative 'config/strategies'
+require foo # dynamic — skipped
+        "#;
+        let reqs = extract_ruby_requires(src);
+        assert_eq!(reqs.len(), 4);
+        let specs: Vec<String> = reqs.iter().map(|(_, s)| s.clone()).collect();
+        assert!(specs.contains(&"active_support/core_ext".to_string()));
+        assert!(specs.contains(&"helpers".to_string()));
+        assert!(specs.contains(&"devise/rails".to_string()));
+        assert!(specs.contains(&"config/strategies".to_string()));
+    }
+
+    #[test]
+    fn resolve_entry_follows_in_gem_requires() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("devise-4.9.3");
+        let lib = root.join("lib");
+        std::fs::create_dir_all(lib.join("devise")).unwrap();
+        std::fs::write(
+            lib.join("devise.rb"),
+            r#"
+require "devise/version"
+require_relative "devise/helpers"
+require "otheram/stuff"
+"#,
+        ).unwrap();
+        std::fs::write(lib.join("devise").join("version.rb"), "module Devise; VERSION='x'; end\n").unwrap();
+        std::fs::write(lib.join("devise").join("helpers.rb"), "module Devise::Helpers; end\n").unwrap();
+
+        let dep = mkdep(root.clone(), "devise");
+        let files = RubygemsEcosystem.resolve_import(&dep, "devise", &[]);
+        assert_eq!(files.len(), 3, "got: {:?}", files);
+        let paths: std::collections::HashSet<_> =
+            files.iter().map(|f| f.absolute_path.clone()).collect();
+        assert!(paths.contains(&lib.join("devise.rb")));
+        assert!(paths.contains(&lib.join("devise").join("version.rb")));
+        assert!(paths.contains(&lib.join("devise").join("helpers.rb")));
+        for f in &files {
+            assert!(f.relative_path.starts_with("ext:ruby:devise/"));
+            assert_eq!(f.language, "ruby");
+        }
+    }
+
+    #[test]
+    fn resolve_entry_falls_back_to_dashed_path() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("rails-html-sanitizer-1.0.0");
+        let nested = root.join("lib").join("rails").join("html");
+        std::fs::create_dir_all(&nested).unwrap();
+        std::fs::write(nested.join("sanitizer.rb"), "module Rails::Html::Sanitizer; end\n").unwrap();
+
+        let dep = mkdep(root, "rails-html-sanitizer");
+        let files = RubygemsEcosystem.resolve_import(&dep, "rails-html-sanitizer", &[]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].absolute_path, nested.join("sanitizer.rb"));
+    }
+
+    #[test]
+    fn resolve_entry_empty_when_no_lib() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("missing-0.1.0");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let dep = mkdep(root, "missing");
+        assert!(RubygemsEcosystem.resolve_import(&dep, "missing", &[]).is_empty());
     }
 }
