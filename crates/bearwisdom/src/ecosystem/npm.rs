@@ -87,6 +87,36 @@ impl Ecosystem for NpmEcosystem {
         walk_ts_external_root(dep)
     }
 
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        package: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        // Reachability-based: find the package's type-declaration entry and
+        // return just that file. The parser will extract ALL exports; the
+        // resolver picks the ones matching the import statement. Any
+        // re-exports pointing at other files in the package become new
+        // imports in the reachability loop and drive further resolve_*
+        // calls until fixpoint.
+        let _ = package;
+        resolve_package_entry(dep).into_iter().collect()
+    }
+
+    fn resolve_symbol(
+        &self,
+        dep: &ExternalDepRoot,
+        fqn: &str,
+    ) -> Vec<WalkedFile> {
+        // When the chain walker asks for an external fqn, start with the
+        // package's entry and let parsing + re-export following land the
+        // definition. Same entry file as resolve_import — the symbol
+        // either appears directly there or is re-exported, in which case
+        // the re-export produces a new import ref resolve_import handles.
+        let _ = fqn;
+        resolve_package_entry(dep).into_iter().collect()
+    }
+
     fn post_process_parsed(&self, _dep: &ExternalDepRoot, parsed: &mut crate::types::ParsedFile) {
         if let Some(pkg) = ts_package_from_virtual_path(&parsed.path).map(str::to_string) {
             prefix_ts_external_symbols(parsed, &pkg);
@@ -466,6 +496,72 @@ fn walk_ts_dir_bounded(
     }
 }
 
+/// Locate a package's type-declaration entry point using its `package.json`.
+///
+/// Priority:
+///   1. `types` field (modern)
+///   2. `typings` field (legacy alias of `types`)
+///   3. `main` field with `.js`/`.mjs`/`.cjs` rewritten to the matching
+///      `.d.ts` sibling if one exists on disk
+///   4. Conventional fallbacks — `index.d.ts`, `dist/index.d.ts`, `lib/index.d.ts`
+///
+/// Returns at most one `WalkedFile`. The caller (reachability loop in the
+/// indexer) parses it and, if the file re-exports from elsewhere in the
+/// package, follows those re-exports through additional `resolve_symbol`
+/// calls.
+fn resolve_package_entry(dep: &ExternalDepRoot) -> Option<WalkedFile> {
+    let pkg_json_path = dep.root.join("package.json");
+    let json_str = std::fs::read_to_string(&pkg_json_path).ok();
+    let parsed: Option<serde_json::Value> = json_str
+        .as_deref()
+        .and_then(|s| serde_json::from_str(s).ok());
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+
+    if let Some(pj) = parsed.as_ref() {
+        for field in ["types", "typings"] {
+            if let Some(v) = pj.get(field).and_then(|v| v.as_str()) {
+                candidates.push(dep.root.join(v.trim_start_matches("./")));
+            }
+        }
+        if let Some(main) = pj.get("main").and_then(|v| v.as_str()) {
+            let main_path = dep.root.join(main.trim_start_matches("./"));
+            // Rewrite .js/.mjs/.cjs → .d.ts sibling. If the main already ends
+            // in .d.ts we keep it.
+            if main.ends_with(".d.ts") {
+                candidates.push(main_path);
+            } else {
+                let stem = main_path.to_string_lossy().to_string();
+                for ext in [".js", ".mjs", ".cjs"] {
+                    if stem.ends_with(ext) {
+                        let dts = stem.trim_end_matches(ext).to_string() + ".d.ts";
+                        candidates.push(PathBuf::from(dts));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // Conventional fallbacks.
+    for fallback in ["index.d.ts", "dist/index.d.ts", "lib/index.d.ts", "types/index.d.ts"] {
+        candidates.push(dep.root.join(fallback));
+    }
+
+    let entry = candidates.into_iter().find(|p| p.is_file())?;
+    let rel_sub = entry
+        .strip_prefix(&dep.root)
+        .ok()?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
+    Some(WalkedFile {
+        relative_path: virtual_path,
+        absolute_path: entry,
+        language: "typescript",
+    })
+}
+
 fn is_ts_source_file(name: &str) -> bool {
     name.ends_with(".ts")
         || name.ends_with(".tsx")
@@ -698,5 +794,105 @@ mod tests {
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------
+    // R1 — reachability-based entry resolution
+    // -----------------------------------------------------------------
+
+    fn mkdep(root: PathBuf, name: &str) -> ExternalDepRoot {
+        ExternalDepRoot {
+            module_path: name.to_string(),
+            version: String::new(),
+            root,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+        }
+    }
+
+    #[test]
+    fn resolve_import_prefers_types_field() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("vitest");
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"vitest","types":"./dist/index.d.ts","main":"./dist/index.js"}"#,
+        ).unwrap();
+        std::fs::write(
+            root.join("dist").join("index.d.ts"),
+            "export declare function describe(name: string, fn: () => void): void;",
+        ).unwrap();
+
+        let dep = mkdep(root.clone(), "vitest");
+        let files = NpmEcosystem.resolve_import(&dep, "vitest", &["describe"]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].absolute_path, root.join("dist").join("index.d.ts"));
+        assert_eq!(files[0].language, "typescript");
+        assert!(files[0].relative_path.starts_with("ext:ts:vitest/"));
+    }
+
+    #[test]
+    fn resolve_import_rewrites_main_to_dts_sibling() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("react");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"react","main":"./index.js"}"#,
+        ).unwrap();
+        std::fs::write(root.join("index.d.ts"), "export function Component(): any;").unwrap();
+
+        let dep = mkdep(root.clone(), "react");
+        let files = NpmEcosystem.resolve_import(&dep, "react", &["Component"]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].absolute_path, root.join("index.d.ts"));
+    }
+
+    #[test]
+    fn resolve_import_falls_back_to_index_dts() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("tiny-pkg");
+        std::fs::create_dir_all(&root).unwrap();
+        // No package.json at all — purely filesystem fallback.
+        std::fs::write(root.join("index.d.ts"), "export const x: number;").unwrap();
+
+        let dep = mkdep(root.clone(), "tiny-pkg");
+        let files = NpmEcosystem.resolve_import(&dep, "tiny-pkg", &["x"]);
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].absolute_path, root.join("index.d.ts"));
+    }
+
+    #[test]
+    fn resolve_import_returns_empty_when_no_entry() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("empty-pkg");
+        std::fs::create_dir_all(&root).unwrap();
+
+        let dep = mkdep(root, "empty-pkg");
+        let files = NpmEcosystem.resolve_import(&dep, "empty-pkg", &[]);
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn resolve_symbol_returns_same_entry_as_import() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("vitest");
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"vitest","types":"./dist/index.d.ts"}"#,
+        ).unwrap();
+        std::fs::write(
+            root.join("dist").join("index.d.ts"),
+            "export interface Assertion {}",
+        ).unwrap();
+
+        let dep = mkdep(root.clone(), "vitest");
+        let a = NpmEcosystem.resolve_import(&dep, "vitest", &["Assertion"]);
+        let b = NpmEcosystem.resolve_symbol(&dep, "vitest.Assertion");
+        assert_eq!(a.len(), 1);
+        assert_eq!(b.len(), 1);
+        assert_eq!(a[0].absolute_path, b[0].absolute_path);
     }
 }

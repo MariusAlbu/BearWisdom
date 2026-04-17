@@ -294,8 +294,57 @@ pub trait Ecosystem: Send + Sync {
     /// Walk one dep root, yielding files to be parsed as external source.
     /// Each `WalkedFile` is downstream tagged with this ecosystem's id
     /// + per-file language detection routes to the right plugin.
+    ///
+    /// This is the eager/wholesale path. `Stdlib`-kind ecosystems typically
+    /// use it (stdlib types are touched by nearly every file, so pre-warming
+    /// pays off). `Package`-kind ecosystems should override
+    /// `resolve_import` + `resolve_symbol` instead and leave this returning
+    /// empty — the reachability loop drives them on demand.
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         let _ = dep;
+        Vec::new()
+    }
+
+    /// Reachability entry point: resolve a specific import statement.
+    ///
+    /// Given a package name and the symbols named in an `import { X, Y } from 'pkg'`
+    /// statement (or language equivalent), return exactly the files needed to
+    /// surface those symbols + any signature types they reference directly.
+    /// The indexer parses the returned files like any other walked file and
+    /// stops — no recursion into unrelated parts of the package.
+    ///
+    /// This is the preferred interception point for `Package`-kind
+    /// ecosystems. Default returns empty (no-op); ecosystems that support
+    /// reachability override.
+    ///
+    /// The indexer iterates: after parsing a round of reached files, it
+    /// collects the new import edges and refs they introduce and calls this
+    /// method again for anything newly named. Loop terminates at fixpoint.
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        package: &str,
+        symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        let _ = (dep, package, symbols);
+        Vec::new()
+    }
+
+    /// Reachability chain step: pull a single qualified name on demand.
+    ///
+    /// Used by chain walkers (Tier 1.5 resolvers) when they encounter a ref
+    /// whose target is known by fully-qualified name but hasn't been indexed
+    /// yet. Return the file(s) defining `fqn` so the indexer can parse them
+    /// and extend the symbol graph.
+    ///
+    /// Returns empty when `fqn` isn't in this ecosystem. Defaults to empty;
+    /// reachability-based ecosystems override.
+    fn resolve_symbol(
+        &self,
+        dep: &ExternalDepRoot,
+        fqn: &str,
+    ) -> Vec<WalkedFile> {
+        let _ = (dep, fqn);
         Vec::new()
     }
 

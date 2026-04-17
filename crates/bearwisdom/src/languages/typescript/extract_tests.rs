@@ -986,3 +986,69 @@ fn explicit_type_annotation_takes_priority_over_new_expression() {
     });
     assert!(has_typeref, "Expected at least one TypeRef 'UserService' from 'service'");
 }
+
+// ---------------------------------------------------------------------------
+// jest/vitest assertion chain refs
+// ---------------------------------------------------------------------------
+
+/// Pattern 1 — `expect(x).toEqual(y)`:
+/// The `toEqual` Calls ref must carry a chain with `expect` as the root segment.
+/// The chain walker needs this to find `toEqual` on the return type of `expect`.
+#[test]
+fn jest_expect_to_equal_has_chain_ref() {
+    let src = "function t() { expect(x).toEqual(y); }";
+    let r = refs(src);
+
+    let to_equal = r.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "toEqual");
+    assert!(to_equal.is_some(), "no Calls ref for toEqual; refs: {r:?}");
+
+    let chain = to_equal.unwrap().chain.as_ref()
+        .expect("toEqual ref must have a chain (chain walker needs it)");
+
+    // Chain must be [expect, toEqual] — root is `expect`, last is `toEqual`.
+    assert_eq!(chain.segments.len(), 2, "chain should have 2 segments: [expect, toEqual]; got: {chain:?}");
+    assert_eq!(chain.segments[0].name, "expect", "chain root should be 'expect'");
+    assert_eq!(chain.segments[1].name, "toEqual", "chain last should be 'toEqual'");
+}
+
+/// Pattern 2 — `expect(x).to.equal(y)` (chai BDD):
+/// The `equal` Calls ref must have a 3-segment chain: [expect, to, equal].
+/// The intermediate `.to` property access is Tier 1.5 chain-walking state.
+#[test]
+fn chai_bdd_expect_to_equal_has_chain_ref() {
+    let src = "function t() { expect(x).to.equal(y); }";
+    let r = refs(src);
+
+    let equal = r.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "equal");
+    assert!(equal.is_some(), "no Calls ref for equal; refs: {r:?}");
+
+    let chain = equal.unwrap().chain.as_ref()
+        .expect("equal ref must have a chain for chai BDD pattern");
+
+    // Chain must be [expect, to, equal].
+    assert_eq!(chain.segments.len(), 3, "chain should have 3 segments: [expect, to, equal]; got: {chain:?}");
+    assert_eq!(chain.segments[0].name, "expect", "chain[0] should be 'expect'");
+    assert_eq!(chain.segments[1].name, "to",     "chain[1] should be 'to'");
+    assert_eq!(chain.segments[2].name, "equal",  "chain[2] should be 'equal'");
+}
+
+/// Pattern 3 — `vi.fn().mockResolvedValue(42)` (vitest spy):
+/// The `mockResolvedValue` Calls ref must carry a 3-segment chain: [vi, fn, mockResolvedValue].
+#[test]
+fn vitest_spy_mock_resolved_value_has_chain_ref() {
+    let src = "function t() { vi.fn().mockResolvedValue(42); }";
+    let r = refs(src);
+
+    let mrv = r.iter().find(|r| r.kind == EdgeKind::Calls && r.target_name == "mockResolvedValue");
+    assert!(mrv.is_some(), "no Calls ref for mockResolvedValue; refs: {r:?}");
+
+    let chain = mrv.unwrap().chain.as_ref()
+        .expect("mockResolvedValue ref must have a chain");
+
+    // Chain must be [vi, fn, mockResolvedValue].
+    assert_eq!(chain.segments.len(), 3,
+        "chain should have 3 segments: [vi, fn, mockResolvedValue]; got: {chain:?}");
+    assert_eq!(chain.segments[0].name, "vi",                  "chain[0] should be 'vi'");
+    assert_eq!(chain.segments[1].name, "fn",                  "chain[1] should be 'fn'");
+    assert_eq!(chain.segments[2].name, "mockResolvedValue",   "chain[2] should be 'mockResolvedValue'");
+}

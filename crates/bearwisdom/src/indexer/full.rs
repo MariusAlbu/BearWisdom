@@ -542,9 +542,9 @@ fn collect_package_dep_rows(
 /// ecosystem id is resolved against `ecosystem::default_registry()` to
 /// pick up its `Ecosystem` trait impl, and against
 /// `ecosystem::default_locator` for per-package attribution overrides
-/// (`locate_roots_for_package` on the legacy trait). The legacy plugin
-/// hook (`LanguagePlugin::externals_locator`) is gone — every dispatch
-/// flows through ecosystems now.
+/// (`locate_roots_for_package` on the legacy trait). Every externals
+/// dispatch flows through ecosystems — the per-language locator hook
+/// was removed in Phase 6.
 ///
 /// M3: when `packages` is non-empty (monorepo / workspace), each ecosystem
 /// is invoked ONCE PER PACKAGE via `locate_roots_for_package`. Roots are
