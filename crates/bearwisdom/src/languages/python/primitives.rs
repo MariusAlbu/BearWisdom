@@ -3,38 +3,25 @@
 // =============================================================================
 
 /// Primitive and built-in type names for Python.
+/// typing/Pathlib/ABC/dataclasses symbols are NOT listed here — they come
+/// from the CpythonStdlib ecosystem as indexed external symbols. Only core
+/// builtin types (implemented in C, not in the stdlib source tree) and
+/// built-in functions not reliably indexed remain.
 pub(crate) const PRIMITIVES: &[&str] = &[
-    // Core types
+    // Core types — C-implemented builtins, not in cpython source tree
     "int", "float", "str", "bool", "None", "bytes", "list", "dict", "tuple",
     "set", "type", "object", "complex", "frozenset", "memoryview", "range",
     "True", "False",
-    // Built-in functions used as types
-    "bytearray", "slice", "property", "classmethod", "staticmethod", "super",
-    "enumerate", "zip", "map", "filter", "reversed", "sorted",
-    // Typing module (PEP 484+)
-    "Any", "Union", "Optional", "List", "Dict", "Tuple", "Set", "FrozenSet",
-    "Type", "Callable", "Iterator", "Generator", "Coroutine",
-    "Awaitable", "AsyncIterator", "AsyncGenerator",
-    "Sequence", "MutableSequence", "Mapping", "MutableMapping",
-    "Iterable", "Collection", "Hashable", "Sized",
-    "ClassVar", "Final", "Literal", "TypeVar", "TypeAlias",
-    "Protocol", "runtime_checkable", "overload",
-    "TypedDict", "NamedTuple", "NewType",
-    "Self", "Never", "NoReturn", "TypeGuard",
-    "Annotated", "Concatenate", "ParamSpec", "TypeVarTuple", "Unpack",
-    // Exceptions
+    // Built-in functions — C-implemented, not reliably indexed
+    "bytearray", "classmethod", "staticmethod", "super",
+    "zip", "sorted",
+    // Exceptions — C-implemented in cpython, not in indexed stdlib source
     "Exception", "BaseException", "ValueError", "TypeError", "KeyError",
     "IndexError", "AttributeError", "RuntimeError", "OSError", "IOError",
     "FileNotFoundError", "PermissionError", "NotImplementedError",
     "StopIteration", "StopAsyncIteration", "GeneratorExit",
     "ImportError", "ModuleNotFoundError", "NameError",
     "AssertionError", "ArithmeticError", "OverflowError", "ZeroDivisionError",
-    // ABC / collections.abc
-    "ABC", "ABCMeta", "abstractmethod",
-    // Dataclasses / attrs
-    "dataclass", "field", "Field",
-    // Pathlib
-    "Path", "PurePath", "PosixPath", "WindowsPath",
     // Generic type parameters
     "T", "U", "K", "V", "E", "R", "S",
 ];
