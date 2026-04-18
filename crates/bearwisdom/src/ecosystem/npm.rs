@@ -110,13 +110,18 @@ impl Ecosystem for NpmEcosystem {
         dep: &ExternalDepRoot,
         fqn: &str,
     ) -> Vec<WalkedFile> {
-        // When the chain walker asks for an external fqn, start with the
-        // package's entry and let parsing + re-export following land the
-        // definition. Same entry file as resolve_import — the symbol
-        // either appears directly there or is re-exported, in which case
-        // the re-export produces a new import ref resolve_import handles.
-        let _ = fqn;
-        resolve_package_entry(dep)
+        // R4: chain walker asks for the file(s) defining a specific FQN
+        // (e.g., "chai.Assertion"). Scan the dep's source tree for files
+        // declaring the FQN's last segment as a class/interface/type.
+        // Falls back to the package entry walk when nothing matches —
+        // either the type is re-exported through the entry, or the search
+        // missed it (rare for declaration files).
+        let target = fqn.rsplit('.').next().unwrap_or(fqn);
+        let mut files = find_files_declaring_type(dep, target);
+        if files.is_empty() {
+            files = resolve_package_entry(dep);
+        }
+        files
     }
 
     fn post_process_parsed(&self, _dep: &ExternalDepRoot, parsed: &mut crate::types::ParsedFile) {
@@ -451,6 +456,141 @@ fn walk_ts_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
     walk_ts_dir_bounded(&dep.root, &dep.root, dep, &mut out, 0);
     out
+}
+
+/// Scan the dep's source tree for files that declare `type_name` as a
+/// class/interface/type/enum/function. Used by `resolve_symbol` to pull in
+/// just the file(s) the chain walker needs, without dumping every file in
+/// the dep into the index.
+///
+/// Caps total files scanned at `MAX_FILES_SCANNED` to bound worst-case cost
+/// on huge declaration bundles (e.g. material-ui ships thousands of .d.ts
+/// files). When the cap fires, callers fall back to the entry walk.
+fn find_files_declaring_type(dep: &ExternalDepRoot, type_name: &str) -> Vec<WalkedFile> {
+    const MAX_FILES_SCANNED: usize = 500;
+    let mut out = Vec::new();
+    let mut scanned = 0usize;
+    scan_for_type_decl(&dep.root, &dep.root, dep, type_name, &mut out, &mut scanned, 0);
+    if scanned >= MAX_FILES_SCANNED {
+        // Bail out — search exceeded budget. Caller falls back to the
+        // package entry walk.
+        return Vec::new();
+    }
+    out
+}
+
+fn scan_for_type_decl(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    type_name: &str,
+    out: &mut Vec<WalkedFile>,
+    scanned: &mut usize,
+    depth: u32,
+) {
+    const MAX_FILES_SCANNED: usize = 500;
+    if depth >= MAX_WALK_DEPTH || *scanned >= MAX_FILES_SCANNED { return }
+
+    let walk_nested = std::env::var_os("BEARWISDOM_TS_WALK_NESTED")
+        .map(|v| v != "0" && !v.is_empty())
+        .unwrap_or(false);
+
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        if *scanned >= MAX_FILES_SCANNED { return }
+        let Ok(file_type) = entry.file_type() else { continue };
+        let path = entry.path();
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name == "node_modules" && !walk_nested { continue }
+                if matches!(
+                    name,
+                    "__tests__" | "__mocks__" | "test" | "tests" | "docs"
+                        | "example" | "examples" | "_examples" | "fixtures"
+                        | ".storybook" | ".git"
+                ) { continue }
+            }
+            scan_for_type_decl(&path, root, dep, type_name, out, scanned, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !is_ts_source_file(name) { continue }
+            if is_test_or_story_file(name) { continue }
+
+            *scanned += 1;
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            if !file_declares_type(&content, type_name) { continue }
+
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Err(_) => continue,
+            };
+            let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
+            let language = if name.ends_with(".tsx") { "tsx" } else { "typescript" };
+            out.push(WalkedFile {
+                relative_path: virtual_path,
+                absolute_path: path,
+                language,
+            });
+        }
+    }
+}
+
+/// Heuristic: does `content` declare `type_name` at the top level as a
+/// class/interface/type/enum/function/const? The chain walker asks for
+/// methods/fields *of* this type, so we only need the file that owns the
+/// declaration; once parsed, the symbol's qualified name + members will be
+/// in the index.
+///
+/// Patterns matched (whitespace-flexible):
+///   `class Foo`, `interface Foo`, `type Foo`, `enum Foo`, `function Foo`,
+///   `const Foo`, `let Foo`, `var Foo`
+/// Each preceded by optional `export`/`declare`/`abstract`/`default`
+/// keywords and followed by `<`, ` `, `=`, `(`, `:`, `{`, `;`, `\n`, or end.
+fn file_declares_type(content: &str, type_name: &str) -> bool {
+    // Cheap pre-filter: skip files that don't contain the name at all.
+    if !content.contains(type_name) { return false }
+
+    for raw in content.lines() {
+        let line = raw.trim_start();
+        // Strip combinations of leading modifiers; order doesn't matter.
+        let stripped = strip_decl_modifiers(line);
+        for keyword in &["class ", "interface ", "type ", "enum ", "function ",
+                         "const ", "let ", "var ", "abstract class "]
+        {
+            if let Some(rest) = stripped.strip_prefix(keyword) {
+                let rest = rest.trim_start();
+                if let Some(after_name) = rest.strip_prefix(type_name) {
+                    let next = after_name.chars().next();
+                    let ok = matches!(
+                        next,
+                        None | Some(' ') | Some('<') | Some('=') | Some('(')
+                            | Some(':') | Some('{') | Some(';') | Some('\t')
+                            | Some('\n') | Some('\r')
+                    );
+                    if ok { return true }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Drop leading `export`/`default`/`declare`/`abstract`/`async` modifiers in
+/// any order. Returns a slice into the original string.
+fn strip_decl_modifiers(line: &str) -> &str {
+    let mut s = line.trim_start();
+    loop {
+        let mut advanced = false;
+        for keyword in &["export ", "default ", "declare ", "async "] {
+            if let Some(rest) = s.strip_prefix(keyword) {
+                s = rest.trim_start();
+                advanced = true;
+                break;
+            }
+        }
+        if !advanced { break }
+    }
+    s
 }
 
 fn walk_ts_dir_bounded(
@@ -964,5 +1104,60 @@ mod tests {
         assert_eq!(a.len(), 1);
         assert_eq!(b.len(), 1);
         assert_eq!(a[0].absolute_path, b[0].absolute_path);
+    }
+
+    // -----------------------------------------------------------------
+    // R4 — file_declares_type pattern matcher
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn file_declares_type_matches_decl_keywords() {
+        assert!(file_declares_type("export class Foo {}\n", "Foo"));
+        assert!(file_declares_type("interface Foo {}\n", "Foo"));
+        assert!(file_declares_type("export interface Foo<T> {}\n", "Foo"));
+        assert!(file_declares_type("export type Foo = string;\n", "Foo"));
+        assert!(file_declares_type("export enum Foo { A, B }\n", "Foo"));
+        assert!(file_declares_type("declare class Foo {}\n", "Foo"));
+        assert!(file_declares_type("export declare interface Foo {}\n", "Foo"));
+        assert!(file_declares_type("export abstract class Foo {}\n", "Foo"));
+        assert!(file_declares_type("export function Foo() {}\n", "Foo"));
+        assert!(file_declares_type("export const Foo = 1;\n", "Foo"));
+    }
+
+    #[test]
+    fn file_declares_type_rejects_partial_matches() {
+        assert!(!file_declares_type("class FooBar {}\n", "Foo"));
+        assert!(!file_declares_type("// uses Foo somewhere\n", "Foo"));
+        assert!(!file_declares_type("import { Foo } from 'x';\n", "Foo"));
+        assert!(!file_declares_type("export interface Bar { f: Foo; }\n", "Foo"));
+        assert!(!file_declares_type("", "Foo"));
+    }
+
+    #[test]
+    fn find_files_declaring_type_returns_definition_only() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("synthetic-pkg");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src").join("foo.d.ts"),
+            "export interface Foo { method(): string }\n",
+        ).unwrap();
+        std::fs::write(
+            root.join("src").join("bar.d.ts"),
+            "import { Foo } from './foo';\nexport interface Bar { f: Foo }\n",
+        ).unwrap();
+        std::fs::write(
+            root.join("src").join("baz.d.ts"),
+            "export class Baz {}\n",
+        ).unwrap();
+
+        let dep = mkdep(root, "synthetic-pkg");
+        let files = find_files_declaring_type(&dep, "Foo");
+        let paths: Vec<String> = files.iter().map(|f| f.relative_path.clone()).collect();
+
+        // Only foo.d.ts (declares Foo) should match. bar.d.ts uses Foo, baz
+        // declares Baz — both excluded.
+        assert_eq!(paths.len(), 1, "expected only the file declaring Foo: {paths:?}");
+        assert!(paths[0].ends_with("foo.d.ts"));
     }
 }
