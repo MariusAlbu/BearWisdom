@@ -10,8 +10,33 @@ use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use rustc_hash::FxHashMap;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::sync::Arc;
+
+// ---------------------------------------------------------------------------
+// ChainMiss — chain walker failure context for R3 lazy reload
+// ---------------------------------------------------------------------------
+
+/// A chain walker bail-out point: the walker resolved `current_type` but had
+/// no member named `target_name` indexed for it. R3 reachability uses these
+/// to drive a second-pass `resolve_symbol` call against the owning
+/// ecosystem dep — pulling in `current_type`'s definition file so the chain
+/// can complete on a retry.
+///
+/// Recorded via `SymbolLookup::record_chain_miss` (interior-mutable on
+/// `SymbolIndex`); drained by `SymbolIndex::take_chain_misses` after the
+/// initial resolution pass.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ChainMiss {
+    /// The fully-qualified type the walker resolved up to but couldn't
+    /// step past. Either a project-relative qname or an external one
+    /// (e.g., `chai.Assertion`).
+    pub current_type: String,
+    /// The next segment name the walker tried to look up against
+    /// `current_type` (e.g., `to` for `expect(x).to.equal(y)`).
+    pub target_name: String,
+}
 
 // ---------------------------------------------------------------------------
 // Bracket-matching utility
@@ -295,6 +320,19 @@ pub trait SymbolLookup {
     fn parent_class_qname(&self, _class_qname: &str) -> Option<&str> {
         None
     }
+
+    /// Record a chain walker bail-out for the R3 second-pass reload.
+    ///
+    /// Called by `chain_walker::resolve_via_chain` when it resolved
+    /// `current_type` but couldn't continue because the next segment isn't
+    /// indexed under it. Default impl is a no-op so test/synthetic lookups
+    /// don't have to opt in.
+    ///
+    /// `SymbolIndex` overrides this with an interior-mutable buffer drained
+    /// by `take_chain_misses` after the main resolution loop, so that the
+    /// indexer can drive `Ecosystem::resolve_symbol` on demand and re-resolve
+    /// only the affected refs.
+    fn record_chain_miss(&self, _miss: ChainMiss) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -385,6 +423,10 @@ pub struct SymbolIndex {
     inherits_map: FxHashMap<String, String>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
+    /// Interior-mutable accumulator for chain walker bail-outs.
+    /// `record_chain_miss` pushes; `take_chain_misses` drains. The resolution
+    /// loop is sequential so plain `RefCell` is sufficient.
+    chain_misses: RefCell<Vec<ChainMiss>>,
 }
 
 impl SymbolIndex {
@@ -931,7 +973,17 @@ impl SymbolIndex {
             inherits_map,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
+            chain_misses: RefCell::new(Vec::new()),
         }
+    }
+
+    /// Drain the chain-walker miss accumulator.
+    ///
+    /// Called by `resolve_and_write` after the initial resolution pass to
+    /// drive R3 lazy-reload via `Ecosystem::resolve_symbol`. Returns the
+    /// accumulated bail-outs in insertion order; the buffer is emptied.
+    pub fn take_chain_misses(&self) -> Vec<ChainMiss> {
+        self.chain_misses.borrow_mut().drain(..).collect()
     }
 
     /// Load all symbols from the database into the index, filling gaps left by
@@ -1498,6 +1550,10 @@ impl SymbolLookup for SymbolIndex {
 
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.inherits_map.get(class_qname).map(|s| s.as_str())
+    }
+
+    fn record_chain_miss(&self, miss: ChainMiss) {
+        self.chain_misses.borrow_mut().push(miss);
     }
 }
 

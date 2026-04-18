@@ -22,7 +22,7 @@ use crate::db::Database;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 use anyhow::{Context, Result};
-use engine::{build_scope_chain, RefContext, ResolutionEngine, SymbolIndex};
+use engine::{build_scope_chain, ChainMiss, RefContext, ResolutionEngine, SymbolIndex};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
@@ -33,6 +33,10 @@ pub struct ResolutionStats {
     pub engine_resolved: u64,
     pub unresolved: u64,
     pub external: u64,
+    /// Chain walker bail-outs collected during this pass. The orchestrator
+    /// (full.rs) feeds these into `expand_chain_reachability` to drive a
+    /// second-pass `Ecosystem::resolve_symbol` reload.
+    pub chain_misses: Vec<ChainMiss>,
 }
 
 /// Resolve all references across all parsed files, writing edges,
@@ -477,6 +481,25 @@ fn resolve_and_write_inner(
 
     tx.commit()
         .context("Failed to commit resolution transaction")?;
+
+    // Drain chain walker bail-outs for the orchestrator's R3 reload pass.
+    // Deduped on (current_type, target_name) — the second pass cares about
+    // unique misses; the source-ref retry list is recovered from the DB's
+    // `unresolved_refs` table.
+    let raw_misses = index.take_chain_misses();
+    let mut seen: std::collections::HashSet<ChainMiss> = std::collections::HashSet::new();
+    let mut unique_misses: Vec<ChainMiss> = Vec::new();
+    for m in raw_misses.iter().cloned() {
+        if seen.insert(m.clone()) { unique_misses.push(m); }
+    }
+    if !unique_misses.is_empty() {
+        debug!(
+            "Chain walker recorded {} bail-outs ({} unique)",
+            raw_misses.len(),
+            unique_misses.len(),
+        );
+    }
+    stats.chain_misses = unique_misses;
 
     // Materialize incoming_edge_count on symbols for fast centrality lookups.
     // Scan edges once into a temp table (O(E)), then join-update symbols (O(S * log E_distinct)).

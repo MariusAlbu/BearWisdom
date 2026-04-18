@@ -11,7 +11,9 @@
 //   Phase 3: Resolve final segment on the resolved type
 // =============================================================================
 
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{
+    ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
+};
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
@@ -253,7 +255,13 @@ pub fn resolve_via_chain(
             continue;
         }
 
-        // Lost the chain — can't determine the next type.
+        // Lost the chain — can't determine the next type. Record the miss
+        // for R3 lazy reload: a second pass will call resolve_symbol on
+        // `current_type`'s owning ecosystem dep to pull its definition file.
+        lookup.record_chain_miss(ChainMiss {
+            current_type: current_type.clone(),
+            target_name: seg.name.clone(),
+        });
         return None;
     }
 
@@ -327,6 +335,13 @@ pub fn resolve_via_chain(
         }
     }
 
+    // Final-segment miss: walked to current_type but no `.last.name` found
+    // anywhere under it. Same R3 reload signal as the intermediate-segment
+    // bail-out above.
+    lookup.record_chain_miss(ChainMiss {
+        current_type: current_type.clone(),
+        target_name: last.name.clone(),
+    });
     None
 }
 
