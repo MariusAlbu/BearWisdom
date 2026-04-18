@@ -149,19 +149,20 @@ pub fn expand_chain_reachability(
     // 3. Dispatch resolve_symbol per (dep, fqn). Dedupe walked files by
     //    absolute_path so the same file pulled by multiple misses is parsed
     //    once.
-    let mut new_walked = Vec::new();
-    let mut seen_paths: HashSet<std::path::PathBuf> = HashSet::new();
-    // Pre-seed seen with already-walked external paths so we don't re-emit
-    // a file that pass-1 already parsed.
+    // Build a set of virtual paths already in `parsed` so we don't re-emit
+    // files pass 1 already walked. Pass-1 ext files have virtual paths like
+    // `ext:typescript:chai/lib/index.d.ts`; we match by suffix against the
+    // resolve_symbol-returned absolute_path's tail (stripped of the dep
+    // root prefix).
+    let mut already_walked: HashSet<String> = HashSet::new();
     for pf in parsed.iter() {
         if pf.path.starts_with("ext:") {
-            // Reconstructing the absolute path from a virtual path is
-            // ecosystem-specific; instead, gather the unique absolute paths
-            // by the file's content origin if available. Conservative
-            // fallback: skip — duplicate parsing is harmless because
-            // write_parsed_files_with_origin upserts on path.
+            already_walked.insert(pf.path.clone());
         }
     }
+
+    let mut new_walked = Vec::new();
+    let mut seen_paths: HashSet<std::path::PathBuf> = HashSet::new();
     for (idx, fqns) in &requests {
         let dep = &dep_roots[*idx];
         let Some(eco) = ecosystem_by_tag.get(dep.ecosystem) else { continue };
@@ -172,7 +173,22 @@ pub fn expand_chain_reachability(
         }
         for fqn in fqns {
             let walked = eco.resolve_symbol(dep, fqn);
+            // Filter: ecosystem resolve_symbol impls today mostly delegate to
+            // the dep's narrowed walk and ignore the fqn argument, which
+            // dumps far more files into the index than the chain walker
+            // actually needs and degrades resolution quality. Keep only
+            // files whose basename plausibly defines the FQN's last
+            // segment (`chai.Assertion` → match `Assertion.ts`/`Assertion.d.ts`).
+            // Files already in pass 1's parsed set are skipped by virtual
+            // path so we don't re-parse them.
+            let target_basename = fqn.rsplit('.').next().unwrap_or(fqn).to_lowercase();
             for wf in walked {
+                if already_walked.contains(&wf.relative_path) {
+                    continue;
+                }
+                if !file_matches_target(&wf, &target_basename) {
+                    continue;
+                }
                 if seen_paths.insert(wf.absolute_path.clone()) {
                     new_walked.push(wf);
                 }
@@ -285,6 +301,29 @@ fn rediscover_dep_roots_and_ecosystems(
     }
 
     (deduped, eco_by_tag)
+}
+
+/// Conservative file→target match: keep a walked file when its basename
+/// (sans extension) equals the FQN's last segment (case-insensitive).
+///
+/// Justification: most ecosystems' `resolve_symbol` impls today ignore the
+/// fqn parameter and return the dep's whole narrowed walk. Without this
+/// filter we dump hundreds of unrelated files into the index per chain
+/// miss, which (counter-intuitively) hurts resolution quality by giving
+/// the engine's external-classification path more incorrect candidates
+/// for short names. The filter trades recall (missing some files that
+/// happen to define the type via re-export) for precision (no flooding).
+fn file_matches_target(walked: &crate::walker::WalkedFile, target_basename: &str) -> bool {
+    let Some(stem) = std::path::Path::new(&walked.absolute_path)
+        .file_stem()
+        .and_then(|s| s.to_str())
+    else {
+        return false;
+    };
+    // Drop a single trailing `.d` for TS declaration files (`Assertion.d.ts`
+    // → file_stem returns "Assertion.d", we want "assertion").
+    let stem = stem.trim_end_matches(".d").to_lowercase();
+    stem == target_basename
 }
 
 /// Build a `simple_name → dep_idx` map from external parsed files.
