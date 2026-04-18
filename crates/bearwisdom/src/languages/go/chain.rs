@@ -2,7 +2,7 @@
 // go/chain.rs — Go chain-aware resolution
 // =============================================================================
 
-use crate::indexer::resolve::engine::{RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
@@ -128,7 +128,11 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
-        // Lost the chain — can't determine the next type.
+        // Lost the chain — record a miss for R4 reload.
+        lookup.record_chain_miss(ChainMiss {
+            current_type: current_type.clone(),
+            target_name: seg.name.clone(),
+        });
         return None;
     }
 
@@ -165,6 +169,10 @@ pub(super) fn resolve_via_chain(
         }
     }
 
+    lookup.record_chain_miss(ChainMiss {
+        current_type: current_type.clone(),
+        target_name: last.name.clone(),
+    });
     None
 }
 

@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::chain_walker::external_type_qname;
-use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, FileContext, RefContext, Resolution, SymbolLookup};
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
@@ -111,6 +111,14 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
+        // R4 chain miss: upgrade short name to external qname before recording
+        // so the reload pass can address the right ExternalDepRoot.
+        let miss_type = external_type_qname(&current_type, lookup)
+            .unwrap_or_else(|| current_type.clone());
+        lookup.record_chain_miss(ChainMiss {
+            current_type: miss_type,
+            target_name: seg.name.clone(),
+        });
         return None;
     }
 
@@ -160,6 +168,10 @@ pub(super) fn resolve_via_chain(
         }
     }
 
+    lookup.record_chain_miss(ChainMiss {
+        current_type: effective_type,
+        target_name: last.name.clone(),
+    });
     None
 }
 

@@ -2,7 +2,7 @@
 // python/chain.rs — Python chain-aware resolution
 // =============================================================================
 
-use crate::indexer::resolve::engine::{RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
@@ -88,6 +88,11 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
+        // R4 chain miss: lost the chain on a known current_type.
+        lookup.record_chain_miss(ChainMiss {
+            current_type: current_type.clone(),
+            target_name: seg.name.clone(),
+        });
         return None;
     }
 
@@ -122,6 +127,11 @@ pub(super) fn resolve_via_chain(
         }
     }
 
+    // R4 chain miss: walked to current_type but no member named last.name.
+    lookup.record_chain_miss(ChainMiss {
+        current_type: current_type.clone(),
+        target_name: last.name.clone(),
+    });
     None
 }
 

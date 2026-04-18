@@ -2,7 +2,7 @@
 // rust_lang/chain.rs — Rust chain-aware resolution
 // =============================================================================
 
-use crate::indexer::resolve::engine::{RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use super::predicates::{kind_compatible, normalize_path};
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 
@@ -92,6 +92,10 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
+        lookup.record_chain_miss(ChainMiss {
+            current_type: current_type.clone(),
+            target_name: seg.name.clone(),
+        });
         return None;
     }
 
@@ -126,6 +130,10 @@ pub(super) fn resolve_via_chain(
         }
     }
 
+    lookup.record_chain_miss(ChainMiss {
+        current_type: current_type.clone(),
+        target_name: last.name.clone(),
+    });
     None
 }
 
