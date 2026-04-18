@@ -1,4 +1,5 @@
 pub mod changeset;
+pub mod expand;
 pub mod full;
 pub mod incremental;
 pub mod module_resolution;

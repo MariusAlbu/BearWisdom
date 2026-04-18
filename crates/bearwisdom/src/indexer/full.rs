@@ -13,6 +13,7 @@
 
 use crate::db::Database;
 use crate::indexer::changeset;
+use crate::indexer::expand;
 use crate::indexer::ref_cache::RefCache;
 use crate::indexer::resolve;
 use crate::indexer::write;
@@ -317,7 +318,8 @@ pub fn full_index(
     combined_parsed.extend(parsed);
     combined_parsed.extend(external_parsed);
     combined_parsed.extend(vendored_c_parsed);
-    let parsed = combined_parsed;
+    let mut parsed = combined_parsed;
+    let mut symbol_id_map = symbol_id_map;
 
     // --- Step 5: Cross-file resolution + edge writing ---
     emit("resolving", 0.0, None);
@@ -327,6 +329,52 @@ pub fn full_index(
         "Wrote {} edges, {} external, {} unresolved references",
         rstats.resolved, rstats.external, rstats.unresolved
     );
+
+    // --- Step 5b: Chain reachability expansion (R3 second pass) ---
+    //
+    // Pass 1's chain walker recorded any (current_type, target_name) pairs
+    // it couldn't step past. Each one is a signal that a reachability-
+    // narrowed dep didn't surface a definition file the chain needed. We
+    // dispatch Ecosystem::resolve_symbol to pull just those files, then
+    // re-run resolution against the augmented index. Pass 1's edges stay
+    // (INSERT OR IGNORE keeps duplicates out); unresolved_refs and
+    // external_refs are wiped before pass 2 so the second pass writes a
+    // single authoritative answer per ref.
+    let final_rstats = if !rstats.chain_misses.is_empty() {
+        let estats = expand::expand_chain_reachability(
+            db,
+            &mut parsed,
+            &mut symbol_id_map,
+            &rstats.chain_misses,
+            project_root,
+            &project_ctx,
+            &written_packages,
+            registry,
+        )
+        .context("Failed to expand chain reachability")?;
+        if estats.new_files > 0 {
+            db.conn().execute("DELETE FROM unresolved_refs", [])
+                .context("Failed to clear unresolved_refs before re-resolve")?;
+            db.conn().execute("DELETE FROM external_refs", [])
+                .context("Failed to clear external_refs before re-resolve")?;
+            let rstats2 =
+                resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
+                    .context("Failed to re-resolve after chain reachability expansion")?;
+            info!(
+                "Chain expansion re-resolve: {} edges (+{} from pass 1), {} external, {} unresolved",
+                rstats2.resolved,
+                rstats2.resolved as i64 - rstats.resolved as i64,
+                rstats2.external,
+                rstats2.unresolved,
+            );
+            rstats2
+        } else {
+            rstats
+        }
+    } else {
+        rstats
+    };
+    let rstats = final_rstats;
     emit("resolving", 1.0, Some(&format!("{} edges resolved", rstats.resolved)));
 
     // --- Step 6a: FTS content index (shared pipeline) ---

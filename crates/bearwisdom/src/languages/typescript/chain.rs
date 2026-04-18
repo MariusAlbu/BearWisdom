@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::chain_walker::external_type_qname;
-use crate::indexer::resolve::engine::{RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
@@ -167,7 +167,18 @@ pub(super) fn resolve_via_chain(
             continue;
         }
 
-        // Lost the chain — can't determine the next type.
+        // Lost the chain — can't determine the next type. Record a miss
+        // so the R3 reload pass can pull current_type's definition file.
+        // Upgrade short names ("Assertion") to full external qnames
+        // ("chai.Assertion") when an external type owns the short name —
+        // the reload pass needs the leading dep segment to address the
+        // right ExternalDepRoot.
+        let miss_type = external_type_qname(&current_type, lookup)
+            .unwrap_or_else(|| current_type.clone());
+        lookup.record_chain_miss(ChainMiss {
+            current_type: miss_type,
+            target_name: seg.name.clone(),
+        });
         return None;
     }
 
@@ -211,6 +222,14 @@ pub(super) fn resolve_via_chain(
         }
     }
 
+    // Final-segment miss: the walker landed on `effective_type` but no
+    // member named `last.name` is indexed under it. Same R3 reload signal
+    // as the intermediate-segment bail-out — feed `effective_type` to
+    // resolve_symbol so its definition file gets pulled.
+    lookup.record_chain_miss(ChainMiss {
+        current_type: effective_type,
+        target_name: last.name.clone(),
+    });
     None
 }
 
