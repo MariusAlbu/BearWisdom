@@ -364,6 +364,7 @@ fn extract_instance(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 
     Some(idx)
@@ -436,6 +437,7 @@ fn collect_deriving_names(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -544,6 +546,7 @@ fn extract_import(
         line: node.start_position().row as u32,
         module: Some(module),
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -612,6 +615,7 @@ fn extract_apply(
         line: node.start_position().row as u32,
         module: fmodule,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -713,6 +717,7 @@ fn extract_infix(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 

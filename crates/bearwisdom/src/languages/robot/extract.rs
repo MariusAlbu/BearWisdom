@@ -152,6 +152,7 @@ fn extract_settings_line(
                         line: lineno,
                         module: Some(t),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -241,6 +242,7 @@ fn extract_keyword_invocation(
         line: lineno,
         module,
         chain: None,
+        byte_offset: 0,
     });
 }
 

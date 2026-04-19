@@ -9,6 +9,7 @@ pub mod connectors;
 mod calls;
 pub(crate) mod decorators;
 mod embedded;
+mod flow;
 mod helpers;
 mod imports;
 mod narrowing;
@@ -59,6 +60,17 @@ impl LanguagePlugin for TypeScriptPlugin {
         &[".ts", ".tsx", ".mts", ".cts"]
     }
 
+    /// `.tsx` uses the TSX grammar, so the language id must be "tsx" (not the
+    /// plugin's primary "typescript") for `grammar(lang_id)` to pick the
+    /// right parser. Other extensions route to the TypeScript grammar.
+    fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
+        match ext.to_ascii_lowercase().as_str() {
+            ".tsx" => Some("tsx"),
+            ".ts" | ".mts" | ".cts" => Some("typescript"),
+            _ => None,
+        }
+    }
+
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         Some(match lang_id {
             "typescript" => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
@@ -74,6 +86,26 @@ impl LanguagePlugin for TypeScriptPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let is_tsx = file_path.ends_with(".tsx") || lang_id == "tsx";
         extract::extract(source, is_tsx)
+    }
+
+    fn extract_connection_points(
+        &self,
+        source: &str,
+        file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
+        connectors::extract_typescript_connection_points(source, file_path)
+    }
+
+    fn extract_with_demand(
+        &self,
+        source: &str,
+        file_path: &str,
+        lang_id: &str,
+        demand: Option<&std::collections::HashSet<String>>,
+    ) -> ExtractionResult {
+        let is_tsx = file_path.ends_with(".tsx") || lang_id == "tsx";
+        extract::extract_with_demand(source, is_tsx, demand)
     }
 
     fn embedded_regions(
@@ -142,5 +174,15 @@ impl LanguagePlugin for TypeScriptPlugin {
         _ctx: &crate::indexer::project_context::ProjectContext,
     ) {
         connectors::run_react_patterns(db.conn(), project_root);
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        // Temporarily disabled while investigating ts-immich hang.
+        // Set BW_TS_FLOW=1 to re-enable.
+        if std::env::var_os("BW_TS_FLOW").is_some() {
+            Some(&flow::TS_FLOW_CONFIG)
+        } else {
+            None
+        }
     }
 }

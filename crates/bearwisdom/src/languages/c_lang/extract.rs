@@ -347,6 +347,7 @@ fn extract_node<'a>(
                                     line: type_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -470,6 +471,7 @@ fn sweep_typerefs<'a>(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -495,6 +497,7 @@ fn sweep_typerefs<'a>(
                                     line: base.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -511,6 +514,7 @@ fn sweep_typerefs<'a>(
                                             line: inner.start_position().row as u32,
                                             module: None,
                                             chain: None,
+                                            byte_offset: 0,
                                         });
                                     }
                                 }

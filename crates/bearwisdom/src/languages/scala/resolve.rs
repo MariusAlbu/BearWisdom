@@ -136,6 +136,7 @@ impl LanguageResolver for ScalaResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "scala_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -152,6 +153,7 @@ impl LanguageResolver for ScalaResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "scala_same_package",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -174,6 +176,7 @@ impl LanguageResolver for ScalaResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "scala_import",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -193,6 +196,7 @@ impl LanguageResolver for ScalaResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "scala_wildcard_import",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -207,6 +211,7 @@ impl LanguageResolver for ScalaResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "scala_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }

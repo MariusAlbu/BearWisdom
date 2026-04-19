@@ -372,6 +372,7 @@ pub(super) fn push_type_definition(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -430,6 +431,7 @@ pub(super) fn push_given_definition(
                 line: rt.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -586,6 +588,7 @@ pub(super) fn push_export(
                     line: child.start_position().row as u32,
                     module: Some(full),
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             _ => {}
@@ -620,6 +623,7 @@ pub(super) fn push_import(
                     line: child.start_position().row as u32,
                     module: Some(full),
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             _ => {}
@@ -661,6 +665,7 @@ fn emit_import_expression(
                             line: sel.start_position().row as u32,
                             module: Some(module),
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -679,6 +684,7 @@ fn emit_import_expression(
             line: node.start_position().row as u32,
             module: Some(full),
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -721,6 +727,7 @@ pub(super) fn extract_extends_with_node(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -789,6 +796,7 @@ pub(super) fn extract_extends_with(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -806,6 +814,7 @@ pub(super) fn extract_extends_with(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

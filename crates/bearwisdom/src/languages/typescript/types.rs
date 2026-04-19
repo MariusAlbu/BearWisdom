@@ -37,6 +37,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         "generic_type" => {
@@ -53,6 +54,7 @@ pub(super) fn extract_type_ref_from_annotation(
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
                 // Also extract type arguments for generic parameter resolution.
                 if let Some(type_args_node) = type_node.child_by_field_name("type_arguments") {
@@ -92,6 +94,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                         line: arg.start_position().row as u32,
                                         module: None,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -110,6 +113,7 @@ pub(super) fn extract_type_ref_from_annotation(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         "function_type" => {
@@ -264,6 +268,7 @@ pub(super) fn extract_type_ref_from_annotation(
                         line: expr.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             } else {
@@ -280,6 +285,7 @@ pub(super) fn extract_type_ref_from_annotation(
                                     line: child.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                                 break;
                             }
@@ -394,6 +400,7 @@ pub(super) fn extract_type_refs_recursive(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -424,6 +431,7 @@ pub(super) fn extract_type_refs_recursive(
                                     line: child.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

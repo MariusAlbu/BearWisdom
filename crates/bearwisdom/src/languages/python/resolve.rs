@@ -137,6 +137,7 @@ impl LanguageResolver for PythonResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "python_import_file",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -148,6 +149,7 @@ impl LanguageResolver for PythonResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "python_import",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -166,6 +168,7 @@ impl LanguageResolver for PythonResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "python_ref_module",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -185,6 +188,7 @@ impl LanguageResolver for PythonResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "python_ref_module_path",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -219,6 +223,7 @@ impl LanguageResolver for PythonResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "python_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -236,6 +241,7 @@ impl LanguageResolver for PythonResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "python_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -248,6 +254,7 @@ impl LanguageResolver for PythonResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "python_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -273,6 +280,7 @@ impl LanguageResolver for PythonResolver {
                                 target_symbol_id: sym.id,
                                 confidence: 1.0,
                                 strategy: "python_module_qualified",
+                                resolved_yield_type: None,
                             });
                         }
                     }
@@ -292,6 +300,7 @@ impl LanguageResolver for PythonResolver {
                                 target_symbol_id: sym.id,
                                 confidence: 0.90,
                                 strategy: "python_module_qualified_by_name",
+                                resolved_yield_type: None,
                             });
                         }
                     }
@@ -314,6 +323,7 @@ impl LanguageResolver for PythonResolver {
                                 target_symbol_id: sym.id,
                                 confidence: 0.90,
                                 strategy: "python_wildcard_import",
+                                resolved_yield_type: None,
                             });
                         }
                     }
@@ -341,6 +351,7 @@ impl LanguageResolver for PythonResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "python_from_import",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -363,6 +374,7 @@ impl LanguageResolver for PythonResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
                         strategy: "python_from_import_prefix",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -509,6 +521,7 @@ mod resolve_tests {
             line: 1,
             module: Some(module.to_string()),
             chain: None,
+            byte_offset: 0,
         }
     }
 
@@ -530,6 +543,9 @@ mod resolve_tests {
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         }
     }
 
@@ -561,6 +577,9 @@ mod resolve_tests {
                 symbol_origin_languages: vec![],
                 ref_origin_languages: vec![],
                 symbol_from_snippet: vec![],
+                flow: crate::types::FlowMeta::default(),
+                connection_points: Vec::new(),
+                demand_contributions: Vec::new(),
             })
             .collect();
         let index = SymbolIndex::build(&owned, &id_map);
@@ -589,6 +608,7 @@ mod resolve_tests {
             line: 5,
             module: None,
             chain: None,
+            byte_offset: 0,
         };
         let consumer_file = make_py_file(
             "posthog/api/views.py",
@@ -642,6 +662,7 @@ mod resolve_tests {
             line: 3,
             module: None,
             chain: None,
+            byte_offset: 0,
         };
         let consumer_file = make_py_file(
             "myapp\\api\\views.py",

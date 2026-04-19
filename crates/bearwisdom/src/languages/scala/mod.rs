@@ -2,6 +2,7 @@
 
 mod calls;
 pub(crate) mod decorators;
+mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
@@ -90,4 +91,7 @@ impl LanguagePlugin for ScalaPlugin {
         Some(std::sync::Arc::new(resolve::ScalaResolver))
     }
 
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::SCALA_FLOW_CONFIG)
+    }
 }

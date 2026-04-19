@@ -350,6 +350,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
+                byte_offset: 0,
             });
         }
         // Don't recurse into imports — there's nothing useful inside.
@@ -444,6 +445,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         recurse_children(node, ctx, language);
@@ -463,6 +465,7 @@ fn walk_node<'src>(node: Node<'_>, ctx: &mut ExtractionCtx<'src>, language: &str
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

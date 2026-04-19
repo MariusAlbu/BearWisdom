@@ -68,6 +68,7 @@ pub(super) fn extract_impl(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -87,6 +88,7 @@ pub(super) fn extract_impl(
                 line: trait_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -187,6 +189,7 @@ pub(super) fn extract_impl(
                                     line: ty_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -285,6 +288,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: macro_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: macro_node.start_byte() as u32,
                         });
                     }
                 }
@@ -308,6 +312,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -387,6 +392,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: name_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: name_node.start_byte() as u32,
                         });
                         // Also emit TypeRef so the type graph is connected.
                         refs.push(ExtractedRef {
@@ -396,6 +402,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: name_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -454,6 +461,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: func.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: func.start_byte() as u32,
                         });
                     }
                 }
@@ -488,6 +496,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -503,6 +512,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -709,6 +719,7 @@ pub(super) fn extract_extern_crate(
         line: name_node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -770,6 +781,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module: if module.is_empty() { None } else { Some(module) },
                 chain: None,
+                byte_offset: 0,
             });
         }
 
@@ -835,6 +847,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
+                byte_offset: 0,
             });
         }
 
@@ -851,6 +864,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
+                byte_offset: 0,
             });
         }
 
@@ -871,6 +885,7 @@ fn walk_use_tree(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
+                byte_offset: 0,
             });
         }
 
@@ -1026,6 +1041,7 @@ fn infer_rust_variable_type(
                         line: name_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1068,6 +1084,7 @@ fn infer_rust_variable_type(
                         line: func.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

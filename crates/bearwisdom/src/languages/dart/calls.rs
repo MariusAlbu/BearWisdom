@@ -36,6 +36,7 @@ pub(super) fn emit_dart_type_ref(
             line: type_node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -97,6 +98,7 @@ pub(super) fn extract_dart_calls(
                             line: child.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -156,6 +158,7 @@ pub(super) fn extract_dart_calls(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -310,6 +313,7 @@ fn extract_postfix_call(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -411,6 +415,7 @@ fn extract_inline_call_from_statement(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -477,6 +482,7 @@ fn extract_new_expression_ref(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             return;
         }
@@ -494,6 +500,7 @@ fn extract_new_expression_ref(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
                 return;
             }
@@ -737,6 +744,7 @@ pub(super) fn extract_const_object_refs(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                     return;
                 }

@@ -38,6 +38,7 @@
 //   apiResource: same minus create and edit (5 routes total)
 // =============================================================================
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -49,6 +50,9 @@ use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
+use crate::types::{
+    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
+};
 
 // ===========================================================================
 // LaravelRouteConnector — LanguagePlugin entry point
@@ -694,11 +698,11 @@ impl Connector for PhpRestConnector {
     fn extract(
         &self,
         conn: &Connection,
-        project_root: &Path,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
+        // Starts (Guzzle/Http) migrated into `extract_php_rest_starts_src`.
         let mut points = Vec::new();
         extract_php_rest_stops(conn, &mut points)?;
-        extract_php_rest_starts(conn, project_root, &mut points)?;
         Ok(points)
     }
 }
@@ -745,63 +749,63 @@ fn extract_php_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> 
     Ok(())
 }
 
-fn extract_php_rest_starts(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    // Guzzle: $client->get('url'), $client->post('url'), Http::get('url'), etc.
+// ===========================================================================
+// Plugin-facing composer
+// ===========================================================================
+
+pub fn extract_php_connection_points(source: &str, file_path: &str) -> Vec<AbstractPoint> {
+    let mut out = Vec::new();
+    extract_php_rest_starts_src(source, file_path, &mut out);
+    out
+}
+
+/// PHP REST client-call starts: Guzzle `$client->get(...)`, Laravel Http facade.
+pub fn extract_php_rest_starts_src(
+    source: &str,
+    file_path: &str,
+    out: &mut Vec<AbstractPoint>,
+) {
+    if php_rest_is_test_file(file_path) {
+        return;
+    }
+    if !source.contains("->") && !source.contains("Http::") {
+        return;
+    }
+
     let re = regex::Regex::new(
         r#"(?:\$\w+|Http)\s*->\s*(?P<method>get|post|put|delete|patch|head)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
-    ).expect("php http client regex");
+    )
+    .expect("php http client regex");
 
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = 'php'")
-        .context("Failed to prepare PHP files query")?;
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query PHP files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect PHP file rows")?;
-
-    for (file_id, rel_path) in files {
-        if php_rest_is_test_file(&rel_path) {
-            continue;
-        }
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for cap in re.captures_iter(line_text) {
-                let raw_url = cap.name("url1")
-                    .or_else(|| cap.name("url2"))
-                    .map(|m| m.as_str().to_string());
-                let Some(raw_url) = raw_url else { continue };
-                if !php_rest_looks_like_api_url(&raw_url) {
-                    continue;
-                }
-                let method = cap.name("method")
-                    .map(|m| m.as_str().to_uppercase())
-                    .unwrap_or_else(|| "GET".to_string());
-                let url_pattern = rest_normalise_url_pattern(&raw_url);
-                out.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: line_no,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Start,
-                    key: url_pattern,
-                    method,
-                    framework: String::new(),
-                    metadata: None,
-                });
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for cap in re.captures_iter(line_text) {
+            let raw_url = cap
+                .name("url1")
+                .or_else(|| cap.name("url2"))
+                .map(|m| m.as_str().to_string());
+            let Some(raw_url) = raw_url else { continue };
+            if !php_rest_looks_like_api_url(&raw_url) {
+                continue;
             }
+            let method = cap
+                .name("method")
+                .map(|m| m.as_str().to_uppercase())
+                .unwrap_or_else(|| "GET".to_string());
+            let url_pattern = rest_normalise_url_pattern(&raw_url);
+            let mut meta = HashMap::new();
+            meta.insert("method".to_string(), method);
+            out.push(AbstractPoint {
+                kind: ConnectionKind::Rest,
+                role: ConnectionRole::Start,
+                key: url_pattern,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
         }
     }
-    Ok(())
 }
 
 fn php_rest_is_test_file(rel_path: &str) -> bool {

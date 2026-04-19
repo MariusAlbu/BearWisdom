@@ -954,6 +954,7 @@ pub(super) fn push_using_directive(
                             line: child.start_position().row as u32,
                             module: Some(full),
                             chain: None,
+                            byte_offset: 0,
                         });
                         return;
                     }
@@ -979,6 +980,7 @@ pub(super) fn push_using_directive(
                     line: child.start_position().row as u32,
                     module: Some(name),
                     chain: None,
+                    byte_offset: 0,
                 });
                 return;
             }
@@ -991,6 +993,7 @@ pub(super) fn push_using_directive(
                     line: child.start_position().row as u32,
                     module: Some(full),
                     chain: None,
+                    byte_offset: 0,
                 });
                 return;
             }

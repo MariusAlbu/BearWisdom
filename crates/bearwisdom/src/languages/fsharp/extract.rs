@@ -250,6 +250,7 @@ fn extract_open(
         line: node.start_position().row as u32,
         module: Some(module),
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -676,6 +677,7 @@ fn extract_interface_implementation(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         break;
@@ -709,6 +711,7 @@ fn extract_class_inherits(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             break;
         }
@@ -789,6 +792,7 @@ fn collect_applications(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -805,6 +809,7 @@ fn collect_applications(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

@@ -464,6 +464,9 @@ fn build_parsed_file(virtual_path: String, symbols: Vec<ExtractedSymbol>, src: &
         symbol_from_snippet: Vec::new(),
         content: None,
         has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 

@@ -87,6 +87,7 @@ impl LanguageResolver for StarlarkResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "starlark_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -131,6 +132,7 @@ impl LanguageResolver for StarlarkResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "starlark_load_import",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -142,6 +144,7 @@ impl LanguageResolver for StarlarkResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.9,
                         strategy: "starlark_load_global",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -153,6 +156,7 @@ impl LanguageResolver for StarlarkResolver {
                 target_symbol_id: sym.id,
                 confidence: 0.75,
                 strategy: "starlark_global_fallback",
+                resolved_yield_type: None,
             });
         }
 

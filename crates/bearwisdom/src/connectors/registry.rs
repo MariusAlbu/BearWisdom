@@ -55,6 +55,29 @@ impl ConnectorRegistry {
         project_root: &Path,
         ctx: &ProjectContext,
     ) -> Result<u32> {
+        self.run_with_plugin_points(conn, project_root, ctx, &[])
+    }
+
+    /// Variant of `run` that accepts a pre-collected list of
+    /// `ConnectionPoint`s emitted by language plugins during parse
+    /// (via `LanguagePlugin::extract_connection_points` → converted by
+    /// `connectors::from_plugins::collect_plugin_connection_points`). The
+    /// pre-collected points are dumped into the same pool as the ones
+    /// produced by legacy `Connector::extract` impls; dedup removes
+    /// accidental duplicates when a connector hasn't yet been flattened
+    /// but its plugin also emits some of the same points.
+    ///
+    /// As individual connectors migrate their detection into plugin
+    /// `extract_connection_points`, their legacy `Connector::extract`
+    /// shrinks / vanishes; this variant keeps both sources live during
+    /// the migration.
+    pub fn run_with_plugin_points(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+        ctx: &ProjectContext,
+        plugin_points: &[ConnectionPoint],
+    ) -> Result<u32> {
         // Phase 0: detect — only keep connectors relevant to this project.
         let active: Vec<&dyn Connector> = self
             .connectors
@@ -63,7 +86,7 @@ impl ConnectorRegistry {
             .map(|c| c.as_ref())
             .collect();
 
-        if active.is_empty() {
+        if active.is_empty() && plugin_points.is_empty() {
             return Ok(0);
         }
 
@@ -71,6 +94,16 @@ impl ConnectorRegistry {
         clear_connection_points(conn)?;
 
         let mut all_points: Vec<ConnectionPoint> = Vec::new();
+
+        // Ingest plugin-emitted points first so they take precedence during
+        // dedup (first wins). As connectors flatten into their owning plugin
+        // their legacy extract impl shrinks; this ordering keeps the
+        // authoritative source ahead of any remaining regex-based legacy
+        // fallback.
+        if !plugin_points.is_empty() {
+            info!("plugin extract_connection_points: {} points", plugin_points.len());
+            all_points.extend_from_slice(plugin_points);
+        }
 
         for connector in &active {
             let desc = connector.descriptor();

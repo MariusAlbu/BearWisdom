@@ -46,6 +46,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                 line: i as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             i += 1;
             continue;

@@ -626,97 +626,88 @@ impl Connector for RubyGraphQlConnector {
         ctx.has_dependency(ManifestKind::Gemfile, "graphql")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // `field :name, GraphQL::Types::String, description: "..."` — group 1 = field name.
-        let re_field = regex::Regex::new(r"^\s*field\s+:(\w+)")
-            .expect("ruby graphql field regex");
-        // `def resolve(...)` or `def field_name(obj, args, ctx)`
-        let re_resolve = regex::Regex::new(r"^\s*def\s+(resolve|query_type|mutation_type|\w+)\s*[\(\n]")
-            .expect("ruby graphql resolve regex");
-        // graphql-ruby BaseResolver or resolver class markers.
-        let re_resolver_class = regex::Regex::new(
-            r"class\s+\w+\s*<\s*(?:Types::|Resolvers::|Mutations::)?(?:Base)?(?:Resolver|Mutation|Query|Object|Field)\b",
-        )
-        .expect("ruby graphql class regex");
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Moved into `RubyPlugin::extract_connection_points`.
+        Ok(Vec::new())
+    }
+}
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, path FROM files
-                 WHERE language = 'ruby'
-                   AND (path LIKE '%/graphql/%' OR path LIKE '%/types/%'
-                        OR path LIKE '%/resolvers/%' OR path LIKE '%/mutations/%'
-                        OR path LIKE '%/queries/%')",
-            )
-            .context("Failed to prepare Ruby GraphQL file query")?;
+/// Per-file Ruby GraphQL scan: emit `field :name` declarations as Start
+/// points and `def resolve` / `def field_name` definitions inside resolver
+/// classes as Stop points. Path-prefix filter keeps non-GraphQL Ruby files
+/// from being scanned by checking whether the file path sits under the
+/// conventional graphql-ruby directories.
+pub fn extract_ruby_graphql(source: &str, file_path: &str) -> Vec<crate::types::ConnectionPoint> {
+    use crate::types::{ConnectionKind, ConnectionPoint as AP, ConnectionRole};
+    use std::collections::HashMap;
 
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-            .context("Failed to query Ruby GraphQL files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Ruby GraphQL file rows")?;
+    // Path filter — the legacy Connector applied this at SQL time.
+    let lower = file_path.replace('\\', "/");
+    if !(lower.contains("/graphql/")
+        || lower.contains("/types/")
+        || lower.contains("/resolvers/")
+        || lower.contains("/mutations/")
+        || lower.contains("/queries/"))
+    {
+        return Vec::new();
+    }
 
-        let mut points = Vec::new();
+    let re_field = regex::Regex::new(r"^\s*field\s+:(\w+)")
+        .expect("ruby graphql field regex");
+    let re_resolve = regex::Regex::new(r"^\s*def\s+(resolve|query_type|mutation_type|\w+)\s*[\(\n]")
+        .expect("ruby graphql resolve regex");
+    let re_resolver_class = regex::Regex::new(
+        r"class\s+\w+\s*<\s*(?:Types::|Resolvers::|Mutations::)?(?:Base)?(?:Resolver|Mutation|Query|Object|Field)\b",
+    )
+    .expect("ruby graphql class regex");
 
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
+    if !re_resolver_class.is_match(source) && !source.contains("field :") {
+        return Vec::new();
+    }
 
-            // Quick filter: must reference graphql-ruby base classes or field macro.
-            if !re_resolver_class.is_match(&source) && !source.contains("field :") {
-                continue;
-            }
+    let in_resolver = re_resolver_class.is_match(source);
+    let mut out: Vec<AP> = Vec::new();
 
-            let in_resolver = re_resolver_class.is_match(&source);
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
 
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
-
-                // `field :name` → Start point (schema definition).
-                if let Some(cap) = re_field.captures(line_text) {
-                    let name = cap[1].to_string();
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::GraphQl,
-                        direction: FlowDirection::Start,
-                        key: name,
-                        method: String::new(),
-                        framework: "graphql-ruby".to_string(),
-                        metadata: None,
-                    });
-                    continue;
-                }
-
-                // `def resolve(...)` / `def field_name(...)` → Stop point (resolver impl).
-                if in_resolver {
-                    if let Some(cap) = re_resolve.captures(line_text) {
-                        let name = cap[1].to_string();
-                        // Skip trivial helpers that aren't resolvers.
-                        if matches!(name.as_str(), "initialize" | "authorized?" | "ready?") {
-                            continue;
-                        }
-                        points.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: line_no,
-                            protocol: Protocol::GraphQl,
-                            direction: FlowDirection::Stop,
-                            key: name,
-                            method: String::new(),
-                            framework: "graphql-ruby".to_string(),
-                            metadata: None,
-                        });
-                    }
-                }
-            }
+        if let Some(cap) = re_field.captures(line_text) {
+            let mut meta = HashMap::new();
+            meta.insert("framework".to_string(), "graphql-ruby".to_string());
+            out.push(AP {
+                kind: ConnectionKind::GraphQL,
+                role: ConnectionRole::Start,
+                key: cap[1].to_string(),
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
+            continue;
         }
 
-        Ok(points)
+        if in_resolver {
+            if let Some(cap) = re_resolve.captures(line_text) {
+                let name = cap[1].to_string();
+                if matches!(name.as_str(), "initialize" | "authorized?" | "ready?") {
+                    continue;
+                }
+                let mut meta = HashMap::new();
+                meta.insert("framework".to_string(), "graphql-ruby".to_string());
+                out.push(AP {
+                    kind: ConnectionKind::GraphQL,
+                    role: ConnectionRole::Stop,
+                    key: name,
+                    line: line_no,
+                    col: 1,
+                    symbol_qname: String::new(),
+                    meta,
+                });
+            }
+        }
     }
+
+    out
 }
 
 // ---------------------------------------------------------------------------

@@ -192,6 +192,7 @@ fn process_directive(
                 line,
                 module: Some(module_name),
                 chain: None,
+                byte_offset: 0,
             });
         }
         return;
@@ -213,6 +214,7 @@ fn process_directive(
                 line,
                 module: Some(module_name),
                 chain: None,
+                byte_offset: 0,
             });
         }
         return;
@@ -253,6 +255,7 @@ fn extract_body_goals(
             line,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }

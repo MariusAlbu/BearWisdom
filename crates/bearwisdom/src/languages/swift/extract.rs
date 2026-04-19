@@ -541,6 +541,7 @@ fn infer_type_from_value(
                         line: value_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -556,6 +557,7 @@ fn infer_type_from_value(
                     line: value_node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

@@ -110,6 +110,7 @@ impl LanguageResolver for ErlangResolver {
                             target_symbol_id: sym.id,
                             confidence: 0.9,
                             strategy: "erlang_same_file_arity",
+                            resolved_yield_type: None,
                         });
                     }
                 }

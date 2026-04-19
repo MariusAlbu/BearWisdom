@@ -239,6 +239,7 @@ fn parse_import_line(line: &str, line_num: u32) -> Option<Vec<ExtractedRef>> {
                     line: line_num,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 }
             })
             .collect();
@@ -257,6 +258,7 @@ fn parse_import_line(line: &str, line_num: u32) -> Option<Vec<ExtractedRef>> {
             line: line_num,
             module: None,
             chain: None,
+            byte_offset: 0,
         }]);
     }
 

@@ -153,6 +153,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                     line: row,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

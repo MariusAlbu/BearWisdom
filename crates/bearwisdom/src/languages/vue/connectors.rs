@@ -1,32 +1,23 @@
 // =============================================================================
-// languages/vue/connectors.rs — Vue-specific flow connectors
+// languages/vue/connectors.rs — Vue GraphQL connection points
 //
-// VueGraphQlConnector:
-//   Detects GraphQL operations in Vue Single File Components (.vue files).
-//   Vue apps use Apollo Client (@vue/apollo-composable) or URQL.
-//
-//   Start points: gql`` template literals containing type Query/Mutation/Subscription.
-//   Stop points: resolver map entries (Nuxt server routes with Apollo Server).
-//
-//   Detection: ts_packages contains "graphql", "@apollo/client",
-//              "@vue/apollo-composable", or "@urql/vue".
+// Flattened into `VuePlugin::extract_connection_points` — the scan runs at
+// parse time on the in-memory source. The registry-facing `Connector` impl
+// returns empty; its detect still fires so the protocol is considered live.
 // =============================================================================
 
+use std::collections::HashMap;
 use std::path::Path;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use regex::Regex;
 use rusqlite::Connection;
-use tracing::debug;
 
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
-use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
+use crate::connectors::types::{ConnectionPoint as DbPoint, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
-
-// ===========================================================================
-// VueGraphQlConnector
-// ===========================================================================
+use crate::types::{ConnectionKind, ConnectionPoint, ConnectionRole};
 
 pub struct VueGraphQlConnector;
 
@@ -49,69 +40,28 @@ impl Connector for VueGraphQlConnector {
             || ctx.has_dependency(ManifestKind::Npm, "@urql/vue")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        let re_type_block = Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{")
-            .expect("vue gql type block regex");
-        let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:")
-            .expect("vue gql field regex");
-        let re_resolver_key = Regex::new(
-            r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#,
-        )
-        .expect("vue graphql resolver key regex");
-
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'vue'")
-            .context("Failed to prepare Vue files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-            .context("Failed to query Vue files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Vue file rows")?;
-
-        let mut points = Vec::new();
-
-        for (file_id, rel_path) in files {
-            let lower = rel_path.to_lowercase();
-            if lower.contains("/node_modules/") {
-                continue;
-            }
-
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(e) => {
-                    debug!(path = %abs_path.display(), err = %e, "Skipping unreadable Vue file");
-                    continue;
-                }
-            };
-
-            if !re_type_block.is_match(&source) && !source.contains("gql`") {
-                continue;
-            }
-
-            extract_graphql_points(
-                &source,
-                file_id,
-                &re_type_block,
-                &re_field,
-                &re_resolver_key,
-                &mut points,
-            );
-        }
-
-        Ok(points)
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<DbPoint>> {
+        // Moved into `VuePlugin::extract_connection_points`.
+        Ok(Vec::new())
     }
 }
 
-fn extract_graphql_points(
-    source: &str,
-    file_id: i64,
-    re_type_block: &Regex,
-    re_field: &Regex,
-    re_resolver_key: &Regex,
-    out: &mut Vec<ConnectionPoint>,
-) {
+/// Scan a `.vue` source for embedded GraphQL schema definitions and
+/// resolver-map entries. Called during parse from
+/// `VuePlugin::extract_connection_points`.
+pub fn extract_vue_graphql_points(source: &str) -> Vec<ConnectionPoint> {
+    let re_type_block =
+        Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{").expect("vue gql type block regex");
+    let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:").expect("vue gql field regex");
+    let re_resolver_key =
+        Regex::new(r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#)
+            .expect("vue graphql resolver key regex");
+
+    if !re_type_block.is_match(source) && !source.contains("gql`") {
+        return Vec::new();
+    }
+
+    let mut out: Vec<ConnectionPoint> = Vec::new();
     let mut current_op_type: Option<String> = None;
     let mut brace_depth: u32 = 0;
 
@@ -129,33 +79,31 @@ fn extract_graphql_points(
                 match ch {
                     '{' => brace_depth += 1,
                     '}' => {
-                        if brace_depth > 0 {
-                            brace_depth -= 1;
-                        }
+                        if brace_depth > 0 { brace_depth -= 1; }
                     }
                     _ => {}
                 }
             }
-
             if brace_depth == 0 {
                 current_op_type = None;
                 continue;
             }
-
             if brace_depth == 1 {
                 if let Some(cap) = re_field.captures(line_text) {
                     let field_name = cap[1].to_string();
                     if !field_name.starts_with("__") {
+                        let mut meta = HashMap::new();
+                        if let Some(op) = current_op_type.as_deref() {
+                            meta.insert("method".to_string(), op.to_string());
+                        }
                         out.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: line_no,
-                            protocol: Protocol::GraphQl,
-                            direction: FlowDirection::Start,
+                            kind: ConnectionKind::GraphQL,
+                            role: ConnectionRole::Start,
                             key: field_name,
-                            method: current_op_type.clone().unwrap_or_default(),
-                            framework: String::new(),
-                            metadata: None,
+                            line: line_no,
+                            col: 1,
+                            symbol_qname: String::new(),
+                            meta,
                         });
                     }
                 }
@@ -163,7 +111,6 @@ fn extract_graphql_points(
             continue;
         }
 
-        // Resolver map entries (Nuxt server API routes with Apollo/URQL).
         for cap in re_resolver_key.captures_iter(line_text) {
             let name = cap[1].to_string();
             if matches!(
@@ -172,17 +119,40 @@ fn extract_graphql_points(
             ) {
                 continue;
             }
+            let mut meta = HashMap::new();
+            meta.insert("framework".to_string(), "apollo".to_string());
             out.push(ConnectionPoint {
-                file_id,
-                symbol_id: None,
-                line: line_no,
-                protocol: Protocol::GraphQl,
-                direction: FlowDirection::Stop,
+                kind: ConnectionKind::GraphQL,
+                role: ConnectionRole::Stop,
                 key: name,
-                method: String::new(),
-                framework: "apollo".to_string(),
-                metadata: None,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
             });
         }
+    }
+    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn emits_nothing_without_gql_marker() {
+        assert!(extract_vue_graphql_points("<template/><script>1</script>").is_empty());
+    }
+
+    #[test]
+    fn emits_start_from_schema_block() {
+        let src = "type Mutation {\n  createUser(input: U): U\n}\n";
+        let points = extract_vue_graphql_points(src);
+        assert_eq!(points.len(), 1);
+        assert_eq!(points[0].key, "createUser");
+        assert_eq!(
+            points[0].meta.get("method").map(String::as_str),
+            Some("mutation"),
+        );
     }
 }

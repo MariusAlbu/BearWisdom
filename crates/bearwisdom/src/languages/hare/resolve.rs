@@ -99,6 +99,7 @@ impl LanguageResolver for HareResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "hare_import_qualified",
+                    resolved_yield_type: None,
                 });
             }
 
@@ -109,6 +110,7 @@ impl LanguageResolver for HareResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "hare_import_local",
+                    resolved_yield_type: None,
                 });
             }
         }

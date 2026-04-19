@@ -35,6 +35,7 @@ pub(super) fn push_import(
                                 line: item.start_position().row as u32,
                                 module: module_path.clone(),
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                         "named_imports" => {
@@ -54,6 +55,7 @@ pub(super) fn push_import(
                                         line: spec.start_position().row as u32,
                                         module: module_path.clone(),
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -71,6 +73,7 @@ pub(super) fn push_import(
                                         line: ns_child.start_position().row as u32,
                                         module: module_path.clone(),
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                     break;
                                 }
@@ -111,6 +114,7 @@ pub(super) fn push_import(
                         line: child.start_position().row as u32,
                         module: require_module,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -149,6 +153,7 @@ pub(super) fn extract_heritage(
                                         line: type_node.start_position().row as u32,
                                         module: None,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -166,6 +171,7 @@ pub(super) fn extract_heritage(
                                         line: type_node.start_position().row as u32,
                                         module: None,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -186,6 +192,7 @@ pub(super) fn extract_heritage(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -203,6 +210,7 @@ pub(super) fn extract_heritage(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

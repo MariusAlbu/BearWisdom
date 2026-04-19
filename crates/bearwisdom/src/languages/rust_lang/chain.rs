@@ -2,6 +2,7 @@
 // rust_lang/chain.rs — Rust chain-aware resolution
 // =============================================================================
 
+use crate::indexer::resolve::chain_walker::simple_yield_type;
 use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use super::predicates::{kind_compatible, normalize_path};
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
@@ -32,26 +33,31 @@ pub(super) fn resolve_via_chain(
         SegmentKind::Identifier => {
             let name = &segments[0].name;
 
-            // Is it a known type (static/enum access: `MyEnum::Variant`, `MyStruct::new()`)?
-            let is_type = lookup.types_by_name(name).iter().any(|s| {
-                matches!(
-                    s.kind.as_str(),
-                    "struct" | "enum" | "trait" | "type_alias" | "class"
-                )
-            });
-            if is_type {
-                Some(normalize_path(name))
+            // R5: per-file flow inference takes precedence over global lookups.
+            if let Some(local_type) = lookup.local_type(name) {
+                Some(normalize_path(&local_type))
             } else {
-                // Is it a field on the enclosing type?
-                let mut found = None;
-                for scope in &ref_ctx.scope_chain {
-                    let field_qname = format!("{scope}.{name}");
-                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
-                        found = Some(normalize_path(type_name));
-                        break;
+                // Is it a known type (static/enum access: `MyEnum::Variant`, `MyStruct::new()`)?
+                let is_type = lookup.types_by_name(name).iter().any(|s| {
+                    matches!(
+                        s.kind.as_str(),
+                        "struct" | "enum" | "trait" | "type_alias" | "class"
+                    )
+                });
+                if is_type {
+                    Some(normalize_path(name))
+                } else {
+                    // Is it a field on the enclosing type?
+                    let mut found = None;
+                    for scope in &ref_ctx.scope_chain {
+                        let field_qname = format!("{scope}.{name}");
+                        if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            found = Some(normalize_path(type_name));
+                            break;
+                        }
                     }
+                    found.or_else(|| segments[0].declared_type.as_ref().map(|t| normalize_path(t)))
                 }
-                found.or_else(|| segments[0].declared_type.as_ref().map(|t| normalize_path(t)))
             }
         }
         _ => None,
@@ -116,6 +122,7 @@ pub(super) fn resolve_via_chain(
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: "rust_chain_resolution",
+                resolved_yield_type: simple_yield_type(sym, lookup).map(|t| normalize_path(&t)),
             });
         }
     }
@@ -126,6 +133,7 @@ pub(super) fn resolve_via_chain(
                 target_symbol_id: sym.id,
                 confidence: 0.95,
                 strategy: "rust_chain_resolution",
+                resolved_yield_type: simple_yield_type(sym, lookup).map(|t| normalize_path(&t)),
             });
         }
     }

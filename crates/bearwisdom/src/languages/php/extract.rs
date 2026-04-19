@@ -304,6 +304,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -323,6 +324,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -362,6 +364,7 @@ fn scan_type_refs_inner(
                             line: rhs.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

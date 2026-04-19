@@ -11,6 +11,7 @@
 //! - `connector_db` — SQLite I/O helpers for connection points and flow edges
 
 pub mod connector_db;
+pub mod from_plugins;
 pub mod matcher;
 pub mod registry;
 pub mod traits;

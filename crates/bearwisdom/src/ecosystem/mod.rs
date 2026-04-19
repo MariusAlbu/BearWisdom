@@ -27,6 +27,9 @@ use crate::walker::WalkedFile;
 
 pub mod externals;
 pub mod manifest;
+pub mod symbol_index;
+
+pub use symbol_index::SymbolLocationIndex;
 
 pub mod android_sdk;
 pub mod cabal;
@@ -40,6 +43,7 @@ pub mod dotnet_stdlib;
 pub mod elixir_stdlib;
 pub mod erlang_otp;
 pub mod go_mod;
+pub mod go_platform;
 pub mod go_stdlib;
 pub mod godot_api;
 pub mod groovy_stdlib;
@@ -360,6 +364,53 @@ pub trait Ecosystem: Send + Sync {
     fn parse_metadata_only(&self, dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
         let _ = dep;
         None
+    }
+
+    /// Build a cheap `(module, name) → file` index over the given dep roots
+    /// using a header-only tree-sitter parse (top-level decls only, no
+    /// function/method body descent). Consumed by Stage 2 of the refactored
+    /// pipeline: for every symbol the demand set asks for, the indexer
+    /// queries this handle to find the single file to parse.
+    ///
+    /// Default impl returns an empty index, which signals "this ecosystem
+    /// has not migrated to demand-driven parsing yet; keep using the eager
+    /// `walk_root` / `resolve_import` path." Ecosystems override once their
+    /// scanner is wired.
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        let _ = dep_roots;
+        SymbolLocationIndex::new()
+    }
+
+    /// Opt-in flag: when `true`, the indexer skips this ecosystem's eager
+    /// walk entirely, builds the symbol index up front, and parses only
+    /// files the Stage 2 demand loop asks for. When `false` (default),
+    /// the legacy `walk_root` / `resolve_import` eager path still runs.
+    ///
+    /// An ecosystem must implement `build_symbol_index` before flipping
+    /// this on — returning empty from the index while skipping the eager
+    /// walk would leave the ecosystem's deps entirely unindexed.
+    fn uses_demand_driven_parse(&self) -> bool { false }
+
+    /// Files to eagerly pull before Stage 2's demand loop starts, even
+    /// for demand-driven ecosystems. Lets ecosystems whose "entry point"
+    /// is a natural, bounded artefact (an npm package's types entry;
+    /// a PyPI package's `__init__.py`; a JDK module's `module-info.java`)
+    /// surface their public API on pass 1 without paying the cost of a
+    /// full walk.
+    ///
+    /// Default returns empty — suited to ecosystems whose per-dep surface
+    /// is large enough that even entry files are wasteful until demand
+    /// names them (Go modules, where the "entry" is an entire flat
+    /// directory of .go files).
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> Vec<crate::walker::WalkedFile> {
+        let _ = dep_roots;
+        Vec::new()
     }
 
     /// Per-file post-processing hook. npm uses this to prefix symbols

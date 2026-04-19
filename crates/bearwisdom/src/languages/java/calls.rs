@@ -45,6 +45,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: name_node.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: name_node.start_byte() as u32,
                         });
                     }
                 }
@@ -66,6 +67,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -184,6 +186,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: child.start_byte() as u32,
                     });
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -257,6 +260,7 @@ fn extract_catch_clause_refs(
                                 line: type_node.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -314,6 +318,7 @@ fn extract_try_with_resources_refs(
                             line: tn.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -350,6 +355,7 @@ fn extract_cast_expression_refs(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -399,6 +405,7 @@ fn extract_method_reference_calls(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: node.start_byte() as u32,
             });
         }
     }
@@ -425,6 +432,7 @@ fn extract_method_reference_calls(
                     line: recv.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -456,6 +464,7 @@ fn extract_enhanced_for_refs(
                 line: tn.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -501,6 +510,7 @@ fn extract_class_literal_ref(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         break;
@@ -561,6 +571,7 @@ fn extract_instanceof_refs(
         line: type_node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 
     // Pattern variable: the identifier after the type, if present.
@@ -582,6 +593,7 @@ fn extract_instanceof_refs(
                         line: c.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 break;

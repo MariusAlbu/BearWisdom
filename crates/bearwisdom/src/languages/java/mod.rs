@@ -4,6 +4,7 @@ mod calls;
 pub(crate) mod connectors;
 pub(crate) mod decorators;
 mod embedded;
+mod flow;
 mod helpers;
 pub(crate) mod keywords;
 mod symbols;
@@ -50,6 +51,15 @@ impl LanguagePlugin for JavaPlugin {
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
         extract::extract(source)
+    }
+
+    fn extract_connection_points(
+        &self,
+        source: &str,
+        file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
+        connectors::extract_java_connection_points(source, file_path)
     }
 
     fn embedded_regions(
@@ -112,5 +122,9 @@ impl LanguagePlugin for JavaPlugin {
             Box::new(connectors::JavaGrpcConnector),
             Box::new(connectors::JavaMqConnector),
         ]
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::JAVA_FLOW_CONFIG)
     }
 }

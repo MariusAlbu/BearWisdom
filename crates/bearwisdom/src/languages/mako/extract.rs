@@ -44,6 +44,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
                     module: None, chain: None,
+                    byte_offset: 0,
                 });
             }
         } else if let Some(rest) = trimmed.strip_prefix("<%inherit") {
@@ -54,12 +55,16 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
                     module: None, chain: None,
+                    byte_offset: 0,
                 });
             }
         }
     }
 
-    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false }
+    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    }
 }
 
 fn extract_attr(s: &str, name: &str) -> Option<String> {

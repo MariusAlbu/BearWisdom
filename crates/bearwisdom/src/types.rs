@@ -9,6 +9,7 @@
 // =============================================================================
 
 use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // Enumerations
@@ -259,6 +260,12 @@ pub struct ExtractedRef {
     /// Structured member access chain from tree-sitter AST.
     /// `None` for simple identifier refs (e.g., `foo()`, import bindings, type refs).
     pub chain: Option<MemberChain>,
+    /// R5 byte offset of the ref site (the node where the ref was emitted).
+    /// Used by the resolver cursor (for narrowing lookups) and by the shared
+    /// `indexer/flow` runner to correlate assignment RHS byte ranges with
+    /// specific refs. `0` means "not populated" — languages whose extractors
+    /// haven't been wired up yet emit this as default.
+    pub byte_offset: u32,
 }
 
 /// An HTTP route attribute extracted from C#.
@@ -305,12 +312,110 @@ impl DbMappingSource {
 }
 
 /// Universal extraction result returned by all language plugins.
+#[derive(Default)]
 pub struct ExtractionResult {
     pub symbols: Vec<ExtractedSymbol>,
     pub refs: Vec<ExtractedRef>,
     pub routes: Vec<ExtractedRoute>,
     pub db_sets: Vec<ExtractedDbSet>,
     pub has_errors: bool,
+    /// Cross-service wiring artifacts spotted by the plugin. Stage 3 of the
+    /// refactored pipeline folds these across files into `flow_edges` rows
+    /// via in-memory Start×Stop matching. Empty default; plugins fill it
+    /// one framework at a time as they migrate connector detection.
+    pub connection_points: Vec<ConnectionPoint>,
+    /// `(module_path, symbol_name)` pairs this file contributes to the
+    /// shared demand accumulator — the subset of `refs` whose target is an
+    /// external import. Used by Stage 2's demand-driven external parser to
+    /// decide which external files to pull. Empty default; plugins fill it
+    /// one ecosystem at a time as they migrate.
+    pub demand_contributions: Vec<(String, String)>,
+}
+
+// ---------------------------------------------------------------------------
+// Connection points — pipeline-refactor scaffolding
+// ---------------------------------------------------------------------------
+//
+// A ConnectionPoint is an intermediate value a language plugin emits when its
+// AST walk spots a cross-service / cross-module wiring artifact: an HTTP
+// route handler (Start), an `http.Client.Get` call (Stop), a DI registration
+// (Start), an `IMediator.Send` call (Stop), a Tauri `#[command]` (Start), an
+// `invoke()` call (Stop), etc.
+//
+// Stage 3 of the refactored pipeline folds connection points across all
+// parsed files into `flow_edges` rows by matching Start×Stop pairs with the
+// same (kind, key). No DB round-trip, no connector re-parse.
+//
+// These types are scaffolding: the field does not yet live on ParsedFile /
+// ExtractionResult and no plugin emits them. Added here so downstream
+// wiring work has a target to reference.
+
+/// What wiring category a connection point belongs to. Match keys only
+/// compare within the same kind.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionKind {
+    /// HTTP REST wiring: route handlers ↔ client calls.
+    Rest,
+    /// gRPC service method ↔ client stub call.
+    Grpc,
+    /// GraphQL resolver ↔ client query / mutation.
+    GraphQL,
+    /// Dependency-injection registration ↔ consumer site.
+    Di,
+    /// Inter-process command / handler (Tauri `#[command]`, Electron
+    /// `ipcMain.handle`) ↔ invoke call site.
+    Ipc,
+    /// Event publish ↔ subscribe (pub/sub, domain events).
+    Event,
+    /// Message queue producer ↔ consumer (Kafka, RabbitMQ, etc.).
+    MessageQueue,
+    /// Route declaration only (framework routing table entry) —
+    /// matching to handlers happens via the handler's symbol qname, not
+    /// via Start×Stop pairing.
+    Route,
+}
+
+/// Whether a connection point is the producing or consuming side of the
+/// pairing. Matched pairs have the same `kind` and `key`, one role each.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ConnectionRole {
+    /// Producer / server / handler side.
+    Start,
+    /// Consumer / client / caller side.
+    Stop,
+}
+
+/// A cross-file wiring datum emitted by a language plugin during extraction.
+///
+/// `key` is the comparison anchor used during Stage 3's in-memory match
+/// reduce. Canonical shapes per kind:
+///   - `Rest`: `"METHOD /path/template"` (e.g. `"GET /users/:id"`).
+///   - `Grpc`: `"package.Service/Method"`.
+///   - `GraphQL`: `"Query.fieldName"` or `"Mutation.fieldName"`.
+///   - `Di`: the registered service's type qname.
+///   - `Ipc`: the command / channel name literal.
+///   - `Event`: the event topic / type name.
+///   - `MessageQueue`: the queue or topic name.
+///   - `Route`: the route template, same shape as `Rest` starts.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConnectionPoint {
+    pub kind: ConnectionKind,
+    pub role: ConnectionRole,
+    pub key: String,
+    /// 1-based line number of the emitting construct within its source file.
+    pub line: u32,
+    /// 1-based column number.
+    pub col: u32,
+    /// Qualified name of the owning symbol (the function declaration, the
+    /// class body, the route constant, etc.). Empty when the connection
+    /// point isn't attached to a nameable symbol.
+    pub symbol_qname: String,
+    /// Optional free-form metadata (e.g. framework name `"gin"`, service
+    /// identifier `"UserService"`). Stored as a small map so individual
+    /// connectors don't need bespoke struct variants.
+    pub meta: HashMap<String, String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -423,7 +528,15 @@ impl ExtractionResult {
         refs: Vec<ExtractedRef>,
         has_errors: bool,
     ) -> Self {
-        Self { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors }
+        Self {
+            symbols,
+            refs,
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
+        }
     }
 
     pub fn with_connectors(
@@ -433,11 +546,27 @@ impl ExtractionResult {
         db_sets: Vec<ExtractedDbSet>,
         has_errors: bool,
     ) -> Self {
-        Self { symbols, refs, routes, db_sets, has_errors }
+        Self {
+            symbols,
+            refs,
+            routes,
+            db_sets,
+            has_errors,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
+        }
     }
 
     pub fn empty() -> Self {
-        Self { symbols: Vec::new(), refs: Vec::new(), routes: Vec::new(), db_sets: Vec::new(), has_errors: false }
+        Self {
+            symbols: Vec::new(),
+            refs: Vec::new(),
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors: false,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
+        }
     }
 }
 
@@ -462,6 +591,48 @@ pub struct PackageInfo {
     /// a name or couldn't be read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub declared_name: Option<String>,
+}
+
+/// A conditional-narrowing scope captured at extraction time.
+///
+/// Each `Narrowing` describes a half-open byte range `[byte_start, byte_end)`
+/// inside the source file where a local variable named `name` should be
+/// treated as having type `narrowed_type` instead of its forward-inferred
+/// type. Populated by language plugins via the shared `indexer::flow` query
+/// runner (TS `instanceof`, `typeof`, user-defined predicates; Python
+/// `isinstance`; Rust `if let`/`match`; etc.).
+///
+/// Consumed by `LocalTypeCache::lookup` on each chain-walker call — the
+/// cursor (the current ref's byte offset) selects which narrowing is active.
+#[derive(Debug, Clone)]
+pub struct Narrowing {
+    pub name: String,
+    pub narrowed_type: String,
+    pub byte_start: u32,
+    pub byte_end: u32,
+}
+
+/// Per-file flow-typing metadata, produced by the shared `indexer::flow`
+/// query runner and consumed by the resolver/chain-walker pair.
+///
+/// All fields default to empty — languages that have not wired up
+/// `FlowConfig` queries yet pay zero cost, and the resolver loop degrades
+/// gracefully (no forward inference, no narrowing).
+///
+/// Fields:
+/// - `narrowings`: conditional-narrowing scopes (see `Narrowing`).
+/// - `flow_binding_lhs`: sparse map `ref_idx → lhs_symbol_idx`. Present when
+///   a ref is the RHS of `<lhs> = <chain>`; the resolver records the resolved
+///   yield type against the named LHS symbol in the file's local-type cache.
+/// - `ref_byte_offsets`: parallel to `refs`; the byte offset of each ref's
+///   site in the source. Empty means "unknown — treat as 0" (used as a
+///   cursor when looking up narrowings). Same convention as
+///   `symbol_origin_languages`.
+#[derive(Debug, Default, Clone)]
+pub struct FlowMeta {
+    pub narrowings: Vec<Narrowing>,
+    pub flow_binding_lhs: HashMap<usize, usize>,
+    pub ref_byte_offsets: Vec<u32>,
 }
 
 /// Everything extracted from a single source file.
@@ -506,6 +677,21 @@ pub struct ParsedFile {
     pub content: Option<String>,
     /// True if tree-sitter reported syntax errors (extraction is still attempted).
     pub has_errors: bool,
+    /// Per-file flow-typing metadata (forward inference, narrowings, byte
+    /// offsets). Default is empty — populated by languages that have wired
+    /// up `FlowConfig` queries. See `FlowMeta`.
+    pub flow: FlowMeta,
+    /// Cross-service wiring points emitted by the language plugin's
+    /// `extract_connection_points` path, paired across files by Stage 3 of
+    /// the refactored pipeline into `flow_edges`. Empty default; plugins
+    /// fill this one framework at a time.
+    pub connection_points: Vec<ConnectionPoint>,
+    /// `(module_path, symbol_name)` contributions this file makes to the
+    /// shared demand accumulator (the refs whose target is an external
+    /// import). Stage 2's demand-driven external parser reads this to
+    /// decide which external files to pull. Kept on the struct for
+    /// diagnostics even after the accumulator consumes it. Empty default.
+    pub demand_contributions: Vec<(String, String)>,
 }
 
 // ---------------------------------------------------------------------------

@@ -25,6 +25,7 @@ use tracing::debug;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{
     ts_package_from_virtual_path, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
@@ -32,6 +33,8 @@ use crate::ecosystem::externals::{
 use crate::ecosystem::manifest::npm::NpmManifest;
 use crate::ecosystem::manifest::ManifestReader;
 use crate::walker::WalkedFile;
+use rayon::prelude::*;
+use tree_sitter::{Node, Parser};
 
 pub const ID: EcosystemId = EcosystemId::new("npm");
 
@@ -129,6 +132,15 @@ impl Ecosystem for NpmEcosystem {
             prefix_ts_external_symbols(parsed, &pkg);
         }
     }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_npm_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 // ---------------------------------------------------------------------------
@@ -800,7 +812,7 @@ fn is_test_or_story_file(name: &str) -> bool {
 /// extractor yields bare qualified names like `Button`. Rewrite them to
 /// `fake-ui.Button` so the TS resolver's `{import_module}.{target}` lookup
 /// matches. Idempotent: already-prefixed names are left alone.
-fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
+pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
     if package.is_empty() { return }
     let prefix = format!("{package}.");
     for sym in &mut pf.symbols {
@@ -813,6 +825,194 @@ fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) 
             None => Some(package.to_string()),
         };
     }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+//
+// Walks every reached npm dep root, tree-sitter parses each TS/JS source
+// file without descending into function/method/class bodies, and records
+// each top-level declaration's name against the file that defines it. The
+// Stage 2 loop consults this index to pull only files it needs; the
+// (gigabytes of) `node_modules/` that the eager walker used to force-parse
+// stays untouched unless a real user chain lands on one of its symbols.
+//
+// File scope matches `walk_ts_external_root` — same .ts/.tsx/.d.ts/.js/.jsx
+// filter, same exclusions (nested node_modules, test/story dirs, etc.).
+
+fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    // Gather every walked file + its owning package name so each parallel
+    // task is self-contained.
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_ts_external_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+
+    // Parallel header-only scan. Each task returns (module, name, file)
+    // tuples merged into one index after the scan.
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_ts_header(&src, wf.language)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of a TS/TSX/JS source file. Returns the
+/// top-level declaration names the file exports (or declares) — classes,
+/// interfaces, functions, type aliases, enums, top-level const/let/var,
+/// plus names surfaced inside `declare module 'foo' { ... }` ambient
+/// blocks (DefinitelyTyped shape). Function bodies, method bodies, class
+/// bodies are *not* walked.
+fn scan_ts_header(source: &str, language: &str) -> Vec<String> {
+    let ts_lang: tree_sitter::Language = match language {
+        "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
+        "javascript" | "jsx" => tree_sitter_javascript::LANGUAGE.into(),
+        _ => tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+    };
+    let mut parser = Parser::new();
+    if parser.set_language(&ts_lang).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        collect_top_level_decl_name(&child, bytes, &mut out);
+    }
+    out
+}
+
+/// Inspect one direct child of the source-file root and record any top-level
+/// declaration name it exposes. Recurses into `export_statement` and
+/// `declare module 'foo' { ... }` wrappers since those hold the same decls
+/// underneath. Does NOT recurse into `block` / `statement_block` /
+/// `class_body` / `function_body` — bodies are where header-only parsing
+/// draws the line.
+fn collect_top_level_decl_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    match node.kind() {
+        "function_declaration"
+        | "generator_function_declaration"
+        | "function_signature"
+        | "class_declaration"
+        | "abstract_class_declaration"
+        | "interface_declaration"
+        | "type_alias_declaration"
+        | "enum_declaration" => {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                if let Ok(name) = name_node.utf8_text(bytes) {
+                    out.push(name.to_string());
+                }
+            }
+        }
+        "lexical_declaration" | "variable_declaration" => {
+            // `const a = ..., b = ...;` — multiple declarators, each with a
+            // name field that's either a plain identifier or a destructuring
+            // pattern. Patterns are skipped; they're rare at module-top-level
+            // for public surface.
+            let mut cursor = node.walk();
+            for decl in node.children(&mut cursor) {
+                if decl.kind() == "variable_declarator" {
+                    if let Some(name_node) = decl.child_by_field_name("name") {
+                        if name_node.kind() == "identifier" {
+                            if let Ok(name) = name_node.utf8_text(bytes) {
+                                out.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "export_statement" => {
+            // `export class Foo` / `export function bar` / `export const X = ...`
+            // wrap the inner decl — recurse into children, which include
+            // both the wrapped decl and any `export_clause` with named
+            // re-exports.
+            let mut cursor = node.walk();
+            for inner in node.children(&mut cursor) {
+                collect_top_level_decl_name(inner_ref(&inner), bytes, out);
+                // Named re-exports: `export { Foo, Bar as Baz } from 'x';`.
+                if inner.kind() == "export_clause" {
+                    let mut cc = inner.walk();
+                    for spec in inner.children(&mut cc) {
+                        if spec.kind() == "export_specifier" {
+                            // Use the exported alias (`alias`) if present,
+                            // otherwise the original `name`.
+                            let exported = spec
+                                .child_by_field_name("alias")
+                                .or_else(|| spec.child_by_field_name("name"));
+                            if let Some(name_node) = exported {
+                                if let Ok(name) = name_node.utf8_text(bytes) {
+                                    out.push(name.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        "ambient_declaration" => {
+            // `declare class X {}`, `declare function f(): void`, `declare module
+            // "foo" { ... }` — recurse into every child so the wrapped
+            // declaration (whatever it is) gets processed by its own arm.
+            let mut cursor = node.walk();
+            for inner in node.children(&mut cursor) {
+                collect_top_level_decl_name(&inner, bytes, out);
+            }
+        }
+        "internal_module" | "module" => {
+            // `namespace X { ... }` or `module "foo" { ... }`. The `body`
+            // field holds a statement_block; each direct child is a decl to
+            // record.
+            let body = node
+                .child_by_field_name("body")
+                .or_else(|| find_named_child(node, &["statement_block"]));
+            if let Some(body) = body {
+                let mut cursor = body.walk();
+                for inner in body.children(&mut cursor) {
+                    collect_top_level_decl_name(&inner, bytes, out);
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn inner_ref<'a>(n: &'a Node<'a>) -> &'a Node<'a> { n }
+
+fn find_named_child<'a>(node: &'a Node<'a>, kinds: &[&str]) -> Option<Node<'a>> {
+    let mut cursor = node.walk();
+    for c in node.children(&mut cursor) {
+        if kinds.iter().any(|k| *k == c.kind()) {
+            return Some(c);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -1131,6 +1331,113 @@ mod tests {
         assert!(!file_declares_type("import { Foo } from 'x';\n", "Foo"));
         assert!(!file_declares_type("export interface Bar { f: Foo; }\n", "Foo"));
         assert!(!file_declares_type("", "Foo"));
+    }
+
+    // -----------------------------------------------------------------
+    // Header-only scanner — demand-driven pipeline entry
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn scan_captures_class_and_interface() {
+        let src = "export class Foo {}\nexport interface Bar { x: number; }\n";
+        let names = scan_ts_header(src, "typescript");
+        assert!(names.contains(&"Foo".to_string()), "{names:?}");
+        assert!(names.contains(&"Bar".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_function_and_type_alias() {
+        let src = "export function baz(): void {}\nexport type QID = string | number;\n";
+        let names = scan_ts_header(src, "typescript");
+        assert!(names.contains(&"baz".to_string()), "{names:?}");
+        assert!(names.contains(&"QID".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_top_level_const_and_let() {
+        let src = "export const Version = '1.0';\nlet counter = 0;\n";
+        let names = scan_ts_header(src, "typescript");
+        assert!(names.contains(&"Version".to_string()), "{names:?}");
+        assert!(names.contains(&"counter".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_enum_declaration() {
+        let src = "export enum Color { Red, Green, Blue }\n";
+        let names = scan_ts_header(src, "typescript");
+        assert!(names.contains(&"Color".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_descends_ambient_declare_module() {
+        // DefinitelyTyped shape — declare module 'foo' { ... decls ... }.
+        let src = r#"declare module "foo" { export class Client {} export function init(): void; }"#;
+        let names = scan_ts_header(src, "typescript");
+        assert!(names.contains(&"Client".to_string()), "{names:?}");
+        assert!(names.contains(&"init".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_ignores_nested_decls_inside_function_bodies() {
+        // Nested decls inside a function body must not leak — the scanner is
+        // header-only. Outer function name should appear; the inner class
+        // should not.
+        let src = "export function outer() { class Hidden {} return new Hidden(); }\n";
+        let names = scan_ts_header(src, "typescript");
+        assert!(names.contains(&"outer".to_string()));
+        assert!(!names.contains(&"Hidden".to_string()), "leaked: {names:?}");
+    }
+
+    #[test]
+    fn scan_handles_tsx_components() {
+        let src = "export function Button() { return <button/>; }\n";
+        let names = scan_ts_header(src, "tsx");
+        assert!(names.contains(&"Button".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_handles_plain_javascript() {
+        let src = "export function helper() {}\nexport const PI = 3.14;\n";
+        let names = scan_ts_header(src, "javascript");
+        assert!(names.contains(&"helper".to_string()), "{names:?}");
+        assert!(names.contains(&"PI".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_returns_empty_on_empty_source() {
+        assert!(scan_ts_header("", "typescript").is_empty());
+    }
+
+    #[test]
+    fn build_index_returns_empty_for_no_deps() {
+        let idx = build_npm_symbol_index(&[]);
+        assert!(idx.is_empty());
+    }
+
+    #[test]
+    fn build_index_populates_from_on_disk_node_modules() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("synthetic-pkg");
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        let index_dts = root.join("src").join("index.d.ts");
+        std::fs::write(
+            &index_dts,
+            "export class Client {}\nexport function connect(): Client { return new Client(); }\n",
+        )
+        .unwrap();
+
+        let dep = mkdep(root, "synthetic-pkg");
+        let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+
+        assert_eq!(
+            idx.locate("synthetic-pkg", "Client"),
+            Some(index_dts.as_path())
+        );
+        assert_eq!(
+            idx.locate("synthetic-pkg", "connect"),
+            Some(index_dts.as_path())
+        );
+        assert!(idx.locate("synthetic-pkg", "NotThere").is_none());
     }
 
     #[test]

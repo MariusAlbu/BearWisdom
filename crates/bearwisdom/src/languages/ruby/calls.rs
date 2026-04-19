@@ -40,6 +40,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                             // Don't also emit a Calls edge for `.new`.
                             // Recurse into arguments but not the receiver again.
@@ -61,6 +62,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain,
+                        byte_offset: child.start_byte() as u32,
                     });
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -84,6 +86,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: method_node.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: 0,
                         });
                     }
                 } else {
@@ -100,6 +103,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                     line: gc.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                             break;
@@ -127,6 +131,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             line: method_node.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -208,6 +213,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 // Do NOT recurse further — constituent parts are captured above.
@@ -224,6 +230,7 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

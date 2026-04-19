@@ -100,6 +100,7 @@ pub(super) fn extract_class(
                             line: base_child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -124,6 +125,7 @@ pub(super) fn extract_class(
                         line: bc.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -159,6 +161,7 @@ pub(super) fn extract_interface_list(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         } else {
             extract_interface_list(&child, src, refs, class_idx, edge_kind);

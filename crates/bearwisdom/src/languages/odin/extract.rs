@@ -159,6 +159,7 @@ fn extract_import(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -362,6 +363,7 @@ fn extract_using(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -398,6 +400,7 @@ fn extract_calls_in_subtree(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             // Recurse into arguments

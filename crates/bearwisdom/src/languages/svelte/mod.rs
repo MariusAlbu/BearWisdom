@@ -56,6 +56,15 @@ impl LanguagePlugin for SveltePlugin {
         extract::extract(source, file_path)
     }
 
+    fn extract_connection_points(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
+        connectors::extract_svelte_graphql_points(source)
+    }
+
     /// Split out `<script>` and `<style>` blocks for sub-extraction by the
     /// JS/TS/CSS/SCSS plugins. The indexer calls this after `extract()` and
     /// splices the resulting symbols/refs back into the same `.svelte` file.

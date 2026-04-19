@@ -173,6 +173,7 @@ pub(super) fn extract_rescue(
                                     line: exc.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

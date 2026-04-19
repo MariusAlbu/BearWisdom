@@ -252,6 +252,7 @@ pub(super) fn extract_function_type_refs(
                                         line: tn.start_position().row as u32,
                                         module: None,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -267,6 +268,7 @@ pub(super) fn extract_function_type_refs(
                                     line: param_child.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

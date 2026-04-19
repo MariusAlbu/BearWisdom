@@ -89,6 +89,7 @@ fn emit_annotation(
             line: node.start_position().row as u32,
             module: first_arg,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -207,6 +208,7 @@ fn extract_cascade_section(
                                 line: inner.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                         break;
@@ -224,6 +226,7 @@ fn extract_cascade_section(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

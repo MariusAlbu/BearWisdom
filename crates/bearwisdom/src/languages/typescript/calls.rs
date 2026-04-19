@@ -30,6 +30,7 @@ pub(super) fn emit_call_ref(
                 line: func_node.start_position().row as u32,
                 module: None,
                 chain,
+                byte_offset: func_node.start_byte() as u32,
             });
         }
     }
@@ -56,6 +57,7 @@ pub(super) fn emit_new_ref(
                 line: constructor.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -88,6 +90,7 @@ pub(super) fn extract_calls(
                             line: func_node.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: func_node.start_byte() as u32,
                         });
                     }
                 }
@@ -118,6 +121,7 @@ pub(super) fn extract_calls(
                             line: tag.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: tag.start_byte() as u32,
                         });
                     }
                 }
@@ -153,6 +157,7 @@ pub(super) fn extract_calls(
                             line: tag_node.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: 0,
                         });
                     }
                 }

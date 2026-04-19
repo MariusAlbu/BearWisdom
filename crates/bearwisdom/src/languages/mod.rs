@@ -44,6 +44,26 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// Used for documentation and validation; detection is in bearwisdom-profile.
     fn extensions(&self) -> &[&str];
 
+    /// Resolve a file extension claimed by this plugin to the specific
+    /// `language_id` that should be stamped on a `WalkedFile` for files with
+    /// that extension. Default returns the plugin's primary id (`self.id()`).
+    ///
+    /// Overridden by plugins that handle multiple variants through a single
+    /// extractor — e.g., TypeScript claims both `.ts` → `"typescript"` and
+    /// `.tsx` → `"tsx"` because the two files use different tree-sitter
+    /// grammars (`LANGUAGE_TYPESCRIPT` vs `LANGUAGE_TSX`) even though the
+    /// extractor logic is shared.
+    ///
+    /// Returning `None` is equivalent to "this extension is not mine" — the
+    /// registry falls back to the next plugin claiming the same extension.
+    fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
+        if self.extensions().iter().any(|e| e.eq_ignore_ascii_case(ext)) {
+            Some(self.id())
+        } else {
+            None
+        }
+    }
+
     /// Get the tree-sitter grammar for a specific language ID.
     /// Returns `None` if the ID isn't handled by this plugin.
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language>;
@@ -57,6 +77,27 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// - `file_path`: relative path (used for heuristics like `.tsx` detection)
     /// - `lang_id`: the language ID from detection (e.g., "typescript" or "tsx")
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult;
+
+    /// R6 demand-driven extraction. Same as `extract` except that `demand`,
+    /// when `Some`, is the set of top-level declaration names the caller
+    /// cares about — declarations outside the set may be dropped. Used when
+    /// parsing external sources (node_modules `.d.ts`, PyPI site-packages,
+    /// Maven sources jars) so a 1.8MB `lib.dom.d.ts` that the project only
+    /// uses 20 types from gets extracted as ~20 declarations instead of tens
+    /// of thousands.
+    ///
+    /// Default impl ignores the demand set and falls back to the full
+    /// `extract` path. Languages that have wired up demand filtering
+    /// (TypeScript today) override this method.
+    fn extract_with_demand(
+        &self,
+        source: &str,
+        file_path: &str,
+        lang_id: &str,
+        _demand: Option<&std::collections::HashSet<String>>,
+    ) -> ExtractionResult {
+        self.extract(source, file_path, lang_id)
+    }
 
     /// Return sub-language text regions contained in this file (e.g. the
     /// `<script lang="ts">` block inside a Vue SFC, the frontmatter inside an
@@ -78,6 +119,36 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _file_path: &str,
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
+        Vec::new()
+    }
+
+    /// Detect cross-service / cross-module wiring points (HTTP routes, client
+    /// calls, DI registrations, IPC commands, event pub/sub, message-queue
+    /// bindings, GraphQL resolvers) during extraction. Each plugin emits
+    /// connection points for the frameworks its language typically hosts —
+    /// e.g. Go plugin emits gin/echo/net-http routes, C# plugin emits
+    /// ASP.NET `[HttpGet]` handlers and `IMediator.Send` calls.
+    ///
+    /// This is the per-plugin half of the "connectors flattened into
+    /// language plugins" refactor. Stage 3 of the pipeline folds the
+    /// emitted connection points into `flow_edges` by matching
+    /// `(kind, key)` pairs with one Start and one Stop role. No DB
+    /// round-trip, no connector re-parse.
+    ///
+    /// Default impl returns an empty vec; languages migrate connector
+    /// detection into this hook one framework at a time. The global
+    /// `connectors/registry.rs` eager path keeps firing for un-migrated
+    /// connectors so behavior is preserved during the rollout.
+    ///
+    /// Called by `indexer/full::parse_file` AFTER `extract()` returns, so
+    /// a host extractor that already parsed the source can cache its
+    /// tree-sitter tree across both calls if needed.
+    fn extract_connection_points(
+        &self,
+        _source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
         Vec::new()
     }
 
@@ -138,6 +209,17 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         _project_root: &std::path::Path,
         _ctx: &crate::indexer::project_context::ProjectContext,
     ) {}
+
+    /// R5 per-file flow-typing configuration. Return `Some(&FLOW_CONFIG)` to
+    /// opt into forward inference, conditional narrowing, and call-site
+    /// generics. The default `None` disables flow-typing for this language
+    /// at zero cost — the resolver's cache stays empty and chain walkers'
+    /// `local_type` lookups all return None.
+    ///
+    /// See `crate::indexer::flow::FlowConfig` for the query contract.
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        None
+    }
 }
 
 // ---------------------------------------------------------------------------

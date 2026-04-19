@@ -178,6 +178,7 @@ impl LanguageResolver for RobotResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "robot_variable_same_file",
+                        resolved_yield_type: None,
                     });
                 }
                 // Resource-imported file variables.
@@ -191,6 +192,7 @@ impl LanguageResolver for RobotResolver {
                             target_symbol_id: sym.id,
                             confidence: 0.95,
                             strategy: "robot_variable_resource",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -212,6 +214,7 @@ impl LanguageResolver for RobotResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "robot_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -233,6 +236,7 @@ impl LanguageResolver for RobotResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "robot_resource_import",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -256,6 +260,7 @@ impl LanguageResolver for RobotResolver {
                     target_symbol_id: sym.id,
                     confidence: 0.90,
                     strategy: "robot_global_name",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -271,6 +276,7 @@ impl LanguageResolver for RobotResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.85,
                         strategy: "robot_global_normalized",
+                        resolved_yield_type: None,
                     });
                 }
             }

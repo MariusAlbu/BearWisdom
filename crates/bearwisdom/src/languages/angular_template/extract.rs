@@ -49,6 +49,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             routes: Vec::new(),
             db_sets: Vec::new(),
             has_errors: true,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         };
     }
     let Some(tree) = parser.parse(source, None) else {
@@ -58,6 +60,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             routes: Vec::new(),
             db_sets: Vec::new(),
             has_errors: true,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         };
     };
 
@@ -69,6 +73,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         routes: Vec::new(),
         db_sets: Vec::new(),
         has_errors: tree.root_node().has_error(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -98,6 +104,7 @@ fn collect_component_refs(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

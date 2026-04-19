@@ -288,6 +288,7 @@ fn extract_module_block(
             line: node.start_position().row as u32,
             module: Some(source_val),
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -540,6 +541,7 @@ fn extract_reference_chain(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -558,6 +560,7 @@ fn extract_function_call_ref(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }

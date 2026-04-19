@@ -138,6 +138,7 @@ fn walk_node(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             } else {
@@ -159,6 +160,7 @@ fn walk_node(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -178,6 +180,7 @@ fn walk_node(
                             line: node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -195,6 +198,7 @@ fn walk_node(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -212,6 +216,7 @@ fn walk_node(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -231,6 +236,7 @@ fn walk_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             } else {
                 // Ordinary field: `Private _timeout As Integer`

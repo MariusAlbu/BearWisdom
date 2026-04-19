@@ -316,6 +316,7 @@ pub(super) fn extract_node<'a>(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -353,6 +354,7 @@ fn extract_type_refs_from_type_node(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         return;
@@ -371,6 +373,7 @@ fn extract_type_refs_from_type_node(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -442,6 +445,7 @@ fn dispatch_body_node(
                         line: op.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -465,6 +469,7 @@ fn dispatch_body_node(
                         line: callee.start_position().row as u32,
                         module: None,
                         chain,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -484,6 +489,7 @@ fn dispatch_body_node(
                                 line: inner.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -498,6 +504,7 @@ fn dispatch_body_node(
                                 line: inner.start_position().row as u32,
                                 module: Some(full),
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -539,6 +546,7 @@ fn scan_type_refs_inner(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         // type_identifier is a leaf — no children to recurse into.
@@ -596,6 +604,7 @@ fn infer_type_from_value(
                         line: value_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -611,6 +620,7 @@ fn infer_type_from_value(
                     line: value_node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -627,6 +637,7 @@ fn infer_type_from_value(
                         line: value_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

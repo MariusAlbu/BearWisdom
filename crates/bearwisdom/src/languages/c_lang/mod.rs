@@ -2,6 +2,7 @@
 
 mod calls;
 mod chain;
+mod flow;
 mod helpers;
 mod symbols;
 pub mod extract;
@@ -101,5 +102,9 @@ impl LanguagePlugin for CLangPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::CLangResolver))
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::C_FLOW_CONFIG)
     }
 }

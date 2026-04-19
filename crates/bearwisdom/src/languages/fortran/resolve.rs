@@ -95,6 +95,7 @@ impl LanguageResolver for FortranResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "fortran_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }

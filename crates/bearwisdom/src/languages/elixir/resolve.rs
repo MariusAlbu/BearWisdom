@@ -127,6 +127,7 @@ impl LanguageResolver for ElixirResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "elixir_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -141,6 +142,7 @@ impl LanguageResolver for ElixirResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "elixir_same_module",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -158,6 +160,7 @@ impl LanguageResolver for ElixirResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "elixir_alias",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -172,6 +175,7 @@ impl LanguageResolver for ElixirResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "elixir_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -184,6 +188,7 @@ impl LanguageResolver for ElixirResolver {
                     target_symbol_id: sym.id,
                     confidence: 0.85,
                     strategy: "elixir_by_name",
+                    resolved_yield_type: None,
                 });
             }
         }

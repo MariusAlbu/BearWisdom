@@ -409,6 +409,7 @@ fn extract_class_parameter(
                 line: tn.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -554,6 +555,7 @@ pub(super) fn emit_import(
                         line: child.start_position().row as u32,
                         module: Some(full),
                         chain: None,
+                        byte_offset: 0,
                     });
                 } else {
                     let target = parts.last().cloned().unwrap_or_default();
@@ -565,6 +567,7 @@ pub(super) fn emit_import(
                         line: child.start_position().row as u32,
                         module: Some(full),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 return;
@@ -579,6 +582,7 @@ pub(super) fn emit_import(
                     line: child.start_position().row as u32,
                     module: Some(full),
                     chain: None,
+                    byte_offset: 0,
                 });
                 return;
             }
@@ -619,6 +623,7 @@ pub(super) fn extract_delegation_specifiers(
                                 line: spec.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }

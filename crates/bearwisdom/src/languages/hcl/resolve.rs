@@ -89,6 +89,7 @@ impl LanguageResolver for HclResolver {
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: "hcl_qname_direct",
+                resolved_yield_type: None,
             });
         }
 
@@ -109,6 +110,7 @@ impl LanguageResolver for HclResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "hcl_same_file_bare",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -118,6 +120,7 @@ impl LanguageResolver for HclResolver {
                     target_symbol_id: sym.id,
                     confidence: 0.9,
                     strategy: "hcl_cross_file_bare",
+                    resolved_yield_type: None,
                 });
             }
         }

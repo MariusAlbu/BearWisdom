@@ -87,6 +87,7 @@ impl LanguageResolver for AdaResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "ada_same_file_ci",
+                    resolved_yield_type: None,
                 });
             }
         }

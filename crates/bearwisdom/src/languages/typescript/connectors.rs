@@ -9,6 +9,7 @@
 // dependency on the legacy `connectors/nestjs_routes.rs` module.
 // =============================================================================
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -20,6 +21,9 @@ use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
+use crate::types::{
+    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
+};
 
 // ===========================================================================
 // NestJS
@@ -487,111 +491,15 @@ impl Connector for TauriIpcTsConnector {
 
     fn extract(
         &self,
-        conn: &Connection,
-        project_root: &Path,
+        _conn: &Connection,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
-        let mut points = Vec::new();
-
-        // invoke("command_name") call sites → Start points
-        let calls = ts_find_invoke_calls(conn, project_root)
-            .context("Tauri invoke call detection failed")?;
-
-        for call in &calls {
-            points.push(ConnectionPoint {
-                file_id: call.file_id,
-                symbol_id: None,
-                line: call.line,
-                protocol: Protocol::Ipc,
-                direction: FlowDirection::Start,
-                key: call.command_name.clone(),
-                method: String::new(),
-                framework: "tauri".to_string(),
-                metadata: None,
-            });
-        }
-
-        // listen("event-name") sites → Stop points for events
-        extract_tauri_listen_events(conn, project_root, &mut points)?;
-
-        Ok(points)
+        // Flattened into `TypeScriptPlugin::extract_connection_points` →
+        // `extract_tauri_ipc_ts_src` (invoke() Start + listen() Stop).
+        Ok(Vec::new())
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tauri IPC TS-side helpers (inlined from connectors/tauri_ipc.rs)
-// ---------------------------------------------------------------------------
-
-struct TsInvokeCall {
-    file_id: i64,
-    line: u32,
-    command_name: String,
-}
-
-fn ts_find_invoke_calls(
-    conn: &Connection,
-    project_root: &Path,
-) -> Result<Vec<TsInvokeCall>> {
-    let re_invoke = regex::Regex::new(
-        r#"invoke\s*(?:<[^>]*>)?\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-    ).expect("invoke regex is valid");
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, path FROM files
-             WHERE language IN ('typescript', 'tsx', 'javascript', 'jsx')",
-        )
-        .context("Failed to prepare TS/JS files query")?;
-
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query TS/JS files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect TS/JS file rows")?;
-
-    let mut calls = Vec::new();
-    for (file_id, rel_path) in files {
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(e) => {
-                debug!(path = %abs_path.display(), err = %e, "Skipping unreadable TS file");
-                continue;
-            }
-        };
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for cap in re_invoke.captures_iter(line_text) {
-                let name = cap
-                    .name("name1")
-                    .or_else(|| cap.name("name2"))
-                    .or_else(|| cap.name("name3"))
-                    .map(|m| m.as_str().to_string());
-                if let Some(command_name) = name {
-                    calls.push(TsInvokeCall { file_id, line: line_no, command_name });
-                }
-            }
-        }
-    }
-    debug!(count = calls.len(), "invoke() calls found");
-    Ok(calls)
-}
-
-fn extract_tauri_listen_events(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    let re_listen = regex::Regex::new(
-        r#"(?:\.\s*)?listen\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-    )
-    .expect("listen regex");
-
-    for lang in &["typescript", "tsx", "javascript", "jsx"] {
-        scan_for_ipc_pattern(conn, project_root, lang, &re_listen, FlowDirection::Stop, "tauri", out)?;
-    }
-
-    Ok(())
-}
 
 // ===========================================================================
 // ElectronIpcConnector — TypeScript/JavaScript only
@@ -614,96 +522,14 @@ impl Connector for ElectronIpcConnector {
 
     fn extract(
         &self,
-        conn: &Connection,
-        project_root: &Path,
+        _conn: &Connection,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
-        let re_main = regex::Regex::new(
-            r#"ipcMain\s*\.\s*(?:handle|on)\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-        )
-        .expect("ipcMain regex");
-        let re_renderer = regex::Regex::new(
-            r#"ipcRenderer\s*\.\s*(?:invoke|send)\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
-        )
-        .expect("ipcRenderer regex");
-
-        let mut points = Vec::new();
-
-        // ipcMain.handle/on → Stop (handler side)
-        for lang in &["typescript", "tsx", "javascript", "jsx"] {
-            scan_for_ipc_pattern(conn, project_root, lang, &re_main, FlowDirection::Stop, "electron", &mut points)?;
-        }
-
-        // ipcRenderer.invoke/send → Start (caller side)
-        for lang in &["typescript", "tsx", "javascript", "jsx"] {
-            scan_for_ipc_pattern(conn, project_root, lang, &re_renderer, FlowDirection::Start, "electron", &mut points)?;
-        }
-
-        Ok(points)
+        // Flattened into `extract_electron_ipc_src`.
+        Ok(Vec::new())
     }
 }
 
-// ---------------------------------------------------------------------------
-// Shared IPC scan helper
-// ---------------------------------------------------------------------------
-
-/// Scan all files of a given language for a regex pattern that captures a name
-/// (via named groups name1/name2/name3) and emit IPC ConnectionPoints.
-fn scan_for_ipc_pattern(
-    conn: &Connection,
-    project_root: &Path,
-    language: &str,
-    re: &regex::Regex,
-    direction: FlowDirection,
-    framework: &str,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = ?1")
-        .context("Failed to prepare file query")?;
-
-    let files: Vec<(i64, String)> = stmt
-        .query_map([language], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        })
-        .context("Failed to query files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect file rows")?;
-
-    for (file_id, rel_path) in files {
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for cap in re.captures_iter(line_text) {
-                let name = cap
-                    .name("name1")
-                    .or_else(|| cap.name("name2"))
-                    .or_else(|| cap.name("name3"))
-                    .map(|m| m.as_str().to_string());
-
-                if let Some(key) = name {
-                    out.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::Ipc,
-                        direction,
-                        key,
-                        method: String::new(),
-                        framework: framework.to_string(),
-                        metadata: None,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(())
-}
 
 // ===========================================================================
 // React patterns post-index hook + inlined helpers
@@ -1416,11 +1242,12 @@ impl Connector for TypeScriptRestConnector {
     fn extract(
         &self,
         conn: &Connection,
-        project_root: &Path,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
+        // Starts (fetch/axios) migrated into `extract_ts_rest_starts_src`.
+        // Stops come from the `routes` table (populated during parse).
         let mut points = Vec::new();
         extract_ts_rest_stops(conn, &mut points)?;
-        extract_ts_rest_starts(conn, project_root, &mut points)?;
         Ok(points)
     }
 }
@@ -1463,107 +1290,6 @@ fn extract_ts_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> R
             framework: String::new(),
             metadata: None,
         });
-    }
-    Ok(())
-}
-
-fn extract_ts_rest_starts(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    let re_fetch = Regex::new(
-        r#"fetch\s*\(\s*(?:\w+\s*\(\s*)?(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
-    )
-    .expect("fetch regex");
-    let re_axios = Regex::new(
-        r#"axios\.(?P<method>get|post|put|delete|patch|head)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
-    )
-    .expect("axios regex");
-    let re_method_extract = Regex::new(r#"method\s*:\s*['"](?P<m>[A-Z]+)['"]"#)
-        .expect("method extract regex");
-
-    let mut stmt = conn
-        .prepare(
-            "SELECT id, path FROM files
-             WHERE language IN ('typescript', 'tsx', 'javascript', 'jsx')",
-        )
-        .context("Failed to prepare TS files query")?;
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query TS files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect TS file rows")?;
-
-    for (file_id, rel_path) in files {
-        if ts_rest_is_test_or_config_file(&rel_path) {
-            continue;
-        }
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-
-            for cap in re_fetch.captures_iter(line_text) {
-                let raw_url = cap
-                    .name("url1")
-                    .or_else(|| cap.name("url2"))
-                    .or_else(|| cap.name("url3"))
-                    .map(|m| m.as_str().to_string());
-                let Some(raw_url) = raw_url else { continue };
-                if !ts_rest_looks_like_api_url(&raw_url) {
-                    continue;
-                }
-                let method = re_method_extract
-                    .captures(line_text)
-                    .and_then(|c| c.name("m"))
-                    .map(|m| m.as_str().to_string())
-                    .unwrap_or_else(|| "GET".to_string());
-                let url_pattern = rest_normalise_url_pattern(&raw_url);
-                out.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: line_no,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Start,
-                    key: url_pattern,
-                    method,
-                    framework: String::new(),
-                    metadata: None,
-                });
-            }
-
-            for cap in re_axios.captures_iter(line_text) {
-                let raw_url = cap
-                    .name("url1")
-                    .or_else(|| cap.name("url2"))
-                    .or_else(|| cap.name("url3"))
-                    .map(|m| m.as_str().to_string());
-                let Some(raw_url) = raw_url else { continue };
-                if !ts_rest_looks_like_api_url(&raw_url) {
-                    continue;
-                }
-                let method = cap
-                    .name("method")
-                    .map(|m| m.as_str().to_uppercase())
-                    .unwrap_or_else(|| "GET".to_string());
-                let url_pattern = rest_normalise_url_pattern(&raw_url);
-                out.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: line_no,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Start,
-                    key: url_pattern,
-                    method,
-                    framework: String::new(),
-                    metadata: None,
-                });
-            }
-        }
     }
     Ok(())
 }
@@ -1649,164 +1375,9 @@ impl Connector for TypeScriptMqConnector {
             || ctx.has_dependency(ManifestKind::Npm, "@nestjs/microservices")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // kafkajs: producer.send({ topic: "name" ...})
-        let re_kafka_send = Regex::new(
-            r#"producer\.send\s*\(\s*\{[^}]*topic\s*:\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("ts kafka send regex");
-
-        // kafkajs: consumer.subscribe({ topic: "name" }) or consumer.subscribe({ topics: ["name"] })
-        let re_kafka_subscribe = Regex::new(
-            r#"consumer\.subscribe\s*\(\s*\{[^}]*topics?\s*:\s*(?:\[[^\]]*['"`]([^'"`]+)['"`]|['"`]([^'"`]+)['"`])"#,
-        )
-        .expect("ts kafka subscribe regex");
-
-        // amqplib: channel.publish("exchange", "routingKey", ...)
-        let re_amqp_publish = Regex::new(
-            r#"channel\.publish\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("ts amqp publish regex");
-
-        // amqplib: channel.consume("queue", ...)
-        let re_amqp_consume = Regex::new(
-            r#"channel\.consume\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("ts amqp consume regex");
-
-        // BullMQ / NestJS @Processor("queue") decorator
-        let re_processor = Regex::new(
-            r#"@Processor\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("ts bullmq processor regex");
-
-        // BullMQ: new Queue("queue-name") or new Worker("queue-name", ...)
-        let re_queue_ctor = Regex::new(
-            r#"new\s+Queue\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("ts bullmq queue ctor regex");
-
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, path FROM files
-                 WHERE language IN ('typescript', 'tsx', 'javascript', 'jsx')",
-            )
-            .context("Failed to prepare TS/JS files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-            .context("Failed to query TS/JS files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect TS/JS file rows")?;
-
-        let mut points = Vec::new();
-
-        for (file_id, rel_path) in files {
-            let lower = rel_path.to_lowercase();
-            if lower.contains("/node_modules/") || lower.ends_with(".min.js") {
-                continue;
-            }
-
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
-
-                for cap in re_kafka_send.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_kafka_subscribe.captures_iter(line_text) {
-                    let topic = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str());
-                    if let Some(t) = topic {
-                        points.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: line_no,
-                            protocol: Protocol::MessageQueue,
-                            direction: FlowDirection::Stop,
-                            key: t.to_string(),
-                            method: String::new(),
-                            framework: "kafka".to_string(),
-                            metadata: None,
-                        });
-                    }
-                }
-
-                for cap in re_amqp_publish.captures_iter(line_text) {
-                    // Use routing key as the topic key.
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[2].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_amqp_consume.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_processor.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "bullmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_queue_ctor.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "bullmq".to_string(),
-                        metadata: None,
-                    });
-                }
-            }
-        }
-
-        Ok(points)
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Flattened into `extract_ts_mq_src`.
+        Ok(Vec::new())
     }
 }
 
@@ -1841,77 +1412,127 @@ impl Connector for TypeScriptGraphQlConnector {
             || ctx.has_dependency(ManifestKind::Npm, "nexus")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // GraphQL type blocks inside SDL or gql`` literals.
-        let re_type_block = Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{")
-            .expect("gql type block regex");
-        let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:")
-            .expect("gql field regex");
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Moved into `TypeScriptPlugin::extract_connection_points`.
+        Ok(Vec::new())
+    }
+}
 
-        // Apollo/GraphQL resolver map: resolvers.Query = { fieldName(...) }
-        // or:  Query: { fieldName: (_parent, _args, ctx) => ... }
-        let re_resolver_key = Regex::new(
-            r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#,
-        )
-        .expect("ts graphql resolver key regex");
+/// Per-file TS/JS GraphQL scan: SDL type blocks (Start), Apollo resolver
+/// maps (Stop), type-graphql `@Query() / @Mutation()` decorators (Stop).
+/// Invoked from `TypeScriptPlugin::extract_connection_points`.
+pub fn extract_typescript_graphql(source: &str) -> Vec<crate::types::ConnectionPoint> {
+    use crate::types::{ConnectionKind, ConnectionPoint as AP, ConnectionRole};
+    use std::collections::HashMap;
 
-        // @Resolver() class + @Query() / @Mutation() — type-graphql
-        let re_typegraphql_op = Regex::new(
-            r#"@(?:Query|Mutation|Subscription)\s*\(\s*\([^)]*\)\s*=>\s*\w+\s*\)"#,
-        )
-        .expect("ts type-graphql op regex");
+    let re_type_block = Regex::new(r"type\s+(Query|Mutation|Subscription)\s*\{")
+        .expect("gql type block regex");
+    let re_field = Regex::new(r"^\s+(\w+)(?:\([^)]*\))?\s*:")
+        .expect("gql field regex");
+    let re_resolver_key = Regex::new(
+        r#"['"`]?(\w+)['"`]?\s*:\s*(?:async\s+)?\([^)]*\)\s*=>"#,
+    )
+    .expect("ts graphql resolver key regex");
+    let re_typegraphql_op = Regex::new(
+        r#"@(?:Query|Mutation|Subscription)\s*\(\s*\([^)]*\)\s*=>\s*\w+\s*\)"#,
+    )
+    .expect("ts type-graphql op regex");
 
-        let mut stmt = conn
-            .prepare(
-                "SELECT id, path, language FROM files
-                 WHERE language IN ('typescript', 'tsx', 'javascript', 'jsx')",
-            )
-            .context("Failed to prepare TS/JS files query")?;
+    // Fast filter: no GraphQL markers → no points.
+    if !re_type_block.is_match(source)
+        && !source.contains("@Query")
+        && !source.contains("@Mutation")
+    {
+        return Vec::new();
+    }
 
-        let files: Vec<(i64, String, String)> = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, i64>(0)?,
-                    row.get::<_, String>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            })
-            .context("Failed to query TS/JS files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect TS/JS file rows")?;
+    let mut out: Vec<AP> = Vec::new();
+    let mut current_op_type: Option<String> = None;
+    let mut brace_depth: u32 = 0;
 
-        let mut points = Vec::new();
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
 
-        for (file_id, rel_path, _lang) in files {
-            let lower = rel_path.to_lowercase();
-            if lower.contains("/node_modules/") || lower.ends_with(".min.js") {
-                continue;
-            }
-
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            // Quick filter: skip files that contain no GraphQL SDL.
-            if !re_type_block.is_match(&source) && !source.contains("@Query") && !source.contains("@Mutation") {
-                continue;
-            }
-
-            extract_ts_graphql_points(
-                &source,
-                file_id,
-                &re_type_block,
-                &re_field,
-                &re_resolver_key,
-                &re_typegraphql_op,
-                &mut points,
-            );
+        if let Some(cap) = re_type_block.captures(line_text) {
+            current_op_type = Some(cap[1].to_lowercase());
+            brace_depth = 1;
+            continue;
         }
 
-        Ok(points)
+        if current_op_type.is_some() {
+            for ch in line_text.chars() {
+                match ch {
+                    '{' => brace_depth += 1,
+                    '}' => {
+                        if brace_depth > 0 { brace_depth -= 1; }
+                    }
+                    _ => {}
+                }
+            }
+            if brace_depth == 0 {
+                current_op_type = None;
+                continue;
+            }
+            if brace_depth == 1 {
+                if let Some(cap) = re_field.captures(line_text) {
+                    let field_name = cap[1].to_string();
+                    if !field_name.starts_with("__") {
+                        let mut meta = HashMap::new();
+                        if let Some(op) = current_op_type.as_deref() {
+                            meta.insert("method".to_string(), op.to_string());
+                        }
+                        out.push(AP {
+                            kind: ConnectionKind::GraphQL,
+                            role: ConnectionRole::Start,
+                            key: field_name,
+                            line: line_no,
+                            col: 1,
+                            symbol_qname: String::new(),
+                            meta,
+                        });
+                    }
+                }
+            }
+            continue;
+        }
+
+        for cap in re_resolver_key.captures_iter(line_text) {
+            let name = cap[1].to_string();
+            if matches!(
+                name.as_str(),
+                "then" | "catch" | "finally" | "map" | "filter" | "reduce"
+            ) {
+                continue;
+            }
+            let mut meta = HashMap::new();
+            meta.insert("framework".to_string(), "apollo".to_string());
+            out.push(AP {
+                kind: ConnectionKind::GraphQL,
+                role: ConnectionRole::Stop,
+                key: name,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
+        }
+
+        if re_typegraphql_op.is_match(line_text) {
+            let mut meta = HashMap::new();
+            meta.insert("framework".to_string(), "type-graphql".to_string());
+            out.push(AP {
+                kind: ConnectionKind::GraphQL,
+                role: ConnectionRole::Stop,
+                key: String::new(),
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
+        }
     }
+
+    out
 }
 
 fn extract_ts_graphql_points(
@@ -2012,5 +1633,436 @@ fn extract_ts_graphql_points(
                 metadata: None,
             });
         }
+    }
+}
+
+// ===========================================================================
+// Plugin-facing composer — called from TypeScriptPlugin::extract_connection_points
+// ===========================================================================
+
+/// Compose every source-scan-level TypeScript/JavaScript connector into the
+/// per-file points list the plugin hook returns.
+pub fn extract_typescript_connection_points(
+    source: &str,
+    file_path: &str,
+) -> Vec<AbstractPoint> {
+    let mut out = Vec::new();
+    out.extend(extract_typescript_graphql(source));
+    extract_tauri_ipc_ts_src(source, &mut out);
+    extract_electron_ipc_src(source, &mut out);
+    extract_ts_rest_starts_src(source, file_path, &mut out);
+    extract_ts_mq_src(source, file_path, &mut out);
+    out
+}
+
+fn push_ipc_point(
+    out: &mut Vec<AbstractPoint>,
+    role: ConnectionRole,
+    key: String,
+    line: u32,
+    framework: &str,
+) {
+    let mut meta = HashMap::new();
+    meta.insert("framework".to_string(), framework.to_string());
+    out.push(AbstractPoint {
+        kind: ConnectionKind::Ipc,
+        role,
+        key,
+        line,
+        col: 1,
+        symbol_qname: String::new(),
+        meta,
+    });
+}
+
+fn push_mq_point(
+    out: &mut Vec<AbstractPoint>,
+    role: ConnectionRole,
+    key: String,
+    line: u32,
+    framework: &str,
+) {
+    let mut meta = HashMap::new();
+    meta.insert("framework".to_string(), framework.to_string());
+    out.push(AbstractPoint {
+        kind: ConnectionKind::MessageQueue,
+        role,
+        key,
+        line,
+        col: 1,
+        symbol_qname: String::new(),
+        meta,
+    });
+}
+
+/// Tauri IPC on the TS/JS side: `invoke("cmd")` (Start) + `listen("event")` (Stop).
+pub fn extract_tauri_ipc_ts_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains("invoke") && !source.contains("listen") {
+        return;
+    }
+    let re_invoke = Regex::new(
+        r#"invoke\s*(?:<[^>]*>)?\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
+    )
+    .expect("invoke regex");
+    let re_listen = Regex::new(
+        r#"(?:\.\s*)?listen\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
+    )
+    .expect("listen regex");
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for cap in re_invoke.captures_iter(line_text) {
+            let name = cap
+                .name("name1")
+                .or_else(|| cap.name("name2"))
+                .or_else(|| cap.name("name3"))
+                .map(|m| m.as_str().to_string());
+            if let Some(key) = name {
+                push_ipc_point(out, ConnectionRole::Start, key, line_no, "tauri");
+            }
+        }
+        for cap in re_listen.captures_iter(line_text) {
+            let name = cap
+                .name("name1")
+                .or_else(|| cap.name("name2"))
+                .or_else(|| cap.name("name3"))
+                .map(|m| m.as_str().to_string());
+            if let Some(key) = name {
+                push_ipc_point(out, ConnectionRole::Stop, key, line_no, "tauri");
+            }
+        }
+    }
+}
+
+/// Electron IPC: `ipcMain.handle/on` (Stop) + `ipcRenderer.invoke/send` (Start).
+pub fn extract_electron_ipc_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains("ipcMain") && !source.contains("ipcRenderer") {
+        return;
+    }
+    let re_main = Regex::new(
+        r#"ipcMain\s*\.\s*(?:handle|on)\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
+    )
+    .expect("ipcMain regex");
+    let re_renderer = Regex::new(
+        r#"ipcRenderer\s*\.\s*(?:invoke|send)\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)'|`(?P<name3>[^`]+)`)"#,
+    )
+    .expect("ipcRenderer regex");
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for cap in re_main.captures_iter(line_text) {
+            let name = cap
+                .name("name1")
+                .or_else(|| cap.name("name2"))
+                .or_else(|| cap.name("name3"))
+                .map(|m| m.as_str().to_string());
+            if let Some(key) = name {
+                push_ipc_point(out, ConnectionRole::Stop, key, line_no, "electron");
+            }
+        }
+        for cap in re_renderer.captures_iter(line_text) {
+            let name = cap
+                .name("name1")
+                .or_else(|| cap.name("name2"))
+                .or_else(|| cap.name("name3"))
+                .map(|m| m.as_str().to_string());
+            if let Some(key) = name {
+                push_ipc_point(out, ConnectionRole::Start, key, line_no, "electron");
+            }
+        }
+    }
+}
+
+/// TS/JS REST client-call starts: `fetch("/url")`, `axios.get("/url")`.
+pub fn extract_ts_rest_starts_src(
+    source: &str,
+    file_path: &str,
+    out: &mut Vec<AbstractPoint>,
+) {
+    if ts_rest_is_test_or_config_file(file_path) {
+        return;
+    }
+    if !source.contains("fetch(") && !source.contains("axios.") {
+        return;
+    }
+
+    let re_fetch = Regex::new(
+        r#"fetch\s*\(\s*(?:\w+\s*\(\s*)?(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    )
+    .expect("fetch regex");
+    let re_axios = Regex::new(
+        r#"axios\.(?P<method>get|post|put|delete|patch|head)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)'|`(?P<url3>[^`]+)`)"#,
+    )
+    .expect("axios regex");
+    let re_method_extract =
+        Regex::new(r#"method\s*:\s*['"](?P<m>[A-Z]+)['"]"#).expect("method extract regex");
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        for cap in re_fetch.captures_iter(line_text) {
+            let raw_url = cap
+                .name("url1")
+                .or_else(|| cap.name("url2"))
+                .or_else(|| cap.name("url3"))
+                .map(|m| m.as_str().to_string());
+            let Some(raw_url) = raw_url else { continue };
+            if !ts_rest_looks_like_api_url(&raw_url) {
+                continue;
+            }
+            let method = re_method_extract
+                .captures(line_text)
+                .and_then(|c| c.name("m"))
+                .map(|m| m.as_str().to_string())
+                .unwrap_or_else(|| "GET".to_string());
+            let url_pattern = rest_normalise_url_pattern(&raw_url);
+            let mut meta = HashMap::new();
+            meta.insert("method".to_string(), method);
+            out.push(AbstractPoint {
+                kind: ConnectionKind::Rest,
+                role: ConnectionRole::Start,
+                key: url_pattern,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
+        }
+
+        for cap in re_axios.captures_iter(line_text) {
+            let raw_url = cap
+                .name("url1")
+                .or_else(|| cap.name("url2"))
+                .or_else(|| cap.name("url3"))
+                .map(|m| m.as_str().to_string());
+            let Some(raw_url) = raw_url else { continue };
+            if !ts_rest_looks_like_api_url(&raw_url) {
+                continue;
+            }
+            let method = cap
+                .name("method")
+                .map(|m| m.as_str().to_uppercase())
+                .unwrap_or_else(|| "GET".to_string());
+            let url_pattern = rest_normalise_url_pattern(&raw_url);
+            let mut meta = HashMap::new();
+            meta.insert("method".to_string(), method);
+            out.push(AbstractPoint {
+                kind: ConnectionKind::Rest,
+                role: ConnectionRole::Start,
+                key: url_pattern,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
+        }
+    }
+}
+
+/// TS/JS message queue detection: kafkajs, amqplib, bullmq.
+pub fn extract_ts_mq_src(source: &str, file_path: &str, out: &mut Vec<AbstractPoint>) {
+    let lower_path = file_path.to_lowercase();
+    if lower_path.contains("/node_modules/") || lower_path.ends_with(".min.js") {
+        return;
+    }
+    if !source.contains("producer")
+        && !source.contains("consumer")
+        && !source.contains("channel")
+        && !source.contains("@Processor")
+        && !source.contains("new Queue")
+    {
+        return;
+    }
+
+    let re_kafka_send = Regex::new(
+        r#"producer\.send\s*\(\s*\{[^}]*topic\s*:\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("ts kafka send regex");
+    let re_kafka_subscribe = Regex::new(
+        r#"consumer\.subscribe\s*\(\s*\{[^}]*topics?\s*:\s*(?:\[[^\]]*['"`]([^'"`]+)['"`]|['"`]([^'"`]+)['"`])"#,
+    )
+    .expect("ts kafka subscribe regex");
+    let re_amqp_publish = Regex::new(
+        r#"channel\.publish\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("ts amqp publish regex");
+    let re_amqp_consume = Regex::new(
+        r#"channel\.consume\s*\(\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("ts amqp consume regex");
+    let re_processor = Regex::new(
+        r#"@Processor\s*\(\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("ts bullmq processor regex");
+    let re_queue_ctor = Regex::new(
+        r#"new\s+Queue\s*\(\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("ts bullmq queue ctor regex");
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        for cap in re_kafka_send.captures_iter(line_text) {
+            push_mq_point(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_kafka_subscribe.captures_iter(line_text) {
+            let topic = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str().to_string());
+            if let Some(t) = topic {
+                push_mq_point(out, ConnectionRole::Stop, t, line_no, "kafka");
+            }
+        }
+        for cap in re_amqp_publish.captures_iter(line_text) {
+            push_mq_point(out, ConnectionRole::Start, cap[2].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_amqp_consume.captures_iter(line_text) {
+            push_mq_point(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_processor.captures_iter(line_text) {
+            push_mq_point(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "bullmq");
+        }
+        for cap in re_queue_ctor.captures_iter(line_text) {
+            push_mq_point(out, ConnectionRole::Start, cap[1].to_string(), line_no, "bullmq");
+        }
+    }
+}
+
+// ===========================================================================
+// Plugin-level tests (source-scan functions only — no DB fixtures)
+// ===========================================================================
+
+#[cfg(test)]
+mod plugin_tests {
+    use super::*;
+
+    #[test]
+    fn tauri_invoke_is_start() {
+        let mut out = Vec::new();
+        extract_tauri_ipc_ts_src(
+            "await invoke('greet', { name: 'world' });",
+            &mut out,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, ConnectionKind::Ipc);
+        assert_eq!(out[0].role, ConnectionRole::Start);
+        assert_eq!(out[0].key, "greet");
+        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("tauri"));
+    }
+
+    #[test]
+    fn tauri_listen_is_stop() {
+        let mut out = Vec::new();
+        extract_tauri_ipc_ts_src("listen(\"tick\", handler)", &mut out);
+        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
+        assert_eq!(stops.len(), 1);
+        assert_eq!(stops[0].key, "tick");
+    }
+
+    #[test]
+    fn electron_ipc_main_handle_is_stop() {
+        let mut out = Vec::new();
+        extract_electron_ipc_src(
+            "ipcMain.handle('file:save', async (e, path, content) => {})",
+            &mut out,
+        );
+        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
+        assert_eq!(stops.len(), 1);
+        assert_eq!(stops[0].key, "file:save");
+    }
+
+    #[test]
+    fn electron_renderer_invoke_is_start() {
+        let mut out = Vec::new();
+        extract_electron_ipc_src("ipcRenderer.invoke('file:save', path, content)", &mut out);
+        let starts: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Start).collect();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].key, "file:save");
+    }
+
+    #[test]
+    fn ts_rest_fetch_emits_get_by_default() {
+        let src = "await fetch('/api/users/42')";
+        let mut out = Vec::new();
+        extract_ts_rest_starts_src(src, "src/client.ts", &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "/api/users/42");
+        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("GET"));
+    }
+
+    #[test]
+    fn ts_rest_fetch_parses_method_option() {
+        let src = r#"await fetch('/api/users', { method: 'POST', body })"#;
+        let mut out = Vec::new();
+        extract_ts_rest_starts_src(src, "src/client.ts", &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("POST"));
+    }
+
+    #[test]
+    fn ts_rest_skips_test_files() {
+        let mut out = Vec::new();
+        extract_ts_rest_starts_src(
+            "fetch('/api/x')",
+            "src/client.test.ts",
+            &mut out,
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn ts_rest_rejects_absolute_urls_on_client() {
+        let src = "await fetch('https://example.com/api/x')";
+        let mut out = Vec::new();
+        extract_ts_rest_starts_src(src, "src/client.ts", &mut out);
+        assert!(out.is_empty(), "absolute URLs don't match local stops");
+    }
+
+    #[test]
+    fn ts_mq_kafka_producer_start() {
+        let src = r#"producer.send({ topic: "orders", messages: [] })"#;
+        let mut out = Vec::new();
+        extract_ts_mq_src(src, "src/queue.ts", &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "orders");
+        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("kafka"));
+        assert_eq!(out[0].role, ConnectionRole::Start);
+    }
+
+    #[test]
+    fn ts_mq_skips_node_modules() {
+        let src = r#"producer.send({ topic: "x" })"#;
+        let mut out = Vec::new();
+        extract_ts_mq_src(src, "src/node_modules/foo/index.ts", &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn ts_mq_bullmq_processor_is_stop() {
+        let src = r#"@Processor('notifications')\nclass X {}"#;
+        let mut out = Vec::new();
+        extract_ts_mq_src(src, "src/worker.ts", &mut out);
+        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
+        assert_eq!(stops.len(), 1);
+        assert_eq!(stops[0].key, "notifications");
+    }
+
+    #[test]
+    fn composer_picks_up_every_kind() {
+        let src = r#"
+const Schema = gql`
+  type Query {
+    me: User
+  }
+`
+await invoke('greet', { name })
+ipcMain.handle('save', async () => {})
+await fetch('/api/ping')
+producer.send({ topic: "t" })
+"#;
+        let points = extract_typescript_connection_points(src, "src/app.ts");
+        let has = |k: ConnectionKind| points.iter().any(|p| p.kind == k);
+        assert!(has(ConnectionKind::GraphQL), "graphql not found");
+        assert!(has(ConnectionKind::Ipc), "ipc not found");
+        assert!(has(ConnectionKind::Rest), "rest not found");
+        assert!(has(ConnectionKind::MessageQueue), "mq not found");
     }
 }

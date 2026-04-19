@@ -8,10 +8,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
+use tree_sitter::{Node, Parser};
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
@@ -64,6 +67,15 @@ impl Ecosystem for ComposerEcosystem {
     ) -> Vec<WalkedFile> {
         walk_php_narrowed(dep)
     }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_php_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for ComposerEcosystem {
@@ -442,6 +454,99 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
             });
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+
+fn build_php_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_php_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_php_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of a PHP source file. Records top-level
+/// class / interface / trait / enum / function / const names. Nested
+/// class methods are left to the regular extractor when the file is
+/// eventually pulled into the index.
+fn scan_php_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_php::LANGUAGE_PHP.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    walk_php_decls(&root, bytes, &mut out, 0);
+    out
+}
+
+fn walk_php_decls(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32) {
+    if depth > 4 { return }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "class_declaration"
+            | "interface_declaration"
+            | "trait_declaration"
+            | "enum_declaration"
+            | "function_definition"
+            | "const_declaration" => {
+                if let Some(name_node) = child
+                    .child_by_field_name("name")
+                    .or_else(|| find_first_name_child(&child, "name"))
+                {
+                    if let Ok(t) = name_node.utf8_text(bytes) {
+                        out.push(t.to_string());
+                    }
+                }
+            }
+            "namespace_definition" | "namespace_use_declaration"
+            | "program" | "compound_statement" => {
+                // Recurse — namespaces wrap their contents in a block.
+                walk_php_decls(&child, bytes, out, depth + 1);
+            }
+            _ => {}
+        }
+    }
+}
+
+fn find_first_name_child<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == kind { return Some(child) }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

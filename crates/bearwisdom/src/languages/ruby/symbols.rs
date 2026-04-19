@@ -85,6 +85,7 @@ pub(super) fn extract_class(
             line: superclass_node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -326,6 +327,7 @@ pub(super) fn extract_call_statement(
                                 line: arg.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -353,6 +355,7 @@ pub(super) fn extract_call_statement(
                             line: arg.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                         break;
                     }
@@ -373,6 +376,7 @@ pub(super) fn extract_call_statement(
                                 line: node.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         } else {
                             refs.push(ExtractedRef {
@@ -382,6 +386,7 @@ pub(super) fn extract_call_statement(
                                 line: node.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -393,6 +398,7 @@ pub(super) fn extract_call_statement(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -440,6 +446,7 @@ fn extract_require(
                     line: arg.start_position().row as u32,
                     module,
                     chain: None,
+                    byte_offset: 0,
                 });
                 break;
             }

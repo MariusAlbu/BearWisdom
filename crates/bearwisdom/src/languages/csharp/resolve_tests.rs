@@ -35,6 +35,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         line,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
 
@@ -56,6 +57,9 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         symbol_origin_languages: vec![],
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -89,6 +93,9 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -237,6 +244,7 @@ fn test_using_directive_resolution() {
         line: 1,
         module: Some("App.Models".to_string()),
         chain: None,
+        byte_offset: 0,
     });
 
     let (index, id_map) = build_test_env(&[&file1, &file2]);
@@ -343,6 +351,7 @@ fn test_private_visibility_cross_file() {
         line: 1,
         module: Some("App.Internal".to_string()),
         chain: None,
+        byte_offset: 0,
     });
 
     let (index, _) = build_test_env(&[&file1, &file2]);
@@ -600,6 +609,7 @@ fn test_infer_no_false_positive_on_project_ref() {
         line: 1,
         module: Some("App.Models".to_string()),
         chain: None,
+        byte_offset: 0,
     });
 
     let resolver = CSharpResolver;
@@ -646,6 +656,7 @@ fn test_infer_without_project_context_fallback() {
         line: 1,
         module: Some("App.Models".to_string()),
         chain: None,
+        byte_offset: 0,
     });
 
     let resolver = CSharpResolver;
@@ -678,6 +689,7 @@ fn workspace_project_namespace_not_classified_as_external() {
         line,
         module: Some(target.to_string()),
         chain: None,
+        byte_offset: 0,
     };
     let file = make_file(
         "App/Foo.cs",
@@ -725,6 +737,7 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
         line,
         module: Some(target.to_string()),
         chain: None,
+        byte_offset: 0,
     };
     let file = make_file(
         "App/Foo.cs",

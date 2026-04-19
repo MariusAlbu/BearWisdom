@@ -95,6 +95,7 @@ impl LanguageResolver for PrologResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "prolog_scope_chain",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -105,6 +106,7 @@ impl LanguageResolver for PrologResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "prolog_same_file",
+                        resolved_yield_type: None,
                     });
                 }
             }

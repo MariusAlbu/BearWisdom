@@ -8,10 +8,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
@@ -52,6 +54,15 @@ impl Ecosystem for NimbleEcosystem {
     fn resolve_symbol(
         &self, dep: &ExternalDepRoot, _f: &str,
     ) -> Vec<WalkedFile> { walk_nim_narrowed(dep) }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_nim_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for NimbleEcosystem {
@@ -340,6 +351,103 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
             });
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+//
+// Nim has no tree-sitter grammar in this crate, so we do a line-based scan
+// for top-level declarations. Matches `proc`, `func`, `method`, `iterator`,
+// `converter`, `template`, `macro`, `type`, `const`, `var`, `let` followed
+// by an identifier at column 0 (or after `export` marker `*`).
+
+fn build_nim_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_nim_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_nim_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Line-based scan of a Nim source file for top-level declarations. Looks
+/// for `proc name*(...)`, `type Foo*`, `const X*`, `var Y*`, etc. — only at
+/// column 0 so nested definitions inside proc bodies don't leak through.
+pub(crate) fn scan_nim_header(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in source.lines() {
+        // Only consider lines that start at column 0 (no leading whitespace).
+        if line.is_empty() || line.starts_with(char::is_whitespace) { continue }
+        let kw = match next_nim_keyword(line) {
+            Some(kw) => kw,
+            None => continue,
+        };
+        let rest = line[kw.len()..].trim_start();
+        let name = extract_nim_identifier(rest);
+        if !name.is_empty() {
+            out.push(name);
+        }
+    }
+    out
+}
+
+fn next_nim_keyword(line: &str) -> Option<&'static str> {
+    for kw in &[
+        "proc", "func", "method", "iterator", "converter", "template",
+        "macro", "type", "const", "var", "let",
+    ] {
+        if line.starts_with(kw) {
+            // Must be followed by whitespace or `*` to avoid matching
+            // identifiers that start with these prefixes.
+            let rest = &line[kw.len()..];
+            if rest.starts_with(char::is_whitespace)
+                || rest.starts_with('*')
+                || rest.starts_with('(')
+            {
+                return Some(kw);
+            }
+        }
+    }
+    None
+}
+
+/// Grab the identifier at the start of `rest`. Nim identifiers are
+/// alphanumeric + underscore; the first char must be alphabetic.
+fn extract_nim_identifier(rest: &str) -> String {
+    let mut chars = rest.chars();
+    let first = match chars.next() {
+        Some(c) if c.is_alphabetic() || c == '_' => c,
+        _ => return String::new(),
+    };
+    let mut name = String::new();
+    name.push(first);
+    for c in chars {
+        if c.is_alphanumeric() || c == '_' { name.push(c) } else { break }
+    }
+    name
 }
 
 // ---------------------------------------------------------------------------

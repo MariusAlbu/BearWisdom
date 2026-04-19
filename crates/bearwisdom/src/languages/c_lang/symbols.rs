@@ -54,6 +54,7 @@ fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         line: name_node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -454,6 +455,7 @@ pub(super) fn push_include(
                     line: node.start_position().row as u32,
                     module: Some(path.to_string()),
                     chain: None,
+                    byte_offset: 0,
                 });
                 return;
             }
@@ -679,6 +681,7 @@ pub(super) fn push_using_decl(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 return;
@@ -798,6 +801,7 @@ pub(super) fn extract_bases(
                             line: base.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                     "base_class_specifier" => {
@@ -812,6 +816,7 @@ pub(super) fn extract_bases(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

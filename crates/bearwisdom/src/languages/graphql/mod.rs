@@ -41,6 +41,15 @@ impl LanguagePlugin for GraphQlPlugin {
         extract::extract(source, tree_sitter_graphql::LANGUAGE.into())
     }
 
+    fn extract_connection_points(
+        &self,
+        source: &str,
+        _file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
+        connectors::extract_schema_starts(source)
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "object_type_definition",

@@ -74,6 +74,7 @@ fn emit_attribute(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -208,6 +209,7 @@ fn extract_binding_pattern_type(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -291,6 +293,7 @@ fn extract_pattern_type_refs(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 } else if child.kind() == "simple_identifier" {
@@ -303,6 +306,7 @@ fn extract_pattern_type_refs(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -321,6 +325,7 @@ fn extract_pattern_type_refs(
                             line: inner.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -376,6 +381,7 @@ pub(super) fn extract_extension_conformances(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

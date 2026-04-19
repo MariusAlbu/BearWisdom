@@ -33,6 +33,7 @@ pub(super) fn extract_calls_from_body(
                             line: callee.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -152,6 +153,7 @@ pub(super) fn extract_type_ref_from_swift_type(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
     // Recursively walk the entire type subtree to catch ALL type_identifier nodes,
@@ -201,6 +203,7 @@ fn extract_all_type_identifiers(
                             line,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -305,6 +308,7 @@ pub(super) fn extract_protocol_composition_refs(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }

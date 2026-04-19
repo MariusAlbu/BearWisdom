@@ -545,6 +545,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 return;
@@ -560,6 +561,7 @@ pub(super) fn extract_type_ref_from_type_assertion(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -767,6 +769,7 @@ pub(super) fn push_variable_decl(
                                             line: init_node.start_position().row as u32,
                                             module: None,
                                             chain: Some(chain),
+                                            byte_offset: 0,
                                         });
                                     }
                                 }
@@ -788,6 +791,7 @@ pub(super) fn push_variable_decl(
                                         line: init_node.start_position().row as u32,
                                         module: None,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -807,6 +811,7 @@ pub(super) fn push_variable_decl(
                                         line: init_node.start_position().row as u32,
                                         module: None,
                                         chain: Some(chain),
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -889,6 +894,7 @@ pub(super) fn push_variable_decl(
                                 line: prop.start_position().row as u32,
                                 module: None,
                                 chain: Some(prop_chain),
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -1003,6 +1009,7 @@ pub(super) fn push_variable_decl(
                                     line: elem_node.start_position().row as u32,
                                     module: None,
                                     chain: Some(elem_chain),
+                                    byte_offset: 0,
                                 });
                             }
                         }

@@ -368,6 +368,7 @@ fn emit_annotation_ref(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -440,6 +441,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             // Recurse ONLY into type_arguments children (for generic params like
@@ -470,6 +472,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             let mut cursor = node.walk();
@@ -496,6 +499,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             // Recurse to handle type args inside annotations and nested annotations.
@@ -536,6 +540,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             let mut cursor = node.walk();
@@ -654,6 +659,7 @@ fn infer_type_from_initializer(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -669,6 +675,7 @@ fn infer_type_from_initializer(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

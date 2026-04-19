@@ -128,6 +128,7 @@ fn emit_import_ref(
         line: node.start_position().row as u32,
         module,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -728,6 +729,7 @@ fn extract_field_declaration(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             // Also emit a Field symbol (the embedded type acts as an accessible field).
             symbols.push(ExtractedSymbol {
@@ -813,6 +815,7 @@ fn emit_type_refs_from_subtree(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -843,6 +846,7 @@ fn emit_type_refs_from_subtree(
                     line: node.start_position().row as u32,
                     module: pkg,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -1113,6 +1117,7 @@ pub(super) fn extract_short_var_decl(
                                     line: rhs_node.start_position().row as u32,
                                     module: None,
                                     chain: Some(chain),
+                                    byte_offset: 0,
                                 });
                             }
                         } else {
@@ -1126,6 +1131,7 @@ pub(super) fn extract_short_var_decl(
                                     line: rhs_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -1156,6 +1162,7 @@ pub(super) fn extract_short_var_decl(
                                     line: rhs_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -1308,6 +1315,7 @@ fn extract_const_var_spec(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -1442,6 +1450,7 @@ pub(super) fn extract_go_typed_params_as_symbols(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }

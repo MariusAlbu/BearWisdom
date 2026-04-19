@@ -77,6 +77,7 @@ fn emit_annotation(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -90,6 +91,7 @@ fn emit_annotation(
                     line: node.start_position().row as u32,
                     module: first_arg,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

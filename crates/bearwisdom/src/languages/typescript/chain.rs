@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::chain_walker::external_type_qname;
-use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolInfo, SymbolLookup};
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
@@ -42,31 +42,37 @@ pub(super) fn resolve_via_chain(
         SegmentKind::Identifier => {
             let name = &segments[0].name;
 
-            // Is it a known class/type? (static access: `ClassName.method()`)
-            let is_type = lookup.types_by_name(name).iter().any(|s| {
-                matches!(
-                    s.kind.as_str(),
-                    "class" | "struct" | "interface" | "enum" | "type_alias"
-                )
-            });
-            if is_type {
-                Some(name.clone())
+            // R5: per-file flow inference takes precedence over global lookups.
+            // A local-variable shadow correctly hides a same-named class.
+            if let Some(local_type) = lookup.local_type(name) {
+                Some(local_type)
             } else {
-                // Is it a field on the enclosing class?
-                let mut found = None;
-                for scope in &ref_ctx.scope_chain {
-                    let field_qname = format!("{scope}.{name}");
-                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
-                        // Capture generic args from the field declaration.
-                        initial_generic_args = lookup
-                            .field_type_args(&field_qname)
-                            .unwrap_or(&[])
-                            .to_vec();
-                        found = Some(type_name.to_string());
-                        break;
+                // Is it a known class/type? (static access: `ClassName.method()`)
+                let is_type = lookup.types_by_name(name).iter().any(|s| {
+                    matches!(
+                        s.kind.as_str(),
+                        "class" | "struct" | "interface" | "enum" | "type_alias"
+                    )
+                });
+                if is_type {
+                    Some(name.clone())
+                } else {
+                    // Is it a field on the enclosing class?
+                    let mut found = None;
+                    for scope in &ref_ctx.scope_chain {
+                        let field_qname = format!("{scope}.{name}");
+                        if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            // Capture generic args from the field declaration.
+                            initial_generic_args = lookup
+                                .field_type_args(&field_qname)
+                                .unwrap_or(&[])
+                                .to_vec();
+                            found = Some(type_name.to_string());
+                            break;
+                        }
                     }
+                    found.or_else(|| segments[0].declared_type.clone())
                 }
-                found.or_else(|| segments[0].declared_type.clone())
             }
         }
         _ => None,
@@ -107,6 +113,14 @@ pub(super) fn resolve_via_chain(
             }
             current_type = resolved_type;
             continue;
+        }
+
+        // R5: call-site type args (`findOne<User>()`) bind the method's own
+        // generic parameters before its return type resolves.
+        if !seg.type_args.is_empty() {
+            env.enter_generic_context(&member_qname, &seg.type_args, |name| {
+                lookup.generic_params(name).map(|p| p.to_vec())
+            });
         }
 
         // Try return type (method call result in a fluent chain).
@@ -207,6 +221,7 @@ pub(super) fn resolve_via_chain(
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: "ts_chain_resolution",
+                resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
             });
         }
     }
@@ -218,6 +233,7 @@ pub(super) fn resolve_via_chain(
                 target_symbol_id: sym.id,
                 confidence: 0.95,
                 strategy: "ts_chain_resolution",
+                resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
             });
         }
     }
@@ -231,6 +247,26 @@ pub(super) fn resolve_via_chain(
         target_name: last.name.clone(),
     });
     None
+}
+
+/// R5: compute the yield type of a resolved Phase-3 symbol, honoring
+/// call-site generic arguments (`findOne<User>()`) and the active
+/// `TypeEnvironment` bindings accumulated during chain walking.
+fn ts_yield_type(
+    sym: &SymbolInfo,
+    call_site_type_args: &[String],
+    lookup: &dyn SymbolLookup,
+    env: &mut TypeEnvironment,
+) -> Option<String> {
+    let raw = lookup
+        .return_type_name(&sym.qualified_name)
+        .or_else(|| lookup.field_type_name(&sym.qualified_name))?;
+    if !call_site_type_args.is_empty() {
+        env.enter_generic_context(&sym.qualified_name, call_site_type_args, |name| {
+            lookup.generic_params(name).map(|p| p.to_vec())
+        });
+    }
+    Some(env.resolve(raw))
 }
 
 /// Find the enclosing class name from the scope chain.

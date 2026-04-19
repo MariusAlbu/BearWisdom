@@ -36,6 +36,7 @@ pub(super) fn extract_calls_from_body(
                             line: fn_node.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: fn_node.start_byte() as u32,
                         });
                     }
                 }
@@ -82,6 +83,7 @@ pub(super) fn extract_calls_from_body(
                                             line: pchild.start_position().row as u32,
                                             module: None,
                                             chain: None,
+                                            byte_offset: 0,
                                         });
                                     }
                                 }
@@ -112,6 +114,7 @@ pub(super) fn extract_calls_from_body(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                                 refs.push(ExtractedRef {
                                     source_symbol_index,
@@ -120,6 +123,7 @@ pub(super) fn extract_calls_from_body(
                                     line: inner.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -135,6 +139,7 @@ pub(super) fn extract_calls_from_body(
                                             line: name_node.start_position().row as u32,
                                             module: None,
                                             chain: None,
+                                            byte_offset: 0,
                                         });
                                         refs.push(ExtractedRef {
                                             source_symbol_index,
@@ -143,6 +148,7 @@ pub(super) fn extract_calls_from_body(
                                             line: name_node.start_position().row as u32,
                                             module: None,
                                             chain: None,
+                                            byte_offset: 0,
                                         });
                                     }
                                 }
@@ -233,6 +239,7 @@ fn extract_lambda_param_typerefs(
                                         line: inner.start_position().row as u32,
                                         module: None,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -268,6 +275,7 @@ fn extract_catch_typerefs(
                                 line: inner.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -283,6 +291,7 @@ fn extract_catch_typerefs(
                                     line: name_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

@@ -43,6 +43,15 @@ impl LanguagePlugin for GroovyPlugin {
         extract::extract(source)
     }
 
+    fn extract_connection_points(
+        &self,
+        source: &str,
+        file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
+        connectors::extract_groovy_connection_points(source, file_path)
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class_declaration",

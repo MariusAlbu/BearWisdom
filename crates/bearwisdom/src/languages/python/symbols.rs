@@ -480,6 +480,7 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
 
@@ -646,6 +647,7 @@ fn extract_superclass_refs(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             "attribute" => {
@@ -661,6 +663,7 @@ fn extract_superclass_refs(
                         line: child.start_position().row as u32,
                         module: obj,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -904,6 +907,7 @@ fn infer_python_variable_type(
         line: rhs.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -1098,6 +1102,7 @@ fn extract_with_item(
                                 line: expr.start_position().row as u32,
                                 module: None,
                                 chain: Some(chain),
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -1262,6 +1267,7 @@ pub(super) fn extract_named_expression(
                         line: value_node.start_position().row as u32,
                         module: None,
                         chain: Some(chain),
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1431,6 +1437,7 @@ fn extract_pattern_refs(
                         line: class_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1844,6 +1851,7 @@ fn extract_except_clause(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1883,6 +1891,7 @@ fn extract_except_type_refs(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -1897,6 +1906,7 @@ fn extract_except_type_refs(
                         line: attr.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1945,6 +1955,7 @@ fn extract_raise_statement(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1961,6 +1972,7 @@ fn extract_raise_statement(
                                     line: func.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -1975,6 +1987,7 @@ fn extract_raise_statement(
                                         line: attr.start_position().row as u32,
                                         module: None,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                             }
@@ -2016,6 +2029,7 @@ fn extract_augmented_assignment(
                         line: left.start_position().row as u32,
                         module: None,
                         chain: Some(chain),
+                        byte_offset: 0,
                     });
                 }
             }
@@ -2110,6 +2124,7 @@ fn extract_type_refs_from_annotation(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -2133,6 +2148,7 @@ fn extract_type_refs_from_annotation(
                         line: attr.start_position().row as u32,
                         module,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

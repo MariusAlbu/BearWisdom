@@ -34,6 +34,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                 routes: vec![],
                 db_sets: vec![],
                 has_errors: true,
+                connection_points: Vec::new(),
+                demand_contributions: Vec::new(),
             }
         }
     };
@@ -143,6 +145,7 @@ pub(super) fn extract_from_node(
                                     line: fc.start_position().row as u32,
                                     module: Some("__future__".to_string()),
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -301,6 +304,7 @@ fn emit_type_ref_from_annotation(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -322,6 +326,7 @@ fn emit_type_ref_from_annotation(
                         line: attr.start_position().row as u32,
                         module,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -372,6 +377,7 @@ fn scan_type_annotation_nodes(
                     line: type_line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
                 // Still recurse — annotations can nest (e.g. `Optional[List[Foo]]`).
             }
@@ -388,6 +394,7 @@ fn scan_type_annotation_nodes(
                     line: type_line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             _ => {}
@@ -419,6 +426,7 @@ fn emit_type_ref_from_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

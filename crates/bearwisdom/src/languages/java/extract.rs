@@ -68,6 +68,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                 routes: vec![],
                 db_sets: vec![],
                 has_errors: true,
+                connection_points: Vec::new(),
+                demand_contributions: Vec::new(),
             }
         }
     };
@@ -424,6 +426,7 @@ fn scan_all_type_identifiers(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

@@ -1,5 +1,8 @@
     use super::*;
     use crate::db::Database;
+    use crate::indexer::stage_discover::{
+        collect_package_dep_rows, manifest_kind_to_ecosystem,
+    };
     use std::fs;
     use tempfile::TempDir;
 

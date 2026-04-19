@@ -13,6 +13,7 @@
 //   by querying stereotype concept members and following `implements` edges.
 // =============================================================================
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -23,6 +24,9 @@ use tracing::{debug, info};
 use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
+use crate::types::{
+    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
+};
 use crate::indexer::project_context::ProjectContext;
 
 // ===========================================================================
@@ -652,11 +656,12 @@ impl Connector for JavaRestConnector {
     fn extract(
         &self,
         conn: &Connection,
-        project_root: &Path,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
+        // Starts (HttpClient/RestTemplate/WebClient) migrated into
+        // `extract_java_rest_starts_src`. Stops stay on DB.
         let mut points = Vec::new();
         extract_java_rest_stops(conn, &mut points)?;
-        extract_java_rest_starts(conn, project_root, &mut points)?;
         Ok(points)
     }
 }
@@ -698,63 +703,6 @@ fn extract_java_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) ->
             framework: String::new(),
             metadata: None,
         });
-    }
-    Ok(())
-}
-
-fn extract_java_rest_starts(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    // HttpClient / RestTemplate / WebClient call sites
-    let re = regex::Regex::new(
-        r#"(?:HttpClient|RestTemplate|WebClient)[^.(]*\.\s*(?P<method>get|post|put|delete|getForObject|postForEntity|exchange|retrieve)\s*\([^)]*"(?P<url>[^"]+)""#,
-    )
-    .expect("java http client regex is valid");
-
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = 'java'")
-        .context("Failed to prepare Java files query")?;
-
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query Java files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect Java file rows")?;
-
-    for (file_id, rel_path) in files {
-        if rest_is_test_or_config_file(&rel_path) {
-            continue;
-        }
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for cap in re.captures_iter(line_text) {
-                let Some(raw_url) = cap.name("url").map(|m| m.as_str().to_string()) else { continue };
-                if !rest_looks_like_backend_api_url(&raw_url) {
-                    continue;
-                }
-                let method = rest_normalise_method(cap.name("method").map(|m| m.as_str()).unwrap_or("GET"));
-                let url_pattern = rest_normalise_url_pattern(&raw_url);
-                out.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: line_no,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Start,
-                    key: url_pattern,
-                    method,
-                    framework: String::new(),
-                    metadata: None,
-                });
-            }
-        }
     }
     Ok(())
 }
@@ -976,145 +924,191 @@ impl Connector for JavaMqConnector {
             || ctx.has_dependency(ManifestKind::Gradle, "com.amazonaws")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // Producers:
-        //   kafkaTemplate.send("topic", ...)
-        //   producer.send(new ProducerRecord<>("topic", ...))
-        //   rabbitTemplate.convertAndSend("exchange", "routingKey", ...)
-        //
-        // Consumers:
-        //   @KafkaListener(topics = "topic")
-        //   @KafkaListener(topics = {"t1", "t2"})
-        //   @RabbitListener(queues = "queue")
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Flattened into `extract_java_mq_src`.
+        Ok(Vec::new())
+    }
+}
 
-        let re_kafka_template_send = regex::Regex::new(
-            r#"kafkaTemplate\.send\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("java kafka template send regex");
+// ===========================================================================
+// Plugin-facing composer — called from JavaPlugin::extract_connection_points
+// ===========================================================================
 
-        let re_producer_record = regex::Regex::new(
-            r#"new\s+ProducerRecord\s*<[^>]*>\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("java producer record regex");
+pub fn extract_java_connection_points(source: &str, file_path: &str) -> Vec<AbstractPoint> {
+    let mut out = Vec::new();
+    extract_java_rest_starts_src(source, file_path, &mut out);
+    extract_java_mq_src(source, &mut out);
+    out
+}
 
-        let re_rabbit_send = regex::Regex::new(
-            r#"rabbitTemplate\.(?:convertAndSend|send)\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("java rabbit send regex");
+/// Java REST client-call starts: HttpClient / RestTemplate / WebClient.
+pub fn extract_java_rest_starts_src(
+    source: &str,
+    file_path: &str,
+    out: &mut Vec<AbstractPoint>,
+) {
+    if rest_is_test_or_config_file(file_path) {
+        return;
+    }
+    if !source.contains("HttpClient")
+        && !source.contains("RestTemplate")
+        && !source.contains("WebClient")
+    {
+        return;
+    }
 
-        let re_kafka_listener = regex::Regex::new(
-            r#"@KafkaListener\s*\([^)]*topics\s*=\s*(?:\{[^}]*['"]([^'"]+)['"]|['"]([^'"]+)['"])"#,
-        )
-        .expect("java kafka listener regex");
+    let re = regex::Regex::new(
+        r#"(?:HttpClient|RestTemplate|WebClient)[^.(]*\.\s*(?P<method>get|post|put|delete|getForObject|postForEntity|exchange|retrieve)\s*\([^)]*"(?P<url>[^"]+)""#,
+    )
+    .expect("java http client regex");
 
-        let re_rabbit_listener = regex::Regex::new(
-            r#"@RabbitListener\s*\([^)]*queues\s*=\s*(?:\{[^}]*['"]([^'"]+)['"]|['"]([^'"]+)['"])"#,
-        )
-        .expect("java rabbit listener regex");
-
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'java'")
-            .context("Failed to prepare Java files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })
-            .context("Failed to query Java files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Java file rows")?;
-
-        let mut points = Vec::new();
-
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for cap in re.captures_iter(line_text) {
+            let Some(raw_url) = cap.name("url").map(|m| m.as_str().to_string()) else {
+                continue;
             };
+            if !rest_looks_like_backend_api_url(&raw_url) {
+                continue;
+            }
+            let method =
+                rest_normalise_method(cap.name("method").map(|m| m.as_str()).unwrap_or("GET"));
+            let url_pattern = rest_normalise_url_pattern(&raw_url);
+            let mut meta = HashMap::new();
+            meta.insert("method".to_string(), method);
+            out.push(AbstractPoint {
+                kind: ConnectionKind::Rest,
+                role: ConnectionRole::Start,
+                key: url_pattern,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
+        }
+    }
+}
 
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
+/// Java MQ detection: Spring Kafka/AMQP, raw Kafka client.
+pub fn extract_java_mq_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains("kafkaTemplate")
+        && !source.contains("ProducerRecord")
+        && !source.contains("rabbitTemplate")
+        && !source.contains("@KafkaListener")
+        && !source.contains("@RabbitListener")
+    {
+        return;
+    }
 
-                for cap in re_kafka_template_send.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
+    let re_kafka_template_send = regex::Regex::new(
+        r#"kafkaTemplate\.send\s*\(\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("java kafka template send regex");
+    let re_producer_record = regex::Regex::new(
+        r#"new\s+ProducerRecord\s*<[^>]*>\s*\(\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("java producer record regex");
+    let re_rabbit_send = regex::Regex::new(
+        r#"rabbitTemplate\.(?:convertAndSend|send)\s*\(\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("java rabbit send regex");
+    let re_kafka_listener = regex::Regex::new(
+        r#"@KafkaListener\s*\([^)]*topics\s*=\s*(?:\{[^}]*['"]([^'"]+)['"]|['"]([^'"]+)['"])"#,
+    )
+    .expect("java kafka listener regex");
+    let re_rabbit_listener = regex::Regex::new(
+        r#"@RabbitListener\s*\([^)]*queues\s*=\s*(?:\{[^}]*['"]([^'"]+)['"]|['"]([^'"]+)['"])"#,
+    )
+    .expect("java rabbit listener regex");
 
-                for cap in re_producer_record.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
+    let push = |out: &mut Vec<AbstractPoint>,
+                role: ConnectionRole,
+                key: String,
+                line: u32,
+                framework: &str| {
+        let mut meta = HashMap::new();
+        meta.insert("framework".to_string(), framework.to_string());
+        out.push(AbstractPoint {
+            kind: ConnectionKind::MessageQueue,
+            role,
+            key,
+            line,
+            col: 1,
+            symbol_qname: String::new(),
+            meta,
+        });
+    };
 
-                for cap in re_rabbit_send.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
 
-                for cap in re_kafka_listener.captures_iter(line_text) {
-                    let topic = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str());
-                    if let Some(t) = topic {
-                        points.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: line_no,
-                            protocol: Protocol::MessageQueue,
-                            direction: FlowDirection::Stop,
-                            key: t.to_string(),
-                            method: String::new(),
-                            framework: "kafka".to_string(),
-                            metadata: None,
-                        });
-                    }
-                }
-
-                for cap in re_rabbit_listener.captures_iter(line_text) {
-                    let queue = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str());
-                    if let Some(q) = queue {
-                        points.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: line_no,
-                            protocol: Protocol::MessageQueue,
-                            direction: FlowDirection::Stop,
-                            key: q.to_string(),
-                            method: String::new(),
-                            framework: "rabbitmq".to_string(),
-                            metadata: None,
-                        });
-                    }
-                }
+        for cap in re_kafka_template_send.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_producer_record.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_rabbit_send.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_kafka_listener.captures_iter(line_text) {
+            if let Some(t) = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str().to_string()) {
+                push(out, ConnectionRole::Stop, t, line_no, "kafka");
             }
         }
+        for cap in re_rabbit_listener.captures_iter(line_text) {
+            if let Some(q) = cap.get(1).or_else(|| cap.get(2)).map(|m| m.as_str().to_string()) {
+                push(out, ConnectionRole::Stop, q, line_no, "rabbitmq");
+            }
+        }
+    }
+}
 
-        Ok(points)
+#[cfg(test)]
+mod plugin_source_scan_tests {
+    use super::*;
+
+    #[test]
+    fn java_rest_resttemplate_get() {
+        // The legacy regex matches the class name literal (not variable name).
+        let src = r#"RestTemplate .getForObject("/api/users/42", String.class);"#;
+        let mut out = Vec::new();
+        extract_java_rest_starts_src(src, "src/main/java/App.java", &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "/api/users/42");
+        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("GET"));
+    }
+
+    #[test]
+    fn java_mq_kafka_listener_stop() {
+        let src = r#"@KafkaListener(topics = "orders")\npublic void on(Msg m) {}"#;
+        let mut out = Vec::new();
+        extract_java_mq_src(src, &mut out);
+        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
+        assert_eq!(stops.len(), 1);
+        assert_eq!(stops[0].key, "orders");
+    }
+
+    #[test]
+    fn java_mq_kafka_template_send_start() {
+        let src = r#"kafkaTemplate.send("users", msg);"#;
+        let mut out = Vec::new();
+        extract_java_mq_src(src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "users");
+        assert_eq!(out[0].role, ConnectionRole::Start);
+    }
+
+    #[test]
+    fn composer_combines() {
+        let src = r#"
+RestTemplate .getForObject("/api/x", String.class);
+kafkaTemplate.send("y", m);
+"#;
+        let points = extract_java_connection_points(src, "App.java");
+        let has = |k: ConnectionKind| points.iter().any(|p| p.kind == k);
+        assert!(has(ConnectionKind::Rest));
+        assert!(has(ConnectionKind::MessageQueue));
     }
 }
 

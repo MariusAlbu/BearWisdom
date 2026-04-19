@@ -191,6 +191,7 @@ fn extract_from(
             line: node.start_position().row as u32,
             module: Some(img.clone()),
             chain: None,
+            byte_offset: 0,
         });
         // Inherits edge: each stage inherits its base image
         refs.push(ExtractedRef {
@@ -200,6 +201,7 @@ fn extract_from(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -459,6 +461,7 @@ fn extract_copy(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -474,6 +477,7 @@ fn extract_copy(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }

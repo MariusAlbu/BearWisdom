@@ -14,10 +14,13 @@ use tracing::debug;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
 use crate::walker::WalkedFile;
+use rayon::prelude::*;
+use tree_sitter::{Node, Parser};
 
 pub const ID: EcosystemId = EcosystemId::new("go-mod");
 
@@ -66,6 +69,15 @@ impl Ecosystem for GoModEcosystem {
     ) -> Vec<WalkedFile> {
         resolve_go_requested_packages(dep)
     }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_go_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for GoModEcosystem {
@@ -440,6 +452,7 @@ fn expand_go_package_into(
         let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
         if !name.ends_with(".go") { continue }
         if name.ends_with("_test.go") { continue }
+        if !super::go_platform::file_matches_host(name) { continue }
         let rel_sub = match path.strip_prefix(&dep.root) {
             Ok(p) => p.to_string_lossy().replace('\\', "/"),
             Err(_) => continue,
@@ -499,6 +512,7 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
             if !name.ends_with(".go") { continue }
             if name.ends_with("_test.go") { continue }
+            if !super::go_platform::file_matches_host(name) { continue }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,
@@ -511,6 +525,240 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
             });
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline scaffolding)
+// ---------------------------------------------------------------------------
+//
+// Builds a cheap `(module_path, symbol_name) → file` map over every reached
+// Go dep root by tree-sitter parsing each .go file and reading ONLY the
+// top-level declarations (functions, methods, types, vars, consts). Function
+// bodies are never walked — their inner nodes aren't inspected, so the
+// allocation profile is O(#top_level_decls) rather than O(#ast_nodes). That
+// cost is the one-time entry fee the demand-driven Stage 2 pipeline pays so
+// it can then pull just the files its demand set actually needs.
+//
+// File scope matches `resolve_go_requested_packages` — only sub-packages the
+// user imports, plus within-module transitives up to GO_SUBPKG_MAX_DEPTH.
+// Platform-mismatched files are dropped via `go_platform::file_matches_host`.
+
+fn build_go_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    // Collect every walked file + its owning module path so each parallel
+    // scanner task is self-contained.
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in resolve_go_requested_packages(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+
+    // Parallel header-only scan. Each task returns (module, name, file)
+    // tuples; we merge into one index at the end so the hot map isn't
+    // under a lock during the scan.
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_go_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of a Go source file. Returns the list of
+/// top-level declaration names the file exports (or defines locally — the
+/// caller filters by visibility if needed). Methods are keyed as
+/// `ReceiverType.MethodName`; struct/interface/alias types are keyed by
+/// their type name; top-level vars and consts are keyed by their identifier.
+///
+/// Bodies of functions and methods are *not* walked — we only inspect the
+/// direct children of `source_file` and the immediate children of the
+/// type/var/const declarations. No `block` is descended.
+fn scan_go_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_go::LANGUAGE.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+
+    for child in root.children(&mut cursor) {
+        match child.kind() {
+            "function_declaration" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    if let Ok(name) = name_node.utf8_text(bytes) {
+                        out.push(name.to_string());
+                    }
+                }
+            }
+            "method_declaration" => {
+                let (recv, name) = method_decl_names(&child, source);
+                match (recv, name) {
+                    (Some(recv), Some(name)) => out.push(format!("{recv}.{name}")),
+                    // Receiver type couldn't be parsed — still record the
+                    // bare method name so unresolved lookups have something
+                    // to match against.
+                    (None, Some(name)) => out.push(name),
+                    _ => {}
+                }
+            }
+            "type_declaration" => {
+                let mut sub_cursor = child.walk();
+                for spec in child.children(&mut sub_cursor) {
+                    if matches!(spec.kind(), "type_spec" | "type_alias") {
+                        if let Some(name_node) = spec.child_by_field_name("name") {
+                            if let Ok(name) = name_node.utf8_text(bytes) {
+                                out.push(name.to_string());
+                            }
+                        }
+                    }
+                }
+            }
+            "var_declaration" | "const_declaration" => {
+                // Grouped declarations `var ( ... )` wrap their specs in a
+                // `var_spec_list` / `const_spec_list` intermediate; single
+                // specs are direct children. Handle both.
+                collect_var_const_names(&child, bytes, &mut out);
+            }
+            _ => {}
+        }
+    }
+
+    out
+}
+
+/// Walk a `var_declaration` / `const_declaration` node and append every
+/// declared name onto `out`. Handles the grouped form `var ( a = 1; b = 2 )`
+/// where tree-sitter-go wraps the specs in a `var_spec_list` intermediate.
+fn collect_var_const_names(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "var_spec" | "const_spec" => collect_spec_names(&child, bytes, out),
+            "var_spec_list" | "const_spec_list" => {
+                // Recurse one level to reach the individual specs.
+                let mut inner = child.walk();
+                for spec in child.children(&mut inner) {
+                    if matches!(spec.kind(), "var_spec" | "const_spec") {
+                        collect_spec_names(&spec, bytes, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+}
+
+/// Pull identifier names out of a single `var_spec` / `const_spec`. Stops
+/// at the first non-identifier named child (the declared type) or at `=`
+/// (the start of the RHS expression list).
+fn collect_spec_names(spec: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    let mut cursor = spec.walk();
+    let mut past_names = false;
+    for cc in spec.children(&mut cursor) {
+        if !cc.is_named() {
+            if cc.utf8_text(bytes) == Ok("=") {
+                past_names = true;
+            }
+            continue;
+        }
+        if past_names { break }
+        if cc.kind() == "identifier" {
+            if let Ok(name) = cc.utf8_text(bytes) {
+                out.push(name.to_string());
+            }
+        } else {
+            past_names = true;
+        }
+    }
+}
+
+/// Pull `(receiver_type_name, method_name)` out of a `method_declaration`
+/// node without walking its body. Handles `*T`, `T`, and `T[K]` receivers.
+fn method_decl_names(node: &Node, source: &str) -> (Option<String>, Option<String>) {
+    let mut receiver: Option<String> = None;
+    let mut method: Option<String> = None;
+    let mut seen_receiver_list = false;
+
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if !child.is_named() { continue }
+        match child.kind() {
+            "parameter_list" if !seen_receiver_list => {
+                seen_receiver_list = true;
+                receiver = extract_receiver_type(&child, source);
+            }
+            "field_identifier" if method.is_none() => {
+                if let Ok(s) = child.utf8_text(source.as_bytes()) {
+                    method = Some(s.to_string());
+                }
+            }
+            _ => {}
+        }
+    }
+    (receiver, method)
+}
+
+fn extract_receiver_type(param_list: &Node, source: &str) -> Option<String> {
+    let bytes = source.as_bytes();
+    let mut cursor = param_list.walk();
+    for child in param_list.children(&mut cursor) {
+        if child.kind() != "parameter_declaration" { continue }
+        let mut ccursor = child.walk();
+        for cc in child.children(&mut ccursor) {
+            if !cc.is_named() { continue }
+            match cc.kind() {
+                "type_identifier" => {
+                    return cc.utf8_text(bytes).ok().map(String::from);
+                }
+                "pointer_type" => {
+                    // *T — find the inner type_identifier / generic_type.
+                    let mut inner = cc.walk();
+                    for t in cc.children(&mut inner) {
+                        if t.kind() == "type_identifier" {
+                            return t.utf8_text(bytes).ok().map(String::from);
+                        }
+                        if t.kind() == "generic_type" {
+                            if let Some(inner_name) = t.child_by_field_name("type") {
+                                return inner_name.utf8_text(bytes).ok().map(String::from);
+                            }
+                        }
+                    }
+                }
+                "generic_type" => {
+                    // T[K] — unwrap to T.
+                    if let Some(inner_name) = cc.child_by_field_name("type") {
+                        return inner_name.utf8_text(bytes).ok().map(String::from);
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -588,6 +836,177 @@ require github.com/other/pkg v1.0.0
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------
+    // Header-only scanner — tree-sitter parse without body descent
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn scan_captures_top_level_function() {
+        let src = r#"
+package sqlite
+
+func Open(path string) (*DB, error) {
+    // body we never walk
+    return nil, nil
+}
+"#;
+        let names = scan_go_header(src);
+        assert!(names.contains(&"Open".to_string()), "names: {names:?}");
+    }
+
+    #[test]
+    fn scan_captures_method_with_pointer_receiver() {
+        let src = r#"
+package sqlite
+
+type DB struct{}
+
+func (d *DB) Query(q string) (*Rows, error) {
+    return nil, nil
+}
+"#;
+        let names = scan_go_header(src);
+        assert!(names.contains(&"DB".to_string()), "types missing: {names:?}");
+        assert!(names.contains(&"DB.Query".to_string()), "method missing: {names:?}");
+    }
+
+    #[test]
+    fn scan_captures_method_with_value_receiver() {
+        let src = r#"
+package sqlite
+
+type Query struct{}
+
+func (q Query) String() string { return "" }
+"#;
+        let names = scan_go_header(src);
+        assert!(names.contains(&"Query.String".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_type_declarations() {
+        let src = r#"
+package foo
+
+type Client struct { addr string }
+type Handler interface { Handle() }
+type Name = string
+"#;
+        let names = scan_go_header(src);
+        assert!(names.contains(&"Client".to_string()), "{names:?}");
+        assert!(names.contains(&"Handler".to_string()), "{names:?}");
+        assert!(names.contains(&"Name".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_top_level_vars_and_consts() {
+        let src = r#"
+package foo
+
+var DefaultTimeout = 30
+const MaxRetries = 3
+
+var (
+    LogLevel = "info"
+    Verbose  bool
+)
+"#;
+        let names = scan_go_header(src);
+        for expected in ["DefaultTimeout", "MaxRetries", "LogLevel", "Verbose"] {
+            assert!(
+                names.contains(&expected.to_string()),
+                "missing {expected}: {names:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn scan_ignores_function_body_contents() {
+        // Identifiers inside function bodies must not leak into the top-level
+        // name set — the scanner is *header-only*.
+        let src = r#"
+package foo
+
+func Outer() {
+    var shouldNotAppear = 1
+    type AlsoHidden struct{}
+    _ = shouldNotAppear
+}
+"#;
+        let names = scan_go_header(src);
+        assert_eq!(names, vec!["Outer".to_string()]);
+    }
+
+    #[test]
+    fn scan_handles_generic_method_receiver() {
+        // `func (c *Cache[K, V]) Get(k K) V` — receiver type unwraps to `Cache`.
+        let src = r#"
+package foo
+
+type Cache[K comparable, V any] struct{}
+
+func (c *Cache[K, V]) Get(k K) V { var zero V; return zero }
+"#;
+        let names = scan_go_header(src);
+        assert!(names.contains(&"Cache".to_string()), "type: {names:?}");
+        assert!(names.contains(&"Cache.Get".to_string()), "method: {names:?}");
+    }
+
+    #[test]
+    fn scan_returns_empty_on_unparseable_source() {
+        // Tree-sitter returns an error tree rather than None, but we should
+        // still surface whatever valid top-level decls it finds.
+        let names = scan_go_header("not valid go");
+        assert!(names.is_empty());
+    }
+
+    #[test]
+    fn build_index_returns_empty_for_no_deps() {
+        let idx = build_go_symbol_index(&[]);
+        assert!(idx.is_empty());
+    }
+
+    #[test]
+    fn build_index_populates_from_on_disk_files() {
+        use std::io::Write;
+        let tmp = std::env::temp_dir().join("bw-test-gomod-symindex");
+        let _ = std::fs::remove_dir_all(&tmp);
+        let pkg_dir = tmp.join("lib");
+        std::fs::create_dir_all(&pkg_dir).unwrap();
+        let sqlite_go = pkg_dir.join("sqlite.go");
+        let mut f = std::fs::File::create(&sqlite_go).unwrap();
+        writeln!(
+            f,
+            "package sqlite\n\ntype DB struct {{}}\nfunc Open() *DB {{ return nil }}\nfunc (d *DB) Query() error {{ return nil }}"
+        ).unwrap();
+
+        let dep = ExternalDepRoot {
+            module_path: "modernc.org/sqlite".to_string(),
+            version: "v0".to_string(),
+            root: tmp.clone(),
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: vec!["modernc.org/sqlite/lib".to_string()],
+        };
+        let idx = build_go_symbol_index(std::slice::from_ref(&dep));
+
+        assert_eq!(
+            idx.locate("modernc.org/sqlite", "Open"),
+            Some(sqlite_go.as_path())
+        );
+        assert_eq!(
+            idx.locate("modernc.org/sqlite", "DB"),
+            Some(sqlite_go.as_path())
+        );
+        assert_eq!(
+            idx.locate("modernc.org/sqlite", "DB.Query"),
+            Some(sqlite_go.as_path())
+        );
+        assert_eq!(idx.locate("modernc.org/sqlite", "Nonexistent"), None);
+
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 
     // -----------------------------------------------------------------

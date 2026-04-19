@@ -8,10 +8,12 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::walker::WalkedFile;
@@ -45,6 +47,15 @@ impl Ecosystem for CpanEcosystem {
     fn resolve_symbol(
         &self, dep: &ExternalDepRoot, _f: &str,
     ) -> Vec<WalkedFile> { walk_perl_narrowed(dep) }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_perl_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for CpanEcosystem {
@@ -282,6 +293,80 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
             });
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+//
+// Perl has no tree-sitter grammar in this crate (ABI conflict). Line-based
+// scan: `package Foo::Bar;` declarations and `sub name { ... }` definitions
+// are captured. Names stored as simple segments (`Bar`) so `find_by_name`
+// resolves typical `use Foo::Bar;` references.
+
+fn build_perl_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_perl_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_perl_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+pub(crate) fn scan_perl_header(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in source.lines() {
+        let t = line.trim_start();
+        if let Some(rest) = t.strip_prefix("package ") {
+            let pkg = rest
+                .trim()
+                .trim_end_matches(';')
+                .trim()
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if !pkg.is_empty() {
+                out.push(pkg.clone());
+                // Also store the last `::`-separated segment so `use Foo::Bar;`
+                // can resolve via find_by_name("Bar").
+                if let Some(last) = pkg.rsplit("::").next() {
+                    if last != pkg { out.push(last.to_string()) }
+                }
+            }
+        } else if let Some(rest) = t.strip_prefix("sub ") {
+            let name: String = rest
+                .chars()
+                .take_while(|c| c.is_alphanumeric() || *c == '_')
+                .collect();
+            if !name.is_empty() {
+                out.push(name);
+            }
+        }
+    }
+    out
 }
 
 #[cfg(test)]

@@ -131,6 +131,7 @@ fn walk_dir(
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
             if !name.ends_with(".go") { continue }
             if name.ends_with("_test.go") { continue }
+            if !super::go_platform::file_matches_host(name) { continue }
             let rel_sub = match path.strip_prefix(root) {
                 Ok(p) => p.to_string_lossy().replace('\\', "/"),
                 Err(_) => continue,

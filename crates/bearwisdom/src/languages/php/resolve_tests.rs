@@ -36,9 +36,9 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         line: 1,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
     ExtractedRef {
         source_symbol_index: source_idx,
@@ -47,9 +47,9 @@ fn make_use(source_idx: usize, alias: &str, fqn: &str) -> ExtractedRef {
         line: 1,
         module: Some(fqn.to_string()),
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
@@ -68,6 +68,9 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         symbol_origin_languages: vec![],
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -99,6 +102,9 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -442,6 +448,7 @@ fn test_inherited_method_via_this_resolves() {
                 line: 5,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             },
             // $this->account() inside execute()
             ExtractedRef {
@@ -451,6 +458,7 @@ fn test_inherited_method_via_this_resolves() {
                 line: 20,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             },
         ],
     );
@@ -508,6 +516,7 @@ fn test_inherited_method_via_chain_selfref() {
                 line: 3,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             },
             // Realistic: extractor emits target_name="account" with SelfRef chain.
             ExtractedRef {
@@ -536,6 +545,7 @@ fn test_inherited_method_via_chain_selfref() {
                         },
                     ],
                 }),
+                byte_offset: 0,
             },
         ],
     );
@@ -592,6 +602,7 @@ fn test_transitive_inherited_method_resolves() {
                 line: 3,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             },
         ],
     );
@@ -609,6 +620,7 @@ fn test_transitive_inherited_method_resolves() {
                 line: 3,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             },
             ExtractedRef {
                 source_symbol_index: 1, // handle
@@ -617,6 +629,7 @@ fn test_transitive_inherited_method_resolves() {
                 line: 15,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             },
         ],
     );

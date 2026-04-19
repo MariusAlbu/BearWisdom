@@ -1,6 +1,7 @@
 //! ruby language plugin.
 
 mod calls;
+mod flow;
 mod helpers;
 mod params;
 pub(crate) mod keywords;
@@ -51,6 +52,15 @@ impl LanguagePlugin for RubyPlugin {
         extract::extract(source)
     }
 
+    fn extract_connection_points(
+        &self,
+        source: &str,
+        file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
+        connectors::extract_ruby_graphql(source, file_path)
+    }
+
     fn symbol_node_kinds(&self) -> &[&str] {
         &[
             "class",
@@ -83,5 +93,9 @@ impl LanguagePlugin for RubyPlugin {
             Box::new(connectors::RubyRestConnector),
             Box::new(connectors::RubyGraphQlConnector),
         ]
+    }
+
+    fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {
+        Some(&flow::RUBY_FLOW_CONFIG)
     }
 }

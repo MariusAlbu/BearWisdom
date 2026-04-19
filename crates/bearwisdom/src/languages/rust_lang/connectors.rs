@@ -1,14 +1,17 @@
 // =============================================================================
 // languages/rust_lang/connectors.rs — Rust language connectors
 //
-// Contains:
-//   - TauriIpcConnector (Rust stop-side: #[tauri::command] handlers)
-//
-// The TypeScript start-side (invoke() calls) lives in
-// languages/typescript/connectors.rs. Both halves emit ConnectionPoints
-// that the matcher joins into flow_edges.
+// Flattened pattern (see CONNECTOR_MIGRATION.md):
+//   - Source-scan halves live in `extract_rust_connection_points(source,
+//     file_path)`, wired into `RustLangPlugin::extract_connection_points`.
+//     They emit abstract `crate::types::ConnectionPoint` values at parse
+//     time.
+//   - Legacy `Connector::extract` impls stay registered for their
+//     `detect(ctx)` gating + any DB-table work that still lives post-parse
+//     (REST stops from `routes`, gRPC stop detection needs the symbol table).
 // =============================================================================
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -18,9 +21,29 @@ use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
+use crate::types::{
+    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
+};
 
 // ===========================================================================
-// TauriIpcConnector — Rust handler side
+// Plugin-facing entry point
+// ===========================================================================
+
+/// Invoked from `RustLangPlugin::extract_connection_points`. Returns all
+/// source-scannable ConnectionPoints for one `.rs` file.
+pub fn extract_rust_connection_points(
+    source: &str,
+    file_path: &str,
+) -> Vec<AbstractPoint> {
+    let mut out = Vec::new();
+    extract_tauri_ipc_rust_src(source, &mut out);
+    extract_rust_rest_starts_src(source, file_path, &mut out);
+    extract_rust_mq_src(source, &mut out);
+    out
+}
+
+// ===========================================================================
+// Tauri IPC — Rust handler side (Stop for #[command], Start for .emit())
 // ===========================================================================
 
 pub struct TauriIpcConnector;
@@ -40,93 +63,37 @@ impl Connector for TauriIpcConnector {
 
     fn extract(
         &self,
-        conn: &Connection,
-        project_root: &Path,
+        _conn: &Connection,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
-        let mut points = Vec::new();
-
-        // #[tauri::command] attributed functions → Stop points
-        let commands = rust_find_tauri_commands(conn, project_root)
-            .context("Tauri command detection failed")?;
-
-        for cmd in &commands {
-            points.push(ConnectionPoint {
-                file_id: cmd.file_id,
-                symbol_id: cmd.symbol_id,
-                line: cmd.line,
-                protocol: Protocol::Ipc,
-                direction: FlowDirection::Stop,
-                key: cmd.command_name.clone(),
-                method: String::new(),
-                framework: "tauri".to_string(),
-                metadata: None,
-            });
-        }
-
-        // Rust app.emit() / window.emit() sites → Start points for events
-        extract_tauri_emit_events(conn, project_root, &mut points)?;
-
-        Ok(points)
+        // Flattened: `extract_tauri_ipc_rust_src` emits both
+        // #[tauri::command] Stop points and app.emit()/window.emit() Start
+        // points during parse.
+        Ok(Vec::new())
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tauri IPC Rust-side helpers (inlined from connectors/tauri_ipc.rs)
-// ---------------------------------------------------------------------------
+/// Scan one Rust file for Tauri IPC markers.
+///
+///   - `#[tauri::command]` or `#[command]` on the line before a fn decl →
+///     Stop point with key = function name.
+///   - `.emit("name", ...)` / `.emit('name', ...)` → Start point with key =
+///     event name.
+pub fn extract_tauri_ipc_rust_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains("command") && !source.contains(".emit") {
+        return;
+    }
 
-struct RustTauriCommand {
-    symbol_id: Option<i64>,
-    command_name: String,
-    file_id: i64,
-    line: u32,
-}
-
-fn rust_find_tauri_commands(
-    conn: &Connection,
-    project_root: &Path,
-) -> Result<Vec<RustTauriCommand>> {
     let re_attr = regex::Regex::new(r"#\[(?:tauri::)?command\]")
         .expect("command attr regex is valid");
     let re_fn = regex::Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*[(<]")
         .expect("fn decl regex is valid");
+    let re_emit = regex::Regex::new(
+        r#"\.emit\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)')"#,
+    )
+    .expect("emit regex");
 
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = 'rust'")
-        .context("Failed to prepare Rust files query")?;
-
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query Rust files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect Rust file rows")?;
-
-    let mut commands = Vec::new();
-    for (file_id, rel_path) in files {
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(e) => {
-                tracing::debug!(path = %abs_path.display(), err = %e, "Skipping unreadable Rust file");
-                continue;
-            }
-        };
-        rust_extract_commands_from_source(conn, &source, file_id, &rel_path, &re_attr, &re_fn, &mut commands);
-    }
-    tracing::debug!(count = commands.len(), "Tauri commands found");
-    Ok(commands)
-}
-
-fn rust_extract_commands_from_source(
-    conn: &Connection,
-    source: &str,
-    file_id: i64,
-    rel_path: &str,
-    re_attr: &regex::Regex,
-    re_fn: &regex::Regex,
-    out: &mut Vec<RustTauriCommand>,
-) {
     let mut next_line_is_command = false;
-
     for (line_idx, line_text) in source.lines().enumerate() {
         let line_no = (line_idx + 1) as u32;
 
@@ -137,106 +104,46 @@ fn rust_extract_commands_from_source(
 
         if next_line_is_command {
             next_line_is_command = false;
-
             if let Some(cap) = re_fn.captures(line_text) {
-                let command_name = cap[1].to_string();
+                let cmd_name = cap[1].to_string();
+                let mut meta = HashMap::new();
+                meta.insert("framework".to_string(), "tauri".to_string());
+                out.push(AbstractPoint {
+                    kind: ConnectionKind::Ipc,
+                    role: ConnectionRole::Stop,
+                    key: cmd_name.clone(),
+                    line: line_no,
+                    col: 1,
+                    symbol_qname: cmd_name,
+                    meta,
+                });
+            }
+        }
 
-                let symbol_id: Option<i64> = conn
-                    .query_row(
-                        "SELECT s.id FROM symbols s
-                         JOIN files f ON f.id = s.file_id
-                         WHERE s.name = ?1 AND f.path = ?2
-                           AND s.kind IN ('function', 'method')
-                         LIMIT 1",
-                        rusqlite::params![command_name, rel_path],
-                        |r| r.get(0),
-                    )
-                    .ok();
-
-                out.push(RustTauriCommand { symbol_id, command_name, file_id, line: line_no });
+        for cap in re_emit.captures_iter(line_text) {
+            let name = cap
+                .name("name1")
+                .or_else(|| cap.name("name2"))
+                .map(|m| m.as_str().to_string());
+            if let Some(key) = name {
+                let mut meta = HashMap::new();
+                meta.insert("framework".to_string(), "tauri".to_string());
+                out.push(AbstractPoint {
+                    kind: ConnectionKind::Ipc,
+                    role: ConnectionRole::Start,
+                    key,
+                    line: line_no,
+                    col: 1,
+                    symbol_qname: String::new(),
+                    meta,
+                });
             }
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// Event emit detection (Rust side)
-// ---------------------------------------------------------------------------
-
-fn extract_tauri_emit_events(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    let re_emit = regex::Regex::new(
-        r#"\.emit\s*\(\s*(?:"(?P<name1>[^"]+)"|'(?P<name2>[^']+)')"#,
-    )
-    .expect("emit regex");
-
-    scan_files_for_pattern(conn, project_root, "rust", &re_emit, FlowDirection::Start, "tauri", out)
-}
-
-/// Scan all files of a given language for a regex pattern that captures a name
-/// (via named groups name1/name2/name3) and emit ConnectionPoints.
-fn scan_files_for_pattern(
-    conn: &Connection,
-    project_root: &Path,
-    language: &str,
-    re: &regex::Regex,
-    direction: FlowDirection,
-    framework: &str,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = ?1")
-        .context("Failed to prepare file query")?;
-
-    let files: Vec<(i64, String)> = stmt
-        .query_map([language], |row| {
-            Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-        })
-        .context("Failed to query files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect file rows")?;
-
-    for (file_id, rel_path) in files {
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for cap in re.captures_iter(line_text) {
-                let name = cap
-                    .name("name1")
-                    .or_else(|| cap.name("name2"))
-                    .or_else(|| cap.name("name3"))
-                    .map(|m| m.as_str().to_string());
-
-                if let Some(key) = name {
-                    out.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::Ipc,
-                        direction,
-                        key,
-                        method: String::new(),
-                        framework: framework.to_string(),
-                        metadata: None,
-                    });
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 // ===========================================================================
-// RustRestConnector — HTTP client call starts + route stops for Rust
+// Rust REST — starts (client calls) scan, stops (routes table) DB
 // ===========================================================================
 
 pub struct RustRestConnector;
@@ -257,11 +164,13 @@ impl Connector for RustRestConnector {
     fn extract(
         &self,
         conn: &Connection,
-        project_root: &Path,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
+        // Starts (reqwest calls) migrated into `extract_rust_rest_starts_src`.
+        // Stops still read from the `routes` table populated by the Rust
+        // parser plugin.
         let mut points = Vec::new();
         extract_rust_rest_stops(conn, &mut points)?;
-        extract_rust_rest_starts(conn, project_root, &mut points)?;
         Ok(points)
     }
 }
@@ -308,93 +217,84 @@ fn extract_rust_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) ->
     Ok(())
 }
 
-fn extract_rust_rest_starts(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    // reqwest: client.get("url"), reqwest::get("url"), reqwest::Client::new().post("url")
+/// Source-scan reqwest client calls; emit Start points for each.
+pub fn extract_rust_rest_starts_src(
+    source: &str,
+    file_path: &str,
+    out: &mut Vec<AbstractPoint>,
+) {
+    if rust_rest_is_test_file(file_path) {
+        return;
+    }
+    if !source.contains("reqwest") && !source.contains("client") {
+        return;
+    }
+
     let re_reqwest = regex::Regex::new(
         r#"(?:reqwest(?:::\w+)?|client)\s*(?:::\w+)?\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*\(\s*"(?P<url>[^"]+)""#,
     )
     .expect("rust reqwest regex");
-
-    // reqwest::get("url") — standalone free function
     let re_reqwest_free = regex::Regex::new(
         r#"reqwest\s*::\s*get\s*\(\s*"(?P<url>[^"]+)""#,
     )
     .expect("rust reqwest free fn regex");
 
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = 'rust'")
-        .context("Failed to prepare Rust files query")?;
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query Rust files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect Rust file rows")?;
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
 
-    for (file_id, rel_path) in files {
-        if rust_rest_is_test_file(&rel_path) {
-            continue;
+        for cap in re_reqwest.captures_iter(line_text) {
+            let raw_url = cap["url"].to_string();
+            if !rust_rest_looks_like_api_url(&raw_url) {
+                continue;
+            }
+            let method = cap
+                .name("method")
+                .map(|m| m.as_str().to_uppercase())
+                .unwrap_or_else(|| "GET".to_string());
+            let url_pattern = rest_normalise_url_pattern_rust(&raw_url);
+            let mut meta = HashMap::new();
+            meta.insert("method".to_string(), method);
+            meta.insert("framework".to_string(), "reqwest".to_string());
+            out.push(AbstractPoint {
+                kind: ConnectionKind::Rest,
+                role: ConnectionRole::Start,
+                key: url_pattern,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
         }
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
 
-            for cap in re_reqwest.captures_iter(line_text) {
-                let raw_url = cap["url"].to_string();
-                if !rust_rest_looks_like_api_url(&raw_url) {
-                    continue;
-                }
-                let method = cap
-                    .name("method")
-                    .map(|m| m.as_str().to_uppercase())
-                    .unwrap_or_else(|| "GET".to_string());
-                let url_pattern = rest_normalise_url_pattern_rust(&raw_url);
-                out.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: line_no,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Start,
-                    key: url_pattern,
-                    method,
-                    framework: "reqwest".to_string(),
-                    metadata: None,
-                });
+        for cap in re_reqwest_free.captures_iter(line_text) {
+            let raw_url = cap["url"].to_string();
+            if !rust_rest_looks_like_api_url(&raw_url) {
+                continue;
             }
-
-            for cap in re_reqwest_free.captures_iter(line_text) {
-                let raw_url = cap["url"].to_string();
-                if !rust_rest_looks_like_api_url(&raw_url) {
-                    continue;
-                }
-                let url_pattern = rest_normalise_url_pattern_rust(&raw_url);
-                out.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: None,
-                    line: line_no,
-                    protocol: Protocol::Rest,
-                    direction: FlowDirection::Start,
-                    key: url_pattern,
-                    method: "GET".to_string(),
-                    framework: "reqwest".to_string(),
-                    metadata: None,
-                });
-            }
+            let url_pattern = rest_normalise_url_pattern_rust(&raw_url);
+            let mut meta = HashMap::new();
+            meta.insert("method".to_string(), "GET".to_string());
+            meta.insert("framework".to_string(), "reqwest".to_string());
+            out.push(AbstractPoint {
+                kind: ConnectionKind::Rest,
+                role: ConnectionRole::Start,
+                key: url_pattern,
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
         }
     }
-    Ok(())
 }
 
 fn rust_rest_is_test_file(rel_path: &str) -> bool {
-    let lower = rel_path.to_lowercase();
-    lower.contains("/tests/") || lower.contains("_test.rs") || lower.contains("/benches/")
+    let lower = rel_path.replace('\\', "/").to_lowercase();
+    lower.contains("/tests/")
+        || lower.starts_with("tests/")
+        || lower.contains("_test.rs")
+        || lower.contains("/benches/")
+        || lower.starts_with("benches/")
 }
 
 fn rust_rest_looks_like_api_url(s: &str) -> bool {
@@ -419,17 +319,9 @@ fn rest_normalise_url_pattern_rust(raw: &str) -> String {
 }
 
 // ===========================================================================
-// RustGrpcConnector
+// Rust gRPC — tonic `impl XxxServer for` detection (DB symbol join, legacy)
 // ===========================================================================
 
-/// Detects Rust tonic gRPC service implementations.
-///
-/// tonic generates a `{ServiceName}Server` trait.  Implementors write:
-///   `#[tonic::async_trait]`
-///   `impl GreeterServer for MyGreeter { ... }`
-///
-/// We scan for `impl {Name}Server for` patterns and emit Stop points for
-/// every method in that file at or after the impl block.
 pub struct RustGrpcConnector;
 
 impl Connector for RustGrpcConnector {
@@ -530,16 +422,9 @@ impl Connector for RustGrpcConnector {
 }
 
 // ===========================================================================
-// RustMqConnector
+// Rust MQ — rdkafka / lapin / async-nats source scan
 // ===========================================================================
 
-/// Detects Rust message queue patterns:
-///   - rdkafka: `FutureRecord::to("topic")` (producer)
-///              `consumer.subscribe(&["topic"])` (consumer)
-///   - lapin (RabbitMQ): `basic_publish("exchange", "routing_key", ...)` (producer)
-///                        `basic_consume("queue", ...)` (consumer)
-///   - async-nats: `client.subscribe("subject")` (consumer)
-///                 `client.publish("subject", ...)` (producer)
 pub struct RustMqConnector;
 
 impl Connector for RustMqConnector {
@@ -559,154 +444,99 @@ impl Connector for RustMqConnector {
             || ctx.has_dependency(ManifestKind::Cargo, "nats")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // rdkafka: FutureRecord::to("topic")  or  BaseRecord::to("topic")
-        let re_rdkafka_send = regex::Regex::new(
-            r#"(?:FutureRecord|BaseRecord)::to\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("rust rdkafka send regex");
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Flattened: see `extract_rust_mq_src`.
+        Ok(Vec::new())
+    }
+}
 
-        // rdkafka: consumer.subscribe(&["topic"])
-        let re_rdkafka_subscribe = regex::Regex::new(
-            r#"\.subscribe\s*\(\s*&\s*\[\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("rust rdkafka subscribe regex");
+/// Source-scan Rust MQ client calls:
+///   - rdkafka: `FutureRecord::to("topic")` / `BaseRecord::to("topic")` (produce)
+///              `consumer.subscribe(&["topic"])` (consume)
+///   - lapin:   `basic_publish("exchange", "routing_key")` (produce)
+///              `basic_consume("queue")` (consume)
+///   - nats:    `.publish("subject")` (produce) / `.subscribe("subject")` (consume)
+pub fn extract_rust_mq_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains("FutureRecord")
+        && !source.contains("BaseRecord")
+        && !source.contains("basic_publish")
+        && !source.contains("basic_consume")
+        && !source.contains(".subscribe")
+        && !source.contains(".publish")
+    {
+        return;
+    }
 
-        // lapin: channel.basic_publish("exchange", "routing_key", ...)
-        let re_lapin_publish = regex::Regex::new(
-            r#"basic_publish\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("rust lapin publish regex");
+    let re_rdkafka_send = regex::Regex::new(
+        r#"(?:FutureRecord|BaseRecord)::to\s*\(\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("rust rdkafka send regex");
+    let re_rdkafka_subscribe = regex::Regex::new(
+        r#"\.subscribe\s*\(\s*&\s*\[\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("rust rdkafka subscribe regex");
+    let re_lapin_publish = regex::Regex::new(
+        r#"basic_publish\s*\(\s*['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("rust lapin publish regex");
+    let re_lapin_consume = regex::Regex::new(
+        r#"basic_consume\s*\(\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("rust lapin consume regex");
+    let re_nats_subscribe = regex::Regex::new(
+        r#"\.subscribe\s*\(\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("rust nats subscribe regex");
+    let re_nats_publish = regex::Regex::new(
+        r#"\.publish\s*\(\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("rust nats publish regex");
 
-        // lapin: channel.basic_consume("queue", ...)
-        let re_lapin_consume = regex::Regex::new(
-            r#"basic_consume\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("rust lapin consume regex");
+    let push = |out: &mut Vec<AbstractPoint>,
+                role: ConnectionRole,
+                key: String,
+                line: u32,
+                framework: &str| {
+        let mut meta = HashMap::new();
+        meta.insert("framework".to_string(), framework.to_string());
+        out.push(AbstractPoint {
+            kind: ConnectionKind::MessageQueue,
+            role,
+            key,
+            line,
+            col: 1,
+            symbol_qname: String::new(),
+            meta,
+        });
+    };
 
-        // async-nats / nats: client.subscribe("subject")
-        let re_nats_subscribe = regex::Regex::new(
-            r#"\.subscribe\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("rust nats subscribe regex");
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
 
-        // async-nats / nats: client.publish("subject", ...)
-        let re_nats_publish = regex::Regex::new(
-            r#"\.publish\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("rust nats publish regex");
-
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'rust'")
-            .context("Failed to prepare Rust files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })
-            .context("Failed to query Rust files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Rust file rows")?;
-
-        let mut points = Vec::new();
-
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
-
-                for cap in re_rdkafka_send.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_rdkafka_subscribe.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_lapin_publish.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[2].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_lapin_consume.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_nats_subscribe.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "nats".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_nats_publish.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "nats".to_string(),
-                        metadata: None,
-                    });
-                }
+        for cap in re_rdkafka_send.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_rdkafka_subscribe.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_lapin_publish.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[2].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_lapin_consume.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "rabbitmq");
+        }
+        // NATS subscribe / publish regexes overlap with the rdkafka subscribe
+        // + the lapin nothing; the frameworks are mutually exclusive by
+        // dependency, but we guard on both to avoid double-emitting in a
+        // codebase that uses both (rare).
+        if !re_rdkafka_subscribe.is_match(line_text) {
+            for cap in re_nats_subscribe.captures_iter(line_text) {
+                push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "nats");
             }
         }
-
-        Ok(points)
+        for cap in re_nats_publish.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "nats");
+        }
     }
 }
 
@@ -715,63 +545,118 @@ impl Connector for RustMqConnector {
 // ===========================================================================
 
 #[cfg(test)]
-mod tauri_ipc_tests {
+mod tests {
     use super::*;
-    use crate::db::Database;
-    use std::io::Write;
-    use tempfile::NamedTempFile;
 
-    fn make_rs_file(content: &str) -> NamedTempFile {
-        let mut f = NamedTempFile::new().unwrap();
-        write!(f, "{}", content).unwrap();
-        f
+    #[test]
+    fn tauri_command_attr_produces_stop() {
+        let src = "#[tauri::command]\npub async fn greet(name: String) -> String {\n    format!(\"Hi {}\", name)\n}\n";
+        let mut out = Vec::new();
+        extract_tauri_ipc_rust_src(src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "greet");
+        assert_eq!(out[0].role, ConnectionRole::Stop);
+        assert_eq!(out[0].kind, ConnectionKind::Ipc);
+        assert_eq!(out[0].line, 2, "fn decl is on line 2");
+        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("tauri"));
     }
 
     #[test]
-    fn command_attr_regex_matches_full_path() {
-        let re = regex::Regex::new(r"#\[(?:tauri::)?command\]").unwrap();
-        assert!(re.is_match("#[tauri::command]"));
+    fn tauri_short_command_attr_matches() {
+        let src = "#[command]\nfn close_splashscreen(window: Window) {}\n";
+        let mut out = Vec::new();
+        extract_tauri_ipc_rust_src(src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "close_splashscreen");
     }
 
     #[test]
-    fn command_attr_regex_matches_short_form() {
-        let re = regex::Regex::new(r"#\[(?:tauri::)?command\]").unwrap();
-        assert!(re.is_match("#[command]"));
+    fn tauri_emit_produces_start() {
+        let src = "fn notify(app: &AppHandle) {\n    app.emit(\"progress\", &payload).unwrap();\n}\n";
+        let mut out = Vec::new();
+        extract_tauri_ipc_rust_src(src, &mut out);
+        let starts: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Start).collect();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].key, "progress");
     }
 
     #[test]
-    fn fn_decl_regex_extracts_name() {
-        let re = regex::Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*[(<]").unwrap();
-        let caps = re.captures("pub async fn read_file(path: String) -> String {").unwrap();
-        assert_eq!(&caps[1], "read_file");
+    fn rust_rest_starts_detects_reqwest_get() {
+        let src = "async fn call() {\n    let _ = reqwest::get(\"/api/users\").await;\n}\n";
+        let mut out = Vec::new();
+        extract_rust_rest_starts_src(src, "src/lib.rs", &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "/api/users");
+        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("GET"));
+        assert_eq!(out[0].role, ConnectionRole::Start);
     }
 
     #[test]
-    fn fn_decl_regex_extracts_simple_fn() {
-        let re = regex::Regex::new(r"(?:pub\s+)?(?:async\s+)?fn\s+(\w+)\s*[(<]").unwrap();
-        let caps = re.captures("fn close_splashscreen(window: Window) {").unwrap();
-        assert_eq!(&caps[1], "close_splashscreen");
+    fn rust_rest_starts_skips_test_files() {
+        let src = "reqwest::get(\"/api/x\").await;";
+        let mut out = Vec::new();
+        extract_rust_rest_starts_src(src, "tests/integration.rs", &mut out);
+        assert!(out.is_empty());
     }
 
     #[test]
-    fn find_commands_detects_attribute() {
-        let db = Database::open_in_memory().unwrap();
-        let conn = db.conn();
+    fn rust_rest_starts_filters_non_api_urls() {
+        // Bare domain (no path) → filtered.
+        let src = "reqwest::get(\"https://example.com\").await;";
+        let mut out = Vec::new();
+        extract_rust_rest_starts_src(src, "src/lib.rs", &mut out);
+        assert!(out.is_empty(), "bare domain without path is filtered");
+    }
 
-        let rs_file = make_rs_file(
-            "#[tauri::command]\npub async fn greet(name: String) -> String {\n    format!(\"Hello {}!\", name)\n}\n",
-        );
-        let root = rs_file.path().parent().unwrap();
-        let file_name = rs_file.path().file_name().unwrap().to_str().unwrap();
+    #[test]
+    fn rust_mq_kafka_send_start() {
+        let src = "let record = FutureRecord::to(\"orders\").payload(&data);";
+        let mut out = Vec::new();
+        extract_rust_mq_src(src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "orders");
+        assert_eq!(out[0].role, ConnectionRole::Start);
+        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("kafka"));
+    }
 
-        conn.execute(
-            "INSERT INTO files (path, hash, language, last_indexed) VALUES (?1, 'h', 'rust', 0)",
-            [file_name],
-        ).unwrap();
+    #[test]
+    fn rust_mq_lapin_publish_uses_routing_key() {
+        let src = "channel.basic_publish(\"my_exchange\", \"route.key\", opts, body).await;";
+        let mut out = Vec::new();
+        extract_rust_mq_src(src, &mut out);
+        let starts: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Start).collect();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].key, "route.key");
+        assert_eq!(starts[0].meta.get("framework").map(String::as_str), Some("rabbitmq"));
+    }
 
-        let commands = rust_find_tauri_commands(conn, root).unwrap();
-        assert_eq!(commands.len(), 1);
-        assert_eq!(commands[0].command_name, "greet");
-        assert_eq!(commands[0].line, 2, "fn is on line 2");
+    #[test]
+    fn rust_mq_no_markers_is_empty() {
+        let mut out = Vec::new();
+        extract_rust_mq_src("fn main() { println!(\"hi\"); }", &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn extract_rust_connection_points_composes_all_three() {
+        let src = r#"
+#[tauri::command]
+fn cmd(name: String) -> String { name }
+
+async fn client() {
+    let _ = reqwest::get("/api/ping").await;
+}
+
+fn mq() {
+    let r = FutureRecord::to("topic");
+}
+"#;
+        let points = extract_rust_connection_points(src, "src/lib.rs");
+        let ipc_count = points.iter().filter(|p| p.kind == ConnectionKind::Ipc).count();
+        let rest_count = points.iter().filter(|p| p.kind == ConnectionKind::Rest).count();
+        let mq_count = points.iter().filter(|p| p.kind == ConnectionKind::MessageQueue).count();
+        assert_eq!(ipc_count, 1);
+        assert_eq!(rest_count, 1);
+        assert_eq!(mq_count, 1);
     }
 }

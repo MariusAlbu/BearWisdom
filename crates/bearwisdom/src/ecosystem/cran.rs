@@ -10,10 +10,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::{debug, info, warn};
+use tree_sitter::{Node, Parser};
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
@@ -55,6 +58,15 @@ impl Ecosystem for CranEcosystem {
     fn resolve_symbol(
         &self, dep: &ExternalDepRoot, _f: &str,
     ) -> Vec<WalkedFile> { walk_r_narrowed(dep) }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_r_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for CranEcosystem {
@@ -488,6 +500,88 @@ pub fn parse_renv_lock_packages(renv_lock: &Path) -> Option<Vec<String>> {
     let mut names: Vec<String> = packages.keys().cloned().collect();
     names.sort();
     Some(names)
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+
+fn build_r_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_r_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_r_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of an R source file. R packages surface
+/// their public API via top-level assignments `name <- function(...) {...}`
+/// (or `=` / `->` variants) and via `setClass` / `setGeneric` / `setMethod`
+/// S4 declarations. We record every top-level LHS identifier of an `<-`
+/// assignment whose RHS is a `function`, `call`, or literal.
+fn scan_r_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_r::LANGUAGE.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        collect_r_top_level_name(&child, bytes, &mut out);
+    }
+    out
+}
+
+fn collect_r_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    match node.kind() {
+        "left_assignment" | "equals_assignment" | "super_assignment"
+        | "binary_operator" | "assignment" => {
+            // LHS is an identifier / string / dollar; RHS is the value. We
+            // only care about the LHS identifier.
+            let lhs = node
+                .child_by_field_name("name")
+                .or_else(|| node.child_by_field_name("lhs"))
+                .or_else(|| node.child_by_field_name("left"))
+                .or_else(|| node.named_child(0));
+            if let Some(lhs) = lhs {
+                if matches!(lhs.kind(), "identifier" | "string") {
+                    if let Ok(t) = lhs.utf8_text(bytes) {
+                        out.push(t.trim_matches('"').to_string());
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
 }
 
 // ---------------------------------------------------------------------------

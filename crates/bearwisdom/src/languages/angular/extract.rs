@@ -104,6 +104,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     } else if tag.chars().next().map_or(false, |c| c.is_uppercase())
         && !BUILTIN_HTML_TAGS.contains(&tag.as_str())
@@ -116,6 +117,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -181,6 +183,7 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
         return;
     }
@@ -219,6 +222,7 @@ fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<Extracted
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -263,6 +267,7 @@ fn extract_pipes_from_expression(expr: &str, line: u32, refs: &mut Vec<Extracted
             line,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }

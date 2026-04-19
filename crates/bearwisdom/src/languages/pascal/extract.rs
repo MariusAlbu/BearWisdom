@@ -347,6 +347,7 @@ fn extract_class(
                                     line: child.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                             break;
@@ -361,6 +362,7 @@ fn extract_class(
                                     line: child.start_position().row as u32,
                                     module: qualifier,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                             break;
@@ -559,6 +561,7 @@ fn extract_uses(
                     line: child.start_position().row as u32,
                     module: Some(name),
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -653,6 +656,7 @@ fn extract_typeref(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 return; // one ref per typeref is enough
@@ -668,6 +672,7 @@ fn extract_typeref(
                         line: node.start_position().row as u32,
                         module: qualifier,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 return;
@@ -701,6 +706,7 @@ fn extract_call(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }

@@ -34,9 +34,9 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind) -> ExtractedRef {
         line: 1,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_require(source_idx: usize, name: &str, module: Option<&str>) -> ExtractedRef {
     ExtractedRef {
         source_symbol_index: source_idx,
@@ -45,9 +45,9 @@ fn make_require(source_idx: usize, name: &str, module: Option<&str>) -> Extracte
         line: 1,
         module: module.map(|m| m.to_string()),
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
@@ -66,6 +66,9 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         symbol_origin_languages: vec![],
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -97,6 +100,9 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -303,6 +309,7 @@ fn test_stdlib_require_is_external() {
         line: 1,
         module: None,
         chain: None,
+        byte_offset: 0,
     };
 
     let sym = make_symbol("Foo", "Foo", SymbolKind::Class, None);

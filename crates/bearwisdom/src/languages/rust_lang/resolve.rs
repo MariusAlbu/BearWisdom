@@ -141,6 +141,7 @@ impl LanguageResolver for RustResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "rust_self_type",
+                    resolved_yield_type: None,
                 });
             }
             // For Calls to Self (e.g. Self::new()), look for a method
@@ -155,6 +156,7 @@ impl LanguageResolver for RustResolver {
                             target_symbol_id: child.id,
                             confidence: 0.95,
                             strategy: "rust_self_constructor",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -164,6 +166,7 @@ impl LanguageResolver for RustResolver {
                 target_symbol_id: sym.id,
                 confidence: 0.90,
                 strategy: "rust_self_type_fallback",
+                resolved_yield_type: None,
             });
         }
 
@@ -221,6 +224,7 @@ impl LanguageResolver for RustResolver {
                                     target_symbol_id: sym.id,
                                     confidence: 1.0,
                                     strategy: "rust_ref_module",
+                                    resolved_yield_type: None,
                                 });
                             }
                         }
@@ -233,6 +237,7 @@ impl LanguageResolver for RustResolver {
                                     target_symbol_id: sym.id,
                                     confidence: 1.0,
                                     strategy: "rust_ref_module",
+                                    resolved_yield_type: None,
                                 });
                             }
                         }
@@ -256,6 +261,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "rust_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -273,6 +279,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "rust_same_module",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -288,6 +295,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "rust_same_module_by_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -310,6 +318,7 @@ impl LanguageResolver for RustResolver {
                                 target_symbol_id: sym.id,
                                 confidence: 1.0,
                                 strategy: "rust_wildcard_import",
+                                resolved_yield_type: None,
                             });
                         }
                     }
@@ -338,6 +347,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "rust_import",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -363,6 +373,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
                         strategy: "rust_import_prefix",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -403,6 +414,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: candidates[0].id,
                         confidence: 0.90,
                         strategy: "rust_reexport_dir",
+                        resolved_yield_type: None,
                     });
                 }
                 // Multiple candidates: prefer the one whose qualified_name is shortest
@@ -416,6 +428,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: best.id,
                         confidence: 0.85,
                         strategy: "rust_reexport_dir_ambiguous",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -430,6 +443,7 @@ impl LanguageResolver for RustResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "rust_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -445,6 +459,7 @@ impl LanguageResolver for RustResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "rust_qualified_name_stripped",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -467,6 +482,7 @@ impl LanguageResolver for RustResolver {
                     target_symbol_id: candidates[0].id,
                     confidence: 0.80,
                     strategy: "rust_global_name_fallback",
+                    resolved_yield_type: None,
                 });
             }
             // Multiple candidates: prefer the one in the same file as the caller.
@@ -481,6 +497,7 @@ impl LanguageResolver for RustResolver {
                     target_symbol_id: same_file[0].id,
                     confidence: 0.90,
                     strategy: "rust_same_file_name_fallback",
+                    resolved_yield_type: None,
                 });
             }
             // Multiple candidates: prefer internal (crate-relative qualified names start with
@@ -495,6 +512,7 @@ impl LanguageResolver for RustResolver {
                     target_symbol_id: scoped[0].id,
                     confidence: 0.75,
                     strategy: "rust_global_name_scoped",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -513,6 +531,7 @@ impl LanguageResolver for RustResolver {
                     target_symbol_id: candidates[0].id,
                     confidence: 0.75,
                     strategy: "rust_global_typeref_fallback",
+                    resolved_yield_type: None,
                 });
             }
         }

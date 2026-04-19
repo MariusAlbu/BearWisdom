@@ -81,6 +81,7 @@ impl LanguageResolver for PascalResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "pascal_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }

@@ -51,6 +51,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             target_name: name,
                             kind: EdgeKind::Imports,
                             line, module: None, chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -60,7 +61,10 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         }
         i += 1;
     }
-    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false }
+    ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    }
 }
 
 fn quoted(s: &str) -> Option<String> {

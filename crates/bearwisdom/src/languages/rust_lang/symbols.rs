@@ -682,6 +682,7 @@ fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
         line,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
 

@@ -125,6 +125,7 @@ pub(super) fn extract_calls_from_body(
                         line: func_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: func_node.start_byte() as u32,
                     });
                     extract_calls_from_body(&child, source, source_symbol_index, refs, import_map);
                     continue;
@@ -163,6 +164,7 @@ pub(super) fn extract_calls_from_body(
                         line: func_node.start_position().row as u32,
                         module: resolved_module,
                         chain,
+                        byte_offset: func_node.start_byte() as u32,
                     });
                 }
             }
@@ -232,6 +234,7 @@ fn emit_isinstance_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -249,6 +252,7 @@ fn emit_isinstance_type_node(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -265,6 +269,7 @@ fn emit_isinstance_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -358,6 +363,7 @@ pub(super) fn extract_import_statement(
                     line: child.start_position().row as u32,
                     module,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             "aliased_import" => {
@@ -377,6 +383,7 @@ pub(super) fn extract_import_statement(
                         line: child.start_position().row as u32,
                         module,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -419,6 +426,7 @@ pub(super) fn extract_import_from_statement(
                     line: child.start_position().row as u32,
                     module: module.clone(),
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             "aliased_import" => {
@@ -431,6 +439,7 @@ pub(super) fn extract_import_from_statement(
                         line: child.start_position().row as u32,
                         module: module.clone(),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -442,6 +451,7 @@ pub(super) fn extract_import_from_statement(
                     line: child.start_position().row as u32,
                     module: module.clone(),
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             _ => {}

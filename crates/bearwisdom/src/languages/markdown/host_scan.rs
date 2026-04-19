@@ -163,6 +163,7 @@ fn collect_link_refs(
                                 line: line_no,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                         i = paren_close + 1;

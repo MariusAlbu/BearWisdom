@@ -10,13 +10,16 @@
 // keyword-avoiding names and clearer about intent.
 // =============================================================================
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
+use tree_sitter::{Node, Parser};
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
@@ -51,6 +54,15 @@ impl Ecosystem for ZigPkgEcosystem {
     fn resolve_symbol(
         &self, dep: &ExternalDepRoot, _f: &str,
     ) -> Vec<WalkedFile> { walk_zig_narrowed(dep) }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_zig_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for ZigPkgEcosystem {
@@ -297,6 +309,90 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
                 language: "zig",
             });
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+
+fn build_zig_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_zig_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_zig_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of a Zig source file. Records top-level
+/// `const Name = ...`, `var Name = ...`, `fn Name(...)` / `pub fn Name(...)`
+/// declarations. Zig uses `const` for both type aliases and struct
+/// definitions so types and functions end up in one bucket.
+fn scan_zig_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_zig::LANGUAGE.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        collect_zig_top_level_name(&child, bytes, &mut out);
+    }
+    out
+}
+
+fn collect_zig_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    match node.kind() {
+        "FnProto" | "fn_decl" | "function_declaration" | "Decl" | "TopLevelDecl"
+        | "VarDecl" | "variable_declaration" => {
+            let mut name_node = node
+                .child_by_field_name("name")
+                .or_else(|| node.child_by_field_name("variable"));
+            if name_node.is_none() {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if child.kind() == "identifier" {
+                        name_node = Some(child);
+                        break;
+                    }
+                }
+            }
+            if let Some(name_node) = name_node {
+                if let Ok(t) = name_node.utf8_text(bytes) {
+                    out.push(t.to_string());
+                }
+            }
+        }
+        _ => {}
     }
 }
 

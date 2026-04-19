@@ -560,6 +560,7 @@ pub(super) fn for_each_type_child<'src>(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

@@ -778,6 +778,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                 line: spec.start_position().row as u32,
                                 module: module_path.clone(),
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -794,6 +795,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                         line,
                         module: module_path.clone(),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -809,6 +811,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -839,6 +842,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                     line,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                                 break 'outer_lex;
                             }
@@ -860,6 +864,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                             line,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -876,6 +881,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                             line,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -899,6 +905,7 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
             line,
             module: module_path,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -924,6 +931,7 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
             line,
             module: module_path.clone(),
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -944,6 +952,7 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                             line: item.start_position().row as u32,
                             module: module_path.clone(),
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                     // `import { useState, useEffect } from 'react'`
@@ -962,6 +971,7 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                                     line: spec.start_position().row as u32,
                                     module: module_path.clone(),
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -979,6 +989,7 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                                     line: ns_child.start_position().row as u32,
                                     module: module_path.clone(),
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                                 break;
                             }
@@ -1001,6 +1012,7 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                 line,
                 module: module_path.clone(),
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -1025,6 +1037,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                             line: n.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                     "extends_clause" => {
@@ -1038,6 +1051,7 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                                     line: type_node.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -1071,6 +1085,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 line: child.start_position().row as u32,
                                 module: Some(module),
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -1084,6 +1099,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 line: child.start_position().row as u32,
                                 module: Some(module),
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -1096,6 +1112,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             line: func_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -1114,6 +1131,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             line: constructor.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -1132,6 +1150,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             line: tag.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -1159,6 +1178,7 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             line: tag_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -1225,6 +1245,7 @@ fn emit_call_ref_js(
                 line: call_node.start_position().row as u32,
                 module: Some(module),
                 chain: None,
+                byte_offset: 0,
             });
         }
     } else if callee == "import" {
@@ -1236,6 +1257,7 @@ fn emit_call_ref_js(
                 line: call_node.start_position().row as u32,
                 module: Some(module),
                 chain: None,
+                byte_offset: 0,
             });
         }
     } else if !callee.is_empty() && !is_js_keyword(&callee) {
@@ -1246,6 +1268,7 @@ fn emit_call_ref_js(
             line: func_node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -1288,6 +1311,7 @@ fn emit_new_ref_js(
             line: constructor.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -1374,6 +1398,7 @@ fn extract_module_exports(
             line: child.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -1408,6 +1433,7 @@ fn try_emit_require(
             line: init_node.start_position().row as u32,
             module: Some(module),
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -1492,6 +1518,7 @@ fn extract_for_loop_var(
                     line: right.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -1717,6 +1744,7 @@ fn scan_all_type_identifiers(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

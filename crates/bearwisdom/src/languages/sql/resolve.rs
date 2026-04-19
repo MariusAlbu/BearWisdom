@@ -70,6 +70,7 @@ impl LanguageResolver for SqlResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "sql_name_lookup",
+                    resolved_yield_type: None,
                 });
             }
         }

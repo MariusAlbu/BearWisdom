@@ -8,10 +8,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
+use tree_sitter::{Node, Parser};
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
@@ -46,6 +49,15 @@ impl Ecosystem for OpamEcosystem {
     fn resolve_symbol(
         &self, dep: &ExternalDepRoot, _f: &str,
     ) -> Vec<WalkedFile> { walk_ocaml_narrowed(dep) }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_ocaml_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for OpamEcosystem {
@@ -343,6 +355,102 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
             });
         }
     }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+
+fn build_ocaml_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_ocaml_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_ocaml_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of an OCaml source file. Records top-level
+/// `let`, `module`, `type`, `val`, `external`, `exception` bindings.
+fn scan_ocaml_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_ocaml::LANGUAGE_OCAML.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        collect_ocaml_top_level_name(&child, bytes, &mut out);
+    }
+    out
+}
+
+fn collect_ocaml_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    match node.kind() {
+        "value_definition" | "let_binding" | "module_definition"
+        | "module_binding" | "type_definition" | "type_binding"
+        | "external" | "exception_definition" | "class_definition"
+        | "class_binding" => {
+            // Try common field names, then fall back to first identifier child.
+            let name_node = node
+                .child_by_field_name("name")
+                .or_else(|| node.child_by_field_name("pattern"))
+                .or_else(|| first_identifier_child(node));
+            if let Some(name_node) = name_node {
+                if let Ok(t) = name_node.utf8_text(bytes) {
+                    out.push(t.to_string());
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn first_identifier_child<'a>(node: &'a Node<'a>) -> Option<Node<'a>> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if matches!(
+            child.kind(),
+            "value_name"
+                | "value_pattern"
+                | "module_name"
+                | "type_constructor"
+                | "constructor_name"
+                | "lowercase_identifier"
+                | "capitalized_identifier"
+        ) {
+            return Some(child);
+        }
+    }
+    None
 }
 
 #[cfg(test)]

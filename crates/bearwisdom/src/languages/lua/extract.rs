@@ -539,6 +539,7 @@ fn extract_function_call(
                         line,
                         module: Some(module_path),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             } else if name == "setmetatable" {
@@ -552,6 +553,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
                 if let Some(parent) = extract_setmetatable_parent(node, src) {
                     refs.push(ExtractedRef {
@@ -561,6 +563,7 @@ fn extract_function_call(
                         line,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             } else if !name.is_empty() {
@@ -571,6 +574,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -584,6 +588,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -597,6 +602,7 @@ fn extract_function_call(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

@@ -163,6 +163,7 @@ fn extract_assignment(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -245,6 +246,7 @@ fn extract_call(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -275,6 +277,7 @@ fn extract_load_refs(
             line: call_node.start_position().row as u32,
             module: Some(module_label.clone()),
             chain: None,
+            byte_offset: 0,
         });
         // Remaining args are symbol names or alias=name pairs.
         for arg in &children[1..] {
@@ -296,6 +299,7 @@ fn extract_load_refs(
                     line: call_node.start_position().row as u32,
                     module: Some(module_label.clone()),
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

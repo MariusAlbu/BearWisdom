@@ -79,6 +79,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         routes: Vec::new(),
         db_sets: Vec::new(),
         has_errors: false,
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -140,6 +142,7 @@ fn handle_tag(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -153,6 +156,7 @@ fn handle_tag(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -168,6 +172,7 @@ fn handle_tag(
                     line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

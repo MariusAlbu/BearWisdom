@@ -106,6 +106,7 @@ fn visit_expr(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             // Recurse into sub-expressions
@@ -340,6 +341,7 @@ fn extract_value_refs(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             // Recurse into sub-expressions (but not the attrpath — avoid double-emit)
@@ -468,6 +470,7 @@ fn extract_inherit_from(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -586,6 +589,7 @@ fn extract_apply(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -606,6 +610,7 @@ fn extract_apply(
                     line: node.start_position().row as u32,
                     module: Some(p),
                     chain: None,
+                    byte_offset: 0,
                 });
                 return;
             }
@@ -625,6 +630,7 @@ fn extract_apply(
                     line: node.start_position().row as u32,
                     module: Some(p),
                     chain: None,
+                    byte_offset: 0,
                 });
                 return;
             }
@@ -640,6 +646,7 @@ fn extract_apply(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -737,6 +744,7 @@ fn extract_with(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }

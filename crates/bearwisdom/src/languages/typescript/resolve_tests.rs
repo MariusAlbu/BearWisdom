@@ -40,9 +40,9 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         line,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
-
 /// Make an import binding ref — the TS extractor emits these as TypeRef with module set.
 fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> ExtractedRef {
     ExtractedRef {
@@ -52,9 +52,9 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         line,
         module: Some(module.to_string()),
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_ts_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
@@ -73,6 +73,9 @@ fn make_ts_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRe
         symbol_origin_languages: vec![],
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -105,6 +108,9 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -834,9 +840,9 @@ fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, 
         line,
         module: Some(from_module.to_string()),
         chain: None,
+        byte_offset: 0,
     }
 }
-
 #[test]
 fn test_barrel_named_reexport() {
     // consumer.ts imports UserService from './services' (the barrel).
@@ -1557,6 +1563,7 @@ fn tsconfig_alias_follows_barrel_reexport() {
         line: 1,
         module: Some("./quick-create-button".to_string()),
         chain: None,
+        byte_offset: 0,
     };
     let barrel = make_ts_file_in_pkg(
         "apps/web/src/features/quick-create/index.ts",
@@ -1789,6 +1796,7 @@ fn passthrough_alias_barrel_classifies_as_external() {
         line: 1,
         module: Some("react-i18next".to_string()),
         chain: None,
+        byte_offset: 0,
     };
     let barrel = make_ts_file_in_pkg(
         "apps/landing/src/i18n/client/trans.tsx",

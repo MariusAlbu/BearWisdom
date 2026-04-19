@@ -113,6 +113,7 @@ fn visit(
                         line: child.start_position().row as u32,
                         module,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 visit(child, src, symbols, refs, parent_index, class_prefix);
@@ -258,6 +259,7 @@ fn extract_class(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                     saw_colon = false; // only emit once per `:` separator
@@ -442,6 +444,7 @@ fn extract_using(
             line,
             module: Some(target),
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -482,6 +485,7 @@ fn extract_command(
                         line: node.start_position().row as u32,
                         module: Some(module),
                         chain: None,
+                        byte_offset: 0,
                     });
                     emitted = true;
                     break;
@@ -497,6 +501,7 @@ fn extract_command(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         return;
@@ -509,6 +514,7 @@ fn extract_command(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -544,6 +550,7 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
                     line: child.start_position().row as u32,
                     module,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             visit_for_calls(&child, src, source_idx, refs);
@@ -696,6 +703,7 @@ fn extract_member_access(
             line: node.start_position().row as u32,
             module,
             chain: None,
+            byte_offset: 0,
         });
     }
 }

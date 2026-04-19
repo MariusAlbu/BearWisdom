@@ -104,6 +104,7 @@ impl LanguageResolver for ProtoResolver {
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: "proto_qualified",
+                resolved_yield_type: None,
             });
         }
         if let Some(pkg) = &file_ctx.file_namespace {
@@ -113,6 +114,7 @@ impl LanguageResolver for ProtoResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "proto_package_qualified",
+                    resolved_yield_type: None,
                 });
             }
         }

@@ -177,6 +177,7 @@ fn walk_node(
                             line: node.start_position().row as u32,
                             module: if module_text.is_empty() { None } else { Some(module_text) },
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                     // Recurse into the function_call's arguments but not into the
@@ -206,6 +207,7 @@ fn walk_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             walk_children(node, src, symbols, refs, parent_idx);

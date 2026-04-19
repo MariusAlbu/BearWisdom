@@ -136,6 +136,7 @@ fn extract_resource_declaration(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -183,6 +184,7 @@ fn extract_module_declaration(
             line: node.start_position().row as u32,
             module: Some(path),
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -387,6 +389,7 @@ fn extract_import_statement(
             line: node.start_position().row as u32,
             module: Some(path),
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -404,6 +407,7 @@ fn extract_using_statement(
             line: node.start_position().row as u32,
             module: Some(path),
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -429,6 +433,7 @@ fn extract_calls_in_subtree(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         } else {
@@ -445,6 +450,7 @@ fn extract_calls_in_subtree(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                         break;
                     }
@@ -614,6 +620,7 @@ fn collect_all_call_expressions(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         // Don't recurse further into call_expression — avoid double-counting nested calls

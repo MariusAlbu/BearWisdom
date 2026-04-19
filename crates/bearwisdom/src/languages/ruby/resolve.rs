@@ -147,6 +147,7 @@ impl LanguageResolver for RubyResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ruby_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -160,6 +161,7 @@ impl LanguageResolver for RubyResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "ruby_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -174,6 +176,7 @@ impl LanguageResolver for RubyResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ruby_same_module",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -189,6 +192,7 @@ impl LanguageResolver for RubyResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ruby_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -198,6 +202,7 @@ impl LanguageResolver for RubyResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ruby_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -249,6 +254,7 @@ impl LanguageResolver for RubyResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.8,
                         strategy: "ruby_external_gem",
+                        resolved_yield_type: None,
                     });
                 }
             }

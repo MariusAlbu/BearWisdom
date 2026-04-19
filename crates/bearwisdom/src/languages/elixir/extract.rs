@@ -174,6 +174,7 @@ fn visit(
                     line: child.start_position().row as u32,
                     module: if name.contains('.') { Some(name) } else { None },
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         } else {
@@ -225,6 +226,7 @@ fn dispatch_call(
                 line: node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             // For dot calls (e.g. `Enum.map`), also emit a TypeRef for the receiver module.
             extract_dot_call_module_ref(node, src, sym_idx, refs);
@@ -500,6 +502,7 @@ fn extract_implementation(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 
     let do_block_idx = find_do_block_index(node);
@@ -545,6 +548,7 @@ fn extract_directive(
                                     line: arg.start_position().row as u32,
                                     module,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                                 emitted = true;
                             }
@@ -565,6 +569,7 @@ fn extract_directive(
                                             line: item.start_position().row as u32,
                                             module,
                                             chain: None,
+                                            byte_offset: 0,
                                         });
                                         emitted = true;
                                     }
@@ -600,6 +605,7 @@ fn extract_directive(
             line: node.start_position().row as u32,
             module,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -661,6 +667,7 @@ fn extract_qualified_multi_alias(
                         line: item.start_position().row as u32,
                         module: Some(full_module),
                         chain: None,
+                        byte_offset: 0,
                     });
                     emitted = true;
                 }
@@ -677,6 +684,7 @@ fn extract_qualified_multi_alias(
             line: right.start_position().row as u32,
             module: Some(name),
             chain: None,
+            byte_offset: 0,
         });
         emitted = true;
     }
@@ -740,6 +748,7 @@ fn dispatch_attribute(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -772,6 +781,7 @@ fn extract_calls_recursive(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                         // For dot calls like `Enum.map(...)`, also emit a TypeRef for
                         // the module part (the `alias` node before the dot).
@@ -800,6 +810,7 @@ fn extract_calls_recursive(
                         line: child.start_position().row as u32,
                         module: if name.contains('.') { Some(name) } else { None },
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -867,6 +878,7 @@ fn extract_dot_call_module_ref(
                                 line: dc_child.start_position().row as u32,
                                 module: if name.contains('.') { Some(name) } else { None },
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                         return; // only the receiver, not the function name
@@ -914,6 +926,7 @@ fn extract_pipe_calls(
                             line: r.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                         // Also emit TypeRef for module part of dot calls on the right side.
                         extract_dot_call_module_ref(&r, src, source_symbol_index, refs);
@@ -935,6 +948,7 @@ fn extract_pipe_calls(
                 line: right.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             // Also emit TypeRef for module part of dot calls (`Enum.map`, etc.).
             extract_dot_call_module_ref(right, src, source_symbol_index, refs);
@@ -1085,6 +1099,7 @@ fn extract_attribute_type_refs(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -1174,6 +1189,7 @@ fn scan_type_refs_inner(
                     line: node.start_position().row as u32,
                     module: if name.contains('.') { Some(name) } else { None },
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             // alias is a leaf — no children to recurse into.
@@ -1197,6 +1213,7 @@ fn scan_type_refs_inner(
                                     line: child.start_position().row as u32,
                                     module: if name.contains('.') { Some(name) } else { None },
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

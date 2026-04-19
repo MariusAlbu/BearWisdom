@@ -33,6 +33,7 @@ pub(super) fn extract_calls_from_body(
                             line: callee.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: callee.start_byte() as u32,
                         });
                     }
                 }
@@ -67,6 +68,7 @@ pub(super) fn extract_calls_from_body(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain,
+                                byte_offset: child.start_byte() as u32,
                             });
                         }
                     }
@@ -183,6 +185,7 @@ pub(super) fn extract_type_ref_from_type_node(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }

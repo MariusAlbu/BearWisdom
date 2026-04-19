@@ -13,6 +13,15 @@ use crate::types::ParsedFile;
 pub struct LanguageRegistry {
     plugins: Vec<Arc<dyn LanguagePlugin>>,
     by_lang_id: FxHashMap<String, usize>,
+    /// File-extension → language_id. Built from every plugin's
+    /// `extensions()` + `language_id_for_extension()` during `register()`.
+    /// Keys are stored lowercase-with-leading-dot; values are interned
+    /// `&'static str` via one Box::leak per unique id (< 100 leaks ever).
+    by_extension: FxHashMap<String, &'static str>,
+    /// Extensions sorted by descending length — compound extensions like
+    /// `.d.ts` / `.html.erb` / `.component.html` are probed before their
+    /// single-segment subsumers so the longest match wins.
+    ext_lookup_order: Vec<String>,
     generic: Arc<dyn LanguagePlugin>,
 }
 
@@ -22,17 +31,44 @@ impl LanguageRegistry {
         Self {
             plugins: Vec::new(),
             by_lang_id: FxHashMap::default(),
+            by_extension: FxHashMap::default(),
+            ext_lookup_order: Vec::new(),
             generic,
         }
     }
 
-    /// Register a language plugin. All language IDs it claims are mapped.
+    /// Register a language plugin. All language IDs it claims are mapped,
+    /// and every extension is indexed so `language_by_extension()` can
+    /// route files to the right plugin without callers hardcoding ext
+    /// tables. First-registered wins on extension collisions.
     pub fn register(&mut self, plugin: Arc<dyn LanguagePlugin>) {
         let idx = self.plugins.len();
         for &lang_id in plugin.language_ids() {
             self.by_lang_id.insert(lang_id.to_string(), idx);
         }
+        for &ext in plugin.extensions() {
+            let key = ext.to_ascii_lowercase();
+            if self.by_extension.contains_key(&key) {
+                continue;
+            }
+            let lang_id = plugin
+                .language_id_for_extension(ext)
+                .unwrap_or_else(|| plugin.id());
+            // Intern the id as &'static str. All plugin id/language_id values
+            // are string literals in practice, but the trait's `&str` return
+            // doesn't expose that to callers — Box::leak is the trivial way
+            // to surface the static lifetime through the registry. At most a
+            // few hundred unique ids over the process lifetime.
+            let leaked: &'static str = Box::leak(lang_id.to_string().into_boxed_str());
+            self.by_extension.insert(key.clone(), leaked);
+            self.ext_lookup_order.push(key);
+        }
         self.plugins.push(plugin);
+        // Keep lookup-order sorted by length descending so compound
+        // extensions (`.d.ts`, `.component.html`) match before their single
+        // segment subsumers. Stable within same length so results are
+        // deterministic across runs.
+        self.ext_lookup_order.sort_by(|a, b| b.len().cmp(&a.len()));
     }
 
     /// Get the plugin for a language ID. Returns the dedicated plugin if one
@@ -65,6 +101,44 @@ impl LanguageRegistry {
     /// Returns true if a dedicated (non-generic) plugin is registered for this ID.
     pub fn has_dedicated(&self, lang_id: &str) -> bool {
         self.by_lang_id.contains_key(lang_id)
+    }
+
+    /// Resolve a file name or path to the language id that should be used
+    /// when parsing it. Returns `None` when no registered plugin claims any
+    /// matching extension.
+    ///
+    /// Matching is longest-suffix first — so `Foo.d.ts` resolves to
+    /// TypeScript's mapping for `.d.ts` (or `.ts` if only the short form is
+    /// registered) and `page.component.html` resolves to the Angular
+    /// template plugin before the plain HTML plugin. Matching is
+    /// case-insensitive for extensions (`.R` and `.r` both hit R).
+    ///
+    /// This replaces the chained if-else extension matches that used to
+    /// live in `indexer::full::make_walked_file` and
+    /// `indexer::expand::language_from_file_ext`.
+    pub fn language_by_extension(&self, path_or_name: &str) -> Option<&'static str> {
+        let lower = path_or_name.to_ascii_lowercase();
+        // Strip directory components; extensions are only meaningful on the
+        // file-name suffix, and matching with the full path confuses
+        // `.component.html` against `.html` in a `src/app.component.html`
+        // basename-first scan.
+        let file_name = lower
+            .rsplit(|c| c == '/' || c == '\\')
+            .next()
+            .unwrap_or(&lower);
+        for ext in &self.ext_lookup_order {
+            if file_name.ends_with(ext.as_str()) {
+                return self.by_extension.get(ext).copied();
+            }
+        }
+        None
+    }
+
+    /// Every registered extension key (lowercased, with leading dot) —
+    /// handy for diagnostics and for validating that the extension-to-
+    /// language table stays in sync with the set of registered plugins.
+    pub fn registered_extensions(&self) -> &[String] {
+        &self.ext_lookup_order
     }
 
     /// Number of dedicated plugins registered.
@@ -125,6 +199,9 @@ mod tests {
             symbol_from_snippet: Vec::new(),
             content: None,
             has_errors: false,
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         }
     }
 
@@ -166,5 +243,107 @@ mod tests {
     fn detected_languages_empty_input() {
         let langs = LanguageRegistry::detected_languages(&[]);
         assert!(langs.is_empty());
+    }
+
+    /// Minimal fake plugin for registry unit tests. Avoids pulling real
+    /// tree-sitter grammars into the test graph.
+    struct FakePlugin {
+        id: &'static str,
+        lang_ids: &'static [&'static str],
+        exts: &'static [&'static str],
+        override_ext: Option<(&'static str, &'static str)>,
+    }
+    impl LanguagePlugin for FakePlugin {
+        fn id(&self) -> &str { self.id }
+        fn language_ids(&self) -> &[&str] { self.lang_ids }
+        fn extensions(&self) -> &[&str] { self.exts }
+        fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
+            if let Some((e, id)) = self.override_ext {
+                if ext.eq_ignore_ascii_case(e) { return Some(id) }
+            }
+            if self.exts.iter().any(|x| x.eq_ignore_ascii_case(ext)) {
+                Some(self.id)
+            } else {
+                None
+            }
+        }
+        fn grammar(&self, _: &str) -> Option<tree_sitter::Language> { None }
+        fn scope_kinds(&self) -> &[crate::parser::scope_tree::ScopeKind] { &[] }
+        fn extract(&self, _: &str, _: &str, _: &str) -> crate::types::ExtractionResult {
+            crate::types::ExtractionResult::default()
+        }
+    }
+
+    fn fake_generic() -> Arc<dyn LanguagePlugin> {
+        Arc::new(FakePlugin {
+            id: "generic",
+            lang_ids: &["generic"],
+            exts: &[],
+            override_ext: None,
+        })
+    }
+
+    #[test]
+    fn extension_lookup_returns_primary_id_by_default() {
+        let mut reg = LanguageRegistry::new(fake_generic());
+        reg.register(Arc::new(FakePlugin {
+            id: "rust",
+            lang_ids: &["rust"],
+            exts: &[".rs"],
+            override_ext: None,
+        }));
+        assert_eq!(reg.language_by_extension("main.rs"), Some("rust"));
+        assert_eq!(reg.language_by_extension("MAIN.RS"), Some("rust"));
+        assert_eq!(reg.language_by_extension("dir/subdir/lib.rs"), Some("rust"));
+        assert_eq!(reg.language_by_extension("readme.md"), None);
+    }
+
+    #[test]
+    fn extension_lookup_longest_suffix_wins() {
+        // Simulate TypeScript + a ".d.ts" plugin competing — the one
+        // claiming the longer extension must win.
+        let mut reg = LanguageRegistry::new(fake_generic());
+        reg.register(Arc::new(FakePlugin {
+            id: "typescript",
+            lang_ids: &["typescript"],
+            exts: &[".ts"],
+            override_ext: None,
+        }));
+        reg.register(Arc::new(FakePlugin {
+            id: "dts",
+            lang_ids: &["dts"],
+            exts: &[".d.ts"],
+            override_ext: None,
+        }));
+        assert_eq!(reg.language_by_extension("types.d.ts"), Some("dts"));
+        assert_eq!(reg.language_by_extension("app.ts"), Some("typescript"));
+    }
+
+    #[test]
+    fn extension_lookup_honors_language_id_override() {
+        // A plugin that handles multiple grammars through distinct
+        // language_ids — the override hook must be respected.
+        let mut reg = LanguageRegistry::new(fake_generic());
+        reg.register(Arc::new(FakePlugin {
+            id: "typescript",
+            lang_ids: &["typescript", "tsx"],
+            exts: &[".ts", ".tsx"],
+            override_ext: Some((".tsx", "tsx")),
+        }));
+        assert_eq!(reg.language_by_extension("app.ts"), Some("typescript"));
+        assert_eq!(reg.language_by_extension("App.tsx"), Some("tsx"));
+    }
+
+    #[test]
+    fn registered_extensions_exposes_every_registered_ext() {
+        let mut reg = LanguageRegistry::new(fake_generic());
+        reg.register(Arc::new(FakePlugin {
+            id: "rust",
+            lang_ids: &["rust"],
+            exts: &[".rs"],
+            override_ext: None,
+        }));
+        let exts = reg.registered_extensions();
+        assert!(exts.iter().any(|e| e == ".rs"));
     }
 }

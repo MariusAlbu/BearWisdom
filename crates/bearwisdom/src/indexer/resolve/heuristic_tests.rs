@@ -19,6 +19,9 @@ fn make_parsed_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<Extract
         symbol_from_snippet: vec![],
         content: None,
         has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -90,6 +93,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         line: 1,
         module: Some("NS".to_string()),
         chain: None,
+        byte_offset: 0,
     };
     let ref_type = ExtractedRef {
         source_symbol_index: 0,
@@ -98,6 +102,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         line: 5,
         module: None,
         chain: None,
+        byte_offset: 0,
     };
     let file_a = make_parsed_file("a.cs", vec![sym_a], vec![ref_import, ref_type]);
 

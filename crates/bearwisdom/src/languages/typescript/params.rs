@@ -295,6 +295,7 @@ pub(super) fn extract_for_loop_var(
                 line: right.start_position().row as u32,
                 module: None,
                 chain: Some(chain),
+                byte_offset: 0,
             });
         }
     } else if iterable_node.kind() == "identifier" {
@@ -309,6 +310,7 @@ pub(super) fn extract_for_loop_var(
                 line: right.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }

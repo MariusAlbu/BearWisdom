@@ -296,6 +296,7 @@ fn extract_behaviour(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -323,6 +324,7 @@ fn extract_import_attr(
         line: node.start_position().row as u32,
         module: Some(module),
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -354,6 +356,7 @@ fn extract_include(
             line: node.start_position().row as u32,
             module: Some(file),
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -504,6 +507,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                         line: call_line,
                                         module,
                                         chain: None,
+                                        byte_offset: 0,
                                     });
                                 }
                                 // Skip the fallback push below
@@ -535,6 +539,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                         line: call_line,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 collect_calls(&child, src, source_idx, refs);
@@ -552,6 +557,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                             line,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -571,6 +577,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                             line,
                             module,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -593,6 +600,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                             line,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

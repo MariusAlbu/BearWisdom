@@ -194,6 +194,7 @@ fn handle_include(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
     // Recurse into arguments to find nested call_expressions
@@ -221,6 +222,7 @@ fn handle_extend(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -245,6 +247,7 @@ fn handle_import(
             line: node.start_position().row as u32,
             module: Some(module),
             chain: None,
+            byte_offset: 0,
         });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -271,6 +274,7 @@ fn handle_forward(
             line: node.start_position().row as u32,
             module: Some(module),
             chain: None,
+            byte_offset: 0,
         });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -297,6 +301,7 @@ fn handle_use(
             line: node.start_position().row as u32,
             module: Some(module),
             chain: None,
+            byte_offset: 0,
         });
     }
     visit_children(node, src, symbols, refs, Some(source_symbol_index));
@@ -470,6 +475,7 @@ fn handle_call_expr(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 
     // Recurse into children (arguments may contain nested call_expressions).

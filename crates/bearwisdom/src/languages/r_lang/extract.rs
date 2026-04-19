@@ -300,6 +300,7 @@ fn extract_binary_operator(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
                 return Some(idx);
             }
@@ -372,6 +373,7 @@ fn extract_call(
                 line,
                 module: Some(pkg),
                 chain: None,
+                byte_offset: 0,
             });
         }
         return None;
@@ -425,6 +427,7 @@ fn extract_call(
         line,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
     None
 }
@@ -458,6 +461,7 @@ fn extract_namespace_operator(
         line: node.start_position().row as u32,
         module: Some(pkg),
         chain: None,
+        byte_offset: 0,
     });
 }
 

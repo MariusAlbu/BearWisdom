@@ -164,6 +164,7 @@ mod tests {
                 line: 2,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             }],
             routes: vec![],
             db_sets: vec![],
@@ -172,6 +173,9 @@ mod tests {
             symbol_from_snippet: vec![],
             content: None,
             has_errors: false,
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         }
     }
 

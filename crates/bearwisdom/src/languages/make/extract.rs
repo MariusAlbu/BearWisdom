@@ -175,6 +175,7 @@ fn extract_prerequisites(
                                 line: prereq.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -296,6 +297,7 @@ fn extract_include_directive(
                 line: node.start_position().row as u32,
                 module: Some(path),
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -344,6 +346,7 @@ fn extract_function_calls_in_subtree(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

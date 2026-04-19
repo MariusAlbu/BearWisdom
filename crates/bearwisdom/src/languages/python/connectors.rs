@@ -16,6 +16,9 @@ use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
+use crate::types::{
+    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
+};
 
 // ===========================================================================
 // Django
@@ -307,11 +310,12 @@ impl Connector for PythonRestConnector {
     fn extract(
         &self,
         conn: &Connection,
-        project_root: &Path,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
+        // Starts (requests/httpx client calls) migrated into
+        // `extract_python_rest_starts_src`. Stops stay on DB (routes table).
         let mut points = Vec::new();
         extract_python_rest_stops(conn, &mut points)?;
-        extract_python_rest_starts(conn, project_root, &mut points)?;
         Ok(points)
     }
 }
@@ -354,70 +358,6 @@ fn extract_python_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) 
             framework: String::new(),
             metadata: None,
         });
-    }
-    Ok(())
-}
-
-fn extract_python_rest_starts(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    // requests.get/post/put/delete/patch + httpx.get/post/…
-    let re_requests = regex::Regex::new(
-        r#"requests\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
-    ).expect("python requests regex");
-    let re_httpx = regex::Regex::new(
-        r#"httpx\s*\.\s*(?P<method>get|post|put|delete|patch)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
-    ).expect("python httpx regex");
-
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = 'python'")
-        .context("Failed to prepare Python files query")?;
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query Python files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect Python file rows")?;
-
-    for (file_id, rel_path) in files {
-        if rest_is_test_or_config_file(&rel_path) {
-            continue;
-        }
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for re in &[&re_requests, &re_httpx] {
-                for cap in re.captures_iter(line_text) {
-                    let raw_url = cap.name("url1")
-                        .or_else(|| cap.name("url2"))
-                        .map(|m| m.as_str().to_string());
-                    let Some(raw_url) = raw_url else { continue };
-                    if !rest_looks_like_backend_api_url(&raw_url) {
-                        continue;
-                    }
-                    let method = cap.name("method")
-                        .map(|m| m.as_str().to_uppercase())
-                        .unwrap_or_else(|| "GET".to_string());
-                    let url_pattern = rest_normalise_url_pattern(&raw_url);
-                    out.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::Rest,
-                        direction: FlowDirection::Start,
-                        key: url_pattern,
-                        method,
-                        framework: String::new(),
-                        metadata: None,
-                    });
-                }
-            }
-        }
     }
     Ok(())
 }
@@ -761,131 +701,9 @@ impl Connector for PythonMqConnector {
             || ctx.has_dependency(ManifestKind::PyProject, "kombu")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        let re_celery_task = regex::Regex::new(
-            r#"@(?:\w+\.)?(?:task|shared_task)\s*(?:\([^)]*\))?\s*$"#,
-        )
-        .expect("python celery task regex");
-
-        let re_producer_send = regex::Regex::new(
-            r#"producer\.send\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("python producer send regex");
-
-        let re_consumer_subscribe = regex::Regex::new(
-            r#"consumer\.subscribe\s*\(\s*\[?\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("python consumer subscribe regex");
-
-        let re_rabbit_publish = regex::Regex::new(
-            r#"channel\.basic_publish\s*\([^)]*routing_key\s*=\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("python rabbit publish regex");
-
-        let re_rabbit_consume = regex::Regex::new(
-            r#"channel\.basic_consume\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("python rabbit consume regex");
-
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'python'")
-            .context("Failed to prepare Python files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })
-            .context("Failed to query Python files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Python file rows")?;
-
-        let mut points = Vec::new();
-
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            let lines: Vec<&str> = source.lines().collect();
-
-            for (line_idx, line_text) in lines.iter().enumerate() {
-                let line_no = (line_idx + 1) as u32;
-
-                if re_celery_task.is_match(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: "celery_task".to_string(),
-                        method: String::new(),
-                        framework: "celery".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_producer_send.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_consumer_subscribe.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_rabbit_publish.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_rabbit_consume.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-            }
-        }
-
-        Ok(points)
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Flattened into `extract_python_mq_src`.
+        Ok(Vec::new())
     }
 }
 
@@ -916,93 +734,14 @@ impl Connector for PythonGraphQlConnector {
             || ctx.has_dependency(ManifestKind::PyProject, "graphql-core")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        let re_ariadne_field = regex::Regex::new(
-            r#"@(?:query|mutation|subscription)\.field\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("python ariadne field regex");
-
-        let re_strawberry = regex::Regex::new(
-            r#"@strawberry\.(?:field|mutation|query|subscription)\s*(?:\([^)]*\))?\s*$"#,
-        )
-        .expect("python strawberry field regex");
-
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'python'")
-            .context("Failed to prepare Python files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })
-            .context("Failed to query Python files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Python file rows")?;
-
+    fn extract(&self, conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Source-scan half (ariadne / strawberry decorators) moved to
+        // `PythonPlugin::extract_connection_points`. Graphene-style
+        // `resolve_*` methods still require a cross-file symbol lookup
+        // and run here on the legacy path until a post-parse resolution
+        // hook lands.
         let mut points = Vec::new();
 
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            let lines: Vec<&str> = source.lines().collect();
-
-            for (line_idx, line_text) in lines.iter().enumerate() {
-                let line_no = (line_idx + 1) as u32;
-
-                for cap in re_ariadne_field.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::GraphQl,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "ariadne".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                if re_strawberry.is_match(line_text) {
-                    let fn_name = lines
-                        .iter()
-                        .skip(line_idx + 1)
-                        .find(|l| {
-                            let t = l.trim();
-                            !t.is_empty() && !t.starts_with('@') && !t.starts_with('#')
-                        })
-                        .and_then(|l| {
-                            let t = l.trim();
-                            t.strip_prefix("async ")
-                                .unwrap_or(t)
-                                .strip_prefix("def ")
-                                .and_then(|s| s.split('(').next())
-                                .map(str::trim)
-                                .map(str::to_string)
-                        });
-
-                    if let Some(name) = fn_name {
-                        points.push(ConnectionPoint {
-                            file_id,
-                            symbol_id: None,
-                            line: line_no,
-                            protocol: Protocol::GraphQl,
-                            direction: FlowDirection::Stop,
-                            key: name,
-                            method: String::new(),
-                            framework: "strawberry".to_string(),
-                            metadata: None,
-                        });
-                    }
-                }
-            }
-        }
-
-        // Graphene-style resolve_* methods.
         let mut resolve_stmt = conn
             .prepare(
                 "SELECT s.id, s.name, s.file_id, s.line
@@ -1049,3 +788,298 @@ impl Connector for PythonGraphQlConnector {
         Ok(points)
     }
 }
+
+/// Per-file Python GraphQL scan: emit Stop points for ariadne
+/// `@query.field("name")` / `@mutation.field(...)` registrations and
+/// strawberry `@strawberry.field` / `@strawberry.mutation` decorators.
+///
+/// Graphene-style `resolve_*` methods are left to the legacy DB path
+/// because they need to be detected from indexed symbols, not raw source.
+pub fn extract_python_graphql(source: &str) -> Vec<crate::types::ConnectionPoint> {
+    use crate::types::{ConnectionKind, ConnectionPoint as AP, ConnectionRole};
+    use std::collections::HashMap;
+
+    let re_ariadne = regex::Regex::new(
+        r#"@(?:query|mutation|subscription)\.field\s*\(\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("python ariadne field regex");
+    let re_strawberry = regex::Regex::new(
+        r#"@strawberry\.(?:field|mutation|query|subscription)\s*(?:\([^)]*\))?\s*$"#,
+    )
+    .expect("python strawberry field regex");
+
+    if !source.contains("@strawberry") && !source.contains(".field(") {
+        return Vec::new();
+    }
+
+    let mut out: Vec<AP> = Vec::new();
+    let lines: Vec<&str> = source.lines().collect();
+
+    for (line_idx, line_text) in lines.iter().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        for cap in re_ariadne.captures_iter(line_text) {
+            let mut meta = HashMap::new();
+            meta.insert("framework".to_string(), "ariadne".to_string());
+            out.push(AP {
+                kind: ConnectionKind::GraphQL,
+                role: ConnectionRole::Stop,
+                key: cap[1].to_string(),
+                line: line_no,
+                col: 1,
+                symbol_qname: String::new(),
+                meta,
+            });
+        }
+
+        if re_strawberry.is_match(line_text) {
+            let fn_name = lines
+                .iter()
+                .skip(line_idx + 1)
+                .find(|l| {
+                    let t = l.trim();
+                    !t.is_empty() && !t.starts_with('@') && !t.starts_with('#')
+                })
+                .and_then(|l| {
+                    let t = l.trim();
+                    t.strip_prefix("async ")
+                        .unwrap_or(t)
+                        .strip_prefix("def ")
+                        .and_then(|s| s.split('(').next())
+                        .map(str::trim)
+                        .map(str::to_string)
+                });
+            if let Some(name) = fn_name {
+                let mut meta = HashMap::new();
+                meta.insert("framework".to_string(), "strawberry".to_string());
+                out.push(AP {
+                    kind: ConnectionKind::GraphQL,
+                    role: ConnectionRole::Stop,
+                    key: name,
+                    line: line_no,
+                    col: 1,
+                    symbol_qname: String::new(),
+                    meta,
+                });
+            }
+        }
+    }
+
+    out
+}
+
+// ===========================================================================
+// Plugin-facing composer — called from PythonPlugin::extract_connection_points
+// ===========================================================================
+
+pub fn extract_python_connection_points(
+    source: &str,
+    file_path: &str,
+) -> Vec<AbstractPoint> {
+    let mut out = Vec::new();
+    out.extend(extract_python_graphql(source));
+    extract_python_rest_starts_src(source, file_path, &mut out);
+    extract_python_mq_src(source, &mut out);
+    out
+}
+
+/// Python REST client-call starts: requests.* and httpx.*.
+pub fn extract_python_rest_starts_src(
+    source: &str,
+    file_path: &str,
+    out: &mut Vec<AbstractPoint>,
+) {
+    if rest_is_test_or_config_file(file_path) {
+        return;
+    }
+    if !source.contains("requests.") && !source.contains("httpx.") {
+        return;
+    }
+
+    let re_requests = regex::Regex::new(
+        r#"requests\s*\.\s*(?P<method>get|post|put|delete|patch|head)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
+    )
+    .expect("python requests regex");
+    let re_httpx = regex::Regex::new(
+        r#"httpx\s*\.\s*(?P<method>get|post|put|delete|patch)\s*\(\s*(?:"(?P<url1>[^"]+)"|'(?P<url2>[^']+)')"#,
+    )
+    .expect("python httpx regex");
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for re in &[&re_requests, &re_httpx] {
+            for cap in re.captures_iter(line_text) {
+                let raw_url = cap
+                    .name("url1")
+                    .or_else(|| cap.name("url2"))
+                    .map(|m| m.as_str().to_string());
+                let Some(raw_url) = raw_url else { continue };
+                if !rest_looks_like_backend_api_url(&raw_url) {
+                    continue;
+                }
+                let method = cap
+                    .name("method")
+                    .map(|m| m.as_str().to_uppercase())
+                    .unwrap_or_else(|| "GET".to_string());
+                let url_pattern = rest_normalise_url_pattern(&raw_url);
+                let mut meta = HashMap::new();
+                meta.insert("method".to_string(), method);
+                out.push(AbstractPoint {
+                    kind: ConnectionKind::Rest,
+                    role: ConnectionRole::Start,
+                    key: url_pattern,
+                    line: line_no,
+                    col: 1,
+                    symbol_qname: String::new(),
+                    meta,
+                });
+            }
+        }
+    }
+}
+
+/// Python MQ detection: celery tasks (Stop), kafka producer/consumer,
+/// RabbitMQ basic_publish/basic_consume (pika).
+pub fn extract_python_mq_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains("@")
+        && !source.contains("producer.")
+        && !source.contains("consumer.")
+        && !source.contains("channel.")
+    {
+        return;
+    }
+
+    let re_celery_task = regex::Regex::new(
+        r#"@(?:\w+\.)?(?:task|shared_task)\s*(?:\([^)]*\))?\s*$"#,
+    )
+    .expect("python celery task regex");
+    let re_producer_send = regex::Regex::new(
+        r#"producer\.send\s*\(\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("python producer send regex");
+    let re_consumer_subscribe = regex::Regex::new(
+        r#"consumer\.subscribe\s*\(\s*\[?\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("python consumer subscribe regex");
+    let re_rabbit_publish = regex::Regex::new(
+        r#"channel\.basic_publish\s*\([^)]*routing_key\s*=\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("python rabbit publish regex");
+    let re_rabbit_consume = regex::Regex::new(
+        r#"channel\.basic_consume\s*\(\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("python rabbit consume regex");
+
+    let push = |out: &mut Vec<AbstractPoint>,
+                role: ConnectionRole,
+                key: String,
+                line: u32,
+                framework: &str| {
+        let mut meta = HashMap::new();
+        meta.insert("framework".to_string(), framework.to_string());
+        out.push(AbstractPoint {
+            kind: ConnectionKind::MessageQueue,
+            role,
+            key,
+            line,
+            col: 1,
+            symbol_qname: String::new(),
+            meta,
+        });
+    };
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        if re_celery_task.is_match(line_text) {
+            push(out, ConnectionRole::Stop, "celery_task".to_string(), line_no, "celery");
+        }
+        for cap in re_producer_send.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_consumer_subscribe.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_rabbit_publish.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_rabbit_consume.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "rabbitmq");
+        }
+    }
+}
+
+#[cfg(test)]
+mod plugin_source_scan_tests {
+    use super::*;
+
+    #[test]
+    fn python_rest_requests_get() {
+        let src = "resp = requests.get('/api/users')";
+        let mut out = Vec::new();
+        extract_python_rest_starts_src(src, "app/client.py", &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].kind, ConnectionKind::Rest);
+        assert_eq!(out[0].role, ConnectionRole::Start);
+        assert_eq!(out[0].key, "/api/users");
+        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("GET"));
+    }
+
+    #[test]
+    fn python_rest_skips_tests() {
+        let src = "requests.get('/api/x')";
+        let mut out = Vec::new();
+        extract_python_rest_starts_src(src, "app/tests/test_client.py", &mut out);
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn python_mq_celery_task_is_stop() {
+        let src = "@celery.task\ndef send_email(): pass";
+        let mut out = Vec::new();
+        extract_python_mq_src(src, &mut out);
+        let stops: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Stop).collect();
+        assert_eq!(stops.len(), 1);
+        assert_eq!(stops[0].key, "celery_task");
+    }
+
+    #[test]
+    fn python_mq_kafka_producer_start() {
+        let src = "producer.send('user-events', msg)";
+        let mut out = Vec::new();
+        extract_python_mq_src(src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "user-events");
+        assert_eq!(out[0].role, ConnectionRole::Start);
+        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("kafka"));
+    }
+
+    #[test]
+    fn python_mq_rabbitmq_publish_with_routing_key() {
+        let src = r#"channel.basic_publish(exchange='x', routing_key='orders.new', body=b)"#;
+        let mut out = Vec::new();
+        extract_python_mq_src(src, &mut out);
+        let starts: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Start).collect();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].key, "orders.new");
+        assert_eq!(starts[0].meta.get("framework").map(String::as_str), Some("rabbitmq"));
+    }
+
+    #[test]
+    fn composer_combines_graphql_rest_mq() {
+        let src = r#"
+@strawberry.field
+def me(): pass
+
+resp = requests.get('/api/users')
+
+producer.send('orders', data)
+"#;
+        let points = extract_python_connection_points(src, "app/main.py");
+        let has = |k: ConnectionKind| points.iter().any(|p| p.kind == k);
+        assert!(has(ConnectionKind::GraphQL));
+        assert!(has(ConnectionKind::Rest));
+        assert!(has(ConnectionKind::MessageQueue));
+    }
+}
+

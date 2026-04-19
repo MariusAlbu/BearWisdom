@@ -126,6 +126,7 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -200,6 +201,7 @@ fn try_extract_on_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) 
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -228,6 +230,7 @@ fn extract_svelte_blocks(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

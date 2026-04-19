@@ -114,41 +114,49 @@ pub fn resolve_via_chain(
         SegmentKind::Identifier => {
             let name = &segments[0].name;
 
-            // Static type access: `ClassName.method()` or `EnumType.Variant`.
-            // Use types_by_name (pre-filtered to type-kind symbols) instead of
-            // by_name — with externals indexed, common names like "Error" or
-            // "Context" collect tens of thousands of non-type candidates that
-            // .any() would scan in the worst case.
-            let is_type = lookup.types_by_name(name).iter().any(|s| {
-                config
-                    .static_type_kinds
-                    .iter()
-                    .any(|&k| s.kind == k)
-            });
-            if is_type {
-                Some((config.normalize_type)(name))
+            // R5: per-file flow inference takes precedence over global lookups.
+            // A local-variable shadow correctly hides a same-named class —
+            // `let x = foo(); x.bar()` resolves `x` to `foo`'s return type
+            // before the resolver checks globals or fields.
+            if let Some(local_type) = lookup.local_type(name) {
+                Some((config.normalize_type)(&local_type))
             } else {
-                // Field on enclosing class: `this.repo` where `repo` is a field.
-                let mut found = None;
-                for scope in &ref_ctx.scope_chain {
-                    let field_qname = format!("{scope}.{name}");
-                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
-                        if config.use_generics {
-                            initial_generic_args = lookup
-                                .field_type_args(&field_qname)
-                                .unwrap_or(&[])
-                                .to_vec();
+                // Static type access: `ClassName.method()` or `EnumType.Variant`.
+                // Use types_by_name (pre-filtered to type-kind symbols) instead of
+                // by_name — with externals indexed, common names like "Error" or
+                // "Context" collect tens of thousands of non-type candidates that
+                // .any() would scan in the worst case.
+                let is_type = lookup.types_by_name(name).iter().any(|s| {
+                    config
+                        .static_type_kinds
+                        .iter()
+                        .any(|&k| s.kind == k)
+                });
+                if is_type {
+                    Some((config.normalize_type)(name))
+                } else {
+                    // Field on enclosing class: `this.repo` where `repo` is a field.
+                    let mut found = None;
+                    for scope in &ref_ctx.scope_chain {
+                        let field_qname = format!("{scope}.{name}");
+                        if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            if config.use_generics {
+                                initial_generic_args = lookup
+                                    .field_type_args(&field_qname)
+                                    .unwrap_or(&[])
+                                    .to_vec();
+                            }
+                            found = Some((config.normalize_type)(type_name));
+                            break;
                         }
-                        found = Some((config.normalize_type)(type_name));
-                        break;
                     }
+                    found.or_else(|| {
+                        segments[0]
+                            .declared_type
+                            .as_ref()
+                            .map(|t| (config.normalize_type)(t))
+                    })
                 }
-                found.or_else(|| {
-                    segments[0]
-                        .declared_type
-                        .as_ref()
-                        .map(|t| (config.normalize_type)(t))
-                })
             }
         }
         _ => None,
@@ -188,6 +196,19 @@ pub fn resolve_via_chain(
             );
             current_type = resolved;
             continue;
+        }
+
+        // R5: call-site type arguments (`repo.findOne<User>()`) bind the
+        // method's own generic parameters before its return type resolves.
+        // Without this, `findOne<User>()` returning `T` would walk the chain
+        // as `T` rather than `User`. Only meaningful for languages whose
+        // `ChainConfig::use_generics` is set.
+        if config.use_generics && !seg.type_args.is_empty() {
+            if let Some(e) = env.as_mut() {
+                e.enter_generic_context(&member_qname, &seg.type_args, |name| {
+                    lookup.generic_params(name).map(|p| p.to_vec())
+                });
+            }
         }
 
         // Try return type (method call result in a fluent chain).
@@ -281,10 +302,14 @@ pub fn resolve_via_chain(
                 target = %last.name,
                 "resolved"
             );
+            let yield_type = compute_yield_type(
+                sym, &last.type_args, config, lookup, env.as_mut(),
+            );
             return Some(Resolution {
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: chain_strategy(strategy),
+                resolved_yield_type: yield_type,
             });
         }
     }
@@ -320,17 +345,25 @@ pub fn resolve_via_chain(
     match matches.len() {
         0 => {}
         1 => {
+            let yield_type = compute_yield_type(
+                matches[0], &last.type_args, config, lookup, env.as_mut(),
+            );
             return Some(Resolution {
                 target_symbol_id: matches[0].id,
                 confidence: 1.0,
                 strategy: chain_strategy_unique(strategy),
+                resolved_yield_type: yield_type,
             });
         }
         _ => {
+            let yield_type = compute_yield_type(
+                matches[0], &last.type_args, config, lookup, env.as_mut(),
+            );
             return Some(Resolution {
                 target_symbol_id: matches[0].id,
                 confidence: 0.95,
                 strategy: chain_strategy(strategy),
+                resolved_yield_type: yield_type,
             });
         }
     }
@@ -343,6 +376,60 @@ pub fn resolve_via_chain(
         target_name: last.name.clone(),
     });
     None
+}
+
+/// R5: compute the yield type of a resolved symbol for per-language
+/// chain walkers that don't use a `TypeEnvironment`.
+///
+/// Used by Python, Ruby, Rust, C, Go per-language chain walkers. Returns
+/// the method's return type or the field's declared type as a String, or
+/// `None` when neither is recorded. Callers typically pass this straight
+/// into `Resolution::resolved_yield_type`.
+pub fn simple_yield_type(sym: &SymbolInfo, lookup: &dyn SymbolLookup) -> Option<String> {
+    lookup
+        .return_type_name(&sym.qualified_name)
+        .or_else(|| lookup.field_type_name(&sym.qualified_name))
+        .map(|s| s.to_string())
+}
+
+/// R5: compute the type the resolved final-segment symbol *yields* for
+/// forward flow inference.
+///
+/// For a method, that's the return type; for a field/property, it's the
+/// declared field type. The type is normalized and then substituted through
+/// the active `TypeEnvironment` so call-site generics and outer class
+/// generics both apply (`repo.findOne<User>()` returning `T` yields `User`).
+///
+/// Returns `None` when the target has no recorded return/field type. In
+/// that case the resolver simply can't record a local-type binding — the
+/// next chain walker for the same local falls back to existing logic.
+fn compute_yield_type(
+    sym: &SymbolInfo,
+    call_site_type_args: &[String],
+    config: &ChainConfig,
+    lookup: &dyn SymbolLookup,
+    env: Option<&mut TypeEnvironment>,
+) -> Option<String> {
+    // Methods: return type. Fields/properties: field type. Priority is
+    // return_type because a `()` at the site already tells us it's a call.
+    let raw = lookup
+        .return_type_name(&sym.qualified_name)
+        .or_else(|| lookup.field_type_name(&sym.qualified_name));
+    let raw = raw?;
+    let normalized = (config.normalize_type)(raw);
+    match env {
+        Some(e) => {
+            // Bind the final segment's own call-site type args (if any) so a
+            // method that returns `T` yields the caller's concrete type.
+            if config.use_generics && !call_site_type_args.is_empty() {
+                e.enter_generic_context(&sym.qualified_name, call_site_type_args, |name| {
+                    lookup.generic_params(name).map(|p| p.to_vec())
+                });
+            }
+            Some(e.resolve(&normalized))
+        }
+        None => Some(normalized),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -508,6 +595,7 @@ fn resolve_final_via_namespace(
                     target_symbol_id: sym.id,
                     confidence: 0.95,
                     strategy: chain_strategy(config.strategy_prefix),
+                    resolved_yield_type: None,
                 });
             }
         }

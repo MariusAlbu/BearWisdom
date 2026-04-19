@@ -144,6 +144,7 @@ fn walk_node(
                             line: node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                     break;
@@ -162,6 +163,7 @@ fn walk_node(
                         line: node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -184,6 +186,7 @@ fn walk_node(
                                 line: node.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -206,6 +209,7 @@ fn walk_node(
                                     line: node.start_position().row as u32,
                                     module: if obj_text.is_empty() { None } else { Some(obj_text) },
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         } else if count == 1 {
@@ -221,6 +225,7 @@ fn walk_node(
                                     line: node.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -359,6 +364,7 @@ fn extract_extends(
                                     line: gc.start_position().row as u32,
                                     module: None,
                                     chain: None,
+                                    byte_offset: 0,
                                 });
                             }
                         }

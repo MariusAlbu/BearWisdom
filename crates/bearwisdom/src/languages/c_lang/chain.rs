@@ -22,6 +22,7 @@
 // =============================================================================
 
 use super::predicates::kind_compatible;
+use crate::indexer::resolve::chain_walker::simple_yield_type;
 use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
@@ -60,36 +61,41 @@ pub(super) fn resolve_via_chain(
         SegmentKind::Identifier => {
             let name = &segments[0].name;
 
-            // Is it a known class/struct type? (static access: `ClassName::method()`)
-            let is_type = lookup.types_by_name(name).iter().any(|s| {
-                matches!(
-                    s.kind.as_str(),
-                    "class" | "struct" | "interface" | "enum" | "type_alias"
-                )
-            });
-            if is_type {
-                Some(name.clone())
+            // R5: per-file flow inference takes precedence over global lookups.
+            if let Some(local_type) = lookup.local_type(name) {
+                Some(local_type)
             } else {
-                // Is it a field/variable on the enclosing class?
-                // Try scope chain: e.g., "TcpClientTmpl::connect.channel" → no,
-                // but "TcpClientTmpl.channel" → yes (dot-separated in type_info).
-                let mut found = None;
-                for scope in &ref_ctx.scope_chain {
-                    let field_qname = format!("{scope}.{name}");
-                    if let Some(type_name) = lookup.field_type_name(&field_qname) {
-                        found = Some(type_name.to_string());
-                        break;
+                // Is it a known class/struct type? (static access: `ClassName::method()`)
+                let is_type = lookup.types_by_name(name).iter().any(|s| {
+                    matches!(
+                        s.kind.as_str(),
+                        "class" | "struct" | "interface" | "enum" | "type_alias"
+                    )
+                });
+                if is_type {
+                    Some(name.clone())
+                } else {
+                    // Is it a field/variable on the enclosing class?
+                    // Try scope chain: e.g., "TcpClientTmpl::connect.channel" → no,
+                    // but "TcpClientTmpl.channel" → yes (dot-separated in type_info).
+                    let mut found = None;
+                    for scope in &ref_ctx.scope_chain {
+                        let field_qname = format!("{scope}.{name}");
+                        if let Some(type_name) = lookup.field_type_name(&field_qname) {
+                            found = Some(type_name.to_string());
+                            break;
+                        }
+                        // Also try with :: scope separator (C++ qualified names can
+                        // appear in scope_chain as "hv::TcpClientTmpl" etc.)
+                        let field_qname_cc = format!("{}.{name}", scope.replace("::", "."));
+                        if let Some(type_name) = lookup.field_type_name(&field_qname_cc) {
+                            found = Some(type_name.to_string());
+                            break;
+                        }
                     }
-                    // Also try with :: scope separator (C++ qualified names can
-                    // appear in scope_chain as "hv::TcpClientTmpl" etc.)
-                    let field_qname_cc = format!("{}.{name}", scope.replace("::", "."));
-                    if let Some(type_name) = lookup.field_type_name(&field_qname_cc) {
-                        found = Some(type_name.to_string());
-                        break;
-                    }
+                    // Last resort: use the declared_type from the chain segment.
+                    found.or_else(|| segments[0].declared_type.clone())
                 }
-                // Last resort: use the declared_type from the chain segment.
-                found.or_else(|| segments[0].declared_type.clone())
             }
         }
         _ => None,
@@ -178,6 +184,7 @@ pub(super) fn resolve_via_chain(
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: "c_chain_resolution",
+                resolved_yield_type: simple_yield_type(sym, lookup).map(|t| normalize_type(&t)),
             });
         }
     }
@@ -202,11 +209,13 @@ pub(super) fn resolve_via_chain(
             target_symbol_id: matches[0].id,
             confidence: 1.0,
             strategy: "c_chain_resolution_unique",
+            resolved_yield_type: simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)),
         }),
         _ => Some(Resolution {
             target_symbol_id: matches[0].id,
             confidence: 0.95,
             strategy: "c_chain_resolution",
+            resolved_yield_type: simple_yield_type(&matches[0], lookup).map(|t| normalize_type(&t)),
         }),
     }
 }

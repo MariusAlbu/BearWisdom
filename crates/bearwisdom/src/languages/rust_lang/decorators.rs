@@ -58,6 +58,7 @@ pub(super) fn extract_decorators(
                 line: attr_item.start_position().row as u32,
                 module: first_arg,
                 chain: None,
+                byte_offset: 0,
             });
 
             // For #[derive(...)], also extract each derived trait as a TypeRef
@@ -159,6 +160,7 @@ fn extract_trait_names_from_token_tree(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -173,6 +175,7 @@ fn extract_trait_names_from_token_tree(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

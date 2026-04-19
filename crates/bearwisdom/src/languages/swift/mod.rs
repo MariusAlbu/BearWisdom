@@ -47,6 +47,15 @@ impl LanguagePlugin for SwiftPlugin {
         extract::extract(source)
     }
 
+    fn extract_connection_points(
+        &self,
+        source: &str,
+        file_path: &str,
+        _lang_id: &str,
+    ) -> Vec<crate::types::ConnectionPoint> {
+        connectors::extract_swift_connection_points(source, file_path)
+    }
+
     fn embedded_regions(
         &self,
         source: &str,

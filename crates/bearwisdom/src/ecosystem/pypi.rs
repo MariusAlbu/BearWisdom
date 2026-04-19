@@ -13,10 +13,13 @@ use tracing::debug;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
 use crate::walker::WalkedFile;
+use rayon::prelude::*;
+use tree_sitter::{Node, Parser};
 
 pub const ID: EcosystemId = EcosystemId::new("pypi");
 
@@ -76,6 +79,15 @@ impl Ecosystem for PypiEcosystem {
         // later optimization.
         resolve_python_package_entry(dep)
     }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_python_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 // ---------------------------------------------------------------------------
@@ -772,6 +784,139 @@ fn walk_python_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: 
 }
 
 // ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+//
+// Walks every reached PyPI dep root, header-only tree-sitter parses each
+// .py/.pyi file, records top-level class/function/assignment names keyed
+// against the distribution's normalized name. The Stage 2 loop consults
+// this index to pull only files demanded by user refs (or re-export
+// follow-through), skipping the rest of the site-packages tree.
+
+fn build_python_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_python_external_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_python_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of a Python source file. Returns every
+/// top-level declaration's name — classes, functions (including `async
+/// def`), module-level assignment targets (`FOO = 1`, `FOO: int = 1`,
+/// `FOO, BAR = ...`). Does *not* recurse into function bodies or class
+/// bodies; class methods are resolved later against the parsed class once
+/// the file is pulled.
+fn scan_python_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_python::LANGUAGE.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        collect_python_top_level_name(&child, bytes, &mut out);
+    }
+    out
+}
+
+/// Extract the name(s) declared by one direct child of `module` — tree-
+/// sitter-python's root-node kind. Decorated definitions wrap the real
+/// decl so we recurse through those; `expression_statement` is where
+/// module-level assignments sit.
+fn collect_python_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    match node.kind() {
+        "class_definition" | "function_definition" => {
+            if let Some(name_node) = node.child_by_field_name("name") {
+                if let Ok(name) = name_node.utf8_text(bytes) {
+                    out.push(name.to_string());
+                }
+            }
+        }
+        "decorated_definition" => {
+            // Decorators wrap the underlying def/class.
+            let mut cursor = node.walk();
+            for inner in node.children(&mut cursor) {
+                if matches!(inner.kind(), "class_definition" | "function_definition") {
+                    collect_python_top_level_name(&inner, bytes, out);
+                }
+            }
+        }
+        "expression_statement" => {
+            // Module-level `FOO = ...` / `FOO: T = ...` / `a, b = ...`.
+            let mut cursor = node.walk();
+            for inner in node.children(&mut cursor) {
+                if matches!(inner.kind(), "assignment") {
+                    if let Some(lhs) = inner.child_by_field_name("left") {
+                        collect_assignment_lhs_names(&lhs, bytes, out);
+                    }
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Walk the LHS of an assignment node, recording every identifier name.
+/// Handles `FOO`, `FOO: T`, and tuple/list unpacking `a, b = ...`.
+fn collect_assignment_lhs_names(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    match node.kind() {
+        "identifier" => {
+            if let Ok(name) = node.utf8_text(bytes) {
+                out.push(name.to_string());
+            }
+        }
+        "tuple_pattern" | "list_pattern" | "pattern_list" | "expression_list"
+        | "tuple" => {
+            let mut cursor = node.walk();
+            for inner in node.children(&mut cursor) {
+                collect_assignment_lhs_names(&inner, bytes, out);
+            }
+        }
+        // `FOO: T` — the identifier is the left child.
+        "typed_parameter" | "assignment" => {
+            if let Some(name_node) = node.child_by_field_name("left") {
+                collect_assignment_lhs_names(&name_node, bytes, out);
+            } else if let Some(name_node) = node.child_by_field_name("name") {
+                collect_assignment_lhs_names(&name_node, bytes, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -864,5 +1009,73 @@ pytest = "*"
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------
+    // Header-only Python scanner — demand-driven pipeline entry
+    // -----------------------------------------------------------------
+
+    #[test]
+    fn scan_captures_class_and_function() {
+        let src = "class Client:\n    pass\n\ndef helper():\n    pass\n";
+        let names = scan_python_header(src);
+        assert!(names.contains(&"Client".to_string()), "{names:?}");
+        assert!(names.contains(&"helper".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_async_function() {
+        let src = "async def fetch(url):\n    pass\n";
+        let names = scan_python_header(src);
+        assert!(names.contains(&"fetch".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_decorated_class_and_function() {
+        let src = "@dataclass\nclass User:\n    pass\n\n@app.get('/foo')\nasync def handler():\n    pass\n";
+        let names = scan_python_header(src);
+        assert!(names.contains(&"User".to_string()), "{names:?}");
+        assert!(names.contains(&"handler".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_captures_module_level_assignments() {
+        let src = "VERSION = '1.0'\nMAX_RETRIES: int = 3\n";
+        let names = scan_python_header(src);
+        assert!(names.contains(&"VERSION".to_string()), "{names:?}");
+        assert!(names.contains(&"MAX_RETRIES".to_string()), "{names:?}");
+    }
+
+    #[test]
+    fn scan_ignores_class_and_function_body_decls() {
+        // Names declared inside a class body (methods) or function body
+        // (nested defs / locals) must not surface — scanner is header-only.
+        let src = r#"
+class Outer:
+    def hidden_method(self): pass
+    INNER = 1
+
+def outer_fn():
+    def hidden_inner(): pass
+    HIDDEN_LOCAL = 2
+"#;
+        let names = scan_python_header(src);
+        assert!(names.contains(&"Outer".to_string()));
+        assert!(names.contains(&"outer_fn".to_string()));
+        assert!(!names.contains(&"hidden_method".to_string()), "leaked: {names:?}");
+        assert!(!names.contains(&"INNER".to_string()), "leaked: {names:?}");
+        assert!(!names.contains(&"hidden_inner".to_string()), "leaked: {names:?}");
+        assert!(!names.contains(&"HIDDEN_LOCAL".to_string()), "leaked: {names:?}");
+    }
+
+    #[test]
+    fn scan_handles_empty_file() {
+        assert!(scan_python_header("").is_empty());
+    }
+
+    #[test]
+    fn build_index_returns_empty_for_no_deps() {
+        let idx = build_python_symbol_index(&[]);
+        assert!(idx.is_empty());
     }
 }

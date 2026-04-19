@@ -252,6 +252,7 @@ fn walk_node(
                 line: node.start_position().row as u32,
                 module: ns,
                 chain: None,
+                byte_offset: 0,
             });
         }
         return;
@@ -274,6 +275,7 @@ fn walk_node(
                     line: child.start_position().row as u32,
                     module: ns,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         } else {
@@ -351,6 +353,7 @@ fn process_list(
             line: head_line,
             module: head_ns,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -368,6 +371,7 @@ fn process_list(
                 line: name_line,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             let vis = if head == "defn-" {
                 Visibility::Private
@@ -398,6 +402,7 @@ fn process_list(
                 line: name_line,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             let idx = push_sym(
                 node,
@@ -421,6 +426,7 @@ fn process_list(
                 line: name_line,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             let idx = push_sym(
                 node,
@@ -459,6 +465,7 @@ fn process_list(
                 line: name_line,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
             let idx = push_sym(
                 node,
@@ -487,6 +494,7 @@ fn process_list(
                     line: name_line,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
                 let idx = push_sym(
                     node,
@@ -772,6 +780,7 @@ fn walk_method_body(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 past_head = true;
@@ -928,6 +937,7 @@ fn walk_call_args(
                     line: child.start_position().row as u32,
                     module: ns,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         } else {
@@ -1042,6 +1052,7 @@ fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx
                             line: inner_child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

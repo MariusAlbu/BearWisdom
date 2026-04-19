@@ -33,7 +33,10 @@ impl LanguagePlugin for FreemarkerPlugin {
                 }
             }
         }
-        ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false }
+        ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
+        }
     }
     fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {
         let mut regions = crate::languages::common::extract_html_script_style_regions(source);
@@ -95,7 +98,9 @@ fn imports_ref(name: &str, line: u32) -> ExtractedRef {
     let p = std::path::Path::new(name);
     let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
     ExtractedRef { source_symbol_index: 0, target_name: target,
-        kind: EdgeKind::Imports, line, module: None, chain: None }
+        kind: EdgeKind::Imports, line, module: None, chain: None,
+            byte_offset: 0,
+        }
 }
 fn quoted(s: &str) -> Option<String> {
     let s = s.trim();

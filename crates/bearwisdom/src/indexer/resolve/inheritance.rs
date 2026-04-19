@@ -57,6 +57,7 @@ where
                             target_symbol_id: sym.id,
                             confidence: 0.85,
                             strategy,
+                            resolved_yield_type: None,
                         });
                     }
                 }

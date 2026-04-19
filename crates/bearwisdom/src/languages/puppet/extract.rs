@@ -137,6 +137,7 @@ fn extract_class_definition(
             line: node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -437,6 +438,7 @@ fn extract_resource_declaration(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -496,6 +498,7 @@ fn extract_include_or_require(
                 line: child.start_position().row as u32,
                 module: Some(name.clone()),
                 chain: None,
+                byte_offset: 0,
             });
             // Calls edge.
             refs.push(ExtractedRef {
@@ -505,6 +508,7 @@ fn extract_include_or_require(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -552,6 +556,7 @@ fn extract_function_call(
         line,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -612,6 +617,7 @@ fn collect_all_function_calls(
             line,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
         // Recurse into function_call children to find nested calls
         let mut cursor = node.walk();
@@ -656,6 +662,7 @@ fn collect_resource_references(
             line,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
         // Still recurse to find nested resource_references
         let mut cursor = node.walk();

@@ -89,6 +89,7 @@ impl LanguageResolver for PuppetResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "puppet_qualified_same_file",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -101,6 +102,7 @@ impl LanguageResolver for PuppetResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "puppet_qualified_global",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -110,6 +112,7 @@ impl LanguageResolver for PuppetResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.9,
                         strategy: "puppet_unqualified_fallback",
+                        resolved_yield_type: None,
                     });
                 }
             }

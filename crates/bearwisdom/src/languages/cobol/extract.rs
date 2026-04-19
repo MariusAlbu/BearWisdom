@@ -132,6 +132,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(copybook),
                         chain: None,
+                        byte_offset: 0,
                     });
                     continue;
                 }
@@ -213,6 +214,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
 
@@ -225,6 +227,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
@@ -233,6 +236,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(prog),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
 
@@ -245,6 +249,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(copybook),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
 
@@ -257,6 +262,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -290,6 +296,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         line: row,
                         module: Some(copybook),
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

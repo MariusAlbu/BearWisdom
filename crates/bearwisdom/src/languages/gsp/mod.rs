@@ -38,12 +38,16 @@ impl LanguagePlugin for GspPlugin {
                             source_symbol_index: 0, target_name: name,
                             kind: EdgeKind::Imports,
                             line: line_no as u32, module: None, chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
             }
         }
-        ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false }
+        ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
+        }
     }
     fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {
         let mut regions = crate::languages::common::extract_html_script_style_regions(source);

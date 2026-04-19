@@ -139,6 +139,7 @@ impl LanguageResolver for PhpResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "php_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -156,6 +157,7 @@ impl LanguageResolver for PhpResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "php_same_namespace",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -172,6 +174,7 @@ impl LanguageResolver for PhpResolver {
                                 target_symbol_id: sym.id,
                                 confidence: 1.0,
                                 strategy: "php_use_statement",
+                                resolved_yield_type: None,
                             });
                         }
                     }
@@ -187,6 +190,7 @@ impl LanguageResolver for PhpResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "php_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -212,6 +216,7 @@ impl LanguageResolver for PhpResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.9,
                         strategy: "php_global_function",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -271,6 +276,7 @@ impl LanguageResolver for PhpResolver {
                                         target_symbol_id: sym.id,
                                         confidence: 0.85,
                                         strategy: "php_inherited_method",
+                                        resolved_yield_type: None,
                                     });
                                 }
                             }

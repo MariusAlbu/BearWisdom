@@ -62,6 +62,7 @@ pub(super) fn extract_base_types(
                             line: base.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                         // Also extract TypeRefs from generic type arguments in base types.
                         // e.g. `class Repo : BaseRepository<User>` → also emit TypeRef to User.
@@ -112,6 +113,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -126,6 +128,7 @@ pub(super) fn extract_type_refs_from_type_node(
                     line: type_node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -145,6 +148,7 @@ pub(super) fn extract_type_refs_from_type_node(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }

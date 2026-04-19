@@ -65,6 +65,7 @@ fn emit_annotation(
             line: node.start_position().row as u32,
             module: first_arg,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -212,6 +213,7 @@ fn extract_pattern_refs(
                         line: type_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -230,6 +232,7 @@ fn extract_pattern_refs(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }

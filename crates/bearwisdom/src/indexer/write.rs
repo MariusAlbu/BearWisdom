@@ -147,10 +147,16 @@ pub fn write_parsed_files_with_origin(
                 ))
                 .copied();
 
+            // `resolved_route` defaults to `route_template` at extract time —
+            // connectors that know about controller-prefix / mount-path joining
+            // later overwrite the resolved path with the full concatenation.
+            // Previously a post-parse `UPDATE routes SET resolved_route =
+            // route_template WHERE resolved_route IS NULL` did this; writing
+            // it inline here drops one SQL round-trip per full reindex.
             tx.prepare_cached(
                 "INSERT OR IGNORE INTO routes
-                   (file_id, symbol_id, http_method, route_template, line)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
+                   (file_id, symbol_id, http_method, route_template, resolved_route, line)
+                 VALUES (?1, ?2, ?3, ?4, ?4, ?5)",
             )
             .context("Failed to prepare route insert")?
             .execute(rusqlite::params![

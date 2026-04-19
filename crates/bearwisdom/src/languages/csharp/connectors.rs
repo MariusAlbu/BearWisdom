@@ -6,6 +6,7 @@
 // connector implementations so the language plugin is fully self-contained.
 // =============================================================================
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -17,6 +18,9 @@ use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
+use crate::types::{
+    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
+};
 
 // ===========================================================================
 // DotnetDiConnector
@@ -856,192 +860,96 @@ impl Connector for CSharpMqConnector {
             || ctx.has_dependency(ManifestKind::NuGet, "Confluent.Kafka")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // Producer patterns:
-        //   await publishEndpoint.Publish<T>(...)  or  await bus.Publish<T>(...)  — MassTransit
-        //   context.Send(new QueueAddress("..."))
-        //   serviceBusSender.SendMessageAsync(...)
-        //   channel.BasicPublish(exchange: "name", routingKey: "key", ...)
-        //   producer.ProduceAsync("topic", ...)   — Confluent.Kafka
-        //
-        // Consumer patterns (class-level attributes or interface implementation):
-        //   : IConsumer<T>           — MassTransit consumer
-        //   : IHandleMessages<T>     — NServiceBus
-        //   [ServiceBusTrigger("queue")] — Azure Functions
-        //   channel.BasicConsume("queue-name", ...)
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Flattened into `extract_csharp_mq_src`.
+        Ok(Vec::new())
+    }
+}
 
-        let re_publish = regex::Regex::new(
-            r#"(?:publishEndpoint|bus|_bus|endpoint|sender|_sender)\.(?:Publish|Send)\s*[<(]"#,
-        )
-        .expect("csharp mq publish regex");
+/// C# MQ source-scan: MassTransit / NServiceBus / Service Bus / RabbitMQ /
+/// Kafka producer+consumer detection. Mixed-framework file is fine — the
+/// dedupe in the registry handles overlap.
+pub fn extract_csharp_mq_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains(".Publish")
+        && !source.contains(".Send")
+        && !source.contains(".Basic")
+        && !source.contains(".ProduceAsync")
+        && !source.contains(".Subscribe")
+        && !source.contains("IConsumer")
+        && !source.contains("ServiceBusTrigger")
+    {
+        return;
+    }
 
-        let re_service_bus_send = regex::Regex::new(
-            r#"\.SendMessageAsync\s*\(|\.SendAsync\s*\("#,
-        )
-        .expect("csharp service bus send regex");
+    let re_publish = regex::Regex::new(
+        r#"(?:publishEndpoint|bus|_bus|endpoint|sender|_sender)\.(?:Publish|Send)\s*[<(]"#,
+    )
+    .expect("csharp mq publish regex");
+    let re_service_bus_send =
+        regex::Regex::new(r#"\.SendMessageAsync\s*\(|\.SendAsync\s*\("#)
+            .expect("csharp service bus send regex");
+    let re_rabbit_publish = regex::Regex::new(
+        r#"\.BasicPublish\s*\([^)]*(?:exchange|routingKey)\s*[=:]\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("csharp rabbit publish regex");
+    let re_kafka_produce =
+        regex::Regex::new(r#"\.ProduceAsync\s*\(\s*['"]([^'"]+)['"]"#)
+            .expect("csharp kafka produce regex");
+    let re_iconsumer =
+        regex::Regex::new(r#":\s*IConsumer\s*<\s*(\w+)\s*>"#).expect("csharp iconsumer regex");
+    let re_service_bus_trigger =
+        regex::Regex::new(r#"\[ServiceBusTrigger\s*\(\s*['"]([^'"]+)['"]"#)
+            .expect("csharp service bus trigger regex");
+    let re_rabbit_consume =
+        regex::Regex::new(r#"\.BasicConsume\s*\(\s*['"]([^'"]+)['"]"#)
+            .expect("csharp rabbit consume regex");
+    let re_kafka_subscribe = regex::Regex::new(
+        r#"\.Subscribe\s*\(\s*(?:new\s*\[\s*\]\s*\{)?\s*['"]([^'"]+)['"]"#,
+    )
+    .expect("csharp kafka subscribe regex");
 
-        let re_rabbit_publish = regex::Regex::new(
-            r#"\.BasicPublish\s*\([^)]*(?:exchange|routingKey)\s*[=:]\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("csharp rabbit publish regex");
+    let push = |out: &mut Vec<AbstractPoint>,
+                role: ConnectionRole,
+                key: String,
+                line: u32,
+                framework: &str| {
+        let mut meta = HashMap::new();
+        meta.insert("framework".to_string(), framework.to_string());
+        out.push(AbstractPoint {
+            kind: ConnectionKind::MessageQueue,
+            role,
+            key,
+            line,
+            col: 1,
+            symbol_qname: String::new(),
+            meta,
+        });
+    };
 
-        let re_kafka_produce = regex::Regex::new(
-            r#"\.ProduceAsync\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("csharp kafka produce regex");
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
 
-        let re_iconsumer = regex::Regex::new(
-            r#":\s*IConsumer\s*<\s*(\w+)\s*>"#,
-        )
-        .expect("csharp iconsumer regex");
-
-        let re_service_bus_trigger = regex::Regex::new(
-            r#"\[ServiceBusTrigger\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("csharp service bus trigger regex");
-
-        let re_rabbit_consume = regex::Regex::new(
-            r#"\.BasicConsume\s*\(\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("csharp rabbit consume regex");
-
-        let re_kafka_subscribe = regex::Regex::new(
-            r#"\.Subscribe\s*\(\s*(?:new\s*\[\s*\]\s*\{)?\s*['"]([^'"]+)['"]"#,
-        )
-        .expect("csharp kafka subscribe regex");
-
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
-            .context("Failed to prepare C# files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| {
-                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
-            })
-            .context("Failed to query C# files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect C# file rows")?;
-
-        let mut points = Vec::new();
-
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
-
-                // Generic publish/send (MassTransit, NServiceBus)
-                if re_publish.is_match(line_text) || re_service_bus_send.is_match(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: "message".to_string(),
-                        method: String::new(),
-                        framework: "dotnet_mq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                // RabbitMQ BasicPublish
-                for cap in re_rabbit_publish.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                // Confluent.Kafka ProduceAsync
-                for cap in re_kafka_produce.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                // MassTransit IConsumer<T>
-                for cap in re_iconsumer.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "dotnet_mq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                // Azure Service Bus trigger
-                for cap in re_service_bus_trigger.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "azure_service_bus".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                // RabbitMQ BasicConsume
-                for cap in re_rabbit_consume.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                // Confluent.Kafka Subscribe
-                for cap in re_kafka_subscribe.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
-                }
-            }
+        if re_publish.is_match(line_text) || re_service_bus_send.is_match(line_text) {
+            push(out, ConnectionRole::Start, "message".to_string(), line_no, "dotnet_mq");
         }
-
-        Ok(points)
+        for cap in re_rabbit_publish.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_kafka_produce.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_iconsumer.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "dotnet_mq");
+        }
+        for cap in re_service_bus_trigger.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "azure_service_bus");
+        }
+        for cap in re_rabbit_consume.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_kafka_subscribe.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "kafka");
+        }
     }
 }
 

@@ -144,6 +144,7 @@ fn extract_class_name_stmt(
             line,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -170,6 +171,7 @@ fn extract_extends_stmt(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -218,6 +220,7 @@ fn extract_inner_class(
             line,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -531,6 +534,7 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

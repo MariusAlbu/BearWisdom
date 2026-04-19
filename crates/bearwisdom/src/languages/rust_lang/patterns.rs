@@ -427,6 +427,7 @@ fn make_typeref(source_symbol_index: usize, name: String, line: u32) -> Extracte
         line,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
 
@@ -492,6 +493,7 @@ fn emit_inherits_from_trait_bounds(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -511,6 +513,7 @@ fn emit_inherits_from_trait_bounds(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -525,6 +528,7 @@ fn emit_inherits_from_trait_bounds(
                             line: child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

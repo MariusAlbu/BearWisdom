@@ -115,6 +115,7 @@ fn extract_from_attribute_list(
                     line: child.start_position().row as u32,
                     module: first_arg,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
             // Also extract TypeRefs from attribute arguments (typeof, generic_name, cast, etc.)

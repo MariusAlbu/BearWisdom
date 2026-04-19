@@ -666,6 +666,9 @@ fn parse_dotnet_dll(
         symbol_from_snippet: Vec::new(),
         content: None,
         has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     })
 }
 

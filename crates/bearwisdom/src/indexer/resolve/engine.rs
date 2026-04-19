@@ -153,6 +153,12 @@ pub struct Resolution {
     pub confidence: f64,
     /// Which strategy produced this resolution (for diagnostics).
     pub strategy: &'static str,
+    /// For chain refs and call refs: the type the resolved target *yields*
+    /// (return type for methods, declared type for fields/variables). `None`
+    /// when not applicable. Consumed by the resolver loop to populate the
+    /// per-file local-type cache for forward flow inference — see
+    /// `LocalTypeCache` and `SymbolLookup::record_local_type`.
+    pub resolved_yield_type: Option<String>,
 }
 
 /// Flattened symbol info used during resolution lookups.
@@ -333,6 +339,43 @@ pub trait SymbolLookup {
     /// indexer can drive `Ecosystem::resolve_symbol` on demand and re-resolve
     /// only the affected refs.
     fn record_chain_miss(&self, _miss: ChainMiss) {}
+
+    // -------------------------------------------------------------------
+    // Per-file flow-typing cache (R5).
+    //
+    // The resolver calls `install_local_cache` at the start of each file,
+    // moves `set_cursor` before resolving each ref, and calls
+    // `record_local_type` after a resolve succeeds with a yield type. Chain
+    // walkers consult `local_type` first in Phase 1 so a local variable's
+    // inferred type takes precedence over same-named globals.
+    //
+    // All methods default to no-ops — synthetic test lookups and
+    // non-SymbolIndex impls don't have to opt in.
+    // -------------------------------------------------------------------
+
+    /// Look up the inferred type of a local variable in the currently-active
+    /// file scope. Honors active conditional narrowings via the cursor set by
+    /// `set_cursor`. Returns `None` when the name is not tracked.
+    fn local_type(&self, _name: &str) -> Option<String> {
+        None
+    }
+
+    /// Install a fresh local-type cache for the next file's resolution pass.
+    /// `narrowings` should be pre-sorted innermost-first (smallest range first).
+    fn install_local_cache(&self, _narrowings: Vec<crate::types::Narrowing>) {}
+
+    /// Move the cache cursor to the given byte offset. The resolver calls
+    /// this before each ref so narrowing lookups see the correct byte range.
+    fn set_cursor(&self, _byte: u32) {}
+
+    /// Record a successfully-inferred local-variable type. Called by the
+    /// resolver after a flow-binding ref resolves with a non-`None`
+    /// `resolved_yield_type`.
+    fn record_local_type(&self, _name: String, _type_name: String) {}
+
+    /// Clear the cache at end of file. Keeps leftover bindings from bleeding
+    /// into the next file's pass.
+    fn clear_local_cache(&self) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -427,6 +470,72 @@ pub struct SymbolIndex {
     /// `record_chain_miss` pushes; `take_chain_misses` drains. The resolution
     /// loop is sequential so plain `RefCell` is sufficient.
     chain_misses: RefCell<Vec<ChainMiss>>,
+    /// Per-file forward-inference cache for local variables (R5). Installed
+    /// at the start of each file's resolution pass, consulted by chain
+    /// walkers in Phase 1, cleared at end of file. The resolution loop is
+    /// sequential so `RefCell` is sufficient.
+    local_type_cache: RefCell<LocalTypeCache>,
+}
+
+// ---------------------------------------------------------------------------
+// LocalTypeCache — per-file flow-typing cache
+// ---------------------------------------------------------------------------
+
+/// Per-file local-variable type cache.
+///
+/// Populated by the resolver loop: each time a flow-binding ref (RHS of
+/// `<lhs> = <expr>`) resolves with a non-`None` `resolved_yield_type`,
+/// the LHS name is recorded here. Subsequent chain walkers for the same
+/// file consult this cache first in Phase 1 so a same-named global
+/// doesn't shadow the local's inferred type.
+///
+/// Three sources of truth, in priority order:
+///   1. Conditional narrowings — `if (x is Bar) { x.barMethod(); }`.
+///      The cursor is set by the resolver to the current ref's byte
+///      offset; whichever narrowing's `[byte_start, byte_end)` contains
+///      the cursor wins. Overlapping ranges are resolved innermost-first
+///      (vec is pre-sorted by descending specificity).
+///   2. Forward inference — `let x = foo(); x.something()`.
+///      Reassignment overwrites the earlier binding (last write wins,
+///      which is safe because refs are resolved in source order).
+///   3. Miss — returns `None`; chain walker falls back to existing logic.
+pub struct LocalTypeCache {
+    /// Forward-propagated types: name → most recent inferred type.
+    /// Reassignment simply overwrites (resolver walks refs in line order).
+    forward: FxHashMap<String, String>,
+    /// Conditional-narrowing scopes, pre-sorted innermost-first so the
+    /// first matching entry wins naturally.
+    narrowings: Vec<crate::types::Narrowing>,
+    /// Current ref's byte position. Set by the resolver before each
+    /// chain-walker call via `SymbolLookup::set_cursor`.
+    cursor: u32,
+}
+
+impl Default for LocalTypeCache {
+    fn default() -> Self {
+        Self {
+            forward: FxHashMap::default(),
+            narrowings: Vec::new(),
+            cursor: 0,
+        }
+    }
+}
+
+impl LocalTypeCache {
+    /// Look up the active type for `name` at the current cursor position.
+    /// Narrowings take precedence — innermost (smallest) wins because the
+    /// `narrowings` vec is pre-sorted by ascending range size.
+    pub fn lookup(&self, name: &str) -> Option<&str> {
+        for n in &self.narrowings {
+            if n.name == name
+                && n.byte_start <= self.cursor
+                && self.cursor < n.byte_end
+            {
+                return Some(&n.narrowed_type);
+            }
+        }
+        self.forward.get(name).map(|s| s.as_str())
+    }
 }
 
 impl SymbolIndex {
@@ -974,6 +1083,7 @@ impl SymbolIndex {
             empty: Vec::new(),
             empty_reexports: Vec::new(),
             chain_misses: RefCell::new(Vec::new()),
+            local_type_cache: RefCell::new(LocalTypeCache::default()),
         }
     }
 
@@ -1555,6 +1665,32 @@ impl SymbolLookup for SymbolIndex {
     fn record_chain_miss(&self, miss: ChainMiss) {
         self.chain_misses.borrow_mut().push(miss);
     }
+
+    fn local_type(&self, name: &str) -> Option<String> {
+        self.local_type_cache.borrow().lookup(name).map(|s| s.to_string())
+    }
+
+    fn install_local_cache(&self, narrowings: Vec<crate::types::Narrowing>) {
+        let mut cache = self.local_type_cache.borrow_mut();
+        cache.forward.clear();
+        cache.narrowings = narrowings;
+        cache.cursor = 0;
+    }
+
+    fn set_cursor(&self, byte: u32) {
+        self.local_type_cache.borrow_mut().cursor = byte;
+    }
+
+    fn record_local_type(&self, name: String, type_name: String) {
+        self.local_type_cache.borrow_mut().forward.insert(name, type_name);
+    }
+
+    fn clear_local_cache(&self) {
+        let mut cache = self.local_type_cache.borrow_mut();
+        cache.forward.clear();
+        cache.narrowings.clear();
+        cache.cursor = 0;
+    }
 }
 
 impl SymbolIndex {
@@ -1705,6 +1841,7 @@ pub fn resolve_common(
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: concat_strategy(lang_prefix, "module_qualified"),
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -1723,6 +1860,7 @@ pub fn resolve_common(
                     target_symbol_id: sym.id,
                     confidence: 0.95,
                     strategy: concat_strategy(lang_prefix, "module_file"),
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -1753,6 +1891,7 @@ pub fn resolve_common(
                         target_symbol_id: sym.id,
                         confidence: 0.95,
                         strategy: concat_strategy(lang_prefix, "import"),
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -1771,6 +1910,7 @@ pub fn resolve_common(
                         target_symbol_id: sym.id,
                         confidence: 0.95,
                         strategy: concat_strategy(lang_prefix, "import"),
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -1786,6 +1926,7 @@ pub fn resolve_common(
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: concat_strategy(lang_prefix, "scope_chain"),
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -1798,6 +1939,7 @@ pub fn resolve_common(
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: concat_strategy(lang_prefix, "same_file"),
+                resolved_yield_type: None,
             });
         }
     }
@@ -1810,6 +1952,7 @@ pub fn resolve_common(
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: concat_strategy(lang_prefix, "qualified_name"),
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -2423,6 +2566,9 @@ mod tests {
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         };
 
         let mut id_map = HashMap::new();
@@ -2489,6 +2635,9 @@ mod tests {
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         }
     }
 
@@ -2552,6 +2701,180 @@ mod tests {
 
         assert!(index.in_namespace("Missing").is_empty());
         assert!(index.in_namespace("N").is_empty()); // "N" is a prefix of "NS" but not "NS."
+    }
+
+    // -----------------------------------------------------------------
+    // R5 per-file flow-typing cache — synthetic tests
+    //
+    // Verify the `LocalTypeCache` round-trip:
+    //   • forward inference via `forward` map (reassignment = last write wins)
+    //   • cursor-based narrowing lookup
+    //   • innermost narrowing wins on overlap
+    //   • clear_local_cache wipes both maps
+    //
+    // These tests operate directly on `SymbolIndex` via the SymbolLookup
+    // trait; the resolver-loop wiring is exercised indirectly through
+    // `install_local_cache` + `record_local_type` + `local_type`.
+    // -----------------------------------------------------------------
+
+    fn make_empty_index() -> SymbolIndex {
+        let id_map: HashMap<(String, String), i64> = HashMap::new();
+        SymbolIndex::build(&[], &id_map)
+    }
+
+    fn narrowing(name: &str, ty: &str, start: u32, end: u32) -> crate::types::Narrowing {
+        crate::types::Narrowing {
+            name: name.to_string(),
+            narrowed_type: ty.to_string(),
+            byte_start: start,
+            byte_end: end,
+        }
+    }
+
+    #[test]
+    fn local_cache_forward_inference() {
+        let idx = make_empty_index();
+        idx.install_local_cache(Vec::new());
+        idx.record_local_type("x".to_string(), "Foo".to_string());
+        assert_eq!(idx.local_type("x"), Some("Foo".to_string()));
+        assert_eq!(idx.local_type("y"), None);
+    }
+
+    #[test]
+    fn local_cache_reassignment_last_write_wins() {
+        let idx = make_empty_index();
+        idx.install_local_cache(Vec::new());
+        idx.record_local_type("x".to_string(), "Foo".to_string());
+        idx.record_local_type("x".to_string(), "Bar".to_string());
+        assert_eq!(idx.local_type("x"), Some("Bar".to_string()));
+    }
+
+    #[test]
+    fn local_cache_clear_wipes_bindings() {
+        let idx = make_empty_index();
+        idx.install_local_cache(vec![narrowing("x", "Bar", 0, 100)]);
+        idx.record_local_type("x".to_string(), "Foo".to_string());
+        idx.clear_local_cache();
+        assert_eq!(idx.local_type("x"), None);
+    }
+
+    #[test]
+    fn local_cache_install_resets_previous_bindings() {
+        let idx = make_empty_index();
+        idx.install_local_cache(Vec::new());
+        idx.record_local_type("x".to_string(), "Foo".to_string());
+        // Simulate moving to the next file: install a fresh cache.
+        idx.install_local_cache(Vec::new());
+        assert_eq!(idx.local_type("x"), None);
+    }
+
+    #[test]
+    fn local_cache_narrowing_honors_cursor() {
+        let idx = make_empty_index();
+        // Narrowing for `x` as `Bar` valid in byte range [50, 80).
+        idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)]);
+        // Baseline forward type is `Foo`.
+        idx.record_local_type("x".to_string(), "Foo".to_string());
+
+        // Cursor before the range → forward type wins.
+        idx.set_cursor(10);
+        assert_eq!(idx.local_type("x"), Some("Foo".to_string()));
+
+        // Cursor inside the narrowing range → narrowed type wins.
+        idx.set_cursor(60);
+        assert_eq!(idx.local_type("x"), Some("Bar".to_string()));
+
+        // Cursor past the range → back to forward type.
+        idx.set_cursor(90);
+        assert_eq!(idx.local_type("x"), Some("Foo".to_string()));
+    }
+
+    #[test]
+    fn local_cache_narrowing_upper_bound_exclusive() {
+        let idx = make_empty_index();
+        idx.install_local_cache(vec![narrowing("x", "Bar", 50, 80)]);
+        // Exactly at end is outside (half-open range).
+        idx.set_cursor(80);
+        assert_eq!(idx.local_type("x"), None);
+        // One less is inside.
+        idx.set_cursor(79);
+        assert_eq!(idx.local_type("x"), Some("Bar".to_string()));
+    }
+
+    #[test]
+    fn local_cache_innermost_narrowing_wins() {
+        let idx = make_empty_index();
+        // Outer range narrows `x` to `A` across [0, 100), inner range narrows
+        // `x` to `B` across [40, 60). Both apply at cursor 50 — innermost
+        // (smallest range) must win because `install_local_cache` sorts by
+        // ascending range size.
+        let narrowings = vec![
+            narrowing("x", "A", 0, 100),
+            narrowing("x", "B", 40, 60),
+        ];
+        // The resolver sorts these before install; replicate that here.
+        let mut sorted = narrowings.clone();
+        sorted.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
+        idx.install_local_cache(sorted);
+
+        idx.set_cursor(50);
+        assert_eq!(idx.local_type("x"), Some("B".to_string()));
+
+        idx.set_cursor(10);
+        assert_eq!(idx.local_type("x"), Some("A".to_string()));
+    }
+
+    #[test]
+    fn local_cache_default_impls_noop_for_non_symbol_index() {
+        // A non-SymbolIndex lookup (synthetic test double) must not crash
+        // or change behavior when the resolver calls flow-cache methods.
+        struct Empty;
+        impl SymbolLookup for Empty {
+            fn by_name(&self, _: &str) -> &[SymbolInfo] { &[] }
+            fn by_qualified_name(&self, _: &str) -> Option<&SymbolInfo> { None }
+            fn members_of(&self, _: &str) -> &[SymbolInfo] { &[] }
+            fn types_by_name(&self, _: &str) -> &[SymbolInfo] { &[] }
+            fn in_namespace(&self, _: &str) -> Vec<&SymbolInfo> { Vec::new() }
+            fn has_in_namespace(&self, _: &str) -> bool { false }
+            fn in_file(&self, _: &str) -> &[SymbolInfo] { &[] }
+            fn field_type_name(&self, _: &str) -> Option<&str> { None }
+            fn return_type_name(&self, _: &str) -> Option<&str> { None }
+            fn field_type_args(&self, _: &str) -> Option<&[String]> { None }
+            fn generic_params(&self, _: &str) -> Option<&[String]> { None }
+            fn reexports_from(&self, _: &str) -> &[(String, String)] { &[] }
+            fn is_external_name(&self, _: &str, _: &str) -> bool { false }
+        }
+        let e = Empty;
+        // All defaulted methods should be no-ops / None.
+        assert_eq!(e.local_type("anything"), None);
+        e.install_local_cache(vec![narrowing("x", "Foo", 0, 10)]);
+        e.set_cursor(5);
+        e.record_local_type("x".to_string(), "Foo".to_string());
+        e.clear_local_cache();
+        // Still None — default impl doesn't record.
+        assert_eq!(e.local_type("x"), None);
+    }
+
+    #[test]
+    fn local_cache_type_cache_generics_roundtrip() {
+        // Sanity check: ensure `TypeEnvironment::enter_generic_context` used
+        // by the chain walker correctly binds call-site type args so the
+        // yield type comes out substituted.
+        use crate::indexer::resolve::type_env::TypeEnvironment;
+        let mut env = TypeEnvironment::new();
+        let pushed = env.enter_generic_context(
+            "UserRepo.findOne",
+            &["User".to_string()],
+            |name| {
+                if name == "UserRepo.findOne" {
+                    Some(vec!["T".to_string()])
+                } else {
+                    None
+                }
+            },
+        );
+        assert!(pushed);
+        assert_eq!(env.resolve("T"), "User");
     }
 
 }

@@ -42,6 +42,7 @@ pub(super) fn extract_calls_from_body(
                             line: callee.start_position().row as u32,
                             module: None,
                             chain,
+                            byte_offset: callee.start_byte() as u32,
                         });
                     }
                 }
@@ -59,6 +60,7 @@ pub(super) fn extract_calls_from_body(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                     // Also emit TypeRefs for type arguments: `new Dictionary<string, Foo>()`
@@ -160,6 +162,7 @@ pub(super) fn extract_calls_from_body(
                                 line: c.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                         break;
@@ -577,6 +580,7 @@ fn extract_is_expression_refs(
                             line: inner.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -649,6 +653,7 @@ fn extract_is_expression_refs(
                 line: child.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
         break;
@@ -693,6 +698,7 @@ fn extract_pattern_type_refs_recursive(
                         line: inner.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -751,6 +757,7 @@ fn emit_pattern_type_ref(
                 line: type_node.start_position().row as u32,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }

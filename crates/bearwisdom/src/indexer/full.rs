@@ -285,7 +285,26 @@ pub fn full_index(
     //
     // M3: workspace packages drive per-package locator calls; roots are
     // deduplicated globally and walked exactly once.
-    let external_parsed = parse_external_sources(project_root, registry, &project_ctx, &written_packages);
+    // R6: build the demand set from project refs before parsing externals.
+    // `parse_external_sources` consumes this to extract only the symbols each
+    // package actually supplies, skipping 99% of a 1.8MB `lib.dom.d.ts` when
+    // the project uses 20 DOM types.
+    let demand = super::demand::DemandSet::from_parsed_files(&parsed);
+    if !demand.is_empty() {
+        info!(
+            "R6 demand set: {} modules, {} total names",
+            demand.module_count(),
+            demand.total_items(),
+        );
+    }
+    let ExternalParsingResult {
+        parsed: external_parsed,
+        symbol_index,
+        demand_driven_roots,
+        demand_driven_ecosystems,
+    } = parse_external_sources(
+        project_root, registry, &project_ctx, &written_packages, &demand,
+    );
     if !external_parsed.is_empty() {
         info!(
             "Parsed {} external files from dependency sources",
@@ -320,61 +339,107 @@ pub fn full_index(
     combined_parsed.extend(vendored_c_parsed);
     let mut parsed = combined_parsed;
     let mut symbol_id_map = symbol_id_map;
+    // `_` binds so compiler doesn't flag unused — these feed the Stage 2
+    // loop below.
+    let _ = &demand_driven_roots;
+    let _ = &demand_driven_ecosystems;
 
-    // --- Step 5: Cross-file resolution + edge writing ---
+    // --- Step 4e: Seed demand from user refs (demand-driven pipeline) ---
+    //
+    // When a demand-driven ecosystem's eager walk was skipped, the first
+    // resolve_iteration would classify every ref into externals as
+    // "external_refs" (no target symbol indexed yet) rather than real
+    // `edges` rows. Pre-pull files the user's direct import-qualified refs
+    // demand so those resolutions land as edges on pass 1. Chain walker
+    // still drives the loop below for deeper hops.
+    if !symbol_index.is_empty() {
+        let seeded = seed_demand_from_user_refs(
+            &parsed, &symbol_index, registry,
+        );
+        if !seeded.is_empty() {
+            info!(
+                "Seeded {} external files from user-ref demand",
+                seeded.len(),
+            );
+            let (_sfm, seeded_sym_map) =
+                write::write_parsed_files_with_origin(db, &seeded, "external")
+                    .context("Failed to write seeded external index")?;
+            symbol_id_map.extend(seeded_sym_map);
+            parsed.extend(seeded);
+        }
+    }
+
+    // --- Step 5: Cross-file resolution + edge writing (Stage 2 loop) ---
+    //
+    // Demand-driven iteration: resolve once, let the chain walker record any
+    // `(current_type, target_name)` bail-outs, pull the files that define
+    // those symbols (via the demand-driven symbol index first, falling back
+    // to `Ecosystem::resolve_symbol` for un-migrated ecosystems), re-resolve.
+    // Edges from earlier iterations survive (`INSERT OR IGNORE`); speculative
+    // `unresolved_refs` / `external_refs` are wiped between iterations so the
+    // final iteration's answer is authoritative.
+    //
+    // Loop exit:
+    //   * `stats.converged()` — chain walker recorded no bail-outs.
+    //   * `estats.new_files == 0` — misses exist but no file pull answered any.
+    //   * `MAX_EXPANSION_ITERATIONS` hit — safety cap against degenerate
+    //     mutual recursion in external types.
     emit("resolving", 0.0, None);
-    let rstats = resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
-        .context("Failed to resolve references")?;
+    const MAX_EXPANSION_ITERATIONS: usize = 8;
+    let mut rstats =
+        resolve::resolve_iteration(db, &parsed, &symbol_id_map, Some(&project_ctx))
+            .context("Failed to resolve references")?;
     info!(
         "Wrote {} edges, {} external, {} unresolved references",
         rstats.resolved, rstats.external, rstats.unresolved
     );
 
-    // --- Step 5b: Chain reachability expansion (R3 second pass) ---
-    //
-    // Pass 1's chain walker recorded any (current_type, target_name) pairs
-    // it couldn't step past. Each one is a signal that a reachability-
-    // narrowed dep didn't surface a definition file the chain needed. We
-    // dispatch Ecosystem::resolve_symbol to pull just those files, then
-    // re-run resolution against the augmented index. Pass 1's edges stay
-    // (INSERT OR IGNORE keeps duplicates out); unresolved_refs and
-    // external_refs are wiped before pass 2 so the second pass writes a
-    // single authoritative answer per ref.
-    let final_rstats = if !rstats.chain_misses.is_empty() {
-        let estats = expand::expand_chain_reachability(
+    let mut iteration = 1;
+    while iteration < MAX_EXPANSION_ITERATIONS && !rstats.converged() {
+        let estats = expand::expand_chain_reachability_with_index(
             db,
             &mut parsed,
             &mut symbol_id_map,
             &rstats.chain_misses,
-            project_root,
-            &project_ctx,
-            &written_packages,
             registry,
+            if symbol_index.is_empty() { None } else { Some(&symbol_index) },
         )
         .context("Failed to expand chain reachability")?;
-        if estats.new_files > 0 {
-            db.conn().execute("DELETE FROM unresolved_refs", [])
-                .context("Failed to clear unresolved_refs before re-resolve")?;
-            db.conn().execute("DELETE FROM external_refs", [])
-                .context("Failed to clear external_refs before re-resolve")?;
-            let rstats2 =
-                resolve::resolve_and_write(db, &parsed, &symbol_id_map, Some(&project_ctx))
-                    .context("Failed to re-resolve after chain reachability expansion")?;
-            info!(
-                "Chain expansion re-resolve: {} edges (+{} from pass 1), {} external, {} unresolved",
-                rstats2.resolved,
-                rstats2.resolved as i64 - rstats.resolved as i64,
-                rstats2.external,
-                rstats2.unresolved,
-            );
-            rstats2
-        } else {
-            rstats
+        if estats.new_files == 0 {
+            // No file pull answered any demand — fixpoint under the lens of
+            // the current ecosystems. Remaining chain misses stay as
+            // unresolved/external; they're genuine resolution gaps.
+            break;
         }
-    } else {
-        rstats
-    };
-    let rstats = final_rstats;
+        db.conn().execute("DELETE FROM unresolved_refs", [])
+            .context("Failed to clear unresolved_refs before re-resolve")?;
+        db.conn().execute("DELETE FROM external_refs", [])
+            .context("Failed to clear external_refs before re-resolve")?;
+        let rstats2 =
+            resolve::resolve_iteration(db, &parsed, &symbol_id_map, Some(&project_ctx))
+                .context("Failed to re-resolve after chain reachability expansion")?;
+        info!(
+            "Chain expansion iteration {}: {} edges ({:+}), {} external, {} unresolved, {} new files",
+            iteration,
+            rstats2.resolved,
+            rstats2.resolved as i64 - rstats.resolved as i64,
+            rstats2.external,
+            rstats2.unresolved,
+            estats.new_files,
+        );
+        rstats = rstats2;
+        iteration += 1;
+    }
+    if iteration == MAX_EXPANSION_ITERATIONS && !rstats.converged() {
+        warn!(
+            "Chain expansion hit iteration cap ({} iterations); {} misses still pending",
+            MAX_EXPANSION_ITERATIONS,
+            rstats.chain_misses.len(),
+        );
+    }
+    // Materialize incoming_edge_count once, after the loop settles.
+    resolve::finalize_resolution(db)
+        .context("Failed to finalize resolution")?;
     emit("resolving", 1.0, Some(&format!("{} edges resolved", rstats.resolved)));
 
     // --- Step 6a: FTS content index (shared pipeline) ---
@@ -398,16 +463,37 @@ pub fn full_index(
     emit("connectors", 0.0, Some("Running connectors"));
     let connector_start = Instant::now();
 
-    // Enrich routes written by tree-sitter extractors (set resolved_route where NULL).
-    if let Err(e) = db.conn().execute(
-        "UPDATE routes SET resolved_route = route_template WHERE resolved_route IS NULL",
-        [],
-    ) {
-        warn!("Route enrichment failed: {e}");
+    // Note: `resolved_route` is now written inline at extract time (see
+    // `write::write_parsed_files`). The post-parse UPDATE that used to run
+    // here is no longer needed — connectors that later rewrite the full
+    // controller-prefix-joined path still do so via per-connector UPDATEs.
+
+    // Collect connection points emitted during extraction by
+    // `LanguagePlugin::extract_connection_points`. Each plugin's
+    // in-memory `crate::types::ConnectionPoint`s get joined to their
+    // DB `file_id` / `symbol_id` here and handed to the matcher alongside
+    // the points legacy `Connector::extract` impls pull from the DB.
+    // Plugins that haven't yet migrated their connector detection emit
+    // nothing here — the old path still fires for them.
+    let plugin_points = crate::connectors::from_plugins::collect_plugin_connection_points(
+        &parsed,
+        &file_id_map,
+        &symbol_id_map,
+    );
+    if !plugin_points.is_empty() {
+        info!(
+            "Collected {} plugin-emitted connection points",
+            plugin_points.len()
+        );
     }
 
     let connector_registry = crate::connectors::registry::build_default_registry();
-    match connector_registry.run(db.conn(), project_root, &project_ctx) {
+    match connector_registry.run_with_plugin_points(
+        db.conn(),
+        project_root,
+        &project_ctx,
+        &plugin_points,
+    ) {
         Ok(flow_count) => info!(
             "Connectors: {flow_count} flow edges in {:.2}s",
             connector_start.elapsed().as_secs_f64()
@@ -466,361 +552,41 @@ pub fn full_index(
     Ok(stats)
 }
 
+// Stage 1 — project + package discovery. Full implementations live in
+// `stage_discover.rs`; these re-exports keep the call-site names short
+// inside `full_index`.
+pub(crate) use super::stage_discover::{
+    collect_package_dep_rows, detect_packages, log_language_breakdown,
+    mark_service_packages,
+};
+
 // ---------------------------------------------------------------------------
 // Parse a single file
 // ---------------------------------------------------------------------------
 
-/// L1: Log a per-language breakdown of parsed files so operators can spot
-/// missing plugin coverage during a full index. Reports host file counts,
-/// host symbol counts, and (separately) symbols produced by embedded
-/// sub-extractors on each sub-language. A Razor `.cshtml`-heavy project
-/// should show e.g. `razor: 120 files, 200 host symbols` alongside
-/// `csharp (embedded): 4500 symbols` once E1 lands.
-fn log_language_breakdown(parsed: &[ParsedFile]) {
-    use std::collections::BTreeMap;
 
-    let mut host_files: BTreeMap<String, u32> = BTreeMap::new();
-    let mut host_symbols: BTreeMap<String, u32> = BTreeMap::new();
-    let mut embedded_symbols: BTreeMap<String, u32> = BTreeMap::new();
+// The external-source discovery, demand seed, and external virtual-path
+// plumbing live in `stage_link.rs`. Re-export the types so `full_index`
+// and the external-parsing integration tests can refer to them unchanged.
+pub(crate) use super::stage_link::{
+    make_walked_file, parse_external_sources, seed_demand_from_user_refs,
+    ExternalParsingResult,
+};
 
-    for pf in parsed {
-        *host_files.entry(pf.language.clone()).or_insert(0) += 1;
-        // Count symbols by their ACTUAL origin (host language when None, sub
-        // extractor language when Some). `symbol_origin_languages` is either
-        // empty (all host) or the same length as symbols.
-        if pf.symbol_origin_languages.is_empty() {
-            *host_symbols.entry(pf.language.clone()).or_insert(0) +=
-                pf.symbols.len() as u32;
-        } else {
-            for origin in &pf.symbol_origin_languages {
-                match origin {
-                    None => {
-                        *host_symbols.entry(pf.language.clone()).or_insert(0) += 1;
-                    }
-                    Some(sub) => {
-                        *embedded_symbols.entry(sub.clone()).or_insert(0) += 1;
-                    }
-                }
-            }
-        }
-    }
-
-    let detected = crate::languages::LanguageRegistry::detected_languages(parsed);
-    info!(
-        "Language audit: {} distinct languages ({} host + embedded)",
-        detected.len(),
-        detected.len()
-    );
-    for (lang, files) in &host_files {
-        let syms = host_symbols.get(lang).copied().unwrap_or(0);
-        info!("  {lang}: {files} files, {syms} host symbols");
-    }
-    for (sub, syms) in &embedded_symbols {
-        info!("  {sub} (embedded): {syms} symbols");
-    }
-}
-
-/// Map a `ManifestKind` to the locator ecosystem string used by
-/// `ExternalSourceLocator::ecosystem`. The two enums are intentionally
-/// separate — manifests are classified by file format (package.json,
-/// pyproject.toml) while locators are classified by tool ecosystem —
-/// so they must stay linked by an explicit table.
-///
-/// Unmatched kinds return `None`; the caller skips writing package_deps
-/// rows for manifests whose ecosystem has no locator today (e.g. Sbt,
-/// Opam when those locators haven't been wired in yet).
-fn manifest_kind_to_ecosystem(
-    kind: crate::ecosystem::manifest::ManifestKind,
-) -> Option<&'static str> {
-    use crate::ecosystem::manifest::ManifestKind;
-    Some(match kind {
-        ManifestKind::Npm => "typescript",
-        ManifestKind::Cargo => "rust",
-        ManifestKind::NuGet => "dotnet",
-        ManifestKind::GoMod => "go",
-        ManifestKind::PyProject => "python",
-        ManifestKind::Gradle => "java",
-        ManifestKind::Maven => "java",
-        ManifestKind::Gemfile => "ruby",
-        ManifestKind::Composer => "php",
-        ManifestKind::SwiftPM => "swift",
-        ManifestKind::Pubspec => "dart",
-        ManifestKind::Mix => "elixir",
-        ManifestKind::Description => "r",
-        ManifestKind::Sbt => "scala",
-        ManifestKind::Opam => "ocaml",
-        // Unknown kinds fall through to None — package_deps row is skipped.
-        #[allow(unreachable_patterns)]
-        _ => return None,
-    })
-}
-
-/// M3: collect `(package_id, ecosystem, dep_name, version, kind)` rows for
-/// every dependency declared by every workspace package. Sourced from the
-/// M2 per-package manifest map already present in `ProjectContext`.
-///
-/// Returned tuples are ready to pass to `write::write_package_deps`.
-/// Version strings are currently None — the manifest readers normalize to
-/// a bare dep-name set and drop version specifiers. That column will light
-/// up in a later pass; today it stays NULL.
-fn collect_package_dep_rows(
-    ctx: &super::project_context::ProjectContext,
-) -> Vec<(i64, &'static str, String, Option<String>, &'static str)> {
-    let mut rows = Vec::new();
-    for (&pkg_id, manifests) in &ctx.by_package {
-        for (&kind, data) in manifests {
-            let Some(ecosystem) = manifest_kind_to_ecosystem(kind) else { continue };
-            for dep in &data.dependencies {
-                rows.push((pkg_id, ecosystem, dep.clone(), None, "runtime"));
-            }
-            // .NET <ProjectReference> — sibling workspace project intent.
-            // Emitted with a distinct kind so downstream consumers can
-            // separate external NuGet deps from internal workspace refs.
-            for pr in &data.project_refs {
-                rows.push((pkg_id, ecosystem, pr.clone(), None, "project_reference"));
-            }
-        }
-    }
-    rows
-}
-
-/// Discover and parse external dependency sources for the project.
-///
-/// Phase 4: driven by `ProjectContext::active_ecosystems`. Each active
-/// ecosystem id is resolved against `ecosystem::default_registry()` to
-/// pick up its `Ecosystem` trait impl, and against
-/// `ecosystem::default_locator` for per-package attribution overrides
-/// (`locate_roots_for_package` on the legacy trait). Every externals
-/// dispatch flows through ecosystems — the per-language locator hook
-/// was removed in Phase 6.
-///
-/// M3: when `packages` is non-empty (monorepo / workspace), each ecosystem
-/// is invoked ONCE PER PACKAGE via `locate_roots_for_package`. Roots are
-/// deduplicated by `(ecosystem, module_path, version, root)` and walked
-/// exactly once regardless of how many packages declared the same dep.
-/// Single-project layouts (empty `packages`) keep the legacy single-call
-/// behavior with unstamped `package_id`.
-///
-/// Returns an empty vec if no externals are discovered. Individual parse
-/// failures are logged but don't abort.
-fn parse_external_sources(
-    project_root: &Path,
-    registry: &LanguageRegistry,
-    ctx: &super::project_context::ProjectContext,
-    packages: &[crate::types::PackageInfo],
-) -> Vec<ParsedFile> {
-    use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
-    use std::sync::Arc;
-
-    // Resolve every active ecosystem to its legacy locator adapter. The
-    // legacy trait still carries the per-package attribution overrides
-    // (`locate_roots_for_package`) and the post-parse hook — those move
-    // onto `Ecosystem` in a later phase; today we bridge.
-    let mut locators: Vec<(
-        crate::ecosystem::EcosystemId,
-        Arc<dyn ExternalSourceLocator>,
-    )> = Vec::new();
-    for &id in &ctx.active_ecosystems {
-        if let Some(loc) = crate::ecosystem::default_locator(id) {
-            locators.push((id, loc));
-        }
-    }
-
-    // Step 1 — discover roots. Either single-project (one locate_roots call
-    // at project_root) or per-package (one locate_roots_for_package per
-    // (locator, package) pair).
-    let mut all_roots: Vec<ExternalDepRoot> = Vec::new();
-    if packages.is_empty() {
-        for (id, locator) in &locators {
-            let roots = locator.locate_roots(project_root);
-            if !roots.is_empty() {
-                info!(
-                    "Discovered {} external {} dependency roots",
-                    roots.len(),
-                    id
-                );
-            }
-            all_roots.extend(roots);
-        }
-    } else {
-        for pkg in packages {
-            let Some(pkg_id) = pkg.id else { continue };
-            let pkg_abs_path = project_root.join(&pkg.path);
-            for (id, locator) in &locators {
-                let roots =
-                    locator.locate_roots_for_package(project_root, &pkg_abs_path, pkg_id);
-                if !roots.is_empty() {
-                    debug!(
-                        "Package {} (id={}): {} external {} roots",
-                        pkg.name,
-                        pkg_id,
-                        roots.len(),
-                        id
-                    );
-                }
-                all_roots.extend(roots);
-            }
-        }
-    }
-
-    // Step 2 — deduplicate by (ecosystem, module_path, version, root_path) so
-    // a dep shared across workspace packages (e.g. both apps/web and apps/server
-    // declaring react 18.3.1) is walked exactly once. Package attribution is
-    // preserved in the declaring-packages list for logs/diagnostics.
-    //
-    // The root path is included in the key so that a package with BOTH a primary
-    // directory (e.g. node_modules/chai/ — JS only) AND a DefinitelyTyped sibling
-    // (node_modules/@types/chai/ — .d.ts) are treated as separate roots to walk.
-    // Without the root path, the second root would be dropped because it shares
-    // the same (ecosystem, module_path, version) as the first.
-    let mut deduped: Vec<(ExternalDepRoot, Vec<i64>)> = Vec::new();
-    let mut root_index: std::collections::HashMap<
-        (&'static str, String, String, std::path::PathBuf),
-        usize,
-    > = std::collections::HashMap::new();
-    for root in all_roots {
-        let key = (
-            root.ecosystem,
-            root.module_path.clone(),
-            root.version.clone(),
-            root.root.clone(),
-        );
-        if let Some(&idx) = root_index.get(&key) {
-            if let Some(pid) = root.package_id {
-                if !deduped[idx].1.contains(&pid) {
-                    deduped[idx].1.push(pid);
-                }
-            }
-        } else {
-            root_index.insert(key, deduped.len());
-            let declaring = root.package_id.map(|p| vec![p]).unwrap_or_default();
-            deduped.push((root, declaring));
-        }
-    }
-
-    if !packages.is_empty() && !deduped.is_empty() {
-        let total_declarations: usize = deduped.iter().map(|(_, pkgs)| pkgs.len()).sum();
-        info!(
-            "External discovery: {} unique roots across {} package declarations",
-            deduped.len(),
-            total_declarations
-        );
-    }
-
-    // Build ecosystem-tag → locator index for the walk phase. The tag is the
-    // legacy string written to `ExternalDepRoot.ecosystem` by each ecosystem
-    // (see `LEGACY_ECOSYSTEM_TAG` in every ecosystem file), distinct from
-    // the new `EcosystemId`. Phase 4 preserves the old tag on disk; the id
-    // is the trait-level identity.
-    let mut locator_by_ecosystem: std::collections::HashMap<
-        &'static str,
-        Arc<dyn ExternalSourceLocator>,
-    > = std::collections::HashMap::new();
-    for (_id, locator) in &locators {
-        locator_by_ecosystem.insert(locator.ecosystem(), locator.clone());
-    }
-
-    // Step 3 — walk source-based roots and collect metadata-only outputs.
-    let mut walked: Vec<WalkedFile> = Vec::new();
-    let mut walked_owners: Vec<Arc<dyn ExternalSourceLocator>> = Vec::new();
-    let mut metadata_parsed: Vec<ParsedFile> = Vec::new();
-
-    // Metadata-only path runs once per locator regardless of package layout.
-    // .NET reads `{project}/obj/*.deps.json` which is already per-csproj
-    // aware internally.
-    for (id, locator) in &locators {
-        if let Some(pre_parsed) = locator.parse_metadata_only(project_root) {
-            info!(
-                "Parsed {} external {} entries via metadata",
-                pre_parsed.len(),
-                id
-            );
-            metadata_parsed.extend(pre_parsed);
-        }
-    }
-
-    // Resolve each active ecosystem's id → Ecosystem trait impl so we can
-    // branch on kind() between the eager walk (Stdlib) and reachability-based
-    // resolve_import (Package). Store by the same legacy string tag used on
-    // ExternalDepRoot.ecosystem so the per-root lookup is cheap.
-    let mut ecosystem_by_tag: std::collections::HashMap<
-        &'static str,
-        Arc<dyn crate::ecosystem::Ecosystem>,
-    > = std::collections::HashMap::new();
-    for (id, locator) in &locators {
-        if let Some(eco) = crate::ecosystem::default_registry().get(*id) {
-            ecosystem_by_tag.insert(locator.ecosystem(), eco.clone());
-        }
-    }
-
-    for (root, _declaring_pkgs) in &deduped {
-        let Some(locator) = locator_by_ecosystem.get(root.ecosystem) else {
-            continue;
-        };
-        let eco = ecosystem_by_tag.get(root.ecosystem);
-        let files = match eco {
-            // Package ecosystems that opted into reachability: call
-            // resolve_import for the lazy entry-driven load. Project
-            // imports drive which symbols the entry parse must surface;
-            // symbols list empty is fine at this step (entry parse lands
-            // every export, resolver picks what it needs).
-            Some(e)
-                if matches!(e.kind(), crate::ecosystem::EcosystemKind::Package)
-                    && e.supports_reachability() =>
-            {
-                e.resolve_import(root, &root.module_path, &[])
-            }
-            // Everything else keeps the eager walk — Stdlib ecosystems
-            // (pre-warming pays off) and un-migrated Package ecosystems
-            // (preserves behavior until they also opt in).
-            _ => locator.walk_root(root),
-        };
-        walked_owners.extend(std::iter::repeat(locator.clone()).take(files.len()));
-        walked.extend(files);
-    }
-
-    if walked.is_empty() {
-        return metadata_parsed;
-    }
-    debug!("Walking {} external source files total", walked.len());
-
-    let results: Vec<Result<ParsedFile>> =
-        walked.par_iter().map(|w| parse_file(w, registry)).collect();
-
-    let mut parsed = Vec::with_capacity(results.len() + metadata_parsed.len());
-    let mut errors = 0usize;
-    for ((walked_file, owner), res) in walked.iter().zip(walked_owners.iter()).zip(results) {
-        match res {
-            Ok(mut pf) => {
-                // Per-locator post-processing hook: TS rewrites declaration
-                // file symbols to package-qualified names here.
-                owner.post_process_parsed(&mut pf);
-                parsed.push(pf)
-            }
-            Err(e) => {
-                errors += 1;
-                debug!(
-                    "External parse failed for {}: {e}",
-                    walked_file.relative_path
-                );
-            }
-        }
-    }
-    if errors > 0 {
-        debug!("{errors} external files failed to parse (non-fatal)");
-    }
-    parsed.extend(metadata_parsed);
-    parsed
-}
-
-/// Extract the package name from a virtual path like `ext:ts:fake-ui/index.d.ts`
-/// or `ext:ts:@tanstack/react-query/dist/index.d.ts`. Returns `None` for
-/// non-TS virtual paths.
-// ts_package_from_virtual_path moved to indexer/externals.rs as part of the
-// Phase 0 ExternalSourceLocator refactor — it's called from the TS locator's
-// post_process_parsed hook and nowhere else.
 
 pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Result<ParsedFile> {
+    parse_file_with_demand(walked, registry, None)
+}
+
+/// R6 entry point for demand-driven parsing. When `demand` is `Some`, the
+/// language plugin's `extract_with_demand` is called instead of `extract`,
+/// and top-level declarations whose name is not in the set may be dropped.
+/// Used when parsing external sources (node_modules `.d.ts`, etc.).
+pub(crate) fn parse_file_with_demand(
+    walked: &WalkedFile,
+    registry: &LanguageRegistry,
+    demand: Option<&std::collections::HashSet<String>>,
+) -> Result<ParsedFile> {
     let bytes = std::fs::read(&walked.absolute_path)
         .with_context(|| format!("Cannot read {}", walked.relative_path))?;
 
@@ -869,15 +635,21 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
             symbol_from_snippet: Vec::new(),
             content: Some(content),
             has_errors: false,
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         });
     }
 
     // Dispatch to the language plugin (dedicated or generic fallback).
+    // When demand is Some, the plugin's demand-aware path runs; with None it
+    // degrades to the regular `extract` via the trait's default impl.
     let plugin = registry.get(walked.language);
-    let mut r = plugin.extract(
+    let mut r = plugin.extract_with_demand(
         &content,
         &walked.relative_path,
         walked.language,
+        demand,
     );
 
     // Run locals.scm query to filter out locally-resolved references.
@@ -916,6 +688,31 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
         );
     }
 
+    // R5 Sprint 2: run flow-typing queries if the plugin provides a FlowConfig.
+    // Populates FlowMeta (forward-inference binding map, conditional narrowings,
+    // call-site type_args on chain segments). Plugins without flow_config pay
+    // zero cost here.
+    let flow_meta = if let (Some(flow_cfg), Some(grammar)) =
+        (plugin.flow_config(), plugin.grammar(walked.language))
+    {
+        crate::indexer::flow::run_flow_queries(
+            &content,
+            &grammar,
+            flow_cfg,
+            &r.symbols,
+            &mut r.refs,
+        )
+    } else {
+        crate::types::FlowMeta::default()
+    };
+
+    // Cross-service wiring datapoints emitted by the plugin. Default impl
+    // returns empty; plugins fill this in one framework at a time. Stage 3
+    // pairs Start/Stop points across files into `flow_edges` rows without
+    // touching the DB.
+    let connection_points =
+        plugin.extract_connection_points(&content, &walked.relative_path, walked.language);
+
     Ok(ParsedFile {
         path: walked.relative_path.clone(),
         language: walked.language.to_string(),
@@ -933,6 +730,9 @@ pub(crate) fn parse_file(walked: &WalkedFile, registry: &LanguageRegistry) -> Re
         symbol_from_snippet,
         content: Some(content),
         has_errors: r.has_errors,
+        flow: flow_meta,
+        connection_points,
+        demand_contributions: Vec::new(),
     })
 }
 
@@ -1298,349 +1098,6 @@ fn filter_local_refs(
     }
 }
 
-// ---------------------------------------------------------------------------
-// Package detection
-// ---------------------------------------------------------------------------
-
-/// Detect workspace packages from monorepo patterns and manifest files.
-///
-/// Returns the package list and the workspace kind string (e.g. `"cargo-workspace"`,
-/// `"pnpm-workspace"`) so the caller can persist it as `workspace_kind` metadata.
-///
-/// Uses bearwisdom-profile's monorepo detection first (Cargo workspace,
-/// npm workspaces, Turborepo, Nx, Lerna), then falls back to scanning
-/// for manifest files in immediate subdirectories.
-fn detect_packages(project_root: &Path) -> (Vec<crate::types::PackageInfo>, Option<String>) {
-    use crate::types::PackageInfo;
-
-    // 1. Try bearwisdom-profile monorepo detection.
-    if let Some(mono) = bearwisdom_profile::scanner::monorepo::detect_monorepo(project_root) {
-        let workspace_kind = mono.kind.clone();
-        let kind_hint = match mono.kind.as_str() {
-            "cargo-workspace" => "cargo",
-            "npm-workspaces" | "pnpm-workspace" | "turborepo" | "lerna" => "npm",
-            "nx" => "npm",
-            other => other,
-        };
-
-        let mut packages: Vec<PackageInfo> = Vec::new();
-
-        if mono.packages.is_empty() {
-            // Profile detected a monorepo kind but no explicit package list.
-            // Scan common workspace directories (packages/, apps/, libs/, crates/).
-            packages = scan_workspace_dirs(project_root, kind_hint);
-        } else {
-            // Profile returned explicit package paths — these may be globs or
-            // directory names. Resolve each to a PackageInfo.
-            for rel_path in &mono.packages {
-                // Handle glob patterns like "crates/*" from Cargo workspace members.
-                if rel_path.contains('*') {
-                    let base = rel_path.trim_end_matches("/*").trim_end_matches("\\*");
-                    let base_dir = project_root.join(base);
-                    if base_dir.is_dir() {
-                        if let Ok(entries) = std::fs::read_dir(&base_dir) {
-                            for entry in entries.flatten() {
-                                if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                                    continue;
-                                }
-                                let sub_name = entry.file_name().to_string_lossy().into_owned();
-                                if sub_name.starts_with('.') { continue; }
-                                let full_rel = format!("{}/{}", base, sub_name);
-                                let abs = project_root.join(&full_rel);
-                                let declared_name = package_name_from_manifest(&abs, kind_hint);
-                                packages.push(PackageInfo {
-                                    id: None,
-                                    name: sub_name.clone(),
-                                    path: full_rel.replace('\\', "/"),
-                                    kind: Some(kind_hint.to_string()),
-                                    manifest: find_manifest_path_abs(&abs, kind_hint),
-                                    declared_name,
-                                });
-                            }
-                        }
-                    }
-                } else {
-                    let abs = project_root.join(rel_path);
-                    if !abs.is_dir() { continue; }
-                    let declared_name = package_name_from_manifest(&abs, kind_hint);
-                    packages.push(PackageInfo {
-                        id: None,
-                        name: dir_name(rel_path),
-                        path: rel_path.replace('\\', "/"),
-                        kind: Some(kind_hint.to_string()),
-                        manifest: find_manifest_path_abs(&abs, kind_hint),
-                        declared_name,
-                    });
-                }
-            }
-        }
-
-        if !packages.is_empty() {
-            info!("Monorepo detected ({}) — {} packages", workspace_kind, packages.len());
-            return (packages, Some(workspace_kind));
-        }
-    }
-
-    // 2. Fallback: scan workspace-style directories.
-    let packages = scan_workspace_dirs(project_root, "unknown");
-    if packages.len() >= 2 {
-        info!("Fallback package scan — {} packages", packages.len());
-        (packages, None)
-    } else {
-        (Vec::new(), None)
-    }
-}
-
-/// Scan common workspace directory patterns (packages/, apps/, libs/, crates/, etc.)
-/// for sub-packages containing manifest files.
-fn scan_workspace_dirs(project_root: &Path, kind_hint: &str) -> Vec<crate::types::PackageInfo> {
-    use crate::types::PackageInfo;
-
-    let workspace_dirs = ["packages", "apps", "libs", "crates", "modules",
-                          "services", "plugins", "integrations", "examples", "src"];
-    let manifest_names: &[&str] = &[
-        "package.json", "Cargo.toml", "go.mod", "pyproject.toml",
-        "pubspec.yaml", "mix.exs", "Package.swift", "composer.json",
-    ];
-    let mut packages = Vec::new();
-
-    for ws_dir in &workspace_dirs {
-        let base = project_root.join(ws_dir);
-        if !base.is_dir() { continue; }
-        if let Ok(entries) = std::fs::read_dir(&base) {
-            for entry in entries.flatten() {
-                if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                    continue;
-                }
-                let sub_name = entry.file_name().to_string_lossy().into_owned();
-                if sub_name.starts_with('.') || sub_name == "node_modules" {
-                    continue;
-                }
-                let sub = entry.path();
-                // Check standard manifest files.
-                let mut found = false;
-                for mf in manifest_names {
-                    if sub.join(mf).exists() {
-                        let rel = format!("{}/{}", ws_dir, sub_name);
-                        let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
-                        let declared_name = package_name_from_manifest(&sub, kind);
-                        packages.push(PackageInfo {
-                            id: None,
-                            name: sub_name.clone(),
-                            path: rel,
-                            kind: Some(kind.to_string()),
-                            manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, mf)),
-                            declared_name,
-                        });
-                        found = true;
-                        break;
-                    }
-                }
-                // Check for .csproj (one per directory is a package).
-                if !found {
-                    if let Some(csproj) = find_csproj(&sub) {
-                        let rel = format!("{}/{}", ws_dir, sub_name);
-                        // For .NET, the declared name is the .csproj stem
-                        // (common convention); e.g., "MyApp.Api.csproj" →
-                        // "MyApp.Api". This is what <ProjectReference> uses.
-                        let declared_name = csproj
-                            .strip_suffix(".csproj")
-                            .map(|s| s.to_string());
-                        packages.push(PackageInfo {
-                            id: None,
-                            name: sub_name.clone(),
-                            path: rel,
-                            kind: Some("dotnet".to_string()),
-                            manifest: Some(format!("{}/{}/{}", ws_dir, sub_name, csproj)),
-                            declared_name,
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // Also check root-level subdirectories (for .NET solutions, Go multi-module, etc.)
-    if let Ok(entries) = std::fs::read_dir(project_root) {
-        for entry in entries.flatten() {
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-                continue;
-            }
-            let dir_name_str = entry.file_name().to_string_lossy().into_owned();
-            if dir_name_str.starts_with('.')
-                || dir_name_str == "node_modules"
-                || dir_name_str == "target"
-                || workspace_dirs.contains(&dir_name_str.as_str())
-            {
-                continue;
-            }
-            let sub = entry.path();
-            for mf in manifest_names {
-                if sub.join(mf).exists() {
-                    let kind = if kind_hint != "unknown" { kind_hint } else { manifest_to_kind(mf) };
-                    let declared_name = package_name_from_manifest(&sub, kind);
-                    // Avoid duplicates from workspace_dirs scan.
-                    if !packages.iter().any(|p| p.path == dir_name_str) {
-                        packages.push(PackageInfo {
-                            id: None,
-                            name: dir_name_str.clone(),
-                            path: dir_name_str.clone(),
-                            kind: Some(kind.to_string()),
-                            manifest: Some(format!("{}/{}", dir_name_str, mf)),
-                            declared_name,
-                        });
-                    }
-                    break;
-                }
-            }
-        }
-    }
-
-    packages
-}
-
-/// Try to extract the native package name from a manifest file — the name
-/// by which this package is imported by siblings (`@myorg/utils`,
-/// `my-crate`, `github.com/user/proj/module`, `MyApp.Api`, etc.). Stored
-/// separately from the folder name on `PackageInfo::declared_name`.
-fn package_name_from_manifest(dir: &Path, kind: &str) -> Option<String> {
-    match kind {
-        "npm" => {
-            let content = std::fs::read_to_string(dir.join("package.json")).ok()?;
-            let v: serde_json::Value = serde_json::from_str(&content).ok()?;
-            v.get("name")?.as_str().map(|s| s.to_string())
-        }
-        "cargo" => {
-            let content = std::fs::read_to_string(dir.join("Cargo.toml")).ok()?;
-            // Simple TOML parse: find `name = "..."` under [package].
-            let in_package = content.find("[package]")?;
-            content[in_package..]
-                .lines()
-                .find(|l| l.trim().starts_with("name"))
-                .and_then(|l| {
-                    let val = l.split('=').nth(1)?.trim().trim_matches('"');
-                    Some(val.to_string())
-                })
-        }
-        "go" => {
-            let content = std::fs::read_to_string(dir.join("go.mod")).ok()?;
-            content.lines().next().and_then(|l| {
-                l.strip_prefix("module ").map(|m| m.trim().to_string())
-            })
-        }
-        "python" => {
-            // pyproject.toml [project].name or [tool.poetry].name.
-            let content = std::fs::read_to_string(dir.join("pyproject.toml")).ok()?;
-            for marker in &["[project]", "[tool.poetry]"] {
-                if let Some(start) = content.find(marker) {
-                    // Scan forward until the next section header.
-                    let tail = &content[start + marker.len()..];
-                    let section = tail.split("\n[").next().unwrap_or(tail);
-                    if let Some(name) = section
-                        .lines()
-                        .find(|l| l.trim_start().starts_with("name"))
-                        .and_then(|l| {
-                            let val = l.split('=').nth(1)?.trim().trim_matches('"').trim_matches('\'');
-                            (!val.is_empty()).then(|| val.to_string())
-                        })
-                    {
-                        return Some(name);
-                    }
-                }
-            }
-            None
-        }
-        "dotnet" => {
-            // .csproj / .fsproj / .vbproj filename stem — this is what
-            // <ProjectReference> resolves against in MSBuild.
-            std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
-                let name = e.file_name().to_string_lossy().into_owned();
-                for ext in &[".csproj", ".fsproj", ".vbproj"] {
-                    if let Some(stem) = name.strip_suffix(ext) {
-                        return Some(stem.to_string());
-                    }
-                }
-                None
-            })
-        }
-        _ => None,
-    }
-}
-
-fn dir_name(rel_path: &str) -> String {
-    rel_path.rsplit('/').next()
-        .or_else(|| rel_path.rsplit('\\').next())
-        .unwrap_or(rel_path)
-        .to_string()
-}
-
-fn find_manifest_path_abs(abs_dir: &Path, kind: &str) -> Option<String> {
-    let candidates: &[&str] = match kind {
-        "cargo" => &["Cargo.toml"],
-        "npm" => &["package.json"],
-        "go" => &["go.mod"],
-        "python" => &["pyproject.toml"],
-        "dart" => &["pubspec.yaml"],
-        "elixir" => &["mix.exs"],
-        _ => &["package.json", "Cargo.toml", "go.mod", "pyproject.toml"],
-    };
-    for c in candidates {
-        if abs_dir.join(c).exists() {
-            // Return path relative to workspace root — caller uses the rel path.
-            return Some(c.to_string());
-        }
-    }
-    None
-}
-
-fn find_csproj(dir: &Path) -> Option<String> {
-    std::fs::read_dir(dir).ok()?.flatten().find_map(|e| {
-        let name = e.file_name().to_string_lossy().into_owned();
-        if name.ends_with(".csproj") { Some(name) } else { None }
-    })
-}
-
-fn manifest_to_kind(filename: &str) -> &str {
-    match filename {
-        "package.json" => "npm",
-        "Cargo.toml" => "cargo",
-        "go.mod" => "go",
-        "pyproject.toml" => "python",
-        "pubspec.yaml" => "dart",
-        "mix.exs" => "elixir",
-        "Package.swift" => "swift",
-        "composer.json" => "php",
-        _ => "unknown",
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Service package marking
-// ---------------------------------------------------------------------------
-
-/// Set `is_service = 1` on packages whose path matches a detected Dockerfile.
-///
-/// `pairs` is `(package_relative_path, dockerfile_relative_path)` as returned
-/// by `crate::languages::dockerfile::connectors::detect_dockerfiles`.
-fn mark_service_packages(conn: &rusqlite::Connection, pairs: &[(String, String)]) {
-    for (pkg_path, dockerfile_path) in pairs {
-        match conn.execute(
-            "UPDATE packages SET is_service = 1 WHERE path = ?1",
-            rusqlite::params![pkg_path],
-        ) {
-            Ok(n) if n > 0 => {
-                debug!("Marked package '{}' as service ({})", pkg_path, dockerfile_path);
-            }
-            Ok(_) => {
-                // Package path not found — may have been cleaned up; not an error.
-                debug!("No package row for path '{}' — skipping is_service mark", pkg_path);
-            }
-            Err(e) => {
-                warn!("Failed to mark package '{}' as service: {e}", pkg_path);
-            }
-        }
-    }
-}
 
 // ---------------------------------------------------------------------------
 // Statistics

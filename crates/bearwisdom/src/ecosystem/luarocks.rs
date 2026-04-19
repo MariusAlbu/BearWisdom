@@ -8,10 +8,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
+use tree_sitter::{Node, Parser};
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
@@ -46,6 +49,15 @@ impl Ecosystem for LuarocksEcosystem {
     fn resolve_symbol(
         &self, dep: &ExternalDepRoot, _f: &str,
     ) -> Vec<WalkedFile> { walk_lua_narrowed(dep) }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_lua_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for LuarocksEcosystem {
@@ -338,6 +350,109 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
                 language: "lua",
             });
         }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+
+fn build_lua_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_lua_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_lua_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of a Lua source file. Records top-level
+/// `function name(...)`, `local function name(...)`, and variable
+/// assignments `name = ...` / `local name = ...` at the module level.
+fn scan_lua_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_lua::LANGUAGE.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        collect_lua_top_level_name(&child, bytes, &mut out);
+    }
+    out
+}
+
+fn collect_lua_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+    match node.kind() {
+        "function_declaration" | "function_definition" | "local_function" => {
+            let mut name_node = node.child_by_field_name("name");
+            if name_node.is_none() {
+                let mut cursor = node.walk();
+                for child in node.children(&mut cursor) {
+                    if matches!(child.kind(), "identifier" | "dot_index_expression") {
+                        name_node = Some(child);
+                        break;
+                    }
+                }
+            }
+            if let Some(name_node) = name_node {
+                if let Ok(t) = name_node.utf8_text(bytes) {
+                    out.push(t.to_string());
+                }
+            }
+        }
+        "variable_declaration" | "assignment_statement" | "local_declaration" => {
+            // LHS can be a comma list; grab the first identifier.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if matches!(child.kind(), "variable_list" | "identifier_list")
+                {
+                    let mut ic = child.walk();
+                    for inner in child.children(&mut ic) {
+                        if inner.kind() == "identifier" {
+                            if let Ok(t) = inner.utf8_text(bytes) {
+                                out.push(t.to_string());
+                            }
+                        }
+                    }
+                    break;
+                }
+                if child.kind() == "identifier" {
+                    if let Ok(t) = child.utf8_text(bytes) {
+                        out.push(t.to_string());
+                    }
+                }
+            }
+        }
+        _ => {}
     }
 }
 

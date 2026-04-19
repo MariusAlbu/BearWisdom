@@ -90,6 +90,7 @@ impl LanguageResolver for NixResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "nix_qualified_name",
+                    resolved_yield_type: None,
                 });
             }
             let last_seg = target.rsplit('.').next().unwrap_or(target.as_str());
@@ -98,6 +99,7 @@ impl LanguageResolver for NixResolver {
                     target_symbol_id: sym.id,
                     confidence: 0.75,
                     strategy: "nix_attr_path_last_seg",
+                    resolved_yield_type: None,
                 });
             }
         }

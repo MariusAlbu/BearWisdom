@@ -31,6 +31,7 @@ pub(super) fn extract_calls_from_body(
                         line: name_node.start_position().row as u32,
                         module: None,
                         chain,
+                        byte_offset: name_node.start_byte() as u32,
                     });
                 }
                 // Recurse into the object expression and arguments to find nested calls.
@@ -49,6 +50,7 @@ pub(super) fn extract_calls_from_body(
                         line: name_node.start_position().row as u32,
                         module: None,
                         chain,
+                        byte_offset: name_node.start_byte() as u32,
                     });
                 }
                 // Recurse into arguments to find nested calls.
@@ -82,6 +84,7 @@ pub(super) fn extract_calls_from_body(
                         line: cls_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -97,6 +100,7 @@ pub(super) fn extract_calls_from_body(
                         line: fn_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -178,6 +182,7 @@ pub(super) fn extract_include_require(
                 line: node.start_position().row as u32,
                 module,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }
@@ -411,6 +416,7 @@ fn extract_catch_type_refs(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -539,6 +545,7 @@ pub(super) fn extract_type_refs_from_php_type(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -710,6 +717,7 @@ fn push_fq_import(
         line,
         module,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -737,6 +745,7 @@ pub(super) fn extract_trait_use(
                 line: child.start_position().row as u32,
                 module,
                 chain: None,
+                byte_offset: 0,
             });
         }
     }

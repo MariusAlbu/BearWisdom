@@ -88,6 +88,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                 routes: vec![],
                 db_sets: vec![],
                 has_errors: true,
+                connection_points: Vec::new(),
+                demand_contributions: Vec::new(),
             }
         }
     };
@@ -205,7 +207,10 @@ pub fn extract(source: &str) -> ExtractionResult {
         }
     }
 
-    ExtractionResult { symbols, refs, routes, db_sets, has_errors }
+    ExtractionResult { symbols, refs, routes, db_sets, has_errors,
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -637,6 +642,7 @@ fn extract_constructor_initializer_call(
             line: initializer.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -725,6 +731,7 @@ fn scan_all_type_positions(
                     line: child.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
                 scan_all_type_positions(child, src, sym_idx, refs);
             }
@@ -806,6 +813,7 @@ fn emit_csharp_type_ref(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -823,6 +831,7 @@ fn emit_csharp_type_ref(
                             line: id_child.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }

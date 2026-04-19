@@ -13,7 +13,7 @@ use super::{calls, decorators, helpers, imports, narrowing, params, symbols, typ
 use crate::types::ExtractionResult;
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Parser};
 
 // ---------------------------------------------------------------------------
@@ -33,6 +33,27 @@ pub(crate) static TS_SCOPE_KINDS: &[ScopeKind] = &[
 
 /// Extract symbols and references from TypeScript or TSX source.
 pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
+    extract_inner(source, is_tsx, None)
+}
+
+/// R6: demand-filtered extraction. When `demand` is `Some`, top-level
+/// declarations whose name is not in the set are skipped entirely —
+/// `lib.dom.d.ts` with ~40k types reduces to the ~20 types a project uses.
+///
+/// `None` delivers the permissive behaviour (identical to `extract`).
+pub fn extract_with_demand(
+    source: &str,
+    is_tsx: bool,
+    demand: Option<&HashSet<String>>,
+) -> ExtractionResult {
+    extract_inner(source, is_tsx, demand)
+}
+
+fn extract_inner(
+    source: &str,
+    is_tsx: bool,
+    demand: Option<&HashSet<String>>,
+) -> ExtractionResult {
     let language: tree_sitter::Language = if is_tsx {
         tree_sitter_typescript::LANGUAGE_TSX.into()
     } else {
@@ -53,6 +74,8 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
                 routes: vec![],
                 db_sets: vec![],
                 has_errors: true,
+                connection_points: Vec::new(),
+                demand_contributions: Vec::new(),
             }
         }
     };
@@ -74,12 +97,16 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
     // to rewrite usage-site refs so the resolver can find the real export.
     let alias_map = build_renamed_import_map(root, src_bytes);
 
-    extract_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None);
+    extract_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None, demand);
 
     // Post-traversal full-tree scan: catch every type_identifier and generic_type
     // base name that the main walker may have missed (e.g. deeply nested generic
     // arguments, conditional types, mapped types, etc.).
-    if !symbols.is_empty() {
+    //
+    // Only runs when no demand filter is active — under demand, most top-level
+    // types are intentionally skipped, so the post-scan would re-emit the same
+    // type_identifier refs we filtered out, defeating the whole point.
+    if !symbols.is_empty() && demand.is_none() {
         scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
     }
 
@@ -99,6 +126,74 @@ pub fn extract(source: &str, is_tsx: bool) -> ExtractionResult {
     ExtractionResult::new(symbols, refs, has_errors)
 }
 
+/// R6 helper: list every declared name for a top-level declaration node.
+/// Returns the `name` field when present (class, interface, function, type
+/// alias, enum, namespace) and walks `variable_declarator` children for
+/// `lexical_declaration` / `variable_declaration`.
+fn declared_names(node: &Node, src: &[u8]) -> Vec<String> {
+    if let Some(n) = node.child_by_field_name("name") {
+        if let Ok(text) = n.utf8_text(src) {
+            return vec![text.to_string()];
+        }
+    }
+    let mut out = Vec::new();
+    let mut cursor = node.walk();
+    for c in node.children(&mut cursor) {
+        if c.kind() == "variable_declarator" {
+            if let Some(n) = c.child_by_field_name("name") {
+                if let Ok(text) = n.utf8_text(src) {
+                    out.push(text.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
+/// R6 helper: the set of tree-sitter node kinds that constitute a top-level
+/// TypeScript declaration. Demand filtering only engages for these kinds.
+fn is_top_level_declaration(kind: &str) -> bool {
+    matches!(
+        kind,
+        "class_declaration"
+            | "abstract_class_declaration"
+            | "interface_declaration"
+            | "function_declaration"
+            | "generator_function_declaration"
+            | "generator_function"
+            | "type_alias_declaration"
+            | "enum_declaration"
+            | "lexical_declaration"
+            | "variable_declaration"
+            | "internal_module"
+    )
+}
+
+/// R6 helper: would a top-level node pass the demand gate? `true` when
+/// demand is `None` (permissive mode) or any declared name is in the set.
+fn keep_by_demand(
+    node: &Node,
+    src: &[u8],
+    demand: Option<&HashSet<String>>,
+    parent_index: Option<usize>,
+) -> bool {
+    // Filter only applies to top-level declarations. Nested ones (methods
+    // inside a class, fields in an interface) ride their container's decision.
+    if parent_index.is_some() {
+        return true;
+    }
+    let Some(set) = demand else {
+        return true;
+    };
+    let names = declared_names(node, src);
+    if names.is_empty() {
+        // No declared name to check — keep (ambient modules, export-only
+        // statements, etc.).
+        return true;
+    }
+    names.iter().any(|n| set.contains(n))
+}
+
 // ---------------------------------------------------------------------------
 // Recursive visitor
 // ---------------------------------------------------------------------------
@@ -110,9 +205,19 @@ fn extract_node(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
+    demand: Option<&HashSet<String>>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
+        // R6 demand gate — drop the whole subtree when this is a top-level
+        // declaration whose name is not in the project's demand set.
+        // Helper returns true unconditionally when demand is None or when
+        // parent_index is set (nested declarations ride their container).
+        if is_top_level_declaration(child.kind())
+            && !keep_by_demand(&child, src, demand, parent_index)
+        {
+            continue;
+        }
         match child.kind() {
             "class_declaration" | "abstract_class_declaration" => {
                 let idx = symbols::push_class(&child, src, scope_tree, symbols, parent_index);
@@ -122,7 +227,7 @@ fn extract_node(
                 // Decorators (@Injectable, @Controller, etc.).
                 decorators::extract_decorators(&child, src, sym_idx, refs);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, idx);
+                    extract_node(body, src, scope_tree, symbols, refs, idx, demand);
                 }
             }
 
@@ -131,7 +236,7 @@ fn extract_node(
                     symbols::push_interface(&child, src, scope_tree, symbols, parent_index);
                 imports::extract_heritage(&child, src, idx.unwrap_or(0), refs);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, idx);
+                    extract_node(body, src, scope_tree, symbols, refs, idx, demand);
                 }
             }
 
@@ -158,7 +263,7 @@ fn extract_node(
                         // Also recurse with extract_node so nested lexical_declaration,
                         // catch_clause, for_in_statement, etc. inside the body produce
                         // their symbols and type refs.
-                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx));
+                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx), demand);
                     }
                 }
             }
@@ -166,7 +271,7 @@ fn extract_node(
             "export_statement" => {
                 // `export class Foo {}` / `export function bar() {}`
                 // Recurse so that declarations inside are extracted.
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
                 // Also extract re-export forms:
                 //   `export { X } from './y'`
                 //   `export { X as Z } from './y'`
@@ -218,7 +323,7 @@ fn extract_node(
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
                         // Also recurse with extract_node so nested lexical_declaration,
                         // catch_clause, for_in_statement, etc. produce symbols and type refs.
-                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx));
+                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx), demand);
                     }
                 }
             }
@@ -366,7 +471,7 @@ fn extract_node(
                 // for initializers that weren't inlined into push_variable_decl.
                 // push_variable_decl handles TypeRef/chain inference for the initializer,
                 // but Calls/Instantiates edges for nested calls come from extract_node.
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             "import_statement" => {
@@ -386,7 +491,7 @@ fn extract_node(
                     parent_index,
                 );
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, parent_index);
+                    extract_node(body, src, scope_tree, symbols, refs, parent_index, demand);
                 }
             }
 
@@ -403,7 +508,7 @@ fn extract_node(
                 );
                 // Recurse into the body for nested calls and symbols.
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, parent_index);
+                    extract_node(body, src, scope_tree, symbols, refs, parent_index, demand);
                 }
             }
 
@@ -411,14 +516,14 @@ fn extract_node(
             "internal_module" => {
                 let idx = symbols::push_namespace(&child, src, scope_tree, symbols, parent_index);
                 if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, idx);
+                    extract_node(body, src, scope_tree, symbols, refs, idx, demand);
                 }
             }
 
             // `declare module "foo" { ... }` / `declare function bar(): void`
             // The meaningful declaration is a child — recurse and let existing arms handle it.
             "ambient_declaration" => {
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // Generator functions — same extraction as regular function_declaration.
@@ -442,7 +547,7 @@ fn extract_node(
                         calls::extract_calls(&body, src, sym_idx, refs);
                         narrowing::extract_narrowing_refs(&body, src, sym_idx, refs);
                         // Also recurse for nested declarations inside the generator body.
-                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx));
+                        extract_node(body, src, scope_tree, symbols, refs, Some(sym_idx), demand);
                     }
                 }
             }
@@ -508,7 +613,7 @@ fn extract_node(
             // property_signature / method_signature / call_signature / index_signature
             // arms fire for each member.
             "object_type" => {
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // Call expressions at any level not already handled by extract_calls
@@ -524,14 +629,14 @@ fn extract_node(
                 calls::emit_call_ref(&child, src, sym_idx, refs);
                 // Continue recursing into children (e.g. arguments may contain
                 // further nested call_expressions at this level).
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // `new Foo(...)` at module scope or inside field initializers.
             "new_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 calls::emit_new_ref(&child, src, sym_idx, refs);
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // `expr as Type` — emit TypeRef for the asserted type.
@@ -539,21 +644,21 @@ fn extract_node(
             "as_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 symbols::extract_type_ref_from_as_expression(&child, src, sym_idx, refs);
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // `expr satisfies Type` — emit TypeRef for the asserted type.
             "satisfies_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 symbols::extract_type_ref_from_satisfies_expression(&child, src, sym_idx, refs);
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // `<Type>expr` — emit TypeRef for the asserted type (TSX-invalid form).
             "type_assertion" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 symbols::extract_type_ref_from_type_assertion(&child, src, sym_idx, refs);
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // `x instanceof Foo` — emit TypeRef for the constructor.
@@ -575,11 +680,12 @@ fn extract_node(
                                 line: right.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
                 }
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // Standalone `type_annotation` nodes encountered during recursion
@@ -591,7 +697,7 @@ fn extract_node(
                 // Recursively walk all children to catch type_identifiers and other types
                 // nested inside generic_type, union_type, etc. that extract_type_ref_from_annotation
                 // may have handled but children not yet extracted.
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // `generic_type` encountered during recursion — recurse to catch all inner types.
@@ -601,7 +707,7 @@ fn extract_node(
                 let sym_idx = parent_index.unwrap_or(0);
                 types::extract_type_ref_from_annotation(&child, src, sym_idx, refs);
                 // Recurse to handle nested types within type arguments.
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
             // `type_identifier` encountered during recursion in expression contexts
@@ -620,6 +726,7 @@ fn extract_node(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -640,6 +747,7 @@ fn extract_node(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -655,7 +763,7 @@ fn extract_node(
             }
 
             _ => {
-                extract_node(child, src, scope_tree, symbols, refs, parent_index);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
         }
     }
@@ -683,11 +791,14 @@ fn extract_sig_object_type_members(
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
+    // `demand = None` here: these are nested members inside an already-kept
+    // declaration (the enclosing function/interface passed the demand gate),
+    // so recurse permissively.
     if let Some(params) = func_node.child_by_field_name("parameters") {
-        extract_node(params, src, scope_tree, symbols, refs, parent_index);
+        extract_node(params, src, scope_tree, symbols, refs, parent_index, None);
     }
     if let Some(ret) = func_node.child_by_field_name("return_type") {
-        extract_node(ret, src, scope_tree, symbols, refs, parent_index);
+        extract_node(ret, src, scope_tree, symbols, refs, parent_index, None);
     }
 }
 
@@ -715,8 +826,9 @@ fn recurse_for_object_types(
 ) {
     match node.kind() {
         "object_type" => {
-            // Found one — extract its members as symbols.
-            extract_node(node, src, scope_tree, symbols, refs, parent_index);
+            // Found one — extract its members as symbols. `demand = None`
+            // because this runs inside an already-kept type alias / interface.
+            extract_node(node, src, scope_tree, symbols, refs, parent_index, None);
         }
         // Type wrappers that can contain object_type members — recurse into children.
         "union_type" | "intersection_type" | "parenthesized_type"
@@ -1025,6 +1137,7 @@ fn extract_reexports(
                                 line: spec.start_position().row as u32,
                                 module: module_path.clone(),
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -1051,6 +1164,7 @@ fn extract_reexports(
             line,
             module: module_path.clone(),
             chain: None,
+            byte_offset: 0,
         });
     }
 }
@@ -1100,6 +1214,7 @@ fn scan_all_type_identifiers(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -1118,6 +1233,7 @@ fn scan_all_type_identifiers(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -1141,6 +1257,7 @@ fn scan_all_type_identifiers(
                             line: base.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -1210,6 +1327,7 @@ fn scan_all_type_identifiers(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         } else {
                             // Even for primitive annotations we need a ref at this line
@@ -1223,6 +1341,7 @@ fn scan_all_type_identifiers(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -1262,6 +1381,7 @@ fn scan_all_type_identifiers(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                         break;
@@ -1294,6 +1414,7 @@ fn scan_all_type_identifiers(
                                 line: child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                         break;

@@ -168,6 +168,7 @@ pub(super) fn extract_from_node(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -186,6 +187,7 @@ pub(super) fn extract_from_node(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -257,6 +259,7 @@ fn scan_all_constants(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -272,6 +275,7 @@ fn scan_all_constants(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 // Don't recurse into scope_resolution — we already extracted the name.

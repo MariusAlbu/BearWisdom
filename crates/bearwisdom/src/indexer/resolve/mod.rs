@@ -26,7 +26,7 @@ use engine::{build_scope_chain, ChainMiss, RefContext, ResolutionEngine, SymbolI
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
-/// Stats returned by `resolve_and_write`.
+/// Stats returned by `resolve_and_write` / `resolve_iteration`.
 #[derive(Debug, Clone, Default)]
 pub struct ResolutionStats {
     pub resolved: u64,
@@ -39,8 +39,19 @@ pub struct ResolutionStats {
     pub chain_misses: Vec<ChainMiss>,
 }
 
+impl ResolutionStats {
+    /// `true` when the chain walker recorded no bail-outs — i.e. no external
+    /// file demand was surfaced by this pass and the Stage 2 loop can stop.
+    /// Used by the demand-driven pipeline as the fixpoint-exit condition.
+    pub fn converged(&self) -> bool {
+        self.chain_misses.is_empty()
+    }
+}
+
 /// Resolve all references across all parsed files, writing edges,
-/// unresolved refs, and external refs to the database.
+/// unresolved refs, and external refs to the database. One-shot entry
+/// point for callers that don't need iteration: runs `resolve_iteration`
+/// once and then `finalize_resolution`.
 ///
 /// Two-tier: language-specific resolvers first (1.0 confidence),
 /// then heuristic fallback (0.50-0.95 confidence).
@@ -52,7 +63,9 @@ pub fn resolve_and_write(
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
-    resolve_and_write_inner(db, parsed, symbol_id_map, project_ctx, false)
+    let stats = resolve_iteration_inner(db, parsed, symbol_id_map, project_ctx, false)?;
+    finalize_resolution(db)?;
+    Ok(stats)
 }
 
 /// Incremental variant: augments the SymbolIndex with all symbols from DB
@@ -63,10 +76,41 @@ pub fn resolve_and_write_incremental(
     symbol_id_map: &HashMap<(String, String), i64>,
     project_ctx: Option<&ProjectContext>,
 ) -> Result<ResolutionStats> {
-    resolve_and_write_inner(db, parsed, symbol_id_map, project_ctx, true)
+    let stats = resolve_iteration_inner(db, parsed, symbol_id_map, project_ctx, true)?;
+    finalize_resolution(db)?;
+    Ok(stats)
 }
 
-fn resolve_and_write_inner(
+/// One resolution pass without post-processing. Writes edges / external_refs /
+/// unresolved_refs the same way as `resolve_and_write` but leaves the
+/// `incoming_edge_count` materialization to a later `finalize_resolution`
+/// call — so the Stage 2 demand-driven pipeline can call this in a loop,
+/// DELETE speculative unresolved/external rows between iterations, and
+/// only finalize once the demand set reaches fixpoint.
+///
+/// `stats.converged()` reports whether the chain walker recorded any
+/// bail-outs. Callers use that as the loop-exit signal.
+pub fn resolve_iteration(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+) -> Result<ResolutionStats> {
+    resolve_iteration_inner(db, parsed, symbol_id_map, project_ctx, false)
+}
+
+/// Incremental iteration variant. Same shape as `resolve_iteration` but
+/// augments the SymbolIndex with DB symbols first.
+pub fn resolve_iteration_incremental(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+) -> Result<ResolutionStats> {
+    resolve_iteration_inner(db, parsed, symbol_id_map, project_ctx, true)
+}
+
+fn resolve_iteration_inner(
     db: &mut Database,
     parsed: &[ParsedFile],
     symbol_id_map: &HashMap<(String, String), i64>,
@@ -122,7 +166,34 @@ fn resolve_and_write_inner(
         let file_imports = import_map.get(&pf.path).unwrap_or(&empty_vec);
         let source_namespace = file_namespace_map.get(&pf.path).map(|s| s.as_str());
 
-        for (ref_idx, r) in pf.refs.iter().enumerate() {
+        // R5: install a fresh per-file flow-typing cache. Narrowings are
+        // sorted innermost-first (smallest range first) so the cache's
+        // cursor-based lookup picks the most specific scope on ties.
+        let mut narrowings = pf.flow.narrowings.clone();
+        narrowings.sort_by_key(|n| n.byte_end.saturating_sub(n.byte_start));
+        index.install_local_cache(narrowings);
+
+        // R5: iterate refs in source order so forward inference
+        // (`let x = foo(); x.bar()`) propagates correctly. Reassignment is
+        // handled naturally by last-write-wins in the cache. We keep the
+        // original ref_idx alongside so flow_binding_lhs / origin-language
+        // lookups stay correct after the sort.
+        //
+        // Only sort when the file actually uses flow-typing — the sort
+        // perturbs extractor emission order, which INSERT OR IGNORE on
+        // edges is sensitive to for duplicate-target refs. When no flow
+        // metadata is present, preserve the original order.
+        let uses_flow = !pf.flow.flow_binding_lhs.is_empty()
+            || !pf.flow.narrowings.is_empty();
+        let refs_ordered: Vec<(usize, &crate::types::ExtractedRef)> = if uses_flow {
+            let mut v: Vec<_> = pf.refs.iter().enumerate().collect();
+            v.sort_by_key(|(_, r)| r.line);
+            v
+        } else {
+            pf.refs.iter().enumerate().collect()
+        };
+
+        for (ref_idx, r) in refs_ordered {
             // Determine the effective language for this ref. Refs from embedded
             // regions (e.g. TS inside a Vue/Svelte file, JS inside PHP/Elixir)
             // carry their own language tag so the resolver and
@@ -166,6 +237,19 @@ fn resolve_and_write_inner(
                 continue;
             }
 
+            // R5: move the flow-cache cursor to this ref's byte offset so
+            // narrowing lookups in chain walkers see the right scope.
+            // Sprint 1 leaves this as 0 for languages that haven't wired
+            // their FlowConfig yet — narrowings are empty in that case so
+            // the cursor value doesn't matter.
+            let ref_byte = pf
+                .flow
+                .ref_byte_offsets
+                .get(ref_idx)
+                .copied()
+                .unwrap_or(0);
+            index.set_cursor(ref_byte);
+
             // Tier 1: Try language-specific resolver (for the effective language).
             let mut resolved_by_engine = false;
             if let (Some(resolver), Some(file_ctx)) = (resolver, &file_ctx) {
@@ -178,6 +262,41 @@ fn resolve_and_write_inner(
                 };
 
                 if let Some(resolution) = resolver.resolve(&file_ctx, &ref_ctx, &index) {
+                    // R5: if this ref is the RHS of `<lhs> = <expr>`, record
+                    // the target's yield type (return type for a method call,
+                    // declared type for a field) against the named LHS. The
+                    // chain walker already populates `resolution.resolved_yield_type`
+                    // for chain refs; fall back to looking up the target's
+                    // return/field type directly so single-segment call refs
+                    // like `let x = foo()` also drive forward inference.
+                    if let Some(lhs_idx) = pf.flow.flow_binding_lhs.get(&ref_idx).copied() {
+                        let yield_type = resolution.resolved_yield_type.clone().or_else(|| {
+                            let target_id = resolution.target_symbol_id;
+                            // Recover the target's qualified name from the index
+                            // and look up its return/field type.
+                            index
+                                .by_name(&r.target_name)
+                                .iter()
+                                .find(|s| s.id == target_id)
+                                .and_then(|s| {
+                                    index
+                                        .return_type_name(&s.qualified_name)
+                                        .or_else(|| {
+                                            index.field_type_name(&s.qualified_name)
+                                        })
+                                        .map(|t| t.to_string())
+                                })
+                        });
+                        if let Some(yield_type) = yield_type {
+                            if let Some(lhs_sym) = pf.symbols.get(lhs_idx) {
+                                index.record_local_type(
+                                    lhs_sym.name.clone(),
+                                    yield_type,
+                                );
+                            }
+                        }
+                    }
+
                     let result = tx
                         .prepare_cached(
                             "INSERT OR IGNORE INTO edges
@@ -477,6 +596,10 @@ fn resolve_and_write_inner(
                 }
             }
         }
+
+        // R5: wipe the local-type cache so bindings from this file don't
+        // leak into the next.
+        index.clear_local_cache();
     }
 
     tx.commit()
@@ -501,9 +624,31 @@ fn resolve_and_write_inner(
     }
     stats.chain_misses = unique_misses;
 
-    // Materialize incoming_edge_count on symbols for fast centrality lookups.
-    // Scan edges once into a temp table (O(E)), then join-update symbols (O(S * log E_distinct)).
-    // This avoids the correlated-subquery path that issues one COUNT per symbol row.
+    if stats.engine_resolved > 0 || stats.external > 0 {
+        info!(
+            "Resolution: {} by engine, {} by heuristic, {} external, {} unresolved",
+            stats.engine_resolved,
+            stats.resolved - stats.engine_resolved,
+            stats.external,
+            stats.unresolved,
+        );
+    }
+
+    Ok(stats)
+}
+
+/// Post-resolution DB maintenance. Runs once after the last call to
+/// `resolve_iteration` in a demand-driven loop (or immediately after the
+/// one-shot `resolve_and_write`). Rematerializes `incoming_edge_count` on
+/// every symbol row so centrality / blast-radius queries stay O(1).
+///
+/// The join-update path (scan edges into a temp table, UPDATE once) is
+/// O(E + S log D) — far cheaper than a correlated subquery that would
+/// issue one COUNT per symbol row. Separated from `resolve_iteration` so
+/// Stage 2 can call iteration multiple times without paying this cost on
+/// every pass.
+pub fn finalize_resolution(db: &mut Database) -> Result<()> {
+    let conn = db.conn();
     conn.execute_batch(
         "CREATE TEMP TABLE IF NOT EXISTS _edge_counts (id INTEGER PRIMARY KEY, cnt INTEGER);
          DELETE FROM _edge_counts;
@@ -518,18 +663,7 @@ fn resolve_and_write_inner(
     .context("Failed to materialize incoming_edge_count")?;
     conn.execute("DELETE FROM _edge_counts", [])
         .context("Failed to clean up edge count temp table")?;
-
-    if stats.engine_resolved > 0 || stats.external > 0 {
-        info!(
-            "Resolution: {} by engine, {} by heuristic, {} external, {} unresolved",
-            stats.engine_resolved,
-            stats.resolved - stats.engine_resolved,
-            stats.external,
-            stats.unresolved,
-        );
-    }
-
-    Ok(stats)
+    Ok(())
 }
 
 /// A module specifier that points to project-local code rather than an

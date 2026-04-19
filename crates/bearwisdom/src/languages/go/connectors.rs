@@ -35,6 +35,9 @@ use crate::connectors::traits::{Connector, ConnectorDescriptor};
 use crate::connectors::types::{ConnectionPoint, FlowDirection, Protocol};
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::project_context::ProjectContext;
+use crate::types::{
+    ConnectionKind, ConnectionPoint as AbstractPoint, ConnectionRole,
+};
 
 // ===========================================================================
 // GoRouteConnector — LanguagePlugin entry point
@@ -536,11 +539,12 @@ impl Connector for GoRestConnector {
     fn extract(
         &self,
         conn: &Connection,
-        project_root: &Path,
+        _project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>> {
+        // Starts (http.Get, http.NewRequest) migrated into
+        // `extract_go_rest_starts_src`. Stops stay on DB.
         let mut points = Vec::new();
         extract_go_rest_stops(conn, &mut points)?;
-        extract_go_rest_starts(conn, project_root, &mut points)?;
         Ok(points)
     }
 }
@@ -583,68 +587,6 @@ fn extract_go_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) -> R
             framework: String::new(),
             metadata: None,
         });
-    }
-    Ok(())
-}
-
-fn extract_go_rest_starts(
-    conn: &Connection,
-    project_root: &Path,
-    out: &mut Vec<ConnectionPoint>,
-) -> Result<()> {
-    // http.Get("url"), http.Post("url", ...)
-    let re_simple = regex::Regex::new(
-        r#"http\s*\.\s*(?P<method>Get|Post)\s*\(\s*"(?P<url>[^"]+)""#,
-    ).expect("go http.Get/Post regex");
-    // http.NewRequest("METHOD", "url", ...)
-    let re_new_request = regex::Regex::new(
-        r#"http\s*\.\s*NewRequest\s*\(\s*"(?P<method>[^"]+)"\s*,\s*"(?P<url>[^"]+)""#,
-    ).expect("go http.NewRequest regex");
-
-    let mut stmt = conn
-        .prepare("SELECT id, path FROM files WHERE language = 'go'")
-        .context("Failed to prepare Go files query")?;
-    let files: Vec<(i64, String)> = stmt
-        .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-        .context("Failed to query Go files")?
-        .collect::<rusqlite::Result<Vec<_>>>()
-        .context("Failed to collect Go file rows")?;
-
-    for (file_id, rel_path) in files {
-        if go_rest_is_test_file(&rel_path) {
-            continue;
-        }
-        let abs_path = project_root.join(&rel_path);
-        let source = match std::fs::read_to_string(&abs_path) {
-            Ok(s) => s,
-            Err(_) => continue,
-        };
-        for (line_idx, line_text) in source.lines().enumerate() {
-            let line_no = (line_idx + 1) as u32;
-            for re in &[&re_simple, &re_new_request] {
-                for cap in re.captures_iter(line_text) {
-                    let Some(raw_url) = cap.name("url").map(|m| m.as_str().to_string()) else { continue };
-                    if !go_rest_looks_like_api_url(&raw_url) {
-                        continue;
-                    }
-                    let method = cap.name("method")
-                        .map(|m| m.as_str().to_uppercase())
-                        .unwrap_or_else(|| "GET".to_string());
-                    let url_pattern = rest_normalise_url_pattern(&raw_url);
-                    out.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::Rest,
-                        direction: FlowDirection::Start,
-                        key: url_pattern,
-                        method,
-                        framework: String::new(),
-                        metadata: None,
-                    });
-                }
-            }
-        }
     }
     Ok(())
 }
@@ -828,132 +770,210 @@ impl Connector for GoMqConnector {
             || ctx.has_dependency(ManifestKind::GoMod, "github.com/nats-io/nats.go")
     }
 
-    fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        // sarama: producer.SendMessage(&sarama.ProducerMessage{Topic: "name", ...})
-        let re_sarama_send = regex::Regex::new(
-            r#"Topic\s*:\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("go sarama topic regex");
+    fn extract(&self, _conn: &Connection, _project_root: &Path) -> Result<Vec<ConnectionPoint>> {
+        // Flattened into `extract_go_mq_src`.
+        Ok(Vec::new())
+    }
+}
 
-        // amqp091: ch.Publish("exchange", "routingKey", ...)
-        let re_amqp_publish = regex::Regex::new(
-            r#"\.Publish\s*\(\s*(?:ctx,\s*)?['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("go amqp publish regex");
+// ===========================================================================
+// Plugin-facing composer — called from GoPlugin::extract_connection_points
+// ===========================================================================
 
-        // amqp091: ch.Consume("queue", ...)
-        let re_amqp_consume = regex::Regex::new(
-            r#"\.Consume\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("go amqp consume regex");
+pub fn extract_go_connection_points(source: &str, file_path: &str) -> Vec<AbstractPoint> {
+    let mut out = Vec::new();
+    extract_go_rest_starts_src(source, file_path, &mut out);
+    extract_go_mq_src(source, &mut out);
+    out
+}
 
-        // nats: nc.Subscribe("subject", ...) / nc.Publish("subject", ...)
-        let re_nats_subscribe = regex::Regex::new(
-            r#"nc\.Subscribe\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("go nats subscribe regex");
+/// Go REST client-call starts: http.Get/Post + http.NewRequest.
+pub fn extract_go_rest_starts_src(
+    source: &str,
+    file_path: &str,
+    out: &mut Vec<AbstractPoint>,
+) {
+    if go_rest_is_test_file(file_path) {
+        return;
+    }
+    if !source.contains("http.") {
+        return;
+    }
 
-        let re_nats_publish = regex::Regex::new(
-            r#"nc\.Publish\s*\(\s*['"`]([^'"`]+)['"`]"#,
-        )
-        .expect("go nats publish regex");
+    let re_simple = regex::Regex::new(
+        r#"http\s*\.\s*(?P<method>Get|Post)\s*\(\s*"(?P<url>[^"]+)""#,
+    )
+    .expect("go http.Get/Post regex");
+    let re_new_request = regex::Regex::new(
+        r#"http\s*\.\s*NewRequest\s*\(\s*"(?P<method>[^"]+)"\s*,\s*"(?P<url>[^"]+)""#,
+    )
+    .expect("go http.NewRequest regex");
 
-        let mut stmt = conn
-            .prepare("SELECT id, path FROM files WHERE language = 'go'")
-            .context("Failed to prepare Go files query")?;
-
-        let files: Vec<(i64, String)> = stmt
-            .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
-            .context("Failed to query Go files")?
-            .collect::<rusqlite::Result<Vec<_>>>()
-            .context("Failed to collect Go file rows")?;
-
-        let mut points = Vec::new();
-
-        for (file_id, rel_path) in files {
-            let abs_path = project_root.join(&rel_path);
-            let source = match std::fs::read_to_string(&abs_path) {
-                Ok(s) => s,
-                Err(_) => continue,
-            };
-
-            for (line_idx, line_text) in source.lines().enumerate() {
-                let line_no = (line_idx + 1) as u32;
-
-                for cap in re_sarama_send.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "kafka".to_string(),
-                        metadata: None,
-                    });
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+        for re in &[&re_simple, &re_new_request] {
+            for cap in re.captures_iter(line_text) {
+                let Some(raw_url) = cap.name("url").map(|m| m.as_str().to_string()) else {
+                    continue;
+                };
+                if !go_rest_looks_like_api_url(&raw_url) {
+                    continue;
                 }
-
-                for cap in re_amqp_publish.captures_iter(line_text) {
-                    // Use routing key as topic key.
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[2].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_amqp_consume.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "rabbitmq".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_nats_subscribe.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Stop,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "nats".to_string(),
-                        metadata: None,
-                    });
-                }
-
-                for cap in re_nats_publish.captures_iter(line_text) {
-                    points.push(ConnectionPoint {
-                        file_id,
-                        symbol_id: None,
-                        line: line_no,
-                        protocol: Protocol::MessageQueue,
-                        direction: FlowDirection::Start,
-                        key: cap[1].to_string(),
-                        method: String::new(),
-                        framework: "nats".to_string(),
-                        metadata: None,
-                    });
-                }
+                let method = cap
+                    .name("method")
+                    .map(|m| m.as_str().to_uppercase())
+                    .unwrap_or_else(|| "GET".to_string());
+                let url_pattern = rest_normalise_url_pattern(&raw_url);
+                let mut meta = HashMap::new();
+                meta.insert("method".to_string(), method);
+                out.push(AbstractPoint {
+                    kind: ConnectionKind::Rest,
+                    role: ConnectionRole::Start,
+                    key: url_pattern,
+                    line: line_no,
+                    col: 1,
+                    symbol_qname: String::new(),
+                    meta,
+                });
             }
         }
+    }
+}
 
-        Ok(points)
+/// Go MQ detection: sarama (topic field), amqp091 publish/consume, nats.
+pub fn extract_go_mq_src(source: &str, out: &mut Vec<AbstractPoint>) {
+    if !source.contains("Topic")
+        && !source.contains(".Publish")
+        && !source.contains(".Consume")
+        && !source.contains(".Subscribe")
+    {
+        return;
+    }
+
+    let re_sarama_send =
+        regex::Regex::new(r#"Topic\s*:\s*['"`]([^'"`]+)['"`]"#).expect("go sarama topic regex");
+    let re_amqp_publish = regex::Regex::new(
+        r#"\.Publish\s*\(\s*(?:ctx,\s*)?['"`]([^'"`]+)['"`]\s*,\s*['"`]([^'"`]+)['"`]"#,
+    )
+    .expect("go amqp publish regex");
+    let re_amqp_consume =
+        regex::Regex::new(r#"\.Consume\s*\(\s*['"`]([^'"`]+)['"`]"#).expect("go amqp consume regex");
+    let re_nats_subscribe =
+        regex::Regex::new(r#"nc\.Subscribe\s*\(\s*['"`]([^'"`]+)['"`]"#).expect("go nats sub regex");
+    let re_nats_publish =
+        regex::Regex::new(r#"nc\.Publish\s*\(\s*['"`]([^'"`]+)['"`]"#).expect("go nats pub regex");
+
+    let push = |out: &mut Vec<AbstractPoint>,
+                role: ConnectionRole,
+                key: String,
+                line: u32,
+                framework: &str| {
+        let mut meta = HashMap::new();
+        meta.insert("framework".to_string(), framework.to_string());
+        out.push(AbstractPoint {
+            kind: ConnectionKind::MessageQueue,
+            role,
+            key,
+            line,
+            col: 1,
+            symbol_qname: String::new(),
+            meta,
+        });
+    };
+
+    for (line_idx, line_text) in source.lines().enumerate() {
+        let line_no = (line_idx + 1) as u32;
+
+        for cap in re_sarama_send.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "kafka");
+        }
+        for cap in re_amqp_publish.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[2].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_amqp_consume.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "rabbitmq");
+        }
+        for cap in re_nats_subscribe.captures_iter(line_text) {
+            push(out, ConnectionRole::Stop, cap[1].to_string(), line_no, "nats");
+        }
+        for cap in re_nats_publish.captures_iter(line_text) {
+            push(out, ConnectionRole::Start, cap[1].to_string(), line_no, "nats");
+        }
+    }
+}
+
+#[cfg(test)]
+mod plugin_source_scan_tests {
+    use super::*;
+
+    #[test]
+    fn go_rest_http_get_is_start() {
+        let mut out = Vec::new();
+        extract_go_rest_starts_src(
+            r#"resp, _ := http.Get("/api/ping")"#,
+            "main.go",
+            &mut out,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "/api/ping");
+        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("GET"));
+    }
+
+    #[test]
+    fn go_rest_new_request_parses_method() {
+        let mut out = Vec::new();
+        extract_go_rest_starts_src(
+            r#"req, _ := http.NewRequest("DELETE", "/api/users/42", nil)"#,
+            "main.go",
+            &mut out,
+        );
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "/api/users/42");
+        assert_eq!(out[0].meta.get("method").map(String::as_str), Some("DELETE"));
+    }
+
+    #[test]
+    fn go_rest_skips_test_files() {
+        let mut out = Vec::new();
+        extract_go_rest_starts_src(
+            r#"http.Get("/api/x")"#,
+            "pkg/foo_test.go",
+            &mut out,
+        );
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn go_mq_sarama_producer_start() {
+        let src = r#"msg := &sarama.ProducerMessage{Topic: "events", Value: v}"#;
+        let mut out = Vec::new();
+        extract_go_mq_src(src, &mut out);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].key, "events");
+        assert_eq!(out[0].role, ConnectionRole::Start);
+        assert_eq!(out[0].meta.get("framework").map(String::as_str), Some("kafka"));
+    }
+
+    #[test]
+    fn go_mq_amqp_publish_uses_routing_key() {
+        let src = r#"ch.Publish("exchange", "user.signup", false, false, msg)"#;
+        let mut out = Vec::new();
+        extract_go_mq_src(src, &mut out);
+        let starts: Vec<_> = out.iter().filter(|p| p.role == ConnectionRole::Start).collect();
+        assert_eq!(starts.len(), 1);
+        assert_eq!(starts[0].key, "user.signup");
+    }
+
+    #[test]
+    fn composer_combines_rest_and_mq() {
+        let src = r#"
+http.Get("/api/x")
+ch.Publish("ex", "rk.a", false, false, m)
+"#;
+        let points = extract_go_connection_points(src, "main.go");
+        let has = |k: ConnectionKind| points.iter().any(|p| p.kind == k);
+        assert!(has(ConnectionKind::Rest));
+        assert!(has(ConnectionKind::MessageQueue));
     }
 }
 

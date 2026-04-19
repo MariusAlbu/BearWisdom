@@ -1,6 +1,16 @@
 pub mod changeset;
+pub mod demand;
 pub mod expand;
+pub mod flow;
+#[cfg(test)]
+#[path = "flow_tests.rs"]
+mod flow_tests;
+#[cfg(test)]
+#[path = "flow_config_tests.rs"]
+mod flow_config_tests;
 pub mod full;
+pub mod stage_discover;
+pub mod stage_link;
 pub mod incremental;
 pub mod module_resolution;
 pub mod post_index;

@@ -192,6 +192,7 @@ impl LanguageResolver for TypeScriptResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ts_import_file",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -209,6 +210,7 @@ impl LanguageResolver for TypeScriptResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ts_import",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -273,6 +275,7 @@ impl LanguageResolver for TypeScriptResolver {
                             target_symbol_id: sym.id,
                             confidence: 1.0,
                             strategy: "ts_relative_import",
+                            resolved_yield_type: None,
                         });
                     }
                 }
@@ -312,6 +315,7 @@ impl LanguageResolver for TypeScriptResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ts_bare_import_qname",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -356,6 +360,7 @@ impl LanguageResolver for TypeScriptResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ts_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -374,6 +379,7 @@ impl LanguageResolver for TypeScriptResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "ts_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -391,6 +397,7 @@ impl LanguageResolver for TypeScriptResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "ts_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -415,6 +422,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 target_symbol_id: sym.id,
                                 confidence: 0.95,
                                 strategy: "ts_field_type_chain",
+                                resolved_yield_type: None,
                             });
                         }
                     }
@@ -429,6 +437,7 @@ impl LanguageResolver for TypeScriptResolver {
                                 target_symbol_id: sym.id,
                                 confidence: 0.90,
                                 strategy: "ts_field_type_chain",
+                                resolved_yield_type: None,
                             });
                         }
                     }
@@ -709,6 +718,7 @@ fn resolve_via_alias(
                 target_symbol_id: sym.id,
                 confidence: 1.0,
                 strategy: "ts_tsconfig_alias",
+                resolved_yield_type: None,
             });
         }
     }
@@ -737,6 +747,7 @@ fn resolve_via_alias(
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "ts_tsconfig_alias",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -798,6 +809,7 @@ fn resolve_workspace_package(
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "ts_workspace_pkg",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -817,6 +829,7 @@ fn resolve_workspace_package(
             target_symbol_id: sym.id,
             confidence: 1.0,
             strategy: "ts_workspace_pkg",
+            resolved_yield_type: None,
         }
     })
 }
@@ -908,6 +921,7 @@ fn follow_reexports(
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "ts_reexport_chain",
+                    resolved_yield_type: None,
                 });
             }
         }
@@ -940,6 +954,7 @@ fn follow_reexports(
                     target_symbol_id: sym.id,
                     confidence: 0.95,
                     strategy: "ts_reexport_star",
+                    resolved_yield_type: None,
                 });
             }
         }

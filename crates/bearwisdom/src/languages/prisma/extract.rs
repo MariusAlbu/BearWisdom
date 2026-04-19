@@ -210,6 +210,7 @@ fn extract_field(
             line: line_num,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 

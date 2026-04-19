@@ -278,6 +278,7 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
                     line: line_idx as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -476,6 +477,7 @@ fn extract_class(
                         line: superclass_node.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -586,6 +588,7 @@ fn extract_type_list_refs(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }
@@ -733,6 +736,7 @@ fn extract_import(
         line: node.start_position().row as u32,
         module: Some(module),
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -764,6 +768,7 @@ fn extract_call(
         line: node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 

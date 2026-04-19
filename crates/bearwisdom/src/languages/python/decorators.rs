@@ -47,6 +47,7 @@ pub(super) fn extract_decorators(
                     line: child.start_position().row as u32,
                     module: first_arg,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }

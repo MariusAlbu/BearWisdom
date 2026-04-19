@@ -135,6 +135,7 @@ impl LanguageResolver for CLangResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "c_scope_chain",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -148,6 +149,7 @@ impl LanguageResolver for CLangResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "c_qualified_name",
+                        resolved_yield_type: None,
                     });
                 }
             }
@@ -164,6 +166,7 @@ impl LanguageResolver for CLangResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "c_same_file",
+                    resolved_yield_type: None,
                 });
             }
         }

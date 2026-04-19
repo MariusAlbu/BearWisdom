@@ -47,9 +47,9 @@ fn make_ref_plain(source_idx: usize, target: &str) -> ExtractedRef {
         line: 2,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> ExtractedRef {
     ExtractedRef {
         source_symbol_index: source_idx,
@@ -58,9 +58,9 @@ fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> Extrac
         line: 2,
         module: Some(module.to_string()),
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
     ExtractedRef {
         source_symbol_index: source_idx,
@@ -69,9 +69,9 @@ fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
         line: 1,
         module: Some(target.to_string()),
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_file(path: &str, language: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
@@ -90,6 +90,9 @@ fn make_file(path: &str, language: &str, symbols: Vec<ExtractedSymbol>, refs: Ve
         symbol_origin_languages: vec![],
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -121,6 +124,9 @@ fn build_index(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String),
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);

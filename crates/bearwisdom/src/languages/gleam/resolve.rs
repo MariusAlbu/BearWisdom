@@ -103,6 +103,7 @@ impl LanguageResolver for GleamResolver {
                     target_symbol_id: sym.id,
                     confidence: 1.0,
                     strategy: "gleam_import_qualified",
+                    resolved_yield_type: None,
                 });
             }
 
@@ -113,6 +114,7 @@ impl LanguageResolver for GleamResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "gleam_import_file",
+                        resolved_yield_type: None,
                     });
                 }
             }

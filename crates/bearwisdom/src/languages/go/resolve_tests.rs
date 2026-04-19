@@ -40,6 +40,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         line,
         module: None,
         chain: None,
+        byte_offset: 0,
     }
 }
 
@@ -56,9 +57,9 @@ fn make_import_ref(
         line,
         module: Some(full_path.to_string()),
         chain: None,
+        byte_offset: 0,
     }
 }
-
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
     ParsedFile {
         path: path.to_string(),
@@ -77,6 +78,9 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         symbol_origin_languages: vec![],
         ref_origin_languages: vec![],
         symbol_from_snippet: vec![],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
     }
 }
 
@@ -108,6 +112,9 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             symbol_origin_languages: vec![],
             ref_origin_languages: vec![],
             symbol_from_snippet: vec![],
+            flow: crate::types::FlowMeta::default(),
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -336,6 +343,7 @@ fn test_build_file_context_alias_import() {
         line: 3,
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
+        byte_offset: 0,
     });
 
     let resolver = GoResolver;
@@ -370,6 +378,7 @@ fn test_build_file_context_blank_import_skipped() {
         line: 3,
         module: Some("database/sql/driver".to_string()),
         chain: None,
+        byte_offset: 0,
     });
 
     let resolver = GoResolver;
@@ -594,6 +603,7 @@ fn test_import_alias_resolution() {
         line: 3,
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
+        byte_offset: 0,
     });
 
     let (index, id_map) = build_test_env(&[&gin_file, &main_file]);
@@ -993,6 +1003,7 @@ fn test_is_visible_public_always() {
         line: 1,
         module: None,
         chain: None,
+        byte_offset: 0,
     };
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
@@ -1033,6 +1044,7 @@ fn test_is_visible_private_same_dir() {
         line: 1,
         module: None,
         chain: None,
+        byte_offset: 0,
     };
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
@@ -1073,6 +1085,7 @@ fn test_is_visible_private_different_dir() {
         line: 1,
         module: None,
         chain: None,
+        byte_offset: 0,
     };
     let source_sym = make_symbol("main", "main.main", SymbolKind::Function, Visibility::Private, Some("main"));
     let ref_ctx = RefContext {
@@ -1122,6 +1135,7 @@ fn test_instantiates_ref_resolution() {
                 line: 10,
                 module: None,
                 chain: None,
+                byte_offset: 0,
             },
         ],
     );

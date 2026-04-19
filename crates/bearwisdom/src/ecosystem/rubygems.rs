@@ -11,10 +11,13 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
+use tree_sitter::{Node, Parser};
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader};
@@ -67,6 +70,15 @@ impl Ecosystem for RubygemsEcosystem {
     ) -> Vec<WalkedFile> {
         resolve_ruby_gem_entry(dep)
     }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_ruby_symbol_index(dep_roots)
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
 impl ExternalSourceLocator for RubygemsEcosystem {
@@ -482,6 +494,97 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
                 absolute_path: path,
                 language: "ruby",
             });
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Symbol-location index (demand-driven pipeline entry)
+// ---------------------------------------------------------------------------
+
+fn build_ruby_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    for dep in dep_roots {
+        for wf in walk_ruby_root(dep) {
+            work.push((dep.module_path.clone(), wf));
+        }
+    }
+    if work.is_empty() {
+        return SymbolLocationIndex::new();
+    }
+    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+        .par_iter()
+        .map(|(module, wf)| {
+            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
+                return Vec::new();
+            };
+            scan_ruby_header(&src)
+                .into_iter()
+                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
+                .collect()
+        })
+        .collect();
+    let mut index = SymbolLocationIndex::new();
+    for batch in per_file {
+        for (module, name, file) in batch {
+            index.insert(module, name, file);
+        }
+    }
+    index
+}
+
+/// Header-only tree-sitter scan of a Ruby source file. Records top-level
+/// class / module / method names. Nested classes are surfaced as bare names
+/// so `find_by_name` can resolve `ActiveRecord::Base` → the file defining
+/// `Base`. Function bodies are not walked but Ruby's body-less declaration
+/// model means we still descend into class / module bodies to capture inner
+/// classes and def'd methods.
+fn scan_ruby_header(source: &str) -> Vec<String> {
+    let language = tree_sitter_ruby::LANGUAGE.into();
+    let mut parser = Parser::new();
+    if parser.set_language(&language).is_err() {
+        return Vec::new();
+    }
+    let Some(tree) = parser.parse(source, None) else {
+        return Vec::new();
+    };
+    let root = tree.root_node();
+    let bytes = source.as_bytes();
+    let mut out: Vec<String> = Vec::new();
+    walk_ruby_decls(&root, bytes, &mut out, 0);
+    out
+}
+
+fn walk_ruby_decls(node: &Node, bytes: &[u8], out: &mut Vec<String>, depth: u32) {
+    if depth > 4 { return }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "class" | "module" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    if let Ok(t) = name_node.utf8_text(bytes) {
+                        // Name can be `Base` or `Foo::Bar` — record as-is and
+                        // also the last segment so both lookups hit.
+                        out.push(t.to_string());
+                        if let Some(last) = t.rsplit("::").next() {
+                            if last != t { out.push(last.to_string()) }
+                        }
+                    }
+                }
+                // Descend into body to capture nested class / module / def.
+                walk_ruby_decls(&child, bytes, out, depth + 1);
+            }
+            "method" | "singleton_method" => {
+                if let Some(name_node) = child.child_by_field_name("name") {
+                    if let Ok(t) = name_node.utf8_text(bytes) {
+                        out.push(t.to_string());
+                    }
+                }
+            }
+            "body_statement" | "program" | "begin_block" => {
+                walk_ruby_decls(&child, bytes, out, depth + 1);
+            }
+            _ => {}
         }
     }
 }

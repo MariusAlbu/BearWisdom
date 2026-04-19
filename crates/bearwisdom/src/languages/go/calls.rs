@@ -338,6 +338,7 @@ pub(super) fn extract_refs_from_body(
                                     } else {
                                         None
                                     },
+                                    byte_offset: 0,
                                 });
                             }
                         }
@@ -368,6 +369,7 @@ pub(super) fn extract_refs_from_body(
                             line: type_ref_line,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                         // Second TypeRef at the same line — consumed by the
                         // `type_identifier` budget inside the qualified_type.
@@ -378,6 +380,7 @@ pub(super) fn extract_refs_from_body(
                             line: type_ref_line,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -396,6 +399,7 @@ pub(super) fn extract_refs_from_body(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -417,6 +421,7 @@ pub(super) fn extract_refs_from_body(
                             line: type_node.start_position().row as u32,
                             module: None,
                             chain: None,
+                            byte_offset: 0,
                         });
                     }
                 }
@@ -459,6 +464,7 @@ pub(super) fn extract_refs_from_body(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
@@ -482,6 +488,7 @@ pub(super) fn extract_refs_from_body(
                         line: child.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 // Also recurse into type arguments for their contained type refs.
@@ -617,6 +624,7 @@ fn extract_call_ref(
             line: func_node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 
@@ -628,6 +636,7 @@ fn extract_call_ref(
         line: func_node.start_position().row as u32,
         module: None,
         chain,
+        byte_offset: func_node.start_byte() as u32,
     });
 }
 
@@ -675,6 +684,7 @@ fn extract_make_chan_type_ref(
                         line: elem.start_position().row as u32,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
                 break;
@@ -821,6 +831,7 @@ pub(super) fn extract_composite_literal_ref(
         line: type_node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -864,6 +875,7 @@ pub(super) fn extract_type_assertion_ref(
         line: type_node.start_position().row as u32,
         module: None,
         chain: None,
+        byte_offset: 0,
     });
 }
 
@@ -901,6 +913,7 @@ pub(super) fn extract_type_switch_refs(
                                 line: type_child.start_position().row as u32,
                                 module: None,
                                 chain: None,
+                                byte_offset: 0,
                             });
                         }
                     }
@@ -1062,6 +1075,7 @@ fn emit_type_refs_from_type_node(
                     line: node.start_position().row as u32,
                     module: None,
                     chain: None,
+                    byte_offset: 0,
                 });
             }
         }
@@ -1083,6 +1097,7 @@ fn emit_type_refs_from_type_node(
                         line,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                     refs.push(ExtractedRef {
                         source_symbol_index,
@@ -1091,6 +1106,7 @@ fn emit_type_refs_from_type_node(
                         line,
                         module: None,
                         chain: None,
+                        byte_offset: 0,
                     });
                 }
             }

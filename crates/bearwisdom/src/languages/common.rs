@@ -32,6 +32,7 @@ pub fn emit_chain_type_ref(
             line: func_node.start_position().row as u32,
             module: None,
             chain: None,
+            byte_offset: 0,
         });
     }
 }
