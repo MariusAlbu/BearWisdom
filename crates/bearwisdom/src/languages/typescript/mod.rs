@@ -156,15 +156,26 @@ impl LanguagePlugin for TypeScriptPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::NestjsRouteConnector),
-            Box::new(connectors::NextjsRouteConnector),
-            Box::new(connectors::TauriIpcTsConnector),
-            Box::new(connectors::ElectronIpcConnector),
-            Box::new(connectors::TypeScriptRestConnector),
-            Box::new(connectors::TypeScriptMqConnector),
-            Box::new(connectors::TypeScriptGraphQlConnector),
-        ]
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        let mut out = Vec::new();
+        out.extend(crate::languages::drive_connector(
+            &connectors::NestjsRouteConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::NextjsRouteConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::TypeScriptRestConnector, db, project_root, ctx,
+        ));
+        out
     }
 
     fn post_index(

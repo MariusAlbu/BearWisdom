@@ -77,8 +77,6 @@ impl LanguagePlugin for GroovyPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::GroovySpringRouteConnector),
-        ]
+        vec![]
     }
 }

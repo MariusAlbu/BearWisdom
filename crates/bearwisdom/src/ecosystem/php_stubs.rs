@@ -43,6 +43,17 @@ impl Ecosystem for PhpStubsEcosystem {
         walk_dir(&dep.root, &mut out, 0);
         out
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
+        super::composer::build_php_symbol_index(dep_roots)
+    }
 }
 
 impl ExternalSourceLocator for PhpStubsEcosystem {

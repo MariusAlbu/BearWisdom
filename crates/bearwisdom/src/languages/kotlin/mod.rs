@@ -108,11 +108,23 @@ impl LanguagePlugin for KotlinPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::KotlinGrpcConnector),
-            Box::new(connectors::KotlinMqConnector),
-            Box::new(connectors::KotlinRestConnector),
-        ]
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        let mut out = Vec::new();
+        out.extend(crate::languages::drive_connector(
+            &connectors::KotlinGrpcConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::KotlinRestConnector, db, project_root, ctx,
+        ));
+        out
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

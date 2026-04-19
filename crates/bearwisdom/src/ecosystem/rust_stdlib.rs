@@ -48,6 +48,17 @@ impl Ecosystem for RustStdlibEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_rust_tree(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
+        super::cargo::build_cargo_symbol_index(dep_roots)
+    }
 }
 
 impl ExternalSourceLocator for RustStdlibEcosystem {

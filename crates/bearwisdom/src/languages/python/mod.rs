@@ -103,14 +103,32 @@ impl LanguagePlugin for PythonPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::DjangoRouteConnector),
-            Box::new(connectors::FastApiRouteConnector),
-            Box::new(connectors::PythonRestConnector),
-            Box::new(connectors::PythonGrpcConnector),
-            Box::new(connectors::PythonMqConnector),
-            Box::new(connectors::PythonGraphQlConnector),
-        ]
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        let mut out = Vec::new();
+        out.extend(crate::languages::drive_connector(
+            &connectors::DjangoRouteConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::FastApiRouteConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::PythonRestConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::PythonGrpcConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::PythonGraphQlConnector, db, project_root, ctx,
+        ));
+        out
     }
 
     fn post_index(

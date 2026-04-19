@@ -72,9 +72,19 @@ impl LanguagePlugin for FSharpPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::FSharpDiConnector),
-        ]
+        // DI needs DB joins → moved to resolve_connection_points.
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        crate::languages::drive_connector(
+            &connectors::FSharpDiConnector, db, project_root, ctx,
+        )
     }
 
 }

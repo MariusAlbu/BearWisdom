@@ -55,7 +55,7 @@ impl ConnectorRegistry {
         project_root: &Path,
         ctx: &ProjectContext,
     ) -> Result<u32> {
-        self.run_with_plugin_points(conn, project_root, ctx, &[])
+        self.run_with_plugin_points(conn, project_root, ctx, &[], &[])
     }
 
     /// Variant of `run` that accepts a pre-collected list of
@@ -77,6 +77,7 @@ impl ConnectorRegistry {
         project_root: &Path,
         ctx: &ProjectContext,
         plugin_points: &[ConnectionPoint],
+        resolved_plugin_points: &[ConnectionPoint],
     ) -> Result<u32> {
         // Phase 0: detect — only keep connectors relevant to this project.
         let active: Vec<&dyn Connector> = self
@@ -86,7 +87,7 @@ impl ConnectorRegistry {
             .map(|c| c.as_ref())
             .collect();
 
-        if active.is_empty() && plugin_points.is_empty() {
+        if active.is_empty() && plugin_points.is_empty() && resolved_plugin_points.is_empty() {
             return Ok(0);
         }
 
@@ -103,6 +104,18 @@ impl ConnectorRegistry {
         if !plugin_points.is_empty() {
             info!("plugin extract_connection_points: {} points", plugin_points.len());
             all_points.extend_from_slice(plugin_points);
+        }
+
+        // Points from `LanguagePlugin::resolve_connection_points` — the
+        // post-parse hook for connectors needing cross-file joins, DI
+        // resolution, or class-inheritance walks that weren't available at
+        // parse time.
+        if !resolved_plugin_points.is_empty() {
+            info!(
+                "plugin resolve_connection_points: {} points",
+                resolved_plugin_points.len()
+            );
+            all_points.extend_from_slice(resolved_plugin_points);
         }
 
         for connector in &active {

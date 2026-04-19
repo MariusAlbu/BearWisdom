@@ -38,6 +38,65 @@ impl Ecosystem for ClojureCoreEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         super::maven::walk_generic_jvm_root(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
+        // Two-source index: maven builder covers `clojure.lang.*` Java
+        // interop types (headers-only tree-sitter parse); regex scanner
+        // below covers `(defn/def/defmacro ... name)` in `.clj` files.
+        let mut idx = super::maven::build_maven_symbol_index(dep_roots);
+        for dep in dep_roots {
+            for wf in super::maven::walk_generic_jvm_root(dep) {
+                if !wf.relative_path.ends_with(".clj")
+                    && !wf.relative_path.ends_with(".cljs")
+                    && !wf.relative_path.ends_with(".cljc")
+                {
+                    continue;
+                }
+                let Ok(source) = std::fs::read_to_string(&wf.absolute_path) else { continue };
+                scan_clojure_defs(&source, &wf, &mut idx);
+            }
+        }
+        idx
+    }
+}
+
+/// Emit `(module, name) → file` entries for Clojure top-level definitions.
+/// Module is the `(ns …)` declaration text from the file (or filename stem
+/// when ns is absent). Recognized forms: `defn`, `defn-`, `def`, `defmacro`,
+/// `defmulti`, `defmethod`, `defprotocol`, `defrecord`, `deftype`.
+fn scan_clojure_defs(
+    source: &str,
+    wf: &WalkedFile,
+    idx: &mut crate::ecosystem::symbol_index::SymbolLocationIndex,
+) {
+    let re_ns = regex::Regex::new(r"\(ns\s+([A-Za-z0-9._\-]+)").expect("clj ns regex");
+    let re_def = regex::Regex::new(
+        r"\((?:defn-?|def|defmacro|defmulti|defmethod|defprotocol|defrecord|deftype)\s+([A-Za-z0-9._*+!?<>=/\-]+)",
+    )
+    .expect("clj def regex");
+
+    let ns_name = re_ns
+        .captures(source)
+        .map(|c| c[1].to_string())
+        .unwrap_or_else(|| {
+            std::path::Path::new(&wf.relative_path)
+                .file_stem()
+                .and_then(|s| s.to_str())
+                .unwrap_or("clojure.core")
+                .to_string()
+        });
+
+    for cap in re_def.captures_iter(source) {
+        let name = cap[1].to_string();
+        idx.insert(&ns_name, &name, &wf.relative_path);
+    }
 }
 
 impl ExternalSourceLocator for ClojureCoreEcosystem {

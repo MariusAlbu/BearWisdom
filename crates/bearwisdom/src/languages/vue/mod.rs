@@ -152,8 +152,6 @@ impl LanguagePlugin for VuePlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::VueGraphQlConnector),
-        ]
+        vec![]
     }
 }

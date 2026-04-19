@@ -929,7 +929,7 @@ fn detect_hex_language(name: &str) -> Option<(&'static str, &'static str)> {
 // Symbol-location index (demand-driven pipeline entry)
 // ---------------------------------------------------------------------------
 
-fn build_hex_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_hex_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
     for dep in dep_roots {
         for wf in walk_hex_root(dep) {

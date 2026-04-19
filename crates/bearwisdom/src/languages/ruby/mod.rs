@@ -88,11 +88,23 @@ impl LanguagePlugin for RubyPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::RailsRouteConnector),
-            Box::new(connectors::RubyRestConnector),
-            Box::new(connectors::RubyGraphQlConnector),
-        ]
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        let mut out = Vec::new();
+        out.extend(crate::languages::drive_connector(
+            &connectors::RailsRouteConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::RubyRestConnector, db, project_root, ctx,
+        ));
+        out
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

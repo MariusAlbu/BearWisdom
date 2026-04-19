@@ -85,6 +85,6 @@ impl LanguagePlugin for ProtoPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![Box::new(connectors::ProtoGrpcConnector)]
+        vec![]
     }
 }

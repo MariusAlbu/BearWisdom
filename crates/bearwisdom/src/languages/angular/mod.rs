@@ -80,9 +80,22 @@ impl LanguagePlugin for AngularPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::AngularDiConnector),
-            Box::new(connectors::AngularRestConnector),
-        ]
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        let mut out = Vec::new();
+        out.extend(crate::languages::drive_connector(
+            &connectors::AngularDiConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::AngularRestConnector, db, project_root, ctx,
+        ));
+        out
     }
 }

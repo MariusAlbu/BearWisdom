@@ -793,7 +793,7 @@ fn walk_python_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: 
 // this index to pull only files demanded by user refs (or re-export
 // follow-through), skipping the rest of the site-packages tree.
 
-fn build_python_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_python_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
     for dep in dep_roots {
         for wf in walk_python_external_root(dep) {

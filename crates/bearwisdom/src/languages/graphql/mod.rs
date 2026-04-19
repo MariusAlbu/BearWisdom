@@ -86,6 +86,7 @@ impl LanguagePlugin for GraphQlPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![Box::new(connectors::GraphQlSchemaConnector)]
+        // Schema starts flattened into `extract_connection_points`.
+        vec![]
     }
 }

@@ -736,7 +736,7 @@ fn walk_dir_bounded(
 // Symbol-location index (demand-driven pipeline entry)
 // ---------------------------------------------------------------------------
 
-fn build_cargo_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_cargo_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
     for dep in dep_roots {
         for wf in walk_cargo_root(dep) {

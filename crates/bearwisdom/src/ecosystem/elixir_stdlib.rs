@@ -33,6 +33,17 @@ impl Ecosystem for ElixirStdlibEcosystem {
     }
     fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> { discover() }
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> { walk(dep) }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
+        super::hex::build_hex_symbol_index(dep_roots)
+    }
 }
 
 impl ExternalSourceLocator for ElixirStdlibEcosystem {

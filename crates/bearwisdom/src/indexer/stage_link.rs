@@ -216,16 +216,11 @@ pub(crate) fn parse_external_sources(
                 continue;
             }
         }
-        let files = match eco {
-            // Package ecosystems that opted into reachability: call
-            // resolve_import for the lazy entry-driven load.
-            Some(e) if matches!(e.kind(), EcosystemKind::Package) && e.supports_reachability() => {
-                e.resolve_import(root, &root.module_path, &[])
-            }
-            // Everything else keeps the eager walk — Stdlib ecosystems
-            // (pre-warming pays off) and un-migrated Package ecosystems.
-            _ => locator.walk_root(root),
-        };
+        // Remaining holdouts on the eager walk: ecosystems with no
+        // source-symbol surface to build an index from — POSIX / MSVC C
+        // headers and VBA TypeLib metadata blobs. The pre-parse walk stays
+        // in place because there's nothing to drive demand for them.
+        let files = locator.walk_root(root);
         walked_owners.extend(std::iter::repeat(locator.clone()).take(files.len()));
         walked.extend(files);
     }

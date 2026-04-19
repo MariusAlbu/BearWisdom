@@ -68,6 +68,18 @@ impl Ecosystem for DotnetStdlibEcosystem {
         }
         if out.is_empty() { None } else { Some(out) }
     }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        _dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
+        // .NET stdlib uses DLL metadata via `parse_metadata_only` — the
+        // symbols land as ParsedFile entries directly and are indexed by
+        // the normal write pass. No source symbol index needed.
+        crate::ecosystem::symbol_index::SymbolLocationIndex::new()
+    }
 }
 
 impl ExternalSourceLocator for DotnetStdlibEcosystem {

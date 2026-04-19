@@ -369,6 +369,60 @@ fn run_incremental_pipeline(
     stats.edges_written = rstats.resolved as u32;
     info!("Resolved {} edges for changed files", rstats.resolved);
 
+    // --- Step 11b: Stage 3 — Connect + post-index enrichment ---
+    //
+    // Align with the full pipeline's 3-stage shape. Connector matching is
+    // cross-file (a Start in changed file X may pair with a Stop in unchanged
+    // file Y), so we re-run the full registry pass against the current DB
+    // state + plugin-emitted points from the changed-file slice only. The
+    // registry's dedupe drops overlap with points already stored from prior
+    // runs.
+    let file_id_map: std::collections::HashMap<String, i64> = symbol_id_map
+        .keys()
+        .map(|(path, _qname)| path.clone())
+        .collect::<std::collections::HashSet<_>>()
+        .into_iter()
+        .filter_map(|path| {
+            let id = db
+                .conn()
+                .query_row(
+                    "SELECT id FROM files WHERE path = ?1",
+                    [&path],
+                    |r| r.get::<_, i64>(0),
+                )
+                .ok()?;
+            Some((path, id))
+        })
+        .collect();
+    let plugin_points = crate::connectors::from_plugins::collect_plugin_connection_points(
+        &parsed,
+        &file_id_map,
+        &symbol_id_map,
+    );
+
+    let mut resolved_plugin_points: Vec<crate::connectors::types::ConnectionPoint> = Vec::new();
+    for plugin in registry.all() {
+        let points = plugin.resolve_connection_points(db, project_root, &project_ctx);
+        if !points.is_empty() {
+            resolved_plugin_points.extend(points);
+        }
+    }
+
+    let connector_registry = crate::connectors::registry::build_default_registry();
+    if let Err(e) = connector_registry.run_with_plugin_points(
+        db.conn(),
+        project_root,
+        &project_ctx,
+        &plugin_points,
+        &resolved_plugin_points,
+    ) {
+        warn!("Incremental connector pass failed: {e}");
+    }
+
+    for plugin in registry.all() {
+        plugin.post_index(db, project_root, &project_ctx);
+    }
+
     // --- Step 12: Store indexed commit ---
     if let Some(commit) = cs.commit {
         if let Err(e) = changeset::set_meta(db, "indexed_commit", &commit) {

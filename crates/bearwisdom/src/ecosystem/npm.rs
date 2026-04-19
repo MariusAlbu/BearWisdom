@@ -841,7 +841,7 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
 // File scope matches `walk_ts_external_root` — same .ts/.tsx/.d.ts/.js/.jsx
 // filter, same exclusions (nested node_modules, test/story dirs, etc.).
 
-fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     // Gather every walked file + its owning package name so each parallel
     // task is self-contained.
     let mut work: Vec<(String, WalkedFile)> = Vec::new();

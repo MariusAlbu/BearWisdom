@@ -772,7 +772,7 @@ fn detect_jvm_language(name: &str) -> Option<(&'static str, &'static str)> {
 //     directly when a user `import org.springframework.context.Ctx` is
 //     seeded.
 
-fn build_maven_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_maven_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     // Collect every walked file + its owning dep metadata so each parallel
     // scan task is self-contained. We walk the FULL dep root (not the
     // R3-narrowed slice) so the index covers every symbol the jar publishes,

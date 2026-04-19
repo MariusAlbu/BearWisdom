@@ -84,49 +84,50 @@ Grouped by plugin. Each composer is invoked by `LanguagePlugin::extract_connecti
 ### Groovy (`GroovyPlugin::extract_connection_points` via `extract_groovy_connection_points`)
 - `groovy_spring_routes` — `@GetMapping/@PostMapping/@RequestMapping` on Spring controllers.
 
-## Remains on legacy DB path
+## DB-lookup connectors — all flattened into `resolve_connection_points`
 
-The registry path is still the authoritative source for connectors that need
-symbol-table joins, inheritance lookups, or DI-container resolution — none of
-which is available at parse time. Their `Connector::extract` stays live; the
-plugin's `extract_connection_points` returns nothing for them.
+The `LanguagePlugin::resolve_connection_points(db, project_root, ctx)` post-parse
+hook is the home for connectors that need cross-file joins, inheritance
+lookups, or DI-container resolution. Every plugin with such a connector
+overrides this method and drives the legacy `Connector` via
+`crate::languages::drive_connector`, which preserves the existing regex +
+SQL query bodies while moving invocation ownership from the registry to the
+plugin.
 
-### Need class/method joins or inheritance walks
+| Plugin | Connectors migrated to `resolve_connection_points` |
+|---|---|
+| C# | `dotnet_di`, `event_bus`, `csharp_grpc`, `csharp_graphql_resolvers`, `csharp_rest` |
+| F# | `fsharp_di` |
+| VB.NET | `vbnet_di` |
+| Angular | `angular_di`, `angular_rest` |
+| Java | `spring_routes`, `spring_di`, `java_rest` (stops), `java_grpc_stops` |
+| Kotlin | `kotlin_grpc_stops`, `kotlin_rest` (stops) |
+| TypeScript | `nestjs_routes`, `nextjs_routes`, `typescript_rest` (stops) |
+| Python | `django_routes`, `fastapi_routes`, `python_rest` (stops), `python_grpc_stops`, `python_graphql_resolvers` (Graphene half) |
+| Elixir | `phoenix_routes` |
+| Ruby | `rails_routes`, `ruby_rest` (stops) |
+| PHP | `laravel_routes`, `php_rest` (stops) |
+| Go | `go_route`, `go_rest` (stops), `go_grpc_stops` |
+| Rust | `rust_rest` (stops), `rust_grpc_stops` |
+| Swift | `swift_rest` (stops) |
+| Dart | `dart_rest` (stops) |
+| Groovy | (neutered — now source-scan-only via `extract_connection_points`) |
 
-- `csharp_graphql_resolvers` — Hot Chocolate `[Query]` on classes + methods.
-- `csharp_rest` — route-handler join + client call starts.
-- `csharp_grpc` — class-based service/client detection.
-- `dotnet_di` / `fsharp_di` / `vbnet_di` — `AddScoped/Transient/Singleton` resolving `IFoo`/`Foo`.
-- `event_bus` — MediatR `IRequest/IRequestHandler`, MassTransit `IConsumer<T>`.
-- `angular_di` / `angular_rest` — class-decorator + providedIn analysis; HttpClient joining to injected services.
-- `spring_di` / `spring_routes` — bean discovery spans files.
-- `nestjs_routes` — `@Controller` on class + `@Get('/path')` on method.
-- `python_graphql_resolvers` — Graphene `resolve_*` method detection (only the Graphene half; ariadne + strawberry are migrated).
-- `python_grpc_stops` — `*Servicer` inheritance + method enumeration.
-- `java_grpc_stops` — `*ImplBase` class extends + method walk.
-- `kotlin_grpc_stops` — `*CoroutineImplBase` / `*ImplBase` class extends + method walk.
-- `go_grpc_stops` — struct implements `*Server` + method walk.
-- `rust_grpc_stops` — `impl *Server for` + method walk in file (uses DB symbol query for methods).
-
-### Filesystem-map connectors
-
-- `nextjs_routes` — filesystem-to-route mapping (pages/app router).
-- `django_routes` / `fastapi_routes` — class-based views + APIView subclasses.
-- `phoenix_routes` / `rails_routes` / `laravel_routes` — scope stacking across files.
-- `go_route` (gin/echo/chi declarations + DB handler function lookup).
-
-### Stop-side of REST (kept on DB)
-
-Every `{lang}_rest` connector listed in "migrated" above has its **starts**
-flattened; its **stops** continue to read from the `routes` table, which is
-populated by the parser's route extraction during indexing. That is the one
-remaining DB read in each of those extract methods.
+Every `fn connectors() -> Vec<Box<dyn Connector>>` now returns `vec![]`. All
+connector work flows through `extract_connection_points` (parse-time source
+scan) or `resolve_connection_points` (post-parse DB-join hook). The legacy
+registry-owned `Connector::extract` path has no callers.
 
 ## Status summary
 
-- **All source-scan-only connectors listed in the prior version of this doc are now flattened.**
-- Plugin-emitted points flow through the matcher alongside legacy DB-query output. Partial migrations coexist safely via the registry's `(file_id, line, protocol, direction, key, method)` dedupe.
-- Remaining DB-only connectors cannot be flattened without either (a) a `LanguagePlugin::resolve_connection_points(points, db_handle)` post-parse hook that can see the fully-populated symbol and inheritance graph, or (b) rewriting each to pre-compute its joins in-memory at parse time. That's a separate design task.
+- **All source-scan-only connectors** → migrated into plugin
+  `extract_connection_points`.
+- **All DB-lookup connectors** → migrated into plugin
+  `resolve_connection_points`.
+- **All `LanguagePlugin::connectors()` return `vec![]`** — registry is purely
+  a matcher-driver over plugin-emitted points now.
+- Plugin-emitted points and DB-join hook points both flow through the
+  registry's `(file_id, line, protocol, direction, key, method)` dedupe.
 
 ## Recipe for reference
 

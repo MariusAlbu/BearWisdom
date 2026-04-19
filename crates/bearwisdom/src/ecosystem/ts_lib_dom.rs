@@ -59,6 +59,17 @@ impl Ecosystem for TsLibDomEcosystem {
     fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         walk_ts_lib(dep)
     }
+
+    fn supports_reachability(&self) -> bool { true }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
+    ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
+        super::npm::build_npm_symbol_index(dep_roots)
+    }
 }
 
 impl ExternalSourceLocator for TsLibDomEcosystem {

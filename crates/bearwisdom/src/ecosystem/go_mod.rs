@@ -543,7 +543,7 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
 // user imports, plus within-module transitives up to GO_SUBPKG_MAX_DEPTH.
 // Platform-mismatched files are dropped via `go_platform::file_matches_host`.
 
-fn build_go_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_go_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     // Collect every walked file + its owning module path so each parallel
     // scanner task is self-contained.
     let mut work: Vec<(String, WalkedFile)> = Vec::new();

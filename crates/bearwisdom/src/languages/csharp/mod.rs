@@ -126,14 +126,35 @@ impl LanguagePlugin for CSharpPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::DotnetDiConnector),
-            Box::new(connectors::EventBusConnector),
-            Box::new(connectors::CSharpGrpcConnector),
-            Box::new(connectors::CSharpMqConnector),
-            Box::new(connectors::CSharpGraphQlConnector),
-            Box::new(connectors::CsharpRestConnector),
-        ]
+        // MQ migrated to source-scan via `extract_connection_points`.
+        // DI / EventBus / gRPC / GraphQL / REST need DB joins and run
+        // from `resolve_connection_points` below.
+        vec![Box::new(connectors::CSharpMqConnector)]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        let mut out = Vec::new();
+        out.extend(crate::languages::drive_connector(
+            &connectors::DotnetDiConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::EventBusConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::CSharpGrpcConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::CSharpGraphQlConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::CsharpRestConnector, db, project_root, ctx,
+        ));
+        out
     }
 
     fn post_index(

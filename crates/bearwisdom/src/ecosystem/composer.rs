@@ -460,7 +460,7 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
 // Symbol-location index (demand-driven pipeline entry)
 // ---------------------------------------------------------------------------
 
-fn build_php_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+pub(crate) fn build_php_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
     for dep in dep_roots {
         for wf in walk_php_root(dep) {

@@ -487,12 +487,29 @@ pub fn full_index(
         );
     }
 
+    // Plugin-owned post-parse connector hook: lets each language plugin emit
+    // connection points that need the fully-written DB (class-inheritance
+    // lookups, method-by-parent joins, DI-container resolution).
+    let mut resolved_plugin_points: Vec<crate::connectors::types::ConnectionPoint> = Vec::new();
+    for plugin in registry.all() {
+        let points = plugin.resolve_connection_points(db, project_root, &project_ctx);
+        if !points.is_empty() {
+            info!(
+                "Plugin {}::resolve_connection_points: {} points",
+                plugin.id(),
+                points.len()
+            );
+            resolved_plugin_points.extend(points);
+        }
+    }
+
     let connector_registry = crate::connectors::registry::build_default_registry();
     match connector_registry.run_with_plugin_points(
         db.conn(),
         project_root,
         &project_ctx,
         &plugin_points,
+        &resolved_plugin_points,
     ) {
         Ok(flow_count) => info!(
             "Connectors: {flow_count} flow edges in {:.2}s",

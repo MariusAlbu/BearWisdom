@@ -152,6 +152,30 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         Vec::new()
     }
 
+    /// Post-parse hook for connectors that need cross-file joins (class
+    /// inheritance lookups, DI-container resolution, method enumeration by
+    /// kind under a given parent class). Called AFTER symbols + edges have
+    /// been written to the DB, so plugins can query the indexed graph.
+    ///
+    /// Returned points go through the same `(file_id, line, protocol,
+    /// direction, key, method)` dedupe as plugin-emitted points from
+    /// `extract_connection_points` and registry-emitted points from
+    /// `Connector::extract`.
+    ///
+    /// Default impl returns empty. Plugins with DB-dependent connectors
+    /// (`*Server` inheritance for gRPC stops, class+method joins for
+    /// REST route controllers, DI registration chains) override this
+    /// instead of registering `Connector::extract` impls at the registry
+    /// level.
+    fn resolve_connection_points(
+        &self,
+        _db: &crate::db::Database,
+        _project_root: &std::path::Path,
+        _ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        Vec::new()
+    }
+
     /// Node kinds that SHOULD produce symbols, per the extraction rules.
     /// Used by `bw coverage` to measure extraction completeness.
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
@@ -481,6 +505,32 @@ pub fn collect_plugin_connectors() -> Vec<Box<dyn crate::connectors::traits::Con
         .iter()
         .flat_map(|plugin| plugin.connectors())
         .collect()
+}
+
+/// Drive a legacy `Connector` (with `detect` + `extract`) from inside a
+/// plugin's `resolve_connection_points` impl. Keeps the existing per-connector
+/// bodies while moving invocation ownership from the registry to the plugin.
+/// Returns empty Vec when the connector's detect returns false OR its extract
+/// errors (logged, non-fatal).
+pub fn drive_connector(
+    c: &dyn crate::connectors::traits::Connector,
+    db: &crate::db::Database,
+    project_root: &std::path::Path,
+    ctx: &crate::indexer::project_context::ProjectContext,
+) -> Vec<crate::connectors::types::ConnectionPoint> {
+    if !c.detect(ctx) {
+        return Vec::new();
+    }
+    match c.extract(db.conn(), project_root) {
+        Ok(pts) => pts,
+        Err(e) => {
+            tracing::warn!(
+                "connector {}: resolve_connection_points failed: {e}",
+                c.descriptor().name
+            );
+            Vec::new()
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------

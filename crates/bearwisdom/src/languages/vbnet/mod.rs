@@ -81,9 +81,18 @@ impl LanguagePlugin for VbNetPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::VbNetDiConnector),
-        ]
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        crate::languages::drive_connector(
+            &connectors::VbNetDiConnector, db, project_root, ctx,
+        )
     }
 
 }

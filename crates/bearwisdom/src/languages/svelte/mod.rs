@@ -94,8 +94,6 @@ impl LanguagePlugin for SveltePlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![
-            Box::new(connectors::SvelteGraphQlConnector),
-        ]
+        vec![]
     }
 }

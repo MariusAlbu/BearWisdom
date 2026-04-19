@@ -93,7 +93,18 @@ impl LanguagePlugin for DartPlugin {
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
-        vec![Box::new(connectors::DartRestConnector)]
+        vec![]
+    }
+
+    fn resolve_connection_points(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        crate::languages::drive_connector(
+            &connectors::DartRestConnector, db, project_root, ctx,
+        )
     }
 
 }
