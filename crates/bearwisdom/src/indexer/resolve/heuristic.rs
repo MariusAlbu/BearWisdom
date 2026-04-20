@@ -831,7 +831,18 @@ pub(super) fn build_name_index(
         // leading slash, because the virtual-path prefix is `ext:ts:` not
         // a filesystem path). Covers lib.dom.d.ts, lib.es5.d.ts,
         // lib.es2015.core.d.ts, etc.
-        lower.contains("typescript/lib/lib.") && lower.ends_with(".d.ts")
+        if lower.contains("typescript/lib/lib.") && lower.ends_with(".d.ts") {
+            return true;
+        }
+        // DefinitelyTyped packages — `@types/chai`, `@types/mocha`,
+        // `@types/jest`, `@types/sinon`. These declare types + methods
+        // whose chain roots are often globals (`expect(x).to.equal()` —
+        // chai's Assertion.equal). Keeping them in name_to_ids lets the
+        // heuristic resolve bare-name matcher calls (`equal`, `eql`)
+        // without full chain-type inference. Framework-native packages
+        // (`@vitest/*`, `@jest/*`) should come through via npm transitive
+        // discovery, not heuristic; this filter stays narrow.
+        lower.contains("@types/") && lower.ends_with(".d.ts")
     }
 
     let mut kind_map: FxHashMap<(&str, &str), &str> = FxHashMap::default();

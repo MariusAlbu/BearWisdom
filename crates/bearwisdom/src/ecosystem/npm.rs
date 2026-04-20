@@ -181,7 +181,11 @@ const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
     // Test runners with implicit globals.
     "vitest",
     "@vitest/browser",
+    "@vitest/expect",
+    "@vitest/runner",
+    "@vitest/spy",
     "@jest/globals",
+    "@jest/expect",
     "jest",
     "mocha",
     "jasmine",
@@ -363,7 +367,87 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             }
         }
     }
+
+    // Transitive dep expansion: for each declared dep, follow the
+    // cross-package re-exports in its type-entry `.d.ts`. Pattern seen
+    // with vitest: its entry file has
+    //   export { X } from '@vitest/expect'
+    //   export { Y } from '@vitest/runner'
+    // but `@vitest/expect` / `@vitest/runner` aren't in vitest's
+    // package.json — they're installed via the lockfile. Without this
+    // step, demand-driven resolution never finds the interfaces that
+    // define matcher chains.
+    //
+    // Scoped to one hop and restricted to the BARE re-export specifiers
+    // read from entry files (not recursive walks) to keep the extra
+    // work O(declared_deps × avg_entry_file_size), not O(full dep
+    // tree). Entries for packages we already have are skipped.
+    let existing: std::collections::HashSet<String> =
+        roots.iter().map(|r| r.module_path.clone()).collect();
+    let mut transitive_specs: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for r in &roots {
+        let entry = match resolve_package_entry_path(r) {
+            Some(e) => e,
+            None => continue,
+        };
+        let Ok(src) = std::fs::read_to_string(&entry) else { continue };
+        for spec in extract_bare_reexport_specifiers(&src) {
+            if !existing.contains(&spec) && !builtins.contains(spec.as_str()) {
+                transitive_specs.insert(spec);
+            }
+        }
+    }
+
+    for spec in transitive_specs {
+        if spec.starts_with('@') && !spec.contains('/') { continue }
+        for nm_root in &node_modules_roots {
+            let candidate = nm_root.join(&spec);
+            if !candidate.is_dir() { continue }
+            if !seen.insert(candidate.clone()) { continue }
+            roots.push(ExternalDepRoot {
+                module_path: spec.clone(),
+                version: String::from("unknown"),
+                root: candidate,
+                ecosystem: LEGACY_ECOSYSTEM_TAG,
+                package_id: None,
+                requested_imports: Vec::new(),
+            });
+        }
+    }
+
     roots
+}
+
+/// Scan a source file for `export ... from '<spec>'` / `import ... from '<spec>'`
+/// statements where `spec` is a bare (non-relative) package specifier. Returns
+/// the specifier's package name (e.g. `@vitest/expect`, `react`, `lodash`).
+/// Relative specifiers are skipped — they stay within the current package and
+/// are handled by `expand_reexports_into`.
+fn extract_bare_reexport_specifiers(src: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    for line in src.lines() {
+        let t = line.trim();
+        if !(t.starts_with("export") || t.starts_with("import")) { continue }
+        let Some(ix) = t.find(" from ") else { continue };
+        let rest = t[ix + 6..].trim_start();
+        let Some(quote) = rest.chars().next() else { continue };
+        if quote != '\'' && quote != '"' { continue }
+        let inner = &rest[1..];
+        let Some(end) = inner.find(quote) else { continue };
+        let spec = &inner[..end];
+        if spec.starts_with("./") || spec.starts_with("../") { continue }
+        // Extract the package name: either `@scope/pkg` or `pkg` (first path segment).
+        let pkg = if spec.starts_with('@') {
+            spec.splitn(3, '/').take(2).collect::<Vec<_>>().join("/")
+        } else {
+            spec.split('/').next().unwrap_or(spec).to_string()
+        };
+        if !pkg.is_empty() {
+            out.push(pkg);
+        }
+    }
+    out
 }
 
 /// DefinitelyTyped publishes types for scoped packages at
@@ -444,6 +528,46 @@ fn discover_ts_externals_scoped(
             }
         }
     }
+
+    // Transitive re-export expansion — mirror of the logic in
+    // `discover_ts_externals`. Scan each declared dep's type-entry `.d.ts`
+    // for `from '<bare-specifier>'` references and add those packages to
+    // the root set. Catches the vitest/@vitest-expect pattern where the
+    // internal scoped package isn't declared in the consumer's
+    // package.json but is re-exported from the dep's public entry.
+    let existing: std::collections::HashSet<String> =
+        roots.iter().map(|r| r.module_path.clone()).collect();
+    let mut transitive_specs: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    for r in &roots {
+        let entry = match resolve_package_entry_path(r) {
+            Some(e) => e,
+            None => continue,
+        };
+        let Ok(src) = std::fs::read_to_string(&entry) else { continue };
+        for spec in extract_bare_reexport_specifiers(&src) {
+            if !existing.contains(&spec) && !builtins.contains(spec.as_str()) {
+                transitive_specs.insert(spec);
+            }
+        }
+    }
+    for spec in transitive_specs {
+        if spec.starts_with('@') && !spec.contains('/') { continue }
+        for nm_root in &node_modules_roots {
+            let candidate = nm_root.join(&spec);
+            if !candidate.is_dir() { continue }
+            if !seen.insert(candidate.clone()) { continue }
+            roots.push(ExternalDepRoot {
+                module_path: spec.clone(),
+                version: String::from("unknown"),
+                root: candidate,
+                ecosystem: LEGACY_ECOSYSTEM_TAG,
+                package_id: None,
+                requested_imports: Vec::new(),
+            });
+        }
+    }
+
     roots
 }
 
