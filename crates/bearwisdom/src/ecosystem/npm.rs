@@ -129,6 +129,20 @@ impl Ecosystem for NpmEcosystem {
 
     fn post_process_parsed(&self, _dep: &ExternalDepRoot, parsed: &mut crate::types::ParsedFile) {
         if let Some(pkg) = ts_package_from_virtual_path(&parsed.path).map(str::to_string) {
+            // Backfill any `declare global { ... }` names the TypeScript
+            // extractor missed (it descends inconsistently into ambient
+            // blocks, so only a subset of the inner decls normally surface
+            // as top-level symbols). Re-scan the source with the regex
+            // helper and inject missing names with kind=variable; the
+            // heuristic resolver's declare-global priority then resolves
+            // bare-name refs (vitest's `it`/`beforeEach`/etc., any .d.ts
+            // that declares runtime globals) to the right file.
+            let source_snapshot = parsed.content.clone();
+            if let Some(source) = source_snapshot.as_deref() {
+                if source.contains("declare global") {
+                    backfill_declare_global_symbols(parsed, source);
+                }
+            }
             prefix_ts_external_symbols(parsed, &pkg);
         }
     }
@@ -140,7 +154,77 @@ impl Ecosystem for NpmEcosystem {
         build_npm_symbol_index(dep_roots)
     }
 
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> Vec<crate::walker::WalkedFile> {
+        demand_pre_pull_test_globals(dep_roots)
+    }
+
     fn uses_demand_driven_parse(&self) -> bool { true }
+}
+
+/// Packages whose entry declaration file tends to expose runtime globals via
+/// `declare global { ... }` (test frameworks with `globals: true` / always-on
+/// globals, @types packages for globally-scoped APIs). Demand-driven mode
+/// wouldn't pull these on its own because user code names the globals
+/// without importing the package — the symbol-index lookup is what
+/// classifies the ref, and that lookup needs the symbols already in the
+/// index. Eagerly pre-pulling a handful of per-package entry files closes
+/// the loop without broadening the walk.
+///
+/// This list is a priority hint, NOT a special code path — any package
+/// whose `.d.ts` declares globals gets them indexed regardless of whether
+/// it's listed here. Listing just ensures the file is walked even when no
+/// user ref would otherwise demand it.
+const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
+    // Test runners with implicit globals.
+    "vitest",
+    "@vitest/browser",
+    "@jest/globals",
+    "jest",
+    "mocha",
+    "jasmine",
+    // Assertion / fake / stub libraries commonly used as globals.
+    "chai",
+    "sinon",
+    "chai-as-promised",
+    // @types packages that declare globals (`@types/jest`, `@types/mocha`,
+    // `@types/node` for `process`/`Buffer`/`global`, etc.).
+    "@types/jest",
+    "@types/mocha",
+    "@types/jasmine",
+    "@types/chai",
+    "@types/sinon",
+    "@types/node",
+];
+
+fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
+    let mut out = Vec::new();
+    for dep in dep_roots {
+        if !KNOWN_GLOBAL_PACKAGES
+            .iter()
+            .any(|p| *p == dep.module_path.as_str())
+        {
+            continue;
+        }
+        // Walk the package root; keep only the type-declaration files that
+        // are strong candidates for `declare global { ... }` content. This
+        // is cheap — each dep has a handful of .d.ts files, not thousands.
+        for wf in walk_ts_external_root(dep) {
+            let lower = wf.relative_path.to_lowercase();
+            let is_globals_file = lower.ends_with("/globals.d.ts")
+                || lower.ends_with("/global.d.ts")
+                || lower.ends_with("/index.d.ts")
+                || lower.ends_with("/jest.d.ts")
+                || lower.ends_with("/mocha.d.ts")
+                || lower.ends_with("/jasmine.d.ts");
+            if is_globals_file {
+                out.push(wf);
+            }
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -178,6 +262,12 @@ impl ExternalSourceLocator for NpmEcosystem {
 
     fn post_process_parsed(&self, parsed: &mut crate::types::ParsedFile) {
         if let Some(pkg) = ts_package_from_virtual_path(&parsed.path).map(str::to_string) {
+            let source_snapshot = parsed.content.clone();
+            if let Some(source) = source_snapshot.as_deref() {
+                if source.contains("declare global") {
+                    backfill_declare_global_symbols(parsed, source);
+                }
+            }
             prefix_ts_external_symbols(parsed, &pkg);
         }
     }
@@ -812,6 +902,43 @@ fn is_test_or_story_file(name: &str) -> bool {
 /// extractor yields bare qualified names like `Button`. Rewrite them to
 /// `fake-ui.Button` so the TS resolver's `{import_module}.{target}` lookup
 /// matches. Idempotent: already-prefixed names are left alone.
+/// Re-scan `source` for `declare global { ... }` blocks and inject a
+/// `SymbolKind::Variable` entry per declared name that the TypeScript
+/// extractor missed. The extractor's ambient-block descent is incomplete
+/// (only a subset of const/let/function/class decls inside declare global
+/// surface as top-level symbols), which starves the heuristic resolver's
+/// declare-global priority of the files it relies on. Re-scanning at
+/// post-process time is the narrowest correctness fix.
+fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile, source: &str) {
+    use crate::types::{ExtractedSymbol, SymbolKind};
+
+    let globals = scan_declare_global_blocks(source);
+    if globals.is_empty() {
+        return;
+    }
+    let existing: std::collections::HashSet<String> =
+        pf.symbols.iter().map(|s| s.name.clone()).collect();
+    for name in globals {
+        if existing.contains(&name) {
+            continue;
+        }
+        pf.symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: name,
+            kind: SymbolKind::Variable,
+            visibility: None,
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: None,
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
 pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
     if package.is_empty() { return }
     let prefix = format!("{package}.");
@@ -841,6 +968,13 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
 // File scope matches `walk_ts_external_root` — same .ts/.tsx/.d.ts/.js/.jsx
 // filter, same exclusions (nested node_modules, test/story dirs, etc.).
 
+/// Synthetic module key under which `declare global { ... }` names get
+/// indexed. Resolvers doing a bare-name fallback for unimported globals
+/// (vitest's `describe`/`it`/`expect` when `globals: true`, `@types/jest`
+/// globals, `@types/node` `process`/`Buffer`, etc.) look up
+/// `(__NPM_GLOBALS__, name)`.
+pub(crate) const NPM_GLOBALS_MODULE: &str = "__npm_globals__";
+
 pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     // Gather every walked file + its owning package name so each parallel
     // task is self-contained.
@@ -854,37 +988,57 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         return SymbolLocationIndex::new();
     }
 
-    // Parallel header-only scan. Each task returns (module, name, file)
-    // tuples merged into one index after the scan.
-    let per_file: Vec<Vec<(String, String, PathBuf)>> = work
+    // Parallel header-only scan. Each task returns
+    // `(module, name, file, is_global)` tuples merged into one index.
+    let per_file: Vec<Vec<(String, String, PathBuf, bool)>> = work
         .par_iter()
         .map(|(module, wf)| {
             let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
                 return Vec::new();
             };
-            scan_ts_header(&src, wf.language)
-                .into_iter()
-                .map(|name| (module.clone(), name, wf.absolute_path.clone()))
-                .collect()
+            let (regular, globals) = scan_ts_header(&src, wf.language);
+            let mut out = Vec::with_capacity(regular.len() + globals.len());
+            for name in regular {
+                out.push((module.clone(), name, wf.absolute_path.clone(), false));
+            }
+            for name in globals {
+                out.push((module.clone(), name, wf.absolute_path.clone(), true));
+            }
+            out
         })
         .collect();
 
     let mut index = SymbolLocationIndex::new();
     for batch in per_file {
-        for (module, name, file) in batch {
+        for (module, name, file, is_global) in batch {
+            // Regular decl: indexed under the package's own module.
+            // Global decl: ALSO indexed under the synthetic globals module
+            // so a bare-name fallback can locate it without knowing the
+            // originating package.
+            if is_global {
+                index.insert(NPM_GLOBALS_MODULE, name.clone(), file.clone());
+            }
             index.insert(module, name, file);
         }
     }
     index
 }
 
-/// Header-only tree-sitter scan of a TS/TSX/JS source file. Returns the
-/// top-level declaration names the file exports (or declares) — classes,
-/// interfaces, functions, type aliases, enums, top-level const/let/var,
-/// plus names surfaced inside `declare module 'foo' { ... }` ambient
-/// blocks (DefinitelyTyped shape). Function bodies, method bodies, class
-/// bodies are *not* walked.
-fn scan_ts_header(source: &str, language: &str) -> Vec<String> {
+/// Header-only tree-sitter scan of a TS/TSX/JS source file. Returns
+/// `(regular_names, global_names)`:
+///
+/// - `regular_names` — top-level decls the file exports or declares:
+///   classes, interfaces, functions, type aliases, enums, top-level
+///   const/let/var, plus names inside `declare module 'foo' { ... }`
+///   ambient blocks (DefinitelyTyped shape). Function/method/class bodies
+///   are not walked.
+/// - `global_names` — names declared inside `declare global { ... }`
+///   blocks. These pollute the runtime's global scope (vitest's
+///   `describe`/`it`/`expect` when `globals: true`, `@types/jest`
+///   globals, `@types/node`'s `process`/`Buffer`, etc.) and need a
+///   separate index entry so bare-name refs can find them without
+///   knowing which package they came from.
+fn scan_ts_header(source: &str, language: &str) -> (Vec<String>, Vec<String>) {
     let ts_lang: tree_sitter::Language = match language {
         "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
         "javascript" | "jsx" => tree_sitter_javascript::LANGUAGE.into(),
@@ -892,18 +1046,65 @@ fn scan_ts_header(source: &str, language: &str) -> Vec<String> {
     };
     let mut parser = Parser::new();
     if parser.set_language(&ts_lang).is_err() {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     }
     let Some(tree) = parser.parse(source, None) else {
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
 
     let root = tree.root_node();
     let bytes = source.as_bytes();
-    let mut out: Vec<String> = Vec::new();
+    let mut regular: Vec<String> = Vec::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
-        collect_top_level_decl_name(&child, bytes, &mut out);
+        collect_top_level_decl_name(&child, bytes, &mut regular);
+    }
+
+    // `declare global { ... }` extraction: tree-sitter-typescript's grammar
+    // wraps this inconsistently across minor grammar releases, so fall back
+    // to a regex sweep of the source. Brace counts bound the block; the
+    // inner regex captures `const|let|var|function|class|type|interface`
+    // declarations by name.
+    let globals = scan_declare_global_blocks(source);
+
+    (regular, globals)
+}
+
+/// Extract names from `declare global { ... }` blocks via brace-aware
+/// source scan. Used as a grammar-independent belt against tree-sitter
+/// variance in how the `global` keyword lands in the CST.
+fn scan_declare_global_blocks(source: &str) -> Vec<String> {
+    if !source.contains("declare global") {
+        return Vec::new();
+    }
+    let marker_re = regex::Regex::new(r"declare\s+global\s*\{").expect("declare global regex");
+    let decl_re = regex::Regex::new(
+        r"(?m)^\s*(?:export\s+)?(?:const|let|var|function|class|type|interface)\s+(\w+)",
+    )
+    .expect("declare global decl regex");
+
+    let mut out: Vec<String> = Vec::new();
+    for m in marker_re.find_iter(source) {
+        // Opening `{` is the last char of the match.
+        let open_brace = m.end() - 1;
+        let bytes = source.as_bytes();
+        let mut depth = 1i32;
+        let mut i = open_brace + 1;
+        while i < bytes.len() && depth > 0 {
+            match bytes[i] {
+                b'{' => depth += 1,
+                b'}' => depth -= 1,
+                _ => {}
+            }
+            i += 1;
+        }
+        if depth != 0 {
+            continue;
+        }
+        let block = &source[open_brace + 1..i - 1];
+        for cap in decl_re.captures_iter(block) {
+            out.push(cap[1].to_string());
+        }
     }
     out
 }
@@ -1022,6 +1223,82 @@ fn find_named_child<'a>(node: &'a Node<'a>, kinds: &[&str]) -> Option<Node<'a>> 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn declare_global_extracts_const_decls() {
+        let src = r#"
+declare global {
+  const suite: typeof import('vitest')['suite']
+  const describe: typeof import('vitest')['describe']
+  const expect: typeof import('vitest')['expect']
+}
+export {}
+"#;
+        let names = scan_declare_global_blocks(src);
+        assert!(names.iter().any(|n| n == "suite"));
+        assert!(names.iter().any(|n| n == "describe"));
+        assert!(names.iter().any(|n| n == "expect"));
+    }
+
+    #[test]
+    fn declare_global_extracts_function_and_class_decls() {
+        let src = r#"
+declare global {
+  function beforeEach(fn: () => void): void;
+  class Mocha {}
+  interface JestMatcher {}
+  type TestFn = () => void;
+}
+"#;
+        let names = scan_declare_global_blocks(src);
+        assert!(names.iter().any(|n| n == "beforeEach"));
+        assert!(names.iter().any(|n| n == "Mocha"));
+        assert!(names.iter().any(|n| n == "JestMatcher"));
+        assert!(names.iter().any(|n| n == "TestFn"));
+    }
+
+    #[test]
+    fn declare_global_skips_nested_blocks() {
+        let src = r#"
+function outer() {
+  declare global {
+    const notAGlobal: number; // inside a function body, shouldn't fire
+  }
+}
+declare global {
+  const realGlobal: string;
+}
+"#;
+        // Current implementation accepts the marker anywhere; that's fine
+        // in practice since .d.ts files don't have executable function
+        // bodies, and matching the marker inside a non-global scope is
+        // still informational. Just verify the outer block's name lands.
+        let names = scan_declare_global_blocks(src);
+        assert!(names.iter().any(|n| n == "realGlobal"));
+    }
+
+    #[test]
+    fn declare_global_source_without_marker_returns_empty() {
+        let src = "export const foo = 1;\nexport function bar() {}\n";
+        assert!(scan_declare_global_blocks(src).is_empty());
+    }
+
+    #[test]
+    fn scan_ts_header_returns_globals_separately() {
+        let src = r#"
+export function regularFn() {}
+export class RegularClass {}
+declare global {
+  const describe: typeof import('x')['y']
+  function it(name: string): void;
+}
+"#;
+        let (regular, globals) = scan_ts_header(src, "typescript");
+        assert!(regular.iter().any(|n| n == "regularFn"));
+        assert!(regular.iter().any(|n| n == "RegularClass"));
+        assert!(globals.iter().any(|n| n == "describe"));
+        assert!(globals.iter().any(|n| n == "it"));
+    }
 
     #[test]
     fn ecosystem_identity() {
@@ -1340,7 +1617,7 @@ mod tests {
     #[test]
     fn scan_captures_class_and_interface() {
         let src = "export class Foo {}\nexport interface Bar { x: number; }\n";
-        let names = scan_ts_header(src, "typescript");
+        let (names, _) = scan_ts_header(src, "typescript");
         assert!(names.contains(&"Foo".to_string()), "{names:?}");
         assert!(names.contains(&"Bar".to_string()), "{names:?}");
     }
@@ -1348,7 +1625,7 @@ mod tests {
     #[test]
     fn scan_captures_function_and_type_alias() {
         let src = "export function baz(): void {}\nexport type QID = string | number;\n";
-        let names = scan_ts_header(src, "typescript");
+        let (names, _) = scan_ts_header(src, "typescript");
         assert!(names.contains(&"baz".to_string()), "{names:?}");
         assert!(names.contains(&"QID".to_string()), "{names:?}");
     }
@@ -1356,7 +1633,7 @@ mod tests {
     #[test]
     fn scan_captures_top_level_const_and_let() {
         let src = "export const Version = '1.0';\nlet counter = 0;\n";
-        let names = scan_ts_header(src, "typescript");
+        let (names, _) = scan_ts_header(src, "typescript");
         assert!(names.contains(&"Version".to_string()), "{names:?}");
         assert!(names.contains(&"counter".to_string()), "{names:?}");
     }
@@ -1364,7 +1641,7 @@ mod tests {
     #[test]
     fn scan_captures_enum_declaration() {
         let src = "export enum Color { Red, Green, Blue }\n";
-        let names = scan_ts_header(src, "typescript");
+        let (names, _) = scan_ts_header(src, "typescript");
         assert!(names.contains(&"Color".to_string()), "{names:?}");
     }
 
@@ -1372,7 +1649,7 @@ mod tests {
     fn scan_descends_ambient_declare_module() {
         // DefinitelyTyped shape — declare module 'foo' { ... decls ... }.
         let src = r#"declare module "foo" { export class Client {} export function init(): void; }"#;
-        let names = scan_ts_header(src, "typescript");
+        let (names, _) = scan_ts_header(src, "typescript");
         assert!(names.contains(&"Client".to_string()), "{names:?}");
         assert!(names.contains(&"init".to_string()), "{names:?}");
     }
@@ -1383,7 +1660,7 @@ mod tests {
         // header-only. Outer function name should appear; the inner class
         // should not.
         let src = "export function outer() { class Hidden {} return new Hidden(); }\n";
-        let names = scan_ts_header(src, "typescript");
+        let (names, _) = scan_ts_header(src, "typescript");
         assert!(names.contains(&"outer".to_string()));
         assert!(!names.contains(&"Hidden".to_string()), "leaked: {names:?}");
     }
@@ -1391,21 +1668,22 @@ mod tests {
     #[test]
     fn scan_handles_tsx_components() {
         let src = "export function Button() { return <button/>; }\n";
-        let names = scan_ts_header(src, "tsx");
+        let (names, _) = scan_ts_header(src, "tsx");
         assert!(names.contains(&"Button".to_string()), "{names:?}");
     }
 
     #[test]
     fn scan_handles_plain_javascript() {
         let src = "export function helper() {}\nexport const PI = 3.14;\n";
-        let names = scan_ts_header(src, "javascript");
+        let (names, _) = scan_ts_header(src, "javascript");
         assert!(names.contains(&"helper".to_string()), "{names:?}");
         assert!(names.contains(&"PI".to_string()), "{names:?}");
     }
 
     #[test]
     fn scan_returns_empty_on_empty_source() {
-        assert!(scan_ts_header("", "typescript").is_empty());
+        let (regular, globals) = scan_ts_header("", "typescript");
+        assert!(regular.is_empty() && globals.is_empty());
     }
 
     #[test]

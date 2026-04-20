@@ -1477,15 +1477,6 @@ pub fn query_builtins_for_language(lang: &str) -> &'static [&'static str] {
             "var",
             "view",
         ],
-        "sql" => &[
-            "AS",
-            "CREATE",
-            "FROM",
-            "INDEX",
-            "SELECT",
-            "UNIQUE",
-            "WHERE",
-        ],
         "starlark" => &[
             "TypeAlias",
             "and",

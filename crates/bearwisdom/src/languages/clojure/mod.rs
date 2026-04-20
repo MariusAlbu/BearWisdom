@@ -57,12 +57,13 @@ impl LanguagePlugin for ClojurePlugin {
     }
 
     fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "String", "Integer", "Long", "Double", "Float", "Boolean",
-            "Character", "Byte", "Short", "Number",
-            "Object", "Class", "Symbol", "Keyword",
-            "List", "Vector", "Map", "Set", "Seq", "Fn",
-        ]
+        // The comprehensive list in `keywords::KEYWORDS` includes syntax
+        // forms (=, defn, ->, ns), operators, and core.clj functions so
+        // refs to them get classified as "primitive" external rather than
+        // unresolved. The previous tiny inline list only covered a handful
+        // of Java interop type names and starved 900+ refs to `=` (and
+        // similar) per project of classification.
+        keywords::KEYWORDS
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {

@@ -264,6 +264,44 @@ pub(super) fn resolve_ref(
         return Some((id, 0.80, "heuristic_namespace"));
     }
 
+    // --- Priority 3.8: declare-global preference (0.75) ---
+    //
+    // `declare global { const expect: ... }` in a `.d.ts` declares a
+    // runtime global, meaning bare-name refs to it should pair with THAT
+    // symbol even when many other packages happen to export the same
+    // simple name (chai.expect, playwright.expect, @types/chai.expect …).
+    // Without this shortcut, Priority 4's ambiguity cap kills the
+    // resolution — 10+ candidates across packages becomes 0 edges.
+    //
+    // File-path signal: any candidate whose external path ends with
+    // `globals.d.ts` (by convention the declare-global carrier inside
+    // an npm package) wins; vitest, @types/jest, @types/mocha, and
+    // @types/node all follow this pattern.
+    if let Some(candidates) = name_to_ids.get(target_name) {
+        // Kind check is lenient here: `declare global { const expect: ... }`
+        // emits as a `variable` symbol but the runtime type is a callable
+        // function. Accept any kind for call-style edges against a globals
+        // file — the file-path signal alone is strong.
+        let globals: Vec<_> = candidates
+            .iter()
+            .filter(|(file, _, _, _)| {
+                let lower = file.to_lowercase();
+                lower.ends_with("/globals.d.ts") || lower.ends_with("globals.d.ts")
+            })
+            .collect();
+        if !globals.is_empty() {
+            let best = globals
+                .iter()
+                .min_by_key(|(file, _, _, _)| {
+                    // Prefer the globals file that's a direct package child
+                    // (e.g. `vitest/globals.d.ts`) over deeper ones.
+                    file.matches('/').count()
+                })
+                .unwrap();
+            return Some((best.3, 0.75, "heuristic_declare_global"));
+        }
+    }
+
     // --- Priority 4: Name + kind (0.50 base, with ambiguity decay) ---
     // Names like `get`, `create`, `update` appear in hundreds of symbols.
     // Resolving them produces false edges that poison graph quality.
@@ -718,7 +756,13 @@ fn file_path_matches_module(file_path: &str, module: &str) -> bool {
 /// collisions (e.g. a `Calls` ref should prefer a method over a class).
 fn kind_matches_symbol_kind(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     match edge_kind {
-        EdgeKind::Calls => matches!(sym_kind, "method" | "function" | "constructor" | "test"),
+        // `property` accepted: TypeScript `.d.ts` interface members like
+        // `dispatchEvent(event: Event): boolean` parse as `property_signature`
+        // and extract as kind="property" but are callable at runtime. DOM
+        // methods (`querySelector`, `getAttribute`, `dispatchEvent`), Function
+        // prototype methods (`bind`, `apply`, `call`), and similar interface-
+        // declared methods all land here.
+        EdgeKind::Calls => matches!(sym_kind, "method" | "function" | "constructor" | "test" | "property"),
         EdgeKind::Inherits => matches!(sym_kind, "class" | "struct"),
         EdgeKind::Implements => matches!(sym_kind, "interface"),
         EdgeKind::TypeRef => matches!(
@@ -762,9 +806,37 @@ pub(super) fn build_name_index(
     // External files are skipped — they belong in SymbolIndex for Tier 1 lookup
     // only, not in the heuristic fallback path (their symbols would pollute
     // cross-language name lookups, e.g. Python `get` matching a TS `get` ref).
+    //
+    // Narrow exception: external `.d.ts` files that declare runtime-global
+    // names user code invokes without imports —
+    //   1. `declare global { ... }` carriers (vitest globals, @types/jest
+    //      globals, @types/node globals).
+    //   2. TypeScript stdlib declaration bundles (`lib.dom.d.ts`,
+    //      `lib.es*.d.ts`). DOM methods (`querySelector`, `dispatchEvent`,
+    //      `getAttribute`), Function prototype methods (`bind`, `apply`,
+    //      `call`), and ECMAScript built-ins all live there and are
+    //      callable on any object without an import.
+    //
+    // Including these lets Priority 4 resolve DOM/ES calls, and Priority
+    // 3.8 resolve declare-global names (`expect`/`describe`/etc.).
+    fn keep_for_heuristic(path: &str) -> bool {
+        if !is_external_path(path) {
+            return true;
+        }
+        let lower = path.to_lowercase();
+        if lower.ends_with("/globals.d.ts") || lower.ends_with("globals.d.ts") {
+            return true;
+        }
+        // TypeScript stdlib — path contains `typescript/lib/lib.` (no
+        // leading slash, because the virtual-path prefix is `ext:ts:` not
+        // a filesystem path). Covers lib.dom.d.ts, lib.es5.d.ts,
+        // lib.es2015.core.d.ts, etc.
+        lower.contains("typescript/lib/lib.") && lower.ends_with(".d.ts")
+    }
+
     let mut kind_map: FxHashMap<(&str, &str), &str> = FxHashMap::default();
     for pf in parsed {
-        if is_external_path(&pf.path) {
+        if !keep_for_heuristic(&pf.path) {
             continue;
         }
         for sym in &pf.symbols {
@@ -774,7 +846,7 @@ pub(super) fn build_name_index(
 
     let mut map: FxHashMap<String, Vec<(String, String, String, i64)>> = FxHashMap::default();
     for ((file, qname), &id) in symbol_id_map {
-        if is_external_path(file) {
+        if !keep_for_heuristic(file) {
             continue;
         }
         // Extract the simple name (last segment of the qualified name).

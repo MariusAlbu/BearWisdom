@@ -65,4 +65,10 @@ pub(crate) const KEYWORDS: &[&str] = &[
     // entries in the original primitives list.
     // Generic type parameters
     "T", "U", "K", "V", "P", "R", "S", "E", "A", "B", "O",
+    // Syntactic keywords that the extractor emits as refs (receiver of
+    // `super(...)` / `super.x()` call, `this` binding, `new.target`).
+    // These aren't symbol references — they're language constructs — so
+    // classifying them as "primitive" external suppresses spurious
+    // unresolved_refs entries.
+    "super", "this", "new.target", "import.meta",
 ];
