@@ -441,6 +441,22 @@ fn vitest_synthetic() -> ParsedFile {
     ));
     refs.push(type_ref(vi_var_idx, VI));
 
+    // Top-level `expect` function → returns chai.Assertion.
+    // Why: vitest re-exports chai's `expect` under `vitest.expect`; the chain
+    // root `expect(x).toBe(y)` resolves via `import { expect } from 'vitest'`
+    // → `vitest.expect` → return_type `chai.Assertion` → Phase 2 walks
+    // `chai.Assertion.toBe` etc. using the chai synthetic entries.
+    let expect_idx = symbols.len();
+    symbols.push(sym_with_sig(
+        &format!("{PKG}.expect"),
+        "expect",
+        SymbolKind::Function,
+        PKG,
+        None,
+        "expect(val: any): chai.Assertion",
+    ));
+    refs.push(type_ref(expect_idx, "chai.Assertion"));
+
     make_parsed_file(PATH, symbols, refs)
 }
 
@@ -627,6 +643,20 @@ mod tests {
                 && r.target_name == "vitest.MockInstance"
         });
         assert!(has_ref, "vitest.Vi.spyOn must return vitest.MockInstance");
+    }
+
+    #[test]
+    fn vitest_expect_returns_chai_assertion() {
+        let pf = vitest_synthetic();
+        let expect_idx = pf.symbols.iter().position(|s| s.qualified_name == "vitest.expect")
+            .expect("vitest.expect must be present");
+        assert_eq!(pf.symbols[expect_idx].kind, SymbolKind::Function);
+        let has_ref = pf.refs.iter().any(|r| {
+            r.source_symbol_index == expect_idx
+                && r.kind == EdgeKind::TypeRef
+                && r.target_name == "chai.Assertion"
+        });
+        assert!(has_ref, "vitest.expect must have a TypeRef to chai.Assertion");
     }
 
     #[test]

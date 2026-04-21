@@ -1914,6 +1914,185 @@ fn tsconfig_alias_parser_extracts_wildcard_mappings() {
     assert!(!aliases.iter().any(|(k, _)| k == "@utils"));
 }
 
+// ---------------------------------------------------------------------------
+// Call-root chain tests — expect(x).toBe(y) / vitest.expect
+// ---------------------------------------------------------------------------
+
+/// `import { expect } from 'chai'; expect(x).toBe(y)` — the chain root
+/// `expect` is a bare-specifier import. Phase 1 resolves it by looking up
+/// `chai.expect` → `return_type_name` → `chai.Assertion`.
+/// Phase 2 walks `chai.Assertion.toBe`, Phase 3 resolves the final segment.
+#[test]
+fn call_root_chain_expect_from_chai_resolves_to_be() {
+    use crate::ecosystem::js_test_chains::synthetic_test_chain_files;
+    use crate::indexer::resolve::chain_walker::external_type_qname;
+
+    // Use the real chai synthetic as the "external" file.
+    // synthetic_test_chain_files needs a dir with chai present — since we
+    // can't guarantee node_modules here, call chai_synthetic() via the
+    // public test path. Instead, build the minimal index manually.
+    let chai_assertion_sym = make_symbol(
+        "Assertion", "chai.Assertion", SymbolKind::Interface, Visibility::Public, Some("chai"),
+    );
+    let chai_expect_sym = ExtractedSymbol {
+        name: "expect".to_string(),
+        qualified_name: "chai.expect".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("expect(val: any): chai.Assertion".to_string()),
+        doc_comment: None,
+        scope_path: Some("chai".to_string()),
+        parent_index: None,
+    };
+    let chai_tobe_sym = ExtractedSymbol {
+        name: "toBe".to_string(),
+        qualified_name: "chai.Assertion.toBe".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("toBe(...): chai.Assertion".to_string()),
+        doc_comment: None,
+        scope_path: Some("chai.Assertion".to_string()),
+        parent_index: None,
+    };
+    // Return-type refs: chai.expect → chai.Assertion, chai.Assertion.toBe → chai.Assertion
+    let expect_rt_ref = ExtractedRef {
+        source_symbol_index: 1,
+        target_name: "chai.Assertion".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+    };
+    let tobe_rt_ref = ExtractedRef {
+        source_symbol_index: 2,
+        target_name: "chai.Assertion".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+    };
+    let chai_file = ParsedFile {
+        path: "ext:ts:chai/__bw_synthetic__.d.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: "synthetic".to_string(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![chai_assertion_sym, chai_expect_sym, chai_tobe_sym],
+        refs: vec![expect_rt_ref, tobe_rt_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None, None, None],
+        ref_origin_languages: vec![None, None],
+        symbol_from_snippet: vec![false, false, false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    };
+
+    // The consumer file: `import { expect } from 'chai'` + the chain ref.
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "toBe".to_string(),
+        kind: EdgeKind::Calls,
+        line: 5,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "expect".to_string(),
+                    node_kind: "identifier".to_string(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "toBe".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+    };
+    let import_ref = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "expect".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 1,
+        module: Some("chai".to_string()),
+        chain: None,
+        byte_offset: 0,
+    };
+    let test_sym = make_symbol("myTest", "myTest", SymbolKind::Function, Visibility::Public, None);
+    let consumer_file = ParsedFile {
+        path: "src/app.test.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![test_sym],
+        refs: vec![import_ref, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None],
+        ref_origin_languages: vec![None, None],
+        symbol_from_snippet: vec![false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    };
+
+    let (index, id_map) = build_test_env(&[&chai_file, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[1], // the chain ref for toBe
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "expect(x).toBe(y) chain must resolve via call-root import fallback"
+    );
+    let res = result.unwrap();
+    let tobe_id = id_map
+        .get(&(
+            "ext:ts:chai/__bw_synthetic__.d.ts".to_string(),
+            "chai.Assertion.toBe".to_string(),
+        ))
+        .expect("chai.Assertion.toBe must be indexed");
+    assert_eq!(
+        res.target_symbol_id, *tobe_id,
+        "chain must resolve to chai.Assertion.toBe"
+    );
+}
+
 #[test]
 fn project_context_workspace_package_id_handles_deep_imports() {
     let mut ctx = ProjectContext::default();
