@@ -150,12 +150,20 @@ pub fn resolve_via_chain(
                             break;
                         }
                     }
-                    found.or_else(|| {
-                        segments[0]
-                            .declared_type
-                            .as_ref()
-                            .map(|t| (config.normalize_type)(t))
-                    })
+                    // Declared type is a parse-time annotation — always the
+                    // strongest hint when available. Consult imports as the
+                    // final fallback: `import { vi } from 'vitest'; vi.spyOn(...)`
+                    // where the external origin declares a field_type on the
+                    // imported name (`export const vi: Vi`), or the import
+                    // itself *is* a type (`import { Button } from 'fake-ui'`).
+                    found
+                        .or_else(|| {
+                            segments[0]
+                                .declared_type
+                                .as_ref()
+                                .map(|t| (config.normalize_type)(t))
+                        })
+                        .or_else(|| resolve_import_root_type(name, file_ctx, config, lookup))
                 }
             }
         }
@@ -462,6 +470,50 @@ pub fn external_type_qname(current_type: &str, lookup: &dyn SymbolLookup) -> Opt
         .iter()
         .find(|s| s.file_path.starts_with("ext:"))
         .map(|s| s.qualified_name.clone())
+}
+
+/// Root-type resolution for an imported identifier.
+///
+/// Covers the `import { vi } from 'vitest'; vi.spyOn(...)` shape where the
+/// chain's root is a value brought into scope by a bare-specifier import. Two
+/// paths:
+///   1. The external origin declares a field_type on the name
+///      (`export const vi: Vi` → `vitest.vi` has field_type `Vi` → root is
+///      `vitest.Vi`).
+///   2. The import itself IS the type (`import { Button } from 'fake-ui';
+///      new Button(...)`) — use the qualified name directly so the chain
+///      walker's Phase 2/3 can reach instance members.
+///
+/// Relative imports are skipped — the resolver's same-language import handling
+/// covers those and modelling cross-file flow here duplicates work.
+fn resolve_import_root_type(
+    name: &str,
+    file_ctx: Option<&FileContext>,
+    config: &ChainConfig,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    let fc = file_ctx?;
+    for import in &fc.imports {
+        if import.imported_name.as_str() != name
+            && import.alias.as_deref() != Some(name)
+        {
+            continue;
+        }
+        let Some(module) = import.module_path.as_deref() else { continue };
+        if module.starts_with('.') || module.starts_with('/') {
+            continue;
+        }
+        let candidate = format!("{module}.{name}");
+        if let Some(ty) = lookup.field_type_name(&candidate) {
+            return Some((config.normalize_type)(ty));
+        }
+        if let Some(sym) = lookup.by_qualified_name(&candidate) {
+            if config.static_type_kinds.iter().any(|&k| k == sym.kind) {
+                return Some((config.normalize_type)(&candidate));
+            }
+        }
+    }
+    None
 }
 
 /// Find the enclosing type from the scope chain, matching against
