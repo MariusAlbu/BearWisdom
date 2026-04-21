@@ -232,3 +232,115 @@ fn ctx_actions_declare_file_resolves_to_synthetic_symbol() {
         "expected at least one edge targeting ctx.actions.declare_file via starlark_ctx_chain, got 0"
     );
 }
+
+/// Round 3 test: synthetic env API symbols (env.expect, env_expect.that_str,
+/// env_str_subject.equals, env_collection_subject.contains) land in the database.
+#[test]
+fn synth_env_api_symbols_in_database() {
+    let project = TestProject::starlark_bazel_project();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    // env.expect — top-level member on env.
+    let env_expect: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'env.expect'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert_eq!(env_expect, 1, "env.expect must be in symbol table");
+
+    // env_expect.that_str — type-level member.
+    let that_str: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'env_expect.that_str'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert_eq!(that_str, 1, "env_expect.that_str must be in symbol table");
+
+    // env_str_subject.equals — assertion method on string subject.
+    let str_equals: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'env_str_subject.equals'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert_eq!(
+        str_equals, 1,
+        "env_str_subject.equals must be in symbol table"
+    );
+
+    // env_collection_subject.contains — assertion method on collection subject.
+    let coll_contains: i64 = db
+        .query_row(
+            "SELECT COUNT(*) FROM symbols WHERE qualified_name = 'env_collection_subject.contains'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert_eq!(
+        coll_contains, 1,
+        "env_collection_subject.contains must be in symbol table"
+    );
+}
+
+/// Round 3 test: env.expect.that_str (3-level chain) resolves to the synthetic
+/// flat-alias symbol via the chain walker, producing a real starlark_ctx_chain edge.
+#[test]
+fn env_expect_that_str_resolves_to_synthetic_symbol() {
+    let project = TestProject::starlark_bazel_project();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    // The flat alias `env.expect.that_str` (matching the extractor's dotted ref)
+    // must be the target of at least one edge emitted by the chain walker.
+    let edges: i64 = db
+        .query_row(
+            r#"
+            SELECT COUNT(*) FROM edges e
+            JOIN symbols t ON t.id = e.target_id
+            WHERE t.qualified_name = 'env.expect.that_str'
+              AND e.strategy = 'starlark_ctx_chain'
+            "#,
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert!(
+        edges > 0,
+        "expected at least one edge targeting env.expect.that_str via starlark_ctx_chain, got 0"
+    );
+}
+
+/// Round 3 test: env.expect.that_collection (3-level chain from analysistest_impl.bzl)
+/// resolves to the synthetic flat-alias symbol via the chain walker.
+#[test]
+fn env_expect_that_collection_resolves_to_synthetic_symbol() {
+    let project = TestProject::starlark_bazel_project();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    let edges: i64 = db
+        .query_row(
+            r#"
+            SELECT COUNT(*) FROM edges e
+            JOIN symbols t ON t.id = e.target_id
+            WHERE t.qualified_name = 'env.expect.that_collection'
+              AND e.strategy = 'starlark_ctx_chain'
+            "#,
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert!(
+        edges > 0,
+        "expected at least one edge targeting env.expect.that_collection via starlark_ctx_chain, got 0"
+    );
+}

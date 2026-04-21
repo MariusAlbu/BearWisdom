@@ -10,6 +10,10 @@
 // java_*, py_*, genrule, …) which are implemented in Java and have no .bzl
 // source on disk, using the virtual path `ext:bazel-builtins:rules.bzl`.
 //
+// Round 3: also emits the analysistest `env` assertion API at
+// `ext:bazel-builtins:env.bzl` so chain walkers produce real resolved edges
+// for env.expect.that_str / that_collection / that_int / that_bool patterns.
+//
 // Activation: Any([ManifestMatch, LanguagePresent("starlark")]).
 // =============================================================================
 
@@ -93,11 +97,12 @@ impl Ecosystem for BazelCentralRegistryEcosystem {
         walk_bazel_root(dep)
     }
 
-    /// Emit synthetic `ParsedFile` entries for Bazel built-in rules and the
-    /// `ctx` / `repository_ctx` API. Returned unconditionally so the resolver
-    /// can close native rule refs like `cc_library(...)` and ctx-chain refs.
+    /// Emit synthetic `ParsedFile` entries for Bazel built-in rules, the
+    /// `ctx` / `repository_ctx` API, and the `env` / analysistest assertion
+    /// chain API. Returned unconditionally so the resolver can close native
+    /// rule refs like `cc_library(...)`, ctx-chain refs, and env-chain refs.
     fn parse_metadata_only(&self, _dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
-        Some(vec![synth_builtin_rules(), synth_ctx_api()])
+        Some(vec![synth_builtin_rules(), synth_ctx_api(), synth_env_api()])
     }
 
     fn uses_demand_driven_parse(&self) -> bool { true }
@@ -115,7 +120,7 @@ impl ExternalSourceLocator for BazelCentralRegistryEcosystem {
     }
 
     fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
-        Some(vec![synth_builtin_rules(), synth_ctx_api()])
+        Some(vec![synth_builtin_rules(), synth_ctx_api(), synth_env_api()])
     }
 }
 
@@ -370,7 +375,6 @@ pub fn extract_workspace_deps(content: &str) -> Vec<String> {
 
 /// Extract `key = "value"` from a Starlark-ish single-line or buffered block.
 fn extract_kwarg(text: &str, key: &str) -> Option<String> {
-    let needle = format!("name = \"");
     // Only match the right key= form.
     let search = format!("{key} = \"");
     let start = text.find(&search)?;
@@ -447,6 +451,80 @@ const REPOSITORY_CTX_MEMBERS: &[(&str, &str, &str)] = &[
     ("environ", "repository_ctx.environ", "repository_ctx.environ -> dict[string, string]"),
 ];
 
+// ---------------------------------------------------------------------------
+// env / env_expect / subject types — analysistest / unittest assertion chains
+// (Round 3)
+// ---------------------------------------------------------------------------
+
+/// Top-level members of the analysistest `env` object. `env.expect` returns an
+/// `env_expect` value; the chain walker resolves 2-level refs (env.expect,
+/// env.fail, env.assert_equals) directly against these symbols.
+const ENV_MEMBERS: &[(&str, &str, &str)] = &[
+    ("expect",              "env.expect",              "env.expect -> env_expect"),
+    ("assert_equals",       "env.assert_equals",       "env.assert_equals(expected, actual)"),
+    ("fail",                "env.fail",                "env.fail(msg)"),
+    ("ctx",                 "env.ctx",                 "env.ctx -> ctx"),
+    ("analysistest_target", "env.analysistest_target", "env.analysistest_target -> Target"),
+];
+
+/// Methods on the `env_expect` object (returned by `env.expect`). Each
+/// `that_*` factory returns a typed subject for further assertion chaining.
+///
+/// Uses the `env_expect.*` type-level qname form.
+const ENV_EXPECT_MEMBERS: &[(&str, &str, &str)] = &[
+    ("that_str",             "env_expect.that_str",             "env_expect.that_str(value) -> env_str_subject"),
+    ("that_int",             "env_expect.that_int",             "env_expect.that_int(value) -> env_int_subject"),
+    ("that_bool",            "env_expect.that_bool",            "env_expect.that_bool(value) -> env_bool_subject"),
+    ("that_collection",      "env_expect.that_collection",      "env_expect.that_collection(value) -> env_collection_subject"),
+    ("that_file",            "env_expect.that_file",            "env_expect.that_file(value) -> env_file_subject"),
+    ("that_target",          "env_expect.that_target",          "env_expect.that_target(value) -> env_target_subject"),
+    ("that_depset_of_files", "env_expect.that_depset_of_files", "env_expect.that_depset_of_files(value) -> env_depset_subject"),
+];
+
+/// Flat dotted call-site aliases for the chain walker. The Starlark extractor
+/// emits `env.expect.that_str` as a dotted ref (root "env"). The chain walker's
+/// `resolve_ctx_chain_direct` does `by_qualified_name("env.expect.that_str")`,
+/// so these symbols must exist under exactly those qnames. This mirrors how
+/// CTX_MEMBERS has `ctx.actions.run_shell` as both the dotted ref and the qname.
+const ENV_EXPECT_FLAT_ALIASES: &[(&str, &str, &str)] = &[
+    ("that_str",             "env.expect.that_str",             "env.expect.that_str(value) -> env_str_subject"),
+    ("that_int",             "env.expect.that_int",             "env.expect.that_int(value) -> env_int_subject"),
+    ("that_bool",            "env.expect.that_bool",            "env.expect.that_bool(value) -> env_bool_subject"),
+    ("that_collection",      "env.expect.that_collection",      "env.expect.that_collection(value) -> env_collection_subject"),
+    ("that_file",            "env.expect.that_file",            "env.expect.that_file(value) -> env_file_subject"),
+    ("that_target",          "env.expect.that_target",          "env.expect.that_target(value) -> env_target_subject"),
+    ("that_depset_of_files", "env.expect.that_depset_of_files", "env.expect.that_depset_of_files(value) -> env_depset_subject"),
+];
+
+/// Assertion methods shared across all subject types. Void return — no further
+/// chain continuation. Emitted once per subject type as `<subject>.<method>`.
+const SUBJECT_ASSERTION_METHODS: &[(&str, &str)] = &[
+    ("equals",           "equals(expected)"),
+    ("is_none",          "is_none()"),
+    ("is_true",          "is_true()"),
+    ("is_false",         "is_false()"),
+    ("contains",         "contains(item)"),
+    ("does_not_contain", "does_not_contain(item)"),
+    ("is_empty",         "is_empty()"),
+    ("contains_exactly", "contains_exactly(*items)"),
+    ("starts_with",      "starts_with(prefix)"),
+    ("ends_with",        "ends_with(suffix)"),
+    ("is_in",            "is_in(collection)"),
+    ("is_at_least",      "is_at_least(min)"),
+    ("is_at_most",       "is_at_most(max)"),
+];
+
+/// All typed subject names, one per `that_*` factory on `env_expect`.
+const ENV_SUBJECT_TYPES: &[&str] = &[
+    "env_str_subject",
+    "env_int_subject",
+    "env_bool_subject",
+    "env_collection_subject",
+    "env_file_subject",
+    "env_target_subject",
+    "env_depset_subject",
+];
+
 fn make_symbol(short: &str, qname: &str, sig: &str, line: u32) -> ExtractedSymbol {
     ExtractedSymbol {
         name: short.to_string(),
@@ -490,6 +568,78 @@ pub fn synth_ctx_api() -> ParsedFile {
         path: virtual_path,
         language: "starlark".to_string(),
         content_hash: format!("bazel-ctx-api-{sym_count}"),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    }
+}
+
+/// Emit a synthetic `ParsedFile` for the analysistest `env` assertion API.
+///
+/// Path: `ext:bazel-builtins:env.bzl`
+///
+/// Models the full type hierarchy:
+///   env → env.expect → env.expect.that_str(…) → env_str_subject.equals(…)
+///
+/// The flat dotted aliases (`env.expect.that_str`, etc.) are what the Starlark
+/// extractor emits as ref target names, and what `resolve_ctx_chain_direct`
+/// looks up via `by_qualified_name`. These mirror the pattern of CTX_MEMBERS
+/// where `ctx.actions.run_shell` is both the call-site dotted ref and the qname.
+pub fn synth_env_api() -> ParsedFile {
+    let virtual_path = "ext:bazel-builtins:env.bzl".to_string();
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut line: u32 = 0;
+
+    // Top-level env members (env.expect, env.fail, env.assert_equals, …).
+    for (short, qname, sig) in ENV_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+
+    // env_expect type-level factory methods (env_expect.that_str, etc.).
+    for (short, qname, sig) in ENV_EXPECT_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+
+    // Flat dotted aliases: env.expect.that_str, env.expect.that_collection, etc.
+    // These are the qnames the chain walker's by_qualified_name lookup uses.
+    for (short, qname, sig) in ENV_EXPECT_FLAT_ALIASES {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+
+    // Per-subject assertion methods: env_str_subject.equals, etc.
+    for subject in ENV_SUBJECT_TYPES {
+        for (method, method_sig) in SUBJECT_ASSERTION_METHODS {
+            let qname = format!("{subject}.{method}");
+            let sig = format!(
+                "{qname}({}",
+                method_sig.trim_start_matches(&format!("{method}("))
+            );
+            symbols.push(make_symbol(method, &qname, &sig, line));
+            line += 1;
+        }
+    }
+
+    let sym_count = symbols.len();
+    ParsedFile {
+        path: virtual_path,
+        language: "starlark".to_string(),
+        content_hash: format!("bazel-env-api-{sym_count}"),
         size: 0,
         line_count: 0,
         mtime: None,
@@ -736,7 +886,7 @@ http_archive(
     }
 
     #[test]
-    fn parse_metadata_only_returns_both_synth_files() {
+    fn parse_metadata_only_returns_all_synth_files() {
         let eco = BazelCentralRegistryEcosystem;
         let dep = ExternalDepRoot {
             module_path: "dummy".to_string(),
@@ -748,8 +898,56 @@ http_archive(
         };
         let files = <BazelCentralRegistryEcosystem as Ecosystem>::parse_metadata_only(&eco, &dep)
             .expect("expected Some");
-        assert_eq!(files.len(), 2, "expected rules.bzl + ctx.bzl synthetic files");
+        assert_eq!(files.len(), 3, "expected rules.bzl + ctx.bzl + env.bzl synthetic files");
         assert!(files.iter().any(|f| f.path == "ext:bazel-builtins:rules.bzl"));
         assert!(files.iter().any(|f| f.path == "ext:bazel-builtins:ctx.bzl"));
+        assert!(files.iter().any(|f| f.path == "ext:bazel-builtins:env.bzl"));
+    }
+
+    #[test]
+    fn synth_env_api_has_expected_symbols() {
+        let pf = synth_env_api();
+        assert_eq!(pf.path, "ext:bazel-builtins:env.bzl");
+        assert_eq!(pf.language, "starlark");
+
+        // Top-level env members.
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env.expect"),
+            "env.expect missing");
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env.fail"),
+            "env.fail missing");
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env.assert_equals"),
+            "env.assert_equals missing");
+
+        // env_expect type-level factory methods.
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env_expect.that_str"),
+            "env_expect.that_str missing");
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env_expect.that_collection"),
+            "env_expect.that_collection missing");
+
+        // Flat dotted aliases (what the chain walker looks up).
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env.expect.that_str"),
+            "env.expect.that_str flat alias missing");
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env.expect.that_collection"),
+            "env.expect.that_collection flat alias missing");
+
+        // Subject assertion methods.
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env_str_subject.equals"),
+            "env_str_subject.equals missing");
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env_collection_subject.contains"),
+            "env_collection_subject.contains missing");
+        assert!(pf.symbols.iter().any(|s| s.qualified_name == "env_bool_subject.is_true"),
+            "env_bool_subject.is_true missing");
+
+        // Total = ENV_MEMBERS + ENV_EXPECT_MEMBERS + ENV_EXPECT_FLAT_ALIASES +
+        //         (subject types x assertion methods).
+        let expected = ENV_MEMBERS.len()
+            + ENV_EXPECT_MEMBERS.len()
+            + ENV_EXPECT_FLAT_ALIASES.len()
+            + ENV_SUBJECT_TYPES.len() * SUBJECT_ASSERTION_METHODS.len();
+        assert_eq!(
+            pf.symbols.len(), expected,
+            "env API symbol count mismatch: expected {expected}, got {}",
+            pf.symbols.len()
+        );
     }
 }

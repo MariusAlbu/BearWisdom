@@ -329,6 +329,32 @@ my_rule(
 )
 "#);
 
+        // Round 3: exercises env.expect.that_collection, that_int, that_bool chains
+        // so the chain walker can produce starlark_ctx_chain edges for the env API.
+        p.add_file("tools/analysistest_impl.bzl", r#"
+load("@bazel_skylib//lib:unittest.bzl", "analysistest")
+
+def _check_output_impl(ctx):
+    env = analysistest.begin(ctx)
+    target = analysistest.target_under_test(env)
+    env.expect.that_collection(ctx.attr.srcs).contains("x")
+    env.expect.that_collection(ctx.attr.srcs).is_empty()
+    env.expect.that_int(len(target[DefaultInfo].files.to_list())).is_at_least(1)
+    env.expect.that_bool(target[DefaultInfo].files.to_list() != []).is_true()
+    env.assert_equals("foo", target.label.name)
+    return analysistest.end(env)
+
+check_output_test = analysistest.make(
+    _check_output_impl,
+)
+
+def check_output_test_suite(name):
+    check_output_test(
+        name = name + "_test",
+        target_under_test = ":my_target",
+    )
+"#);
+
         p
     }
 }
