@@ -536,8 +536,18 @@ fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<String> {
     let s = abs.to_string_lossy().replace('\\', "/");
     match language {
         "typescript" | "tsx" | "javascript" => {
-            let nm = s.rfind("/node_modules/")?;
-            let after = &s[nm + "/node_modules/".len()..];
+            // Standard layout: `.../node_modules/<pkg>/...`.
+            let after = if let Some(nm) = s.rfind("/node_modules/") {
+                s[nm + "/node_modules/".len()..].to_string()
+            } else {
+                // Test/override layout: `BEARWISDOM_TS_NODE_MODULES` points
+                // at a directory whose direct children are packages. Treat
+                // that directory as the `node_modules` root.
+                let env = std::env::var_os("BEARWISDOM_TS_NODE_MODULES")?;
+                let root = env.to_string_lossy().replace('\\', "/");
+                let root = root.trim_end_matches('/');
+                s.strip_prefix(&format!("{root}/"))?.to_string()
+            };
             let parts: Vec<&str> = after.splitn(4, '/').collect();
             if parts.is_empty() { return None }
             let (pkg, rel) = if parts[0].starts_with('@') && parts.len() >= 3 {
