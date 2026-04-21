@@ -15,6 +15,7 @@ pub(crate) mod keywords;
 pub mod extract;
 
 mod predicates;
+pub mod resolve;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -73,7 +74,7 @@ impl LanguagePlugin for GroovyPlugin {
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(crate::languages::java::resolve::JavaResolver))
+        Some(std::sync::Arc::new(resolve::GroovyResolver))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
