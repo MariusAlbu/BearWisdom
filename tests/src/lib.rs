@@ -237,4 +237,98 @@ export class App {
 
         p
     }
+
+    /// Bazel / Starlark project fixture.
+    ///
+    /// Exercises:
+    ///   - A rule implementation that uses `ctx.actions.run_shell`, `ctx.label.name`,
+    ///     `ctx.label.package`, `ctx.outputs`, `ctx.file`, `ctx.attr`.
+    ///   - An analysistest block using `env.expect.that_str` (3-level chain).
+    ///   - A repository_rule using `repository_ctx.execute` and `repository_ctx.os.name`.
+    ///   - A BUILD file with native rules (`cc_library`, `genrule`).
+    pub fn starlark_bazel_project() -> Self {
+        let p = Self { dir: TempDir::new().unwrap() };
+
+        p.add_file("WORKSPACE", r#"workspace(name = "my_project")"#);
+
+        p.add_file("tools/my_rule.bzl", r#"
+def _my_rule_impl(ctx):
+    out = ctx.actions.declare_file(ctx.label.name + ".out")
+    ctx.actions.run_shell(
+        outputs = [out],
+        inputs = ctx.files.srcs,
+        command = "cat %s > %s" % (ctx.file.src.path, out.path),
+    )
+    return [DefaultInfo(files = depset([out]))]
+
+my_rule = rule(
+    implementation = _my_rule_impl,
+    attrs = {
+        "srcs": attr.label_list(allow_files = True),
+        "src": attr.label(allow_single_file = True),
+    },
+)
+"#);
+
+        p.add_file("tools/my_rule_test.bzl", r#"
+load("@bazel_skylib//lib:unittest.bzl", "analysistest", "asserts")
+
+def _my_rule_test_impl(env):
+    target = analysistest.target_under_test(env)
+    env.expect.that_str(target.label.name).equals("expected")
+    asserts.equals(env, "value", target[DefaultInfo].files.to_list()[0].basename)
+
+my_rule_test = analysistest.make(
+    _my_rule_test_impl,
+)
+
+def my_rule_test_suite(name):
+    my_rule_test(
+        name = name + "_test",
+        target_under_test = ":my_target",
+    )
+"#);
+
+        p.add_file("tools/fetch_tool.bzl", r#"
+def _fetch_tool_impl(repository_ctx):
+    result = repository_ctx.execute(["uname", "-s"])
+    os_name = repository_ctx.os.name
+    repository_ctx.file(
+        "BUILD.bazel",
+        content = "exports_files(['tool'])",
+        executable = False,
+    )
+
+fetch_tool = repository_rule(
+    implementation = _fetch_tool_impl,
+    attrs = {
+        "url": attr.string(),
+    },
+)
+"#);
+
+        p.add_file("BUILD.bazel", r#"
+load("//tools:my_rule.bzl", "my_rule")
+
+cc_library(
+    name = "mylib",
+    srcs = ["mylib.cc"],
+    hdrs = ["mylib.h"],
+)
+
+genrule(
+    name = "gen_header",
+    srcs = [":mylib"],
+    outs = ["gen.h"],
+    cmd = "$(location :mylib) > $@",
+)
+
+my_rule(
+    name = "my_target",
+    srcs = [":mylib"],
+)
+"#);
+
+        p
+    }
 }

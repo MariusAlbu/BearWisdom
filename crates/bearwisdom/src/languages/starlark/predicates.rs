@@ -12,11 +12,45 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
+/// Bazel framework parameter roots whose dotted-attribute chains are all
+/// external by definition. Covers refs of any depth:
+///
+/// - `ctx.actions.run_shell`        → root "ctx"
+/// - `ctx.label.name`               → root "ctx"
+/// - `repository_ctx.execute`       → root "repository_ctx"
+/// - `env.expect.that_str`          → root "env"   (analysistest)
+/// - `directory.glob`               → root "directory" (rules_distdir)
+///
+/// A dotted ref matches when its first segment equals one of these roots.
+const BAZEL_FRAMEWORK_ROOTS: &[&str] = &[
+    "ctx",
+    "repository_ctx",
+    "module_ctx",
+    "env",
+    "directory",
+];
+
+/// Return true when `name` is a dotted ref whose leading segment is a known
+/// Bazel framework parameter root (see `BAZEL_FRAMEWORK_ROOTS`).
+///
+/// Used by both `is_starlark_builtin` and `infer_external_namespace` to catch
+/// refs like `ctx.label.name`, `env.expect.that_str`, `directory.glob` that
+/// are more than two levels deep and cannot be enumerated statically.
+pub(super) fn is_bazel_framework_chain(name: &str) -> bool {
+    let root = name.split('.').next().unwrap_or(name);
+    BAZEL_FRAMEWORK_ROOTS.contains(&root)
+}
+
 /// Bazel native rules, Starlark built-in functions, and `native.*` helpers.
 pub(super) fn is_starlark_builtin(name: &str) -> bool {
     // All `native.*` attribute calls (native.cc_library, native.glob, etc.)
     // are Bazel built-ins regardless of the specific method name.
     if name == "native" || name.starts_with("native.") {
+        return true;
+    }
+
+    // Framework parameter chains at any depth.
+    if is_bazel_framework_chain(name) {
         return true;
     }
 
@@ -199,4 +233,66 @@ pub(super) fn is_starlark_builtin(name: &str) -> bool {
             | "RunEnvironmentInfo"
             | "testing.ExecutionInfo"
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn framework_chain_catches_ctx_at_any_depth() {
+        assert!(is_bazel_framework_chain("ctx"), "bare ctx");
+        assert!(is_bazel_framework_chain("ctx.actions"), "ctx.actions");
+        assert!(is_bazel_framework_chain("ctx.actions.run_shell"), "ctx.actions.run_shell");
+        assert!(is_bazel_framework_chain("ctx.label.name"), "ctx.label.name 3-level");
+        assert!(is_bazel_framework_chain("ctx.label.workspace_name"), "ctx.label.workspace_name");
+    }
+
+    #[test]
+    fn framework_chain_catches_repository_ctx() {
+        assert!(is_bazel_framework_chain("repository_ctx"), "bare");
+        assert!(is_bazel_framework_chain("repository_ctx.execute"), "method");
+        assert!(is_bazel_framework_chain("repository_ctx.os.name"), "3-level");
+    }
+
+    #[test]
+    fn framework_chain_catches_env_and_directory() {
+        assert!(is_bazel_framework_chain("env"), "bare env");
+        assert!(is_bazel_framework_chain("env.expect"), "env.expect");
+        assert!(is_bazel_framework_chain("env.expect.that_str"), "3-level analysistest");
+        assert!(is_bazel_framework_chain("env.expect.that_str.equals"), "4-level");
+        assert!(is_bazel_framework_chain("directory.glob"), "directory.glob");
+    }
+
+    #[test]
+    fn framework_chain_does_not_match_non_framework() {
+        assert!(!is_bazel_framework_chain("cc_library"), "native rule");
+        assert!(!is_bazel_framework_chain("paths.join"), "skylib helper");
+        assert!(!is_bazel_framework_chain("my_func"), "user func");
+        assert!(!is_bazel_framework_chain("native.cc_library"), "native.* (separate check)");
+    }
+
+    #[test]
+    fn is_starlark_builtin_includes_framework_chains() {
+        assert!(is_starlark_builtin("ctx.actions.run_shell"), "via framework chain");
+        assert!(is_starlark_builtin("ctx.label.name"), "3-level via framework chain");
+        assert!(is_starlark_builtin("env.expect.that_str"), "analysistest chain");
+        assert!(is_starlark_builtin("repository_ctx.execute"), "repo_ctx method");
+    }
+
+    #[test]
+    fn is_starlark_builtin_still_catches_enumerated_names() {
+        assert!(is_starlark_builtin("cc_library"));
+        assert!(is_starlark_builtin("genrule"));
+        assert!(is_starlark_builtin("rule"));
+        assert!(is_starlark_builtin("provider"));
+        assert!(is_starlark_builtin("select"));
+    }
+
+    #[test]
+    fn native_prefix_is_still_caught() {
+        assert!(is_starlark_builtin("native.cc_library"));
+        assert!(is_starlark_builtin("native.glob"));
+        assert!(is_starlark_builtin("native"));
+    }
 }

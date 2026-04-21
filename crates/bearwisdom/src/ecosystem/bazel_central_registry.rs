@@ -93,11 +93,11 @@ impl Ecosystem for BazelCentralRegistryEcosystem {
         walk_bazel_root(dep)
     }
 
-    /// Emit synthetic `ParsedFile` entries for Bazel built-in rules. These
-    /// are returned unconditionally (regardless of the dep root path) so
-    /// the resolver can close native rule references like `cc_library(...)`.
+    /// Emit synthetic `ParsedFile` entries for Bazel built-in rules and the
+    /// `ctx` / `repository_ctx` API. Returned unconditionally so the resolver
+    /// can close native rule refs like `cc_library(...)` and ctx-chain refs.
     fn parse_metadata_only(&self, _dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
-        Some(vec![synth_builtin_rules()])
+        Some(vec![synth_builtin_rules(), synth_ctx_api()])
     }
 
     fn uses_demand_driven_parse(&self) -> bool { true }
@@ -115,7 +115,7 @@ impl ExternalSourceLocator for BazelCentralRegistryEcosystem {
     }
 
     fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
-        Some(vec![synth_builtin_rules()])
+        Some(vec![synth_builtin_rules(), synth_ctx_api()])
     }
 }
 
@@ -380,8 +380,134 @@ fn extract_kwarg(text: &str, key: &str) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
-// Synthetic built-in rules
+// Synthetic built-in rules + Bazel ctx API
 // ---------------------------------------------------------------------------
+
+/// Dotted members of the Bazel rule-context object `ctx`. Each entry is the
+/// qualified name under `ctx.*` (e.g., `"actions.run"` → symbol qname
+/// `"ctx.actions.run"`). Emitted into `ext:bazel-builtins:ctx.bzl` so that
+/// chain walkers (if ever wired for Starlark) can look up field types.
+///
+/// Members are grouped by sub-object: `actions.*`, `label.*`, top-level
+/// attributes (`attr`, `file`, `files`, `outputs`, `executable`, etc.).
+const CTX_MEMBERS: &[(&str, &str, &str)] = &[
+    // (short_name, qualified_name, signature)
+    ("actions", "ctx.actions", "ctx.actions"),
+    ("actions.run", "ctx.actions.run", "ctx.actions.run(outputs, inputs, executable, arguments=[], **kwargs)"),
+    ("actions.run_shell", "ctx.actions.run_shell", "ctx.actions.run_shell(outputs, inputs=[], command, **kwargs)"),
+    ("actions.declare_file", "ctx.actions.declare_file", "ctx.actions.declare_file(filename, sibling=None) -> File"),
+    ("actions.declare_directory", "ctx.actions.declare_directory", "ctx.actions.declare_directory(name, sibling=None) -> File"),
+    ("actions.write", "ctx.actions.write", "ctx.actions.write(output, content, is_executable=False)"),
+    ("actions.expand_template", "ctx.actions.expand_template", "ctx.actions.expand_template(template, output, substitutions, is_executable=False)"),
+    ("actions.symlink", "ctx.actions.symlink", "ctx.actions.symlink(output, target_file=None, target_path=None, **kwargs)"),
+    ("actions.args", "ctx.actions.args", "ctx.actions.args() -> Args"),
+    ("label", "ctx.label", "ctx.label -> Label"),
+    ("label.name", "ctx.label.name", "ctx.label.name -> string"),
+    ("label.package", "ctx.label.package", "ctx.label.package -> string"),
+    ("label.workspace_name", "ctx.label.workspace_name", "ctx.label.workspace_name -> string"),
+    ("label.workspace_root", "ctx.label.workspace_root", "ctx.label.workspace_root -> string"),
+    ("attr", "ctx.attr", "ctx.attr -> struct"),
+    ("file", "ctx.file", "ctx.file -> struct"),
+    ("files", "ctx.files", "ctx.files -> struct"),
+    ("outputs", "ctx.outputs", "ctx.outputs -> struct"),
+    ("executable", "ctx.executable", "ctx.executable -> struct"),
+    ("runfiles", "ctx.runfiles", "ctx.runfiles(files=[], transitive_files=None, collect_data=False, collect_default=False) -> runfiles"),
+    ("workspace_name", "ctx.workspace_name", "ctx.workspace_name -> string"),
+    ("configuration", "ctx.configuration", "ctx.configuration -> configuration"),
+    ("bin_dir", "ctx.bin_dir", "ctx.bin_dir -> root"),
+    ("genfiles_dir", "ctx.genfiles_dir", "ctx.genfiles_dir -> root"),
+    ("var", "ctx.var", "ctx.var -> dict[string, string]"),
+    ("build_file_path", "ctx.build_file_path", "ctx.build_file_path -> string"),
+    ("coverage_instrumented", "ctx.coverage_instrumented", "ctx.coverage_instrumented(target=None) -> bool"),
+    ("expand_location", "ctx.expand_location", "ctx.expand_location(input, targets=[]) -> string"),
+    ("expand_make_variables", "ctx.expand_make_variables", "ctx.expand_make_variables(attribute_name, command, additional_substitutions) -> string"),
+    ("info_file", "ctx.info_file", "ctx.info_file -> File"),
+    ("version_file", "ctx.version_file", "ctx.version_file -> File"),
+    ("target_platform_has_constraint", "ctx.target_platform_has_constraint", "ctx.target_platform_has_constraint(constraintValue) -> bool"),
+    ("toolchains", "ctx.toolchains", "ctx.toolchains -> struct"),
+    ("fragments", "ctx.fragments", "ctx.fragments -> struct"),
+];
+
+/// repository_ctx members (available in `repository_rule` implementations).
+const REPOSITORY_CTX_MEMBERS: &[(&str, &str, &str)] = &[
+    ("execute", "repository_ctx.execute", "repository_ctx.execute(arguments, timeout=600, environment={}, **kwargs) -> exec_result"),
+    ("path", "repository_ctx.path", "repository_ctx.path(path) -> path"),
+    ("download", "repository_ctx.download", "repository_ctx.download(url, output, sha256='', **kwargs)"),
+    ("download_and_extract", "repository_ctx.download_and_extract", "repository_ctx.download_and_extract(url, output='', sha256='', **kwargs)"),
+    ("extract", "repository_ctx.extract", "repository_ctx.extract(archive, output='', stripPrefix='')"),
+    ("file", "repository_ctx.file", "repository_ctx.file(path, content='', executable=True, **kwargs)"),
+    ("read", "repository_ctx.read", "repository_ctx.read(path) -> string"),
+    ("symlink", "repository_ctx.symlink", "repository_ctx.symlink(target, link_name)"),
+    ("template", "repository_ctx.template", "repository_ctx.template(path, label, substitutions={}, executable=True)"),
+    ("which", "repository_ctx.which", "repository_ctx.which(program) -> path"),
+    ("workspace_root", "repository_ctx.workspace_root", "repository_ctx.workspace_root -> path"),
+    ("name", "repository_ctx.name", "repository_ctx.name -> string"),
+    ("attr", "repository_ctx.attr", "repository_ctx.attr -> struct"),
+    ("os", "repository_ctx.os", "repository_ctx.os -> struct"),
+    ("environ", "repository_ctx.environ", "repository_ctx.environ -> dict[string, string]"),
+];
+
+fn make_symbol(short: &str, qname: &str, sig: &str, line: u32) -> ExtractedSymbol {
+    ExtractedSymbol {
+        name: short.to_string(),
+        qualified_name: qname.to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: line,
+        end_line: line,
+        start_col: 0,
+        end_col: 0,
+        signature: Some(sig.to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    }
+}
+
+/// Emit a synthetic `ParsedFile` for the Bazel `ctx` and `repository_ctx` APIs.
+///
+/// Path: `ext:bazel-builtins:ctx.bzl`
+///
+/// Provides exact-match symbols for chain walkers if Starlark ever gains full
+/// chain-walker wiring. Until then, the predicate-based externalization in
+/// `resolve.rs` handles these refs at the classifier level.
+pub fn synth_ctx_api() -> ParsedFile {
+    let virtual_path = "ext:bazel-builtins:ctx.bzl".to_string();
+    let mut symbols: Vec<ExtractedSymbol> = Vec::new();
+    let mut line: u32 = 0;
+
+    for (short, qname, sig) in CTX_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for (short, qname, sig) in REPOSITORY_CTX_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+
+    let sym_count = symbols.len();
+    ParsedFile {
+        path: virtual_path,
+        language: "starlark".to_string(),
+        content_hash: format!("bazel-ctx-api-{sym_count}"),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    }
+}
 
 /// The Bazel native built-in rules. These are implemented in Java and have no
 /// .bzl source. We emit a single synthetic `ParsedFile` at the virtual path
@@ -578,5 +704,52 @@ http_archive(
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    #[test]
+    fn synth_ctx_api_has_expected_symbols() {
+        let pf = synth_ctx_api();
+        assert_eq!(pf.path, "ext:bazel-builtins:ctx.bzl");
+        assert_eq!(pf.language, "starlark");
+
+        let has_run_shell = pf.symbols.iter().any(|s| s.qualified_name == "ctx.actions.run_shell");
+        assert!(has_run_shell, "ctx.actions.run_shell not in ctx API");
+
+        let has_label_name = pf.symbols.iter().any(|s| s.qualified_name == "ctx.label.name");
+        assert!(has_label_name, "ctx.label.name not in ctx API");
+
+        let has_label_pkg = pf.symbols.iter().any(|s| s.qualified_name == "ctx.label.package");
+        assert!(has_label_pkg, "ctx.label.package not in ctx API");
+
+        let has_repo_execute = pf.symbols.iter().any(|s| s.qualified_name == "repository_ctx.execute");
+        assert!(has_repo_execute, "repository_ctx.execute not in ctx API");
+
+        let has_repo_os = pf.symbols.iter().any(|s| s.qualified_name == "repository_ctx.os");
+        assert!(has_repo_os, "repository_ctx.os not in ctx API");
+
+        let expected_count = CTX_MEMBERS.len() + REPOSITORY_CTX_MEMBERS.len();
+        assert_eq!(
+            pf.symbols.len(), expected_count,
+            "ctx API symbol count mismatch: expected {expected_count}, got {}",
+            pf.symbols.len()
+        );
+    }
+
+    #[test]
+    fn parse_metadata_only_returns_both_synth_files() {
+        let eco = BazelCentralRegistryEcosystem;
+        let dep = ExternalDepRoot {
+            module_path: "dummy".to_string(),
+            version: String::new(),
+            root: std::path::PathBuf::from("/tmp"),
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        };
+        let files = <BazelCentralRegistryEcosystem as Ecosystem>::parse_metadata_only(&eco, &dep)
+            .expect("expected Some");
+        assert_eq!(files.len(), 2, "expected rules.bzl + ctx.bzl synthetic files");
+        assert!(files.iter().any(|f| f.path == "ext:bazel-builtins:rules.bzl"));
+        assert!(files.iter().any(|f| f.path == "ext:bazel-builtins:ctx.bzl"));
     }
 }

@@ -80,6 +80,12 @@ impl LanguageResolver for StarlarkResolver {
             return None;
         }
 
+        // Bazel framework parameter chains (`ctx.*`, `repository_ctx.*`, `env.*`,
+        // `directory.*`) at any depth — never resolve internally.
+        if predicates::is_bazel_framework_chain(target) {
+            return None;
+        }
+
         // Step 1: Same-file resolution (def, assignment).
         for sym in lookup.in_file(&file_ctx.file_path) {
             if sym.name == *target {
@@ -176,6 +182,14 @@ impl LanguageResolver for StarlarkResolver {
         // Covers: native.cc_binary, native.cc_test, native.py_library, etc.
         if target == "native" || target.starts_with("native.") {
             return Some("bazel_native".to_string());
+        }
+
+        // Bazel framework parameter roots: `ctx.*`, `repository_ctx.*`, `env.*`,
+        // `directory.*` — these are opaque objects passed by the Bazel runtime.
+        // Any dotted ref starting with one of these roots is external at any depth
+        // (covers ctx.label.name, env.expect.that_str, directory.glob, etc.).
+        if predicates::is_bazel_framework_chain(target) {
+            return Some("bazel".to_string());
         }
 
         if predicates::is_starlark_builtin(target) {
