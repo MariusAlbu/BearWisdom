@@ -179,6 +179,31 @@ fn chai_synthetic() -> ParsedFile {
         "change", "changes",
         "called", "calledWith", "calledOnce", "calledTwice",
         "calledBefore", "calledAfter",
+        // Vitest-chai integration: vitest extends chai.Assertion with these matchers
+        // (via chai.use(expect.extend) / vitestExpect plugin). Pattern in preact:
+        // `expect(spy).toHaveBeenCalledOnce()`.
+        "toHaveBeenCalled", "toHaveBeenCalledOnce", "toHaveBeenCalledTimes",
+        "toHaveBeenCalledWith", "toHaveBeenLastCalledWith", "toHaveBeenNthCalledWith",
+        "toHaveBeenCalledBefore", "toHaveBeenCalledAfter",
+        "toHaveReturned", "toHaveReturnedTimes", "toHaveReturnedWith",
+        "toHaveLastReturnedWith", "toHaveNthReturnedWith",
+        "toHaveBeenCalledExactlyOnceWith",
+        // Jest-compatible aliases (also used via vitest-chai)
+        "toBeCalled", "toBeCalledWith", "toBeCalledTimes",
+        "lastCalledWith", "nthCalledWith",
+        // Additional vitest matchers commonly used on chai
+        "toEqual", "toBe", "toStrictEqual", "toMatchObject",
+        "toBeNull", "toBeUndefined", "toBeDefined", "toBeTruthy", "toBeFalsy",
+        "toContain", "toContainEqual", "toHaveLength",
+        "toBeGreaterThan", "toBeGreaterThanOrEqual", "toBeLessThan", "toBeLessThanOrEqual",
+        "toBeCloseTo", "toBeNaN", "toBeInstanceOf",
+        "toThrow", "toThrowError",
+        "toMatchSnapshot", "toMatchInlineSnapshot",
+        "resolves", "rejects",
+        // sinon-chai matchers
+        "callCount", "calledThrice",
+        "returnValue", "threw", "exception",
+        "always",
     ];
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
