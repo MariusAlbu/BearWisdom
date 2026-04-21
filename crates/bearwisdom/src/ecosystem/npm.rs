@@ -275,6 +275,11 @@ impl ExternalSourceLocator for NpmEcosystem {
             prefix_ts_external_symbols(parsed, &pkg);
         }
     }
+
+    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
+        let files = super::js_test_chains::synthetic_test_chain_files(project_root);
+        if files.is_empty() { None } else { Some(files) }
+    }
 }
 
 /// Process-wide shared instance used by every npm-consuming plugin.
