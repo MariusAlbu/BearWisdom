@@ -150,6 +150,13 @@ impl LanguageResolver for HclResolver {
             return Some("terraform".to_string());
         }
 
+        // HCL dynamic-block iterators: `dynamic "ingress" { for_each = ... ; content { ... ingress.value.cidr ... } }`
+        // emits refs like `ingress.value` / `ingress.key` where the prefix is the
+        // iterator name (typically the singular of the resource attribute block).
+        if is_dynamic_block_iterator(target) {
+            return Some("terraform".to_string());
+        }
+
         // data.* that refer to provider data sources (not locally-defined data blocks).
         if target.starts_with("data.") {
             let parts: Vec<&str> = target.splitn(3, '.').collect();
@@ -194,6 +201,30 @@ fn is_terraform_meta_ref(name: &str) -> bool {
         name.splitn(2, '.').next().unwrap_or(name),
         "each" | "count" | "self" | "path" | "terraform"
     )
+}
+
+/// Returns true for `<name>.value` or `<name>.key` refs that come from HCL
+/// dynamic-block iterators. The iterator name is arbitrary (usually matches
+/// the block type: `dynamic "ingress"` → refs like `ingress.value.cidr`).
+///
+/// We classify any `<snake>.value` / `<snake>.key` as a dynamic-block ref
+/// when the prefix isn't already a provider resource type (handled earlier).
+fn is_dynamic_block_iterator(name: &str) -> bool {
+    let mut parts = name.split('.');
+    let head = match parts.next() {
+        Some(h) if !h.is_empty() => h,
+        _ => return false,
+    };
+    let tail = match parts.next() {
+        Some(t) => t,
+        None => return false,
+    };
+    if !matches!(tail, "value" | "key") {
+        return false;
+    }
+    // Must look like an HCL identifier (snake_case, starts with letter).
+    head.chars().next().map(|c| c.is_ascii_alphabetic() || c == '_').unwrap_or(false)
+        && head.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 /// Check if a name looks like a Terraform provider resource type.

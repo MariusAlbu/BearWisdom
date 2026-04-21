@@ -84,6 +84,12 @@ impl LanguageResolver for MatlabResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
+        // Route any MATLAB builtin (curated ~560-name set in matlab_stdlib) to
+        // the stdlib ecosystem. `predicates::is_matlab_builtin` covers a smaller
+        // subset from pre-ecosystem days; the ecosystem set is authoritative.
+        if crate::ecosystem::matlab_stdlib::is_builtin(&ref_ctx.extracted_ref.target_name) {
+            return Some("matlab-stdlib".to_string());
+        }
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_matlab_builtin)
     }
 }

@@ -136,9 +136,41 @@ impl LanguageResolver for PuppetResolver {
             }
         }
 
+        // Puppet built-in global variables: `$facts`, `$trusted`, `$server_facts`,
+        // etc. are always available without declaration.
+        if is_puppet_global_var(target) {
+            return Some("puppet-stdlib".to_string());
+        }
+
         // Built-in resource types and functions.
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_puppet_builtin)
-            .map(|_| "puppet".to_string())
+            .map(|_| "puppet-stdlib".to_string())
     }
+}
+
+/// Puppet's built-in top-level variables, always in scope without declaration.
+/// See: https://puppet.com/docs/puppet/latest/lang_facts_and_builtin_vars.html
+fn is_puppet_global_var(name: &str) -> bool {
+    let bare = name.strip_prefix('$').unwrap_or(name);
+    // Allow member access: `$facts['foo']` arrives as `$facts`, but `$facts.foo`
+    // is extracted as `$facts` too; just match the head.
+    let head = bare.split(|c: char| c == '.' || c == '[').next().unwrap_or(bare);
+    matches!(
+        head,
+        "facts"
+            | "trusted"
+            | "server_facts"
+            | "environment"
+            | "servername"
+            | "serverip"
+            | "serverversion"
+            | "clientcert"
+            | "clientversion"
+            | "clientnoop"
+            | "module_name"
+            | "caller_module_name"
+            | "title"
+            | "name"
+    )
 }
 

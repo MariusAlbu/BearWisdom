@@ -34,6 +34,17 @@ const SYNTHETIC_PATH: &str = "ext:matlab-stdlib:builtins.m";
 // Curated built-in list (~400 names, one entry each, no overloads)
 // =============================================================================
 
+/// Checks whether `name` is one of MATLAB's ~560 curated built-in functions.
+/// Used by the MATLAB resolver to classify bare builtin calls as `matlab-stdlib`
+/// external without duplicating the name list. O(1) via a once-built set.
+pub fn is_builtin(name: &str) -> bool {
+    use std::collections::HashSet;
+    use std::sync::OnceLock;
+    static SET: OnceLock<HashSet<&'static str>> = OnceLock::new();
+    SET.get_or_init(|| BUILTINS.iter().copied().collect())
+        .contains(name)
+}
+
 const BUILTINS: &[&str] = &[
     // -------------------------------------------------------------------------
     // Array creation & manipulation

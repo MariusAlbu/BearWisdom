@@ -83,6 +83,33 @@ impl LanguageResolver for PowerShellResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
+        // PowerShell auto-loads modules on first cmdlet use — a bare
+        // `Verb-Noun` call doesn't need an explicit import. Route any
+        // unresolved ref matching the cmdlet pattern to the stdlib/gallery
+        // ecosystem so the demand loop can surface it.
+        if is_cmdlet_name(&ref_ctx.extracted_ref.target_name) {
+            return Some("powershell-stdlib".to_string());
+        }
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_powershell_builtin)
     }
+}
+
+/// PowerShell cmdlet naming convention: `Verb-Noun` with both parts being
+/// alphanumeric identifiers starting with an uppercase letter. Anything
+/// else (free functions, user-defined cmdlets, dot-sourced scripts) takes
+/// the regular resolution path.
+fn is_cmdlet_name(name: &str) -> bool {
+    let (verb, noun) = match name.split_once('-') {
+        Some((v, n)) if !v.is_empty() && !n.is_empty() => (v, n),
+        _ => return false,
+    };
+    let is_ident_part = |s: &str| {
+        let mut it = s.chars();
+        match it.next() {
+            Some(c) if c.is_ascii_uppercase() => {}
+            _ => return false,
+        }
+        it.all(|c| c.is_ascii_alphanumeric())
+    };
+    is_ident_part(verb) && is_ident_part(noun)
 }
