@@ -489,6 +489,117 @@ fn test_inherited_method_via_this_resolves() {
     );
 }
 
+/// `File::whereIn(...)` — static Eloquent call.  The chain root is TypeAccess("File").
+/// Phase 1 must resolve TypeAccess to the class name, then the inheritance walk finds
+/// the Builder method on the parent Model stub.
+#[test]
+fn test_static_eloquent_call_via_type_access() {
+    // Model stub with whereIn (simulates laravel_stubs ModelForwarded)
+    let model_stub = make_file(
+        "ext:laravel-stubs:eloquent/ModelForwarded.php",
+        vec![
+            make_symbol("Model", "Model", SymbolKind::Class, Visibility::Public, None),
+            make_symbol("whereIn", "Model.whereIn", SymbolKind::Method, Visibility::Public, Some("Model")),
+        ],
+        vec![],
+    );
+
+    // File model class (extends Model)
+    let file_model = make_file(
+        "app/Models/File.php",
+        vec![
+            make_symbol("App.Models", "App.Models", SymbolKind::Namespace, Visibility::Public, None),
+            make_symbol("File", "App.Models.File", SymbolKind::Class, Visibility::Public, Some("App.Models")),
+        ],
+        vec![
+            // class File extends Model
+            ExtractedRef {
+                source_symbol_index: 1, // File class
+                target_name: "Model".to_string(),
+                kind: EdgeKind::Inherits,
+                line: 5,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+            },
+        ],
+    );
+
+    // Service that calls File::whereIn(...)
+    let service_file = make_file(
+        "app/Services/StorageService.php",
+        vec![
+            make_symbol("StorageService", "App.Services.StorageService", SymbolKind::Class, Visibility::Public, Some("App.Services")),
+            make_symbol("data", "App.Services.StorageService.data", SymbolKind::Method, Visibility::Public, Some("App.Services.StorageService")),
+        ],
+        vec![
+            // File::whereIn('vault_id', $ids)
+            ExtractedRef {
+                source_symbol_index: 1,
+                target_name: "whereIn".to_string(),
+                kind: EdgeKind::Calls,
+                line: 15,
+                module: None,
+                chain: Some(MemberChain {
+                    segments: vec![
+                        ChainSegment {
+                            name: "File".to_string(),
+                            node_kind: "class".to_string(),
+                            kind: SegmentKind::TypeAccess,
+                            declared_type: None,
+                            type_args: vec![],
+                            optional_chaining: false,
+                        },
+                        ChainSegment {
+                            name: "whereIn".to_string(),
+                            node_kind: "static_call_expression".to_string(),
+                            kind: SegmentKind::Property,
+                            declared_type: None,
+                            type_args: vec![],
+                            optional_chaining: false,
+                        },
+                    ],
+                }),
+                byte_offset: 0,
+            },
+        ],
+    );
+
+    let (index, id_map) = build_test_env(&[&model_stub, &file_model, &service_file]);
+    let resolver = PhpResolver;
+    let file_ctx = resolver.build_file_context(&service_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &service_file.refs[0],
+        source_symbol: &service_file.symbols[1], // data
+        scope_chain: build_scope_chain(service_file.symbols[1].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "File::whereIn() must resolve via TypeAccess root + chain inheritance walk"
+    );
+    let res = result.unwrap();
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "ext:laravel-stubs:eloquent/ModelForwarded.php".to_string(),
+                "Model.whereIn".to_string()
+            ))
+            .unwrap(),
+        "Should resolve to Model.whereIn stub, got strategy={}",
+        res.strategy
+    );
+    assert!(
+        res.strategy == "php_chain_inherited",
+        "Expected php_chain_inherited strategy, got {}",
+        res.strategy
+    );
+}
+
 /// Realistic extractor output: `$this->account()` emits target_name = "account"
 /// with a chain whose first segment is SelfRef("this").  Step 6 must detect this
 /// via the chain, not via the target_name prefix.

@@ -58,6 +58,24 @@ pub(super) fn resolve_via_chain(
                 }
             }
         }
+        // PHP static call: `ClassName::method()` is parsed as a `static_call_expression`
+        // whose first chain segment is emitted with kind TypeAccess.  The segment name
+        // IS the class name — use it directly as the root type so Phase 2/3 can walk
+        // forward from `ClassName.method` (e.g. `File::whereIn()` → root = "File").
+        SegmentKind::TypeAccess => {
+            let name = &segments[0].name;
+            // Prefer a known type symbol; fall back to the bare name so that
+            // project-local classes (e.g. `App.Models.File`) which inherit from
+            // an Eloquent `Model` still enter the walker and get resolved via the
+            // Phase-3 inheritance walk below.
+            let qualified = lookup
+                .types_by_name(name)
+                .iter()
+                .find(|s| matches!(s.kind.as_str(), "class" | "interface" | "enum" | "type_alias"))
+                .map(|s| s.qualified_name.clone())
+                .unwrap_or_else(|| name.clone());
+            Some(qualified)
+        }
         _ => None,
     };
 
@@ -173,6 +191,42 @@ pub(super) fn resolve_via_chain(
                 strategy: "php_chain_resolution",
                 resolved_yield_type: simple_yield_type(sym, lookup),
             });
+        }
+    }
+
+    // Inheritance walk: when `ClassName::staticMethod()` or a chained call fails
+    // on the direct class, walk parent classes via the inheritance map.
+    // This covers Eloquent Model subclasses whose Builder methods are forwarded
+    // via `__callStatic` — the stubs expose them on the `Model` qname.
+    // Depth-bounded at 10 to guard against cycles in malformed source.
+    let mut cls = effective_type.as_str();
+    for _ in 0..10 {
+        match lookup.parent_class_qname(cls) {
+            None => break,
+            Some(parent) => {
+                let parent_candidate = format!("{parent}.{}", last.name);
+                if let Some(sym) = lookup.by_qualified_name(&parent_candidate) {
+                    if kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.85,
+                            strategy: "php_chain_inherited",
+                            resolved_yield_type: simple_yield_type(sym, lookup),
+                        });
+                    }
+                }
+                for sym in lookup.members_of(parent) {
+                    if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.80,
+                            strategy: "php_chain_inherited",
+                            resolved_yield_type: simple_yield_type(sym, lookup),
+                        });
+                    }
+                }
+                cls = parent;
+            }
         }
     }
 

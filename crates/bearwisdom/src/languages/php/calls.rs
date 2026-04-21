@@ -630,7 +630,12 @@ fn build_chain_inner(node: &Node, src: &[u8], segments: &mut Vec<ChainSegment>) 
         }
 
         "static_call_expression" | "scoped_call_expression" => {
-            let class_node = node.child_by_field_name("class")?;
+            // `scoped_call_expression` (PHP 8 grammar) uses field "scope" for the
+            // class and field "name" for the method.  Older grammars may use "class".
+            // Try both so the chain is built regardless of grammar version.
+            let class_node = node
+                .child_by_field_name("scope")
+                .or_else(|| node.child_by_field_name("class"))?;
             let name_node = node.child_by_field_name("name")?;
             segments.push(ChainSegment {
                 name: node_text(&class_node, src),

@@ -331,3 +331,31 @@ class User {
             "expected Instantiates edge for top-level new, got: {inst:?}"
         );
     }
+
+    /// `File::whereIn(...)` — static Eloquent call — must emit a Calls ref with a
+    /// TypeAccess chain root so the PHP chain resolver can walk it.
+    #[test]
+    fn static_call_emits_type_access_chain() {
+        use crate::types::SegmentKind;
+
+        let src = "<?php\nclass Svc { public function run(): void {\n    File::whereIn('vault_id', $ids);\n} }\n";
+        let r = extract::extract(src);
+        assert!(!r.has_errors, "parse errors in static call test");
+
+        // Find the whereIn Calls ref with a chain (not the chain-less version)
+        let where_in_ref = r.refs.iter()
+            .find(|rf| rf.target_name == "whereIn" && rf.kind == EdgeKind::Calls && rf.chain.is_some())
+            .expect("whereIn Calls ref with chain must be emitted for File::whereIn(...)");
+
+        let chain = where_in_ref.chain.as_ref()
+            .expect("whereIn ref must have a chain for TypeAccess resolution");
+
+        assert_eq!(chain.segments.len(), 2, "chain must have 2 segments: [TypeAccess(File), Property(whereIn)]");
+
+        let root = &chain.segments[0];
+        assert_eq!(root.name, "File", "chain root name must be 'File'");
+        assert_eq!(root.kind, SegmentKind::TypeAccess, "chain root kind must be TypeAccess for static calls");
+
+        let method = &chain.segments[1];
+        assert_eq!(method.name, "whereIn", "chain method name must be 'whereIn'");
+    }

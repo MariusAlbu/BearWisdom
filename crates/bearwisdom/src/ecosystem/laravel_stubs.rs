@@ -412,6 +412,43 @@ fn synth_globals(parent_file_idx: usize) -> Vec<ExtractedSymbol> {
 
 fn synthesize_all() -> Vec<ParsedFile> {
     // -------------------------------------------------------------------------
+    // File 0: Eloquent Model — forwards all static Builder methods
+    //
+    // PHP Eloquent Model uses `__callStatic` to proxy static calls to the
+    // Builder, e.g. `File::whereIn(...)`, `User::findOrFail(...)`.  Project
+    // Model subclasses inherit from the vendor `Model` class (qname "Model" in
+    // the index).  We synthesize a stub with qname "Model.*" so the chain-walker
+    // inheritance walk can find these methods when it reaches the parent class.
+    // -------------------------------------------------------------------------
+    let model_symbols = synth_class(
+        "Model",
+        "Model",
+        BUILDER_METHODS,
+        0,
+    );
+    let model_file = ParsedFile {
+        path: "ext:laravel-stubs:eloquent/ModelForwarded.php".to_string(),
+        language: "php".to_string(),
+        content_hash: format!("laravel-stubs-model-{}", BUILDER_METHODS.len()),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        symbols: model_symbols,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    };
+
+    // -------------------------------------------------------------------------
     // File 1: Eloquent Builder
     // -------------------------------------------------------------------------
     let builder_symbols = synth_class(
@@ -555,6 +592,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
     };
 
     vec![
+        model_file,
         builder_file,
         collection_file,
         globals_file,
@@ -744,12 +782,12 @@ mod tests {
     }
 
     #[test]
-    fn synthesize_all_produces_five_files() {
+    fn synthesize_all_produces_six_files() {
         let files = synthesize_all();
         assert_eq!(
             files.len(),
-            5,
-            "expected 5 synthetic files (Builder, Collection, helpers, Builder alias, Collection alias), got {}",
+            6,
+            "expected 6 synthetic files (ModelForwarded, Builder, Collection, helpers, Builder alias, Collection alias), got {}",
             files.len()
         );
     }
@@ -761,6 +799,47 @@ mod tests {
             syms.len() >= 200,
             "expected >= 200 synthetic symbols, got {}",
             syms.len()
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Model forwarded stubs — cover Eloquent static method forwarding
+    // (e.g. `File::whereIn(...)`, `User::findOrFail(...)`)
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn model_forwarded_where_in_present() {
+        let syms = all_symbols();
+        assert!(
+            syms.iter().any(|s| s.qualified_name == "Model.whereIn"),
+            "Model.whereIn must be synthesized for static Eloquent call resolution"
+        );
+    }
+
+    #[test]
+    fn model_forwarded_find_or_fail_present() {
+        let syms = all_symbols();
+        assert!(
+            syms.iter().any(|s| s.qualified_name == "Model.findOrFail"),
+            "Model.findOrFail must be synthesized for static Eloquent call resolution"
+        );
+    }
+
+    #[test]
+    fn model_forwarded_with_count_present() {
+        let syms = all_symbols();
+        assert!(
+            syms.iter().any(|s| s.qualified_name == "Model.withCount"),
+            "Model.withCount must be synthesized for static Eloquent call resolution"
+        );
+    }
+
+    #[test]
+    fn model_forwarded_file_has_correct_virtual_path() {
+        let files = synthesize_all();
+        assert!(
+            files.iter().any(|f| f.path == "ext:laravel-stubs:eloquent/ModelForwarded.php"),
+            "ModelForwarded file must have the ext:laravel-stubs: prefix"
         );
     }
 }
