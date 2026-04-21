@@ -107,7 +107,7 @@ impl LanguageResolver for TypeScriptResolver {
         // Chain-aware resolution: if we have a structured MemberChain, walk it
         // step-by-step following field types.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, ref_ctx, lookup) {
+            if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, file_ctx, ref_ctx, lookup) {
                 return Some(res);
             }
         }

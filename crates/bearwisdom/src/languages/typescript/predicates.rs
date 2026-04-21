@@ -208,7 +208,7 @@ pub(crate) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     match edge_kind {
         EdgeKind::Calls => matches!(
             sym_kind,
-            "method" | "function" | "constructor" | "test" | "property" | "class"
+            "method" | "function" | "constructor" | "test" | "property" | "class" | "variable"
         ),
         EdgeKind::Inherits => matches!(sym_kind, "class"),
         EdgeKind::Implements => matches!(sym_kind, "interface" | "type_alias"),

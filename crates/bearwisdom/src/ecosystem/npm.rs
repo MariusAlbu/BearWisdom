@@ -277,7 +277,10 @@ impl ExternalSourceLocator for NpmEcosystem {
     }
 
     fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
-        let files = super::js_test_chains::synthetic_test_chain_files(project_root);
+        let mut files = super::js_test_chains::synthetic_test_chain_files(project_root);
+        if let Some(dayjs) = super::dayjs_synthetics::synthetic_dayjs_file(project_root) {
+            files.push(dayjs);
+        }
         if files.is_empty() { None } else { Some(files) }
     }
 }

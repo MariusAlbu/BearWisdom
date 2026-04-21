@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::chain_walker::external_type_qname;
-use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolInfo, SymbolLookup};
+use crate::indexer::resolve::engine::{ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup};
 use crate::indexer::resolve::type_env::TypeEnvironment;
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
@@ -23,6 +23,7 @@ use tracing::debug;
 pub(super) fn resolve_via_chain(
     chain: &MemberChain,
     edge_kind: EdgeKind,
+    file_ctx: &FileContext,
     ref_ctx: &RefContext,
     lookup: &dyn SymbolLookup,
 ) -> Option<Resolution> {
@@ -71,7 +72,9 @@ pub(super) fn resolve_via_chain(
                             break;
                         }
                     }
-                    found.or_else(|| segments[0].declared_type.clone())
+                    found
+                        .or_else(|| segments[0].declared_type.clone())
+                        .or_else(|| resolve_call_root_type(name, file_ctx, ref_ctx, lookup))
                 }
             }
         }
@@ -267,6 +270,62 @@ fn ts_yield_type(
         });
     }
     Some(env.resolve(raw))
+}
+
+/// Resolve the root type when the chain root identifier is a function call.
+///
+/// For `dayjs().format()` or `expect(x).to.be.equal(y)`, the chain root
+/// is an Identifier (the callee name). We need the callee's return_type to
+/// seed the chain walk. Strategy:
+///   1. Bare-specifier imports: `import dayjs from 'dayjs'` → probe
+///      `dayjs.dayjs` return_type_name (the synthetic declares it as
+///      returning `dayjs.Dayjs`). Also covers `import { vi } from 'vitest'`.
+///   2. Tsconfig alias imports: `import { dayjs } from '@/lib/dayjs'` →
+///      rewrite the alias, probe the resolved file's re-export. This handles
+///      the common workspace pattern of `packages/dayjs/index.ts` wrapping
+///      the real npm package.
+///   3. npm globals: `declare global { … }` in @types packages exposes
+///      bare callee names (jest's `expect`, vitest globals) under the
+///      `__npm_globals__` sentinel.
+fn resolve_call_root_type(
+    name: &str,
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    lookup: &dyn SymbolLookup,
+) -> Option<String> {
+    for import in &file_ctx.imports {
+        if import.imported_name != name && import.alias.as_deref() != Some(name) {
+            continue;
+        }
+        let Some(module) = import.module_path.as_deref() else { continue };
+        if module.starts_with('.') || module.starts_with('/') {
+            continue;
+        }
+        // Pass 1: bare specifier (`import dayjs from 'dayjs'`).
+        let candidate = format!("{module}.{name}");
+        if let Some(rt) = lookup.return_type_name(&candidate) {
+            return Some(rt.to_string());
+        }
+        if let Some(ft) = lookup.field_type_name(&candidate) {
+            return Some(ft.to_string());
+        }
+        // Pass 2: tsconfig alias rewrite (`@/lib/dayjs` → `apps/web/src/lib/dayjs`).
+        if let Some(rewritten) = lookup.resolve_tsconfig_alias(ref_ctx.file_package_id, module) {
+            let alias_candidate = format!("{rewritten}.{name}");
+            if let Some(rt) = lookup.return_type_name(&alias_candidate) {
+                return Some(rt.to_string());
+            }
+        }
+    }
+    // Pass 3: npm globals injection (jest/vitest `globals: true`).
+    let globals_candidate = format!("{}.{name}", crate::ecosystem::npm::NPM_GLOBALS_MODULE);
+    if let Some(rt) = lookup.return_type_name(&globals_candidate) {
+        return Some(rt.to_string());
+    }
+    if let Some(ft) = lookup.field_type_name(&globals_candidate) {
+        return Some(ft.to_string());
+    }
+    None
 }
 
 /// Find the enclosing class name from the scope chain.
