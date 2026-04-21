@@ -16,6 +16,7 @@
 
 pub mod connectors;
 pub mod extract;
+pub mod resolve;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -76,7 +77,7 @@ impl LanguagePlugin for AngularPlugin {
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
+        Some(std::sync::Arc::new(resolve::AngularResolver))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
