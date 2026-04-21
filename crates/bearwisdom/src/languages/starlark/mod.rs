@@ -7,6 +7,7 @@ pub mod embedded;
 pub mod keywords;
 pub mod extract;
 pub mod resolve;
+pub(crate) mod chain;
 mod predicates;
 
 #[cfg(test)]

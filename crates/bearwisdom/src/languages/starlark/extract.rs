@@ -14,7 +14,10 @@
 //   Calls    — `call` nodes (function invocations)
 // =============================================================================
 
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
+use crate::types::{
+    ChainSegment, EdgeKind, ExtractedRef, ExtractedSymbol, MemberChain, SegmentKind, SymbolKind,
+    Visibility,
+};
 use crate::types::ExtractionResult;
 use tree_sitter::{Node, Parser};
 
@@ -232,23 +235,100 @@ fn extract_call(
         let name = callee_text(fn_node, src);
         if !name.is_empty() {
             // Special-case `load(...)` → Imports ref.
-            let kind = if name == "load" {
-                // Extract the label (first argument) as module target.
+            if name == "load" {
                 extract_load_refs(node, src, sym_idx, refs);
                 return;
+            }
+
+            // Build a MemberChain for dotted attribute access (`ctx.actions.run`).
+            // target_name is kept as the full dotted string (e.g. "ctx.actions.run_shell")
+            // so that the predicate-based external fallback still fires when the chain
+            // resolver misses. The chain carries structured segments for the chain walker.
+            let chain = if fn_node.kind() == "attribute" {
+                build_attribute_chain(fn_node, src)
             } else {
-                EdgeKind::Calls
+                None
             };
+            let target_name = name;
+
             refs.push(ExtractedRef {
                 source_symbol_index: sym_idx,
-                target_name: name,
-                kind,
+                target_name,
+                kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
                 module: None,
-                chain: None,
-                byte_offset: 0,
+                chain,
+                byte_offset: fn_node.start_byte() as u32,
             });
         }
+    }
+}
+
+/// Build a `MemberChain` from a tree-sitter `attribute` node.
+///
+/// For `ctx.actions.run_shell` the tree looks like:
+/// ```text
+/// attribute
+///   object: attribute
+///     object: identifier "ctx"
+///     attribute: identifier "actions"
+///   attribute: identifier "run_shell"
+/// ```
+/// We produce segments: [ctx (Identifier), actions (Property), run_shell (Property)].
+fn build_attribute_chain(node: Node, src: &[u8]) -> Option<MemberChain> {
+    let mut segments = Vec::new();
+    collect_attribute_segments(node, src, &mut segments)?;
+    if segments.len() < 2 {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn collect_attribute_segments(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "identifier" => {
+            let name = text(node, src);
+            if name.is_empty() {
+                return None;
+            }
+            let kind = SegmentKind::Identifier;
+            segments.push(ChainSegment {
+                name,
+                node_kind: "identifier".to_string(),
+                kind,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+        "attribute" => {
+            let object = node.child_by_field_name("object")?;
+            let attribute = node.child_by_field_name("attribute")?;
+            collect_attribute_segments(object, src, segments)?;
+            let attr_name = text(attribute, src);
+            if attr_name.is_empty() {
+                return None;
+            }
+            segments.push(ChainSegment {
+                name: attr_name,
+                node_kind: "attribute".to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+        // Starlark `primary_expression` wrappers — unwrap one level.
+        "primary_expression" => {
+            if let Some(child) = node.named_child(0) {
+                collect_attribute_segments(child, src, segments)
+            } else {
+                None
+            }
+        }
+        _ => None,
     }
 }
 

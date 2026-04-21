@@ -671,6 +671,7 @@ fn chain_strategy(prefix: &str) -> &'static str {
         "dart" => "dart_chain_resolution",
         "swift" => "swift_chain_resolution",
         "c" => "c_chain_resolution",
+        "starlark" => "starlark_chain_resolution",
         _ => "chain_resolution",
     }
 }
@@ -693,6 +694,7 @@ fn chain_strategy_unique(prefix: &str) -> &'static str {
         "dart" => "dart_chain_resolution_unique",
         "swift" => "swift_chain_resolution_unique",
         "c" => "c_chain_resolution_unique",
+        "starlark" => "starlark_chain_resolution_unique",
         _ => "chain_resolution_unique",
     }
 }

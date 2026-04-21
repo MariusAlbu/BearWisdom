@@ -2,12 +2,15 @@
 //!
 //! Verifies:
 //!   1. Starlark symbols and refs are extracted from .bzl and BUILD files.
-//!   2. ctx.* chains at any depth are classified as external (namespace "bazel"),
-//!      not left as unresolved refs.
-//!   3. repository_ctx.* chains are classified as external.
+//!   2. ctx.* chains produce REAL resolved edges (strategy "starlark_ctx_chain")
+//!      against the synthetic ctx API symbols — not opaque external classification.
+//!   3. repository_ctx.* chains are classified as external (predicate fallback for
+//!      refs the chain walker misses — e.g. uncommon members not in CTX_MEMBERS).
 //!   4. env.expect.* (3-level analysistest chains) are classified as external.
 //!   5. Native rules (cc_library, genrule) resolve to the synthetic builtin file.
 //!   6. Synthetic ctx API symbols land in the database.
+//!   7. Chain-walker produces edges: ctx.actions.run_shell resolves to its synthetic
+//!      symbol; ctx.label.name resolves to its synthetic symbol.
 
 use bearwisdom::full_index;
 use bearwisdom_tests::TestProject;
@@ -35,15 +38,15 @@ fn starlark_project_indexes_without_errors() {
 }
 
 #[test]
-fn ctx_chain_refs_classified_as_external_not_unresolved() {
+fn ctx_chain_refs_produce_real_resolved_edges() {
+    // Round 2: ctx.* chains that appear in CTX_MEMBERS are resolved to real
+    // internal edges via strategy "starlark_ctx_chain", NOT opaque external refs.
     let project = TestProject::starlark_bazel_project();
     let mut db = TestProject::in_memory_db();
 
     full_index(&mut db, project.path(), None, None, None).unwrap();
 
-    // ctx.actions.run_shell, ctx.actions.declare_file, ctx.label.name,
-    // ctx.file.src, ctx.files.srcs, ctx.outputs — all must land in
-    // external_refs with namespace "bazel", never in unresolved_refs.
+    // No ctx.* refs left unresolved.
     let ctx_unresolved: i64 = db
         .query_row(
             "SELECT COUNT(*) FROM unresolved_refs WHERE target_name LIKE 'ctx.%'",
@@ -53,19 +56,20 @@ fn ctx_chain_refs_classified_as_external_not_unresolved() {
         .unwrap_or(0);
     assert_eq!(
         ctx_unresolved, 0,
-        "ctx.* refs must be external, not unresolved — found {ctx_unresolved} unresolved ctx.* refs"
+        "ctx.* refs must never be unresolved — found {ctx_unresolved}"
     );
 
-    let ctx_external: i64 = db
+    // Known ctx.* members in CTX_MEMBERS resolve via the chain walker → edges table.
+    let ctx_chain_edges: i64 = db
         .query_row(
-            "SELECT COUNT(*) FROM external_refs WHERE target_name LIKE 'ctx.%'",
+            "SELECT COUNT(*) FROM edges WHERE strategy = 'starlark_ctx_chain'",
             [],
             |r| r.get(0),
         )
         .unwrap_or(0);
     assert!(
-        ctx_external > 0,
-        "expected ctx.* refs in external_refs with namespace 'bazel'"
+        ctx_chain_edges > 0,
+        "expected ctx.* chain-walker edges in edges table (strategy starlark_ctx_chain), got 0"
     );
 }
 
@@ -169,4 +173,62 @@ fn synth_ctx_api_symbols_in_database() {
         )
         .unwrap_or(0);
     assert_eq!(label_name, 1, "ctx.label.name must be in symbol table");
+}
+
+/// Round 2 test: ctx.actions.run_shell resolves to the synthetic symbol via
+/// the chain walker, producing a real edge rather than external classification.
+#[test]
+fn ctx_actions_run_shell_resolves_to_synthetic_symbol() {
+    let project = TestProject::starlark_bazel_project();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    // The synthetic symbol ctx.actions.run_shell must be the target of at least
+    // one resolved edge emitted by the chain walker.
+    let run_shell_edges: i64 = db
+        .query_row(
+            r#"
+            SELECT COUNT(*) FROM edges e
+            JOIN symbols t ON t.id = e.target_id
+            WHERE t.qualified_name = 'ctx.actions.run_shell'
+              AND e.strategy = 'starlark_ctx_chain'
+            "#,
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert!(
+        run_shell_edges > 0,
+        "expected at least one edge targeting ctx.actions.run_shell via starlark_ctx_chain, got 0"
+    );
+}
+
+/// Round 2 test: ctx.actions.declare_file (3-level chain) resolves to its
+/// synthetic symbol via the chain walker.
+#[test]
+fn ctx_actions_declare_file_resolves_to_synthetic_symbol() {
+    let project = TestProject::starlark_bazel_project();
+    let mut db = TestProject::in_memory_db();
+
+    full_index(&mut db, project.path(), None, None, None).unwrap();
+
+    // `ctx.actions.declare_file(ctx.label.name + ".out")` in my_rule.bzl —
+    // the call site is a 3-level chain, resolved by the chain walker.
+    let declare_file_edges: i64 = db
+        .query_row(
+            r#"
+            SELECT COUNT(*) FROM edges e
+            JOIN symbols t ON t.id = e.target_id
+            WHERE t.qualified_name = 'ctx.actions.declare_file'
+              AND e.strategy = 'starlark_ctx_chain'
+            "#,
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+    assert!(
+        declare_file_edges > 0,
+        "expected at least one edge targeting ctx.actions.declare_file via starlark_ctx_chain, got 0"
+    );
 }

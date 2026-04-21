@@ -18,7 +18,7 @@
 // External namespace: `"bazel"` for native Bazel rules and built-in functions.
 // =============================================================================
 
-use super::predicates;
+use super::{chain, predicates};
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -76,13 +76,41 @@ impl LanguageResolver for StarlarkResolver {
         }
 
         // Bazel native rules and Starlark built-ins are external.
-        if predicates::is_starlark_builtin(target) {
+        // Exception: framework chains that the chain resolver can match against
+        // synthetic symbols are handled first below (before this guard), so the
+        // guard only fires for refs the chain walker couldn't resolve.
+        if predicates::is_starlark_builtin(target) && !predicates::is_bazel_framework_chain(target) {
             return None;
         }
 
-        // Bazel framework parameter chains (`ctx.*`, `repository_ctx.*`, `env.*`,
-        // `directory.*`) at any depth — never resolve internally.
+        // Chain-walker resolution: for dotted refs (ctx.actions.run, etc.) try
+        // a direct qualified-name lookup against the synthetic ctx API symbols
+        // before routing to external classification. This produces real edges
+        // (strategy "starlark_ctx_chain") instead of opaque external refs.
+        if predicates::is_bazel_framework_chain(target) || ref_ctx.extracted_ref.chain.is_some() {
+            if let Some(res) = chain::resolve(
+                ref_ctx.extracted_ref.chain.as_ref(),
+                target,
+                edge_kind,
+                Some(file_ctx),
+                ref_ctx,
+                lookup,
+            ) {
+                return Some(res);
+            }
+            // Chain walker missed — fall through so the predicate guards below
+            // still route this ref to external (preserving round-1 behaviour).
+        }
+
+        // Bazel framework parameter chains not resolved by the chain walker:
+        // classify as external rather than leaving as unresolved.
         if predicates::is_bazel_framework_chain(target) {
+            return None;
+        }
+
+        // Remaining starlark builtins that weren't caught by the first guard
+        // (i.e. framework chains that the chain walker missed were handled above).
+        if predicates::is_starlark_builtin(target) {
             return None;
         }
 
