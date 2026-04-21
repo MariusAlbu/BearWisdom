@@ -362,3 +362,156 @@ abstract class AbstractRuleTestCase<T extends Rule> extends AbstractTestCase {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Round-2 fixes: static methods + import static
+// ---------------------------------------------------------------------------
+
+/// `static String method(...)` inside a class → Method symbol is emitted
+/// (tree-sitter-groovy sometimes misses static methods as method_declaration).
+#[test]
+fn symbol_static_string_method_is_extracted() {
+    let r = extract(
+        "class TestUtil {\n\
+         \n\
+             static String shouldFail(Class expectedExceptionClass, Closure code) {\n\
+         \n\
+                 return null\n\
+         \n\
+             }\n\
+         \n\
+         }",
+    );
+    eprintln!(
+        "static_string_method: has_errors={}, symbols={:?}",
+        r.has_errors,
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+    assert!(
+        r.symbols
+            .iter()
+            .any(|s| s.name == "shouldFail" && s.kind == SymbolKind::Method),
+        "expected Method shouldFail from `static String shouldFail(...)`; got {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// `static void method(...)` inside a class → Method symbol emitted with correct qname
+#[test]
+fn symbol_static_void_method_is_extracted_with_qname() {
+    let r = extract(
+        "package org.codenarc.test\n\
+         class TestUtil {\n\
+         \n\
+             static void assertContainsAll(String text, Collection strings) {\n\
+         \n\
+                 strings.each { assert text.contains(it.toString()) }\n\
+         \n\
+             }\n\
+         \n\
+         }",
+    );
+    let method = r.symbols.iter().find(|s| s.name == "assertContainsAll");
+    assert!(
+        method.is_some(),
+        "expected Method assertContainsAll; got {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+    let m = method.unwrap();
+    assert_eq!(
+        m.qualified_name, "org.codenarc.test.TestUtil.assertContainsAll",
+        "static method qname should include package and class"
+    );
+    assert_eq!(
+        m.scope_path.as_deref(),
+        Some("org.codenarc.test.TestUtil"),
+        "static method scope_path should point to class"
+    );
+}
+
+/// `private static Type movedTo(...)` → Method symbol emitted
+#[test]
+fn symbol_private_static_method_is_extracted() {
+    let r = extract(
+        "class MovedRules {\n\
+         \n\
+             private static MovedToRuleSet movedTo(String ruleSetName) {\n\
+         \n\
+                 return new MovedToRuleSet(ruleSetName)\n\
+         \n\
+             }\n\
+         \n\
+         }",
+    );
+    assert!(
+        r.symbols
+            .iter()
+            .any(|s| s.name == "movedTo" && s.kind == SymbolKind::Method),
+        "expected Method movedTo from `private static MovedToRuleSet movedTo(...)`; got {:?}",
+        r.symbols
+            .iter()
+            .map(|s| (&s.name, s.kind))
+            .collect::<Vec<_>>()
+    );
+}
+
+/// `import static pkg.Class.member` → Imports ref with target_name = "member" and module = full path
+#[test]
+fn ref_import_static_produces_member_import() {
+    let r = extract(
+        "import static org.codenarc.test.TestUtil.shouldFail\n\
+         class Foo {}",
+    );
+    let import_ref = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "shouldFail");
+    assert!(
+        import_ref.is_some(),
+        "expected Imports ref with target_name='shouldFail'; got {:?}",
+        r.refs
+            .iter()
+            .map(|rf| (&rf.target_name, rf.kind, rf.module.as_deref()))
+            .collect::<Vec<_>>()
+    );
+    let ir = import_ref.unwrap();
+    assert_eq!(
+        ir.module.as_deref(),
+        Some("org.codenarc.test.TestUtil.shouldFail"),
+        "static import module should be the full qualified path"
+    );
+}
+
+/// `import static pkg.Class.method` bare call resolves via exact-import lookup
+/// (integration: extract + inherit-aware Java resolver step 3)
+#[test]
+fn ref_import_static_not_polluted_as_module() {
+    // The old bug: `import static org.example.Util.foo` would produce
+    // target_name = "static" (entire first word after "import").
+    // After the fix, target_name must be "foo", not "static".
+    let r = extract(
+        "import static org.example.Util.foo\n\
+         class MyTest {}",
+    );
+    // Must NOT have a ref with target_name = "static"
+    assert!(
+        !r.refs
+            .iter()
+            .any(|rf| rf.kind == EdgeKind::Imports && rf.target_name == "static"),
+        "import static must not produce target_name='static'; got {:?}",
+        r.refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Imports)
+            .map(|rf| (&rf.target_name, rf.module.as_deref()))
+            .collect::<Vec<_>>()
+    );
+}

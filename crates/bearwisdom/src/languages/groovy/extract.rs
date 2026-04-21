@@ -121,6 +121,39 @@ pub fn extract(source: &str) -> ExtractionResult {
             let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted);
             symbols.extend(new_methods);
         }
+    } else {
+        // Even when the grammar parses successfully, the tree-sitter-groovy grammar
+        // sometimes classifies `static Type method(...)` declarations as field_declaration
+        // nodes (or other non-method_declaration nodes) rather than method_declaration.
+        // This causes static and private static methods to be silently dropped from
+        // the index.  We run a lightweight line-scanner supplemental pass for every
+        // class found in the file to recover those missing methods.
+        //
+        // The `already_extracted` set prevents double-indexing: methods the grammar
+        // correctly produced are already in symbols and will be skipped.
+        let class_symbols: Vec<(usize, String, String)> = symbols
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.kind == SymbolKind::Class)
+            .map(|(i, s)| (i, s.qualified_name.clone(), s.name.clone()))
+            .collect();
+
+        for (class_idx, class_qname, _class_name) in class_symbols {
+            let already_extracted: std::collections::HashSet<String> = symbols
+                .iter()
+                .filter(|s| {
+                    s.kind == SymbolKind::Method
+                        && s.scope_path
+                            .as_deref()
+                            .map(|sp| sp == class_qname)
+                            .unwrap_or(false)
+                })
+                .map(|s| s.name.clone())
+                .collect();
+
+            let new_methods = scan_methods_from_source(source, class_idx, &class_qname, &already_extracted);
+            symbols.extend(new_methods);
+        }
     }
 
     ExtractionResult::new(symbols, refs, has_errors)
@@ -132,7 +165,12 @@ pub fn extract(source: &str) -> ExtractionResult {
 ///
 /// A method declaration is recognised by the pattern:
 ///   (optional-visibility) (optional-modifier)* (type|def|void)? methodName(
-/// where the line must start with an access modifier or type keyword.
+/// where the line must start with an access modifier or `static` keyword.
+///
+/// The `static` keyword is included because the tree-sitter-groovy grammar
+/// sometimes classifies `static Type method(...)` as a field_declaration
+/// or otherwise fails to produce a method_declaration node, causing static
+/// methods to be silently dropped from the index.
 fn scan_methods_from_source(
     src: &str,
     parent_idx: usize,
@@ -142,8 +180,10 @@ fn scan_methods_from_source(
     let mut methods: Vec<ExtractedSymbol> = Vec::new();
     let mut seen: std::collections::HashSet<String> = already_extracted.clone();
 
-    // Access modifiers that must appear as the FIRST token on a method declaration line.
-    const ACCESS: &[&str] = &["public", "protected", "private"];
+    // Access modifiers (including `static`) that may appear as the FIRST token
+    // on a method declaration line.  Static is included because the Groovy
+    // grammar sometimes does not emit method_declaration for `static Type foo(...)`.
+    const ACCESS: &[&str] = &["public", "protected", "private", "static"];
     // Other modifiers that may follow an access modifier.
     const OTHER_MODS: &[&str] = &["static", "abstract", "final", "synchronized", "native", "void", "def"];
 
@@ -166,11 +206,11 @@ fn scan_methods_from_source(
             None => continue,
         };
 
-        // Line must START with an access modifier to be a method declaration.
+        // Line must START with an access modifier (or `static`) to be a method declaration.
         if !ACCESS.contains(&first) {
             continue;
         }
-        tokens.next(); // consume access modifier
+        tokens.next(); // consume access modifier / static keyword
 
         // Skip additional modifiers (void, def, static, type name, etc.)
         while tokens.peek().map_or(false, |t| {
@@ -714,10 +754,22 @@ fn extract_import(
     refs: &mut Vec<ExtractedRef>,
 ) {
     let text = node_text(node, src);
-    // Strip `import ` prefix and any `as Alias` suffix
-    let module = text
+    // Strip `import ` prefix and any `as Alias` suffix.
+    // Also strip the optional `static` keyword that appears in static imports:
+    //   import static org.codenarc.test.TestUtil.shouldFail
+    // After stripping "import" we may see "static" as the next token — skip it.
+    let after_import = text
         .trim_start_matches("import")
-        .trim()
+        .trim();
+
+    // Skip the `static` keyword when present.
+    let path_str = if after_import.starts_with("static ") || after_import == "static" {
+        after_import.trim_start_matches("static").trim()
+    } else {
+        after_import
+    };
+
+    let full_path = path_str
         .split_whitespace()
         .next()
         .unwrap_or("")
@@ -725,16 +777,31 @@ fn extract_import(
         .trim_end_matches('.')
         .to_string();
 
-    if module.is_empty() {
+    if full_path.is_empty() {
         return;
     }
 
+    // For a static member import `import static pkg.Class.member`, the target_name
+    // is the simple member name (last segment) so the Java resolver's exact-import
+    // lookup (which matches `imported_name == effective_target`) can find it.
+    // The `module` carries the full qualified path so `by_qualified_name` works.
+    let is_static_import = after_import.starts_with("static ");
+    let (target_name, module_path) = if is_static_import {
+        let simple = full_path
+            .rfind('.')
+            .map(|i| full_path[i + 1..].to_string())
+            .unwrap_or_else(|| full_path.clone());
+        (simple, full_path.clone())
+    } else {
+        (full_path.clone(), full_path.clone())
+    };
+
     refs.push(ExtractedRef {
         source_symbol_index,
-        target_name: module.clone(),
+        target_name,
         kind: EdgeKind::Imports,
         line: node.start_position().row as u32,
-        module: Some(module),
+        module: Some(module_path),
         chain: None,
         byte_offset: 0,
     });
