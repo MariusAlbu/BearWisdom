@@ -33,15 +33,19 @@ pub use symbol_index::SymbolLocationIndex;
 
 pub mod android_sdk;
 pub mod cabal;
+pub mod bazel_central_registry;
 pub mod cargo;
 pub mod clojure_core;
 pub mod composer;
 pub mod cpan;
 pub mod cpython_stdlib;
 pub mod cran;
+pub mod dart_sdk;
 pub mod dotnet_stdlib;
 pub mod elixir_stdlib;
 pub mod erlang_otp;
+pub mod flutter_sdk;
+pub mod gleam_stdlib;
 pub mod go_mod;
 pub mod go_platform;
 pub mod go_stdlib;
@@ -51,14 +55,20 @@ pub mod hex;
 pub mod jdk_src;
 pub mod kotlin_stdlib;
 pub mod luarocks;
+pub mod matlab_stdlib;
 pub mod maven;
 pub mod nimble;
+pub mod node_builtins;
 pub mod npm;
 pub mod nuget;
 pub mod opam;
 pub mod php_stubs;
 pub mod posix_headers;
+pub mod powershell_stdlib;
+pub mod psgallery;
 pub mod pub_pkg;
+pub mod puppet_forge;
+pub mod puppet_stdlib;
 pub mod pypi;
 pub mod ruby_stdlib;
 pub mod rubygems;
@@ -66,10 +76,13 @@ pub mod rust_stdlib;
 pub mod scala_stdlib;
 pub mod spm;
 pub mod swift_foundation;
+pub mod tf_registry;
 pub mod ts_lib_dom;
 pub mod vba_typelibs;
 pub mod zig_pkg;
+pub mod zig_std;
 pub use android_sdk::AndroidSdkEcosystem;
+pub use bazel_central_registry::BazelCentralRegistryEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
 pub use clojure_core::ClojureCoreEcosystem;
@@ -77,9 +90,12 @@ pub use composer::ComposerEcosystem;
 pub use cpan::CpanEcosystem;
 pub use cpython_stdlib::CpythonStdlibEcosystem;
 pub use cran::CranEcosystem;
+pub use dart_sdk::DartSdkEcosystem;
 pub use dotnet_stdlib::DotnetStdlibEcosystem;
 pub use elixir_stdlib::ElixirStdlibEcosystem;
 pub use erlang_otp::ErlangOtpEcosystem;
+pub use flutter_sdk::FlutterSdkEcosystem;
+pub use gleam_stdlib::GleamStdlibEcosystem;
 pub use go_mod::GoModEcosystem;
 pub use go_stdlib::GoStdlibEcosystem;
 pub use godot_api::GodotApiEcosystem;
@@ -88,14 +104,20 @@ pub use hex::HexEcosystem;
 pub use jdk_src::JdkSrcEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
+pub use matlab_stdlib::MatlabStdlibEcosystem;
 pub use maven::MavenEcosystem;
 pub use nimble::NimbleEcosystem;
+pub use node_builtins::NodeBuiltinsEcosystem;
 pub use npm::NpmEcosystem;
 pub use nuget::NugetEcosystem;
 pub use opam::OpamEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
 pub use posix_headers::{MsvcHeadersEcosystem, PosixHeadersEcosystem};
+pub use powershell_stdlib::PowerShellStdlibEcosystem;
+pub use psgallery::PsGalleryEcosystem;
 pub use pub_pkg::PubEcosystem;
+pub use puppet_forge::PuppetForgeEcosystem;
+pub use puppet_stdlib::PuppetStdlibEcosystem;
 pub use pypi::PypiEcosystem;
 pub use ruby_stdlib::RubyStdlibEcosystem;
 pub use rubygems::RubygemsEcosystem;
@@ -103,9 +125,11 @@ pub use rust_stdlib::RustStdlibEcosystem;
 pub use scala_stdlib::ScalaStdlibEcosystem;
 pub use spm::SpmEcosystem;
 pub use swift_foundation::SwiftFoundationEcosystem;
+pub use tf_registry::TfRegistryEcosystem;
 pub use ts_lib_dom::TsLibDomEcosystem;
 pub use vba_typelibs::VbaTypelibsEcosystem;
 pub use zig_pkg::ZigPkgEcosystem;
+pub use zig_std::ZigStdEcosystem;
 
 // ---------------------------------------------------------------------------
 // Identity & kind
@@ -506,6 +530,18 @@ pub fn default_locator(
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
+        "puppet-forge" => Some(puppet_forge::shared_locator()),
+        "puppet-stdlib" => Some(puppet_stdlib::shared_locator()),
+        "dart-sdk" => Some(Arc::new(DartSdkEcosystem)),
+        "flutter-sdk" => Some(Arc::new(FlutterSdkEcosystem)),
+        "psgallery" => Some(Arc::new(PsGalleryEcosystem)),
+        "powershell-stdlib" => Some(Arc::new(PowerShellStdlibEcosystem)),
+        "tf-registry" => Some(Arc::new(TfRegistryEcosystem)),
+        "matlab-stdlib" => Some(Arc::new(MatlabStdlibEcosystem)),
+        "gleam-stdlib" => Some(Arc::new(GleamStdlibEcosystem)),
+        "node-builtins" => Some(Arc::new(NodeBuiltinsEcosystem)),
+        "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
+        "zig-std" => Some(Arc::new(ZigStdEcosystem)),
         _ => None,
     }
 }
@@ -537,6 +573,9 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(LuarocksEcosystem));
         reg.register(Arc::new(ZigPkgEcosystem));
         reg.register(Arc::new(GodotApiEcosystem));
+        reg.register(Arc::new(PsGalleryEcosystem));
+        reg.register(Arc::new(TfRegistryEcosystem));
+        reg.register(Arc::new(BazelCentralRegistryEcosystem));
         // Stdlib ecosystems must register AFTER their base package ecosystem
         // (Maven) for TransitiveOn activation to resolve in a single pass.
         reg.register(Arc::new(KotlinStdlibEcosystem));
@@ -558,6 +597,15 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ElixirStdlibEcosystem));
         reg.register(Arc::new(SwiftFoundationEcosystem));
         reg.register(Arc::new(VbaTypelibsEcosystem));
+        reg.register(Arc::new(PuppetForgeEcosystem));
+        reg.register(Arc::new(PuppetStdlibEcosystem));
+        reg.register(Arc::new(DartSdkEcosystem));
+        reg.register(Arc::new(FlutterSdkEcosystem));
+        reg.register(Arc::new(PowerShellStdlibEcosystem));
+        reg.register(Arc::new(MatlabStdlibEcosystem));
+        reg.register(Arc::new(GleamStdlibEcosystem));
+        reg.register(Arc::new(NodeBuiltinsEcosystem));
+        reg.register(Arc::new(ZigStdEcosystem));
         reg
     })
 }

@@ -316,6 +316,10 @@ fn walk_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: &mut Ve
 // Symbol-location index (demand-driven pipeline entry)
 // ---------------------------------------------------------------------------
 
+pub(crate) fn build_zig_symbol_index_pub(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    build_zig_symbol_index(dep_roots)
+}
+
 fn build_zig_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
     for dep in dep_roots {

@@ -10,6 +10,16 @@
 // Languages: csharp, fsharp, vbnet. All three consume the same DLLs from
 // `~/.nuget/packages/`. The file-level `language` tag on emitted parsed
 // files follows the owning .csproj/.fsproj/.vbproj file type.
+//
+// Hybrid source + metadata strategy (additive, no flag flip):
+//   The DLL metadata path (`parse_metadata_only`) remains the primary eager
+//   pass — `uses_demand_driven_parse` stays `false`. A supplementary source
+//   scan runs alongside it: for each resolved package directory we look for
+//   `.cs` files under `contentFiles/cs/<tfm>/`, `lib/<tfm>/`, `src/`, and
+//   the package root. Any found source files are parsed header-only
+//   (top-level namespace/class/interface/enum/struct/method decls) and emitted
+//   as additional `ParsedFile` rows. When source and DLL metadata provide the
+//   same qname, source wins at query time because it carries real line numbers.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -19,6 +29,7 @@ use tracing::debug;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext, ManifestSpec,
+    SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::ecosystem::manifest::{ManifestData, ManifestKind, ManifestReader, ReaderEntry};
@@ -57,13 +68,53 @@ impl Ecosystem for NugetEcosystem {
     fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         Vec::new()
     }
+
+    // `uses_demand_driven_parse` intentionally stays `false`.
+    //
+    // The DLL metadata path is the primary eager pass — flipping this to
+    // `true` would disable `parse_metadata_only` and leave the indexer
+    // relying only on the demand loop, which requires `locate_roots` to return
+    // real dep roots. Since `locate_roots` returns empty (NuGet has no source
+    // walk), flipping would cause a complete regression.
+    //
+    // The new source-index path is SUPPLEMENTARY: it runs inside
+    // `parse_metadata_only` alongside the DLL scan, so source wins on
+    // qnames it covers while DLL metadata fills the rest. No flag change
+    // needed.
+
+    /// Build a supplementary `(module, name) → file` index over any `.cs`
+    /// source files found inside NuGet package dirs. Consumed by chain walkers
+    /// that need a file path for a specific qname — when source resolves it,
+    /// source wins over the DLL-synthesized row.
+    fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+        build_nuget_source_symbol_index(dep_roots)
+    }
+
+    /// Resolve a specific import against the supplementary source index.
+    /// Falls back to empty when no source covers the requested symbols.
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        _package: &str,
+        symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        resolve_nuget_source_symbols(dep, symbols)
+    }
+
+    /// Resolve a single fully-qualified name from the source index.
+    /// Falls back to empty when no source covers `fqn`.
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
+        let short = fqn.rsplit('.').next().unwrap_or(fqn);
+        resolve_nuget_source_symbols(dep, &[short])
+    }
 }
 
 impl ExternalSourceLocator for NugetEcosystem {
     fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
 
     fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
-        let parsed = parse_dotnet_externals(project_root);
+        let (mut parsed, source_pf) = parse_dotnet_externals_with_source(project_root);
+        parsed.extend(source_pf);
         if parsed.is_empty() { None } else { Some(parsed) }
     }
 }
@@ -367,10 +418,23 @@ pub fn parse_global_usings(content: &str) -> Vec<String> {
 // NuGet cache + DLL metadata parsing (migrated from externals/dotnet.rs)
 // ===========================================================================
 
+/// Public entry point used by back-compat re-exports in `externals.rs`.
+/// Returns DLL metadata ParsedFiles only — source ParsedFiles are merged by
+/// the `ExternalSourceLocator::parse_metadata_only` impl above.
 pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFile> {
+    let (dll_pf, _source_pf) = parse_dotnet_externals_with_source(project_root);
+    dll_pf
+}
+
+/// Internal: returns `(dll_parsed_files, source_parsed_files)`. Called by the
+/// `ExternalSourceLocator::parse_metadata_only` impl which concatenates both.
+/// Keeping them separate lets back-compat callers stay cheap (DLL-only).
+fn parse_dotnet_externals_with_source(
+    project_root: &Path,
+) -> (Vec<crate::types::ParsedFile>, Vec<crate::types::ParsedFile>) {
     let mut project_files: Vec<PathBuf> = Vec::new();
     collect_dotnet_project_files(project_root, &mut project_files, 0);
-    if project_files.is_empty() { return Vec::new() }
+    if project_files.is_empty() { return (Vec::new(), Vec::new()) }
 
     let mut coords: Vec<NuGetCoord> = Vec::new();
     for p in &project_files {
@@ -384,11 +448,11 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
         }
     }
 
-    if coords.is_empty() { return Vec::new() }
+    if coords.is_empty() { return (Vec::new(), Vec::new()) }
 
     let Some(nuget_root) = nuget_packages_root() else {
         debug!("No NuGet packages cache; skipping .NET externals");
-        return Vec::new();
+        return (Vec::new(), Vec::new());
     };
     debug!(
         "Probing NuGet cache {} for {} package references",
@@ -397,17 +461,58 @@ pub fn parse_dotnet_externals(project_root: &Path) -> Vec<crate::types::ParsedFi
     );
 
     let lang_id = dominant_dotnet_language(&project_files);
-    let mut out = Vec::new();
-    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut dll_out = Vec::new();
+    let mut src_out = Vec::new();
+    let mut seen_dll: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut seen_src: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
     for coord in coords {
-        let Some(dll_path) = resolve_nuget_dll(&nuget_root, &coord) else { continue };
-        if !seen.insert(dll_path.clone()) { continue }
-        match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
-            Ok(pf) => out.push(pf),
-            Err(e) => debug!("Failed .NET metadata read {}: {e}", dll_path.display()),
+        let pkg_dir = nuget_root.join(coord.name.to_lowercase());
+        if !pkg_dir.is_dir() { continue }
+
+        let version = if let Some(v) = &coord.version {
+            let concrete = pkg_dir.join(v);
+            if concrete.is_dir() { v.clone() }
+            else { match largest_version_subdir(&pkg_dir) { Some(v) => v, None => continue } }
+        } else {
+            match largest_version_subdir(&pkg_dir) { Some(v) => v, None => continue }
+        };
+        let version_dir = pkg_dir.join(&version);
+
+        // DLL metadata path — unchanged from original.
+        if let Some(dll_path) = find_dll_in_version_dir(&version_dir, &coord.name) {
+            if seen_dll.insert(dll_path.clone()) {
+                match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
+                    Ok(pf) => dll_out.push(pf),
+                    Err(e) => debug!("Failed .NET metadata read {}: {e}", dll_path.display()),
+                }
+            }
+        }
+
+        // Supplementary source path — additive, no DLL walk displacement.
+        for src_path in discover_nuget_source_files(&version_dir) {
+            if !seen_src.insert(src_path.clone()) { continue }
+            match parse_cs_source_file(&src_path, &coord.name, lang_id) {
+                Ok(pf) => {
+                    debug!(
+                        "NuGet source: {} symbols from {}",
+                        pf.symbols.len(), src_path.display()
+                    );
+                    src_out.push(pf);
+                }
+                Err(e) => debug!("NuGet source parse error {}: {e}", src_path.display()),
+            }
         }
     }
-    out
+
+    if !src_out.is_empty() {
+        debug!(
+            "NuGet hybrid: {} DLL + {} source-file entries for {}",
+            dll_out.len(), src_out.len(), project_root.display()
+        );
+    }
+
+    (dll_out, src_out)
 }
 
 fn collect_transitive_coords_from_deps_json(proj_dir: &Path) -> Vec<NuGetCoord> {
@@ -481,18 +586,10 @@ pub fn nuget_packages_root() -> Option<PathBuf> {
     if candidate.is_dir() { Some(candidate) } else { None }
 }
 
-fn resolve_nuget_dll(nuget_root: &Path, coord: &NuGetCoord) -> Option<PathBuf> {
-    let pkg_dir = nuget_root.join(coord.name.to_lowercase());
-    if !pkg_dir.is_dir() { return None }
-
-    let version = if let Some(v) = &coord.version {
-        let concrete = pkg_dir.join(v);
-        if concrete.is_dir() { v.clone() } else { largest_version_subdir(&pkg_dir)? }
-    } else {
-        largest_version_subdir(&pkg_dir)?
-    };
-
-    let version_dir = pkg_dir.join(&version);
+/// Locate the `.dll` matching `pkg_name` inside an already-resolved
+/// `<nuget-cache>/<pkg-id>/<version>/` directory. Returns `None` for
+/// source-only packages that ship no `lib/` directory.
+fn find_dll_in_version_dir(version_dir: &Path, pkg_name: &str) -> Option<PathBuf> {
     let lib_dir = version_dir.join("lib");
     if !lib_dir.is_dir() { return None }
 
@@ -505,7 +602,7 @@ fn resolve_nuget_dll(nuget_root: &Path, coord: &NuGetCoord) -> Option<PathBuf> {
     let tfm_dir = chosen_tfm.or_else(|| largest_subdir(&lib_dir))?;
 
     let entries = std::fs::read_dir(&tfm_dir).ok()?;
-    let target_lower = coord.name.to_lowercase() + ".dll";
+    let target_lower = pkg_name.to_lowercase() + ".dll";
     for entry in entries.flatten() {
         let name = entry.file_name().to_string_lossy().to_lowercase();
         if name == target_lower { return Some(entry.path()) }
@@ -808,6 +905,433 @@ fn collect_dotnet_project_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize
     }
 }
 
+// ===========================================================================
+// NuGet source symbol index + resolve helpers (Ecosystem trait surface)
+// ===========================================================================
+
+/// Build a `SymbolLocationIndex` from `.cs` source files in the given dep
+/// roots. Called via the `Ecosystem::build_symbol_index` method when the
+/// pipeline constructs synthetic NuGet dep roots. In the primary eager
+/// indexing flow the supplementary source scan happens inside
+/// `parse_dotnet_externals_with_source` instead.
+fn build_nuget_source_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut index = SymbolLocationIndex::new();
+    for dep in dep_roots {
+        for src_path in discover_nuget_source_files(&dep.root) {
+            let Ok(content) = std::fs::read_to_string(&src_path) else { continue };
+            for sym in scan_cs_header(&content) {
+                index.insert(dep.module_path.clone(), sym.name, src_path.clone());
+            }
+        }
+    }
+    index
+}
+
+/// Return `WalkedFile` entries for `.cs` source files in `dep.root` that
+/// declare any of the requested symbol short names.
+fn resolve_nuget_source_symbols(dep: &ExternalDepRoot, symbols: &[&str]) -> Vec<WalkedFile> {
+    if symbols.is_empty() { return Vec::new(); }
+    let source_files = discover_nuget_source_files(&dep.root);
+    if source_files.is_empty() { return Vec::new(); }
+
+    let targets: std::collections::HashSet<&str> = symbols.iter().copied().collect();
+    let mut out = Vec::new();
+
+    for src_path in source_files {
+        let Ok(content) = std::fs::read_to_string(&src_path) else { continue };
+        let decls = scan_cs_header(&content);
+        if decls.iter().any(|d| targets.contains(d.name.as_str())) {
+            let rel = src_path
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            out.push(WalkedFile {
+                relative_path: format!("ext:dotnet-src:{}/{}", dep.module_path, rel),
+                absolute_path: src_path,
+                language: "csharp",
+            });
+        }
+    }
+    out
+}
+
+// ===========================================================================
+// NuGet source discovery + header-only C# parsing
+// ===========================================================================
+
+/// Discover `.cs` source files shipped inside a NuGet package version dir.
+/// Checks in priority order:
+///   1. `contentFiles/cs/<tfm>/**/*.cs` — NuGet contentFiles convention
+///   2. `lib/<tfm>/**/*.cs` — rare but exists in some packages
+///   3. `src/**/*.cs` — source-only packages (Microsoft.Bcl.*, etc.)
+///   4. Top-level `*.cs` at the package root
+///
+/// Returns deduped absolute paths.
+fn discover_nuget_source_files(version_dir: &Path) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+
+    // 1. contentFiles/cs/<tfm>/
+    let content_files_cs = version_dir.join("contentFiles").join("cs");
+    if content_files_cs.is_dir() {
+        let preferred_tfms = [
+            "net9.0", "net8.0", "net7.0", "net6.0",
+            "netstandard2.1", "netstandard2.0", "any",
+        ];
+        let tfm_dir = preferred_tfms.iter()
+            .map(|tfm| content_files_cs.join(tfm))
+            .find(|p| p.is_dir())
+            .or_else(|| largest_subdir(&content_files_cs));
+        if let Some(dir) = tfm_dir {
+            collect_cs_files(&dir, &mut out, &mut seen, 0);
+        }
+    }
+
+    // 2. lib/<tfm>/**/*.cs
+    let lib_dir = version_dir.join("lib");
+    if lib_dir.is_dir() {
+        let preferred_tfms = [
+            "net9.0", "net8.0", "net7.0", "net6.0",
+            "netstandard2.1", "netstandard2.0",
+        ];
+        let tfm_dir = preferred_tfms.iter()
+            .map(|tfm| lib_dir.join(tfm))
+            .find(|p| p.is_dir())
+            .or_else(|| largest_subdir(&lib_dir));
+        if let Some(dir) = tfm_dir {
+            collect_cs_files(&dir, &mut out, &mut seen, 0);
+        }
+    }
+
+    // 3. src/
+    let src_dir = version_dir.join("src");
+    if src_dir.is_dir() {
+        collect_cs_files(&src_dir, &mut out, &mut seen, 0);
+    }
+
+    // 4. Top-level *.cs
+    if let Ok(entries) = std::fs::read_dir(version_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "cs") {
+                if seen.insert(path.clone()) { out.push(path); }
+            }
+        }
+    }
+
+    out
+}
+
+/// Recursive `.cs` collector with depth cap. Skips build-artifact and
+/// test subdirectories.
+fn collect_cs_files(
+    dir: &Path,
+    out: &mut Vec<PathBuf>,
+    seen: &mut std::collections::HashSet<PathBuf>,
+    depth: usize,
+) {
+    if depth > 8 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let Ok(ft) = entry.file_type() else { continue };
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(
+                    name,
+                    "obj" | "bin" | "test" | "tests" | "samples" | "examples" | ".git"
+                ) { continue; }
+            }
+            collect_cs_files(&path, out, seen, depth + 1);
+        } else if ft.is_file() && path.extension().is_some_and(|e| e == "cs") {
+            if seen.insert(path.clone()) { out.push(path); }
+        }
+    }
+}
+
+/// Parse a single `.cs` source file header-only, returning a synthetic
+/// `ParsedFile`. Uses `ext:dotnet-src:<pkg_name>/<filename>` as the virtual
+/// path so it's distinguishable from DLL-synthesized rows. Real line numbers
+/// are preserved for chain walkers.
+fn parse_cs_source_file(
+    path: &Path,
+    pkg_name: &str,
+    lang_id: &str,
+) -> std::result::Result<crate::types::ParsedFile, String> {
+    use crate::types::{ExtractedSymbol, ParsedFile, Visibility};
+
+    let content = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    let decls = scan_cs_header(&content);
+
+    let file_name = path
+        .file_name()
+        .map(|n| n.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "unknown.cs".to_string());
+    let virtual_path = format!("ext:dotnet-src:{pkg_name}/{file_name}");
+
+    let metadata = std::fs::metadata(path).map_err(|e| e.to_string())?;
+    let size = metadata.len();
+    let mtime = metadata
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+        .map(|d| d.as_secs() as i64);
+    let content_hash = format!("{:x}", size);
+    let line_count = content.lines().count() as u32;
+
+    let extracted: Vec<ExtractedSymbol> = decls
+        .into_iter()
+        .map(|sym| ExtractedSymbol {
+            name: sym.name.clone(),
+            qualified_name: if sym.scope.is_empty() {
+                sym.name.clone()
+            } else {
+                format!("{}.{}", sym.scope, sym.name)
+            },
+            kind: sym.kind,
+            visibility: Some(Visibility::Public),
+            start_line: sym.line as u32,
+            end_line: sym.line as u32,
+            start_col: 0,
+            end_col: 0,
+            signature: sym.signature,
+            doc_comment: None,
+            scope_path: if sym.scope.is_empty() { None } else { Some(sym.scope) },
+            parent_index: None,
+        })
+        .collect();
+
+    Ok(ParsedFile {
+        path: virtual_path,
+        language: lang_id.to_string(),
+        content_hash,
+        size,
+        line_count,
+        mtime,
+        package_id: None,
+        symbols: extracted,
+        refs: Vec::new(),
+        routes: Vec::new(),
+        db_sets: Vec::new(),
+        symbol_origin_languages: Vec::new(),
+        ref_origin_languages: Vec::new(),
+        symbol_from_snippet: Vec::new(),
+        content: None,
+        has_errors: false,
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    })
+}
+
+// ===========================================================================
+// C# header-only scanner
+// ===========================================================================
+//
+// Line-based extraction of top-level declarations from `.cs` source files.
+// Tracks brace depth to determine scope (namespace, type nesting). Emits
+// public/internal type declarations and public methods — skips private
+// members, compiler-generated names, and method body interiors.
+
+#[derive(Debug)]
+struct CsDecl {
+    name: String,
+    /// Dot-joined namespace + enclosing type path (empty at global scope).
+    scope: String,
+    kind: crate::types::SymbolKind,
+    signature: Option<String>,
+    /// 1-based source line number.
+    line: usize,
+}
+
+/// Scan a C# source file and extract top-level public declarations.
+/// Returns one `CsDecl` per class/interface/enum/struct/record/delegate
+/// and public method found at namespace→type→member depth.
+pub(crate) fn scan_cs_header(source: &str) -> Vec<CsDecl> {
+    use crate::types::SymbolKind;
+
+    let mut out = Vec::new();
+    // Stack entries: (name, kind_char) where 'n'=namespace, 't'=type.
+    let mut scope_stack: Vec<(String, char)> = Vec::new();
+
+    for (line_idx, raw_line) in source.lines().enumerate() {
+        let line = raw_line.trim();
+
+        // Count brace deltas on this line.
+        let opens = line.chars().filter(|&c| c == '{').count() as i32;
+        let closes = line.chars().filter(|&c| c == '}').count() as i32;
+
+        // Pop scope for net closing braces (handles standalone `}` lines).
+        if closes > opens {
+            let net_close = (closes - opens) as usize;
+            for _ in 0..net_close.min(scope_stack.len()) {
+                scope_stack.pop();
+            }
+        }
+
+        // Skip non-declaration lines early.
+        if line.is_empty()
+            || line.starts_with("//")
+            || line.starts_with("/*")
+            || line.starts_with('*')
+            || line.starts_with('[')
+            || line.starts_with('#')
+        {
+            continue;
+        }
+
+        // Namespace declaration — capture the full dotted name
+        // (`namespace Acme.Orders` → "Acme.Orders").
+        if let Some(rest) = strip_cs_keyword(line, "namespace") {
+            let ns_name = cs_namespace_name(rest);
+            if !ns_name.is_empty() {
+                scope_stack.push((ns_name, 'n'));
+            }
+            continue;
+        }
+
+        // Skip non-public members (private/protected/internal-only at type level).
+        let is_public = line.contains("public ")
+            || (!line.contains("private ")
+                && !line.contains("protected ")
+                && !line.contains("internal "));
+        if !is_public { continue; }
+
+        // Type declarations.
+        let type_kw: Option<(&str, SymbolKind)> = [
+            ("interface ", SymbolKind::Interface),
+            ("class ",     SymbolKind::Class),
+            ("struct ",    SymbolKind::Struct),
+            ("enum ",      SymbolKind::Enum),
+            ("record ",    SymbolKind::Class),
+            ("delegate ",  SymbolKind::Function),
+        ]
+        .iter()
+        .find_map(|(kw, kind)| {
+            if line.contains(kw) { Some((*kw, *kind)) } else { None }
+        });
+
+        if let Some((kw, kind)) = type_kw {
+            if let Some(pos) = line.find(kw) {
+                let after_kw = &line[pos + kw.len()..];
+                let type_name = cs_first_ident(after_kw);
+                if !type_name.is_empty() && !type_name.starts_with('<') {
+                    let scope = cs_scope_string(&scope_stack, 'n');
+                    let sig = Some(format!("{}{}", kw.trim_end(), format!(" {type_name}")));
+                    out.push(CsDecl {
+                        name: type_name.clone(),
+                        scope,
+                        kind,
+                        signature: sig,
+                        line: line_idx + 1,
+                    });
+                    scope_stack.push((type_name, 't'));
+                }
+            }
+            continue;
+        }
+
+        // Method declarations — only emit if directly inside a type scope.
+        let inside_type = scope_stack.last().map(|(_, k)| *k == 't').unwrap_or(false);
+        if !inside_type { continue; }
+        if line.contains("operator ") { continue; }
+
+        if line.contains('(') {
+            let method_name = extract_cs_method_name(line);
+            if !method_name.is_empty() && !is_cs_noise_ident(&method_name) {
+                let scope = cs_scope_string(&scope_stack, 't');
+                let sig = Some(truncate_to_paren(line, 120));
+                out.push(CsDecl {
+                    name: method_name,
+                    scope,
+                    kind: SymbolKind::Method,
+                    signature: sig,
+                    line: line_idx + 1,
+                });
+            }
+        }
+    }
+
+    out
+}
+
+/// Dot-join scope names of the requested kind and above.
+/// `min_kind='n'` collects only namespace segments.
+/// `min_kind='t'` collects namespace + type segments.
+fn cs_scope_string(stack: &[(String, char)], min_kind: char) -> String {
+    stack
+        .iter()
+        .filter(|(_, k)| *k == 'n' || (min_kind == 't' && *k == 't'))
+        .map(|(name, _)| name.as_str())
+        .collect::<Vec<_>>()
+        .join(".")
+}
+
+/// Return the suffix after `kw ` in `line` if the keyword is present.
+fn strip_cs_keyword<'a>(line: &'a str, kw: &str) -> Option<&'a str> {
+    let pattern = format!("{kw} ");
+    line.find(&pattern).map(|pos| &line[pos + pattern.len()..])
+}
+
+/// Grab the first C# identifier from `s` (alphanumeric + underscore).
+fn cs_first_ident(s: &str) -> String {
+    s.chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect()
+}
+
+/// Grab a dotted namespace name from `s` (alphanumeric + `_` + `.`).
+/// Stops at whitespace, `{`, or `;`. Used for `namespace Acme.Orders`.
+fn cs_namespace_name(s: &str) -> String {
+    s.chars()
+        .take_while(|c| c.is_alphanumeric() || *c == '_' || *c == '.')
+        .collect::<String>()
+        .trim_end_matches('.')
+        .to_string()
+}
+
+/// Extract the method name from a line like
+/// `public async Task<T> MyMethod(...)` — last identifier before `(`.
+fn extract_cs_method_name(line: &str) -> String {
+    let paren = match line.find('(') { Some(p) => p, None => return String::new() };
+    let before_paren = line[..paren].trim_end();
+    // Strip trailing generic suffix `<T>` before the paren.
+    let before_paren = if before_paren.ends_with('>') {
+        match before_paren.rfind('<') {
+            Some(lt) => before_paren[..lt].trim_end(),
+            None => before_paren,
+        }
+    } else {
+        before_paren
+    };
+    // Walk backwards to extract trailing identifier.
+    before_paren
+        .chars()
+        .rev()
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect()
+}
+
+/// Truncate a line to `max_len` chars but keep up to the first `)`.
+fn truncate_to_paren(line: &str, max_len: usize) -> String {
+    let end = line.find(')').map(|p| (p + 1).min(line.len())).unwrap_or(line.len());
+    let s = &line[..end.min(line.len())];
+    if s.len() > max_len { s[..max_len].to_string() } else { s.to_string() }
+}
+
+/// True for C# keywords and noise identifiers that can never be method names.
+fn is_cs_noise_ident(name: &str) -> bool {
+    matches!(
+        name,
+        "if" | "else" | "for" | "foreach" | "while" | "do" | "switch"
+            | "catch" | "finally" | "using" | "return" | "new" | "throw"
+            | "var" | "get" | "set" | "init" | "add" | "remove"
+    ) || name.starts_with('<')
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -902,5 +1426,99 @@ mod tests {
     #[allow(dead_code)]
     fn _ensure_shared_locator_typed() -> Arc<dyn ExternalSourceLocator> {
         shared_locator()
+    }
+
+    // -----------------------------------------------------------------------
+    // C# header scanner tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn scan_cs_header_finds_class_and_interface() {
+        let src = r#"
+namespace MyLib.Core {
+    public interface IRepository {
+        IEnumerable<T> GetAll();
+    }
+    public class UserRepository : IRepository {
+        public IEnumerable<T> GetAll() { return null; }
+    }
+}
+"#;
+        let decls = scan_cs_header(src);
+        let names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&"IRepository"), "should find IRepository");
+        assert!(names.contains(&"UserRepository"), "should find UserRepository");
+    }
+
+    #[test]
+    fn scan_cs_header_captures_namespace_scope() {
+        let src = r#"
+namespace Acme.Orders {
+    public class OrderService { }
+}
+"#;
+        let decls = scan_cs_header(src);
+        let svc = decls.iter().find(|d| d.name == "OrderService").expect("OrderService missing");
+        assert_eq!(svc.scope, "Acme.Orders");
+    }
+
+    #[test]
+    fn scan_cs_header_skips_private_members() {
+        let src = r#"
+namespace X {
+    public class Foo {
+        private void Secret() { }
+        public void Public() { }
+    }
+}
+"#;
+        let decls = scan_cs_header(src);
+        let names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
+        assert!(!names.contains(&"Secret"), "should not emit private method");
+        assert!(names.contains(&"Public"), "should emit public method");
+    }
+
+    #[test]
+    fn scan_cs_header_handles_enum_and_struct() {
+        let src = r#"
+namespace Lib {
+    public enum Status { Active, Inactive }
+    public struct Point { public int X; public int Y; }
+}
+"#;
+        let decls = scan_cs_header(src);
+        let names: Vec<&str> = decls.iter().map(|d| d.name.as_str()).collect();
+        assert!(names.contains(&"Status"));
+        assert!(names.contains(&"Point"));
+    }
+
+    #[test]
+    fn discover_nuget_source_files_empty_for_missing_dir() {
+        let tmp = std::env::temp_dir().join("bw-nuget-test-nonexistent-xyz");
+        let files = discover_nuget_source_files(&tmp);
+        assert!(files.is_empty());
+    }
+
+    #[test]
+    fn discover_nuget_source_finds_contentfiles() {
+        let tmp = std::env::temp_dir().join("bw-nuget-test-contentfiles");
+        let cs_dir = tmp.join("contentFiles").join("cs").join("any");
+        std::fs::create_dir_all(&cs_dir).unwrap();
+        std::fs::write(cs_dir.join("Helper.cs"), "public class Helper {}").unwrap();
+        let files = discover_nuget_source_files(&tmp);
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("Helper.cs"));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn discover_nuget_source_finds_src_dir() {
+        let tmp = std::env::temp_dir().join("bw-nuget-test-src");
+        let src_dir = tmp.join("src");
+        std::fs::create_dir_all(&src_dir).unwrap();
+        std::fs::write(src_dir.join("MyClass.cs"), "public class MyClass {}").unwrap();
+        let files = discover_nuget_source_files(&tmp);
+        assert_eq!(files.len(), 1);
+        let _ = std::fs::remove_dir_all(&tmp);
     }
 }
