@@ -23,14 +23,24 @@
 
 use std::path::Path;
 
+use super::{Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext};
+use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind};
+use crate::walker::WalkedFile;
+
+pub const ID: EcosystemId = EcosystemId::new("jquery-synthetics");
+const LEGACY_ECOSYSTEM_TAG: &str = "jquery-synthetics";
+const LANGUAGES: &[&str] = &["javascript", "typescript"];
 
 // ---------------------------------------------------------------------------
 // Public entry point
 // ---------------------------------------------------------------------------
 
-/// Returns a synthetic ParsedFile for jQuery when the package is present under
-/// any discoverable node_modules directory. Returns None otherwise.
+/// Returns a synthetic ParsedFile for jQuery when jQuery appears to be in
+/// use in the project. Probes the npm location (node_modules/jquery) plus
+/// classic Rails / PHP / generic asset-pipeline conventions so the
+/// synthetic fires for server-rendered projects that include jQuery via
+/// `<script src=…>` or `//= require jquery` instead of npm.
 pub fn synthetic_jquery_file(project_root: &Path) -> Option<ParsedFile> {
     let mut nm_dirs: Vec<std::path::PathBuf> = Vec::new();
     if let Some(raw) = std::env::var_os("BEARWISDOM_TS_NODE_MODULES") {
@@ -44,12 +54,58 @@ pub fn synthetic_jquery_file(project_root: &Path) -> Option<ParsedFile> {
         if local.is_dir() { nm_dirs.push(local); }
     }
 
-    let present = nm_dirs.iter().any(|nm| {
+    let npm_present = nm_dirs.iter().any(|nm| {
         nm.join("jquery").join("package.json").exists()
             || nm.join("jquery").join("dist").join("jquery.js").exists()
     });
+    if npm_present {
+        return Some(jquery_synthetic());
+    }
 
-    if present { Some(jquery_synthetic()) } else { None }
+    // Rails asset pipeline / generic server-rendered project conventions.
+    // Check a handful of directories for any `jquery*.js` file. Directory
+    // scans are scoped to shallow asset folders to keep activation cheap.
+    const ASSET_DIRS: &[&str] = &[
+        "vendor/assets/javascripts",
+        "app/assets/javascripts",
+        "public/javascripts",
+        "public/assets",
+        "public/js",
+        "assets/js",
+        "web/static/vendor",
+    ];
+    for dir_rel in ASSET_DIRS {
+        let dir = project_root.join(dir_rel);
+        if !dir.is_dir() { continue; }
+        if dir_has_jquery_file(&dir) {
+            return Some(jquery_synthetic());
+        }
+    }
+
+    // Ruby: `gem 'jquery-rails'` in Gemfile → classic Rails jQuery include.
+    if let Ok(gemfile) = std::fs::read_to_string(project_root.join("Gemfile")) {
+        if gemfile.contains("jquery-rails") || gemfile.contains("'jquery'") {
+            return Some(jquery_synthetic());
+        }
+    }
+
+    None
+}
+
+/// Scan a directory (non-recursive, cheap) for any file whose name starts
+/// with `jquery` and ends with `.js` — covers `jquery.js`, `jquery.min.js`,
+/// `jquery-3.6.0.min.js`, etc.
+fn dir_has_jquery_file(dir: &Path) -> bool {
+    let Ok(entries) = std::fs::read_dir(dir) else { return false; };
+    for entry in entries.flatten() {
+        if let Some(name) = entry.file_name().to_str() {
+            let lower = name.to_ascii_lowercase();
+            if lower.starts_with("jquery") && lower.ends_with(".js") {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -269,6 +325,74 @@ fn make_parsed_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<Extract
 }
 
 // ---------------------------------------------------------------------------
+// Ecosystem impl — activates on JS/TS language presence so the synthetic
+// fires for Rails / PHP / asset-pipeline projects without a node_modules
+// tree as well as npm-based projects. NpmEcosystem used to emit jQuery
+// synthetics via parse_metadata_only; that path has been removed — this
+// is now the single source of truth.
+// ---------------------------------------------------------------------------
+
+fn synthetic_dep_root() -> ExternalDepRoot {
+    ExternalDepRoot {
+        module_path: "jquery-synthetics".to_string(),
+        version: String::new(),
+        root: std::path::PathBuf::from("ext:jquery-synthetics"),
+        ecosystem: LEGACY_ECOSYSTEM_TAG,
+        package_id: None,
+        requested_imports: Vec::new(),
+    }
+}
+
+pub struct JquerySynthEcosystem;
+
+impl Ecosystem for JquerySynthEcosystem {
+    fn id(&self) -> EcosystemId { ID }
+    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
+    fn languages(&self) -> &'static [&'static str] { LANGUAGES }
+
+    fn activation(&self) -> EcosystemActivation {
+        EcosystemActivation::Any(&[
+            EcosystemActivation::LanguagePresent("javascript"),
+            EcosystemActivation::LanguagePresent("typescript"),
+        ])
+    }
+
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        if synthetic_jquery_file(ctx.project_root).is_some() {
+            vec![synthetic_dep_root()]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
+
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn parse_metadata_only(&self, _dep: &ExternalDepRoot) -> Option<Vec<ParsedFile>> {
+        Some(vec![jquery_synthetic()])
+    }
+}
+
+impl ExternalSourceLocator for JquerySynthEcosystem {
+    fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
+
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        if synthetic_jquery_file(project_root).is_some() {
+            vec![synthetic_dep_root()]
+        } else {
+            Vec::new()
+        }
+    }
+
+    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
+        synthetic_jquery_file(project_root).map(|pf| vec![pf])
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -351,5 +475,45 @@ mod tests {
         assert_eq!(pf.symbols.len(), pf.symbol_origin_languages.len());
         assert_eq!(pf.refs.len(), pf.ref_origin_languages.len());
         assert_eq!(pf.symbols.len(), pf.symbol_from_snippet.len());
+    }
+
+    #[test]
+    fn activation_fires_for_rails_asset_pipeline() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let assets = root.join("app").join("assets").join("javascripts");
+        std::fs::create_dir_all(&assets).unwrap();
+        std::fs::write(assets.join("jquery.min.js"), "// jquery").unwrap();
+        assert!(
+            synthetic_jquery_file(root).is_some(),
+            "Rails app/assets/javascripts/jquery*.js must activate jquery synthetic"
+        );
+    }
+
+    #[test]
+    fn activation_fires_for_vendor_assets_jquery() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let vendor = root.join("vendor").join("assets").join("javascripts");
+        std::fs::create_dir_all(&vendor).unwrap();
+        std::fs::write(vendor.join("jquery-3.6.0.js"), "// jquery").unwrap();
+        assert!(synthetic_jquery_file(root).is_some());
+    }
+
+    #[test]
+    fn activation_fires_for_gemfile_jquery_rails() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        std::fs::write(root.join("Gemfile"), "gem 'jquery-rails'\n").unwrap();
+        assert!(synthetic_jquery_file(root).is_some());
+    }
+
+    #[test]
+    fn activation_does_not_fire_for_empty_project() {
+        let tmp = tempfile::tempdir().unwrap();
+        assert!(
+            synthetic_jquery_file(tmp.path()).is_none(),
+            "empty project must not trigger jquery synthetic"
+        );
     }
 }

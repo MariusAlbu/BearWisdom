@@ -281,9 +281,9 @@ impl ExternalSourceLocator for NpmEcosystem {
         if let Some(dayjs) = super::dayjs_synthetics::synthetic_dayjs_file(project_root) {
             files.push(dayjs);
         }
-        if let Some(jq) = super::jquery_synthetics::synthetic_jquery_file(project_root) {
-            files.push(jq);
-        }
+        // jQuery synthetics are now owned by JquerySynthEcosystem (activates
+        // on JS/TS language presence so Rails / classic-asset projects get
+        // them too). Do not re-emit from here.
         if files.is_empty() { None } else { Some(files) }
     }
 }

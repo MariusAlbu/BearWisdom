@@ -449,6 +449,35 @@ impl LanguageResolver for TypeScriptResolver {
             }
         }
 
+        // Final step: npm-globals fallback for bare single-identifier calls.
+        // Covers classic-asset-pipeline JS (Rails / PHP / vanilla server-
+        // rendered) where `$(...)`, `jQuery(...)`, and similar library globals
+        // appear without an `import` statement. Synthetic packages register
+        // their globals under the `__npm_globals__.<name>` namespace; the
+        // chain walker's Pass 3 already probes this for chain roots, but bare
+        // non-chained calls need an explicit final check here.
+        //
+        // Scoped to single-identifier targets to avoid masking real unresolved
+        // refs on dotted chains.
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef)
+            && !target.contains('.')
+        {
+            let globals_candidate = format!(
+                "{}.{target}",
+                crate::ecosystem::npm::NPM_GLOBALS_MODULE
+            );
+            if let Some(sym) = lookup.by_qualified_name(&globals_candidate) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.85,
+                        strategy: "ts_npm_globals",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }

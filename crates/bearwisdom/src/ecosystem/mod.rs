@@ -78,6 +78,7 @@ pub mod rust_stdlib;
 pub mod scala_stdlib;
 pub mod dayjs_synthetics;
 pub mod jquery_synthetics;
+pub use jquery_synthetics::JquerySynthEcosystem;
 pub mod js_test_chains;
 pub mod spm;
 pub mod spring_stubs;
@@ -541,6 +542,7 @@ pub fn default_locator(
         "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
+        "jquery-synthetics" => Some(Arc::new(JquerySynthEcosystem)),
         "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
@@ -612,6 +614,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ClojureCoreEcosystem));
         reg.register(Arc::new(ErlangOtpEcosystem));
         reg.register(Arc::new(ElixirStdlibEcosystem));
+        reg.register(Arc::new(JquerySynthEcosystem));
         reg.register(Arc::new(SpringStubsEcosystem));
         reg.register(Arc::new(SwiftFoundationEcosystem));
         reg.register(Arc::new(SwiftPmDslStubsEcosystem));
