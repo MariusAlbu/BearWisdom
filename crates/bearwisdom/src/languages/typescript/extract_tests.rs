@@ -1052,3 +1052,64 @@ fn vitest_spy_mock_resolved_value_has_chain_ref() {
     assert_eq!(chain.segments[1].name, "fn",                  "chain[1] should be 'fn'");
     assert_eq!(chain.segments[2].name, "mockResolvedValue",   "chain[2] should be 'mockResolvedValue'");
 }
+
+#[test]
+fn type_parameter_usage_inside_declaration_is_not_emitted_as_ref() {
+    // `Target` is a type parameter of `TargetedEvent`; its use inside the
+    // type alias body must NOT surface as an unresolved external ref.
+    let src = r#"
+        export type TargetedEvent<Target extends EventTarget = EventTarget> = {
+            readonly currentTarget: Target;
+        };
+    "#;
+    let r = refs(src);
+    let leaked: Vec<_> = r
+        .iter()
+        .filter(|r| r.target_name == "Target" && r.kind == EdgeKind::TypeRef)
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "type-param `Target` leaked as ref: {leaked:?}"
+    );
+    // And the constraint `EventTarget` still emits (it's genuinely external).
+    assert!(
+        r.iter().any(|r| r.target_name == "EventTarget" && r.kind == EdgeKind::TypeRef),
+        "EventTarget constraint should still emit a ref; refs: {r:?}"
+    );
+}
+
+#[test]
+fn type_parameter_scope_does_not_suppress_same_named_ref_outside() {
+    // `T` is a type parameter of `Box<T>`; outside Box, `T` is not in scope
+    // and must still emit as a ref.
+    let src = r#"
+        export interface Box<T> { value: T }
+        export type UseT = T;
+    "#;
+    let r = refs(src);
+    // The outer `T` (in UseT = T) is outside any scope and should emit.
+    let outer_t = r
+        .iter()
+        .filter(|r| r.target_name == "T" && r.kind == EdgeKind::TypeRef)
+        .count();
+    assert!(
+        outer_t >= 1,
+        "out-of-scope `T` should still emit a ref; refs: {r:?}"
+    );
+}
+
+#[test]
+fn function_type_parameter_suppressed_inside_function_body_annotations() {
+    let src = r#"
+        export function identity<Target>(x: Target): Target { return x; }
+    "#;
+    let r = refs(src);
+    let leaked: Vec<_> = r
+        .iter()
+        .filter(|r| r.target_name == "Target" && r.kind == EdgeKind::TypeRef)
+        .collect();
+    assert!(
+        leaked.is_empty(),
+        "type-param `Target` in function signature leaked: {leaked:?}"
+    );
+}

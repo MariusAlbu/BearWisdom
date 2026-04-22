@@ -110,6 +110,28 @@ fn extract_inner(
         scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
     }
 
+    // Post-filter: suppress TypeRef entries whose target is an in-scope type
+    // parameter at the ref's source line. A `function f<Target>(x: Target)`
+    // or `type T<Target> = { a: Target }` must not leak `Target` as an
+    // unresolved external — it's a local generic binding, no more a ref than
+    // a local variable. Works uniformly across every emission path (main
+    // walker, type helper modules, scan_all post-scan) because it operates
+    // on the finished refs vec.
+    {
+        let mut scopes: Vec<(String, u32, u32)> = Vec::new();
+        collect_type_param_scopes(root, src_bytes, &mut scopes);
+        if !scopes.is_empty() {
+            refs.retain(|r| {
+                if r.kind != EdgeKind::TypeRef {
+                    return true;
+                }
+                !scopes.iter().any(|(name, start, end)| {
+                    &r.target_name == name && r.line >= *start && r.line <= *end
+                })
+            });
+        }
+    }
+
     // Annotate call refs: if a Calls ref has a chain whose first segment is a
     // known import alias, set module so the resolver can trace it back.
     if !import_map.is_empty() {
@@ -1426,6 +1448,82 @@ fn scan_all_type_identifiers(
                 scan_all_type_identifiers(child, src, sym_idx, refs);
             }
         }
+    }
+}
+
+/// Return every type-parameter name declared on `node` via a direct
+/// `type_parameters` child. Covers function / arrow / method / class /
+/// interface / type-alias / call-signature / construct-signature
+/// declarations — all the TS grammar nodes that can introduce a fresh
+/// generic scope.
+///
+/// Empty vec for nodes that don't declare type parameters (most of them).
+fn collect_declared_type_params(node: &tree_sitter::Node, src: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() != "type_parameters" {
+            continue;
+        }
+        let mut tp_cursor = child.walk();
+        for tp in child.children(&mut tp_cursor) {
+            if tp.kind() != "type_parameter" {
+                continue;
+            }
+            // Prefer the `name` field when the grammar exposes it; fall back
+            // to the first type_identifier / identifier child for grammars
+            // that don't name the field. The explicit loop keeps the walker
+            // cursor's lifetime inside the same scope as the yielded node.
+            let name_node = if let Some(n) = tp.child_by_field_name("name") {
+                Some(n)
+            } else {
+                let mut tpc = tp.walk();
+                let mut found = None;
+                for c in tp.children(&mut tpc) {
+                    if matches!(c.kind(), "type_identifier" | "identifier") {
+                        found = Some(c);
+                        break;
+                    }
+                }
+                found
+            };
+            if let Some(n) = name_node {
+                if let Ok(name) = n.utf8_text(src) {
+                    if !name.is_empty() {
+                        out.push(name.to_string());
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+/// Walk the full tree and collect every `(type_param_name, start_line,
+/// end_line)` tuple for the subtree where that type parameter is in scope.
+///
+/// Used by the post-filter pass in `extract_inner` to drop TypeRef entries
+/// whose target is a generic type parameter binding (e.g. `Target` inside
+/// `TargetedEvent<Target>`) rather than an external type. The scope is
+/// approximated by the line range of the declaring node, which is accurate
+/// enough in practice — same-line cross-scope collisions require contrived
+/// single-line layouts of separate generic declarations.
+fn collect_type_param_scopes(
+    node: tree_sitter::Node,
+    src: &[u8],
+    out: &mut Vec<(String, u32, u32)>,
+) {
+    let declared = collect_declared_type_params(&node, src);
+    if !declared.is_empty() {
+        let start_line = node.start_position().row as u32;
+        let end_line = node.end_position().row as u32;
+        for name in declared {
+            out.push((name, start_line, end_line));
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_type_param_scopes(child, src, out);
     }
 }
 
