@@ -115,6 +115,32 @@ pub fn chunk_file(
     Ok(chunks)
 }
 
+/// Chunk a single file's content into `code_chunks` using the caller's
+/// transaction. Skips dedup (full-reindex path). Used by the streaming
+/// parse pipeline so per-file chunk writes join the main write transaction.
+pub fn chunk_one_file_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    file_id: i64,
+    content: &str,
+) -> Result<u32> {
+    let chunks = chunk_file(tx, file_id, content, DEFAULT_MAX_TOKENS)?;
+    let mut stmt = tx.prepare_cached(
+        "INSERT INTO code_chunks (file_id, symbol_id, content_hash, content, start_line, end_line)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+    )?;
+    for chunk in &chunks {
+        stmt.execute(params![
+            chunk.file_id,
+            chunk.symbol_id,
+            chunk.content_hash,
+            chunk.content,
+            chunk.start_line,
+            chunk.end_line,
+        ])?;
+    }
+    Ok(chunks.len() as u32)
+}
+
 /// Bulk-insert chunks for multiple files in a single transaction.
 ///
 /// Skips all dedup logic — intended for full index after DROP+CREATE when the

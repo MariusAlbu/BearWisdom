@@ -36,6 +36,139 @@ pub fn write_parsed_files(
     write_parsed_files_with_origin(db, parsed, "internal")
 }
 
+/// Write a single `ParsedFile` inside an existing transaction and return its
+/// assigned `file_id`. Appends rows into `symbol_id_map` for every symbol.
+///
+/// Used by the streaming parse pipeline in `full.rs` so files can be
+/// persisted one at a time as parser workers produce them, instead of
+/// holding every ParsedFile in memory until a single batched write.
+///
+/// Caller is responsible for transaction lifecycle (begin + commit) and
+/// for invalidating any query cache once all writes are done.
+pub fn write_one_parsed_file(
+    tx: &rusqlite::Transaction<'_>,
+    pf: &ParsedFile,
+    origin: &str,
+    now: i64,
+    symbol_id_map: &mut SymbolIdMap,
+) -> Result<i64> {
+    // Upsert file row and capture the assigned id via RETURNING.
+    let file_id: i64 = tx
+        .prepare_cached(
+            "INSERT INTO files (path, hash, language, last_indexed, mtime, size, package_id, origin)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)
+             ON CONFLICT(path) DO UPDATE SET
+               hash = excluded.hash,
+               language = excluded.language,
+               last_indexed = excluded.last_indexed,
+               mtime = excluded.mtime,
+               size = excluded.size,
+               package_id = excluded.package_id,
+               origin = excluded.origin
+             RETURNING id",
+        )
+        .context("Failed to prepare file upsert")?
+        .query_row(
+            rusqlite::params![pf.path, pf.content_hash, pf.language, now, pf.mtime, pf.size as i64, pf.package_id, origin],
+            |r| r.get(0),
+        )
+        .with_context(|| format!("Failed to upsert file {}", pf.path))?;
+
+    tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
+        .context("Failed to prepare symbol delete")?
+        .execute([file_id])?;
+    tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
+        .context("Failed to prepare import delete")?
+        .execute([file_id])?;
+
+    for (i, sym) in pf.symbols.iter().enumerate() {
+        let origin_language: Option<&str> = pf
+            .symbol_origin_languages
+            .get(i)
+            .and_then(|o| o.as_deref());
+
+        tx.prepare_cached(
+            "INSERT INTO symbols
+               (file_id, name, qualified_name, kind, line, col,
+                end_line, end_col, scope_path, signature, doc_comment, visibility, origin, origin_language)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
+        )
+        .context("Failed to prepare symbol insert")?
+        .execute(rusqlite::params![
+            file_id,
+            sym.name,
+            sym.qualified_name,
+            sym.kind.as_str(),
+            sym.start_line,
+            sym.start_col,
+            sym.end_line,
+            sym.end_col,
+            sym.scope_path,
+            sym.signature,
+            sym.doc_comment,
+            sym.visibility.map(|v| v.as_str()),
+            origin,
+            origin_language,
+        ])
+        .with_context(|| {
+            format!("Failed to insert symbol {} in {}", sym.qualified_name, pf.path)
+        })?;
+
+        let sym_id = tx.last_insert_rowid();
+        symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), sym_id);
+    }
+
+    for route in &pf.routes {
+        let sym_id = symbol_id_map
+            .get(&(
+                pf.path.clone(),
+                pf.symbols
+                    .get(route.handler_symbol_index)
+                    .map(|s| s.qualified_name.clone())
+                    .unwrap_or_default(),
+            ))
+            .copied();
+
+        tx.prepare_cached(
+            "INSERT OR IGNORE INTO routes
+               (file_id, symbol_id, http_method, route_template, resolved_route, line)
+             VALUES (?1, ?2, ?3, ?4, ?4, ?5)",
+        )
+        .context("Failed to prepare route insert")?
+        .execute(rusqlite::params![
+            file_id,
+            sym_id,
+            route.http_method,
+            route.template,
+            pf.symbols.get(route.handler_symbol_index).map(|s| s.start_line),
+        ])
+        .with_context(|| format!("Failed to insert route for {}", pf.path))?;
+    }
+
+    for r in &pf.refs {
+        if r.kind != crate::types::EdgeKind::Imports {
+            continue;
+        }
+        tx.prepare_cached(
+            "INSERT INTO imports (file_id, imported_name, module_path, alias, line)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .context("Failed to prepare import insert")?
+        .execute(rusqlite::params![
+            file_id,
+            r.target_name,
+            r.module.as_deref(),
+            Option::<&str>::None,
+            r.line,
+        ])
+        .with_context(|| {
+            format!("Failed to insert import '{}' in {}", r.target_name, pf.path)
+        })?;
+    }
+
+    Ok(file_id)
+}
+
 /// Origin-aware variant. Callers that index external dependency sources
 /// (Go module cache, node_modules, site-packages, etc.) pass "external" so
 /// the rows can be partitioned from project code in user-facing queries.

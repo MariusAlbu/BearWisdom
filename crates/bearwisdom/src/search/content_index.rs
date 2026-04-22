@@ -90,6 +90,29 @@ pub fn batch_index_content(conn: &Connection, files: &[(i64, &str, &str)]) -> Re
     Ok(count)
 }
 
+/// Insert a single file's FTS5 content entry using the caller's transaction.
+///
+/// Unlike [`batch_index_content`], this does NOT open a new transaction —
+/// it assumes the caller has one already active. Used by the streaming
+/// parse pipeline so per-file FTS writes join the main write transaction
+/// instead of paying a BEGIN/COMMIT per file (thousands of commits add
+/// seconds of wall time on a large reindex).
+pub fn index_one_file_in_tx(
+    tx: &rusqlite::Transaction<'_>,
+    file_id: i64,
+    path: &str,
+    content: &str,
+) -> Result<()> {
+    tx.execute("DELETE FROM fts_content WHERE rowid = ?1", [file_id])
+        .with_context(|| format!("FTS delete for file_id={file_id}"))?;
+    tx.execute(
+        "INSERT INTO fts_content(rowid, path, content) VALUES (?1, ?2, ?3)",
+        rusqlite::params![file_id, path, content],
+    )
+    .with_context(|| format!("FTS insert for {path}"))?;
+    Ok(())
+}
+
 /// Remove a single file from the trigram content index.
 pub fn remove_file_content(conn: &Connection, file_id: i64) -> Result<()> {
     conn.execute(

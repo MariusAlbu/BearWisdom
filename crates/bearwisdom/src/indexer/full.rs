@@ -168,49 +168,21 @@ pub fn full_index(
         .context("Failed to build parse thread pool")?;
     debug!("Parsing with {parse_threads} threads (cap for memory discipline)");
 
-    let results: Vec<Result<ParsedFile>> = parse_pool.install(|| {
-        files.par_iter().map(|w| parse_file(w, registry)).collect()
-    });
-
-    let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
-    let mut files_with_errors = 0u32;
-
-    for (walked, result) in files.iter().zip(results) {
-        match result {
-            Ok(pf) => {
-                if pf.has_errors {
-                    files_with_errors += 1;
-                    debug!("Syntax errors in {}", walked.relative_path);
-                }
-                parsed.push(pf);
-            }
-            Err(e) => {
-                warn!("Failed to parse {}: {e}", walked.relative_path);
-            }
-        }
-    }
-    info!("Parsed {} files ({} with syntax errors)", parsed.len(), files_with_errors);
-
-    // L1: per-language audit log — host file counts + embedded-region
-    // awareness so operators can spot missing plugin coverage (zero files
-    // for an expected language, missing embedded sub-languages, etc.).
-    log_language_breakdown(&parsed);
-    emit("parsing", 1.0, Some(&format!("{} files parsed", parsed.len())));
-
-    // --- Step 3b: Detect workspace packages ---
+    // --- Step 3b: Detect workspace packages (filesystem-only, no parse needed) ---
+    //
+    // Moved BEFORE streaming parse so each parsed file can be written with
+    // its package_id the first time it hits the DB, instead of a separate
+    // assign_package_ids mutation pass afterward.
     let (packages, workspace_kind) = detect_packages(project_root);
     let written_packages = if !packages.is_empty() {
         let written = write::write_packages(db, &packages)
             .context("Failed to write packages")?;
         info!("Detected {} workspace packages", written.len());
-        write::assign_package_ids(&mut parsed, &written);
         if let Some(ref kind) = workspace_kind {
             if let Err(e) = changeset::set_meta(db, "workspace_kind", kind) {
                 warn!("Failed to store workspace_kind: {e}");
             }
         }
-
-        // Mark packages that contain a Dockerfile as deployable services.
         let dockerfile_pairs =
             crate::languages::dockerfile::connectors::detect_dockerfiles(db.conn(), project_root);
         if !dockerfile_pairs.is_empty() {
@@ -220,77 +192,217 @@ pub fn full_index(
                 dockerfile_pairs.len()
             );
         }
-
         written
     } else {
         Vec::new()
     };
 
-    // --- Step 3c: Split out vendored C/C++ headers ---
+    // Pre-sorted (longest-prefix-wins) list of package paths → id.
+    // Streaming writer uses this to stamp package_id on each file before
+    // persisting to SQLite. Matches the semantics of
+    // `write::assign_package_ids`: longest prefix wins, and the match must
+    // end on a path separator (so `src-tauri` doesn't match a sibling
+    // package rooted at `src`).
+    let package_lookup: Vec<(String, i64)> = {
+        let mut v: Vec<(String, i64)> = written_packages
+            .iter()
+            .filter_map(|p| p.id.map(|id| (p.path.replace('\\', "/"), id)))
+            .collect();
+        v.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        v
+    };
+    let package_id_for_path = |rel_path: &str| -> Option<i64> {
+        let normalized = rel_path.replace('\\', "/");
+        for (pkg_path, id) in &package_lookup {
+            if pkg_path.is_empty() {
+                return Some(*id);
+            }
+            if normalized.starts_with(pkg_path.as_str())
+                && (normalized.len() == pkg_path.len()
+                    || normalized.as_bytes()[pkg_path.len()] == b'/')
+            {
+                return Some(*id);
+            }
+        }
+        None
+    };
+
+    // --- Steps 3c + 4 + 4a: Streaming parse → write → FTS + chunks + slim ---
     //
-    // C/C++ projects commonly drop third-party library headers directly into
-    // the project tree (e.g. nlohmann/json.hpp under `cpputil/`, raylib.h
-    // under a renderer directory). These are detectable via conventional
-    // vendor path segments OR content-based library banners.
+    // Bounded-channel pipeline: parser workers on the capped rayon pool
+    // send ParsedFiles to the main thread, which writes each one to SQLite
+    // as it arrives (file row + symbols + routes + imports + FTS content
+    // + code chunks), then drops the heavy content/routes/db_sets fields
+    // before pushing a slim copy into the result vec.
     //
-    // Vendored files are re-pathed to `ext:c:<original>` so the resolver
-    // skips chasing their internal refs (same mechanism as package-managed
-    // externals). Their symbols are still indexed so project refs that point
-    // into them are promoted from unresolved → external_refs.
-    let (mut vendored_c_parsed, project_parsed): (Vec<ParsedFile>, Vec<ParsedFile>) =
-        parsed.into_iter().partition(|pf| {
-            matches!(pf.language.as_str(), "c" | "cpp")
+    // The old pattern was `par_iter().collect() → write_parsed_files(&)`,
+    // which forced every ParsedFile to live in RAM simultaneously before
+    // any write began. On a 7k-file codebase that peaked at multi-GB and
+    // triggered the machine-unresponsive behaviour the user reported.
+    // Streaming bounds peak memory at `channel_capacity × full ParsedFile
+    // + N × slim ParsedFile` regardless of project size.
+    //
+    // Vendored-C detection happens inline (still needs content, so it's
+    // done right after parse and before slim-down). FTS + chunks also use
+    // the caller's transaction via `index_one_file_in_tx` /
+    // `chunk_one_file_in_tx` — avoids thousands of per-file BEGIN/COMMIT.
+    const PARSE_CHANNEL_CAP: usize = 32;
+    let (parse_tx, parse_rx) = std::sync::mpsc::sync_channel::<ParsedFile>(PARSE_CHANNEL_CAP);
+
+    let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
+    let mut vendored_c_parsed: Vec<ParsedFile> = Vec::new();
+    let mut file_id_map: write::FileIdMap = std::collections::HashMap::new();
+    let mut symbol_id_map: write::SymbolIdMap = std::collections::HashMap::new();
+    let mut files_with_errors = 0u32;
+    let mut fts_count = 0u32;
+    let mut total_chunks = 0u32;
+
+    std::thread::scope(|scope| -> Result<()> {
+        // Parser worker thread: drives the rayon pool to parse files in
+        // parallel and send each result into the bounded channel. When the
+        // par_iter completes, the sender is dropped, which closes the
+        // channel so the main-thread drain exits its loop.
+        let parse_tx_for_workers = parse_tx.clone();
+        let files_for_workers = &files;
+        let registry_for_workers = registry;
+        let pool_for_workers = &parse_pool;
+        scope.spawn(move || {
+            pool_for_workers.install(|| {
+                files_for_workers.par_iter().for_each_with(
+                    parse_tx_for_workers,
+                    |tx, w| {
+                        match parse_file(w, registry_for_workers) {
+                            Ok(pf) => {
+                                let _ = tx.send(pf);
+                            }
+                            Err(e) => {
+                                warn!("Failed to parse {}: {e}", w.relative_path);
+                            }
+                        }
+                    },
+                );
+            });
+            // `parse_tx_for_workers` drops at scope end, closing the channel.
+        });
+        drop(parse_tx); // main thread's copy — workers hold the live senders.
+
+        // Main thread: open the write transaction, drain channel, write
+        // each ParsedFile, slim, push to result.
+        let conn = db.conn();
+        let tx = conn
+            .unchecked_transaction()
+            .context("Failed to begin streaming write transaction")?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs() as i64;
+
+        while let Ok(mut pf) = parse_rx.recv() {
+            if pf.has_errors {
+                files_with_errors += 1;
+                debug!("Syntax errors in {}", pf.path);
+            }
+
+            // Stamp package_id based on path prefix match.
+            pf.package_id = package_id_for_path(&pf.path);
+
+            // Vendored-C detection uses content — do it before slim-down.
+            let is_vendored_c = matches!(pf.language.as_str(), "c" | "cpp")
                 && is_c_vendored_file(
                     &pf.language,
                     &pf.path,
                     pf.content.as_deref().unwrap_or(""),
-                )
-        });
-    let mut parsed = project_parsed;
-    for pf in &mut vendored_c_parsed {
-        let original = pf.path.clone();
-        pf.path = format!("ext:c:{original}");
-        debug!("C/C++ vendored external: {original}");
-    }
-    if !vendored_c_parsed.is_empty() {
-        info!("Classified {} C/C++ files as vendored externals", vendored_c_parsed.len());
-    }
+                );
+            if is_vendored_c {
+                let original = pf.path.clone();
+                pf.path = format!("ext:c:{original}");
+                debug!("C/C++ vendored external: {original}");
+            }
 
-    // --- Step 4: Write files + symbols (shared pipeline) ---
-    let (file_id_map, mut symbol_id_map) =
-        write::write_parsed_files(db, &parsed).context("Failed to write index to database")?;
+            let origin = if is_vendored_c { "external" } else { "internal" };
+            let file_id =
+                write::write_one_parsed_file(&tx, &pf, origin, now, &mut symbol_id_map)
+                    .with_context(|| format!("streaming write failed for {}", pf.path))?;
+            file_id_map.insert(pf.path.clone(), file_id);
+
+            // FTS5 + code chunks: join the outer transaction so we don't
+            // pay BEGIN/COMMIT per file.
+            if let Some(content) = pf.content.as_deref() {
+                if let Err(e) = crate::search::content_index::index_one_file_in_tx(
+                    &tx, file_id, &pf.path, content,
+                ) {
+                    warn!("FTS index for {} failed: {e}", pf.path);
+                } else {
+                    fts_count += 1;
+                }
+                match crate::search::chunker::chunk_one_file_in_tx(&tx, file_id, content) {
+                    Ok(n) => total_chunks += n,
+                    Err(e) => warn!("chunking {} failed: {e}", pf.path),
+                }
+            }
+
+            // Populate RefCache while symbols + refs are still live.
+            if let Some(rc) = ref_cache.as_ref() {
+                if let Ok(mut guard) = rc.lock() {
+                    guard.store(&pf.path, &pf.content_hash, &pf);
+                }
+            }
+
+            // Slim down: drop the big per-file fields whose only consumers
+            // (write / FTS / chunks) have already read them. `symbols`,
+            // `refs`, `flow`, `connection_points`, and the origin vectors
+            // stay — resolution, connector detection, and flow matching
+            // read them downstream.
+            pf.content = None;
+            pf.routes = Vec::new();
+            pf.db_sets = Vec::new();
+
+            if is_vendored_c {
+                vendored_c_parsed.push(pf);
+            } else {
+                parsed.push(pf);
+            }
+        }
+
+        tx.commit()
+            .context("Failed to commit streaming write transaction")?;
+
+        // Invalidate query caches — symbols changed.
+        if let Some(ref cache) = db.query_cache {
+            cache.invalidate_all();
+        }
+        Ok(())
+    })?;
+
+    info!(
+        "Parsed + wrote {} files ({} with syntax errors) via streaming pipeline",
+        parsed.len() + vendored_c_parsed.len(),
+        files_with_errors
+    );
     info!(
         "Wrote {} symbols across {} files",
         symbol_id_map.len(),
         file_id_map.len()
     );
-
-    // --- Step 4a: FTS content index + code chunks (moved up from Step 6). ---
-    //
-    // FTS5 and chunking are the last consumers of `ParsedFile::content`.
-    // Running them here instead of after resolution lets us drop the raw
-    // source string from every ParsedFile immediately, which is the single
-    // biggest memory saving in the pipeline (hundreds of MB on a large
-    // codebase). Resolution + connectors do not depend on FTS/chunk rows
-    // being written before them.
-    emit("indexing_content", 0.0, Some("Building search index"));
-    let fts_count = write::update_fts_content(db, &parsed, &file_id_map)?;
-    info!("Indexed {} files for FTS5 content search", fts_count);
-    let total_chunks = write::update_chunks(db, &parsed, &file_id_map, true)?;
+    info!("Indexed {fts_count} files for FTS5 content search");
     info!("Created {total_chunks} code chunks");
-    emit("indexing_content", 1.0, Some(&format!("{total_chunks} chunks created")));
 
-    // --- Step 4a2: Release post-write-only fields ---
-    //
-    // `content` (raw source), `routes`, and `db_sets` are consumed only
-    // during write + FTS + chunks. Nothing downstream (resolve, connectors,
-    // flow edges) reads them. Free the backing allocations now so the
-    // resolve and connector phases don't share memory with them.
-    for pf in parsed.iter_mut() {
-        pf.content = None;
-        pf.routes = Vec::new();
-        pf.db_sets = Vec::new();
+    if !vendored_c_parsed.is_empty() {
+        info!(
+            "Classified {} C/C++ files as vendored externals",
+            vendored_c_parsed.len()
+        );
     }
+
+    // L1: per-language audit log — runs on slim parsed (symbols still live
+    // until resolve).
+    log_language_breakdown(&parsed);
+    emit("parsing", 1.0, Some(&format!("{} files parsed", parsed.len())));
+    emit(
+        "indexing_content",
+        1.0,
+        Some(&format!("{total_chunks} chunks created")),
+    );
 
     // --- Step 4b: Build the per-package project context (M2 + Phase 4) ---
     // Built BEFORE external discovery so (a) M3 can write per-package
@@ -378,14 +490,8 @@ pub fn full_index(
         symbol_id_map.extend(ext_symbol_map);
     }
 
-    // Write vendored C/C++ files (split in Step 3c) as external.
-    if !vendored_c_parsed.is_empty() {
-        let (_vc_file_map, vc_symbol_map) =
-            write::write_parsed_files_with_origin(db, &vendored_c_parsed, "external")
-                .context("Failed to write vendored C/C++ external index")?;
-        info!("Wrote {} vendored C/C++ symbols as external", vc_symbol_map.len());
-        symbol_id_map.extend(vc_symbol_map);
-    }
+    // Vendored C/C++ files are already persisted with origin="external"
+    // by the streaming pipeline above; nothing to do here.
 
     // Combined slice the resolver sees. External files are skipped by the
     // ref-iteration loop in resolve_and_write but their symbols are still
