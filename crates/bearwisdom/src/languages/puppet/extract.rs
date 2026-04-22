@@ -78,10 +78,17 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
 }
 
 /// Walk the tree and record every `$variable` binding that should be
-/// considered local to a declaration. Two sources:
+/// considered local to a declaration. Three sources:
 ///   * `class_definition` / `defined_resource_type` / `function_declaration`
 ///     → walk the `parameter_list` child, extract each `$name` from
 ///     `parameter > expression > variable`.
+///   * Same containers → walk the `block` child and collect the LHS `$name`
+///     of every `assignment` statement (`$var = expr`). Puppet has
+///     function-wide variable scope (no block scoping), so any assignment
+///     anywhere in the body puts that variable in scope for the entire
+///     declaration. This catches body-locals like `$mod_libs = $apache::…`
+///     whose subscript uses (`$mod_libs[$mod]`) are emitted as
+///     `resource_reference` Calls refs by the extractor.
 ///   * `lambda` → direct `variable` children are block params (`|$x, $y|`).
 ///
 /// Each binding is scoped to the enclosing declaration's line range so
@@ -105,6 +112,9 @@ fn collect_local_var_scopes(
         for child in node.children(&mut cursor) {
             if child.kind() == "parameter_list" {
                 collect_param_variable_names(child, src, start_line, end_line, out);
+            }
+            if child.kind() == "block" {
+                collect_block_assignment_vars(child, src, start_line, end_line, out);
             }
         }
     }
@@ -151,6 +161,52 @@ fn collect_param_variable_names(
         }
         if let Some(name) = first_variable_descendant(&param, src) {
             out.push((name, start_line, end_line));
+        }
+    }
+}
+
+/// Recursively walk a `block` node and record the LHS `$variable` of every
+/// `assignment` statement as a body-local binding scoped to [start_line,
+/// end_line]. Puppet has function-wide variable scope — an assignment
+/// anywhere in the body (`$mod_libs = $apache::mod_libs`) makes that name
+/// available throughout the enclosing declaration, including uses inside
+/// nested `if`/`elsif`/`else` sub-blocks that tree-sitter emits as
+/// `resource_reference` refs (e.g. `$mod_libs[$mod]`).
+fn collect_block_assignment_vars(
+    block: Node,
+    src: &str,
+    start_line: u32,
+    end_line: u32,
+    out: &mut Vec<(String, u32, u32)>,
+) {
+    let mut cursor = block.walk();
+    for stmt in block.children(&mut cursor) {
+        match stmt.kind() {
+            "assignment" => {
+                // assignment: variable ('=' | '+=') expression
+                // The first child is the LHS variable.
+                if let Some(first) = stmt.child(0) {
+                    if first.kind() == "variable" {
+                        let name = node_text(first, src);
+                        if !name.is_empty() {
+                            out.push((name, start_line, end_line));
+                        }
+                    }
+                }
+            }
+            // Puppet is function-scoped: recurse into nested control-flow
+            // blocks so assignments inside `if`/`elsif`/`unless`/`case`
+            // sub-blocks are also captured.
+            "if_statement" | "unless_statement" | "case_statement" | "elsif_statement"
+            | "else_statement" | "case_item" | "default_case" => {
+                let mut inner = stmt.walk();
+                for child in stmt.children(&mut inner) {
+                    if child.kind() == "block" {
+                        collect_block_assignment_vars(child, src, start_line, end_line, out);
+                    }
+                }
+            }
+            _ => {}
         }
     }
 }
@@ -852,6 +908,61 @@ mod local_scope_tests {
         assert!(
             !scopes.iter().any(|(n, _, _)| n == "$other"),
             "$other must not be captured: {scopes:?}"
+        );
+    }
+
+    #[test]
+    fn body_assignment_in_define_captured() {
+        // Mirrors the puppet-apache pattern:
+        //   define apache::mod (...) {
+        //     $mod_libs = $apache::mod_libs
+        //     if $mod in $mod_libs { $x = $mod_libs[$mod] }
+        //   }
+        // `$mod_libs` is a body-local assignment; its subscript use
+        // `$mod_libs[$mod]` is emitted as a resource_reference ref and
+        // should be suppressed.
+        let src = concat!(
+            "define apache::mod (\n",
+            "  Optional[String] $package = undef,\n",
+            ") {\n",
+            "  $mod_libs = $apache::mod_libs\n",
+            "  if $mod in $mod_libs {\n",
+            "    $_lib = $mod_libs[$mod]\n",
+            "  }\n",
+            "}\n",
+        );
+        let scopes = parse_and_collect(src);
+        assert!(
+            scopes.iter().any(|(n, _, _)| n == "$mod_libs"),
+            "body-assignment $mod_libs should be captured: {scopes:?}"
+        );
+    }
+
+    #[test]
+    fn body_assignment_in_nested_if_captured() {
+        // Assignments inside if/elsif sub-blocks are also function-scoped in
+        // Puppet, so they too should suppress refs throughout the declaration.
+        let src = concat!(
+            "class apache::mod::php (\n",
+            "  Optional[String] $package_name = undef,\n",
+            ") {\n",
+            "  $mod_packages = $apache::mod_packages\n",
+            "  if $package_name {\n",
+            "    $_pkg = $package_name\n",
+            "  } elsif $mod in $mod_packages {\n",
+            "    $_pkg = $mod_packages[$mod]\n",
+            "  }\n",
+            "}\n",
+        );
+        let scopes = parse_and_collect(src);
+        assert!(
+            scopes.iter().any(|(n, _, _)| n == "$mod_packages"),
+            "body-assignment $mod_packages should be captured: {scopes:?}"
+        );
+        // $package_name is a formal parameter — should also be present
+        assert!(
+            scopes.iter().any(|(n, _, _)| n == "$package_name"),
+            "formal param $package_name should be captured: {scopes:?}"
         );
     }
 }
