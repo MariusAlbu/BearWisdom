@@ -84,14 +84,42 @@ impl ManifestReader for NpmManifest {
                 "nuxt.config.ts",
                 "nuxt.config.js",
             ];
+            let mut has_any_js_config = false;
+            let mut declares_at_alias = false;
             for file_name in JS_CONFIG_FILES {
                 let cfg_path = package_dir.join(file_name);
                 let Ok(cfg_content) = std::fs::read_to_string(&cfg_path) else { continue };
+                has_any_js_config = true;
                 let extra = super::js_config_aliases::parse_js_config_aliases(&cfg_content);
                 for entry in extra {
+                    if entry.0 == "@/" {
+                        declares_at_alias = true;
+                    }
                     // Longest-match wins in the resolver, so duplicate keys
                     // across config files are harmless — we just push them.
                     data.tsconfig_paths.push(entry);
+                }
+            }
+
+            // Framework-convention default aliases. Some Vite plugins inject
+            // path aliases at runtime rather than declaring them in the
+            // user's config file. These conventions are widely enough used
+            // that hard-coding them here (gated on the plugin being a
+            // declared dependency) recovers thousands of unresolved refs in
+            // Laravel / Nuxt / SvelteKit projects without needing a plugin
+            // loader.
+            if has_any_js_config && !declares_at_alias {
+                // `laravel-vite-plugin` injects `@/` → `resources/js/` so
+                // `import Foo from '@/Components/Foo.vue'` maps to
+                // `resources/js/Components/Foo.vue`. Monica, Jetstream,
+                // Breeze, and every Laravel + Inertia starter use this.
+                let has_laravel_vite = data
+                    .dependencies
+                    .iter()
+                    .any(|d| d == "laravel-vite-plugin");
+                if has_laravel_vite && package_dir.join("resources").join("js").is_dir() {
+                    data.tsconfig_paths
+                        .push(("@/".to_string(), "resources/js/".to_string()));
                 }
             }
 

@@ -223,6 +223,20 @@ pub fn read_all_manifests(project_root: &Path) -> HashMap<ManifestKind, Manifest
         if pm.data.sdk_type.is_some() {
             entry.sdk_type = pm.data.sdk_type;
         }
+        // tsconfig-style aliases (from tsconfig.json + vite/vue/webpack
+        // configs) must propagate into the union or single-package projects
+        // — those that don't trigger the per-package builder — will never
+        // see any alias rewrite. Deduplicate so repeat runs stay idempotent.
+        for alias in pm.data.tsconfig_paths {
+            if !entry.tsconfig_paths.contains(&alias) {
+                entry.tsconfig_paths.push(alias);
+            }
+        }
+        for pr in pm.data.project_refs {
+            if !entry.project_refs.contains(&pr) {
+                entry.project_refs.push(pr);
+            }
+        }
     }
     result
 }

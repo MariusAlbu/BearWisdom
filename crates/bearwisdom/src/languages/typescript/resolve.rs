@@ -791,6 +791,25 @@ fn resolve_via_alias(
         }
     }
 
+    // Vue SFC default-import case: `import JetLabel from '@/Components/Label.vue'`
+    // binds the local name `JetLabel` to the file's default export, but the
+    // Vue extractor names the file's component class by its filename stem
+    // (`Label`). Looking for a symbol named `JetLabel` in `Label.vue` never
+    // hits. Since .vue files are single-default-export by convention, fall
+    // back to the single Class symbol in the file.
+    if rewritten.ends_with(".vue") {
+        for sym in lookup.in_file(rewritten) {
+            if sym.kind == "class" && predicates::kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "ts_vue_default_import",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+    }
+
     None
 }
 
