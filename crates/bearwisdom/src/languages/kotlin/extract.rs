@@ -61,7 +61,71 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // and emit TypeRef for any type names not already captured by the walker.
     scan_all_type_refs(root, src, &mut refs);
 
+    // Post-filter: drop TypeRefs whose target is a generic type parameter
+    // in scope at the ref's line. `abstract class Foo<STATE : State>` puts
+    // STATE in scope within the class body; uses of `STATE` inside emit
+    // user_type nodes that look identical to any real type reference, so
+    // the scan_all_type_refs pass picks them up as unresolved externals.
+    // Mirrors the TypeScript resolver's same-class fix (commit 23a4055).
+    {
+        let mut scopes: Vec<(String, u32, u32)> = Vec::new();
+        collect_type_param_scopes(root, src, &mut scopes);
+        if !scopes.is_empty() {
+            refs.retain(|r| {
+                if r.kind != crate::types::EdgeKind::TypeRef {
+                    return true;
+                }
+                !scopes.iter().any(|(name, start, end)| {
+                    &r.target_name == name && r.line >= *start && r.line <= *end
+                })
+            });
+        }
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Walk every `type_parameters` node in the tree and record each declared
+/// type-parameter name along with the byte-line range over which it is in
+/// scope (the range of the *parent* declaration — class, function, property,
+/// type alias).
+fn collect_type_param_scopes(
+    node: tree_sitter::Node,
+    src: &[u8],
+    out: &mut Vec<(String, u32, u32)>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "type_parameters" {
+            // Scope is the parent of type_parameters — the class/function/etc.
+            // declaration. If there's no parent (shouldn't happen at grammar
+            // root), fall back to the type_parameters span itself.
+            let scope_node = child.parent().unwrap_or(child);
+            let start_line = scope_node.start_position().row as u32;
+            let end_line = scope_node.end_position().row as u32;
+            let mut tc = child.walk();
+            for tp in child.children(&mut tc) {
+                if tp.kind() != "type_parameter" {
+                    continue;
+                }
+                // Type-parameter name: first simple_identifier / identifier /
+                // type_identifier child. Bounds (the part after `:`) are
+                // wrapped in `type` / `user_type` nodes we skip here.
+                let mut tpc = tp.walk();
+                for c in tp.children(&mut tpc) {
+                    if matches!(c.kind(), "simple_identifier" | "identifier" | "type_identifier") {
+                        if let Ok(name) = c.utf8_text(src) {
+                            if !name.is_empty() {
+                                out.push((name.to_string(), start_line, end_line));
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+        }
+        collect_type_param_scopes(child, src, out);
+    }
 }
 
 // ---------------------------------------------------------------------------
