@@ -180,9 +180,15 @@ pub(super) fn extract_node<'a>(
                 let idx = push_type_decl(&child, src, scope_tree, SymbolKind::Class, symbols, parent_index);
                 if let Some(sym_idx) = idx {
                     extract_decorators(&child, src, sym_idx, refs);
-                }
-                if let Some(body) = child.child_by_field_name("body") {
-                    extract_node(body, src, scope_tree, symbols, refs, idx);
+                    extract_delegation_specifiers(&child, src, sym_idx, refs);
+                    // Members live inside a `class_body` direct child — the
+                    // kotlin-ng grammar does not expose a `body` field on
+                    // object_declaration, so `child_by_field_name("body")`
+                    // returns None and silently drops every inner `val` /
+                    // `fun` declaration. Without this, `object JavaBuildConfig {
+                    // val JAVA_VERSION = ... }` emits only the class symbol
+                    // and callers can never resolve `JavaBuildConfig.JAVA_VERSION`.
+                    extract_class_body(&child, src, scope_tree, symbols, refs, idx);
                 }
             }
 

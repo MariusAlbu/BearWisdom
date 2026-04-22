@@ -36,6 +36,7 @@ pub mod cabal;
 pub mod bazel_central_registry;
 pub mod cargo;
 pub mod clojure_core;
+pub mod compose_icons_stubs;
 pub mod composer;
 pub mod cpan;
 pub mod cpython_stdlib;
@@ -94,6 +95,7 @@ pub use bazel_central_registry::BazelCentralRegistryEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
 pub use clojure_core::ClojureCoreEcosystem;
+pub use compose_icons_stubs::ComposeIconsStubsEcosystem;
 pub use composer::ComposerEcosystem;
 pub use cpan::CpanEcosystem;
 pub use cpython_stdlib::CpythonStdlibEcosystem;
@@ -540,6 +542,7 @@ pub fn default_locator(
         "scala-stdlib" => Some(Arc::new(ScalaStdlibEcosystem)),
         "groovy-stdlib" => Some(Arc::new(GroovyStdlibEcosystem)),
         "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
+        "compose-icons-stubs" => Some(Arc::new(ComposeIconsStubsEcosystem)),
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
         "jquery-synthetics" => Some(Arc::new(JquerySynthEcosystem)),
@@ -612,6 +615,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ScalaStdlibEcosystem));
         reg.register(Arc::new(GroovyStdlibEcosystem));
         reg.register(Arc::new(ClojureCoreEcosystem));
+        reg.register(Arc::new(ComposeIconsStubsEcosystem));
         reg.register(Arc::new(ErlangOtpEcosystem));
         reg.register(Arc::new(ElixirStdlibEcosystem));
         reg.register(Arc::new(JquerySynthEcosystem));
