@@ -34,6 +34,8 @@ pub use symbol_index::SymbolLocationIndex;
 pub mod android_sdk;
 pub mod cabal;
 pub mod bazel_central_registry;
+pub mod clay_ui_synthetics;
+pub mod sdl_synthetics;
 pub mod cargo;
 pub mod clojure_core;
 pub mod compose_icons_stubs;
@@ -92,6 +94,8 @@ pub mod zig_pkg;
 pub mod zig_std;
 pub use android_sdk::AndroidSdkEcosystem;
 pub use bazel_central_registry::BazelCentralRegistryEcosystem;
+pub use clay_ui_synthetics::ClayUiSyntheticsEcosystem;
+pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
 pub use clojure_core::ClojureCoreEcosystem;
@@ -562,6 +566,8 @@ pub fn default_locator(
         "node-builtins" => Some(Arc::new(NodeBuiltinsEcosystem)),
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
+        "clay-ui-synthetics" => Some(Arc::new(ClayUiSyntheticsEcosystem)),
+        "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
         _ => None,
     }
 }
@@ -632,6 +638,8 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(GleamStdlibEcosystem));
         reg.register(Arc::new(NodeBuiltinsEcosystem));
         reg.register(Arc::new(ZigStdEcosystem));
+        reg.register(Arc::new(ClayUiSyntheticsEcosystem));
+        reg.register(Arc::new(SdlSyntheticsEcosystem));
         reg
     })
 }

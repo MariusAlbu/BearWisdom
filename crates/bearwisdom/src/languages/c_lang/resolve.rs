@@ -171,6 +171,33 @@ impl LanguageResolver for CLangResolver {
             }
         }
 
+        // Step 4 (C-specific): Global by-name fallback.
+        //
+        // Catches external synthetic symbols (Clay UI macro-generated array
+        // functions, SDL API, POSIX extension APIs) that are not reachable via
+        // same-file lookup, scope-chain, or import-based paths. Single-char
+        // names are skipped to avoid false positives from template parameters
+        // that slipped past is_template_param.
+        //
+        // `kind_compatible` is intentionally NOT checked here: C enum constants
+        // (e.g. CLAY_* alignment values) are used both in call-expression
+        // positions and as type-refs, but their symbol kind is enum_member which
+        // doesn't match either EdgeKind::Calls or EdgeKind::TypeRef in
+        // kind_compatible. The global fallback step is conservative — it only
+        // fires when all local resolution paths have failed, so the risk of a
+        // spurious match is low and bounded by the target name length guard.
+        if !effective_target.contains("::") && effective_target.len() > 1 {
+            let by_name_hits = lookup.by_name(effective_target);
+            if let Some(sym) = by_name_hits.first() {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: "c_by_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         engine::resolve_common("c", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
