@@ -138,8 +138,39 @@ pub fn full_index(
     let registry = languages::default_registry();
     let files = cs.added; // FullScan puts everything in `added`
     emit("parsing", 0.0, Some(&format!("0/{} files", files.len())));
-    let results: Vec<Result<ParsedFile>> =
-        files.par_iter().map(|w| parse_file(w, registry)).collect();
+
+    // Parsing runs on a dedicated rayon pool with a capped thread count.
+    // The default global pool spawns one worker per logical core (24 on a
+    // Ryzen 7900), and each active worker concurrently holds a tree-sitter
+    // Tree + String content + in-flight ParsedFile — on a 7k-file project
+    // that stacks into GB of transient RAM and can make the user's machine
+    // unresponsive. Capping at `min(logical_cores, 8)` keeps ~95% of the
+    // parse throughput (parsing is CPU-bound but only modestly
+    // parallel-scalable past 8 threads given shared-grammar contention)
+    // and cuts peak memory roughly 3x.
+    //
+    // Override via `BEARWISDOM_PARSE_THREADS` env var when a dedicated
+    // CI runner wants to use every core.
+    let parse_threads = std::env::var("BEARWISDOM_PARSE_THREADS")
+        .ok()
+        .and_then(|s| s.parse::<usize>().ok())
+        .filter(|&n| n > 0)
+        .unwrap_or_else(|| {
+            let cores = std::thread::available_parallelism()
+                .map(|n| n.get())
+                .unwrap_or(4);
+            cores.min(8)
+        });
+    let parse_pool = rayon::ThreadPoolBuilder::new()
+        .num_threads(parse_threads)
+        .thread_name(|i| format!("bw-parse-{i}"))
+        .build()
+        .context("Failed to build parse thread pool")?;
+    debug!("Parsing with {parse_threads} threads (cap for memory discipline)");
+
+    let results: Vec<Result<ParsedFile>> = parse_pool.install(|| {
+        files.par_iter().map(|w| parse_file(w, registry)).collect()
+    });
 
     let mut parsed: Vec<ParsedFile> = Vec::with_capacity(files.len());
     let mut files_with_errors = 0u32;
@@ -451,6 +482,21 @@ pub fn full_index(
     let total_chunks = write::update_chunks(db, &parsed, &file_id_map, true)?;
     info!("Created {total_chunks} code chunks");
     emit("indexing_content", 1.0, Some(&format!("{total_chunks} chunks created")));
+
+    // --- Step 6c: Free per-file source content. ---
+    //
+    // `ParsedFile::content` carries the full file source so FTS5 indexing and
+    // code-chunk extraction (Steps 6a/6b) can feed it in without re-reading
+    // from disk. Those are the last consumers — everything downstream
+    // (connectors, flow edges, graph materialisation) operates on the
+    // already-extracted `symbols`/`refs`/`connection_points` vectors.
+    //
+    // On a 7k-file Rails + Vue codebase the retained content dominates
+    // ParsedFile memory (hundreds of MB); dropping it here releases it
+    // before the connector pass, which is itself allocation-heavy.
+    for pf in parsed.iter_mut() {
+        pf.content = None;
+    }
 
     // --- Step 7a: Flow connectors (registry pipeline) ---
     //
