@@ -76,6 +76,7 @@ pub mod rubygems;
 pub mod rust_stdlib;
 pub mod scala_stdlib;
 pub mod dayjs_synthetics;
+pub mod jquery_synthetics;
 pub mod js_test_chains;
 pub mod spm;
 pub mod swift_foundation;

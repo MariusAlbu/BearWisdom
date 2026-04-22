@@ -1777,6 +1777,19 @@ pub trait LanguageResolver: Send + Sync {
         None
     }
 
+    /// When the resolver needs to consult another file's imports alongside
+    /// this file's own, return that companion's path. The resolve driver
+    /// merges the companion's `FileContext.imports` into this file's before
+    /// any reference is resolved.
+    ///
+    /// Used by Angular templates (`.component.html`) to consult the paired
+    /// `.component.ts` file — the template has no imports of its own, but
+    /// every symbol it references is imported by its component class.
+    /// Returns `None` when no companion applies.
+    fn companion_file_for_imports(&self, _file_path: &str) -> Option<String> {
+        None
+    }
+
     /// Same as `infer_external_namespace` but with `lookup` access for
     /// barrel/re-export inspection. Resolvers that need to chase a
     /// passthrough barrel (`@/foo` → `apps/x/src/foo.ts` → `export { Y }

@@ -281,6 +281,9 @@ impl ExternalSourceLocator for NpmEcosystem {
         if let Some(dayjs) = super::dayjs_synthetics::synthetic_dayjs_file(project_root) {
             files.push(dayjs);
         }
+        if let Some(jq) = super::jquery_synthetics::synthetic_jquery_file(project_root) {
+            files.push(jq);
+        }
         if files.is_empty() { None } else { Some(files) }
     }
 }

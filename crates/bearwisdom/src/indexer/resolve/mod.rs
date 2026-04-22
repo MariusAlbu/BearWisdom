@@ -160,7 +160,22 @@ fn resolve_iteration_inner(
 
         // Try language-specific resolver for this file.
         let host_resolver = engine.resolver_for(&pf.language);
-        let host_file_ctx = host_resolver.map(|r| r.build_file_context(pf, project_ctx));
+        let host_file_ctx = host_resolver.map(|r| {
+            let mut ctx = r.build_file_context(pf, project_ctx);
+            // Merge companion imports (e.g. Angular template inherits the
+            // paired `.component.ts` imports, since the template itself has
+            // no import statements but every symbol it names is imported by
+            // the component class).
+            if let Some(companion_path) = r.companion_file_for_imports(&pf.path) {
+                if let Some(comp_pf) = parsed.iter().find(|p| p.path == companion_path) {
+                    if let Some(comp_resolver) = engine.resolver_for(&comp_pf.language) {
+                        let comp_ctx = comp_resolver.build_file_context(comp_pf, project_ctx);
+                        ctx.imports.extend(comp_ctx.imports);
+                    }
+                }
+            }
+            ctx
+        });
 
         let empty_vec = vec![];
         let file_imports = import_map.get(&pf.path).unwrap_or(&empty_vec);
