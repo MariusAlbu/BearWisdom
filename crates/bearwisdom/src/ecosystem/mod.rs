@@ -63,6 +63,7 @@ pub mod npm;
 pub mod nuget;
 pub mod laravel_stubs;
 pub mod opam;
+pub mod phoenix_stubs;
 pub mod php_stubs;
 pub mod posix_headers;
 pub mod powershell_stdlib;
@@ -115,6 +116,7 @@ pub use node_builtins::NodeBuiltinsEcosystem;
 pub use npm::NpmEcosystem;
 pub use nuget::NugetEcosystem;
 pub use laravel_stubs::LaravelStubsEcosystem;
+pub use phoenix_stubs::PhoenixStubsEcosystem;
 pub use opam::OpamEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
 pub use posix_headers::{MsvcHeadersEcosystem, PosixHeadersEcosystem};
@@ -529,6 +531,7 @@ pub fn default_locator(
         "dotnet-stdlib" => Some(Arc::new(DotnetStdlibEcosystem)),
         "php-stubs" => Some(Arc::new(PhpStubsEcosystem)),
         "laravel-stubs" => Some(Arc::new(LaravelStubsEcosystem)),
+        "phoenix-stubs" => Some(Arc::new(PhoenixStubsEcosystem)),
         "scala-stdlib" => Some(Arc::new(ScalaStdlibEcosystem)),
         "groovy-stdlib" => Some(Arc::new(GroovyStdlibEcosystem)),
         "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
@@ -597,6 +600,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(DotnetStdlibEcosystem));
         reg.register(Arc::new(PhpStubsEcosystem));
         reg.register(Arc::new(LaravelStubsEcosystem));
+        reg.register(Arc::new(PhoenixStubsEcosystem));
         reg.register(Arc::new(ScalaStdlibEcosystem));
         reg.register(Arc::new(GroovyStdlibEcosystem));
         reg.register(Arc::new(ClojureCoreEcosystem));
