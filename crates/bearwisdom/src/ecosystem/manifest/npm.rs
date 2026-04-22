@@ -67,6 +67,34 @@ impl ManifestReader for NpmManifest {
                 data.tsconfig_paths = parse_tsconfig_paths(&ts_content);
             }
 
+            // Vite / Vue CLI / webpack / Nuxt configs also carry `resolve.alias`
+            // prefix mappings. Parse each probed filename and append anything
+            // found so the resolver's existing alias rewrite treats them
+            // identically to tsconfig paths. JS/TS ASTs are walked — static
+            // values only; anything dynamic is dropped.
+            const JS_CONFIG_FILES: &[&str] = &[
+                "vite.config.ts",
+                "vite.config.js",
+                "vite.config.mjs",
+                "vite.config.mts",
+                "vue.config.js",
+                "vue.config.ts",
+                "webpack.config.js",
+                "webpack.config.ts",
+                "nuxt.config.ts",
+                "nuxt.config.js",
+            ];
+            for file_name in JS_CONFIG_FILES {
+                let cfg_path = package_dir.join(file_name);
+                let Ok(cfg_content) = std::fs::read_to_string(&cfg_path) else { continue };
+                let extra = super::js_config_aliases::parse_js_config_aliases(&cfg_content);
+                for entry in extra {
+                    // Longest-match wins in the resolver, so duplicate keys
+                    // across config files are harmless — we just push them.
+                    data.tsconfig_paths.push(entry);
+                }
+            }
+
             out.push(ReaderEntry {
                 package_dir,
                 manifest_path,

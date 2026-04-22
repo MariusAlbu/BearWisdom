@@ -16,6 +16,7 @@
 // NOTE: `gemfile` manifest reader migrated to `crate::ecosystem::rubygems` in Phase 2+3.
 // NOTE: `go_mod` manifest reader migrated to `crate::ecosystem::go_mod` in Phase 2+3.
 pub mod gradle;
+pub mod js_config_aliases;
 pub mod maven;
 pub mod mix;
 pub mod npm;
