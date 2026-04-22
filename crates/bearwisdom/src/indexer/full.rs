@@ -246,7 +246,7 @@ pub fn full_index(
                     pf.content.as_deref().unwrap_or(""),
                 )
         });
-    let parsed = project_parsed;
+    let mut parsed = project_parsed;
     for pf in &mut vendored_c_parsed {
         let original = pf.path.clone();
         pf.path = format!("ext:c:{original}");
@@ -264,6 +264,33 @@ pub fn full_index(
         symbol_id_map.len(),
         file_id_map.len()
     );
+
+    // --- Step 4a: FTS content index + code chunks (moved up from Step 6). ---
+    //
+    // FTS5 and chunking are the last consumers of `ParsedFile::content`.
+    // Running them here instead of after resolution lets us drop the raw
+    // source string from every ParsedFile immediately, which is the single
+    // biggest memory saving in the pipeline (hundreds of MB on a large
+    // codebase). Resolution + connectors do not depend on FTS/chunk rows
+    // being written before them.
+    emit("indexing_content", 0.0, Some("Building search index"));
+    let fts_count = write::update_fts_content(db, &parsed, &file_id_map)?;
+    info!("Indexed {} files for FTS5 content search", fts_count);
+    let total_chunks = write::update_chunks(db, &parsed, &file_id_map, true)?;
+    info!("Created {total_chunks} code chunks");
+    emit("indexing_content", 1.0, Some(&format!("{total_chunks} chunks created")));
+
+    // --- Step 4a2: Release post-write-only fields ---
+    //
+    // `content` (raw source), `routes`, and `db_sets` are consumed only
+    // during write + FTS + chunks. Nothing downstream (resolve, connectors,
+    // flow edges) reads them. Free the backing allocations now so the
+    // resolve and connector phases don't share memory with them.
+    for pf in parsed.iter_mut() {
+        pf.content = None;
+        pf.routes = Vec::new();
+        pf.db_sets = Vec::new();
+    }
 
     // --- Step 4b: Build the per-package project context (M2 + Phase 4) ---
     // Built BEFORE external discovery so (a) M3 can write per-package
@@ -473,29 +500,33 @@ pub fn full_index(
         .context("Failed to finalize resolution")?;
     emit("resolving", 1.0, Some(&format!("{} edges resolved", rstats.resolved)));
 
-    // --- Step 6a: FTS content index (shared pipeline) ---
-    emit("indexing_content", 0.0, Some("Building search index"));
-    let fts_count = write::update_fts_content(db, &parsed, &file_id_map)?;
-    info!("Indexed {} files for FTS5 content search", fts_count);
-
-    // --- Step 6b: Code chunking (shared pipeline) ---
-    let total_chunks = write::update_chunks(db, &parsed, &file_id_map, true)?;
-    info!("Created {total_chunks} code chunks");
-    emit("indexing_content", 1.0, Some(&format!("{total_chunks} chunks created")));
-
-    // --- Step 6c: Free per-file source content. ---
+    // --- Step 5b: Populate the RefCache while symbols + refs are still live. ---
     //
-    // `ParsedFile::content` carries the full file source so FTS5 indexing and
-    // code-chunk extraction (Steps 6a/6b) can feed it in without re-reading
-    // from disk. Those are the last consumers — everything downstream
-    // (connectors, flow edges, graph materialisation) operates on the
-    // already-extracted `symbols`/`refs`/`connection_points` vectors.
+    // RefCache caches per-file `symbols` and `refs` so incremental reindex can
+    // skip re-parsing unchanged files on the next pass. It clones the data
+    // internally, so it's safe to drop the originals afterwards.
+    if let Some(rc) = ref_cache {
+        let mut guard = rc.lock().unwrap();
+        guard.store_all(&parsed);
+        debug!("RefCache populated: {} files", parsed.len());
+    }
+
+    // --- Step 5c: Release resolve-only fields. ---
     //
-    // On a 7k-file Rails + Vue codebase the retained content dominates
-    // ParsedFile memory (hundreds of MB); dropping it here releases it
-    // before the connector pass, which is itself allocation-heavy.
+    // Resolution + flow inference are the last consumers of `symbols`,
+    // `refs`, `flow`, and the parallel origin / snippet vectors. The
+    // connector pass below only reads `path`, `language`, `package_id`,
+    // and `connection_points`; freeing the heavy vectors now strips each
+    // `ParsedFile` down to <1 KB of residual state so memory pressure
+    // doesn't stack with the connector registry's own allocations.
     for pf in parsed.iter_mut() {
-        pf.content = None;
+        pf.symbols = Vec::new();
+        pf.refs = Vec::new();
+        pf.flow = crate::types::FlowMeta::default();
+        pf.symbol_origin_languages = Vec::new();
+        pf.ref_origin_languages = Vec::new();
+        pf.symbol_from_snippet = Vec::new();
+        pf.demand_contributions = Vec::new();
     }
 
     // --- Step 7a: Flow connectors (registry pipeline) ---
@@ -602,15 +633,8 @@ pub fn full_index(
         stats.package_count,
     );
 
-    // Populate the pool-level ref cache (if the caller supplied one) so
-    // incremental reindex can skip re-parsing unchanged dependent files on the
-    // next pass.  The lock is held only long enough to drain parsed into the
-    // cache; the pool connection that ran full_index is irrelevant after this.
-    if let Some(rc) = ref_cache {
-        let mut guard = rc.lock().unwrap();
-        guard.store_all(&parsed);
-        debug!("RefCache populated: {} files", parsed.len());
-    }
+    // RefCache was populated earlier (Step 5b) while `symbols` and `refs`
+    // were still live on each ParsedFile. Nothing to do here anymore.
 
     Ok(stats)
 }
