@@ -14,6 +14,8 @@
 //
 // REFERENCES:
 //   Imports    — `using_statement` (using namespace / using module)
+//   Imports    — sentinel: .NET local-var type binding (target_name="dotnet-stdlib",
+//                module=Some(var_name)); consumed by the resolver's build_file_context
 //   Calls      — `command` nodes (every cmdlet/function invocation)
 //   Calls      — `invokation_expression` (method calls)
 //   TypeRef    — `member_access` (property/field reads)
@@ -22,6 +24,11 @@
 
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
+
+/// Sentinel target name for .NET variable-type binding refs.
+/// The resolver's `build_file_context` looks for `Imports` refs with this
+/// target name; `module` carries the variable name (stripped of `$`).
+pub(crate) const DOTNET_BINDING_SENTINEL: &str = "dotnet-stdlib";
 
 pub fn extract(source: &str) -> ExtractionResult {
     let language: tree_sitter::Language = tree_sitter_powershell::LANGUAGE.into();
@@ -40,7 +47,238 @@ pub fn extract(source: &str) -> ExtractionResult {
 
     visit(tree.root_node(), source, &mut symbols, &mut refs, None, "");
 
+    // .NET local-variable type binding scan.
+    //
+    // For each `$var = New-Object Windows.Controls.Border` (and similar) found
+    // in the raw source, emit a sentinel Imports ref so the resolver can classify
+    // subsequent member-access refs on `$var` as dotnet-stdlib external refs
+    // rather than unresolved.  The sentinel is:
+    //   kind=Imports, target_name="dotnet-stdlib", module=Some(var_name)
+    //
+    // This is done on the raw source text (not via tree-sitter) because it is
+    // simpler and fast enough; the three recognised patterns are straightforward
+    // to scan line by line.
+    emit_dotnet_binding_sentinels(source, &mut refs);
+
     ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Scan `source` for .NET object-creation assignments and emit one sentinel
+/// `Imports` ref per binding found.
+fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
+    for (line_no, raw_line) in source.lines().enumerate() {
+        let line = raw_line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let binding = try_parse_new_object(line)
+            .or_else(|| try_parse_type_new(line))
+            .or_else(|| try_parse_typed_param(line));
+
+        if let Some((var_name, dotnet_type)) = binding {
+            if is_dotnet_type_name(&dotnet_type) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: 0, // sentinel — not tied to a specific symbol
+                    target_name: DOTNET_BINDING_SENTINEL.to_string(),
+                    kind: EdgeKind::Imports,
+                    line: line_no as u32,
+                    module: Some(var_name),
+                    chain: None,
+                    byte_offset: 0,
+                });
+            }
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// .NET pattern parsers (shared with resolve.rs via pub(crate))
+// ---------------------------------------------------------------------------
+
+/// Try to parse `$var = New-Object [-TypeName] Type.Name [args...]`.
+/// Returns `(var_name_without_dollar, type_name)` on success.
+pub(crate) fn try_parse_new_object(line: &str) -> Option<(String, String)> {
+    if !line.starts_with('$') {
+        return None;
+    }
+    let eq_pos = line.find('=')?;
+    let lhs = line[..eq_pos].trim();
+    let rhs = line[eq_pos + 1..].trim();
+
+    let var_raw = lhs.trim_start_matches('$');
+    let var_name = if let Some(pos) = var_raw.find(':') {
+        var_raw[pos + 1..].to_string()
+    } else {
+        var_raw.to_string()
+    };
+    if var_name.is_empty() {
+        return None;
+    }
+
+    let rhs_lower = rhs.to_ascii_lowercase();
+    if !rhs_lower.starts_with("new-object") {
+        return None;
+    }
+
+    let after_cmd = rhs[10..].trim();
+    let type_part = if after_cmd.to_ascii_lowercase().starts_with("-typename") {
+        after_cmd[9..].trim()
+    } else {
+        after_cmd
+    };
+
+    // Type name is first whitespace-delimited token; strip trailing `(` for
+    // patterns like `New-Object Windows.CornerRadius(10)`.
+    let raw_token = type_part.split_ascii_whitespace().next()?;
+    let type_name = raw_token
+        .find('(')
+        .map(|p| &raw_token[..p])
+        .unwrap_or(raw_token)
+        .to_string();
+    if type_name.is_empty() {
+        return None;
+    }
+
+    Some((var_name, type_name))
+}
+
+/// Try to parse `$var = [Type.Name]::new(...)`.
+/// Returns `(var_name_without_dollar, type_name)` on success.
+pub(crate) fn try_parse_type_new(line: &str) -> Option<(String, String)> {
+    if !line.starts_with('$') {
+        return None;
+    }
+    let eq_pos = line.find('=')?;
+    let lhs = line[..eq_pos].trim();
+    let rhs = line[eq_pos + 1..].trim();
+
+    let var_raw = lhs.trim_start_matches('$');
+    let var_name = if let Some(pos) = var_raw.find(':') {
+        var_raw[pos + 1..].to_string()
+    } else {
+        var_raw.to_string()
+    };
+    if var_name.is_empty() {
+        return None;
+    }
+
+    if !rhs.starts_with('[') {
+        return None;
+    }
+
+    // Depth-counting scan to handle nested brackets in generic types:
+    //   [System.Collections.Generic.List[string]]::new()
+    //   [System.Collections.Hashtable]::new()
+    // We count `[` depth to find the matching outer `]`.
+    let close_bracket = find_matching_close_bracket(&rhs[1..])?;
+    // close_bracket is relative to rhs[1..], so absolute index = close_bracket + 1
+    let abs_close = close_bracket + 1;
+    let raw_type = rhs[1..abs_close].trim();
+    if raw_type.is_empty() {
+        return None;
+    }
+    // Strip generic type arguments for the stored type name:
+    //   "System.Collections.Generic.List[string]" → "System.Collections.Generic.List"
+    let type_name = strip_type_args(raw_type);
+    if type_name.is_empty() {
+        return None;
+    }
+
+    let after_bracket = rhs[abs_close + 1..].trim_start();
+    if !after_bracket.to_ascii_lowercase().starts_with("::new") {
+        return None;
+    }
+
+    Some((var_name, type_name))
+}
+
+/// Try to parse `[Type.Name]$var` typed parameter / variable.
+/// Returns `(var_name_without_dollar, type_name)` on success.
+pub(crate) fn try_parse_typed_param(line: &str) -> Option<(String, String)> {
+    if !line.starts_with('[') {
+        return None;
+    }
+
+    let close_bracket = line.find(']')?;
+    let type_name = line[1..close_bracket].trim().to_string();
+    if type_name.is_empty() {
+        return None;
+    }
+
+    let after_bracket = line[close_bracket + 1..].trim_start();
+    if !after_bracket.starts_with('$') {
+        return None;
+    }
+
+    let rest = &after_bracket[1..];
+    let name_end = rest
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(rest.len());
+    let var_name = rest[..name_end].to_string();
+    if var_name.is_empty() {
+        return None;
+    }
+
+    Some((var_name, type_name))
+}
+
+/// Returns `true` if `type_name` looks like a .NET framework namespace path.
+/// Must contain a `.` and start with a recognised top-level namespace segment.
+/// Generic type args (e.g. `[string]`, `<int>`) are stripped before checking.
+pub(crate) fn is_dotnet_type_name(type_name: &str) -> bool {
+    let base = strip_type_args(type_name);
+    if !base.contains('.') {
+        return false;
+    }
+    let root = base.split('.').next().unwrap_or("");
+    matches!(
+        root,
+        "System"
+            | "Microsoft"
+            | "Windows"
+            | "WPF"
+            | "PresentationFramework"
+            | "PresentationCore"
+    )
+}
+
+/// Strip PowerShell-style generic type arguments from a type name.
+///
+/// Examples:
+///   "System.Collections.Generic.List[string]"  → "System.Collections.Generic.List"
+///   "System.Collections.Hashtable"             → "System.Collections.Hashtable"
+///   "System.Action[string,int]"                → "System.Action"
+fn strip_type_args(s: &str) -> String {
+    // Strip everything from the first `[` or `<` that follows an identifier char.
+    let bracket_pos = s
+        .char_indices()
+        .find(|&(_, c)| c == '[' || c == '<')
+        .map(|(i, _)| i)
+        .unwrap_or(s.len());
+    s[..bracket_pos].trim_end().to_string()
+}
+
+/// Depth-counting scan for the closing `]` that matches the opening `[`
+/// which is assumed to appear just before `s` (i.e. `s` starts immediately
+/// after the opening `[`).
+///
+/// Returns the index within `s` of the matching `]`, or `None` if not found.
+fn find_matching_close_bracket(s: &str) -> Option<usize> {
+    let mut depth = 1usize;
+    for (i, c) in s.char_indices() {
+        match c {
+            '[' => depth += 1,
+            ']' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
