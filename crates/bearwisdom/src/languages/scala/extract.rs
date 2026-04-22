@@ -62,7 +62,121 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     // interpolated expressions, complex type projections, or error subtrees).
     scan_all_type_refs(root, src, &mut refs);
 
+    // Post-filter: drop TypeRefs whose target is a generic type parameter in
+    // scope at the ref's line. `class HealthRoutes[F[_]: Monad]` puts F in
+    // scope across the class body; uses inside (`def get: F[Response]`) emit
+    // TypeRef for F that the resolver can never match against a real symbol.
+    // Mirrors the TS (23a4055) and Kotlin (9cb5717) post-filters.
+    {
+        let mut scopes: Vec<(String, u32, u32)> = Vec::new();
+        collect_type_param_scopes(root, src, &mut scopes);
+        if !scopes.is_empty() {
+            refs.retain(|r| {
+                if r.kind != crate::types::EdgeKind::TypeRef {
+                    return true;
+                }
+                !scopes.iter().any(|(name, start, end)| {
+                    &r.target_name == name && r.line >= *start && r.line <= *end
+                })
+            });
+        }
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Walk every `type_parameters` node and record each declared type-parameter
+/// name plus the line range of its declaring parent (class / trait / object
+/// / method / function / type_definition). Uses of that name inside the
+/// range are generic-binding references, not external type refs.
+///
+/// Scala tree-sitter exposes a variety of type-parameter shapes depending on
+/// variance (`+T` / `-T`), bounds (`T <: Upper`), context bounds
+/// (`T: TypeClass`), and higher-kindedness (`F[_]`). The name is always the
+/// first `type_identifier` / `identifier` child of the type-parameter node,
+/// regardless of shape — so we just scan for either.
+fn collect_type_param_scopes(
+    node: tree_sitter::Node,
+    src: &[u8],
+    out: &mut Vec<(String, u32, u32)>,
+) {
+    // tree-sitter-scala exposes `type_parameters` two different ways:
+    //
+    //   * As a named FIELD on declarations that the grammar authors chose
+    //     to label — class_definition, trait_definition, enum_definition,
+    //     given_definition, extension_definition, type_definition,
+    //     function_type, lambda_expression, type_lambda.
+    //   * As a direct KIND child (unlabeled) on every other declaration
+    //     that accepts them — most importantly `function_definition` and
+    //     `function_declaration`, where type params like `def two[F, G]`
+    //     live.
+    //
+    // Checking the field alone misses the unlabeled case (and vice-versa).
+    // Look for both on every node so uses of `G` inside `def two[G]` get
+    // scoped correctly.
+    let mut tp_node: Option<tree_sitter::Node> = node.child_by_field_name("type_parameters");
+    if tp_node.is_none() {
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "type_parameters" {
+                tp_node = Some(child);
+                break;
+            }
+        }
+    }
+    if let Some(tp) = tp_node {
+        let start_line = node.start_position().row as u32;
+        let end_line = node.end_position().row as u32;
+        collect_type_param_names(&tp, src, start_line, end_line, out);
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_type_param_scopes(child, src, out);
+    }
+}
+
+/// Pull the parameter names out of a `type_parameters` subtree. The grammar
+/// varies by variance and bound shape (`+T`, `-T`, `T`, `F[_]`, etc.), but
+/// the name is always the first `identifier` / `type_identifier` descendant
+/// of each direct child.
+fn collect_type_param_names(
+    tp_node: &tree_sitter::Node,
+    src: &[u8],
+    start_line: u32,
+    end_line: u32,
+    out: &mut Vec<(String, u32, u32)>,
+) {
+    let mut cursor = tp_node.walk();
+    for tp in tp_node.children(&mut cursor) {
+        if !tp.is_named() {
+            continue;
+        }
+        // Find the first identifier descendant — that's the parameter name.
+        if let Some(name) = first_identifier_descendant(&tp, src) {
+            out.push((name, start_line, end_line));
+        }
+    }
+}
+
+/// Left-to-right, pre-order descendant scan for the first `identifier` /
+/// `type_identifier`. Must be pre-order left-first so that for a shape like
+/// `G[_]: Trace` we return `G` (the parameter name, leftmost) and not
+/// `Trace` (a bound, further down the subtree).
+fn first_identifier_descendant(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
+    if matches!(node.kind(), "identifier" | "type_identifier") {
+        if let Ok(name) = node.utf8_text(src) {
+            if !name.is_empty() {
+                return Some(name.to_string());
+            }
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(name) = first_identifier_descendant(&child, src) {
+            return Some(name);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------

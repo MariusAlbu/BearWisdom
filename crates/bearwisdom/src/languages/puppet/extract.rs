@@ -55,7 +55,121 @@ pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::E
     collect_resource_references(tree.root_node(), source, &mut refs);
     collect_all_function_calls(tree.root_node(), source, &mut refs);
 
+    // Post-filter: drop refs whose target is a locally-bound `$variable`
+    // (class / define / function parameter, or lambda block variable) at
+    // the ref's line. Puppet's lambda syntax `$xs.each |T $x| { …use $x… }`
+    // emits each use of `$x` as a function_call → Calls ref; without this
+    // every block variable lands in unresolved_refs. Same for class params:
+    // `class foo ($directory) { … use $directory … }` similarly leaks.
+    // Mirrors the TS / Kotlin / Scala type-param filter pattern.
+    {
+        let mut scopes: Vec<(String, u32, u32)> = Vec::new();
+        collect_local_var_scopes(tree.root_node(), source, &mut scopes);
+        if !scopes.is_empty() {
+            refs.retain(|r| {
+                !scopes.iter().any(|(name, start, end)| {
+                    &r.target_name == name && r.line >= *start && r.line <= *end
+                })
+            });
+        }
+    }
+
     crate::types::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Walk the tree and record every `$variable` binding that should be
+/// considered local to a declaration. Two sources:
+///   * `class_definition` / `defined_resource_type` / `function_declaration`
+///     → walk the `parameter_list` child, extract each `$name` from
+///     `parameter > expression > variable`.
+///   * `lambda` → direct `variable` children are block params (`|$x, $y|`).
+///
+/// Each binding is scoped to the enclosing declaration's line range so
+/// uses outside (or in sibling scopes) still resolve normally.
+fn collect_local_var_scopes(
+    node: Node,
+    src: &str,
+    out: &mut Vec<(String, u32, u32)>,
+) {
+    let kind = node.kind();
+    let is_param_container = matches!(
+        kind,
+        "class_definition"
+            | "defined_resource_type"
+            | "function_declaration"
+    );
+    if is_param_container {
+        let start_line = node.start_position().row as u32;
+        let end_line = node.end_position().row as u32;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "parameter_list" {
+                collect_param_variable_names(child, src, start_line, end_line, out);
+            }
+        }
+    }
+    // `$xs.each |$x| { … }` is parsed as `iterator_statement` in
+    // tree-sitter-puppet (the grammar exposes `lambda` as a sibling kind
+    // but Puppet's pipe-delimited block form lands here instead). Block
+    // variables are direct `variable` children appearing before the
+    // `block` child; walk in order and stop once we hit the body.
+    if kind == "iterator_statement" || kind == "lambda" {
+        let start_line = node.start_position().row as u32;
+        let end_line = node.end_position().row as u32;
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            if child.kind() == "block" {
+                break;
+            }
+            if child.kind() == "variable" {
+                let name = node_text(child, src);
+                if !name.is_empty() {
+                    out.push((name, start_line, end_line));
+                }
+            }
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        collect_local_var_scopes(child, src, out);
+    }
+}
+
+/// For each `parameter` inside a `parameter_list`, walk the subtree for
+/// the first `variable` node and record its text (`$name`).
+fn collect_param_variable_names(
+    param_list: Node,
+    src: &str,
+    start_line: u32,
+    end_line: u32,
+    out: &mut Vec<(String, u32, u32)>,
+) {
+    let mut cursor = param_list.walk();
+    for param in param_list.children(&mut cursor) {
+        if param.kind() != "parameter" {
+            continue;
+        }
+        if let Some(name) = first_variable_descendant(&param, src) {
+            out.push((name, start_line, end_line));
+        }
+    }
+}
+
+/// Pre-order left-first search for the first `variable` descendant.
+fn first_variable_descendant(node: &Node, src: &str) -> Option<String> {
+    if node.kind() == "variable" {
+        let t = node_text(*node, src);
+        if !t.is_empty() {
+            return Some(t);
+        }
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if let Some(v) = first_variable_descendant(&child, src) {
+            return Some(v);
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -679,4 +793,65 @@ fn collect_resource_references(
 
 fn node_text(node: Node, src: &str) -> String {
     src[node.start_byte()..node.end_byte()].to_string()
+}
+
+#[cfg(test)]
+mod local_scope_tests {
+    use super::*;
+    use tree_sitter::Parser;
+
+    fn puppet_lang() -> tree_sitter::Language {
+        tree_sitter_puppet::LANGUAGE.into()
+    }
+
+    fn parse_and_collect(src: &str) -> Vec<(String, u32, u32)> {
+        let mut parser = Parser::new();
+        parser.set_language(&puppet_lang()).unwrap();
+        let tree = parser.parse(src, None).unwrap();
+        let mut out = Vec::new();
+        collect_local_var_scopes(tree.root_node(), src, &mut out);
+        out
+    }
+
+    #[test]
+    fn class_param_scoped_to_class_body() {
+        let src = "class foo ($directory = '/tmp') {\n  file { $directory: }\n}\n";
+        let scopes = parse_and_collect(src);
+        assert!(
+            scopes.iter().any(|(n, _, _)| n == "$directory"),
+            "expected $directory in scopes: {scopes:?}"
+        );
+    }
+
+    #[test]
+    fn lambda_block_variable_scoped_to_lambda() {
+        let src = "class foo {\n  $xs.each |$x| {\n    notify { $x: }\n  }\n}\n";
+        let scopes = parse_and_collect(src);
+        assert!(
+            scopes.iter().any(|(n, _, _)| n == "$x"),
+            "expected $x from lambda: {scopes:?}"
+        );
+    }
+
+    #[test]
+    fn typed_lambda_variable_captured() {
+        // Puppet lambda with a type annotation: `|Hash $directory|`
+        let src = "class foo {\n  $xs.each |Hash $directory| {\n    notify { $directory: }\n  }\n}\n";
+        let scopes = parse_and_collect(src);
+        assert!(
+            scopes.iter().any(|(n, _, _)| n == "$directory"),
+            "typed lambda var should be captured: {scopes:?}"
+        );
+    }
+
+    #[test]
+    fn out_of_scope_variable_not_captured_wrongly() {
+        // `$other` is not a parameter anywhere; should NOT appear.
+        let src = "class foo ($directory) { notify { $other: } }\n";
+        let scopes = parse_and_collect(src);
+        assert!(
+            !scopes.iter().any(|(n, _, _)| n == "$other"),
+            "$other must not be captured: {scopes:?}"
+        );
+    }
 }
