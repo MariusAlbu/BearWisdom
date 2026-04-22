@@ -81,6 +81,7 @@ pub mod jquery_synthetics;
 pub mod js_test_chains;
 pub mod spm;
 pub mod swift_foundation;
+pub mod swift_pm_dsl_stubs;
 pub mod tf_registry;
 pub mod ts_lib_dom;
 pub mod vba_typelibs;
@@ -132,6 +133,7 @@ pub use rust_stdlib::RustStdlibEcosystem;
 pub use scala_stdlib::ScalaStdlibEcosystem;
 pub use spm::SpmEcosystem;
 pub use swift_foundation::SwiftFoundationEcosystem;
+pub use swift_pm_dsl_stubs::SwiftPmDslStubsEcosystem;
 pub use tf_registry::TfRegistryEcosystem;
 pub use ts_lib_dom::TsLibDomEcosystem;
 pub use vba_typelibs::VbaTypelibsEcosystem;
@@ -538,6 +540,7 @@ pub fn default_locator(
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
+        "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
         "puppet-forge" => Some(puppet_forge::shared_locator()),
         "puppet-stdlib" => Some(puppet_stdlib::shared_locator()),
@@ -607,6 +610,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ErlangOtpEcosystem));
         reg.register(Arc::new(ElixirStdlibEcosystem));
         reg.register(Arc::new(SwiftFoundationEcosystem));
+        reg.register(Arc::new(SwiftPmDslStubsEcosystem));
         reg.register(Arc::new(VbaTypelibsEcosystem));
         reg.register(Arc::new(PuppetForgeEcosystem));
         reg.register(Arc::new(PuppetStdlibEcosystem));
