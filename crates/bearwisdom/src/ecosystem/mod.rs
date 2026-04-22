@@ -80,6 +80,7 @@ pub mod dayjs_synthetics;
 pub mod jquery_synthetics;
 pub mod js_test_chains;
 pub mod spm;
+pub mod spring_stubs;
 pub mod swift_foundation;
 pub mod swift_pm_dsl_stubs;
 pub mod tf_registry;
@@ -132,6 +133,7 @@ pub use rubygems::RubygemsEcosystem;
 pub use rust_stdlib::RustStdlibEcosystem;
 pub use scala_stdlib::ScalaStdlibEcosystem;
 pub use spm::SpmEcosystem;
+pub use spring_stubs::SpringStubsEcosystem;
 pub use swift_foundation::SwiftFoundationEcosystem;
 pub use swift_pm_dsl_stubs::SwiftPmDslStubsEcosystem;
 pub use tf_registry::TfRegistryEcosystem;
@@ -539,6 +541,7 @@ pub fn default_locator(
         "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
+        "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
@@ -609,6 +612,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ClojureCoreEcosystem));
         reg.register(Arc::new(ErlangOtpEcosystem));
         reg.register(Arc::new(ElixirStdlibEcosystem));
+        reg.register(Arc::new(SpringStubsEcosystem));
         reg.register(Arc::new(SwiftFoundationEcosystem));
         reg.register(Arc::new(SwiftPmDslStubsEcosystem));
         reg.register(Arc::new(VbaTypelibsEcosystem));
