@@ -246,6 +246,36 @@ impl LanguageResolver for KotlinResolver {
             }
         }
 
+        // Step 7: Bare-name fallback — match any symbol whose `name` field
+        // equals the target. Confidence lowered to 0.85 to signal this is
+        // a best-guess match, not a scoped/imported resolution.
+        //
+        // Enables DSL-lambda receivers (Spring MockMvc Kotlin DSL:
+        // `mockMvc.andExpect { jsonPath(...) }`), top-level helper calls
+        // imported via wildcards the extractor may have lost, and framework-
+        // synthesised symbols (spring_stubs, compose_stubs, …) whose
+        // qualified path the caller wouldn't know. Mirrors Elixir's step 5.
+        //
+        // Bare names only (no-dot) for Calls + TypeRef + Instantiates — the
+        // dotted-name case already has steps 5/6 above. Imports return early.
+        if !effective_target.contains('.')
+            && matches!(
+                edge_kind,
+                EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates
+            )
+        {
+            for sym in lookup.by_name(effective_target) {
+                if predicates::kind_compatible(edge_kind, &sym.kind) {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.85,
+                        strategy: "kotlin_by_name",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+        }
+
         None
     }
 
