@@ -397,3 +397,66 @@ const handler = async (req, res) => {
         eprintln!("Calls in arrow: {targets:?}");
         assert!(targets.contains(&"fetchData"), "expected fetchData call: {targets:?}");
     }
+
+    #[test]
+    fn member_call_produces_chain_ref() {
+        let src = "vi.spyOn(obj, 'method');";
+        let r = extract::extract(src);
+        let spy_ref = r
+            .refs
+            .iter()
+            .find(|r| r.target_name == "spyOn" && r.kind == EdgeKind::Calls)
+            .expect("spyOn Calls ref");
+        let chain = spy_ref.chain.as_ref().expect("chain must be Some for member call");
+        assert_eq!(chain.segments.len(), 2, "expected [vi, spyOn], got {:?}", chain.segments);
+        assert_eq!(chain.segments[0].name, "vi");
+        assert_eq!(chain.segments[1].name, "spyOn");
+    }
+
+    #[test]
+    fn chained_assertion_produces_chain_ref() {
+        let src = "expect(x).toHaveBeenCalledOnce();";
+        let r = extract::extract(src);
+        let matcher_ref = r
+            .refs
+            .iter()
+            .find(|r| r.target_name == "toHaveBeenCalledOnce" && r.kind == EdgeKind::Calls)
+            .expect("toHaveBeenCalledOnce Calls ref");
+        let chain = matcher_ref.chain.as_ref().expect("chain must be Some for chained assertion");
+        assert!(chain.segments.len() >= 2, "expected at least [expect, toHaveBeenCalledOnce], got {:?}", chain.segments);
+        assert_eq!(chain.segments.last().unwrap().name, "toHaveBeenCalledOnce");
+    }
+
+    #[test]
+    fn long_chai_chain_produces_chain_ref() {
+        let src = "expect(x).to.deep.equal(y);";
+        let r = extract::extract(src);
+        let equal_ref = r
+            .refs
+            .iter()
+            .find(|r| r.target_name == "equal" && r.kind == EdgeKind::Calls)
+            .expect("equal Calls ref");
+        let chain = equal_ref.chain.as_ref().expect("chain must be Some for chai chain");
+        assert!(chain.segments.len() >= 2, "expected multi-segment chain, got {:?}", chain.segments);
+        assert_eq!(chain.segments.last().unwrap().name, "equal");
+    }
+
+    #[test]
+    fn bare_function_call_chain_is_none_or_single_segment() {
+        let src = "setupScratch();";
+        let r = extract::extract(src);
+        let setup_ref = r
+            .refs
+            .iter()
+            .find(|r| r.target_name == "setupScratch" && r.kind == EdgeKind::Calls)
+            .expect("setupScratch Calls ref");
+        // Bare calls either have no chain or a single-segment chain.
+        if let Some(chain) = &setup_ref.chain {
+            assert_eq!(
+                chain.segments.len(),
+                1,
+                "bare call should have at most 1 segment, got {:?}",
+                chain.segments
+            );
+        }
+    }

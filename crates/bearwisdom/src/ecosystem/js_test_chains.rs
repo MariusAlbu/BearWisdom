@@ -457,6 +457,43 @@ fn vitest_synthetic() -> ParsedFile {
     ));
     refs.push(type_ref(expect_idx, "chai.Assertion"));
 
+    // __npm_globals__ entries — for vitest `globals: true` mode where `expect`
+    // and `vi` are injected into global scope (no import statement).
+    //
+    // `resolve_call_root_type` Pass 3 probes `__npm_globals__.<name>` as a
+    // last resort when a bare callee has no import in the file. By placing
+    // these entries here we populate TypeInfo so the probe returns the correct
+    // type without requiring a separate synthetic file.
+    //
+    //   __npm_globals__.expect → return_type = "chai.Assertion"
+    //     covers: `expect(spy).toHaveBeenCalledOnce()` with no import
+    //
+    //   __npm_globals__.vi    → field_type = "vitest.Vi"
+    //     covers: `vi.spyOn(...)` with no import (rare — most files do import vi)
+    const GLOBALS: &str = "__npm_globals__";
+
+    let g_expect_idx = symbols.len();
+    symbols.push(sym_with_sig(
+        &format!("{GLOBALS}.expect"),
+        "expect",
+        SymbolKind::Function,
+        GLOBALS,
+        None,
+        "expect(val: any): chai.Assertion",
+    ));
+    refs.push(type_ref(g_expect_idx, "chai.Assertion"));
+
+    let g_vi_idx = symbols.len();
+    symbols.push(sym_with_sig(
+        &format!("{GLOBALS}.vi"),
+        "vi",
+        SymbolKind::Variable,
+        GLOBALS,
+        None,
+        "vi: Vi",
+    ));
+    refs.push(type_ref(g_vi_idx, VI));
+
     make_parsed_file(PATH, symbols, refs)
 }
 
@@ -657,6 +694,36 @@ mod tests {
                 && r.target_name == "chai.Assertion"
         });
         assert!(has_ref, "vitest.expect must have a TypeRef to chai.Assertion");
+    }
+
+    #[test]
+    fn vitest_globals_expect_returns_chai_assertion() {
+        let pf = vitest_synthetic();
+        let sym_idx = pf.symbols.iter().position(|s| s.qualified_name == "__npm_globals__.expect")
+            .expect("__npm_globals__.expect must be present");
+        assert_eq!(pf.symbols[sym_idx].kind, SymbolKind::Function,
+            "__npm_globals__.expect must be Function so return_type_name resolves");
+        let has_ref = pf.refs.iter().any(|r| {
+            r.source_symbol_index == sym_idx
+                && r.kind == EdgeKind::TypeRef
+                && r.target_name == "chai.Assertion"
+        });
+        assert!(has_ref, "__npm_globals__.expect must have TypeRef→chai.Assertion");
+    }
+
+    #[test]
+    fn vitest_globals_vi_field_type_is_vi_interface() {
+        let pf = vitest_synthetic();
+        let sym_idx = pf.symbols.iter().position(|s| s.qualified_name == "__npm_globals__.vi")
+            .expect("__npm_globals__.vi must be present");
+        assert_eq!(pf.symbols[sym_idx].kind, SymbolKind::Variable,
+            "__npm_globals__.vi must be Variable so field_type_name resolves");
+        let has_ref = pf.refs.iter().any(|r| {
+            r.source_symbol_index == sym_idx
+                && r.kind == EdgeKind::TypeRef
+                && r.target_name == "vitest.Vi"
+        });
+        assert!(has_ref, "__npm_globals__.vi must have TypeRef→vitest.Vi");
     }
 
     #[test]

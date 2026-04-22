@@ -2093,6 +2093,148 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
     );
 }
 
+/// `expect(spy).toHaveBeenCalledOnce()` with NO `expect` import (vitest globals mode).
+/// Phase 1 must fall through to Pass 3 of `resolve_call_root_type` and find
+/// `__npm_globals__.expect` → return_type → `chai.Assertion`. Phase 3 then
+/// resolves `chai.Assertion.toHaveBeenCalledOnce` which lives in chai synthetic.
+#[test]
+fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
+    // Minimal chai synthetic: Assertion interface + toHaveBeenCalledOnce method.
+    let chai_assertion_sym = ExtractedSymbol {
+        name: "Assertion".to_string(),
+        qualified_name: "chai.Assertion".to_string(),
+        kind: SymbolKind::Interface,
+        visibility: Some(Visibility::Public),
+        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+        signature: None, doc_comment: None,
+        scope_path: Some("chai".to_string()),
+        parent_index: None,
+    };
+    let chai_matcher_sym = ExtractedSymbol {
+        name: "toHaveBeenCalledOnce".to_string(),
+        qualified_name: "chai.Assertion.toHaveBeenCalledOnce".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+        signature: Some("toHaveBeenCalledOnce(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("chai.Assertion".to_string()),
+        parent_index: Some(0),
+    };
+    // __npm_globals__.expect → return_type = "chai.Assertion"
+    let npm_globals_expect_sym = ExtractedSymbol {
+        name: "expect".to_string(),
+        qualified_name: "__npm_globals__.expect".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0, end_line: 0, start_col: 0, end_col: 0,
+        signature: Some("expect(val: any): chai.Assertion".to_string()),
+        doc_comment: None,
+        scope_path: Some("__npm_globals__".to_string()),
+        parent_index: None,
+    };
+    // TypeRef: __npm_globals__.expect → chai.Assertion
+    let globals_expect_ref = ExtractedRef {
+        source_symbol_index: 2, // npm_globals_expect_sym is index 2
+        target_name: "chai.Assertion".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0, module: None, chain: None, byte_offset: 0,
+    };
+
+    let synth_file = ParsedFile {
+        path: "ext:ts:vitest/__bw_synthetic__.d.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: "synthetic".to_string(),
+        size: 0, line_count: 0, mtime: None, package_id: None,
+        content: None, has_errors: false,
+        symbols: vec![chai_assertion_sym, chai_matcher_sym, npm_globals_expect_sym],
+        refs: vec![globals_expect_ref],
+        routes: vec![], db_sets: vec![],
+        symbol_origin_languages: vec![None, None, None],
+        ref_origin_languages: vec![None],
+        symbol_from_snippet: vec![false, false, false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    };
+
+    // Consumer file: NO import for `expect` — globals mode.
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 0,
+        target_name: "toHaveBeenCalledOnce".to_string(),
+        kind: EdgeKind::Calls,
+        line: 10,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "expect".to_string(),
+                    node_kind: "identifier".to_string(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "toHaveBeenCalledOnce".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+    };
+    let test_sym = make_symbol("myTest", "myTest", SymbolKind::Function, Visibility::Public, None);
+    let consumer_file = ParsedFile {
+        path: "compat/test/browser/PureComponent.test.jsx".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0, line_count: 0, mtime: None, package_id: None,
+        content: None, has_errors: false,
+        // No import ref for expect — globals mode.
+        symbols: vec![test_sym],
+        refs: vec![chain_ref],
+        routes: vec![], db_sets: vec![],
+        symbol_origin_languages: vec![None],
+        ref_origin_languages: vec![None],
+        symbol_from_snippet: vec![false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+    };
+
+    let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[0],
+        source_symbol: &consumer_file.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "expect(spy).toHaveBeenCalledOnce() globals-mode chain must resolve via __npm_globals__"
+    );
+    let res = result.unwrap();
+    let matcher_id = id_map
+        .get(&(
+            "ext:ts:vitest/__bw_synthetic__.d.ts".to_string(),
+            "chai.Assertion.toHaveBeenCalledOnce".to_string(),
+        ))
+        .expect("chai.Assertion.toHaveBeenCalledOnce must be indexed");
+    assert_eq!(
+        res.target_symbol_id, *matcher_id,
+        "chain must resolve to chai.Assertion.toHaveBeenCalledOnce"
+    );
+}
+
 #[test]
 fn project_context_workspace_package_id_handles_deep_imports() {
     let mut ctx = ProjectContext::default();

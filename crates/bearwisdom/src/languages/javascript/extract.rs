@@ -16,6 +16,7 @@
 use super::{helpers};
 use super::helpers::{detect_visibility, extract_jsdoc, node_text};
 
+use crate::languages::common::build_member_chain;
 use crate::parser::scope_tree::ScopeTree;
 use crate::types::{EdgeKind, ExtractedRef as Ref, ExtractedSymbol as Sym, SymbolKind};
 use crate::types::{ExtractedRef, ExtractedSymbol};
@@ -1073,7 +1074,13 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
         match child.kind() {
             "call_expression" => {
                 if let Some(func_node) = child.child_by_field_name("function") {
-                    let callee = callee_name(func_node, src);
+                    // Build a structured chain; fall back to plain callee name.
+                    let chain = build_member_chain(func_node, src);
+                    let callee = chain
+                        .as_ref()
+                        .and_then(|c| c.segments.last())
+                        .map(|s| s.name.clone())
+                        .unwrap_or_else(|| callee_name(func_node, src));
 
                     // require('foo') → Imports edge instead of Calls
                     if callee == "require" {
@@ -1103,16 +1110,17 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             });
                         }
                     }
-                    // Regular call
+                    // Regular call — emit with chain for member access resolution.
                     else if !callee.is_empty() {
+                        crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
                         refs.push(Ref {
                             source_symbol_index,
                             target_name: callee,
                             kind: EdgeKind::Calls,
                             line: func_node.start_position().row as u32,
                             module: None,
-                            chain: None,
-                            byte_offset: 0,
+                            chain,
+                            byte_offset: func_node.start_byte() as u32,
                         });
                     }
                 }
@@ -1235,7 +1243,15 @@ fn emit_call_ref_js(
     let Some(func_node) = call_node.child_by_field_name("function") else {
         return;
     };
-    let callee = callee_name(func_node, src);
+    // Build a structured chain first; fall back to plain callee name when the
+    // node isn't chainable (e.g. an anonymous arrow-function callee).
+    let chain = build_member_chain(func_node, src);
+    let callee = chain
+        .as_ref()
+        .and_then(|c| c.segments.last())
+        .map(|s| s.name.clone())
+        .unwrap_or_else(|| callee_name(func_node, src));
+
     if callee == "require" {
         if let Some(module) = extract_require_path(call_node, src) {
             refs.push(Ref {
@@ -1261,14 +1277,16 @@ fn emit_call_ref_js(
             });
         }
     } else if !callee.is_empty() && !is_js_keyword(&callee) {
+        // Emit a TypeRef for the chain receiver when it looks like a type name.
+        crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
         refs.push(Ref {
             source_symbol_index,
             target_name: callee,
             kind: EdgeKind::Calls,
             line: func_node.start_position().row as u32,
             module: None,
-            chain: None,
-            byte_offset: 0,
+            chain,
+            byte_offset: func_node.start_byte() as u32,
         });
     }
 }

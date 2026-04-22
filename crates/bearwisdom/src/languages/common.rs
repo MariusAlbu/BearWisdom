@@ -7,8 +7,117 @@
 // uncluttered.
 // =============================================================================
 
-use crate::types::{EmbeddedOrigin, EmbeddedRegion};
+use crate::types::{
+    ChainSegment, EmbeddedOrigin, EmbeddedRegion, MemberChain, SegmentKind,
+};
 use tree_sitter::{Node, Parser};
+
+// ---------------------------------------------------------------------------
+// Shared chain builder — language-agnostic, works for any grammar that uses
+// the standard tree-sitter JS/TS node kinds (member_expression, identifier,
+// call_expression, subscript_expression, this, super).
+// ---------------------------------------------------------------------------
+
+/// Build a structured member-access chain from a tree-sitter function node.
+///
+/// Returns `None` when the node isn't a recognisable chain root (e.g. an
+/// anonymous arrow function as the callee, which can't be named).
+///
+/// Works with both the TypeScript and JavaScript grammars — both grammars
+/// share the same node kinds for all patterns covered here.
+pub fn build_member_chain(node: Node, src: &[u8]) -> Option<MemberChain> {
+    let mut segments = Vec::new();
+    build_chain_inner(node, src, &mut segments)?;
+    if segments.is_empty() {
+        return None;
+    }
+    Some(MemberChain { segments })
+}
+
+fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
+    match node.kind() {
+        "this" | "super" => {
+            segments.push(ChainSegment {
+                name: node_text_bytes(node, src),
+                node_kind: node.kind().to_string(),
+                kind: SegmentKind::SelfRef,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "identifier" | "property_identifier" => {
+            segments.push(ChainSegment {
+                name: node_text_bytes(node, src),
+                node_kind: "identifier".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "member_expression" => {
+            let object = node.child_by_field_name("object")?;
+            let property = node.child_by_field_name("property")?;
+
+            let is_optional = (0..node.child_count()).any(|i| {
+                node.child(i)
+                    .map(|c| c.kind() == "optional_chain")
+                    .unwrap_or(false)
+            });
+
+            build_chain_inner(object, src, segments)?;
+
+            segments.push(ChainSegment {
+                name: node_text_bytes(property, src),
+                node_kind: property.kind().to_string(),
+                kind: SegmentKind::Property,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: is_optional,
+            });
+            Some(())
+        }
+
+        "subscript_expression" => {
+            let object = node.child_by_field_name("object")?;
+            let index = node.child_by_field_name("index")?;
+
+            build_chain_inner(object, src, segments)?;
+
+            segments.push(ChainSegment {
+                name: node_text_bytes(index, src),
+                node_kind: "subscript_expression".to_string(),
+                kind: SegmentKind::ComputedAccess,
+                declared_type: None,
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        "call_expression" => {
+            // Nested call in a chain: `a.b().c()` — walk into the function child.
+            let func = node.child_by_field_name("function")?;
+            build_chain_inner(func, src, segments)
+        }
+
+        // Non-chainable node (arrow, conditional, etc.) — abort.
+        _ => None,
+    }
+}
+
+/// Extract text for a node from the raw byte buffer.
+fn node_text_bytes(node: Node, src: &[u8]) -> String {
+    src.get(node.start_byte()..node.end_byte())
+        .and_then(|b| std::str::from_utf8(b).ok())
+        .unwrap_or("")
+        .to_string()
+}
 
 /// When a call has a chain (e.g. `Foo::bar()`, `Foo.bar()`), emit a `TypeRef`
 /// for the type prefix — the segment before the final method name — if it
