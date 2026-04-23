@@ -516,6 +516,12 @@ enum Commands {
 // ---------------------------------------------------------------------------
 
 fn main() {
+    // Convert panics into a clean process exit.  Without this the streaming-
+    // parse pipeline's worker threads can be left blocked on channel sends
+    // while the main thread unwinds, turning a panic into a silent hang.
+    // See bearwisdom::panic_hook.
+    bearwisdom::install_fail_fast_panic_hook();
+
     // Initialise tracing to stderr so stdout stays clean JSON.
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)

@@ -307,12 +307,28 @@ pub fn full_index(
             pf.package_id = package_id_for_path(&pf.path);
 
             // Vendored-C detection uses content — do it before slim-down.
+            // Wrapped in catch_unwind because this is the drain loop's only
+            // content-sensitive call site: if the scanner ever panics again
+            // the pipeline must not hang waiting for workers that can no
+            // longer deliver to a vanished receiver (see panic_hook.rs).
             let is_vendored_c = matches!(pf.language.as_str(), "c" | "cpp")
-                && is_c_vendored_file(
-                    &pf.language,
-                    &pf.path,
-                    pf.content.as_deref().unwrap_or(""),
-                );
+                && match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    is_c_vendored_file(
+                        &pf.language,
+                        &pf.path,
+                        pf.content.as_deref().unwrap_or(""),
+                    )
+                })) {
+                    Ok(flag) => flag,
+                    Err(e) => {
+                        let msg = panic_message(&e);
+                        warn!(
+                            "is_c_vendored_file panicked on {}: {msg} — treating as non-vendored",
+                            pf.path,
+                        );
+                        false
+                    }
+                };
             if is_vendored_c {
                 let original = pf.path.clone();
                 pf.path = format!("ext:c:{original}");
@@ -810,7 +826,20 @@ pub(crate) fn parse_file_with_demand(
     // LPCWSTR, BEGIN_INTERFACE, …). These files are valid C but semantically
     // uninteresting and have no cross-project consumers. Record the file row
     // for hash tracking but emit zero symbols/refs.
-    if is_generated_platform_header(walked.language, &content) {
+    let is_generated = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        is_generated_platform_header(walked.language, &content)
+    })) {
+        Ok(flag) => flag,
+        Err(e) => {
+            let msg = panic_message(&e);
+            warn!(
+                "is_generated_platform_header panicked on {}: {msg} — treating as non-generated",
+                walked.relative_path,
+            );
+            false
+        }
+    };
+    if is_generated {
         return Ok(ParsedFile {
             path: walked.relative_path.clone(),
             language: walked.language.to_string(),
@@ -951,7 +980,11 @@ fn is_generated_platform_header(language: &str, content: &str) -> bool {
     if !matches!(language, "c" | "cpp" | "c++") {
         return false;
     }
-    let head = &content[..content.len().min(2048)];
+    let mut end = content.len().min(2048);
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &content[..end];
     const MARKERS: &[&str] = &[
         "File created by MIDL compiler",        // Microsoft MIDL (WebView2, WinRT, COM)
         "ALWAYS GENERATED file contains",        // MIDL banner variant
@@ -1016,8 +1049,29 @@ pub(crate) fn is_c_vendored_file(language: &str, path: &str, content: &str) -> b
             return true;
         }
     }
-    let head = &content[..content.len().min(4096)];
+    // Slice the first ~4 KiB of content to scan for vendor banners.  Naive
+    // byte-slicing panics when the cut falls inside a multi-byte UTF-8 char
+    // (e.g. the box-drawing glyphs some Redis deps use in comments). Walk
+    // back to the nearest char boundary.
+    let mut end = content.len().min(4096);
+    while end > 0 && !content.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &content[..end];
     VENDORED_CONTENT_MARKERS.iter().any(|m| head.contains(m))
+}
+
+/// Extract a short human-readable description from a `catch_unwind` payload.
+/// Used by the pipeline's panic guards so a scanner that misbehaves still
+/// produces a legible warning instead of `<opaque Any>`.
+fn panic_message(payload: &Box<dyn std::any::Any + Send>) -> String {
+    if let Some(s) = payload.downcast_ref::<&'static str>() {
+        return (*s).to_string();
+    }
+    if let Some(s) = payload.downcast_ref::<String>() {
+        return s.clone();
+    }
+    "<non-string panic payload>".to_string()
 }
 
 // ---------------------------------------------------------------------------

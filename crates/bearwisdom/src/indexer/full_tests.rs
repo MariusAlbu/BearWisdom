@@ -187,3 +187,40 @@ namespace App {
             .flatten().collect();
         assert_eq!(axios_declarers, vec!["server", "web"]);
     }
+
+    /// Regression: content scanners in full.rs used `&content[..content.len().min(N)]`
+    /// which panicked when byte N landed inside a multi-byte UTF-8 char.
+    /// c-redis ships a header with a box-drawing glyph (`─`, 3 bytes) whose
+    /// second byte sat at offset 4096, panicking the streaming-pipeline writer
+    /// and stalling the indexer silently.  The vendor-banner and generated-
+    /// platform-header scanners both cap at a byte index; both must clamp to
+    /// a char boundary before slicing.
+    #[test]
+    fn vendor_scan_survives_multibyte_char_at_boundary() {
+        // Pad up to just before byte 4096 with ASCII, then drop a 3-byte char
+        // so byte 4096 is inside the char.
+        let mut src = String::with_capacity(5000);
+        src.push_str("/* Header with a box-drawing glyph at the scan cutoff */\n");
+        while src.len() < 4094 {
+            src.push('a');
+        }
+        src.push('─'); // 3 bytes: e2 94 80 — cut at 4096 falls inside
+        while src.len() < 5000 {
+            src.push('b');
+        }
+        assert!(src.len() > 4096);
+        assert!(!src.is_char_boundary(4096));
+
+        // Both content-scan helpers must accept this without panicking.
+        let _ = super::is_c_vendored_file("c", "src/x.c", &src);
+        let _ = super::is_generated_platform_header("c", &src);
+    }
+
+    #[test]
+    fn vendor_scan_on_short_content_does_not_panic() {
+        // Content shorter than the 4 KiB cutoff: `.min(len)` returns len, so
+        // no clamping needed — but the char-boundary walk must still handle
+        // the no-op case.
+        let _ = super::is_c_vendored_file("c", "src/x.c", "int main() { return 0; }");
+        let _ = super::is_generated_platform_header("c", "int main() { return 0; }");
+    }

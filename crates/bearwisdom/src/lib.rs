@@ -22,11 +22,14 @@ pub mod db;
 pub mod ecosystem;
 pub mod indexer;
 pub mod languages;
+pub mod panic_hook;
 pub mod parser;
 pub mod query;
 pub mod search;
 pub mod types;
 pub mod walker;
+
+pub use panic_hook::install_fail_fast_panic_hook;
 
 // Re-export the most commonly used entry points at the crate root so callers
 // don't need to dig through module paths.

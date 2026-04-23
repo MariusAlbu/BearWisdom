@@ -45,6 +45,10 @@ fn resolve_db_path(project_root: &std::path::Path) -> Result<PathBuf> {
 
 #[tokio::main]
 async fn main() -> Result<()> {
+    // Fail fast on panics so the pipeline can't hang silently — see
+    // bearwisdom::panic_hook for the full rationale.
+    bearwisdom::install_fail_fast_panic_hook();
+
     // Initialize tracing — output to stderr only (stdout reserved for MCP JSON-RPC)
     tracing_subscriber::fmt()
         .with_env_filter(
