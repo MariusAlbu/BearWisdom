@@ -5,9 +5,36 @@
 //   * PosixHeadersEcosystem — /usr/include on unix-like systems.
 //   * MsvcHeadersEcosystem  — $VCINSTALLDIR/include on Windows.
 //
-// Both gate on `LanguagePresent("c") OR LanguagePresent("cpp")` plus the
-// platform check. On the wrong platform the ecosystem's activation
-// returns false and nothing probes.
+// Both activate when the project has C/C++ source files on the matching
+// host platform.  On the wrong platform activation returns false and
+// nothing probes.
+//
+// Demand-driven parsing
+// ---------------------
+// Both ecosystems declare `uses_demand_driven_parse = true` and return
+// an empty `walk_root`.  `build_symbol_index` enumerates the header files
+// under each dep root (no content parse) and registers each header under
+// its `#include`-visible path, e.g. `stdio.h`, `windows.h`,
+// `winrt/Windows.Foundation.h`.  The indexer's Stage-2 demand loop then
+// pulls exactly the headers a user `#include`s — and their transitive
+// includes as the pulled files are themselves parsed and their own
+// Imports refs are queued.
+//
+// Why this matters
+// ----------------
+// The Windows SDK Include/ dir has five top-level children with wildly
+// different footprints (`ucrt`: 66 headers, `um`: 1.5k, `shared`: 280,
+// `winrt`: 400, `cppwinrt`: 1.4k — ~3.7k total).  The previous eager walk
+// parsed every one of them on any Windows host with C/C++ source, even
+// for Linux-first codebases (redis, sqlite, nginx) that need only a
+// dozen POSIX-compatible stdlib headers.  The symptom was 4.7k spurious
+// external files, 1.6M spurious symbols, and minutes of wasted work.
+// Demand-driven matching the include graph keeps the external slice
+// scoped to whatever the project actually reaches.
+//
+// The POSIX side has the same shape — `/usr/include` holds a few hundred
+// to a few thousand headers depending on the distro + packages — so the
+// same treatment applies.
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -17,7 +44,7 @@ use tracing::debug;
 
 use super::{
     Ecosystem, EcosystemActivation, EcosystemId, EcosystemKind, LocateContext,
-    Platform,
+    Platform, SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{ExternalDepRoot, ExternalSourceLocator};
 use crate::walker::WalkedFile;
@@ -50,8 +77,34 @@ impl Ecosystem for PosixHeadersEcosystem {
         discover_posix_include()
     }
 
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        walk_headers(dep, POSIX_TAG)
+    // Demand-driven: no eager walk. `build_symbol_index` enumerates headers
+    // and registers their include-paths so Stage-2 can pull the right file
+    // when a user `#include`s it.
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
+
+    fn supports_reachability(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_c_header_index(dep_roots)
+    }
+
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        header: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        resolve_header(dep, header).into_iter().collect()
+    }
+
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
+        resolve_header(dep, fqn).into_iter().collect()
     }
 }
 
@@ -60,8 +113,8 @@ impl ExternalSourceLocator for PosixHeadersEcosystem {
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_posix_include()
     }
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        walk_headers(dep, POSIX_TAG)
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
     }
 }
 
@@ -124,8 +177,31 @@ impl Ecosystem for MsvcHeadersEcosystem {
         discover_msvc_include()
     }
 
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        walk_headers(dep, MSVC_TAG)
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
+
+    fn supports_reachability(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_c_header_index(dep_roots)
+    }
+
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        header: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        resolve_header(dep, header).into_iter().collect()
+    }
+
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
+        resolve_header(dep, fqn).into_iter().collect()
     }
 }
 
@@ -134,34 +210,73 @@ impl ExternalSourceLocator for MsvcHeadersEcosystem {
     fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
         discover_msvc_include()
     }
-    fn walk_root(&self, dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        walk_headers(dep, MSVC_TAG)
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
     }
 }
 
+/// Enumerate candidate MSVC Include roots. Each sub-dir of
+/// `WindowsSdkDir/Include/<version>/` (ucrt, um, shared, winrt, cppwinrt)
+/// becomes its own `ExternalDepRoot` so the `#include`-visible path is the
+/// header's path relative to that sub-dir — matching what a user's
+/// `#include <stdio.h>` statement names. The `cppwinrt/` and `winrt/` dirs
+/// are included for completeness; demand-driven parsing won't pay for
+/// them unless the project's own source actually references them.
 fn discover_msvc_include() -> Vec<ExternalDepRoot> {
     if !cfg!(target_os = "windows") { return Vec::new() }
-    let mut out = Vec::new();
+
+    // Explicit override wins over autodetect.  Treated as one search-path
+    // root (flat layout) because test environments usually point it at a
+    // single prepared dir.
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_MSVC_INCLUDE") {
+        let p = PathBuf::from(explicit);
+        if p.is_dir() {
+            return vec![make_root(&p, MSVC_TAG)];
+        }
+    }
+
+    let mut include_roots: Vec<PathBuf> = Vec::new();
     if let Some(vc) = std::env::var_os("VCINSTALLDIR") {
         let p = PathBuf::from(vc).join("include");
         if p.is_dir() {
-            out.push(make_root(&p, MSVC_TAG));
+            include_roots.push(p);
         }
     }
     if let Some(wdk) = std::env::var_os("WindowsSdkDir") {
         let p = PathBuf::from(wdk).join("Include");
         if p.is_dir() {
-            out.push(make_root(&p, MSVC_TAG));
+            include_roots.extend(newest_sdk_versions(&p));
         }
     }
-    if let Some(explicit) = std::env::var_os("BEARWISDOM_MSVC_INCLUDE") {
-        let p = PathBuf::from(explicit);
-        if p.is_dir() {
-            out.push(make_root(&p, MSVC_TAG));
-        }
-    }
-    if out.is_empty() {
+
+    if include_roots.is_empty() {
         debug!("msvc-headers: no VCINSTALLDIR / WindowsSdkDir / override probed");
+        return Vec::new();
+    }
+
+    let mut out = Vec::new();
+    for include in &include_roots {
+        // Windows SDK versioned roots have subdirs ucrt/um/shared/winrt/cppwinrt.
+        // Each is a search path in its own right (compiler arguments pass them
+        // all with /I). Emit each as a separate dep root so relative paths in
+        // the symbol index match `#include <...>` syntax.
+        let structured_children: Vec<&str> = ["ucrt", "um", "shared", "winrt", "cppwinrt"]
+            .iter()
+            .copied()
+            .filter(|sub| include.join(sub).is_dir())
+            .collect();
+        if structured_children.is_empty() {
+            // VCINSTALLDIR/include is flat (C++ stdlib: cstdio, iostream, ...).
+            out.push(make_root(include, MSVC_TAG));
+            continue;
+        }
+        for sub in structured_children {
+            out.push(make_root(&include.join(sub), MSVC_TAG));
+        }
+        // The version root itself contains `winrt/Foo.h` under its root, and
+        // compilers walk through when resolving `#include <winrt/Foo.h>`.
+        // Emit the version root so relative paths like `winrt/Foo.h` resolve.
+        out.push(make_root(include, MSVC_TAG));
     }
     out
 }
@@ -187,13 +302,52 @@ fn make_root(dir: &Path, tag: &'static str) -> ExternalDepRoot {
     }
 }
 
-fn walk_headers(dep: &ExternalDepRoot, _tag: &'static str) -> Vec<WalkedFile> {
-    let mut out = Vec::new();
-    walk_dir(&dep.root, &mut out, 0);
-    out
+/// Pick the newest `10.0.*` version directory under a Windows SDK Include
+/// root. The SDK nests versioned dirs (e.g. `Include/10.0.26100.0/`),
+/// each with its own `ucrt/`, `um/`, etc. tree. Walking every installed
+/// version would multiply the symbol-index size with no benefit — the
+/// newest is the one the compiler picks unless the user asks otherwise.
+fn newest_sdk_versions(include: &Path) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(include) else { return Vec::new() };
+    let mut versions: Vec<PathBuf> = entries
+        .flatten()
+        .filter(|e| e.file_type().map(|ft| ft.is_dir()).unwrap_or(false))
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|s| s.starts_with("10."))
+        })
+        .collect();
+    versions.sort_by(|a, b| a.file_name().cmp(&b.file_name()));
+    versions.into_iter().next_back().into_iter().collect()
 }
 
-fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
+/// Walk every dep root and register each header at its `#include`-visible
+/// relative path. The symbol index uses `(module_path, symbol_name)` →
+/// file; for headers we set both key slots to the header's relative path
+/// so `#include <stdio.h>` (emitted as `target_name="stdio.h"`,
+/// `module="stdio.h"` by the C extractor) resolves directly.
+fn build_c_header_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
+    let mut idx = SymbolLocationIndex::new();
+    for dep in dep_roots {
+        collect_headers_rec(&dep.root, &dep.root, &mut idx, 0);
+    }
+    if !idx.is_empty() {
+        debug!("c-headers: indexed {} header paths", idx.len());
+    }
+    idx
+}
+
+/// Recursively enumerate `.h`/`.hpp`/`.hxx`/`.hh` files under `dir`,
+/// computing each file's path relative to `root` — which is the user-
+/// visible include path (e.g. `stdio.h`, `winrt/Windows.Foundation.h`).
+fn collect_headers_rec(
+    root: &Path,
+    dir: &Path,
+    idx: &mut SymbolLocationIndex,
+    depth: u32,
+) {
     if depth >= 10 { return }
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
@@ -201,23 +355,221 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
         let path = entry.path();
         if ft.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                // Skip noisy sub-dirs but keep the main platform headers.
+                // Historical skip — vendor test fixtures sometimes drop noisy
+                // sub-dirs inside /usr/include. Harmless on SDK trees.
                 if matches!(name, "tests" | "test") { continue }
             }
-            walk_dir(&path, out, depth + 1);
-        } else if ft.is_file() {
-            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
-            let lang = match () {
-                _ if name.ends_with(".h") => "c",
-                _ if name.ends_with(".hpp") || name.ends_with(".hxx") || name.ends_with(".hh") => "cpp",
-                _ => continue,
-            };
-            let display = path.to_string_lossy().replace('\\', "/");
-            out.push(WalkedFile {
-                relative_path: format!("ext:{lang}:{}", display),
-                absolute_path: path,
-                language: lang,
-            });
+            collect_headers_rec(root, &path, idx, depth + 1);
+            continue;
         }
+        if !ft.is_file() { continue }
+        let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+        if !(name.ends_with(".h")
+            || name.ends_with(".hpp")
+            || name.ends_with(".hxx")
+            || name.ends_with(".hh"))
+        {
+            continue;
+        }
+        let Ok(rel) = path.strip_prefix(root) else { continue };
+        let rel_str = rel.to_string_lossy().replace('\\', "/");
+        // Register each header at the path a compiler would name it through
+        // THIS search root.  Don't also register the basename — that was
+        // producing false matches where a user's `#include "async.h"`
+        // (project-local, intended to resolve to sibling source) picked up
+        // an unrelated `winrt/wrl/async.h` from the SDK. Multi-root
+        // coverage (ucrt/, um/, winrt/, the version root, ...) gives
+        // every `#include` form the right relative key without needing
+        // a basename fallback.
+        idx.insert(rel_str.clone(), rel_str.clone(), path.clone());
+    }
+}
+
+/// On-demand header resolution for `resolve_import` / `resolve_symbol`.
+/// Tries the full relative path first, then falls back to the basename so
+/// both `<winrt/Foo.h>` and a basename-only demand (generated by the
+/// chain walker) land on the same file.
+fn resolve_header(dep: &ExternalDepRoot, header: &str) -> Option<WalkedFile> {
+    let candidate = dep.root.join(header);
+    if candidate.is_file() {
+        return Some(WalkedFile {
+            relative_path: format!("ext:c:{}", candidate.to_string_lossy().replace('\\', "/")),
+            absolute_path: candidate,
+            language: "c",
+        });
+    }
+    // Basename-only fallback: scan dep.root recursively for a matching file.
+    // Rare path — only hit when the demand loop tries a bare symbol name.
+    let mut stack = vec![dep.root.clone()];
+    while let Some(dir) = stack.pop() {
+        let Ok(entries) = std::fs::read_dir(&dir) else { continue };
+        for entry in entries.flatten() {
+            let Ok(ft) = entry.file_type() else { continue };
+            let path = entry.path();
+            if ft.is_dir() {
+                stack.push(path);
+                continue;
+            }
+            if ft.is_file() && path.file_name().and_then(|n| n.to_str()) == Some(header) {
+                return Some(WalkedFile {
+                    relative_path: format!("ext:c:{}", path.to_string_lossy().replace('\\', "/")),
+                    absolute_path: path,
+                    language: "c",
+                });
+            }
+        }
+    }
+    None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+    use tempfile::TempDir;
+
+    fn write(path: &Path, body: &str) {
+        fs::create_dir_all(path.parent().unwrap()).unwrap();
+        fs::write(path, body).unwrap();
+    }
+
+    #[test]
+    fn newest_sdk_version_picks_latest() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("10.0.22621.0/ucrt")).unwrap();
+        fs::create_dir_all(tmp.path().join("10.0.26100.0/ucrt")).unwrap();
+        fs::create_dir_all(tmp.path().join("wdf")).unwrap();
+        let picked = newest_sdk_versions(tmp.path());
+        assert_eq!(picked.len(), 1);
+        assert!(picked[0].to_string_lossy().contains("10.0.26100.0"));
+    }
+
+    #[test]
+    fn newest_sdk_version_ignores_unversioned_siblings() {
+        let tmp = TempDir::new().unwrap();
+        fs::create_dir_all(tmp.path().join("10.0.26100.0")).unwrap();
+        fs::create_dir_all(tmp.path().join("shared")).unwrap();
+        fs::create_dir_all(tmp.path().join("wdf")).unwrap();
+        let picked = newest_sdk_versions(tmp.path());
+        assert_eq!(picked.len(), 1);
+        assert!(picked[0].to_string_lossy().contains("10.0.26100.0"));
+    }
+
+    #[test]
+    fn header_index_registers_relative_path() {
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("stdio.h"), "int printf(const char*, ...);\n");
+        write(&tmp.path().join("string.h"), "char* strcpy(char*, const char*);\n");
+        let dep = make_root(tmp.path(), "test");
+        let idx = build_c_header_index(&[dep]);
+        assert!(!idx.is_empty());
+        // `#include <stdio.h>` should locate stdio.h.
+        assert!(idx.locate("stdio.h", "stdio.h").is_some());
+        assert!(idx.locate("string.h", "string.h").is_some());
+    }
+
+    #[test]
+    fn header_index_registers_only_relative_path_from_root() {
+        // Two roots cover the same SDK layout from different angles: one
+        // mounted at `winrt/` (so `Windows.Foundation.h` is at the root)
+        // and one mounted at the version dir above it (so the file is at
+        // `winrt/Windows.Foundation.h`).  This is the real discover_msvc
+        // emission pattern.  Both `#include` spellings should resolve —
+        // not via basename fallback, but via the matching root.
+        let tmp = TempDir::new().unwrap();
+        let version_root = tmp.path();
+        write(&version_root.join("winrt/Windows.Foundation.h"), "/* header */\n");
+        let winrt_root = make_root(&version_root.join("winrt"), "test");
+        let version_dep = make_root(version_root, "test");
+        let idx = build_c_header_index(&[winrt_root, version_dep]);
+        // Reached via the winrt/ root (relative = `Windows.Foundation.h`).
+        assert!(idx.locate("Windows.Foundation.h", "Windows.Foundation.h").is_some());
+        // Reached via the version root (relative = `winrt/Windows.Foundation.h`).
+        assert!(idx.locate("winrt/Windows.Foundation.h", "winrt/Windows.Foundation.h").is_some());
+    }
+
+    #[test]
+    fn header_index_does_not_basename_match_across_dirs() {
+        // Regression: when only a deep-nested header exists, its basename
+        // must NOT be registered — otherwise a user's project-local
+        // `#include "async.h"` would wrongly pull a WinRT header.
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("wrl/async.h"), "/* winrt async */\n");
+        let dep = make_root(tmp.path(), "test");
+        let idx = build_c_header_index(&[dep]);
+        assert!(idx.locate("wrl/async.h", "wrl/async.h").is_some());
+        assert!(
+            idx.locate("async.h", "async.h").is_none(),
+            "basename-only lookup must not match a deeper-nested header",
+        );
+    }
+
+    #[test]
+    fn header_index_skips_non_header_files() {
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("foo.h"), "\n");
+        write(&tmp.path().join("README.md"), "docs\n");
+        write(&tmp.path().join("license.txt"), "text\n");
+        let dep = make_root(tmp.path(), "test");
+        let idx = build_c_header_index(&[dep]);
+        assert!(idx.locate("foo.h", "foo.h").is_some());
+        assert!(idx.locate("README.md", "README.md").is_none());
+        assert!(idx.locate("license.txt", "license.txt").is_none());
+    }
+
+    #[test]
+    fn resolve_header_finds_file_at_relative_path() {
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("stdio.h"), "\n");
+        let dep = make_root(tmp.path(), "test");
+        let found = resolve_header(&dep, "stdio.h").expect("should find stdio.h");
+        assert!(found.absolute_path.ends_with("stdio.h"));
+        assert_eq!(found.language, "c");
+        assert!(found.relative_path.starts_with("ext:c:"));
+    }
+
+    #[test]
+    fn resolve_header_falls_back_to_basename() {
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("winrt/Windows.Foundation.h"), "\n");
+        let dep = make_root(tmp.path(), "test");
+        // Ask for just the basename (no directory prefix). Scanner should
+        // walk the tree and find it.
+        let found = resolve_header(&dep, "Windows.Foundation.h").expect("basename fallback");
+        assert!(found.absolute_path.ends_with("Windows.Foundation.h"));
+    }
+
+    #[test]
+    fn resolve_header_returns_none_on_miss() {
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("foo.h"), "\n");
+        let dep = make_root(tmp.path(), "test");
+        assert!(resolve_header(&dep, "does-not-exist.h").is_none());
+    }
+
+    #[test]
+    fn msvc_ecosystem_declares_demand_driven() {
+        assert!(MsvcHeadersEcosystem.uses_demand_driven_parse());
+        assert!(MsvcHeadersEcosystem.supports_reachability());
+    }
+
+    #[test]
+    fn posix_ecosystem_declares_demand_driven() {
+        assert!(PosixHeadersEcosystem.uses_demand_driven_parse());
+        assert!(PosixHeadersEcosystem.supports_reachability());
+    }
+
+    #[test]
+    fn msvc_walk_root_is_empty_under_demand_driven() {
+        let tmp = TempDir::new().unwrap();
+        let dep = make_root(tmp.path(), MSVC_TAG);
+        assert!(Ecosystem::walk_root(&MsvcHeadersEcosystem, &dep).is_empty());
+    }
+
+    #[test]
+    fn posix_walk_root_is_empty_under_demand_driven() {
+        let tmp = TempDir::new().unwrap();
+        let dep = make_root(tmp.path(), POSIX_TAG);
+        assert!(Ecosystem::walk_root(&PosixHeadersEcosystem, &dep).is_empty());
     }
 }
