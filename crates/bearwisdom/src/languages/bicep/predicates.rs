@@ -123,5 +123,20 @@ pub(super) fn is_bicep_builtin(name: &str) -> bool {
             // ── Namespace aliases ─────────────────────────────────────────────
             | "sys"
             | "az"
+            // ── Decorators (language builtins, not library API) ───────────────
+            // Used as `@description('...')`, `@minLength(3)`, etc. The ref the
+            // extractor emits targets the bare name without the `@`.
+            | "description"
+            | "minLength"
+            | "maxLength"
+            | "minValue"
+            | "maxValue"
+            | "allowed"
+            | "secure"
+            | "metadata"
+            | "batchSize"
+            | "export"
+            | "sealed"
+            | "discriminator"
     )
 }

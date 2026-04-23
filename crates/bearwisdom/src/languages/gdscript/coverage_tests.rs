@@ -216,3 +216,46 @@ fn symbol_anonymous_enum_definition() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// preload / load — emit Imports edge for the scene/script path argument
+// ---------------------------------------------------------------------------
+
+/// `preload("res://foo.gd")` → Imports edge with `module="foo.gd"`, target="foo".
+#[test]
+fn ref_preload_emits_imports_edge() {
+    let r = extract("const Foo := preload(\"res://addons/util/foo.gd\")\n");
+    let imp = r
+        .refs
+        .iter()
+        .find(|e| e.kind == EdgeKind::Imports)
+        .unwrap_or_else(|| panic!("expected Imports edge; got {:?}", r.refs));
+    assert_eq!(imp.target_name, "foo");
+    assert_eq!(imp.module.as_deref(), Some("addons/util/foo.gd"));
+}
+
+/// `load("foo.gd")` with a relative path → Imports edge, path kept as-is.
+#[test]
+fn ref_load_relative_path_emits_imports() {
+    let r = extract("var scene = load(\"debugger_tab.gd\")\n");
+    let imp = r
+        .refs
+        .iter()
+        .find(|e| e.kind == EdgeKind::Imports)
+        .unwrap_or_else(|| panic!("expected Imports edge; got {:?}", r.refs));
+    assert_eq!(imp.target_name, "debugger_tab");
+    assert_eq!(imp.module.as_deref(), Some("debugger_tab.gd"));
+}
+
+/// Scenes get the .tscn extension stripped from target_name, path kept in module.
+#[test]
+fn ref_preload_scene_path() {
+    let r = extract("const Menu := preload(\"res://ui/main_menu.tscn\")\n");
+    let imp = r
+        .refs
+        .iter()
+        .find(|e| e.kind == EdgeKind::Imports)
+        .unwrap_or_else(|| panic!("expected Imports edge; got {:?}", r.refs));
+    assert_eq!(imp.target_name, "main_menu");
+    assert_eq!(imp.module.as_deref(), Some("ui/main_menu.tscn"));
+}

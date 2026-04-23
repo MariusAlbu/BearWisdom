@@ -79,10 +79,10 @@ fn visit(
                 extract_export_var(&child, src, symbols, parent_index);
             }
             "variable_statement" | "onready_variable_statement" => {
-                extract_variable(&child, src, symbols, parent_index, inside_class);
+                extract_variable(&child, src, symbols, refs, parent_index, inside_class);
             }
             "const_statement" => {
-                extract_const(&child, src, symbols, parent_index);
+                extract_const(&child, src, symbols, refs, parent_index);
             }
             "enum_definition" => {
                 extract_enum(&child, src, symbols, parent_index);
@@ -373,6 +373,7 @@ fn extract_variable(
     node: &Node,
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
     inside_class: bool,
 ) {
@@ -401,6 +402,7 @@ fn extract_variable(
     };
 
     let line = node.start_position().row as u32;
+    let idx = symbols.len();
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -416,6 +418,10 @@ fn extract_variable(
         scope_path: None,
         parent_index,
     });
+
+    // Walk the initializer for calls so `preload(...)` / `load(...)` on the
+    // RHS emits its Imports edge via collect_calls.
+    collect_calls(node, src, idx, refs);
 }
 
 /// Return true if the variable_statement node has an `@export` annotation.
@@ -453,6 +459,7 @@ fn extract_const(
     node: &Node,
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
 ) {
     let name = match node.child_by_field_name("name") {
@@ -461,6 +468,7 @@ fn extract_const(
     };
 
     let line = node.start_position().row as u32;
+    let idx = symbols.len();
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -476,6 +484,10 @@ fn extract_const(
         scope_path: None,
         parent_index,
     });
+
+    // `const Foo := preload(...)` — walk the initializer so the preload call
+    // emits its Imports edge via collect_calls.
+    collect_calls(node, src, idx, refs);
 }
 
 // ---------------------------------------------------------------------------
@@ -527,20 +539,76 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                     _ => String::new(),
                 };
                 if !name.is_empty() {
+                    let line = child.start_position().row as u32;
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
-                        target_name: name,
+                        target_name: name.clone(),
                         kind: EdgeKind::Calls,
-                        line: child.start_position().row as u32,
+                        line,
                         module: None,
                         chain: None,
                         byte_offset: 0,
                     });
+
+                    // `preload("res://path/to/foo.gd")` and `load(...)` bring another
+                    // script/scene file into scope. The call itself is a builtin that
+                    // resolves to nothing useful, but the path argument is a cross-
+                    // file import — emit an Imports edge so the resolver can link
+                    // symbols defined in the target .gd file. Mirrors the bash
+                    // `source`/`.` precedent in cb2fc80.
+                    if name == "preload" || name == "load" {
+                        if let Some(raw) = first_string_arg(&child, src) {
+                            // Strip `res://` (Godot project-root prefix); keep
+                            // relative paths as-is.
+                            let normalized = raw.trim_start_matches("res://").to_string();
+                            let target = normalized
+                                .rsplit('/')
+                                .next()
+                                .unwrap_or(&normalized)
+                                .trim_end_matches(".gd")
+                                .trim_end_matches(".tscn")
+                                .trim_end_matches(".tres")
+                                .to_string();
+                            if !target.is_empty() {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: source_idx,
+                                    target_name: target,
+                                    kind: EdgeKind::Imports,
+                                    line,
+                                    module: Some(normalized),
+                                    chain: None,
+                                    byte_offset: 0,
+                                });
+                            }
+                        }
+                    }
                 }
             }
         }
         collect_calls(&child, src, source_idx, refs);
     }
+}
+
+/// Return the text of the first string literal appearing in this call node's
+/// argument list, with surrounding quotes trimmed.
+fn first_string_arg(call_node: &Node, src: &str) -> Option<String> {
+    let mut cursor = call_node.walk();
+    for child in call_node.children(&mut cursor) {
+        // tree-sitter-gdscript wraps call args in `arguments`; scan its children.
+        if child.kind() == "arguments" {
+            let mut inner = child.walk();
+            for arg in child.children(&mut inner) {
+                if arg.kind() == "string" {
+                    let raw = node_text(&arg, src);
+                    let trimmed = raw.trim_matches('"').trim_matches('\'');
+                    if !trimmed.is_empty() {
+                        return Some(trimmed.to_string());
+                    }
+                }
+            }
+        }
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
