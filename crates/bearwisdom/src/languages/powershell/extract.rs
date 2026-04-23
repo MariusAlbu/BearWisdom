@@ -183,7 +183,74 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                 });
             }
         }
+
+        // ---- Part 4: propagation through member/index access ----
+        // `$Tweaks = $sync.selectedTweaks` or `$val = $sync["Key"].Member` — if the
+        // source variable is already bound to .NET (registry var, explicit type,
+        // pipeline, cmdlet result, or an earlier propagation), inherit the binding.
+        // The property/index read returns a .NET value in every realistic case
+        // and `System.Windows.DependencyObject` is conservative enough to cover
+        // it.  Registry vars are pre-seeded so `$Tweaks = $sync.foo` works even
+        // on the very first line that touches `$sync`.
+        if let Some((lhs, rhs_root)) = try_parse_propagation(line) {
+            let bound = emitted_vars.contains(&rhs_root)
+                || HASHTABLE_REGISTRY_VARS.iter().any(|v| *v == rhs_root.as_str());
+            if bound && emitted_vars.insert(lhs.clone()) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: 0,
+                    target_name: DOTNET_BINDING_SENTINEL.to_string(),
+                    kind: EdgeKind::Imports,
+                    line: line_no as u32,
+                    module: Some(lhs),
+                    chain: None,
+                    byte_offset: 0,
+                });
+            }
+        }
     }
+}
+
+/// Parse `$lhs = $rhs.<member>...` or `$lhs = $rhs[...]...` and return
+/// `(lhs, rhs_root)` stripped of `$`. Returns `None` when the line isn't a
+/// propagation assignment.
+pub(crate) fn try_parse_propagation(line: &str) -> Option<(String, String)> {
+    if !line.starts_with('$') {
+        return None;
+    }
+    let eq_pos = line.find('=')?;
+    // Skip compound assignments (`==`, `+=`, etc).
+    let after_eq = line.get(eq_pos + 1..)?.chars().next();
+    if matches!(after_eq, Some('=') | Some('~')) {
+        return None;
+    }
+    let lhs_raw = line[..eq_pos].trim().trim_start_matches('$');
+    let lhs = lhs_raw.split(':').next_back().unwrap_or(lhs_raw);
+    if lhs.is_empty() || !lhs.chars().all(|c| c.is_alphanumeric() || c == '_') {
+        return None;
+    }
+
+    let rhs = line[eq_pos + 1..].trim();
+    if !rhs.starts_with('$') {
+        return None;
+    }
+    // Skip the pipeline var `$_` — it already has its own sentinel.
+    let rhs_name_start = &rhs[1..];
+    let name_end = rhs_name_start
+        .find(|c: char| !c.is_alphanumeric() && c != '_')
+        .unwrap_or(rhs_name_start.len());
+    if name_end == 0 {
+        return None;
+    }
+    let rhs_root_raw = &rhs_name_start[..name_end];
+    let rhs_root = rhs_root_raw.rsplit(':').next().unwrap_or(rhs_root_raw);
+    // Require a `.` or `[` after the root so we know this is a member or
+    // index read (not just `$a = $b` which carries no type information here).
+    let after_root = rhs_name_start[name_end..].trim_start();
+    if !(after_root.starts_with('.') || after_root.starts_with('[')) {
+        return None;
+    }
+
+    Some((lhs.to_string(), rhs_root.to_string()))
 }
 
 /// Well-known WPF hashtable registry variable names used in PowerShell WPF

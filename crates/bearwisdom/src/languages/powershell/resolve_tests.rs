@@ -7,8 +7,8 @@
 // =============================================================================
 
 use super::extract::{
-    is_dotnet_type_name, try_parse_cmdlet_result_chain, try_parse_new_object, try_parse_type_new,
-    try_parse_typed_param, DOTNET_BINDING_SENTINEL,
+    is_dotnet_type_name, try_parse_cmdlet_result_chain, try_parse_new_object,
+    try_parse_propagation, try_parse_type_new, try_parse_typed_param, DOTNET_BINDING_SENTINEL,
 };
 
 // ---------------------------------------------------------------------------
@@ -459,4 +459,66 @@ fn test_part3_unknown_cmdlet_returns_none() {
     // `Write-Host` is not in the type table — no sentinel emitted.
     let tag = try_parse_cmdlet_result_chain("(Write-Host).Something");
     assert_eq!(tag, None);
+}
+
+// ===========================================================================
+// Part 4 — propagation through member/index access
+// ===========================================================================
+
+#[test]
+fn propagation_member_access() {
+    let p = try_parse_propagation("$Tweaks = $sync.selectedTweaks");
+    assert_eq!(p, Some(("Tweaks".to_string(), "sync".to_string())));
+}
+
+#[test]
+fn propagation_index_access() {
+    let p = try_parse_propagation("$dns = $sync[\"WPFchangedns\"].text");
+    assert_eq!(p, Some(("dns".to_string(), "sync".to_string())));
+}
+
+#[test]
+fn propagation_scope_prefix() {
+    let p = try_parse_propagation("$script:list = $store.entries");
+    assert_eq!(p, Some(("list".to_string(), "store".to_string())));
+}
+
+#[test]
+fn propagation_rejects_plain_copy() {
+    // `$a = $b` without member access carries no type info; skip.
+    assert_eq!(try_parse_propagation("$a = $b"), None);
+}
+
+#[test]
+fn propagation_rejects_non_var_rhs() {
+    assert_eq!(try_parse_propagation("$a = Get-Something"), None);
+    assert_eq!(try_parse_propagation("$a = 42.Foo"), None);
+}
+
+#[test]
+fn propagation_rejects_equality() {
+    assert_eq!(try_parse_propagation("$a == $b.Foo"), None);
+}
+
+#[test]
+fn propagation_from_registry_binds_lhs() {
+    // Full end-to-end: scan a source snippet where `$Tweaks = $sync.foo`, then
+    // verify `Tweaks` shows up as a .NET-bound var via the emitted sentinels.
+    use crate::languages::powershell::extract::extract;
+    let src = r#"
+function Invoke-X {
+    $Tweaks = $sync.selectedTweaks
+    $Tweaks.Count
+}
+"#;
+    let result = extract(src);
+    let bound: Vec<_> = result
+        .refs
+        .iter()
+        .filter(|r| r.target_name == DOTNET_BINDING_SENTINEL)
+        .filter_map(|r| r.module.clone())
+        .collect();
+    assert!(bound.contains(&"sync".to_string()), "sync registry binding missing; got {bound:?}");
+    assert!(bound.contains(&"Tweaks".to_string()),
+        "Tweaks should inherit binding from $sync.selectedTweaks; got {bound:?}");
 }

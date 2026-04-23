@@ -93,6 +93,8 @@ pub(super) fn is_bicep_builtin(name: &str) -> bool {
             | "items"
             | "objectKeys"
             | "values"
+            | "take"
+            | "pickZones"
             // ── Numeric functions ─────────────────────────────────────────────
             | "add"
             | "sub"

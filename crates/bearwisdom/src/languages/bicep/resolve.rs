@@ -93,9 +93,20 @@ impl LanguageResolver for BicepResolver {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
 
         // Azure resource type strings take priority.
         if is_azure_resource_type(target) {
+            return Some("azure".to_string());
+        }
+
+        // Child-resource shorthand: inside a parent `resource` block a nested
+        // `resource childAlias 'subnets' existing = { ... }` uses a bare
+        // single-segment type name that resolves against the parent's type
+        // path at deploy time (→ `Microsoft.Network/virtualNetworks/subnets`).
+        // The bicep extractor only emits TypeRef refs for resource-declaration
+        // type strings, so any bare-name TypeRef here is a child shorthand.
+        if edge_kind == EdgeKind::TypeRef && is_child_resource_shorthand(target) {
             return Some("azure".to_string());
         }
 
@@ -117,5 +128,24 @@ fn is_azure_resource_type(name: &str) -> bool {
         || lower.starts_with("azure.")
         || lower.starts_with("br:")
         || lower.starts_with("br/")
+}
+
+/// Returns true for the bare type-name shorthand used inside nested
+/// `resource` declarations (`'subnets'`, `'ruleCollectionGroups'`, etc.).
+/// Valid shorthand forms are a single camelCase segment, optionally with an
+/// `@api-version` suffix. Starts with a lowercase letter so Bicep-local
+/// symbol names (which are user-chosen and typically capitalized or
+/// otherwise mixed) don't collide.
+fn is_child_resource_shorthand(name: &str) -> bool {
+    if name.is_empty() || name.contains('/') {
+        return false;
+    }
+    let base = name.split('@').next().unwrap_or(name);
+    let mut chars = base.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_lowercase() => {}
+        _ => return false,
+    }
+    chars.all(|c| c.is_ascii_alphanumeric())
 }
 

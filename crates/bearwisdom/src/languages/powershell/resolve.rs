@@ -197,17 +197,20 @@ impl LanguageResolver for PowerShellResolver {
 
 /// Check whether `var_name` (stripped of `$`) is bound to a .NET type in the
 /// current file's import entries (placed there by `build_file_context`).
+/// Matches case-insensitively — PowerShell variable references are case-
+/// insensitive, so `$Tweaks` and `$tweaks` alias the same binding.
 fn is_dotnet_bound_var(var_name: &str, file_ctx: &FileContext) -> bool {
     file_ctx.imports.iter().any(|imp| {
         imp.module_path.as_deref() == Some(DOTNET_BINDING_SENTINEL)
-            && imp.imported_name == var_name
+            && imp.imported_name.eq_ignore_ascii_case(var_name)
     })
 }
 
 /// PowerShell cmdlet naming convention: `Verb-Noun` with both parts being
-/// alphanumeric identifiers starting with an uppercase letter. Anything
-/// else (free functions, user-defined cmdlets, dot-sourced scripts) takes
-/// the regular resolution path.
+/// alphanumeric identifiers. PowerShell is case-insensitive so `New-object`
+/// is the same cmdlet as `New-Object` — both match here. Anything else
+/// (free functions, user-defined cmdlets, dot-sourced scripts) takes the
+/// regular resolution path.
 fn is_cmdlet_name(name: &str) -> bool {
     let (verb, noun) = match name.split_once('-') {
         Some((v, n)) if !v.is_empty() && !n.is_empty() => (v, n),
@@ -216,7 +219,7 @@ fn is_cmdlet_name(name: &str) -> bool {
     let is_ident_part = |s: &str| {
         let mut it = s.chars();
         match it.next() {
-            Some(c) if c.is_ascii_uppercase() => {}
+            Some(c) if c.is_ascii_alphabetic() => {}
             _ => return false,
         }
         it.all(|c| c.is_ascii_alphanumeric())
