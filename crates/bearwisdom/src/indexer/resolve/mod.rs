@@ -22,7 +22,7 @@ use crate::db::Database;
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 use anyhow::{Context, Result};
-use engine::{build_scope_chain, ChainMiss, RefContext, ResolutionEngine, SymbolIndex};
+use engine::{build_scope_chain, ChainMiss, ImportEntry, RefContext, ResolutionEngine, SymbolIndex};
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
 
@@ -140,6 +140,17 @@ fn resolve_iteration_inner(
     let import_map = heuristic::build_import_map(parsed);
     let file_namespace_map = heuristic::build_file_namespace_map(parsed);
 
+    // Fast companion lookup: HashMap<path, &ParsedFile> replaces the
+    // per-iteration O(N) `parsed.iter().find` scan that resolve used
+    // before. Bonus: when a companion file ISN'T in `parsed` (incremental
+    // run — only the template changed, the component is in the DB), we
+    // fall back to pulling that companion's imports directly from the
+    // `imports` DB table. Without that fallback, an Angular template
+    // edited on its own lost every inherited `.component.ts` import and
+    // dropped from ~90% to ~52% resolution rate on touched files.
+    let parsed_by_path: std::collections::HashMap<&str, &ParsedFile> =
+        parsed.iter().map(|p| (p.path.as_str(), p)).collect();
+
     for pf in parsed {
         // Externals are indexed for lookup only — we don't chase their internal
         // refs, otherwise a handful of third-party packages explode the edge
@@ -167,11 +178,18 @@ fn resolve_iteration_inner(
             // no import statements but every symbol it names is imported by
             // the component class).
             if let Some(companion_path) = r.companion_file_for_imports(&pf.path) {
-                if let Some(comp_pf) = parsed.iter().find(|p| p.path == companion_path) {
+                if let Some(comp_pf) = parsed_by_path.get(companion_path.as_str()) {
                     if let Some(comp_resolver) = engine.resolver_for(&comp_pf.language) {
                         let comp_ctx = comp_resolver.build_file_context(comp_pf, project_ctx);
                         ctx.imports.extend(comp_ctx.imports);
                     }
+                } else {
+                    // Companion file isn't in this run's parse slice
+                    // (incremental re-index, companion unchanged).
+                    // Read its persisted import rows directly so the
+                    // template still inherits them.
+                    let db_imports = read_file_imports_from_db(conn, &companion_path);
+                    ctx.imports.extend(db_imports);
                 }
             }
             ctx
@@ -731,4 +749,37 @@ fn is_module_in_project(
         return true;
     }
     index.has_in_namespace(module_path)
+}
+
+/// Pull a file's persisted `imports` rows directly from the DB and
+/// rehydrate them as `ImportEntry` values. Used by the companion-import
+/// merge when the companion file isn't in the current parse slice
+/// (incremental re-index where only the template changed but the paired
+/// component was already indexed in a prior run).
+///
+/// Returns an empty Vec on any SQL error; the path through here is best-
+/// effort context enrichment, not a correctness-critical read.
+fn read_file_imports_from_db(
+    conn: &rusqlite::Connection,
+    file_path: &str,
+) -> Vec<ImportEntry> {
+    let sql = "SELECT i.imported_name, i.module_path, i.alias
+               FROM imports i
+               JOIN files f ON f.id = i.file_id
+               WHERE f.path = ?1";
+    let Ok(mut stmt) = conn.prepare_cached(sql) else {
+        return Vec::new();
+    };
+    let rows = stmt.query_map([file_path], |r| {
+        Ok(ImportEntry {
+            imported_name: r.get::<_, String>(0)?,
+            module_path: r.get::<_, Option<String>>(1)?,
+            alias: r.get::<_, Option<String>>(2)?,
+            is_wildcard: false, // Not persisted; safe default.
+        })
+    });
+    match rows {
+        Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
+        Err(_) => Vec::new(),
+    }
 }

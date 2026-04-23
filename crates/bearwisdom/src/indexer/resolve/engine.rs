@@ -482,9 +482,14 @@ pub struct SymbolIndex {
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
     /// Interior-mutable accumulator for chain walker bail-outs.
-    /// `record_chain_miss` pushes; `take_chain_misses` drains. The resolution
-    /// loop is sequential so plain `RefCell` is sufficient.
-    chain_misses: RefCell<Vec<ChainMiss>>,
+    /// `record_chain_miss` pushes; `take_chain_misses` drains.
+    ///
+    /// Uses `Mutex` rather than `RefCell` so the resolver can parallelize
+    /// per-file work in a later refactor without rewriting every
+    /// `SymbolLookup` call site. Single-threaded use pays the cost of
+    /// uncontended `Mutex::lock` calls — nanoseconds per call, negligible
+    /// against the SQL writes that dominate the resolution loop.
+    chain_misses: std::sync::Mutex<Vec<ChainMiss>>,
     /// Per-file forward-inference cache for local variables (R5). Installed
     /// at the start of each file's resolution pass, consulted by chain
     /// walkers in Phase 1, cleared at end of file. The resolution loop is
@@ -1097,7 +1102,7 @@ impl SymbolIndex {
             inherits_map,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
-            chain_misses: RefCell::new(Vec::new()),
+            chain_misses: std::sync::Mutex::new(Vec::new()),
             local_type_cache: RefCell::new(LocalTypeCache::default()),
         }
     }
@@ -1108,7 +1113,11 @@ impl SymbolIndex {
     /// drive R3 lazy-reload via `Ecosystem::resolve_symbol`. Returns the
     /// accumulated bail-outs in insertion order; the buffer is emptied.
     pub fn take_chain_misses(&self) -> Vec<ChainMiss> {
-        self.chain_misses.borrow_mut().drain(..).collect()
+        self.chain_misses
+            .lock()
+            .expect("chain_misses mutex poisoned")
+            .drain(..)
+            .collect()
     }
 
     /// Load all symbols from the database into the index, filling gaps left by
@@ -1688,7 +1697,10 @@ impl SymbolLookup for SymbolIndex {
             current_type: strip_generic_args(&miss.current_type),
             target_name: strip_generic_args(&miss.target_name),
         };
-        self.chain_misses.borrow_mut().push(miss);
+        self.chain_misses
+            .lock()
+            .expect("chain_misses mutex poisoned")
+            .push(miss);
     }
 
     fn local_type(&self, name: &str) -> Option<String> {
