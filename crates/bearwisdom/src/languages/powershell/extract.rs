@@ -22,6 +22,7 @@
 //   Inherits   — `class_statement` with `:` base type
 // =============================================================================
 
+use crate::ecosystem::powershell_cmdlet_types::{cmdlet_result_module_tag, cmdlet_return_type};
 use crate::types::{EdgeKind, ExtractionResult, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
@@ -55,6 +56,14 @@ pub fn extract(source: &str) -> ExtractionResult {
     // rather than unresolved.  The sentinel is:
     //   kind=Imports, target_name="dotnet-stdlib", module=Some(var_name)
     //
+    // Also covers three new patterns introduced in Pass 2:
+    //   Part 1: $sync["Key"].Member  → binds "sync" (and other registry vars)
+    //           to System.Windows.DependencyObject
+    //   Part 2: $_.Member inside ForEach-Object/Where-Object → binds "_" to
+    //           System.Windows.UIElement (WPF catch-all)
+    //   Part 3: (Get-Xxx).Member    → binds "__cmdlet_get_xxx" synthetic tag
+    //           to the cmdlet's .NET return type
+    //
     // This is done on the raw source text (not via tree-sitter) because it is
     // simpler and fast enough; the three recognised patterns are straightforward
     // to scan line by line.
@@ -65,21 +74,53 @@ pub fn extract(source: &str) -> ExtractionResult {
 
 /// Scan `source` for .NET object-creation assignments and emit one sentinel
 /// `Imports` ref per binding found.
+///
+/// Covers four patterns (Pass 1 + Pass 2):
+///
+///   **Pass 1 — explicit type assignment:**
+///     `$var = New-Object Windows.Controls.Border`
+///     `$var = [System.Collections.Hashtable]::new()`
+///     `[Windows.Controls.WrapPanel]$var = ...`
+///
+///   **Part 1 — hashtable-indexer registry:**
+///     `$sync["Key"].Member` / `$sync.Form.FindName(...)` — any line that
+///     references a well-known WPF registry variable (`$sync`, `$WPFApp`)
+///     through an index expression. Binds the registry variable name to
+///     `System.Windows.DependencyObject` as a conservative .NET catch-all
+///     for WPF elements (covers Dispatcher, Visibility, Text, FindName, etc.).
+///
+///   **Part 2 — pipeline variable `$_`:**
+///     `Where-Object { $_.Member }` / `ForEach-Object { $_.Member }` — any
+///     line that references `$_.` inside a pipeline block context. Binds `_`
+///     to `System.Windows.UIElement` as a WPF catch-all (covers Visibility,
+///     Children, Text, etc.).
+///
+///   **Part 3 — cmdlet-result chain:**
+///     `(Get-Date).ToString(...)` / `(Get-ChildItem).Extension` — any line
+///     matching `(Get-Xxx).` where `Get-Xxx` is in the cmdlet type table.
+///     Binds the synthetic tag `__cmdlet_get_xxx` to the .NET return type.
+///     The extractor's `invokation_module` emits this same tag as the `module`
+///     field so the resolver can match them.
 fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
+    // Track which registry var names and pipeline-var bindings we've already
+    // emitted so we only push one sentinel per binding per file (dedup).
+    let mut emitted_vars: std::collections::HashSet<String> = std::collections::HashSet::new();
+
     for (line_no, raw_line) in source.lines().enumerate() {
         let line = raw_line.trim();
         if line.is_empty() || line.starts_with('#') {
             continue;
         }
 
+        // ---- Pass 1: explicit .NET type assignment ----
         let binding = try_parse_new_object(line)
             .or_else(|| try_parse_type_new(line))
             .or_else(|| try_parse_typed_param(line));
 
         if let Some((var_name, dotnet_type)) = binding {
-            if is_dotnet_type_name(&dotnet_type) {
+            if is_dotnet_type_name(&dotnet_type) && emitted_vars.insert(var_name.clone()) {
                 refs.push(ExtractedRef {
-                    source_symbol_index: 0, // sentinel — not tied to a specific symbol
+                    source_symbol_index: 0,
                     target_name: DOTNET_BINDING_SENTINEL.to_string(),
                     kind: EdgeKind::Imports,
                     line: line_no as u32,
@@ -89,7 +130,89 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                 });
             }
         }
+
+        // ---- Part 1: hashtable-indexer registry variables ----
+        // Detect patterns like `$sync["Key"].` or `$WPFApp["Key"].` and bind
+        // the registry variable name to DependencyObject.
+        for registry_var in HASHTABLE_REGISTRY_VARS {
+            let pattern = format!("${registry_var}[");
+            if line.contains(&pattern) || line.contains(&format!("${registry_var}.")) {
+                let key = registry_var.to_string();
+                if emitted_vars.insert(key.clone()) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: 0,
+                        target_name: DOTNET_BINDING_SENTINEL.to_string(),
+                        kind: EdgeKind::Imports,
+                        line: line_no as u32,
+                        module: Some(key),
+                        chain: None,
+                        byte_offset: 0,
+                    });
+                }
+            }
+        }
+
+        // ---- Part 2: pipeline variable `$_` ----
+        // If this line references `$_.` we emit a sentinel for `_` bound to
+        // System.Windows.UIElement. One sentinel per file is enough.
+        if line.contains("$_.") && emitted_vars.insert("_".to_string()) {
+            refs.push(ExtractedRef {
+                source_symbol_index: 0,
+                target_name: DOTNET_BINDING_SENTINEL.to_string(),
+                kind: EdgeKind::Imports,
+                line: line_no as u32,
+                module: Some("_".to_string()),
+                chain: None,
+                byte_offset: 0,
+            });
+        }
+
+        // ---- Part 3: cmdlet-result chains `(Get-Xxx).Member` ----
+        // Scan for `(Get-Xxx).` patterns and emit a sentinel for the synthetic
+        // module tag if `Get-Xxx` is in the cmdlet type table.
+        if let Some(tag) = try_parse_cmdlet_result_chain(line) {
+            if emitted_vars.insert(tag.clone()) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: 0,
+                    target_name: DOTNET_BINDING_SENTINEL.to_string(),
+                    kind: EdgeKind::Imports,
+                    line: line_no as u32,
+                    module: Some(tag),
+                    chain: None,
+                    byte_offset: 0,
+                });
+            }
+        }
     }
+}
+
+/// Well-known WPF hashtable registry variable names used in PowerShell WPF
+/// scripts. Accessing `$<name>["Key"]` returns a WPF element; members on
+/// those elements are .NET framework members.
+const HASHTABLE_REGISTRY_VARS: &[&str] = &["sync", "WPFApp", "script:sync"];
+
+/// Try to parse a `(Get-Xxx).` pattern on the given line and return the
+/// synthetic module tag for that cmdlet, if the cmdlet is in the type table.
+///
+/// Returns `None` if no known cmdlet result chain is detected on this line.
+pub(crate) fn try_parse_cmdlet_result_chain(line: &str) -> Option<String> {
+    // Look for `(Get-` sequence on the line (case-insensitive).
+    let lower = line.to_ascii_lowercase();
+    let mut search_from = 0;
+    while let Some(paren_pos) = lower[search_from..].find("(get-") {
+        let abs_pos = search_from + paren_pos;
+        // Extract the cmdlet name: starts at abs_pos+1, ends at ')' or whitespace.
+        let after_paren = &line[abs_pos + 1..];
+        let cmdlet_end = after_paren
+            .find(|c: char| c == ')' || c == ' ' || c == '\t' || c == '(')
+            .unwrap_or(after_paren.len());
+        let cmdlet_name = &after_paren[..cmdlet_end];
+        if cmdlet_return_type(cmdlet_name).is_some() {
+            return Some(cmdlet_result_module_tag(cmdlet_name));
+        }
+        search_from = abs_pos + 5; // advance past "(get-"
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
@@ -921,7 +1044,12 @@ fn extract_member_access(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
-    // member_access: variable  .  member_name(simple_name)
+    // member_access: _primary_expression  .  member_name
+    // The _primary_expression may be:
+    //   - a `variable`      — direct: $obj.Prop
+    //   - an `element_access`  — Part 1: $sync["Key"].Prop
+    //   - a `member_access`    — chain: $sync.Form.Prop
+    //   - other               — no module extracted
     let member = find_child_text(node, "member_name", src)
         .or_else(|| find_child_text(node, "simple_name", src));
 
@@ -929,10 +1057,33 @@ fn extract_member_access(
         if name.is_empty() {
             return;
         }
-        // Qualifier: strip `$` from the variable child
+
+        // Try direct `variable` child first (original pass 1 path).
+        // If not found, walk into element_access / member_access chains (Part 1)
+        // or extract from a type_literal for `[Type]::Member` static access.
         let module = find_child_text(node, "variable", src)
             .map(|v| v.trim_start_matches('$').to_string())
-            .filter(|v| !v.is_empty());
+            .filter(|v| !v.is_empty())
+            .or_else(|| {
+                // Find first named child that is not member_name / simple_name
+                let obj_idx = (0..node.child_count()).find(|&i| {
+                    node.child(i).map_or(false, |c| {
+                        c.is_named() && c.kind() != "member_name" && c.kind() != "simple_name"
+                    })
+                });
+                obj_idx
+                    .and_then(|i| node.child(i))
+                    .and_then(|child| match child.kind() {
+                        "element_access" | "member_access" => find_root_variable(&child, src),
+                        // `[Windows.Visibility]::Visible` — type literal static member
+                        "type_literal" => {
+                            let mut parts: Vec<String> = Vec::new();
+                            collect_type_identifiers(child, src, &mut parts);
+                            if parts.is_empty() { None } else { Some(parts.join(".")) }
+                        }
+                        _ => None,
+                    })
+            });
 
         refs.push(ExtractedRef {
             source_symbol_index,
@@ -966,10 +1117,16 @@ fn find_child_text(node: &Node, kind: &str, src: &str) -> Option<String> {
 
 /// Extract the qualifier (module) from an `invokation_expression` node.
 ///
-/// Two patterns:
+/// Patterns handled:
 /// - `[Type]::Method()` — first named child is `type_literal`; collect dotted
 ///   type name from nested `type_identifier` leaves (e.g. `System.IO.File`).
 /// - `$obj.Method()`    — first named child is `variable`; strip leading `$`.
+/// - `$sync["Key"].Method()` — first named child is `member_access` or
+///   `element_access`; walk into the subtree to find the root `variable`.
+/// - `(Get-Date).Method()` — first named child is `parenthesized_expression`
+///   containing a `command` node; look up the cmdlet in the type table and
+///   return the synthetic module tag (matches the sentinel emitted by
+///   `emit_dotnet_binding_sentinels`).
 fn invokation_module(node: &Node, src: &str) -> Option<String> {
     // Find the first named child by index to avoid borrowing cursor across the match.
     let first_named_idx = (0..node.child_count()).find(|&i| {
@@ -997,8 +1154,80 @@ fn invokation_module(node: &Node, src: &str) -> Option<String> {
                 Some(stripped.to_string())
             }
         }
+        // Part 1: `$sync["Key"].Method()` — root variable through element_access chain
+        // Part 1: `$sync.Form.FindName(...)` — root variable through member_access chain
+        "element_access" | "member_access" => {
+            find_root_variable(&first, src)
+        }
+        // Part 3: `(Get-Date).Method()` — cmdlet result synthetic tag
+        "parenthesized_expression" => {
+            extract_cmdlet_tag_from_paren(&first, src)
+        }
         _ => None,
     }
+}
+
+/// Walk down a nested `element_access` / `member_access` / `variable` chain
+/// to find the root `variable` node, and return its name (without `$`).
+///
+/// Handles chains like:
+///   `$sync["Key"]`          → element_access { variable($sync), "[", string, "]" }
+///   `$sync.Form`            → member_access { variable($sync), ".", member_name }
+///   `$sync["Key"].Dispatcher` → member_access { element_access { variable($sync) }, ... }
+fn find_root_variable(node: &Node, src: &str) -> Option<String> {
+    if node.kind() == "variable" {
+        let raw = node_text(node, src);
+        let stripped = raw.trim_start_matches('$');
+        return if stripped.is_empty() { None } else { Some(stripped.to_string()) };
+    }
+    // Recurse into the first named child (the object part of the access).
+    let first_idx = (0..node.child_count()).find(|&i| {
+        node.child(i).map_or(false, |c| c.is_named())
+    })?;
+    let first = node.child(first_idx)?;
+    match first.kind() {
+        "variable" => {
+            let raw = node_text(&first, src);
+            let stripped = raw.trim_start_matches('$');
+            if stripped.is_empty() { None } else { Some(stripped.to_string()) }
+        }
+        "element_access" | "member_access" => find_root_variable(&first, src),
+        _ => None,
+    }
+}
+
+/// Given a `parenthesized_expression` node, look for a `command` descendant,
+/// extract its `command_name`, and return the synthetic module tag if the
+/// cmdlet is in the type table.
+///
+/// The grammar parses `(Get-Date)` as:
+///   parenthesized_expression { pipeline { command { command_name: "Get-Date" } } }
+/// So we need a recursive descent to reach the command node.
+fn extract_cmdlet_tag_from_paren(node: &Node, src: &str) -> Option<String> {
+    find_command_tag_recursive(node, src, 0)
+}
+
+/// Recursively search for a `command` node under `node` (up to `max_depth`
+/// levels deep) and return the cmdlet module tag if found.
+fn find_command_tag_recursive(node: &Node, src: &str, depth: usize) -> Option<String> {
+    if depth > 4 {
+        return None; // guard against pathological nesting
+    }
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "command" {
+            if let Some(cmd_name) = find_child_text(&child, "command_name", src) {
+                if crate::ecosystem::powershell_cmdlet_types::cmdlet_return_type(&cmd_name).is_some() {
+                    return Some(cmdlet_result_module_tag(&cmd_name));
+                }
+            }
+        }
+        // Recurse into pipeline, statement_list, and other wrappers.
+        if let Some(tag) = find_command_tag_recursive(&child, src, depth + 1) {
+            return Some(tag);
+        }
+    }
+    None
 }
 
 /// Recursively collect all `type_identifier` leaf texts under `node`.

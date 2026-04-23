@@ -8,7 +8,7 @@
 //      within the file.
 //   3. By-name lookup: for imported modules, symbols may be defined elsewhere.
 //
-// .NET interop — local-var type binding (Parts 1/2/3):
+// .NET interop — local-var type binding (Pass 1 + Pass 2):
 //
 //   When PowerShell scripts create .NET objects and then call methods or
 //   access properties on them, the extractor emits member-access refs like:
@@ -33,6 +33,28 @@
 //   In `resolve` we skip the normal index lookup for such refs — the .NET
 //   framework members won't be in the project index.
 //
+//   Pass 2 adds three more sentinel kinds (same wire format, different source):
+//
+//   Part 1 — hashtable-indexer registry:
+//     `$sync["Key"].Dispatcher.Invoke(…)`
+//     extractor detects `$sync[` on any line → sentinel module=Some("sync")
+//     extractor's invokation_module / extract_member_access walks through
+//     element_access nodes to find the root variable → ref.module = "sync"
+//     is_dotnet_bound_var("sync", …) → true → dotnet-stdlib.
+//
+//   Part 2 — pipeline variable `$_`:
+//     `ForEach-Object { $_.Visibility = … }`
+//     extractor detects `$_.` on any line → sentinel module=Some("_")
+//     `$_` is a plain variable so ref.module = "_" via existing path.
+//     is_dotnet_bound_var("_", …) → true → dotnet-stdlib.
+//
+//   Part 3 — cmdlet-result chain:
+//     `(Get-Date).ToString("…")`
+//     extractor detects `(Get-Date).` → sentinel module=Some("__cmdlet_get_date")
+//     invokation_module recognizes parenthesized_expression → command →
+//     returns "__cmdlet_get_date" as module.
+//     is_dotnet_bound_var("__cmdlet_get_date", …) → true → dotnet-stdlib.
+//
 // PowerShell import model:
 //   `Import-Module ModuleName`       → target_name = "ModuleName"
 //   `using module ./MyModule.psm1`   → target_name = "./MyModule.psm1"
@@ -42,7 +64,7 @@
 // namespace identifier.
 // =============================================================================
 
-use super::extract::DOTNET_BINDING_SENTINEL;
+use super::extract::{is_dotnet_type_name, DOTNET_BINDING_SENTINEL};
 use super::predicates;
 use crate::indexer::resolve::engine::{
     self, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -121,8 +143,11 @@ impl LanguageResolver for PowerShellResolver {
         // project-index lookup entirely — the member won't be there.
         // This prevents a false match against any same-named project symbol
         // and lets the ref fall through to `infer_external_namespace` cleanly.
+        //
+        // Also skip when the module is itself a .NET type name (static members
+        // like `[Windows.Visibility]::Visible` → module="Windows.Visibility").
         if let Some(module) = &ref_ctx.extracted_ref.module {
-            if is_dotnet_bound_var(module, file_ctx) {
+            if is_dotnet_bound_var(module, file_ctx) || is_dotnet_type_name(module) {
                 return None;
             }
         }
@@ -140,8 +165,17 @@ impl LanguageResolver for PowerShellResolver {
         // Covers both property reads (TypeRef) and method calls (Calls):
         //   $border.Style          → module="border", kind=TypeRef
         //   $border.Add_Click(…)   → module="border", kind=Calls
+        //
+        // Also covers static member access on .NET type literals:
+        //   [Windows.Visibility]::Visible  → module="Windows.Visibility", kind=TypeRef
+        //   [System.IO.File]::Exists(…)    → module="System.IO.File", kind=Calls
         if let Some(module) = &ref_ctx.extracted_ref.module {
             if is_dotnet_bound_var(module, file_ctx) {
+                return Some(DOTNET_BINDING_SENTINEL.to_string());
+            }
+            // Static member on a bare .NET type literal (no sentinel needed —
+            // the type name itself is the signal).
+            if is_dotnet_type_name(module) {
                 return Some(DOTNET_BINDING_SENTINEL.to_string());
             }
         }

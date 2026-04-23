@@ -7,8 +7,8 @@
 // =============================================================================
 
 use super::extract::{
-    is_dotnet_type_name, try_parse_new_object, try_parse_type_new, try_parse_typed_param,
-    DOTNET_BINDING_SENTINEL,
+    is_dotnet_type_name, try_parse_cmdlet_result_chain, try_parse_new_object, try_parse_type_new,
+    try_parse_typed_param, DOTNET_BINDING_SENTINEL,
 };
 
 // ---------------------------------------------------------------------------
@@ -312,4 +312,151 @@ fn test_infer_external_ns_cmdlet_no_module() {
     };
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
     assert_eq!(ns, Some("powershell-stdlib".to_string()));
+}
+
+// ===========================================================================
+// Pass 2 — Part 1: hashtable-indexer registry ($sync["Key"].Member)
+// ===========================================================================
+
+/// Binding for registry var `sync` → is_dotnet_bound_var("sync") should be true.
+#[test]
+fn test_part1_sync_registry_var_classifies_as_dotnet() {
+    let resolver = PowerShellResolver;
+    let file_ctx = make_file_ctx_with_binding("sync");
+    // Ref: `$sync["WPFKey"].Dispatcher` → module="sync", target="Dispatcher"
+    let r = make_member_ref("Dispatcher", "sync", EdgeKind::TypeRef);
+    let sym = make_source_sym();
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    assert_eq!(ns, Some("dotnet-stdlib".to_string()));
+}
+
+#[test]
+fn test_part1_sync_invoke_classifies_as_dotnet() {
+    let resolver = PowerShellResolver;
+    let file_ctx = make_file_ctx_with_binding("sync");
+    let r = make_member_ref("Invoke", "sync", EdgeKind::Calls);
+    let sym = make_source_sym();
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    assert_eq!(ns, Some("dotnet-stdlib".to_string()));
+}
+
+#[test]
+fn test_part1_sync_text_visibility_findname() {
+    let resolver = PowerShellResolver;
+    let file_ctx = make_file_ctx_with_binding("sync");
+    let sym = make_source_sym();
+    for name in &["Text", "Visibility", "FindName", "IsChecked", "Count"] {
+        let r = make_member_ref(name, "sync", EdgeKind::TypeRef);
+        let ref_ctx = RefContext {
+            extracted_ref: &r,
+            source_symbol: &sym,
+            scope_chain: vec![],
+            file_package_id: None,
+        };
+        let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+        assert_eq!(
+            ns,
+            Some("dotnet-stdlib".to_string()),
+            "{name} on sync should be dotnet-stdlib",
+        );
+    }
+}
+
+// ===========================================================================
+// Pass 2 — Part 2: pipeline variable `$_`
+// ===========================================================================
+
+#[test]
+fn test_part2_pipeline_var_visibility_classifies_as_dotnet() {
+    let resolver = PowerShellResolver;
+    let file_ctx = make_file_ctx_with_binding("_");
+    let r = make_member_ref("Visibility", "_", EdgeKind::TypeRef);
+    let sym = make_source_sym();
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    assert_eq!(ns, Some("dotnet-stdlib".to_string()));
+}
+
+#[test]
+fn test_part2_pipeline_var_text_classifies_as_dotnet() {
+    let resolver = PowerShellResolver;
+    let file_ctx = make_file_ctx_with_binding("_");
+    let r = make_member_ref("Text", "_", EdgeKind::TypeRef);
+    let sym = make_source_sym();
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    assert_eq!(ns, Some("dotnet-stdlib".to_string()));
+}
+
+// ===========================================================================
+// Pass 2 — Part 3: cmdlet-result chain ((Get-Date).ToString())
+// ===========================================================================
+
+#[test]
+fn test_part3_try_parse_cmdlet_result_chain_get_date() {
+    let tag = try_parse_cmdlet_result_chain("    $ts = (Get-Date).ToString(\"HH:mm:ss\")");
+    assert_eq!(tag, Some("__cmdlet_get_date".to_string()));
+}
+
+#[test]
+fn test_part3_try_parse_cmdlet_result_chain_get_childitem() {
+    let tag = try_parse_cmdlet_result_chain("Get-ChildItem . | ForEach-Object { $_.FullName }");
+    // No `(Get-ChildItem).` pattern on this line — cmdlet not wrapped in parens.
+    // Should return None.
+    assert_eq!(tag, None);
+}
+
+#[test]
+fn test_part3_try_parse_cmdlet_result_chain_parenthesized() {
+    let tag = try_parse_cmdlet_result_chain(
+        "    if ((Get-ChildItem \".\").IsReadOnly) {",
+    );
+    assert_eq!(tag, Some("__cmdlet_get_childitem".to_string()));
+}
+
+#[test]
+fn test_part3_infer_external_ns_cmdlet_result() {
+    use crate::ecosystem::powershell_cmdlet_types::cmdlet_result_module_tag;
+    let resolver = PowerShellResolver;
+    let tag = cmdlet_result_module_tag("Get-Date");
+    let file_ctx = make_file_ctx_with_binding(&tag);
+    let r = make_member_ref("ToString", &tag, EdgeKind::Calls);
+    let sym = make_source_sym();
+    let ref_ctx = RefContext {
+        extracted_ref: &r,
+        source_symbol: &sym,
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
+    assert_eq!(ns, Some("dotnet-stdlib".to_string()));
+}
+
+#[test]
+fn test_part3_unknown_cmdlet_returns_none() {
+    // `Write-Host` is not in the type table — no sentinel emitted.
+    let tag = try_parse_cmdlet_result_chain("(Write-Host).Something");
+    assert_eq!(tag, None);
 }

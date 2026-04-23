@@ -69,6 +69,7 @@ pub mod opam;
 pub mod phoenix_stubs;
 pub mod php_stubs;
 pub mod posix_headers;
+pub mod powershell_cmdlet_types;
 pub mod powershell_stdlib;
 pub mod psgallery;
 pub mod pub_pkg;
