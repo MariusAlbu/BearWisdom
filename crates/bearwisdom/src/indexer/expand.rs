@@ -209,44 +209,55 @@ pub fn expand_chain_reachability_with_index(
 }
 
 /// Query the symbol index for every file plausibly defining the miss's
-/// target. Tries `Type.Method` first (keyed methods), then the bare
-/// `target_name` (top-level function), then falls back to the last
-/// segment of a dotted `current_type`. Returns all matching files.
+/// target. Tries the most type-scoped forms first and only falls back to
+/// bare-name lookup when the scoped probes all miss — otherwise a chain
+/// miss on a common name like `Request` / `Client` / `Builder` would
+/// pull every file in the index that happens to define SOMETHING by that
+/// name, across dozens of unrelated packages.
 fn locate_via_symbol_index(
     index: &SymbolLocationIndex,
     miss: &ChainMiss,
 ) -> Vec<std::path::PathBuf> {
     let mut out: Vec<std::path::PathBuf> = Vec::new();
-    let mut push_all = |name: &str, out: &mut Vec<std::path::PathBuf>| {
+    let push_all = |name: &str, out: &mut Vec<std::path::PathBuf>| {
         for (_, path) in index.find_by_name(name) {
             out.push(path.to_path_buf());
         }
     };
 
-    // `Receiver.Method` — canonical method key for Go and most OO languages.
+    // Phase A — type-scoped probes. Every probe has the type prefix
+    // baked in, so hits here are always for THIS type's members and
+    // never for an unrelated type across the index.
+    //   1. `{current_type}.{target_name}` — full method key.
+    //   2. `{last_seg}.{target_name}`     — unwrap dotted type.
+    //   3. `current_type`                 — receiver-type file (TS/JS:
+    //      the type's body holds properties the method-key probe misses).
     let full = format!("{}.{}", miss.current_type, miss.target_name);
     push_all(&full, &mut out);
 
-    // Package-level function / value: bare target name.
-    push_all(&miss.target_name, &mut out);
-
-    // Dotted current_type (e.g. "sqlite.DB") — try unwrapping to the last
-    // segment and retry method-key form + type-only form.
     if let Some(last_seg) = miss.current_type.rsplit('.').next() {
         if last_seg != miss.current_type {
             let short = format!("{}.{}", last_seg, miss.target_name);
             push_all(&short, &mut out);
-            push_all(last_seg, &mut out);
         }
     }
 
-    // Type-only probe. Scanners for languages like TS / JS index type
-    // names at the top level but not their property names — so
-    // `result.data` with `result: UseQueryResult` produces a miss whose
-    // `target_name=data` doesn't hit any probe above. Pulling the file
-    // that defines `UseQueryResult` gives the resolver the type's body
-    // (properties, methods) on the next iteration.
+    // Type-only probe — still carries the type name so same-type scoping.
     push_all(&miss.current_type, &mut out);
+
+    // Phase B — bare-name fallback. Only fires when no type-scoped probe
+    // found a candidate. For unknown-receiver chains (anonymous object,
+    // externally-defined type we haven't indexed yet) this is the only
+    // way to surface a plausible target. The blast radius is contained
+    // to misses where we have literally nothing else to go on.
+    if out.is_empty() {
+        push_all(&miss.target_name, &mut out);
+        if let Some(last_seg) = miss.current_type.rsplit('.').next() {
+            if last_seg != miss.current_type {
+                push_all(last_seg, &mut out);
+            }
+        }
+    }
 
     out.sort();
     out.dedup();

@@ -364,15 +364,14 @@ pub fn resolve_via_chain(
             });
         }
         _ => {
-            let yield_type = compute_yield_type(
-                matches[0], &last.type_args, config, lookup, env.as_mut(),
-            );
-            return Some(Resolution {
-                target_symbol_id: matches[0].id,
-                confidence: 0.95,
-                strategy: chain_strategy(strategy),
-                resolved_yield_type: yield_type,
-            });
+            // Ambiguous: multiple candidates share this (type_prefix, name,
+            // compatible_kind) triple. The previous behavior was to pick
+            // `matches[0]` at 0.95 confidence, but `matches[0]` is hash-
+            // seed-dependent — whichever symbol happened to land first in
+            // `by_name` wins. That's both non-deterministic AND wrong
+            // often enough to corrupt dead-code detection. Fall through to
+            // the heuristic tier, which applies a `0.50 / sqrt(n)` decay
+            // and is intentionally honest about ambiguity.
         }
     }
 

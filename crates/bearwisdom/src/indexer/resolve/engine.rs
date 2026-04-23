@@ -56,6 +56,21 @@ pub struct ChainMiss {
 /// `static_type_kinds`/`enclosing_type_kinds`, kept here so the pre-filter
 /// stays a superset even when extractors start emitting those strings
 /// directly (via `kind_str` overrides in future language plugins).
+/// Take everything up to (but not including) the first `<` and trim a
+/// trailing `.`. `Promise<User>` → `Promise`, `react.FC<Props>` →
+/// `react.FC`, `foo.` → `foo`. Input without `<` is returned unchanged.
+///
+/// Used by `SymbolLookup::record_chain_miss` to strip generic arguments
+/// before the expander queries the symbol index — index entries never
+/// carry `<…>`, so a `Promise<User>` miss would never hit without this.
+fn strip_generic_args(s: &str) -> String {
+    let base = match s.find('<') {
+        Some(i) => &s[..i],
+        None => s,
+    };
+    base.trim_end_matches('.').to_string()
+}
+
 fn is_type_like_kind(kind: &str) -> bool {
     matches!(
         kind,
@@ -1663,6 +1678,16 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn record_chain_miss(&self, miss: ChainMiss) {
+        // Strip generic type arguments from both fields before stashing.
+        // The chain walker produces strings like "Promise<User>" or
+        // "react.FC<Props>", but `expand.rs::locate_via_symbol_index`
+        // queries the symbol index by bare name — index entries never
+        // carry `<…>`. Without this trim, every chain miss on a generic
+        // type silently fails to resolve at expansion time.
+        let miss = ChainMiss {
+            current_type: strip_generic_args(&miss.current_type),
+            target_name: strip_generic_args(&miss.target_name),
+        };
         self.chain_misses.borrow_mut().push(miss);
     }
 

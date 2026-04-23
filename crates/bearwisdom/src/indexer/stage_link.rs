@@ -388,20 +388,35 @@ fn seed_demand_from_user_refs_inner(
         }
         for r in &pf.refs {
             if r.target_name.is_empty() { continue }
-            // `module` unambiguously routes a ref to one external file via
-            // the symbol index. Without module, enqueue_named_target falls
-            // through to `find_by_name` which matches every file in the
-            // index that happens to define something with that name —
-            // `Request`/`Response`/`Buffer` live in dozens of unrelated
-            // packages. The chain walker's expand_chain_reachability_with
-            // _index picks up unresolved module-less refs during resolve
-            // iterations with proper type context.
-            if r.module.is_none() { continue }
+            // A ref with explicit `module` context routes unambiguously
+            // via `locate(module, name)`. For module-less refs we can
+            // still recover **ambient globals** — `document`, `Buffer`,
+            // `fetch`, `process`, `HTMLElement` etc. that `scan_declare
+            // _global_blocks` deposited under `NPM_GLOBALS_MODULE` — by
+            // probing that synthetic module first. Refs that miss
+            // globals too (plain method calls like `.map()`, `.push()`,
+            // unknown identifiers) stay unseeded; the chain walker's
+            // expand pass picks them up later with type context, which
+            // is tighter than blasting `find_by_name` into dozens of
+            // unrelated hits.
+            let effective_module: Option<&str> = if r.module.is_some() {
+                r.module.as_deref()
+            } else if symbol_index
+                .locate(
+                    crate::ecosystem::npm::NPM_GLOBALS_MODULE,
+                    &r.target_name,
+                )
+                .is_some()
+            {
+                Some(crate::ecosystem::npm::NPM_GLOBALS_MODULE)
+            } else {
+                continue;
+            };
             wanted_names.insert(r.target_name.clone());
             enqueue_named_target(
                 symbol_index,
                 &r.target_name,
-                r.module.as_deref(),
+                effective_module,
                 None, // user files never have relative-import context here
                 &mut seen_paths,
                 &mut queue,
