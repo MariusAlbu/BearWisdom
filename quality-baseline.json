@@ -1,5 +1,5 @@
 {
-  "captured_at": "2026-04-11T00:00:00Z",
+  "captured_at": "2026-04-23T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -9,8 +9,8 @@
         "min_routes": 688
       },
       "code_chunks": 127566,
-      "edges": 10811,
-      "files": 1268,
+      "edges": 11151,
+      "files": 1449,
       "flow_edge_types": {
         "di_binding": 60
       },
@@ -32,8 +32,8 @@
       "path": "F:/Work/Projects/TestProjects/SimplCommerce",
       "project": "SimplCommerce",
       "routes": 688,
-      "symbols": 15653,
-      "unresolved_refs": 4298
+      "symbols": 16522,
+      "unresolved_refs": 649
     },
     {
       "assertions": {
@@ -100,7 +100,7 @@
     {
       "assertions": {},
       "code_chunks": 1667,
-      "edges": 411,
+      "edges": 2553,
       "files": 213,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -115,8 +115,8 @@
       "path": "F:/Work/Projects/TestProjects/angular-coreui",
       "project": "angular-coreui",
       "routes": 0,
-      "symbols": 746,
-      "unresolved_refs": 68
+      "symbols": 1720,
+      "unresolved_refs": 2330
     },
     {
       "assertions": {
@@ -124,7 +124,7 @@
         "min_flow_edges": 24
       },
       "code_chunks": 4130,
-      "edges": 1568,
+      "edges": 3344,
       "files": 441,
       "flow_edge_types": {
         "di_binding": 24
@@ -143,8 +143,8 @@
       "path": "F:/Work/Projects/TestProjects/angular-ngx-admin",
       "project": "angular-ngx-admin",
       "routes": 0,
-      "symbols": 2302,
-      "unresolved_refs": 254
+      "symbols": 2977,
+      "unresolved_refs": 1524
     },
     {
       "assertions": {
@@ -153,7 +153,7 @@
         "min_routes": 12
       },
       "code_chunks": 1789,
-      "edges": 1199,
+      "edges": 1519,
       "files": 196,
       "flow_edge_types": {
         "di_binding": 11
@@ -171,8 +171,8 @@
       "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
       "project": "dotnet-CleanArchitecture",
       "routes": 12,
-      "symbols": 1437,
-      "unresolved_refs": 262
+      "symbols": 1631,
+      "unresolved_refs": 117
     },
     {
       "assertions": {
@@ -181,8 +181,8 @@
         "min_routes": 40
       },
       "code_chunks": 2421,
-      "edges": 636,
-      "files": 116,
+      "edges": 707,
+      "files": 138,
       "flow_edge_types": {
         "di_binding": 8
       },
@@ -200,8 +200,8 @@
       "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
       "project": "dotnet-EquinoxProject",
       "routes": 40,
-      "symbols": 946,
-      "unresolved_refs": 4
+      "symbols": 1052,
+      "unresolved_refs": 9
     },
     {
       "assertions": {
@@ -236,20 +236,20 @@
     },
     {
       "assertions": {
-        "min_di_binding_edges": 29,
+        "min_di_binding_edges": 27,
         "min_event_handler_edges": 48,
-        "min_flow_edges": 77,
+        "min_flow_edges": 75,
         "min_http_call_edges": 0,
         "min_routes": 87
       },
       "code_chunks": 11041,
-      "edges": 4451,
-      "files": 676,
+      "edges": 5044,
+      "files": 734,
       "flow_edge_types": {
-        "di_binding": 29,
+        "di_binding": 27,
         "event_handler": 48
       },
-      "flow_edges": 77,
+      "flow_edges": 75,
       "languages": {
         "csharp": 527,
         "css": 30,
@@ -264,8 +264,8 @@
       "path": "F:/Work/Projects/TestProjects/eShop",
       "project": "eShop",
       "routes": 87,
-      "symbols": 6237,
-      "unresolved_refs": 10
+      "symbols": 6702,
+      "unresolved_refs": 2
     },
     {
       "assertions": {
@@ -274,8 +274,8 @@
         "min_routes": 18
       },
       "code_chunks": 2089,
-      "edges": 3276,
-      "files": 181,
+      "edges": 2893,
+      "files": 183,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -294,8 +294,8 @@
       "path": "F:/Work/Projects/TestProjects/full-stack-fastapi-template",
       "project": "full-stack-fastapi-template",
       "routes": 18,
-      "symbols": 2121,
-      "unresolved_refs": 161
+      "symbols": 2390,
+      "unresolved_refs": 554
     },
     {
       "assertions": {
@@ -391,8 +391,8 @@
         "min_routes": 97
       },
       "code_chunks": 904454,
-      "edges": 34337,
-      "files": 704,
+      "edges": 45325,
+      "files": 702,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -411,8 +411,8 @@
       "path": "F:/Work/Projects/TestProjects/go-pocketbase",
       "project": "go-pocketbase",
       "routes": 97,
-      "symbols": 29949,
-      "unresolved_refs": 6290
+      "symbols": 32122,
+      "unresolved_refs": 4200
     },
     {
       "assertions": {
@@ -449,7 +449,7 @@
         "min_routes": 1
       },
       "code_chunks": 2562,
-      "edges": 1769,
+      "edges": 2594,
       "files": 162,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -468,15 +468,15 @@
       "path": "F:/Work/Projects/TestProjects/java-petclinic-reactjs",
       "project": "java-petclinic-reactjs",
       "routes": 1,
-      "symbols": 1567,
-      "unresolved_refs": 218
+      "symbols": 1604,
+      "unresolved_refs": 164
     },
     {
       "assertions": {
         "min_routes": 1
       },
       "code_chunks": 1934,
-      "edges": 1334,
+      "edges": 2261,
       "files": 124,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -492,15 +492,15 @@
       "path": "F:/Work/Projects/TestProjects/java-petclinic-rest",
       "project": "java-petclinic-rest",
       "routes": 1,
-      "symbols": 1283,
-      "unresolved_refs": 152
+      "symbols": 1371,
+      "unresolved_refs": 66
     },
     {
       "assertions": {
         "min_routes": 16
       },
       "code_chunks": 2226,
-      "edges": 489,
+      "edges": 790,
       "files": 83,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -517,16 +517,16 @@
       "path": "F:/Work/Projects/TestProjects/java-spring-petclinic",
       "project": "java-spring-petclinic",
       "routes": 16,
-      "symbols": 598,
-      "unresolved_refs": 113
+      "symbols": 669,
+      "unresolved_refs": 132
     },
     {
       "assertions": {
         "min_routes": 306
       },
       "code_chunks": 28538,
-      "edges": 10986,
-      "files": 1749,
+      "edges": 22726,
+      "files": 2004,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -543,8 +543,8 @@
       "path": "F:/Work/Projects/TestProjects/php-monica",
       "project": "php-monica",
       "routes": 306,
-      "symbols": 8554,
-      "unresolved_refs": 1186
+      "symbols": 10572,
+      "unresolved_refs": 197
     },
     {
       "assertions": {
@@ -553,7 +553,7 @@
         "min_routes": 12
       },
       "code_chunks": 4666,
-      "edges": 382,
+      "edges": 572,
       "files": 138,
       "flow_edge_types": {
         "django_view": 14
@@ -575,8 +575,8 @@
       "path": "F:/Work/Projects/TestProjects/python-cookiecutter-django",
       "project": "python-cookiecutter-django",
       "routes": 12,
-      "symbols": 1067,
-      "unresolved_refs": 148
+      "symbols": 3734,
+      "unresolved_refs": 190
     },
     {
       "assertions": {
@@ -587,8 +587,8 @@
         "min_routes": 29
       },
       "code_chunks": 34854,
-      "edges": 14362,
-      "files": 960,
+      "edges": 22859,
+      "files": 965,
       "flow_edge_types": {
         "di_binding": 14,
         "django_model": 11,
@@ -613,8 +613,8 @@
       "path": "F:/Work/Projects/TestProjects/python-paperless-ngx",
       "project": "python-paperless-ngx",
       "routes": 29,
-      "symbols": 27112,
-      "unresolved_refs": 4561
+      "symbols": 31610,
+      "unresolved_refs": 14469
     },
     {
       "assertions": {
@@ -725,8 +725,8 @@
         "min_routes": 1
       },
       "code_chunks": 13453,
-      "edges": 24139,
-      "files": 1969,
+      "edges": 52563,
+      "files": 1989,
       "flow_edge_types": {
         "http_call": 36
       },
@@ -744,8 +744,8 @@
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
       "project": "react-tanstack-query",
       "routes": 1,
-      "symbols": 18975,
-      "unresolved_refs": 7818
+      "symbols": 27521,
+      "unresolved_refs": 3153
     },
     {
       "assertions": {
@@ -782,8 +782,8 @@
     {
       "assertions": {},
       "code_chunks": 16662,
-      "edges": 11128,
-      "files": 1406,
+      "edges": 23837,
+      "files": 1408,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -801,8 +801,8 @@
       "path": "F:/Work/Projects/TestProjects/rust-lemmy",
       "project": "rust-lemmy",
       "routes": 0,
-      "symbols": 18464,
-      "unresolved_refs": 2262
+      "symbols": 19771,
+      "unresolved_refs": 2911
     },
     {
       "assertions": {
@@ -811,8 +811,8 @@
         "min_routes": 18
       },
       "code_chunks": 44600,
-      "edges": 111703,
-      "files": 3320,
+      "edges": 165155,
+      "files": 3324,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -839,15 +839,15 @@
       "path": "F:/Work/Projects/TestProjects/ts-immich",
       "project": "ts-immich",
       "routes": 18,
-      "symbols": 75039,
-      "unresolved_refs": 25221
+      "symbols": 83253,
+      "unresolved_refs": 24273
     },
     {
       "assertions": {
         "min_routes": 21
       },
       "code_chunks": 608,
-      "edges": 374,
+      "edges": 711,
       "files": 43,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -860,14 +860,14 @@
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
       "project": "ts-nestjs-realworld",
       "routes": 21,
-      "symbols": 344,
-      "unresolved_refs": 12
+      "symbols": 356,
+      "unresolved_refs": 18
     },
     {
       "assertions": {},
       "code_chunks": 1159,
-      "edges": 232,
-      "files": 151,
+      "edges": 1041,
+      "files": 285,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -883,14 +883,14 @@
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
       "project": "vue-element-admin",
       "routes": 0,
-      "symbols": 708,
-      "unresolved_refs": 672
+      "symbols": 2314,
+      "unresolved_refs": 941
     },
     {
       "assertions": {},
       "code_chunks": 9154,
-      "edges": 3978,
-      "files": 990,
+      "edges": 14089,
+      "files": 1619,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -908,14 +908,14 @@
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
       "project": "vue-vben-admin",
       "routes": 0,
-      "symbols": 5920,
-      "unresolved_refs": 619
+      "symbols": 14093,
+      "unresolved_refs": 1820
     },
     {
       "assertions": {},
       "code_chunks": 1175,
-      "edges": 342,
-      "files": 99,
+      "edges": 1352,
+      "files": 199,
       "flow_edge_types": {},
       "flow_edges": 0,
       "languages": {
@@ -931,8 +931,8 @@
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
       "project": "vue-vuestic-admin",
       "routes": 0,
-      "symbols": 418,
-      "unresolved_refs": 7
+      "symbols": 1196,
+      "unresolved_refs": 498
     }
   ],
   "version": "0.2.0-dev"
