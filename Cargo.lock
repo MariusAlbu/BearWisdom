@@ -316,6 +316,7 @@ dependencies = [
  "tree-sitter-yaml",
  "tree-sitter-zig",
  "walkdir",
+ "windows-sys 0.61.2",
  "zip",
 ]
 

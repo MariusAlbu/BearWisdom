@@ -9,6 +9,7 @@ mod flow_tests;
 #[path = "flow_config_tests.rs"]
 mod flow_config_tests;
 pub mod full;
+pub mod mem_probe;
 pub mod stage_discover;
 pub mod stage_link;
 pub mod incremental;

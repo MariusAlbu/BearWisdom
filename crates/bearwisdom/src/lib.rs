@@ -17,11 +17,13 @@
 //   • DB             — SQLite WAL + sqlite-vec, connection pool (DbPool)
 // =============================================================================
 
+pub mod alloc_probe;
 pub mod connectors;
 pub mod db;
 pub mod ecosystem;
 pub mod indexer;
 pub mod languages;
+pub mod memory_cap;
 pub mod panic_hook;
 pub mod parser;
 pub mod query;

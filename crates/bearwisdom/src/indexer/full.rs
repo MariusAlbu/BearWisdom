@@ -14,6 +14,7 @@
 use crate::db::Database;
 use crate::indexer::changeset;
 use crate::indexer::expand;
+use crate::indexer::mem_probe;
 use crate::indexer::ref_cache::RefCache;
 use crate::indexer::resolve;
 use crate::indexer::write;
@@ -67,10 +68,12 @@ pub fn full_index(
 
     let start = Instant::now();
     info!("Starting full index of {}", project_root.display());
+    mem_probe::probe("00_start");
 
     // --- Step 1: Change detection (FullScan) ---
     emit("scanning", 0.0, None);
     let cs = changeset::full_scan(project_root, pre_walked)?;
+    mem_probe::probe("01_scan_done");
     let file_count = cs.added.len();
     info!("Found {} source files", file_count);
     emit("scanning", 1.0, Some(&format!("{} files found", file_count)));
@@ -133,6 +136,7 @@ pub fn full_index(
             info!("Index tables recreated");
         }
     }
+    mem_probe::probe("02_db_reset_done");
 
     // --- Steps 2-3: Read + parse (parallel via Rayon) ---
     let registry = languages::default_registry();
@@ -414,6 +418,7 @@ pub fn full_index(
     // until resolve).
     log_language_breakdown(&parsed);
     emit("parsing", 1.0, Some(&format!("{} files parsed", parsed.len())));
+    mem_probe::probe("03_streaming_parse_done");
     emit(
         "indexing_content",
         1.0,
@@ -440,6 +445,7 @@ pub fn full_index(
         distinct_langs,
         crate::ecosystem::default_registry(),
     );
+    mem_probe::probe("04_project_ctx_built");
 
     // --- Step 4c: Write per-package dependency graph (M3) ---
     // `package_deps` rows let queries like "which packages in this monorepo
@@ -459,6 +465,7 @@ pub fn full_index(
             }
         }
     }
+    mem_probe::probe("05_package_deps_written");
 
     // --- Step 4d: Discover + index external dependencies ---
     //
@@ -483,6 +490,7 @@ pub fn full_index(
             demand.total_items(),
         );
     }
+    mem_probe::probe("06_demand_built");
     let ExternalParsingResult {
         parsed: external_parsed,
         symbol_index,
@@ -491,6 +499,7 @@ pub fn full_index(
     } = parse_external_sources(
         project_root, registry, &project_ctx, &written_packages, &demand,
     );
+    mem_probe::probe("07_external_parsed");
     if !external_parsed.is_empty() {
         info!(
             "Parsed {} external files from dependency sources",
@@ -519,6 +528,7 @@ pub fn full_index(
     combined_parsed.extend(vendored_c_parsed);
     let mut parsed = combined_parsed;
     let mut symbol_id_map = symbol_id_map;
+    mem_probe::probe("08_externals_written");
     // `_` binds so compiler doesn't flag unused — these feed the Stage 2
     // loop below.
     let _ = &demand_driven_roots;
@@ -548,6 +558,7 @@ pub fn full_index(
             parsed.extend(seeded);
         }
     }
+    mem_probe::probe("09_demand_seeded");
 
     // --- Step 5: Cross-file resolution + edge writing (Stage 2 loop) ---
     //
@@ -573,6 +584,7 @@ pub fn full_index(
         "Wrote {} edges, {} external, {} unresolved references",
         rstats.resolved, rstats.external, rstats.unresolved
     );
+    mem_probe::probe("10_resolve_iter_0");
 
     let mut iteration = 1;
     while iteration < MAX_EXPANSION_ITERATIONS && !rstats.converged() {
@@ -609,6 +621,7 @@ pub fn full_index(
         );
         rstats = rstats2;
         iteration += 1;
+        mem_probe::probe(&format!("10_resolve_iter_{iteration}"));
     }
     if iteration == MAX_EXPANSION_ITERATIONS && !rstats.converged() {
         warn!(
@@ -621,6 +634,7 @@ pub fn full_index(
     resolve::finalize_resolution(db)
         .context("Failed to finalize resolution")?;
     emit("resolving", 1.0, Some(&format!("{} edges resolved", rstats.resolved)));
+    mem_probe::probe("11_resolve_finalized");
 
     // --- Step 5b: Populate the RefCache while symbols + refs are still live. ---
     //
@@ -632,6 +646,7 @@ pub fn full_index(
         guard.store_all(&parsed);
         debug!("RefCache populated: {} files", parsed.len());
     }
+    mem_probe::probe("12_refcache_stored");
 
     // --- Step 5c: Release resolve-only fields. ---
     //
@@ -650,6 +665,7 @@ pub fn full_index(
         pf.symbol_from_snippet = Vec::new();
         pf.demand_contributions = Vec::new();
     }
+    mem_probe::probe("13_parsed_slim");
 
     // --- Step 7a: Flow connectors (registry pipeline) ---
     //
@@ -716,6 +732,7 @@ pub fn full_index(
         ),
         Err(e) => warn!("Connector registry failed: {e}"),
     }
+    mem_probe::probe("14_connectors_done");
 
     // --- Step 7b: Non-flow post-index hooks ---
     //
@@ -726,6 +743,7 @@ pub fn full_index(
     for plugin in registry.all() {
         plugin.post_index(db, project_root, &project_ctx);
     }
+    mem_probe::probe("15_post_index_done");
 
     emit("connectors", 1.0, None);
 

@@ -1,5 +1,13 @@
 extern crate sqlite_vec;
 
+// Wrap the system allocator with a diagnostic probe. When
+// `BEARWISDOM_ALLOC_PROBE_MB=<n>` is set, every allocation of at least
+// that many MiB prints a backtrace to stderr before forwarding. When
+// unset, overhead is a single relaxed atomic load per alloc.
+#[global_allocator]
+static ALLOCATOR: bearwisdom::alloc_probe::ProbingAllocator =
+    bearwisdom::alloc_probe::ProbingAllocator;
+
 // =============================================================================
 // BearWisdom CLI
 //
@@ -521,6 +529,14 @@ fn main() {
     // while the main thread unwinds, turning a panic into a silent hang.
     // See bearwisdom::panic_hook.
     bearwisdom::install_fail_fast_panic_hook();
+
+    // Opt-in memory guards (no-op unless the matching env vars are set).
+    // BEARWISDOM_MEMORY_CAP_MB caps total process commit via a Windows Job
+    // Object so a pathological allocation kills the process, not the desktop.
+    // BEARWISDOM_ALLOC_PROBE_MB prints a backtrace for any alloc above the
+    // threshold — diagnostic for the 768 MiB allocation regression.
+    bearwisdom::memory_cap::install_from_env();
+    bearwisdom::alloc_probe::install_from_env();
 
     // Initialise tracing to stderr so stdout stays clean JSON.
     tracing_subscriber::fmt()
