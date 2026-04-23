@@ -44,7 +44,8 @@ pub use types::{EdgeKind, EdgeSource, IndexStats, PackageInfo, Symbol, SymbolKin
 pub use indexer::post_index::embed_chunks;
 pub use query::stats::{
     concept_count, flow_edge_breakdown, flow_edge_count_by_type, flow_edges_data,
-    index_stats, unresolved_flow_count, FlowEdgeBreakdown, FlowEdgeRow, FlowEdgesData,
+    index_stats, resolution_breakdown, unresolved_flow_count, FlowEdgeBreakdown,
+    FlowEdgeRow, FlowEdgesData, ResolutionBreakdown,
 };
 pub use walker::WalkedFile;
 

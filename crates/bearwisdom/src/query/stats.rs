@@ -5,7 +5,7 @@
 // Replaces raw COUNT(*) queries scattered across CLI/web consumers.
 // =============================================================================
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use crate::db::Database;
 use crate::query::QueryResult;
@@ -132,6 +132,126 @@ pub fn flow_edge_breakdown(db: &Database) -> QueryResult<Vec<FlowEdgeBreakdown>>
         })
     })?;
     Ok(rows.filter_map(|r| r.ok()).collect())
+}
+
+/// Internal-only resolution breakdown for a single project.
+///
+/// Consumers (quality-check baseline, MCP `bw_diagnostics`) use this as the
+/// authoritative picture of how well the indexer understood the project's
+/// own code. All counts are restricted to `files.origin = 'internal'` so
+/// external dependency noise (node_modules, site-packages) never inflates
+/// the resolution rate.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ResolutionBreakdown {
+    /// Edges whose source symbol lives in a user file.
+    pub internal_edges: u32,
+    /// `unresolved_refs` whose source symbol lives in a user file (and
+    /// which didn't come from a doc/markdown snippet).
+    pub internal_unresolved: u32,
+    /// Percent resolved, two decimals: internal_edges /
+    /// (internal_edges + internal_unresolved) * 100. 100.0 when both sides
+    /// are zero (an empty project has no resolution to measure).
+    pub resolution_rate: f64,
+    /// Map keyed `"<language>.<kind>"` (e.g. `"typescript.calls"`) →
+    /// number of unresolved refs in user code of that language and kind.
+    /// Pinpoints which extractor / resolver is leaking.
+    pub unresolved_by_lang_kind: BTreeMap<String, u32>,
+    /// Per-language file counts, user files only.
+    pub languages: BTreeMap<String, u32>,
+    /// Total persisted `code_chunks` rows — proxy for doc-drift coverage
+    /// (markdown fences get chunked too).
+    pub code_chunks: u32,
+}
+
+/// Compute the resolution breakdown for the currently-open index.
+pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
+    let _timer = db.timer("resolution_breakdown");
+    let conn = db.conn();
+
+    let internal_edges: u32 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal'",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let internal_unresolved: u32 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND u.from_snippet = 0",
+            [],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
+    let mut languages: BTreeMap<String, u32> = BTreeMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT language, COUNT(*) FROM files
+             WHERE origin = 'internal'
+             GROUP BY language
+             ORDER BY language",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
+        })?;
+        for row in rows {
+            let (lang, count) = row?;
+            languages.insert(lang, count);
+        }
+    }
+
+    let mut unresolved_by_lang_kind: BTreeMap<String, u32> = BTreeMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT f.language, u.kind, COUNT(*)
+             FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND u.from_snippet = 0
+             GROUP BY f.language, u.kind
+             ORDER BY f.language, u.kind",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, u32>(2)?,
+            ))
+        })?;
+        for row in rows {
+            let (lang, kind, count) = row?;
+            unresolved_by_lang_kind.insert(format!("{lang}.{kind}"), count);
+        }
+    }
+
+    let code_chunks: u32 = conn
+        .query_row("SELECT COUNT(*) FROM code_chunks", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    let resolution_rate = if internal_edges + internal_unresolved == 0 {
+        100.0
+    } else {
+        (internal_edges as f64) * 100.0
+            / (internal_edges as f64 + internal_unresolved as f64)
+    };
+    let resolution_rate = (resolution_rate * 100.0).round() / 100.0;
+
+    Ok(ResolutionBreakdown {
+        internal_edges,
+        internal_unresolved,
+        resolution_rate,
+        unresolved_by_lang_kind,
+        languages,
+        code_chunks,
+    })
 }
 
 /// Return the number of concepts currently in the index.

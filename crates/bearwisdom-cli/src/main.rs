@@ -439,10 +439,13 @@ enum Commands {
     },
 
     /// Run quality checks against baseline. Indexes each project, compares
-    /// against quality-baseline.json, and reports regressions/improvements.
+    /// against baseline.json, and reports regressions/improvements across
+    /// the five quality dimensions: language detection, extraction +
+    /// resolution, connector/flow wiring, dead-code trust (transitive via
+    /// resolution_rate), and doc-drift coverage.
     QualityCheck {
-        /// Path to the quality-baseline.json file.
-        #[arg(long, default_value = "quality-baseline.json")]
+        /// Path to the baseline.json file.
+        #[arg(long, default_value = "baseline.json")]
         baseline: String,
         /// Re-index projects (don't use cached). Slower but catches indexing regressions.
         #[arg(long)]
@@ -1340,6 +1343,38 @@ fn resolve_db_path(project_root: &Path) -> Result<PathBuf> {
 /// Heuristic: if the project root contains no non-hidden entries (everything
 /// starts with `.`), or contains only entries whose names match a small
 /// allowlist of known cache/metadata dirs, it's a ghost.
+/// Current process working set in MiB (Windows: PSAPI; others: 0).
+/// Sampled at the end of each project's indexing pass — captures memory
+/// the indexer is still holding after full_index returns (the pipeline
+/// has already slimmed parsed state by phase 13, so this is the retained
+/// floor, not the in-flight peak). Process-cumulative PeakWorkingSetSize
+/// is NOT used here because it only ever grows across a batch run,
+/// making every project after the biggest one report identical numbers.
+#[cfg(windows)]
+fn current_working_set_mb() -> u64 {
+    use windows_sys::Win32::System::ProcessStatus::{
+        GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX,
+    };
+    use windows_sys::Win32::System::Threading::GetCurrentProcess;
+    unsafe {
+        let mut counters: PROCESS_MEMORY_COUNTERS_EX = std::mem::zeroed();
+        let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+        let ok = GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            (&mut counters as *mut PROCESS_MEMORY_COUNTERS_EX) as *mut PROCESS_MEMORY_COUNTERS,
+            size,
+        );
+        if ok == 0 {
+            0
+        } else {
+            counters.WorkingSetSize as u64 / (1024 * 1024)
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn current_working_set_mb() -> u64 { 0 }
+
 fn is_ghost_project(root: &Path) -> bool {
     let Ok(entries) = std::fs::read_dir(root) else {
         return true;
@@ -1496,13 +1531,21 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         let stats = bearwisdom::index_stats(&db)?;
         let files = stats.file_count as i64;
         let symbols = stats.symbol_count as i64;
-        let edges = stats.edge_count as i64;
         let routes = stats.route_count as i64;
         let flow_edges = stats.flow_edge_count as i64;
-        let unresolved = stats.unresolved_ref_count as i64;
+        let internal_unresolved = stats.unresolved_ref_count as i64;
         let unresolved_external = stats.unresolved_ref_count_external as i64;
         let unresolved_flows: i64 =
             bearwisdom::unresolved_flow_count(&db)? as i64;
+
+        // Internal-edges count + per-(language, kind) breakdown come from
+        // the shared library helper so quality-check and recapture report
+        // identical shapes.
+        let rb = bearwisdom::resolution_breakdown(&db)?;
+        let internal_edges = rb.internal_edges as i64;
+        let resolution_rate = rb.resolution_rate;
+        let _ = internal_unresolved; // shadowed by rb.internal_unresolved below
+        let internal_unresolved = rb.internal_unresolved as i64;
 
         // Per-type flow edge counts.
         let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
@@ -1525,11 +1568,16 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         let baseline_flow = proj["flow_edges"].as_i64().unwrap_or(0);
         let baseline_routes = proj["routes"].as_i64().unwrap_or(0);
         let baseline_symbols = proj["symbols"].as_i64().unwrap_or(0);
-        let baseline_edges = proj["edges"].as_i64().unwrap_or(0);
+        // Prefer the new `internal_edges` key; fall back to `edges` for
+        // any legacy baseline files that predate the schema consolidation.
+        let baseline_edges = proj["internal_edges"]
+            .as_i64()
+            .or_else(|| proj["edges"].as_i64())
+            .unwrap_or(0);
 
         for (label, current, baseline_val) in [
             ("symbols", symbols, baseline_symbols),
-            ("edges", edges, baseline_edges),
+            ("internal_edges", internal_edges, baseline_edges),
             ("routes", routes, baseline_routes),
             ("flow_edges", flow_edges, baseline_flow),
         ] {
@@ -1552,6 +1600,16 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
         // Check min_* assertions.
         if let Some(obj) = assertions.as_object() {
             for (key, val) in obj {
+                // min_resolution_rate is the only float-valued assertion.
+                if key == "min_resolution_rate" {
+                    let min_rate = val.as_f64().unwrap_or(0.0);
+                    if resolution_rate < min_rate {
+                        proj_regressions.push(format!(
+                            "{key}: expected >={min_rate}, got {resolution_rate:.2}"
+                        ));
+                    }
+                    continue;
+                }
                 if let Some(min_val) = val.as_i64() {
                     let current_val = match key.as_str() {
                         "min_routes" => routes,
@@ -1598,10 +1656,12 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
             "current": {
                 "files": files,
                 "symbols": symbols,
-                "edges": edges,
+                "internal_edges": internal_edges,
+                "internal_unresolved": internal_unresolved,
+                "resolution_rate": resolution_rate,
                 "routes": routes,
                 "flow_edges": flow_edges,
-                "unresolved_refs": unresolved,
+                "unresolved_external": unresolved_external,
                 "unresolved_flow_starts": unresolved_flows,
                 "flow_edge_types": flow_edge_types,
             },
@@ -1678,8 +1738,19 @@ fn cmd_quality_recapture(baseline_path: &str) -> Result<String> {
         let db_path = resolve_db_path(&root)?;
         let mut db = Database::open(&db_path)
             .with_context(|| format!("Failed to open DB for {name}"))?;
+
+        // Capture performance around the actual full_index call so the
+        // baseline catches indexing perf regressions. `index_duration_ms`
+        // is wall-clock for the indexer pipeline itself (excludes DB
+        // open, stats queries, JSON writes). `end_ws_mb` is the
+        // process's peak working set after the index — on Windows via
+        // PSAPI, 0 on other platforms (we only run the baseline on
+        // Windows anyway).
+        let index_start = std::time::Instant::now();
         bearwisdom::full_index(&mut db, &root, None, None, None)
             .with_context(|| format!("Index failed for {name}"))?;
+        let index_duration_ms = index_start.elapsed().as_millis() as u64;
+        let end_ws_mb = current_working_set_mb();
 
         let stats = bearwisdom::index_stats(&db)?;
         let flow_breakdown = bearwisdom::flow_edge_breakdown(&db)?;
@@ -1688,38 +1759,81 @@ fn cmd_quality_recapture(baseline_path: &str) -> Result<String> {
             .map(|b| (b.edge_type, b.count))
             .collect();
 
+        // The consolidated baseline measures five quality dimensions:
+        //   1. Language detection  — `languages` map (ecosystem + manifest).
+        //   2. Extraction + resolution — `internal_edges` /
+        //      `internal_unresolved` / `resolution_rate` plus the
+        //      per-(language, kind) breakdown that pinpoints which
+        //      extractor is leaking.
+        //   3. Connector wiring — `flow_edges` + `flow_edge_types` + `routes`.
+        //   4. Dead-code trust — transitively measured by resolution_rate.
+        //   5. Doc drift — `code_chunks` count (markdown fences chunk too).
+        // Plus a performance block: duration and peak working set so
+        // regressions in indexer perf surface on the next run.
+        let rb = bearwisdom::resolution_breakdown(&db)?;
+
         let mut updated = proj.clone();
+        // Drop legacy fields so the schema is clean (ignore if absent).
+        let stale_keys = [
+            "edges",
+            "unresolved_refs",
+            "unresolved_ref_count",
+            "external_ref_count",
+        ];
+        if let Some(obj) = updated.as_object_mut() {
+            for k in stale_keys {
+                obj.remove(k);
+            }
+        }
+
+        // Write the consolidated schema in a stable order.
         updated["files"] = serde_json::json!(stats.file_count);
+        updated["languages"] = serde_json::json!(rb.languages);
         updated["symbols"] = serde_json::json!(stats.symbol_count);
-        updated["edges"] = serde_json::json!(stats.edge_count);
-        updated["routes"] = serde_json::json!(stats.route_count);
+        updated["internal_edges"] = serde_json::json!(rb.internal_edges);
+        updated["internal_unresolved"] = serde_json::json!(rb.internal_unresolved);
+        updated["resolution_rate"] = serde_json::json!(rb.resolution_rate);
+        updated["unresolved_by_lang_kind"] = serde_json::json!(rb.unresolved_by_lang_kind);
         updated["flow_edges"] = serde_json::json!(stats.flow_edge_count);
-        updated["unresolved_refs"] = serde_json::json!(stats.unresolved_ref_count);
         updated["flow_edge_types"] = serde_json::json!(flow_edge_types);
+        updated["routes"] = serde_json::json!(stats.route_count);
+        updated["code_chunks"] = serde_json::json!(rb.code_chunks);
+        // Performance block: duration + peak working set. Separate from
+        // correctness metrics so a perf regression doesn't masquerade as
+        // a resolution regression.
+        updated["perf"] = serde_json::json!({
+            "index_duration_ms": index_duration_ms,
+            "end_ws_mb": end_ws_mb,
+            "files_per_sec": if index_duration_ms > 0 {
+                (stats.file_count as f64 * 1000.0 / index_duration_ms as f64).round() as u64
+            } else { 0 },
+        });
 
         // Rebuild assertions using the newly captured values so future
         // quality-check runs compare to the NEW floor, not the old one.
-        // Only rewrite fields the existing assertions block already had —
-        // don't invent new thresholds.
-        if let Some(assertions) = updated["assertions"].as_object_mut() {
-            let old_keys: Vec<String> = assertions.keys().cloned().collect();
-            for key in old_keys {
+        // Adds `min_resolution_rate` if absent (integer floor of current
+        // rate — gives a small headroom against decimal jitter).
+        let assertions = updated
+            .as_object_mut()
+            .and_then(|o| o.entry("assertions".to_string()).or_insert_with(|| serde_json::json!({})).as_object_mut());
+        if let Some(assertions) = assertions {
+            let existing_keys: Vec<String> = assertions.keys().cloned().collect();
+            for key in existing_keys {
                 if let Some(new_value) = match key.as_str() {
                     "min_routes" => Some(serde_json::json!(stats.route_count)),
                     "min_flow_edges" => Some(serde_json::json!(stats.flow_edge_count)),
-                    "min_edges" => Some(serde_json::json!(stats.edge_count)),
+                    "min_edges" => Some(serde_json::json!(rb.internal_edges)),
                     "min_symbols" => Some(serde_json::json!(stats.symbol_count)),
                     "min_files" => Some(serde_json::json!(stats.file_count)),
+                    "min_resolution_rate" => {
+                        Some(serde_json::json!(rb.resolution_rate.floor() as u32))
+                    }
                     _ => {
-                        // Handle flow-edge-type thresholds: min_{type}_edges.
-                        // When the type is absent from the new snapshot, the
-                        // connector legitimately produced zero edges — record
-                        // that as 0, not the old threshold. Keeping the old
-                        // value produces perpetual false-regression flags on
-                        // every subsequent quality-check run (the pre-S9
-                        // behavior that made SimplCommerce / eShop / fastapi /
-                        // ts-immich fail on min_http_call_edges while their
-                        // http_call counts were 0).
+                        // Flow-edge-type thresholds: min_{type}_edges.
+                        // Missing type means the connector produced zero —
+                        // record as 0 rather than keeping the old threshold,
+                        // otherwise every quality-check run would perpetually
+                        // flag the same "regression" against a stale floor.
                         if let Some(ty) = key
                             .strip_prefix("min_")
                             .and_then(|s| s.strip_suffix("_edges"))
@@ -1734,13 +1848,25 @@ fn cmd_quality_recapture(baseline_path: &str) -> Result<String> {
                     assertions.insert(key, new_value);
                 }
             }
+            // Bake in min_resolution_rate on first recapture if absent.
+            if !assertions.contains_key("min_resolution_rate") {
+                assertions.insert(
+                    "min_resolution_rate".to_string(),
+                    serde_json::json!(rb.resolution_rate.floor() as u32),
+                );
+            }
         }
 
         new_projects.push(updated);
         recaptured += 1;
         eprintln!(
-            "  OK ({} files, {} symbols, {} edges)",
-            stats.file_count, stats.symbol_count, stats.edge_count
+            "  OK ({} files, {} symbols, {} int_edges, {:.1}% resolved, {} ms, {} MB end_ws)",
+            stats.file_count,
+            stats.symbol_count,
+            rb.internal_edges,
+            rb.resolution_rate,
+            index_duration_ms,
+            end_ws_mb
         );
     }
 

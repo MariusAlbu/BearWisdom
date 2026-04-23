@@ -6,34 +6,51 @@
         "min_di_binding_edges": 60,
         "min_flow_edges": 60,
         "min_http_call_edges": 0,
+        "min_resolution_rate": 94,
         "min_routes": 688
       },
-      "code_chunks": 127566,
-      "edges": 11151,
+      "code_chunks": 48188,
       "files": 1449,
       "flow_edge_types": {
         "di_binding": 60
       },
       "flow_edges": 60,
+      "internal_edges": 11151,
+      "internal_unresolved": 649,
       "languages": {
         "csharp": 811,
-        "css": 46,
+        "css": 14,
         "dockerfile": 2,
-        "html": 100,
-        "javascript": 381,
+        "html": 98,
+        "javascript": 207,
         "json": 81,
-        "markdown": 6,
+        "markdown": 5,
+        "powershell": 1,
+        "razor": 181,
         "scss": 14,
         "shell": 3,
         "sql": 27,
-        "xml": 5,
+        "xml": 4,
         "yaml": 1
       },
       "path": "F:/Work/Projects/TestProjects/SimplCommerce",
+      "perf": {
+        "end_ws_mb": 118,
+        "files_per_sec": 64,
+        "index_duration_ms": 22656
+      },
       "project": "SimplCommerce",
+      "resolution_rate": 94.5,
       "routes": 688,
       "symbols": 16522,
-      "unresolved_refs": 649
+      "unresolved_by_lang_kind": {
+        "dockerfile.inherits": 2,
+        "javascript.calls": 580,
+        "javascript.type_ref": 34,
+        "razor.calls": 19,
+        "razor.type_ref": 7,
+        "scss.calls": 7
+      }
     },
     {
       "assertions": {
@@ -98,14 +115,18 @@
       "unresolved_refs": 2
     },
     {
-      "assertions": {},
-      "code_chunks": 1667,
-      "edges": 2553,
+      "assertions": {
+        "min_resolution_rate": 52
+      },
+      "code_chunks": 3094,
       "files": 213,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 2553,
+      "internal_unresolved": 2330,
       "languages": {
-        "html": 53,
+        "angular_template": 52,
+        "html": 1,
         "json": 6,
         "markdown": 3,
         "scss": 17,
@@ -113,26 +134,39 @@
         "xml": 7
       },
       "path": "F:/Work/Projects/TestProjects/angular-coreui",
+      "perf": {
+        "end_ws_mb": 157,
+        "files_per_sec": 36,
+        "index_duration_ms": 5912
+      },
       "project": "angular-coreui",
+      "resolution_rate": 52.28,
       "routes": 0,
       "symbols": 1720,
-      "unresolved_refs": 2330
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 2265,
+        "scss.calls": 3,
+        "typescript.calls": 54,
+        "typescript.type_ref": 8
+      }
     },
     {
       "assertions": {
         "min_di_binding_edges": 24,
-        "min_flow_edges": 24
+        "min_flow_edges": 24,
+        "min_resolution_rate": 68
       },
-      "code_chunks": 4130,
-      "edges": 3344,
+      "code_chunks": 6207,
       "files": 441,
       "flow_edge_types": {
         "di_binding": 24
       },
       "flow_edges": 24,
+      "internal_edges": 3344,
+      "internal_unresolved": 1524,
       "languages": {
-        "css": 4,
-        "html": 79,
+        "angular_template": 78,
+        "html": 1,
         "javascript": 2,
         "json": 11,
         "markdown": 8,
@@ -141,27 +175,43 @@
         "xml": 4
       },
       "path": "F:/Work/Projects/TestProjects/angular-ngx-admin",
+      "perf": {
+        "end_ws_mb": 101,
+        "files_per_sec": 77,
+        "index_duration_ms": 5719
+      },
       "project": "angular-ngx-admin",
+      "resolution_rate": 68.69,
       "routes": 0,
       "symbols": 2977,
-      "unresolved_refs": 1524
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 999,
+        "angular_template.type_ref": 4,
+        "scss.calls": 275,
+        "typescript.calls": 175,
+        "typescript.instantiates": 65,
+        "typescript.type_ref": 6
+      }
     },
     {
       "assertions": {
         "min_di_binding_edges": 11,
         "min_flow_edges": 11,
+        "min_resolution_rate": 92,
         "min_routes": 12
       },
-      "code_chunks": 1789,
-      "edges": 1519,
+      "code_chunks": 2797,
       "files": 196,
       "flow_edge_types": {
         "di_binding": 11
       },
       "flow_edges": 11,
+      "internal_edges": 1519,
+      "internal_unresolved": 117,
       "languages": {
+        "angular_template": 10,
         "csharp": 110,
-        "html": 12,
+        "html": 2,
         "javascript": 18,
         "json": 21,
         "markdown": 6,
@@ -169,39 +219,66 @@
         "typescript": 25
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
+      "perf": {
+        "end_ws_mb": 98,
+        "files_per_sec": 24,
+        "index_duration_ms": 8132
+      },
       "project": "dotnet-CleanArchitecture",
+      "resolution_rate": 92.85,
       "routes": 12,
       "symbols": 1631,
-      "unresolved_refs": 117
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 8,
+        "html.calls": 2,
+        "javascript.calls": 18,
+        "markdown.imports": 2,
+        "scss.calls": 14,
+        "typescript.calls": 41,
+        "typescript.instantiates": 4,
+        "typescript.type_ref": 28
+      }
     },
     {
       "assertions": {
         "min_di_binding_edges": 8,
         "min_flow_edges": 8,
+        "min_resolution_rate": 98,
         "min_routes": 40
       },
-      "code_chunks": 2421,
-      "edges": 707,
+      "code_chunks": 2951,
       "files": 138,
       "flow_edge_types": {
         "di_binding": 8
       },
       "flow_edges": 8,
+      "internal_edges": 707,
+      "internal_unresolved": 9,
       "languages": {
         "csharp": 90,
-        "css": 2,
+        "css": 1,
         "dockerfile": 2,
-        "javascript": 6,
+        "javascript": 2,
         "json": 14,
-        "markdown": 6,
+        "markdown": 4,
+        "razor": 22,
         "xml": 2,
         "yaml": 1
       },
       "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
+      "perf": {
+        "end_ws_mb": 103,
+        "files_per_sec": 16,
+        "index_duration_ms": 8765
+      },
       "project": "dotnet-EquinoxProject",
+      "resolution_rate": 98.74,
       "routes": 40,
       "symbols": 1052,
-      "unresolved_refs": 9
+      "unresolved_by_lang_kind": {
+        "dockerfile.inherits": 4,
+        "razor.calls": 5
+      }
     },
     {
       "assertions": {
@@ -240,50 +317,66 @@
         "min_event_handler_edges": 48,
         "min_flow_edges": 75,
         "min_http_call_edges": 0,
+        "min_resolution_rate": 99,
         "min_routes": 87
       },
-      "code_chunks": 11041,
-      "edges": 5044,
+      "code_chunks": 15253,
       "files": 734,
       "flow_edge_types": {
         "di_binding": 27,
         "event_handler": 48
       },
       "flow_edges": 75,
+      "internal_edges": 5044,
+      "internal_unresolved": 2,
       "languages": {
         "csharp": 527,
         "css": 30,
         "html": 1,
-        "javascript": 6,
+        "javascript": 5,
         "json": 39,
         "markdown": 5,
+        "proto": 2,
+        "razor": 58,
         "typescript": 5,
         "xml": 60,
         "yaml": 2
       },
       "path": "F:/Work/Projects/TestProjects/eShop",
+      "perf": {
+        "end_ws_mb": 115,
+        "files_per_sec": 34,
+        "index_duration_ms": 21897
+      },
       "project": "eShop",
+      "resolution_rate": 99.96,
       "routes": 87,
       "symbols": 6702,
-      "unresolved_refs": 2
+      "unresolved_by_lang_kind": {
+        "markdown.imports": 2
+      }
     },
     {
       "assertions": {
         "min_flow_edges": 0,
         "min_http_call_edges": 0,
+        "min_resolution_rate": 83,
         "min_routes": 18
       },
-      "code_chunks": 2089,
-      "edges": 2893,
+      "code_chunks": 3826,
       "files": 183,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 2899,
+      "internal_unresolved": 554,
       "languages": {
         "css": 1,
         "dockerfile": 2,
         "html": 1,
-        "json": 7,
+        "json": 8,
+        "mako": 1,
         "markdown": 10,
+        "nginx": 1,
         "python": 45,
         "shell": 8,
         "toml": 2,
@@ -292,10 +385,25 @@
         "yaml": 4
       },
       "path": "F:/Work/Projects/TestProjects/full-stack-fastapi-template",
+      "perf": {
+        "end_ws_mb": 127,
+        "files_per_sec": 10,
+        "index_duration_ms": 19195
+      },
       "project": "full-stack-fastapi-template",
+      "resolution_rate": 83.96,
       "routes": 18,
       "symbols": 2390,
-      "unresolved_refs": 554
+      "unresolved_by_lang_kind": {
+        "dockerfile.calls": 1,
+        "dockerfile.inherits": 1,
+        "markdown.imports": 3,
+        "python.calls": 1,
+        "python.imports": 10,
+        "python.type_ref": 360,
+        "typescript.calls": 10,
+        "typescript.type_ref": 168
+      }
     },
     {
       "assertions": {
@@ -388,31 +496,50 @@
     },
     {
       "assertions": {
+        "min_resolution_rate": 91,
         "min_routes": 97
       },
-      "code_chunks": 904454,
-      "edges": 45325,
+      "code_chunks": 56603,
       "files": 702,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 45325,
+      "internal_unresolved": 4200,
       "languages": {
         "c": 1,
-        "css": 14,
         "go": 442,
         "html": 1,
-        "javascript": 47,
+        "javascript": 16,
         "json": 2,
         "markdown": 7,
         "scss": 27,
+        "svelte": 172,
         "typescript": 1,
-        "xml": 34,
+        "xml": 32,
         "yaml": 1
       },
       "path": "F:/Work/Projects/TestProjects/go-pocketbase",
+      "perf": {
+        "end_ws_mb": 201,
+        "files_per_sec": 8,
+        "index_duration_ms": 83183
+      },
       "project": "go-pocketbase",
+      "resolution_rate": 91.52,
       "routes": 97,
       "symbols": 32122,
-      "unresolved_refs": 4200
+      "unresolved_by_lang_kind": {
+        "go.calls": 995,
+        "go.instantiates": 1849,
+        "go.type_ref": 219,
+        "javascript.calls": 63,
+        "javascript.type_ref": 17,
+        "markdown.imports": 2,
+        "scss.calls": 8,
+        "svelte.calls": 129,
+        "svelte.type_ref": 211,
+        "typescript.type_ref": 707
+      }
     },
     {
       "assertions": {
@@ -446,13 +573,15 @@
     },
     {
       "assertions": {
+        "min_resolution_rate": 94,
         "min_routes": 1
       },
-      "code_chunks": 2562,
-      "edges": 2594,
+      "code_chunks": 3357,
       "files": 162,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 2594,
+      "internal_unresolved": 164,
       "languages": {
         "html": 1,
         "java": 102,
@@ -466,20 +595,36 @@
         "yaml": 1
       },
       "path": "F:/Work/Projects/TestProjects/java-petclinic-reactjs",
+      "perf": {
+        "end_ws_mb": 122,
+        "files_per_sec": 23,
+        "index_duration_ms": 6930
+      },
       "project": "java-petclinic-reactjs",
+      "resolution_rate": 94.05,
       "routes": 1,
       "symbols": 1604,
-      "unresolved_refs": 164
+      "unresolved_by_lang_kind": {
+        "java.calls": 27,
+        "java.instantiates": 1,
+        "java.type_ref": 7,
+        "javascript.calls": 3,
+        "sql.type_ref": 1,
+        "typescript.calls": 119,
+        "typescript.type_ref": 6
+      }
     },
     {
       "assertions": {
+        "min_resolution_rate": 97,
         "min_routes": 1
       },
-      "code_chunks": 1934,
-      "edges": 2261,
+      "code_chunks": 2466,
       "files": 124,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 2261,
+      "internal_unresolved": 66,
       "languages": {
         "java": 106,
         "json": 2,
@@ -490,22 +635,38 @@
         "yaml": 2
       },
       "path": "F:/Work/Projects/TestProjects/java-petclinic-rest",
+      "perf": {
+        "end_ws_mb": 246,
+        "files_per_sec": 19,
+        "index_duration_ms": 6527
+      },
       "project": "java-petclinic-rest",
+      "resolution_rate": 97.16,
       "routes": 1,
       "symbols": 1371,
-      "unresolved_refs": 66
+      "unresolved_by_lang_kind": {
+        "java.calls": 42,
+        "java.instantiates": 1,
+        "java.type_ref": 10,
+        "markdown.imports": 11,
+        "shell.calls": 1,
+        "sql.type_ref": 1
+      }
     },
     {
       "assertions": {
+        "min_resolution_rate": 85,
         "min_routes": 16
       },
-      "code_chunks": 2226,
-      "edges": 790,
+      "code_chunks": 2488,
       "files": 83,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 790,
+      "internal_unresolved": 132,
       "languages": {
         "css": 1,
+        "groovy": 2,
         "html": 12,
         "java": 47,
         "markdown": 1,
@@ -515,50 +676,84 @@
         "yaml": 3
       },
       "path": "F:/Work/Projects/TestProjects/java-spring-petclinic",
+      "perf": {
+        "end_ws_mb": 121,
+        "files_per_sec": 12,
+        "index_duration_ms": 7094
+      },
       "project": "java-spring-petclinic",
+      "resolution_rate": 85.68,
       "routes": 16,
       "symbols": 669,
-      "unresolved_refs": 132
+      "unresolved_by_lang_kind": {
+        "java.calls": 109,
+        "java.instantiates": 6,
+        "java.type_ref": 14,
+        "markdown.imports": 2,
+        "sql.type_ref": 1
+      }
     },
     {
       "assertions": {
+        "min_resolution_rate": 99,
         "min_routes": 306
       },
-      "code_chunks": 28538,
-      "edges": 22726,
+      "code_chunks": 35571,
       "files": 2004,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 22726,
+      "internal_unresolved": 197,
       "languages": {
+        "blade": 5,
         "css": 1,
         "dockerfile": 1,
         "javascript": 7,
-        "json": 35,
+        "json": 36,
         "markdown": 6,
-        "php": 1649,
+        "php": 1644,
         "shell": 10,
+        "vue": 254,
         "xml": 38,
         "yaml": 2
       },
       "path": "F:/Work/Projects/TestProjects/php-monica",
+      "perf": {
+        "end_ws_mb": 151,
+        "files_per_sec": 25,
+        "index_duration_ms": 79584
+      },
       "project": "php-monica",
+      "resolution_rate": 99.14,
       "routes": 306,
       "symbols": 10572,
-      "unresolved_refs": 197
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 16,
+        "markdown.imports": 1,
+        "php.calls": 55,
+        "php.imports": 42,
+        "php.inherits": 3,
+        "php.instantiates": 3,
+        "php.type_ref": 10,
+        "shell.calls": 13,
+        "vue.calls": 54
+      }
     },
     {
       "assertions": {
         "min_django_view_edges": 14,
         "min_flow_edges": 14,
+        "min_resolution_rate": 75,
         "min_routes": 12
       },
-      "code_chunks": 4666,
-      "edges": 572,
+      "code_chunks": 6043,
       "files": 138,
       "flow_edge_types": {
         "django_view": 14
       },
       "flow_edges": 14,
+      "internal_edges": 572,
+      "internal_unresolved": 190,
       "languages": {
         "c": 2,
         "dockerfile": 9,
@@ -573,10 +768,25 @@
         "yaml": 4
       },
       "path": "F:/Work/Projects/TestProjects/python-cookiecutter-django",
+      "perf": {
+        "end_ws_mb": 297,
+        "files_per_sec": 16,
+        "index_duration_ms": 8566
+      },
       "project": "python-cookiecutter-django",
+      "resolution_rate": 75.07,
       "routes": 12,
       "symbols": 3734,
-      "unresolved_refs": 190
+      "unresolved_by_lang_kind": {
+        "c.calls": 5,
+        "c.type_ref": 12,
+        "dockerfile.inherits": 7,
+        "javascript.calls": 3,
+        "python.calls": 37,
+        "python.imports": 16,
+        "python.type_ref": 105,
+        "shell.calls": 5
+      }
     },
     {
       "assertions": {
@@ -584,10 +794,10 @@
         "min_django_model_edges": 11,
         "min_django_view_edges": 49,
         "min_flow_edges": 74,
+        "min_resolution_rate": 61,
         "min_routes": 29
       },
-      "code_chunks": 34854,
-      "edges": 22859,
+      "code_chunks": 59944,
       "files": 965,
       "flow_edge_types": {
         "di_binding": 14,
@@ -595,26 +805,49 @@
         "django_view": 49
       },
       "flow_edges": 74,
+      "internal_edges": 22859,
+      "internal_unresolved": 14469,
       "languages": {
-        "css": 5,
+        "angular_template": 100,
+        "css": 4,
         "dockerfile": 1,
-        "html": 119,
+        "html": 19,
         "javascript": 3,
         "json": 7,
         "markdown": 18,
         "python": 261,
         "scss": 104,
         "shell": 5,
+        "systemd": 5,
         "toml": 2,
         "typescript": 412,
         "xml": 14,
         "yaml": 10
       },
       "path": "F:/Work/Projects/TestProjects/python-paperless-ngx",
+      "perf": {
+        "end_ws_mb": 189,
+        "files_per_sec": 14,
+        "index_duration_ms": 68590
+      },
       "project": "python-paperless-ngx",
+      "resolution_rate": 61.24,
       "routes": 29,
       "symbols": 31610,
-      "unresolved_refs": 14469
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 850,
+        "angular_template.type_ref": 74,
+        "dockerfile.inherits": 1,
+        "markdown.imports": 29,
+        "python.calls": 1480,
+        "python.imports": 76,
+        "python.type_ref": 4747,
+        "scss.calls": 5,
+        "shell.calls": 6,
+        "typescript.calls": 6928,
+        "typescript.instantiates": 16,
+        "typescript.type_ref": 257
+      }
     },
     {
       "assertions": {
@@ -722,30 +955,52 @@
       "assertions": {
         "min_flow_edges": 36,
         "min_http_call_edges": 36,
+        "min_resolution_rate": 94,
         "min_routes": 1
       },
-      "code_chunks": 13453,
-      "edges": 52563,
+      "code_chunks": 49090,
       "files": 1989,
       "flow_edge_types": {
         "http_call": 36
       },
       "flow_edges": 36,
+      "internal_edges": 52607,
+      "internal_unresolved": 3153,
       "languages": {
+        "angular_template": 17,
+        "astro": 2,
         "css": 19,
-        "html": 70,
-        "javascript": 50,
-        "json": 171,
-        "markdown": 497,
-        "typescript": 308,
-        "xml": 19,
+        "html": 53,
+        "javascript": 144,
+        "json": 254,
+        "markdown": 527,
+        "svelte": 75,
+        "typescript": 855,
+        "vue": 20,
+        "xml": 20,
         "yaml": 3
       },
       "path": "F:/Work/Projects/TestProjects/react-tanstack-query",
+      "perf": {
+        "end_ws_mb": 163,
+        "files_per_sec": 18,
+        "index_duration_ms": 109908
+      },
       "project": "react-tanstack-query",
+      "resolution_rate": 94.35,
       "routes": 1,
       "symbols": 27521,
-      "unresolved_refs": 3153
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 16,
+        "javascript.calls": 19,
+        "javascript.type_ref": 1,
+        "markdown.imports": 424,
+        "svelte.calls": 71,
+        "svelte.type_ref": 23,
+        "typescript.calls": 438,
+        "typescript.instantiates": 2,
+        "typescript.type_ref": 2159
+      }
     },
     {
       "assertions": {
@@ -780,17 +1035,21 @@
       "unresolved_refs": 66682
     },
     {
-      "assertions": {},
-      "code_chunks": 16662,
-      "edges": 23837,
+      "assertions": {
+        "min_resolution_rate": 89
+      },
+      "code_chunks": 35731,
       "files": 1408,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 23836,
+      "internal_unresolved": 2911,
       "languages": {
         "dockerfile": 1,
         "javascript": 2,
         "json": 121,
         "markdown": 10,
+        "nginx": 2,
         "rust": 514,
         "shell": 32,
         "sql": 666,
@@ -799,58 +1058,133 @@
         "yaml": 4
       },
       "path": "F:/Work/Projects/TestProjects/rust-lemmy",
+      "perf": {
+        "end_ws_mb": 147,
+        "files_per_sec": 48,
+        "index_duration_ms": 29031
+      },
       "project": "rust-lemmy",
+      "resolution_rate": 89.12,
       "routes": 0,
       "symbols": 19771,
-      "unresolved_refs": 2911
+      "unresolved_by_lang_kind": {
+        "markdown.imports": 6,
+        "rust.calls": 822,
+        "rust.implements": 9,
+        "rust.imports": 1,
+        "rust.type_ref": 1297,
+        "shell.calls": 32,
+        "sql.type_ref": 91,
+        "typescript.calls": 652,
+        "typescript.type_ref": 1
+      }
     },
     {
       "assertions": {
         "min_flow_edges": 0,
         "min_http_call_edges": 0,
+        "min_resolution_rate": 87,
         "min_routes": 18
       },
-      "code_chunks": 44600,
-      "edges": 165155,
+      "code_chunks": 168021,
       "files": 3324,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 165199,
+      "internal_unresolved": 24273,
       "languages": {
         "c": 3,
+        "cmake": 1,
         "cpp": 1,
         "css": 2,
+        "dart": 1427,
         "dockerfile": 4,
-        "html": 1,
+        "gotemplate": 1,
+        "groovy": 3,
+        "handlebars": 2,
+        "hcl": 14,
+        "html": 2,
         "java": 1,
         "javascript": 14,
-        "json": 143,
+        "json": 146,
         "kotlin": 38,
-        "markdown": 125,
+        "make": 1,
+        "markdown": 114,
+        "mdx": 11,
+        "prolog": 1,
         "python": 31,
         "ruby": 2,
         "shell": 10,
         "sql": 34,
+        "svelte": 400,
         "swift": 33,
         "toml": 10,
         "typescript": 941,
         "xml": 52,
-        "yaml": 22
+        "yaml": 25
       },
       "path": "F:/Work/Projects/TestProjects/ts-immich",
+      "perf": {
+        "end_ws_mb": 177,
+        "files_per_sec": 7,
+        "index_duration_ms": 499595
+      },
       "project": "ts-immich",
+      "resolution_rate": 87.19,
       "routes": 18,
       "symbols": 83253,
-      "unresolved_refs": 24273
+      "unresolved_by_lang_kind": {
+        "c.calls": 5,
+        "c.type_ref": 67,
+        "cmake.calls": 1,
+        "cpp.calls": 26,
+        "cpp.imports": 1,
+        "cpp.inherits": 2,
+        "cpp.type_ref": 89,
+        "dart.calls": 2091,
+        "dart.implements": 7,
+        "dart.inherits": 435,
+        "dart.instantiates": 275,
+        "dart.type_ref": 6895,
+        "dockerfile.inherits": 1,
+        "handlebars.imports": 4,
+        "hcl.calls": 8,
+        "kotlin.calls": 230,
+        "kotlin.implements": 3,
+        "kotlin.inherits": 2,
+        "kotlin.type_ref": 219,
+        "markdown.imports": 707,
+        "mdx.calls": 18,
+        "mdx.imports": 45,
+        "python.calls": 33,
+        "python.imports": 11,
+        "python.type_ref": 672,
+        "shell.calls": 6,
+        "svelte.calls": 2990,
+        "svelte.instantiates": 4,
+        "svelte.type_ref": 874,
+        "swift.calls": 96,
+        "swift.implements": 7,
+        "swift.imports": 5,
+        "swift.inherits": 1,
+        "swift.type_ref": 6515,
+        "typescript.calls": 595,
+        "typescript.inherits": 1,
+        "typescript.instantiates": 29,
+        "typescript.type_ref": 1303
+      }
     },
     {
       "assertions": {
+        "min_resolution_rate": 97,
         "min_routes": 21
       },
-      "code_chunks": 608,
-      "edges": 711,
+      "code_chunks": 825,
       "files": 43,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 711,
+      "internal_unresolved": 18,
       "languages": {
         "javascript": 1,
         "json": 6,
@@ -858,81 +1192,147 @@
         "typescript": 35
       },
       "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld",
+      "perf": {
+        "end_ws_mb": 196,
+        "files_per_sec": 17,
+        "index_duration_ms": 2494
+      },
       "project": "ts-nestjs-realworld",
+      "resolution_rate": 97.53,
       "routes": 21,
       "symbols": 356,
-      "unresolved_refs": 18
+      "unresolved_by_lang_kind": {
+        "markdown.imports": 1,
+        "typescript.calls": 17
+      }
     },
     {
-      "assertions": {},
-      "code_chunks": 1159,
-      "edges": 1041,
+      "assertions": {
+        "min_resolution_rate": 52
+      },
+      "code_chunks": 4316,
       "files": 285,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 1053,
+      "internal_unresolved": 941,
       "languages": {
         "css": 2,
+        "handlebars": 3,
         "html": 1,
         "javascript": 85,
         "json": 2,
         "markdown": 5,
         "scss": 9,
+        "vue": 131,
         "xml": 46,
         "yaml": 1
       },
       "path": "F:/Work/Projects/TestProjects/vue-element-admin",
+      "perf": {
+        "end_ws_mb": 200,
+        "files_per_sec": 156,
+        "index_duration_ms": 1824
+      },
       "project": "vue-element-admin",
+      "resolution_rate": 52.81,
       "routes": 0,
       "symbols": 2314,
-      "unresolved_refs": 941
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 210,
+        "javascript.type_ref": 18,
+        "vue.calls": 713
+      }
     },
     {
-      "assertions": {},
-      "code_chunks": 9154,
-      "edges": 14089,
+      "assertions": {
+        "min_resolution_rate": 88
+      },
+      "code_chunks": 30330,
       "files": 1619,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 14086,
+      "internal_unresolved": 1820,
       "languages": {
-        "css": 1,
+        "css": 13,
         "dockerfile": 1,
         "html": 8,
         "javascript": 6,
-        "json": 78,
-        "markdown": 115,
+        "json": 141,
+        "markdown": 132,
+        "nginx": 1,
+        "scss": 4,
         "shell": 1,
-        "typescript": 297,
-        "xml": 4,
+        "typescript": 659,
+        "vue": 628,
+        "xml": 21,
         "yaml": 4
       },
       "path": "F:/Work/Projects/TestProjects/vue-vben-admin",
+      "perf": {
+        "end_ws_mb": 347,
+        "files_per_sec": 24,
+        "index_duration_ms": 68698
+      },
       "project": "vue-vben-admin",
+      "resolution_rate": 88.56,
       "routes": 0,
       "symbols": 14093,
-      "unresolved_refs": 1820
+      "unresolved_by_lang_kind": {
+        "html.calls": 6,
+        "javascript.calls": 1,
+        "markdown.imports": 24,
+        "shell.calls": 1,
+        "typescript.calls": 185,
+        "typescript.inherits": 1,
+        "typescript.instantiates": 11,
+        "typescript.type_ref": 461,
+        "vue.calls": 901,
+        "vue.instantiates": 2,
+        "vue.type_ref": 227
+      }
     },
     {
-      "assertions": {},
-      "code_chunks": 1175,
-      "edges": 1352,
+      "assertions": {
+        "min_resolution_rate": 73
+      },
+      "code_chunks": 3206,
       "files": 199,
       "flow_edge_types": {},
       "flow_edges": 0,
+      "internal_edges": 1352,
+      "internal_unresolved": 498,
       "languages": {
         "html": 1,
         "javascript": 3,
-        "json": 14,
+        "json": 15,
         "markdown": 6,
         "scss": 6,
         "toml": 1,
         "typescript": 66,
+        "vue": 99,
         "xml": 2
       },
       "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin",
+      "perf": {
+        "end_ws_mb": 148,
+        "files_per_sec": 54,
+        "index_duration_ms": 3716
+      },
       "project": "vue-vuestic-admin",
+      "resolution_rate": 73.08,
       "routes": 0,
       "symbols": 1196,
-      "unresolved_refs": 498
+      "unresolved_by_lang_kind": {
+        "markdown.imports": 7,
+        "typescript.calls": 7,
+        "typescript.instantiates": 1,
+        "typescript.type_ref": 75,
+        "vue.calls": 345,
+        "vue.instantiates": 1,
+        "vue.type_ref": 62
+      }
     }
   ],
   "version": "0.2.0-dev"
