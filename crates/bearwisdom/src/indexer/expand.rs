@@ -26,7 +26,7 @@ use tracing::{debug, info};
 
 use crate::db::Database;
 use crate::ecosystem::SymbolLocationIndex;
-use crate::indexer::full::parse_file;
+use crate::indexer::full::parse_file_with_demand;
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::ChainMiss;
 use crate::indexer::write;
@@ -99,12 +99,19 @@ pub fn expand_chain_reachability_with_index(
 
     // Build the dedupe sets — ext: paths already parsed this run and a set of
     // absolute paths already queued for this pass so multiple misses for the
-    // same file don't parse it twice.
+    // same file don't parse it twice. `per_file_demand` accumulates, per
+    // walked file, the set of symbol names the chain walker actually wants
+    // — every miss's `target_name` plus the last segment of `current_type`
+    // (the name the walker already resolved to and whose members we need).
+    // Passed to `extract_with_demand` so a located .d.ts is extracted only
+    // for the handful of names we asked about.
     let mut new_walked: Vec<WalkedFile> = Vec::new();
     let mut seen_paths: std::collections::HashSet<std::path::PathBuf> =
         std::collections::HashSet::new();
     let mut already_walked: std::collections::HashSet<String> =
         std::collections::HashSet::new();
+    let mut per_file_demand: HashMap<std::path::PathBuf, std::collections::HashSet<String>> =
+        HashMap::new();
     for pf in parsed.iter() {
         if pf.path.starts_with("ext:") {
             already_walked.insert(pf.path.clone());
@@ -115,7 +122,18 @@ pub fn expand_chain_reachability_with_index(
         let hits = locate_via_symbol_index(index, miss);
         if hits.is_empty() { continue }
         stats.mapped += 1;
+        let current_leaf = miss
+            .current_type
+            .rsplit(['.', '\\', '/', ':'])
+            .next()
+            .unwrap_or("")
+            .to_string();
         for path in hits {
+            let demand_entry = per_file_demand.entry(path.clone()).or_default();
+            demand_entry.insert(miss.target_name.clone());
+            if !current_leaf.is_empty() {
+                demand_entry.insert(current_leaf.clone());
+            }
             if !seen_paths.insert(path.clone()) { continue }
             let Some(language) = language_from_file_ext(&path) else {
                 // Extension the indexer can't parse — skip.
@@ -144,11 +162,14 @@ pub fn expand_chain_reachability_with_index(
     // Parse new files in parallel. Errors are logged but not fatal.
     let new_parsed: Vec<ParsedFile> = new_walked
         .par_iter()
-        .filter_map(|w| match parse_file(w, registry) {
-            Ok(pf) => Some(pf),
-            Err(e) => {
-                debug!("expand: parse failed for {}: {e}", w.relative_path);
-                None
+        .filter_map(|w| {
+            let demand = per_file_demand.get(&w.absolute_path);
+            match parse_file_with_demand(w, registry, demand) {
+                Ok(pf) => Some(pf),
+                Err(e) => {
+                    debug!("expand: parse failed for {}: {e}", w.relative_path);
+                    None
+                }
             }
         })
         .collect();

@@ -18,6 +18,7 @@
 // work unchanged. Phase 4 migrates the schema and renames.
 // =============================================================================
 
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -1123,57 +1124,275 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
         return SymbolLocationIndex::new();
     }
 
-    // Parallel header-only scan. Each task returns
-    // `(module, name, file, is_global)` tuples merged into one index.
-    let per_file: Vec<Vec<(String, String, PathBuf, bool)>> = work
+    // Parallel header-only scan. Each task returns a FileExports record
+    // capturing (a) which names the file defines locally, (b) which names
+    // it re-exports and from where, (c) wildcard `export * from 'x'`
+    // sources, and (d) `declare global { ... }` names.
+    let scanned: Vec<(String, PathBuf, FileExports)> = work
         .par_iter()
         .map(|(module, wf)| {
-            let Ok(src) = std::fs::read_to_string(&wf.absolute_path) else {
-                return Vec::new();
-            };
-            let (regular, globals) = scan_ts_header(&src, wf.language);
-            let mut out = Vec::with_capacity(regular.len() + globals.len());
-            for name in regular {
-                out.push((module.clone(), name, wf.absolute_path.clone(), false));
-            }
-            for name in globals {
-                out.push((module.clone(), name, wf.absolute_path.clone(), true));
-            }
-            out
+            let exports = std::fs::read_to_string(&wf.absolute_path)
+                .ok()
+                .map(|src| scan_ts_file_exports(&src, wf.language))
+                .unwrap_or_default();
+            (module.clone(), wf.absolute_path.clone(), exports)
         })
         .collect();
 
+    // Build a by-path view for re-export resolution. Two structures: a
+    // HashSet<PathBuf> of every scanned file (for `resolve_relative_in_set`
+    // so we don't hit the filesystem per edge) and a HashMap<Path, &exports>
+    // so resolve_definition can follow named re-exports through the graph.
+    let known_paths: HashSet<PathBuf> =
+        scanned.iter().map(|(_, p, _)| p.clone()).collect();
+    let by_path: HashMap<&Path, &FileExports> = scanned
+        .iter()
+        .map(|(_, p, e)| (p.as_path(), e))
+        .collect();
+
     let mut index = SymbolLocationIndex::new();
-    for batch in per_file {
-        for (module, name, file, is_global) in batch {
-            // Regular decl: indexed under the package's own module.
-            // Global decl: ALSO indexed under the synthetic globals module
-            // so a bare-name fallback can locate it without knowing the
-            // originating package.
-            if is_global {
-                index.insert(NPM_GLOBALS_MODULE, name.clone(), file.clone());
+    for (module, file, exports) in &scanned {
+        // Globals: indexed under BOTH the synthetic globals module (so
+        // bare-name fallback finds them) and the owning package (so
+        // package-qualified lookups still resolve). Unchanged from before.
+        for g in &exports.globals {
+            index.insert(NPM_GLOBALS_MODULE, g.clone(), file.clone());
+            index.insert(module, g.clone(), file.clone());
+        }
+
+        // Named exports: resolve each to its DEFINITION file by walking
+        // the re-export graph. A barrel like `axios/index.d.ts` that
+        // does `export { get } from './core'` resolves 'get' to
+        // './core.d.ts' so `locate('axios', 'get')` points at the real
+        // definition instead of the barrel.
+        for (exposed, source) in &exports.named {
+            let mut visited = HashSet::new();
+            let def_file = resolve_definition(
+                &by_path,
+                &known_paths,
+                file,
+                source,
+                &mut visited,
+            )
+            .unwrap_or_else(|| file.clone());
+            index.insert(module, exposed.clone(), def_file);
+        }
+
+        // Wildcards: `export * from './mod'`. Collect every name exposed
+        // through the wildcard chain (recursive, cycle-guarded) and
+        // register each under OUR package's module with the definition
+        // file. Cross-package wildcards (`export * from 'other-pkg'`)
+        // are skipped — the other package's scan already indexes those
+        // names under its own module, and we don't want to double-count.
+        let mut wc_seen: HashSet<PathBuf> = HashSet::new();
+        let mut wc_names: HashMap<String, PathBuf> = HashMap::new();
+        for wc in &exports.wildcards {
+            if !wc.starts_with('.') {
+                continue;
             }
-            index.insert(module, name, file);
+            let Some(parent) = file.parent() else { continue };
+            let Some(wc_path) = resolve_relative_in_set(parent, wc, &known_paths) else {
+                continue;
+            };
+            collect_wildcard_names(
+                &by_path,
+                &known_paths,
+                &wc_path,
+                &mut wc_seen,
+                &mut wc_names,
+            );
+        }
+        for (name, def_file) in wc_names {
+            index.insert(module, name, def_file);
         }
     }
     index
 }
 
-/// Header-only tree-sitter scan of a TS/TSX/JS source file. Returns
-/// `(regular_names, global_names)`:
+// ---------------------------------------------------------------------------
+// Re-export resolution helpers (index-build time)
+// ---------------------------------------------------------------------------
+
+/// Follow a (potentially chained) re-export from `current_file` to the file
+/// that actually defines the symbol. Returns `None` when the chain exits the
+/// same-package scope (cross-package specifier), dead-ends in an unscanned
+/// file, or hits a cycle.
 ///
-/// - `regular_names` — top-level decls the file exports or declares:
-///   classes, interfaces, functions, type aliases, enums, top-level
-///   const/let/var, plus names inside `declare module 'foo' { ... }`
-///   ambient blocks (DefinitelyTyped shape). Function/method/class bodies
-///   are not walked.
-/// - `global_names` — names declared inside `declare global { ... }`
-///   blocks. These pollute the runtime's global scope (vitest's
-///   `describe`/`it`/`expect` when `globals: true`, `@types/jest`
-///   globals, `@types/node`'s `process`/`Buffer`, etc.) and need a
-///   separate index entry so bare-name refs can find them without
-///   knowing which package they came from.
-fn scan_ts_header(source: &str, language: &str) -> (Vec<String>, Vec<String>) {
+/// Callers fall back to indexing the name at the barrel file on `None`,
+/// preserving pre-refactor behaviour for cases we can't follow statically.
+fn resolve_definition(
+    by_path: &HashMap<&Path, &FileExports>,
+    known_paths: &HashSet<PathBuf>,
+    current_file: &Path,
+    source: &ExportSource,
+    visited: &mut HashSet<(PathBuf, String)>,
+) -> Option<PathBuf> {
+    match source {
+        ExportSource::Local => Some(current_file.to_path_buf()),
+        ExportSource::Reexport { module, original } => {
+            if !module.starts_with('.') {
+                // Cross-package — the target package's scan indexes its
+                // own Locals under its own module, so `locate(target_pkg,
+                // original)` already answers for the user. We can't
+                // bridge pkg-A's re-export of pkg-B's symbol into a
+                // unified pointer without the pkg-B index in hand, and
+                // that lives in a different ecosystem's dep_roots.
+                return None;
+            }
+            let parent = current_file.parent()?;
+            let target = resolve_relative_in_set(parent, module, known_paths)?;
+            if !visited.insert((target.clone(), original.clone())) {
+                return None;
+            }
+            let target_exports = by_path.get(target.as_path())?;
+            if let Some(inner) = target_exports.named.get(original) {
+                return resolve_definition(
+                    by_path,
+                    known_paths,
+                    &target,
+                    inner,
+                    visited,
+                );
+            }
+            // Name not directly in target.named — try wildcard re-exports
+            // in the target file. `export * from './sub'` surfaces every
+            // name in sub under the current file's export set.
+            for wc in &target_exports.wildcards {
+                if !wc.starts_with('.') {
+                    continue;
+                }
+                let Some(wc_parent) = target.parent() else { continue };
+                let Some(wc_path) =
+                    resolve_relative_in_set(wc_parent, wc, known_paths)
+                else {
+                    continue;
+                };
+                let Some(wc_exports) = by_path.get(wc_path.as_path()) else {
+                    continue;
+                };
+                if let Some(inner) = wc_exports.named.get(original) {
+                    if let Some(def) = resolve_definition(
+                        by_path,
+                        known_paths,
+                        &wc_path,
+                        inner,
+                        visited,
+                    ) {
+                        return Some(def);
+                    }
+                }
+            }
+            None
+        }
+    }
+}
+
+/// Gather every name reachable through `export * from` starting at `file`,
+/// mapping each to its definition path. Wildcards chain through nested
+/// wildcards too. `seen` guards cycles; `out` accumulates names with
+/// first-writer-wins semantics (consistent with the index at large).
+fn collect_wildcard_names(
+    by_path: &HashMap<&Path, &FileExports>,
+    known_paths: &HashSet<PathBuf>,
+    file: &Path,
+    seen: &mut HashSet<PathBuf>,
+    out: &mut HashMap<String, PathBuf>,
+) {
+    if !seen.insert(file.to_path_buf()) {
+        return;
+    }
+    let Some(exports) = by_path.get(file) else { return };
+    for (name, source) in &exports.named {
+        if out.contains_key(name) {
+            continue;
+        }
+        let mut visited = HashSet::new();
+        let def_file = resolve_definition(by_path, known_paths, file, source, &mut visited)
+            .unwrap_or_else(|| file.to_path_buf());
+        out.insert(name.clone(), def_file);
+    }
+    for wc in &exports.wildcards {
+        if !wc.starts_with('.') {
+            continue;
+        }
+        let Some(parent) = file.parent() else { continue };
+        let Some(wc_path) = resolve_relative_in_set(parent, wc, known_paths) else {
+            continue;
+        };
+        collect_wildcard_names(by_path, known_paths, &wc_path, seen, out);
+    }
+}
+
+/// Filesystem-free variant of `resolve_ts_relative_import`: probes the set
+/// of already-scanned files (with the same extension + index resolution
+/// rules) instead of hitting disk. Saves millions of `is_file` syscalls
+/// on large `node_modules` trees.
+fn resolve_relative_in_set(
+    base_dir: &Path,
+    specifier: &str,
+    known: &HashSet<PathBuf>,
+) -> Option<PathBuf> {
+    let target = base_dir.join(specifier);
+    const EXTS: &[&str] = &[
+        "ts", "tsx", "d.ts", "mts", "cts", "js", "jsx", "mjs", "cjs",
+    ];
+    for ext in EXTS {
+        let candidate = target.with_extension(ext);
+        if known.contains(&candidate) {
+            return Some(candidate);
+        }
+    }
+    for ext in EXTS {
+        let candidate = target.join(format!("index.{ext}"));
+        if known.contains(&candidate) {
+            return Some(candidate);
+        }
+    }
+    None
+}
+
+/// How an exposed name in a TS/JS file gets its value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum ExportSource {
+    /// `function X() {}`, `class X {}`, `export { localX }`, etc. — X is
+    /// defined in this file.
+    Local,
+    /// `export { Orig as Exposed } from 'module'` — the exposed name is
+    /// sourced from `module`, under `original_name` (which equals the
+    /// exposed name when there's no renaming).
+    Reexport { module: String, original: String },
+}
+
+/// Per-file export summary built by `scan_ts_file_exports`. Keys of
+/// `named` are exposed names; the enum tells us whether a name is a
+/// definition or a re-export so the index builder can follow re-exports
+/// to the file that actually defines the symbol.
+#[derive(Debug, Default, Clone)]
+struct FileExports {
+    /// exposed_name → where the value comes from
+    named: HashMap<String, ExportSource>,
+    /// Module specifiers of `export * from '<module>'` statements.
+    wildcards: Vec<String>,
+    /// `declare global { ... }` names — surfaced separately (pollute the
+    /// global namespace regardless of any import).
+    globals: Vec<String>,
+}
+
+/// Header-only tree-sitter scan of a TS/TSX/JS source file. Returns a
+/// FileExports describing:
+///
+/// - `named`: top-level decls and named exports. Each keyed by the name
+///   *as exposed by this file* and tagged with whether it's defined here
+///   (Local) or re-exported from another module (Reexport).
+/// - `wildcards`: `export * from 'x'` module specifiers.
+/// - `globals`: names declared inside `declare global { ... }` blocks.
+///
+/// Function/method/class bodies are not walked. DefinitelyTyped shapes
+/// (`declare module 'foo' { ... }`) surface their inner decls as Local
+/// under the ambient module name of the containing file.
+fn scan_ts_file_exports(source: &str, language: &str) -> FileExports {
+    let mut out = FileExports::default();
+
     let ts_lang: tree_sitter::Language = match language {
         "tsx" => tree_sitter_typescript::LANGUAGE_TSX.into(),
         "javascript" | "jsx" => tree_sitter_javascript::LANGUAGE.into(),
@@ -1181,18 +1400,17 @@ fn scan_ts_header(source: &str, language: &str) -> (Vec<String>, Vec<String>) {
     };
     let mut parser = Parser::new();
     if parser.set_language(&ts_lang).is_err() {
-        return (Vec::new(), Vec::new());
+        return out;
     }
     let Some(tree) = parser.parse(source, None) else {
-        return (Vec::new(), Vec::new());
+        return out;
     };
 
     let root = tree.root_node();
     let bytes = source.as_bytes();
-    let mut regular: Vec<String> = Vec::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
-        collect_top_level_decl_name(&child, bytes, &mut regular);
+        collect_file_exports(&child, bytes, &mut out);
     }
 
     // `declare global { ... }` extraction: tree-sitter-typescript's grammar
@@ -1200,9 +1418,20 @@ fn scan_ts_header(source: &str, language: &str) -> (Vec<String>, Vec<String>) {
     // to a regex sweep of the source. Brace counts bound the block; the
     // inner regex captures `const|let|var|function|class|type|interface`
     // declarations by name.
-    let globals = scan_declare_global_blocks(source);
+    out.globals = scan_declare_global_blocks(source);
+    out
+}
 
-    (regular, globals)
+/// Back-compat helper: the pre-refactor `scan_ts_header` returned
+/// `(regular_names, global_names)` as flat vecs. Tests and a handful of
+/// callers still depend on that shape. We derive it from the richer
+/// FileExports so both surfaces stay in sync.
+#[cfg(test)]
+fn scan_ts_header(source: &str, language: &str) -> (Vec<String>, Vec<String>) {
+    let exports = scan_ts_file_exports(source, language);
+    let mut regular: Vec<String> = exports.named.into_keys().collect();
+    regular.sort();
+    (regular, exports.globals)
 }
 
 /// Extract names from `declare global { ... }` blocks via brace-aware
@@ -1245,12 +1474,14 @@ fn scan_declare_global_blocks(source: &str) -> Vec<String> {
 }
 
 /// Inspect one direct child of the source-file root and record any top-level
-/// declaration name it exposes. Recurses into `export_statement` and
-/// `declare module 'foo' { ... }` wrappers since those hold the same decls
-/// underneath. Does NOT recurse into `block` / `statement_block` /
-/// `class_body` / `function_body` — bodies are where header-only parsing
-/// draws the line.
-fn collect_top_level_decl_name(node: &Node, bytes: &[u8], out: &mut Vec<String>) {
+/// declaration or export into `out`. Local definitions land as
+/// `ExportSource::Local`; named re-exports (`export { X } from 'mod'`) land
+/// as `ExportSource::Reexport`; star re-exports (`export * from 'mod'`) land
+/// in `out.wildcards`. Recurses into `export_statement`, `ambient_declaration`,
+/// and `internal_module`/`module` (namespace) wrappers. Does NOT recurse into
+/// `block` / `statement_block` / `class_body` / `function_body` — bodies are
+/// where header-only parsing draws the line.
+fn collect_file_exports(node: &Node, bytes: &[u8], out: &mut FileExports) {
     match node.kind() {
         "function_declaration"
         | "generator_function_declaration"
@@ -1262,22 +1493,22 @@ fn collect_top_level_decl_name(node: &Node, bytes: &[u8], out: &mut Vec<String>)
         | "enum_declaration" => {
             if let Some(name_node) = node.child_by_field_name("name") {
                 if let Ok(name) = name_node.utf8_text(bytes) {
-                    out.push(name.to_string());
+                    out.named
+                        .entry(name.to_string())
+                        .or_insert(ExportSource::Local);
                 }
             }
         }
         "lexical_declaration" | "variable_declaration" => {
-            // `const a = ..., b = ...;` — multiple declarators, each with a
-            // name field that's either a plain identifier or a destructuring
-            // pattern. Patterns are skipped; they're rare at module-top-level
-            // for public surface.
             let mut cursor = node.walk();
             for decl in node.children(&mut cursor) {
                 if decl.kind() == "variable_declarator" {
                     if let Some(name_node) = decl.child_by_field_name("name") {
                         if name_node.kind() == "identifier" {
                             if let Ok(name) = name_node.utf8_text(bytes) {
-                                out.push(name.to_string());
+                                out.named
+                                    .entry(name.to_string())
+                                    .or_insert(ExportSource::Local);
                             }
                         }
                     }
@@ -1285,53 +1516,94 @@ fn collect_top_level_decl_name(node: &Node, bytes: &[u8], out: &mut Vec<String>)
             }
         }
         "export_statement" => {
-            // `export class Foo` / `export function bar` / `export const X = ...`
-            // wrap the inner decl — recurse into children, which include
-            // both the wrapped decl and any `export_clause` with named
-            // re-exports.
+            // Source module (`from '<mod>'`) if present on this statement:
+            // `export { X } from './m'`  →  source = Some("./m")
+            // `export class Foo {}`       →  source = None
+            // `export * from './m'`       →  source = Some("./m")
+            let source_module = extract_export_source_module(node, bytes);
+
+            // Detect `export * from 'mod'` — a `*` token child with a source.
+            let mut has_star = false;
+            {
+                let mut cursor = node.walk();
+                for ch in node.children(&mut cursor) {
+                    if ch.kind() == "*" {
+                        has_star = true;
+                        break;
+                    }
+                }
+            }
+            if has_star {
+                if let Some(src) = source_module.clone() {
+                    out.wildcards.push(src);
+                }
+                // Star re-export has no named specifiers — done.
+                return;
+            }
+
+            // Walk children: for each export_clause, every specifier is a
+            // named (re-)export. Other children may be wrapped local decls
+            // (class/function/etc.) — recurse on those.
             let mut cursor = node.walk();
             for inner in node.children(&mut cursor) {
-                collect_top_level_decl_name(inner_ref(&inner), bytes, out);
-                // Named re-exports: `export { Foo, Bar as Baz } from 'x';`.
-                if inner.kind() == "export_clause" {
-                    let mut cc = inner.walk();
-                    for spec in inner.children(&mut cc) {
-                        if spec.kind() == "export_specifier" {
-                            // Use the exported alias (`alias`) if present,
-                            // otherwise the original `name`.
-                            let exported = spec
-                                .child_by_field_name("alias")
-                                .or_else(|| spec.child_by_field_name("name"));
-                            if let Some(name_node) = exported {
-                                if let Ok(name) = name_node.utf8_text(bytes) {
-                                    out.push(name.to_string());
-                                }
+                match inner.kind() {
+                    "export_clause" => {
+                        let mut cc = inner.walk();
+                        for spec in inner.children(&mut cc) {
+                            if spec.kind() != "export_specifier" {
+                                continue;
                             }
+                            let orig_node = spec.child_by_field_name("name");
+                            let alias_node = spec.child_by_field_name("alias");
+                            let exposed_node = alias_node.or(orig_node);
+                            let (Some(on), Some(en)) = (orig_node, exposed_node) else {
+                                continue;
+                            };
+                            let Ok(original) = on.utf8_text(bytes) else { continue };
+                            let Ok(exposed) = en.utf8_text(bytes) else { continue };
+                            let source = match source_module.clone() {
+                                Some(m) => ExportSource::Reexport {
+                                    module: m,
+                                    original: original.to_string(),
+                                },
+                                // `export { localX }` with no `from` clause —
+                                // forwards a locally-declared / locally-imported
+                                // binding. Treat as Local: the binding has to
+                                // resolve in this file's scope, and the
+                                // resolver will pick up the definition from
+                                // the import map or local decl.
+                                None => ExportSource::Local,
+                            };
+                            out.named
+                                .entry(exposed.to_string())
+                                .or_insert(source);
                         }
+                    }
+                    _ => {
+                        collect_file_exports(&inner, bytes, out);
                     }
                 }
             }
         }
         "ambient_declaration" => {
-            // `declare class X {}`, `declare function f(): void`, `declare module
-            // "foo" { ... }` — recurse into every child so the wrapped
-            // declaration (whatever it is) gets processed by its own arm.
+            // `declare class X {}`, `declare function f(): void`, `declare
+            // module 'foo' { ... }` — recurse so the wrapped declaration
+            // gets classified by its own arm.
             let mut cursor = node.walk();
             for inner in node.children(&mut cursor) {
-                collect_top_level_decl_name(&inner, bytes, out);
+                collect_file_exports(&inner, bytes, out);
             }
         }
         "internal_module" | "module" => {
-            // `namespace X { ... }` or `module "foo" { ... }`. The `body`
-            // field holds a statement_block; each direct child is a decl to
-            // record.
+            // `namespace X { ... }` or `module 'foo' { ... }`. Recurse
+            // into the body; each direct child is itself a decl.
             let body = node
                 .child_by_field_name("body")
                 .or_else(|| find_named_child(node, &["statement_block"]));
             if let Some(body) = body {
                 let mut cursor = body.walk();
                 for inner in body.children(&mut cursor) {
-                    collect_top_level_decl_name(&inner, bytes, out);
+                    collect_file_exports(&inner, bytes, out);
                 }
             }
         }
@@ -1339,7 +1611,26 @@ fn collect_top_level_decl_name(node: &Node, bytes: &[u8], out: &mut Vec<String>)
     }
 }
 
-fn inner_ref<'a>(n: &'a Node<'a>) -> &'a Node<'a> { n }
+/// Extract the `'module'` specifier from an `export ... from '...'` statement.
+/// Tree-sitter-typescript exposes it as a `source` field on the export_statement
+/// node. The raw text includes the surrounding quotes, which we strip here.
+fn extract_export_source_module(node: &Node, bytes: &[u8]) -> Option<String> {
+    if let Some(src) = node.child_by_field_name("source") {
+        if let Ok(raw) = src.utf8_text(bytes) {
+            return Some(strip_quotes(raw));
+        }
+    }
+    None
+}
+
+fn strip_quotes(s: &str) -> String {
+    s.trim()
+        .trim_start_matches('"')
+        .trim_end_matches('"')
+        .trim_start_matches('\'')
+        .trim_end_matches('\'')
+        .to_string()
+}
 
 fn find_named_child<'a>(node: &'a Node<'a>, kinds: &[&str]) -> Option<Node<'a>> {
     let mut cursor = node.walk();

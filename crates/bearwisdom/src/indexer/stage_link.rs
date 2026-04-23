@@ -338,12 +338,45 @@ pub(crate) fn seed_demand_from_user_refs(
     symbol_index: &SymbolLocationIndex,
     registry: &LanguageRegistry,
 ) -> Vec<ParsedFile> {
+    // Run the BFS on an 8 MiB-stack worker, matching the budget rayon parse
+    // workers use. The main thread's Windows default of 1 MiB is too small
+    // for tree-sitter extractors walking deeply-nested external .d.ts files
+    // (ts-immich hits this on a transitive dependency of `@types/node`).
+    // Scoped thread so we can borrow `parsed`, `symbol_index`, and
+    // `registry` without cloning.
+    std::thread::scope(|s| {
+        let handle = std::thread::Builder::new()
+            .name("bw-demand-seed".to_string())
+            .stack_size(8 * 1024 * 1024)
+            .spawn_scoped(s, move || {
+                seed_demand_from_user_refs_inner(parsed, symbol_index, registry)
+            })
+            .expect("failed to spawn bw-demand-seed thread");
+        handle.join().unwrap_or_else(|_| {
+            tracing::warn!("bw-demand-seed thread panicked; returning empty seed set");
+            Vec::new()
+        })
+    })
+}
+
+fn seed_demand_from_user_refs_inner(
+    parsed: &[ParsedFile],
+    symbol_index: &SymbolLocationIndex,
+    registry: &LanguageRegistry,
+) -> Vec<ParsedFile> {
     // Safety cap against pathological cases (mutual cycles not caught by
     // the `seen` set because of symlink-like aliasing, etc.).
     const MAX_PULLS_PER_SEED: usize = 20_000;
 
     // Single pass over `parsed`: populates `already_virtual`, `wanted_names`,
-    // and seeds `queue`. One loop, one touch per ref.
+    // and seeds `queue`. Only refs with import context feed the seed — an
+    // explicit `Imports` edge, or any ref whose module is populated (namespace-
+    // qualified member chains). Bare call targets like `.map()` / `.push()`
+    // are intentionally excluded: they match tens of thousands of symbols
+    // across the index and previously blew seed_demand out to 18k+ pulled
+    // files on ts-immich. The chain walker's demand-expansion pass
+    // (expand_chain_reachability_with_index) picks up unresolved bare refs
+    // during resolve iterations with proper type context.
     let mut wanted_names: HashSet<String> = HashSet::new();
     let mut seen_paths: HashSet<PathBuf> = HashSet::new();
     let mut queue: VecDeque<PathBuf> = VecDeque::new();
@@ -355,6 +388,15 @@ pub(crate) fn seed_demand_from_user_refs(
         }
         for r in &pf.refs {
             if r.target_name.is_empty() { continue }
+            // `module` unambiguously routes a ref to one external file via
+            // the symbol index. Without module, enqueue_named_target falls
+            // through to `find_by_name` which matches every file in the
+            // index that happens to define something with that name —
+            // `Request`/`Response`/`Buffer` live in dozens of unrelated
+            // packages. The chain walker's expand_chain_reachability_with
+            // _index picks up unresolved module-less refs during resolve
+            // iterations with proper type context.
+            if r.module.is_none() { continue }
             wanted_names.insert(r.target_name.clone());
             enqueue_named_target(
                 symbol_index,
@@ -378,7 +420,11 @@ pub(crate) fn seed_demand_from_user_refs(
         pulls += 1;
 
         let Some(walked) = make_walked_file(&path, &already_virtual) else { continue };
-        let mut pf = match super::full::parse_file(&walked, registry) {
+        // Demand-filter the extraction to `wanted_names`. Without this, a
+        // single lib.dom.d.ts gets extracted with ~12k symbols even though
+        // the user only references ~200 types from it — hundreds of MiB of
+        // extra ParsedFile state retained until phase 13.
+        let mut pf = match super::full::parse_file_with_demand(&walked, registry, Some(&wanted_names)) {
             Ok(pf) => pf,
             Err(e) => {
                 debug!("seed: parse failed for {}: {e}", walked.relative_path);
@@ -395,22 +441,18 @@ pub(crate) fn seed_demand_from_user_refs(
             crate::ecosystem::npm::prefix_ts_external_symbols(&mut pf, &pkg);
         }
 
-        // Follow re-exports — but only for names in the wanted set. An
-        // `export { Foo } from './types'` is interesting only when `Foo`
-        // is something the user actually needs.
-        let file_dir = path.parent().unwrap_or_else(|| Path::new("."));
-        for r in &pf.refs {
-            if r.kind != EdgeKind::Imports { continue }
-            if !wanted_names.contains(&r.target_name) { continue }
-            enqueue_named_target(
-                symbol_index,
-                &r.target_name,
-                r.module.as_deref(),
-                Some(file_dir),
-                &mut seen_paths,
-                &mut queue,
-            );
-        }
+        // No re-export walking here by design. build_npm_symbol_index
+        // resolves re-exports at index-build time so every entry in the
+        // symbol index already points to the file that DEFINES the symbol
+        // (not the barrel that forwards it). `locate(pkg, name)` above
+        // therefore lands on the definition file on the first hop, so
+        // enqueuing its imports would only pull transitive type
+        // dependencies the chain walker doesn't actually need yet.
+        //
+        // Deeper misses (a member access whose receiver's type is defined
+        // in another file) are handled by expand_chain_reachability_with
+        // _index during resolve iterations — demand-driven and per-target,
+        // not unbounded BFS.
 
         all_parsed.push(pf);
     }
@@ -477,7 +519,7 @@ fn enqueue_named_target(
 /// Resolve a TypeScript / JavaScript relative import specifier to an
 /// absolute file path. Tries the extensions Node / bundlers try in order,
 /// then the `index.*` variant if the specifier points at a directory.
-fn resolve_ts_relative_import(base_dir: &Path, specifier: &str) -> Option<PathBuf> {
+pub(crate) fn resolve_ts_relative_import(base_dir: &Path, specifier: &str) -> Option<PathBuf> {
     let target = base_dir.join(specifier);
     const EXTS: &[&str] = &["ts", "tsx", "d.ts", "mts", "cts", "js", "jsx", "mjs", "cjs"];
     for ext in EXTS {
