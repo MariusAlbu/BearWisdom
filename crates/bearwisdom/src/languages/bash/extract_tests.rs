@@ -149,3 +149,56 @@ notify_slack done
             .collect();
         assert!(calls.contains(&"date"), "expected Calls ref to 'date' from embedded $(...); got: {calls:?}");
     }
+
+    // --- Shell source module field tests (ported from 8dcc438) ---
+
+    /// The `module` field of a source import must carry the raw path so that the
+    /// resolver can suffix-match it against indexed .sh files.
+    #[test]
+    fn source_import_module_field_carries_raw_path() {
+        let src = r#"source ./lib/helpers.sh"#;
+        let r = extract::extract(src);
+        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
+        assert_eq!(
+            imp.module.as_deref(),
+            Some("./lib/helpers.sh"),
+            "module should be the raw path"
+        );
+    }
+
+    /// Variable-prefixed source paths: `source "$OSH/themes/foo.sh"` should
+    /// produce an Imports edge with the variable-embedded path in `module`.
+    /// The resolver strips `$OSH/` and suffix-matches `themes/foo.sh` against
+    /// indexed files.
+    #[test]
+    fn source_variable_path_produces_import_ref_with_module() {
+        let src = r#"source "$OSH/themes/powerline/powerline.base.sh""#;
+        let r = extract::extract(src);
+        let imports: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Imports).collect();
+        assert!(!imports.is_empty(), "expected import ref for $VAR-path source");
+        let module = imports[0].module.as_deref().unwrap_or("");
+        // The module field must contain the path (with or without the `$OSH` prefix).
+        assert!(
+            module.contains("powerline.base.sh"),
+            "module field should contain the target filename; got: {module:?}"
+        );
+    }
+
+    /// A function call inside a function body is extracted as a Calls ref.
+    #[test]
+    fn function_body_call_produces_calls_ref() {
+        let src = r#"
+function deploy() {
+    run_backup
+    cleanup_old_logs
+}
+"#;
+        let r = extract::extract(src);
+        let calls: Vec<_> = r.refs.iter().filter(|r| r.kind == EdgeKind::Calls).collect();
+        let names: Vec<&str> = calls.iter().map(|r| r.target_name.as_str()).collect();
+        assert!(names.contains(&"run_backup"), "expected run_backup call: {names:?}");
+        assert!(
+            names.contains(&"cleanup_old_logs"),
+            "expected cleanup_old_logs call: {names:?}"
+        );
+    }
