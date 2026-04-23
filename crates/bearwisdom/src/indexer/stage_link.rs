@@ -574,7 +574,7 @@ pub(crate) fn make_walked_file(
 /// demand-driven path, so per-locator `post_process_parsed` hooks (notably
 /// npm's `ext:ts:<pkg>/...` → prefix symbols with `<pkg>.`) recognize the
 /// pulled file the same as a walker-emitted one.
-fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<String> {
+pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<String> {
     let s = abs.to_string_lossy().replace('\\', "/");
     match language {
         "typescript" | "tsx" | "javascript" => {

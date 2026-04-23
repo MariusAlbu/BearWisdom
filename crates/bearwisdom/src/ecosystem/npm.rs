@@ -1229,6 +1229,18 @@ fn resolve_definition(
 ) -> Option<PathBuf> {
     match source {
         ExportSource::Local => Some(current_file.to_path_buf()),
+        ExportSource::Namespace { module } => {
+            // `export * as ns from './mod'` — ns points at the whole
+            // module's entry file. No single "original" symbol name to
+            // follow through chains; resolving terminates at the module
+            // file itself. Cross-package namespace re-exports return
+            // None with the same reasoning as cross-package Reexports.
+            if !module.starts_with('.') {
+                return None;
+            }
+            let parent = current_file.parent()?;
+            resolve_relative_in_set(parent, module, known_paths)
+        }
         ExportSource::Reexport { module, original } => {
             if !module.starts_with('.') {
                 // Cross-package — the target package's scan indexes its
@@ -1361,6 +1373,11 @@ enum ExportSource {
     /// sourced from `module`, under `original_name` (which equals the
     /// exposed name when there's no renaming).
     Reexport { module: String, original: String },
+    /// `export * as ns from 'module'` — the exposed name is the whole
+    /// module's namespace object. Resolves to the module's entry file;
+    /// there's no single `original` symbol name to track because the
+    /// namespace is the aggregate of every export in `module`.
+    Namespace { module: String },
 }
 
 /// Per-file export summary built by `scan_ts_file_exports`. Keys of
@@ -1408,18 +1425,114 @@ fn scan_ts_file_exports(source: &str, language: &str) -> FileExports {
 
     let root = tree.root_node();
     let bytes = source.as_bytes();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        collect_file_exports(&child, bytes, &mut out);
+
+    // First pass: build a local→(module, original_name) import map so the
+    // export pass can decide whether `export { X }` (no `from`) is a
+    // genuine local forward or a re-export of an imported binding. Without
+    // this, `import { X } from './mod'; export { X }` was misrecorded as
+    // Local pointing at the barrel file — breaking any downstream lookup
+    // that expected X's definition to be in `./mod`.
+    let mut imports: HashMap<String, (String, String)> = HashMap::new();
+    {
+        let mut cursor = root.walk();
+        for child in root.children(&mut cursor) {
+            collect_imports(&child, bytes, &mut imports);
+        }
+    }
+
+    // Second pass: exports + wildcards + namespace re-exports.
+    {
+        let mut cursor = root.walk();
+        for child in root.children(&mut cursor) {
+            collect_file_exports(&child, bytes, &mut out, &imports);
+        }
     }
 
     // `declare global { ... }` extraction: tree-sitter-typescript's grammar
     // wraps this inconsistently across minor grammar releases, so fall back
-    // to a regex sweep of the source. Brace counts bound the block; the
-    // inner regex captures `const|let|var|function|class|type|interface`
-    // declarations by name.
+    // to a regex sweep of the source.
     out.globals = scan_declare_global_blocks(source);
     out
+}
+
+/// Populate `out` with every import binding surfaced by an
+/// `import_statement` node. Entry shape: `local_name → (module, original)`.
+///
+/// - `import X from 'mod'`                    → `"X" → ("mod", "default")`
+/// - `import { X, Y as Y2 } from 'mod'`       → `"X" → ("mod", "X")`, `"Y2" → ("mod", "Y")`
+/// - `import * as ns from 'mod'`              → `"ns" → ("mod", "*")`
+/// - `import 'side-effect'`                   → nothing
+///
+/// The sentinel `"*"` in the original-name slot is recognised by the
+/// export pass and upgraded to an `ExportSource::Namespace` when the
+/// binding is re-exported without a `from` clause.
+fn collect_imports(
+    node: &Node,
+    bytes: &[u8],
+    out: &mut HashMap<String, (String, String)>,
+) {
+    if node.kind() != "import_statement" {
+        return;
+    }
+    let Some(module) = extract_export_source_module(node, bytes) else {
+        return;
+    };
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() != "import_clause" {
+            continue;
+        }
+        let mut cc = child.walk();
+        for piece in child.children(&mut cc) {
+            match piece.kind() {
+                // `import X from 'mod'` — default import.
+                "identifier" => {
+                    if let Ok(name) = piece.utf8_text(bytes) {
+                        out.insert(
+                            name.to_string(),
+                            (module.clone(), "default".to_string()),
+                        );
+                    }
+                }
+                // `import { X, Y as Y2 } from 'mod'`
+                "named_imports" => {
+                    let mut sc = piece.walk();
+                    for spec in piece.children(&mut sc) {
+                        if spec.kind() != "import_specifier" {
+                            continue;
+                        }
+                        let orig_node = spec.child_by_field_name("name");
+                        let alias_node = spec.child_by_field_name("alias");
+                        let local_node = alias_node.or(orig_node);
+                        let (Some(on), Some(ln)) = (orig_node, local_node) else {
+                            continue;
+                        };
+                        let Ok(original) = on.utf8_text(bytes) else { continue };
+                        let Ok(local) = ln.utf8_text(bytes) else { continue };
+                        out.insert(
+                            local.to_string(),
+                            (module.clone(), original.to_string()),
+                        );
+                    }
+                }
+                // `import * as ns from 'mod'`
+                "namespace_import" => {
+                    let mut sc = piece.walk();
+                    for n in piece.children(&mut sc) {
+                        if n.kind() == "identifier" {
+                            if let Ok(name) = n.utf8_text(bytes) {
+                                out.insert(
+                                    name.to_string(),
+                                    (module.clone(), "*".to_string()),
+                                );
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
 }
 
 /// Back-compat helper: the pre-refactor `scan_ts_header` returned
@@ -1481,7 +1594,12 @@ fn scan_declare_global_blocks(source: &str) -> Vec<String> {
 /// and `internal_module`/`module` (namespace) wrappers. Does NOT recurse into
 /// `block` / `statement_block` / `class_body` / `function_body` — bodies are
 /// where header-only parsing draws the line.
-fn collect_file_exports(node: &Node, bytes: &[u8], out: &mut FileExports) {
+fn collect_file_exports(
+    node: &Node,
+    bytes: &[u8],
+    out: &mut FileExports,
+    imports: &HashMap<String, (String, String)>,
+) {
     match node.kind() {
         "function_declaration"
         | "generator_function_declaration"
@@ -1517,33 +1635,71 @@ fn collect_file_exports(node: &Node, bytes: &[u8], out: &mut FileExports) {
         }
         "export_statement" => {
             // Source module (`from '<mod>'`) if present on this statement:
-            // `export { X } from './m'`  →  source = Some("./m")
-            // `export class Foo {}`       →  source = None
-            // `export * from './m'`       →  source = Some("./m")
+            // `export { X } from './m'`           →  source = Some("./m")
+            // `export class Foo {}`                →  source = None
+            // `export * from './m'`                →  source = Some("./m")
+            // `export * as ns from './m'`          →  source = Some("./m"), namespace re-export
             let source_module = extract_export_source_module(node, bytes);
 
-            // Detect `export * from 'mod'` — a `*` token child with a source.
+            // Scan direct children once for the three distinct shapes we need:
+            //   `*` alone                 → wildcard re-export
+            //   `*` + namespace_export    → named namespace re-export
+            //   `default` keyword         → default export (sibling may be a decl or identifier)
             let mut has_star = false;
+            let mut namespace_name: Option<String> = None;
+            let mut has_default_keyword = false;
             {
                 let mut cursor = node.walk();
                 for ch in node.children(&mut cursor) {
-                    if ch.kind() == "*" {
-                        has_star = true;
-                        break;
+                    match ch.kind() {
+                        "*" => has_star = true,
+                        "default" => has_default_keyword = true,
+                        "namespace_export" => {
+                            // `* as ns` — the identifier lives inside.
+                            let mut nc = ch.walk();
+                            for nch in ch.children(&mut nc) {
+                                if nch.kind() == "identifier" {
+                                    if let Ok(n) = nch.utf8_text(bytes) {
+                                        namespace_name = Some(n.to_string());
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
                     }
                 }
             }
+
             if has_star {
                 if let Some(src) = source_module.clone() {
-                    out.wildcards.push(src);
+                    if let Some(ns) = namespace_name {
+                        // `export * as ns from './mod'` — single named
+                        // export bound to the whole module namespace.
+                        out.named
+                            .entry(ns)
+                            .or_insert(ExportSource::Namespace { module: src });
+                    } else {
+                        // `export * from './mod'` — pure wildcard.
+                        out.wildcards.push(src);
+                    }
                 }
-                // Star re-export has no named specifiers — done.
+                // Star statement has no further specifiers to process.
                 return;
             }
 
-            // Walk children: for each export_clause, every specifier is a
-            // named (re-)export. Other children may be wrapped local decls
-            // (class/function/etc.) — recurse on those.
+            // `export default ...` — register a synthetic `default` entry
+            // so downstream `export { default as X } from './this'`
+            // re-exports in other files can resolve through the index.
+            // Points at this file: the wrapped declaration, object literal,
+            // or expression is what the default value resolves to.
+            if has_default_keyword {
+                out.named
+                    .entry("default".to_string())
+                    .or_insert(ExportSource::Local);
+            }
+
+            // Walk children: each export_clause specifier is a (re-)export;
+            // other children are wrapped local decls to recurse into.
             let mut cursor = node.walk();
             for inner in node.children(&mut cursor) {
                 match inner.kind() {
@@ -1561,18 +1717,35 @@ fn collect_file_exports(node: &Node, bytes: &[u8], out: &mut FileExports) {
                             };
                             let Ok(original) = on.utf8_text(bytes) else { continue };
                             let Ok(exposed) = en.utf8_text(bytes) else { continue };
-                            let source = match source_module.clone() {
-                                Some(m) => ExportSource::Reexport {
+                            // Three cases for the source:
+                            //   (a) `export { X } from 'mod'` — direct re-export.
+                            //   (b) `export { X }` with no `from`, but X was
+                            //       imported in this file — transitive re-export.
+                            //       Without this branch, the index would record
+                            //       X as Local to the barrel and lose the
+                            //       connection to the real definition file.
+                            //   (c) `export { X }` where X is a local decl.
+                            let source = if let Some(m) = source_module.clone() {
+                                // (a)
+                                ExportSource::Reexport {
                                     module: m,
                                     original: original.to_string(),
-                                },
-                                // `export { localX }` with no `from` clause —
-                                // forwards a locally-declared / locally-imported
-                                // binding. Treat as Local: the binding has to
-                                // resolve in this file's scope, and the
-                                // resolver will pick up the definition from
-                                // the import map or local decl.
-                                None => ExportSource::Local,
+                                }
+                            } else if let Some((m, imp_orig)) = imports.get(original) {
+                                // (b) — forward the imported binding to its real source.
+                                // `import * as ns; export { ns }` needs Namespace,
+                                // not Reexport, because `*` isn't a real symbol.
+                                if imp_orig == "*" {
+                                    ExportSource::Namespace { module: m.clone() }
+                                } else {
+                                    ExportSource::Reexport {
+                                        module: m.clone(),
+                                        original: imp_orig.clone(),
+                                    }
+                                }
+                            } else {
+                                // (c) — genuinely local.
+                                ExportSource::Local
                             };
                             out.named
                                 .entry(exposed.to_string())
@@ -1580,7 +1753,7 @@ fn collect_file_exports(node: &Node, bytes: &[u8], out: &mut FileExports) {
                         }
                     }
                     _ => {
-                        collect_file_exports(&inner, bytes, out);
+                        collect_file_exports(&inner, bytes, out, imports);
                     }
                 }
             }
@@ -1591,7 +1764,7 @@ fn collect_file_exports(node: &Node, bytes: &[u8], out: &mut FileExports) {
             // gets classified by its own arm.
             let mut cursor = node.walk();
             for inner in node.children(&mut cursor) {
-                collect_file_exports(&inner, bytes, out);
+                collect_file_exports(&inner, bytes, out, imports);
             }
         }
         "internal_module" | "module" => {
@@ -1603,7 +1776,7 @@ fn collect_file_exports(node: &Node, bytes: &[u8], out: &mut FileExports) {
             if let Some(body) = body {
                 let mut cursor = body.walk();
                 for inner in body.children(&mut cursor) {
-                    collect_file_exports(&inner, bytes, out);
+                    collect_file_exports(&inner, bytes, out, imports);
                 }
             }
         }

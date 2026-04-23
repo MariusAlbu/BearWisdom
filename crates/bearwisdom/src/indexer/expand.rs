@@ -139,7 +139,7 @@ pub fn expand_chain_reachability_with_index(
                 // Extension the indexer can't parse — skip.
                 continue;
             };
-            let virtual_path = virtual_path_for_indexed_file(&path);
+            let virtual_path = virtual_path_for_indexed_file(&path, language);
             if already_walked.contains(&virtual_path) { continue }
             new_walked.push(WalkedFile {
                 relative_path: virtual_path,
@@ -160,12 +160,25 @@ pub fn expand_chain_reachability_with_index(
     debug!("expand: {} new files to parse", new_walked.len());
 
     // Parse new files in parallel. Errors are logged but not fatal.
+    // Apply the same post-parse hook `seed_demand_from_user_refs` uses so
+    // pulled TS externals get their symbols prefixed with `<pkg>.` before
+    // the index sees them — otherwise expand-path qnames would diverge
+    // from seed-path qnames for the same file across iterations.
     let new_parsed: Vec<ParsedFile> = new_walked
         .par_iter()
         .filter_map(|w| {
             let demand = per_file_demand.get(&w.absolute_path);
             match parse_file_with_demand(w, registry, demand) {
-                Ok(pf) => Some(pf),
+                Ok(mut pf) => {
+                    if let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(
+                        &pf.path,
+                    )
+                    .map(str::to_string)
+                    {
+                        crate::ecosystem::npm::prefix_ts_external_symbols(&mut pf, &pkg);
+                    }
+                    Some(pf)
+                }
                 Err(e) => {
                     debug!("expand: parse failed for {}: {e}", w.relative_path);
                     None
@@ -240,14 +253,24 @@ fn locate_via_symbol_index(
     out
 }
 
-/// Build a stable virtual path for a file located through the symbol index.
-/// The pass-1 dedupe check compares `ParsedFile::path` against these virtual
-/// paths, so the shape has to survive re-iteration. We use `ext:idx:<absolute>`
-/// as a synthetic tag — distinct from any walker-emitted `ext:<lang>:...` so
-/// dedup is deterministic across iterations and can't collide with eager walk.
-fn virtual_path_for_indexed_file(path: &std::path::Path) -> String {
-    let stem = path.to_string_lossy().replace('\\', "/");
-    format!("ext:idx:{stem}")
+/// Build a virtual path for a file located through the symbol index.
+///
+/// Must match the shape used by `stage_link::seed_demand_from_user_refs` —
+/// if the two paths disagree, a file pulled by the seed on iteration 1 and
+/// re-pulled by chain expansion on iteration 2 gets a different
+/// `ParsedFile::path`, defeats the `already_walked` dedupe check, and gets
+/// parsed + written twice with mismatched qnames (because post-processing
+/// hooks like `prefix_ts_external_symbols` key off the `ext:ts:<pkg>/...`
+/// shape that the seed produces).
+///
+/// Falls back to `ext:idx:<absolute>` when the ecosystem-specific shape
+/// isn't applicable (same as `make_walked_file` in `stage_link`).
+fn virtual_path_for_indexed_file(
+    path: &std::path::Path,
+    language: &str,
+) -> String {
+    super::stage_link::virtual_path_for_pulled(path, language)
+        .unwrap_or_else(|| format!("ext:idx:{}", path.to_string_lossy().replace('\\', "/")))
 }
 
 /// Infer the language id for a file pulled through the demand-driven symbol
