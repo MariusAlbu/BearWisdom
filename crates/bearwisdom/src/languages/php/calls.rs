@@ -16,6 +16,11 @@ pub(super) fn extract_calls_from_body(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Each arm that recurses explicitly MUST `continue` — otherwise the
+    // unconditional recursion at the bottom of the loop visits the same
+    // subtree again, doubling work at every nesting level. A method chain
+    // N deep (common in Laravel fluent builders) otherwise costs O(2^N)
+    // recursions and ref-pushes, blowing memory into hundreds of MiB.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -36,6 +41,7 @@ pub(super) fn extract_calls_from_body(
                 }
                 // Recurse into the object expression and arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
+                continue;
             }
 
             "static_call_expression" | "scoped_call_expression" => {
@@ -55,6 +61,7 @@ pub(super) fn extract_calls_from_body(
                 }
                 // Recurse into arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
+                continue;
             }
 
             "object_creation_expression" => {
@@ -108,6 +115,7 @@ pub(super) fn extract_calls_from_body(
             // `match($x) { 1 => 'one', default => 'other' }` — recurse into arms.
             "match_expression" => {
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
+                continue;
             }
 
             // `fn($x) => $x->name` — recurse into body.
@@ -115,6 +123,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_calls_from_body(&body, src, source_symbol_index, refs);
                 }
+                continue;
             }
 
             // `function() use ($x) { ... }` — anonymous function.
@@ -123,6 +132,7 @@ pub(super) fn extract_calls_from_body(
                 if let Some(body) = child.child_by_field_name("body") {
                     extract_calls_from_body(&body, src, source_symbol_index, refs);
                 }
+                continue;
             }
 
             // `include 'file.php'` / `require_once 'config.php'` — emit Imports edge.
@@ -134,6 +144,7 @@ pub(super) fn extract_calls_from_body(
             // `"Hello $name and {$obj->method()}"` — interpolated string with embedded expressions.
             "encapsed_string" => {
                 extract_encapsed_string_calls(&child, src, source_symbol_index, refs);
+                continue;
             }
 
             _ => {}
