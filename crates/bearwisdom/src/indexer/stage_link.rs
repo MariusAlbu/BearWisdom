@@ -456,18 +456,28 @@ fn seed_demand_from_user_refs_inner(
             crate::ecosystem::npm::prefix_ts_external_symbols(&mut pf, &pkg);
         }
 
-        // No re-export walking here by design. build_npm_symbol_index
-        // resolves re-exports at index-build time so every entry in the
-        // symbol index already points to the file that DEFINES the symbol
-        // (not the barrel that forwards it). `locate(pkg, name)` above
-        // therefore lands on the definition file on the first hop, so
-        // enqueuing its imports would only pull transitive type
-        // dependencies the chain walker doesn't actually need yet.
+        // Inheritance closure: follow `extends` across sibling files in the
+        // same package. `BehaviorSubject.d.ts` has
+        //     import { Subject } from './Subject';
+        //     export declare class BehaviorSubject<T> extends Subject<T>
+        // — the TS chain walker's Phase-3 inheritance walk can only reach
+        // `Subject.asObservable` when Subject.d.ts is parsed too. The seed
+        // doesn't otherwise follow external→external relative imports, so
+        // this is the narrow door that pulls them in: only for Inherits
+        // edges, matched against the file's own Imports to discover the
+        // parent's module path. MAX_PULLS_PER_SEED caps any runaway.
         //
-        // Deeper misses (a member access whose receiver's type is defined
-        // in another file) are handled by expand_chain_reachability_with
-        // _index during resolve iterations — demand-driven and per-target,
-        // not unbounded BFS.
+        // Generic re-exports are intentionally NOT walked — build_npm_symbol
+        // _index already resolves those at index-build time and the symbol
+        // index therefore points at definition files directly.
+        follow_inheritance_closure(
+            &pf,
+            path.parent(),
+            symbol_index,
+            &mut wanted_names,
+            &mut seen_paths,
+            &mut queue,
+        );
 
         all_parsed.push(pf);
     }
@@ -525,6 +535,66 @@ fn enqueue_named_target(
         for (_module, path) in symbol_index.find_by_name(target_name) {
             let owned = path.to_path_buf();
             if seen.insert(owned.clone()) {
+                queue.push_back(owned);
+            }
+        }
+    }
+}
+
+/// For every `Inherits` ref emitted by an external file, pair it with the
+/// matching `Imports` ref (same `target_name`) in the same file to discover
+/// the parent class's module. Relative modules resolve against the file's
+/// own directory and enqueue the sibling file; bare modules route through
+/// the symbol index. The parent name is added to `wanted_names` so the
+/// parent file, when parsed, keeps the class past the demand filter.
+fn follow_inheritance_closure(
+    pf: &ParsedFile,
+    parent_dir: Option<&Path>,
+    symbol_index: &SymbolLocationIndex,
+    wanted_names: &mut HashSet<String>,
+    seen_paths: &mut HashSet<PathBuf>,
+    queue: &mut VecDeque<PathBuf>,
+) {
+    // Build local alias → module map from this file's import bindings.
+    // The TS extractor emits import bindings as `TypeRef` refs carrying a
+    // module path (see `typescript/imports.rs::push_import`) — `Imports`
+    // is reserved for CommonJS `import = require(...)`. Accept both so
+    // the closure works uniformly across TS and JS externals.
+    let mut import_module: HashMap<&str, &str> = HashMap::new();
+    for r in &pf.refs {
+        if !matches!(r.kind, EdgeKind::TypeRef | EdgeKind::Imports) {
+            continue;
+        }
+        let Some(m) = r.module.as_deref() else { continue };
+        if m.is_empty() {
+            continue;
+        }
+        import_module.insert(r.target_name.as_str(), m);
+    }
+
+    if import_module.is_empty() {
+        return;
+    }
+
+    for r in &pf.refs {
+        if r.kind != EdgeKind::Inherits {
+            continue;
+        }
+        let parent_name = r.target_name.as_str();
+        let Some(&module) = import_module.get(parent_name) else {
+            continue;
+        };
+        wanted_names.insert(parent_name.to_string());
+        if module.starts_with('.') {
+            let Some(base) = parent_dir else { continue };
+            if let Some(resolved) = resolve_ts_relative_import(base, module) {
+                if seen_paths.insert(resolved.clone()) {
+                    queue.push_back(resolved);
+                }
+            }
+        } else if let Some(path) = symbol_index.locate(module, parent_name) {
+            let owned = path.to_path_buf();
+            if seen_paths.insert(owned.clone()) {
                 queue.push_back(owned);
             }
         }
@@ -636,8 +706,16 @@ fn lookup_demand_for_walked<'a>(
     relative_path: &str,
     demand: &'a DemandSet,
 ) -> Option<&'a HashSet<String>> {
+    // Ambient-global libraries — lib.dom.d.ts, lib.es5.d.ts,
+    // lib.webworker.d.ts, @types/node — declare the whole runtime type
+    // surface. Filtering these by the project's user-ref demand set drops
+    // interfaces the user doesn't name directly but whose instance methods
+    // they still call (`Number.toFixed`, `String.trim`, `ExtendableEvent.waitUntil`).
+    // A top-level interface filtered out loses all its child method symbols,
+    // which leaves chain walkers nothing to land on. Parse these files
+    // fully — they're the type-system floor, not an optimisable surface.
     if is_ambient_global_external(relative_path) {
-        return demand.globals();
+        return None;
     }
 
     if let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(relative_path) {

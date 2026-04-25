@@ -237,6 +237,22 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
              COMMIT;",
         )?;
     }
+    // v0.11: Indexes on FK columns referencing symbols(id) so cascade
+    // DELETE doesn't trigger full table scans. On a 280k-symbol index
+    // (aspnetcore) deleting 7 symbol rows took 80s without these
+    // indexes — `code_chunks`, `db_mappings`, and `connection_points`
+    // each scanned their entire table per cascading delete because
+    // their `symbol_id` column had no covering index. Adding these
+    // makes incremental save-latency O(rows_per_symbol) instead of
+    // O(rows_in_table * symbols_deleted).
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_code_chunks_symbol
+            ON code_chunks(symbol_id) WHERE symbol_id IS NOT NULL;
+         CREATE INDEX IF NOT EXISTS idx_db_mappings_symbol
+            ON db_mappings(symbol_id);
+         CREATE INDEX IF NOT EXISTS idx_connection_points_symbol
+            ON connection_points(symbol_id) WHERE symbol_id IS NOT NULL;"
+    )?;
     Ok(())
 }
 

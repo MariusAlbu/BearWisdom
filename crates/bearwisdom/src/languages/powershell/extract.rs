@@ -881,6 +881,26 @@ fn extract_using(
 // Command (cmdlet invocation) → Calls edge
 // ---------------------------------------------------------------------------
 
+/// Does `name` look like a real PowerShell command/cmdlet name? Filters
+/// out extractor noise where tree-sitter-powershell produces a `command`
+/// node for a numeric / operator fragment (the classic offender being
+/// range expressions like `0..($n - 1)` inside a `foreach`).
+///
+/// Real names start with an ASCII letter or `_` and contain only
+/// alphanumerics plus `-`, `_`, `.`, `:`, `\`. Names with leading digits,
+/// `.`, or operator punctuation are rejected.
+fn looks_like_powershell_command_name(name: &str) -> bool {
+    let mut chars = name.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.' | ':' | '\\'))
+}
+
 fn extract_command(
     node: &Node,
     src: &str,
@@ -892,6 +912,16 @@ fn extract_command(
         Some(n) => n,
         None => return,
     };
+
+    // Filter garbage: tree-sitter-powershell occasionally parses expressions
+    // like `0..($n - 1)` (range operator) or operator fragments as `command`
+    // with a synthetic `command_name`. A real PowerShell command name starts
+    // with an ASCII letter or `_`, and contains only letters / digits / `-`
+    // / `_` / `.` / `:` / `\`. Anything else is extractor noise — skip so it
+    // doesn't leak into `unresolved_refs`.
+    if !looks_like_powershell_command_name(&cmd_name) {
+        return;
+    }
 
     // For `Import-Module`, try to extract the module name as an Imports edge;
     // fall back to emitting a Calls edge so the command node is always covered.

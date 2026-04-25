@@ -313,6 +313,96 @@ pub(super) fn push_ts_field(
     // Extract TypeRef from field type annotation: `db: DatabaseRepository`
     if let Some(type_ann) = node.child_by_field_name("type") {
         extract_type_ref_from_annotation(&type_ann, src, idx, refs);
+    } else if let Some(init) = node.child_by_field_name("value") {
+        // No explicit annotation — infer the field's type from its
+        // initializer the same way `push_variable_decl` does for locals.
+        // Without this, `private _x = new Foo()` leaves `_x`'s type
+        // unknown, and downstream chain walks like `this._x.bar()` bail
+        // at Phase 2 before reaching the method lookup.
+        infer_field_type_from_initializer(init, src, idx, refs);
+    }
+}
+
+fn infer_field_type_from_initializer(
+    init: Node,
+    src: &[u8],
+    field_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    // `private x = await Factory()` — unwrap the await so its inner
+    // call_expression drives the inference the same as a plain call.
+    let node = if init.kind() == "await_expression" {
+        init.child_by_field_name("value")
+            .or_else(|| init.named_child(0))
+            .unwrap_or(init)
+    } else {
+        init
+    };
+
+    match node.kind() {
+        "new_expression" => {
+            let Some(constructor) = node.child_by_field_name("constructor") else { return };
+            let type_name = match constructor.kind() {
+                "identifier" | "type_identifier" => node_text(constructor, src),
+                _ => return,
+            };
+            if type_name.is_empty() {
+                return;
+            }
+            refs.push(ExtractedRef {
+                source_symbol_index: field_idx,
+                target_name: type_name,
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+            });
+            // `new Foo<Bar, Baz>()` — emit each generic arg as an extra
+            // TypeRef so the field_type_args map picks them up (mirrors
+            // what extract_type_ref_from_annotation does for annotated
+            // fields).
+            if let Some(type_args) = node.child_by_field_name("type_arguments") {
+                let mut tc = type_args.walk();
+                for arg in type_args.children(&mut tc) {
+                    if arg.kind() == "type_identifier"
+                        || arg.kind() == "predefined_type"
+                        || arg.kind() == "identifier"
+                    {
+                        let arg_name = node_text(arg, src);
+                        if arg_name.is_empty() {
+                            continue;
+                        }
+                        refs.push(ExtractedRef {
+                            source_symbol_index: field_idx,
+                            target_name: arg_name,
+                            kind: EdgeKind::TypeRef,
+                            line: arg.start_position().row as u32,
+                            module: None,
+                            chain: None,
+                            byte_offset: 0,
+                        });
+                    }
+                }
+            }
+        }
+        // Intentionally NOT matching `call_expression` / `member_expression`
+        // here: their result type is the callee's return type, not the callee
+        // itself. Emitting a chain TypeRef pointing at the final method lands
+        // on a `method` symbol which fails `kind_compatible(TypeRef, method)`
+        // and pollutes unresolved_refs — the Calls ref already emitted by
+        // extract.rs's public_field_definition arm carries the same chain
+        // and is the right anchor for inheritance-walk resolution anyway.
+        "as_expression" => {
+            extract_type_ref_from_as_expression(&node, src, field_idx, refs);
+        }
+        "type_assertion" => {
+            extract_type_ref_from_type_assertion(&node, src, field_idx, refs);
+        }
+        "satisfies_expression" => {
+            extract_type_ref_from_satisfies_expression(&node, src, field_idx, refs);
+        }
+        _ => {}
     }
 }
 

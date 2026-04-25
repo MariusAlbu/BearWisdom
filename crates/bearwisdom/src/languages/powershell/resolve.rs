@@ -187,8 +187,42 @@ impl LanguageResolver for PowerShellResolver {
         if is_cmdlet_name(&ref_ctx.extracted_ref.target_name) {
             return Some("powershell-stdlib".to_string());
         }
+
+        // External executables invoked as PowerShell commands — `git`,
+        // `dotnet`, `npm`, `curl`, `fsh`, etc. These are not PowerShell
+        // symbols at all; they're processes resolved via `$env:PATH` at
+        // runtime. Classify them under the `cli` namespace so they leave
+        // unresolved_refs while the graph still records the invocation.
+        if ref_ctx.extracted_ref.kind == EdgeKind::Calls
+            && looks_like_external_executable(&ref_ctx.extracted_ref.target_name)
+        {
+            return Some("cli".to_string());
+        }
+
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_powershell_builtin)
     }
+}
+
+/// A command name looks like an external executable when it:
+///   * is a short identifier with no `-` (cmdlets use Verb-Noun),
+///   * contains no `.` (dotted paths are method / property access), and
+///   * contains no `$` / whitespace / special shell metacharacters.
+///
+/// PowerShell users also commonly invoke well-known CLI tools (`git`,
+/// `docker`, `kubectl`, `az`) this way; they're impossible to resolve
+/// locally but shouldn't pollute `unresolved_refs`.
+fn looks_like_external_executable(name: &str) -> bool {
+    if name.is_empty() || name.contains('-') || name.contains('.') {
+        return false;
+    }
+    // Must start with an alphabetic char (exclude operators, digits, etc.).
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(c) if c.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    // Remaining chars: alphanumeric or underscore (valid identifier).
+    chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 // ---------------------------------------------------------------------------

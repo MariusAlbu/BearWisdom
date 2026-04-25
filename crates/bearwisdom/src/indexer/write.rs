@@ -9,14 +9,191 @@
 use crate::db::Database;
 use crate::types::ParsedFile;
 use anyhow::{Context, Result};
+use rusqlite::types::Value;
 use std::collections::HashMap;
 use tracing::{debug, warn};
+
+// Batching constants. SQLite's `SQLITE_MAX_VARIABLE_NUMBER` defaults to
+// 32766 on modern builds; 128 rows × 14 vars = 1792 variables, well
+// inside any realistic limit. Row counts are chosen so almost every file
+// fits in one batch (median C# file has < 128 symbols) — a bigger batch
+// would only save us on outlier files and risk hitting the variable
+// cap on pathological generated code.
+const SYMBOL_COLS: usize = 14;
+const SYMBOL_BATCH_ROWS: usize = 128;
+const IMPORT_COLS: usize = 5;
+const IMPORT_BATCH_ROWS: usize = 256;
 
 /// Maps relative_path → SQLite file row ID.
 pub type FileIdMap = HashMap<String, i64>;
 
 /// Maps (relative_path, qualified_name) → SQLite symbol row ID.
 pub type SymbolIdMap = HashMap<(String, String), i64>;
+
+fn symbol_insert_sql(rows: usize) -> String {
+    // Pre-sized: 14 vars per row, one tuple plus a separator of 3 chars,
+    // plus the header/footer. 64 is a comfortable overshoot.
+    let mut sql = String::with_capacity(256 + rows * 64);
+    sql.push_str(
+        "INSERT INTO symbols \
+         (file_id, name, qualified_name, kind, line, col, end_line, end_col, \
+          scope_path, signature, doc_comment, visibility, origin, origin_language) \
+         VALUES ",
+    );
+    for i in 0..rows {
+        if i > 0 { sql.push(','); }
+        sql.push_str("(?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    }
+    sql.push_str(" RETURNING id");
+    sql
+}
+
+fn import_insert_sql(rows: usize) -> String {
+    let mut sql = String::with_capacity(128 + rows * 24);
+    sql.push_str(
+        "INSERT INTO imports (file_id, imported_name, module_path, alias, line) VALUES ",
+    );
+    for i in 0..rows {
+        if i > 0 { sql.push(','); }
+        sql.push_str("(?,?,?,?,?)");
+    }
+    sql
+}
+
+fn push_symbol_params(
+    params: &mut Vec<Value>,
+    file_id: i64,
+    pf: &ParsedFile,
+    global_idx: usize,
+    origin: &str,
+) {
+    let sym = &pf.symbols[global_idx];
+    let origin_language: Option<&str> = pf
+        .symbol_origin_languages
+        .get(global_idx)
+        .and_then(|o| o.as_deref());
+    params.push(Value::Integer(file_id));
+    params.push(Value::Text(sym.name.clone()));
+    params.push(Value::Text(sym.qualified_name.clone()));
+    params.push(Value::Text(sym.kind.as_str().to_string()));
+    params.push(Value::Integer(sym.start_line as i64));
+    params.push(Value::Integer(sym.start_col as i64));
+    params.push(Value::Integer(sym.end_line as i64));
+    params.push(Value::Integer(sym.end_col as i64));
+    params.push(match &sym.scope_path {
+        Some(s) => Value::Text(s.clone()),
+        None => Value::Null,
+    });
+    params.push(match &sym.signature {
+        Some(s) => Value::Text(s.clone()),
+        None => Value::Null,
+    });
+    params.push(match &sym.doc_comment {
+        Some(s) => Value::Text(s.clone()),
+        None => Value::Null,
+    });
+    params.push(match sym.visibility {
+        Some(v) => Value::Text(v.as_str().to_string()),
+        None => Value::Null,
+    });
+    params.push(Value::Text(origin.to_string()));
+    params.push(match origin_language {
+        Some(s) => Value::Text(s.to_string()),
+        None => Value::Null,
+    });
+}
+
+/// Batched symbol insert. Replaces the per-row loop: for a file with 400
+/// symbols, the old path executed 400 separate `INSERT … RETURNING id`
+/// statements; this path runs 4 chunked `INSERT … VALUES (…),(…),…
+/// RETURNING id` statements, cutting the rusqlite round-trip count by
+/// ~100×. Preserves the SymbolIdMap ordering the rest of the pipeline
+/// assumes: SQLite's RETURNING returns rows in VALUES order.
+fn insert_symbols_batched(
+    tx: &rusqlite::Transaction<'_>,
+    file_id: i64,
+    pf: &ParsedFile,
+    origin: &str,
+    symbol_id_map: &mut SymbolIdMap,
+) -> Result<()> {
+    if pf.symbols.is_empty() { return Ok(()); }
+
+    let total = pf.symbols.len();
+    let mut start = 0;
+    while start < total {
+        let end = (start + SYMBOL_BATCH_ROWS).min(total);
+        let rows = end - start;
+        let sql = symbol_insert_sql(rows);
+        let mut params: Vec<Value> = Vec::with_capacity(rows * SYMBOL_COLS);
+        for i in start..end {
+            push_symbol_params(&mut params, file_id, pf, i, origin);
+        }
+
+        // prepare_cached hits when the chunk is exactly SYMBOL_BATCH_ROWS
+        // (true for every non-tail chunk of a large file). The tail chunk
+        // is a one-shot prepare, negligible.
+        let mut stmt = tx
+            .prepare_cached(&sql)
+            .context("Failed to prepare batched symbol insert")?;
+        let ids: Vec<i64> = stmt
+            .query_map(rusqlite::params_from_iter(params.iter()), |r| r.get(0))
+            .context("Failed to execute batched symbol insert")?
+            .collect::<std::result::Result<_, _>>()
+            .context("Failed to collect RETURNING ids")?;
+
+        if ids.len() != rows {
+            anyhow::bail!(
+                "RETURNING id count mismatch: expected {} rows, got {} for {}",
+                rows, ids.len(), pf.path,
+            );
+        }
+        for (i, sym_id) in (start..end).zip(ids.iter()) {
+            let sym = &pf.symbols[i];
+            symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), *sym_id);
+        }
+        start = end;
+    }
+    Ok(())
+}
+
+/// Batched import insert. Filters non-Imports refs, then chunks.
+fn insert_imports_batched(
+    tx: &rusqlite::Transaction<'_>,
+    file_id: i64,
+    pf: &ParsedFile,
+) -> Result<()> {
+    let imports: Vec<&crate::types::ExtractedRef> = pf
+        .refs
+        .iter()
+        .filter(|r| r.kind == crate::types::EdgeKind::Imports)
+        .collect();
+    if imports.is_empty() { return Ok(()); }
+
+    let mut start = 0;
+    while start < imports.len() {
+        let end = (start + IMPORT_BATCH_ROWS).min(imports.len());
+        let rows = end - start;
+        let sql = import_insert_sql(rows);
+        let mut params: Vec<Value> = Vec::with_capacity(rows * IMPORT_COLS);
+        for r in &imports[start..end] {
+            params.push(Value::Integer(file_id));
+            params.push(Value::Text(r.target_name.clone()));
+            params.push(match r.module.as_deref() {
+                Some(s) => Value::Text(s.to_string()),
+                None => Value::Null,
+            });
+            params.push(Value::Null); // alias — always null in extract
+            params.push(Value::Integer(r.line as i64));
+        }
+
+        tx.prepare_cached(&sql)
+            .context("Failed to prepare batched import insert")?
+            .execute(rusqlite::params_from_iter(params.iter()))
+            .context("Failed to execute batched import insert")?;
+        start = end;
+    }
+    Ok(())
+}
 
 // ---------------------------------------------------------------------------
 // Core write: files + symbols + imports + routes
@@ -33,7 +210,9 @@ pub fn write_parsed_files(
     db: &Database,
     parsed: &[ParsedFile],
 ) -> Result<(FileIdMap, SymbolIdMap)> {
-    write_parsed_files_with_origin(db, parsed, "internal")
+    // Incremental entry point: symbols/imports for these files may exist
+    // from a prior index, so the per-file DELETE step is load-bearing.
+    write_parsed_files_with_origin_impl(db, parsed, "internal", /*is_full*/ false)
 }
 
 /// Write a single `ParsedFile` inside an existing transaction and return its
@@ -51,6 +230,7 @@ pub fn write_one_parsed_file(
     origin: &str,
     now: i64,
     symbol_id_map: &mut SymbolIdMap,
+    is_full: bool,
 ) -> Result<i64> {
     // Upsert file row and capture the assigned id via RETURNING.
     let file_id: i64 = tx
@@ -74,49 +254,21 @@ pub fn write_one_parsed_file(
         )
         .with_context(|| format!("Failed to upsert file {}", pf.path))?;
 
-    tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
-        .context("Failed to prepare symbol delete")?
-        .execute([file_id])?;
-    tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
-        .context("Failed to prepare import delete")?
-        .execute([file_id])?;
-
-    for (i, sym) in pf.symbols.iter().enumerate() {
-        let origin_language: Option<&str> = pf
-            .symbol_origin_languages
-            .get(i)
-            .and_then(|o| o.as_deref());
-
-        tx.prepare_cached(
-            "INSERT INTO symbols
-               (file_id, name, qualified_name, kind, line, col,
-                end_line, end_col, scope_path, signature, doc_comment, visibility, origin, origin_language)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-        )
-        .context("Failed to prepare symbol insert")?
-        .execute(rusqlite::params![
-            file_id,
-            sym.name,
-            sym.qualified_name,
-            sym.kind.as_str(),
-            sym.start_line,
-            sym.start_col,
-            sym.end_line,
-            sym.end_col,
-            sym.scope_path,
-            sym.signature,
-            sym.doc_comment,
-            sym.visibility.map(|v| v.as_str()),
-            origin,
-            origin_language,
-        ])
-        .with_context(|| {
-            format!("Failed to insert symbol {} in {}", sym.qualified_name, pf.path)
-        })?;
-
-        let sym_id = tx.last_insert_rowid();
-        symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), sym_id);
+    // On a full index the symbols / imports tables were just DROP+CREATE'd
+    // in `full.rs`, so these per-file DELETEs are no-ops — but a no-op
+    // DELETE is still a round-trip through rusqlite + SQLite's statement
+    // executor. Across ~1M files this is tens of seconds of wall-clock.
+    // Incremental callers still need the DELETE to clear stale rows.
+    if !is_full {
+        tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
+            .context("Failed to prepare symbol delete")?
+            .execute([file_id])?;
+        tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
+            .context("Failed to prepare import delete")?
+            .execute([file_id])?;
     }
+
+    insert_symbols_batched(tx, file_id, pf, origin, symbol_id_map)?;
 
     for route in &pf.routes {
         let sym_id = symbol_id_map
@@ -145,26 +297,7 @@ pub fn write_one_parsed_file(
         .with_context(|| format!("Failed to insert route for {}", pf.path))?;
     }
 
-    for r in &pf.refs {
-        if r.kind != crate::types::EdgeKind::Imports {
-            continue;
-        }
-        tx.prepare_cached(
-            "INSERT INTO imports (file_id, imported_name, module_path, alias, line)
-             VALUES (?1, ?2, ?3, ?4, ?5)",
-        )
-        .context("Failed to prepare import insert")?
-        .execute(rusqlite::params![
-            file_id,
-            r.target_name,
-            r.module.as_deref(),
-            Option::<&str>::None,
-            r.line,
-        ])
-        .with_context(|| {
-            format!("Failed to insert import '{}' in {}", r.target_name, pf.path)
-        })?;
-    }
+    insert_imports_batched(tx, file_id, pf)?;
 
     Ok(file_id)
 }
@@ -176,6 +309,28 @@ pub fn write_parsed_files_with_origin(
     db: &Database,
     parsed: &[ParsedFile],
     origin: &str,
+) -> Result<(FileIdMap, SymbolIdMap)> {
+    // Default to the full-index fast path (tables are fresh after
+    // DROP+CREATE). Call sites that re-write over existing rows use the
+    // `_incremental` variant, which keeps the per-file DELETE cleanup.
+    write_parsed_files_with_origin_impl(db, parsed, origin, /*is_full*/ true)
+}
+
+/// Incremental-safe variant: keeps per-file DELETE from symbols/imports so
+/// stale rows are removed when a file is re-indexed.
+pub fn write_parsed_files_with_origin_incremental(
+    db: &Database,
+    parsed: &[ParsedFile],
+    origin: &str,
+) -> Result<(FileIdMap, SymbolIdMap)> {
+    write_parsed_files_with_origin_impl(db, parsed, origin, /*is_full*/ false)
+}
+
+fn write_parsed_files_with_origin_impl(
+    db: &Database,
+    parsed: &[ParsedFile],
+    origin: &str,
+    is_full: bool,
 ) -> Result<(FileIdMap, SymbolIdMap)> {
     let conn = db.conn();
     let now = std::time::SystemTime::now()
@@ -215,58 +370,27 @@ pub fn write_parsed_files_with_origin(
 
         file_id_map.insert(pf.path.clone(), file_id);
 
-        // Delete existing symbols (ON CONFLICT upsert doesn't cascade-delete).
-        tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
-            .context("Failed to prepare symbol delete")?
-            .execute([file_id])?;
+        // On a full index the tables were just DROP+CREATE'd in full.rs so
+        // these per-file DELETEs are no-ops. Skipping them saves ~2 SQL
+        // round-trips per file (tens of seconds on 500k+ files).
+        if !is_full {
+            // Delete existing symbols (ON CONFLICT upsert doesn't cascade-delete).
+            tx.prepare_cached("DELETE FROM symbols WHERE file_id = ?1")
+                .context("Failed to prepare symbol delete")?
+                .execute([file_id])?;
 
-        // Delete existing imports (not cascaded by symbols delete).
-        tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
-            .context("Failed to prepare import delete")?
-            .execute([file_id])?;
-
-        // Insert all symbols.
-        for (i, sym) in pf.symbols.iter().enumerate() {
-            // Sub-extracted symbols carry their own origin language (e.g. TS
-            // inside a .vue file). Host-extracted symbols use the file's
-            // language — represented as NULL in the column for storage
-            // efficiency and queryability ("WHERE origin_language IS NOT NULL"
-            // yields only spliced multi-language symbols).
-            let origin_language: Option<&str> = pf
-                .symbol_origin_languages
-                .get(i)
-                .and_then(|o| o.as_deref());
-
-            tx.prepare_cached(
-                "INSERT INTO symbols
-                   (file_id, name, qualified_name, kind, line, col,
-                    end_line, end_col, scope_path, signature, doc_comment, visibility, origin, origin_language)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
-            )
-            .context("Failed to prepare symbol insert")?
-            .execute(rusqlite::params![
-                file_id,
-                sym.name,
-                sym.qualified_name,
-                sym.kind.as_str(),
-                sym.start_line,
-                sym.start_col,
-                sym.end_line,
-                sym.end_col,
-                sym.scope_path,
-                sym.signature,
-                sym.doc_comment,
-                sym.visibility.map(|v| v.as_str()),
-                origin,
-                origin_language,
-            ])
-            .with_context(|| {
-                format!("Failed to insert symbol {} in {}", sym.qualified_name, pf.path)
-            })?;
-
-            let sym_id = tx.last_insert_rowid();
-            symbol_id_map.insert((pf.path.clone(), sym.qualified_name.clone()), sym_id);
+            // Delete existing imports (not cascaded by symbols delete).
+            tx.prepare_cached("DELETE FROM imports WHERE file_id = ?1")
+                .context("Failed to prepare import delete")?
+                .execute([file_id])?;
         }
+
+        // Sub-extracted symbols carry their own origin language (e.g. TS
+        // inside a .vue file). Host-extracted symbols use the file's
+        // language — represented as NULL in the column for storage
+        // efficiency and queryability ("WHERE origin_language IS NOT NULL"
+        // yields only spliced multi-language symbols).
+        insert_symbols_batched(&tx, file_id, pf, origin, &mut symbol_id_map)?;
 
         // Insert route records (ASP.NET [HttpGet], [Route], etc.).
         for route in &pf.routes {
@@ -303,26 +427,7 @@ pub fn write_parsed_files_with_origin(
         }
 
         // Insert import records.
-        for r in &pf.refs {
-            if r.kind != crate::types::EdgeKind::Imports {
-                continue;
-            }
-            tx.prepare_cached(
-                "INSERT INTO imports (file_id, imported_name, module_path, alias, line)
-                 VALUES (?1, ?2, ?3, ?4, ?5)",
-            )
-            .context("Failed to prepare import insert")?
-            .execute(rusqlite::params![
-                file_id,
-                r.target_name,
-                r.module.as_deref(),
-                Option::<&str>::None,
-                r.line,
-            ])
-            .with_context(|| {
-                format!("Failed to insert import '{}' in {}", r.target_name, pf.path)
-            })?;
-        }
+        insert_imports_batched(&tx, file_id, pf)?;
     }
 
     tx.commit()

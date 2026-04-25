@@ -116,7 +116,7 @@ tar                    = { workspace = true }
 # RSS / working-set sampling for per-phase memory instrumentation.
 # Windows-only: pulls GetProcessMemoryInfo via the Win32 PSAPI surface.
 [target.'cfg(windows)'.dependencies]
-windows-sys            = { version = "0.61", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_Foundation"] }
+windows-sys            = { version = "0.61", features = ["Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_System_JobObjects", "Win32_Foundation", "Win32_Security"] }
 
 [build-dependencies]
 regex = "1"

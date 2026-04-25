@@ -198,8 +198,11 @@ impl LanguageResolver for TypeScriptResolver {
             }
 
             // Also try {module}.{target} as a qualified name (parser may use this form).
+            // `all_by_qualified_name` to see past the TypeScript declaration-
+            // merging case where the same qname exposes both an interface
+            // (not callable) and a variable/function (callable).
             let candidate = format!("{module}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
+            for sym in lookup.all_by_qualified_name(&candidate) {
                 if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_import",
@@ -212,6 +215,66 @@ impl LanguageResolver for TypeScriptResolver {
                         strategy: "ts_import",
                         resolved_yield_type: None,
                     });
+                }
+            }
+
+            // DefinitelyTyped prefix: when user imports `react` the runtime
+            // package ships no types; the types live under `@types/react` and
+            // qnames in the index are `@types/react.createContext` etc.
+            // Retry the qname with the `@types/` prefix. Also handles the
+            // scoped convention (`@scope/pkg` → `@types/scope__pkg`).
+            if predicates::is_bare_specifier(module) && !module.starts_with("@types/") {
+                let types_candidates = definitely_typed_qname_prefixes(module);
+                for types_pkg in &types_candidates {
+                    let candidate = format!("{types_pkg}.{target}");
+                    for sym in lookup.all_by_qualified_name(&candidate) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
+                            debug!(
+                                strategy = "ts_import_definitely_typed",
+                                candidate = %candidate,
+                                specifier = %module,
+                                "resolved"
+                            );
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 1.0,
+                                strategy: "ts_import_definitely_typed",
+                                resolved_yield_type: None,
+                            });
+                        }
+                    }
+                }
+            }
+
+            // Deep-import qname stripping — same peel as the file_ctx import
+            // loop below. When the extractor sets `ref.module = "rxjs/operators"`
+            // but externals index the package as `rxjs.*`, retry the qname
+            // lookup against progressively-shorter prefixes.
+            if predicates::is_bare_specifier(module) && module.contains('/') {
+                let mut path = module.as_str();
+                while let Some(slash) = path.rfind('/') {
+                    let parent = &path[..slash];
+                    if parent.starts_with('@') && !parent.contains('/') {
+                        break;
+                    }
+                    path = parent;
+                    let candidate = format!("{path}.{target}");
+                    for sym in lookup.all_by_qualified_name(&candidate) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
+                            debug!(
+                                strategy = "ts_import_deep",
+                                candidate = %candidate,
+                                specifier = %module,
+                                "resolved"
+                            );
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 1.0,
+                                strategy: "ts_import_deep",
+                                resolved_yield_type: None,
+                            });
+                        }
+                    }
                 }
             }
 
@@ -304,7 +367,13 @@ impl LanguageResolver for TypeScriptResolver {
             }
 
             let candidate = format!("{module_path}.{target}");
-            if let Some(sym) = lookup.by_qualified_name(&candidate) {
+            // `all_by_qualified_name` covers the TypeScript declaration-merging
+            // case: `@angular/core.Injectable` is declared as both an interface
+            // (options type) and a variable (decorator function). `by_qname`'s
+            // first-wins picks one; a Calls ref against the interface fails
+            // kind_compatible and the variable overload never gets checked
+            // unless we scan all duplicates.
+            for sym in lookup.all_by_qualified_name(&candidate) {
                 if predicates::kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_bare_import_qname",
@@ -317,6 +386,43 @@ impl LanguageResolver for TypeScriptResolver {
                         strategy: "ts_bare_import_qname",
                         resolved_yield_type: None,
                     });
+                }
+            }
+            // Deep-import qname stripping. When the exact qname misses —
+            // `rxjs/operators.tap`, `lodash/fp.get`, `date-fns/utcToZonedTime.format` —
+            // strip trailing `/seg` segments and retry. Externals index package
+            // source under the package prefix alone (`rxjs.tap`), so the deep
+            // import path has to be peeled off before the lookup can match.
+            //
+            // Scope boundary: stop before stripping a scope-only prefix like
+            // `@angular`. `@angular/core/testing.X` strips to `@angular/core.X`
+            // (valid package qname) but never down to `@angular.X` — scoped
+            // packages always require a package segment after the scope.
+            if module_path.contains('/') {
+                let mut path = module_path.as_str();
+                while let Some(slash) = path.rfind('/') {
+                    let parent = &path[..slash];
+                    if parent.starts_with('@') && !parent.contains('/') {
+                        break;
+                    }
+                    path = parent;
+                    let candidate = format!("{path}.{target}");
+                    for sym in lookup.all_by_qualified_name(&candidate) {
+                        if predicates::kind_compatible(edge_kind, &sym.kind) {
+                            debug!(
+                                strategy = "ts_bare_import_deep",
+                                candidate = %candidate,
+                                specifier = %module_path,
+                                "resolved"
+                            );
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 1.0,
+                                strategy: "ts_bare_import_deep",
+                                resolved_yield_type: None,
+                            });
+                        }
+                    }
                 }
             }
             // tsconfig `paths` alias: the import specifier may be a
@@ -490,8 +596,18 @@ impl LanguageResolver for TypeScriptResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        // Browser/JS runtime globals — always external.
-        if predicates::is_js_runtime_global(target) {
+        // DOM interface types (HTML*/SVG*/ARIA*/IDB*/XPath*/MathML*) — global
+        // in lib.dom.d.ts and always external. Pattern-based rather than a
+        // hardcoded list: lib.dom.d.ts ships hundreds of these and new ones
+        // land with each Chrome/Firefox release, so enumerating them by hand
+        // is a losing game.
+        if predicates::is_dom_interface_type(target) {
+            return Some("runtime".to_string());
+        }
+        // React namespace types (`React.FC`, `React.ReactNode`) — available
+        // globally under the JSX runtime without an explicit import in files
+        // that use `jsx: react-jsx`.
+        if predicates::is_react_namespace_type(target) {
             return Some("runtime".to_string());
         }
 
@@ -604,13 +720,14 @@ impl LanguageResolver for TypeScriptResolver {
             }
         }
 
-        // Last resort: common built-in method names that appear on Array, String,
-        // Promise, and Object instances. Only classify when we have no other
-        // information — all import-based checks have already failed above.
-        if predicates::is_common_builtin_method(target) {
-            return Some("runtime".to_string());
-        }
-
+        // No hardcoded "looks like a common DOM/Array/Promise method" fallback
+        // here — that's a guess, not a fact. Bare method calls whose receiver
+        // type we couldn't infer (or whose receiver resolves internally by
+        // coincidence of name) fall through to the heuristic tier so the
+        // symbol index answers honestly instead. When lib.dom.d.ts and
+        // lib.es5.d.ts are indexed through the externals pipeline, their
+        // symbols (`Array.prototype.map`, `Event.composedPath`, etc.) are
+        // reachable through the normal by-name lookup.
         None
     }
 
@@ -670,6 +787,41 @@ impl LanguageResolver for TypeScriptResolver {
                 }
             }
         }
+
+        // Last resort: ambient-global method classification. If the bare
+        // target (simple name, no dotted prefix) is a method/property
+        // declared in an ambient-global lib file (`lib.dom.d.ts`,
+        // `lib.es5.d.ts`, `lib.webworker.d.ts`, `@types/node/*`), the call
+        // is a DOM/ES runtime API. Replaces the hardcoded
+        // `is_common_builtin_method` list — index-backed, adapts to the
+        // project's own TypeScript version.
+        //
+        // Two triggers, each gated on "ambient name exists":
+        //   1. Ref carries a chain — the chain walker already tried and
+        //      bailed (we're in Tier 1.5). The receiver is untyped or
+        //      resolved to an internal type with no matching member, and
+        //      the method name is a known DOM/ES surface. Classify.
+        //      Covers `this.theme.set(x)` where `theme = signal<T>()`
+        //      can't be typed — `set` only lives on WritableSignal / Map /
+        //      Set in lib.*.d.ts, so external is honest.
+        //   2. Ref has no chain AND no internal same-name candidate. Bare
+        //      call to an ambient name — `setTimeout(...)`, `fetch(...)`
+        //      at file scope. Classify when no user-code function
+        //      competes.
+        if !target.contains('.') && lookup.is_ambient_global_method(target) {
+            let has_chain = ref_ctx.extracted_ref.chain.is_some();
+            if has_chain {
+                return Some("runtime".to_string());
+            }
+            let has_internal = lookup
+                .by_name(target)
+                .iter()
+                .any(|s| !lookup.is_external_file(&s.file_path));
+            if !has_internal {
+                return Some("runtime".to_string());
+            }
+        }
+
         None
     }
 }
@@ -685,6 +837,33 @@ impl LanguageResolver for TypeScriptResolver {
 /// Common pattern: `apps/x/src/i18n/client/trans.tsx` containing exactly
 /// `export { Trans } from "react-i18next"` — the consumer's
 /// `@/i18n/client/trans` import is effectively a re-export of the
+/// Produce DefinitelyTyped qname prefixes for a bare specifier.
+///
+/// When a user imports `react` (runtime package with no inline types) the
+/// actual type symbols live in `@types/react/*.d.ts` and are indexed under
+/// the qname prefix `@types/react.*`. The TS resolver normally looks up
+/// `react.createContext` which misses; this helper yields the alternate
+/// `@types/`-prefixed candidates to retry.
+///
+/// Scoped convention: `@scope/pkg` → `@types/scope__pkg` (DefinitelyTyped's
+/// escape for the inner `@`). Also yields `@types/pkg` for unscoped names.
+fn definitely_typed_qname_prefixes(specifier: &str) -> Vec<String> {
+    if specifier.is_empty() {
+        return Vec::new();
+    }
+    let mut out = Vec::new();
+    if let Some(rest) = specifier.strip_prefix('@') {
+        if let Some(slash) = rest.find('/') {
+            let scope = &rest[..slash];
+            let pkg = &rest[slash + 1..];
+            out.push(format!("@types/{scope}__{pkg}"));
+        }
+    } else {
+        out.push(format!("@types/{specifier}"));
+    }
+    out
+}
+
 /// external `react-i18next` package, not an internal symbol.
 ///
 /// Returns the bare external namespace (e.g. `"react-i18next"`) when the

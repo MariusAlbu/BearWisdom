@@ -6,18 +6,27 @@
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
-const HTML_BUILTINS: &[&str] = &[
-    "html", "head", "body", "title", "meta", "link", "script", "style",
-    "div", "span", "p", "a", "img", "ul", "ol", "li", "table", "tr", "td", "th",
-    "thead", "tbody", "tfoot", "form", "input", "button", "select", "option",
-    "textarea", "label", "fieldset", "legend", "h1", "h2", "h3", "h4", "h5", "h6",
-    "header", "footer", "nav", "section", "article", "aside", "main",
-    "strong", "em", "b", "i", "u", "code", "pre", "blockquote", "hr", "br",
-    "svg", "path", "circle", "rect", "g", "use", "defs", "symbol",
-    "canvas", "video", "audio", "source", "track", "picture",
-    "iframe", "embed", "object", "param", "details", "summary", "figure", "figcaption",
-    "template", "slot", "ng-template", "ng-container", "ng-content",
-];
+/// Decide whether a template tag is a standard HTML element (and thus not
+/// worth emitting as a component call).
+///
+/// HTML5 elements are always lowercase and never contain `-`. Angular /
+/// web-component elements MUST use kebab-case (`app-nav-menu`,
+/// `router-outlet`) — the `-` is mandated by both the custom-elements spec
+/// and Angular's component-selector linter. React-in-template conventions
+/// use PascalCase. This covers all three cases without a hand-maintained
+/// tag list (which would drift — `hgroup`, `search`, `hgroup`, future
+/// HTML5 additions, etc. are easy to miss).
+///
+/// Angular's structural pseudo-elements (`ng-template`, `ng-container`,
+/// `ng-content`) contain `-` but aren't components; explicitly skip them.
+fn is_standard_html_element(tag: &str) -> bool {
+    // Structural Angular pseudo-elements: templated, not component refs.
+    if matches!(tag, "ng-template" | "ng-container" | "ng-content") {
+        return true;
+    }
+    // HTML5: lowercase, no `-`. Anything else is a component-looking tag.
+    tag.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+}
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
@@ -89,7 +98,7 @@ fn collect_component_refs(
         let kind = child.kind();
         if matches!(kind, "element" | "self_closing_element") {
             if let Some(tag) = element_tag_name(&child, source) {
-                if !HTML_BUILTINS.contains(&tag.to_ascii_lowercase().as_str()) {
+                if !is_standard_html_element(&tag) {
                     let normalized = if tag.chars().next().map_or(false, |c| c.is_uppercase()) {
                         tag.clone()
                     } else if tag.contains('-') {

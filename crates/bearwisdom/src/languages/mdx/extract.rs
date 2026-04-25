@@ -28,12 +28,20 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
 
 fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef>) {
     let fence_ranges = fence_byte_ranges(source);
+    let inline_code_ranges = inline_code_byte_ranges(source);
     let bytes = source.as_bytes();
     let mut i = 0usize;
     while i < bytes.len() {
         if inside_any_range(i, &fence_ranges) {
             // Skip to the end of the current fence.
             if let Some(end) = fence_ranges.iter().find(|(s, e)| i >= *s && i < *e).map(|(_, e)| *e) {
+                i = end;
+                continue;
+            }
+        }
+        if inside_any_range(i, &inline_code_ranges) {
+            // Skip past the end of the current inline-code span.
+            if let Some(end) = inline_code_ranges.iter().find(|(s, e)| i >= *s && i < *e).map(|(_, e)| *e) {
                 i = end;
                 continue;
             }
@@ -56,6 +64,67 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
         }
         i += 1;
     }
+}
+
+/// Collect byte ranges covering inline-code spans — `` `code` `` and
+/// ``` `` code `` ``` (the double-backtick form used when the content
+/// itself contains a single backtick). The goal is to skip
+/// `` `ICommand<TResponse>` `` and similar prose where `<T>` is a TypeScript
+/// generic-type fragment, not JSX. CommonMark defines an inline-code span
+/// as a run of N backticks terminated by the next run of exactly N
+/// backticks, with the content taken literally — we approximate that.
+fn inline_code_byte_ranges(source: &str) -> Vec<(usize, usize)> {
+    let bytes = source.as_bytes();
+    let mut ranges = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        if bytes[i] != b'`' {
+            i += 1;
+            continue;
+        }
+        // Count consecutive backticks.
+        let run_start = i;
+        let mut run_len = 0usize;
+        while i < bytes.len() && bytes[i] == b'`' {
+            run_len += 1;
+            i += 1;
+        }
+        // Find a closing run of exactly run_len backticks on the same
+        // line or up to end-of-file. Unmatched opens are prose text.
+        let content_start = i;
+        let mut j = i;
+        while j < bytes.len() {
+            if bytes[j] == b'`' {
+                let mut close_len = 0usize;
+                let close_start = j;
+                while j < bytes.len() && bytes[j] == b'`' {
+                    close_len += 1;
+                    j += 1;
+                }
+                if close_len == run_len {
+                    ranges.push((run_start, j));
+                    i = j;
+                    break;
+                }
+                // A differently-sized backtick run — keep searching.
+                let _ = close_start;
+            } else if bytes[j] == b'\n' {
+                // Inline code doesn't span paragraph breaks in most
+                // CommonMark dialects; a lone backtick run is treated
+                // as literal text. Abort scanning this run.
+                i = content_start;
+                break;
+            } else {
+                j += 1;
+            }
+        }
+        // If we ran off the end without a match, advance past the
+        // opening run so we don't loop.
+        if i < run_start + run_len {
+            i = run_start + run_len;
+        }
+    }
+    ranges
 }
 
 /// Collect (start, end) byte ranges covering each fenced code block's
@@ -301,5 +370,42 @@ mod tests {
             .map(|r| r.target_name.as_str())
             .collect();
         assert_eq!(calls, vec!["Card"]);
+    }
+
+    #[test]
+    fn inline_code_generic_types_are_not_jsx() {
+        // `ICommand<TResponse>` inside inline code is a TypeScript generic
+        // fragment, not a JSX component reference. Prior scan emitted
+        // `TResponse`, `T`, `TId`, etc. as `Calls` refs, polluting
+        // `unresolved_refs` in doc-heavy MDX projects (dotnet-starter-kit
+        // had 56 mdx.calls that were all this pattern).
+        let src = "Handlers implement `ICommand<TResponse>` and `IQuery<TResponse>` — see `ValueTask<T>`.\n\n<RealComponent />";
+        let r = extract(src, "page.mdx");
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert_eq!(
+            calls,
+            vec!["RealComponent"],
+            "inline-code generic types leaked through"
+        );
+    }
+
+    #[test]
+    fn double_backtick_inline_code_also_skipped() {
+        // `` ` `` escapes a backtick; MDX uses double-backtick spans for
+        // code containing single backticks.
+        let src = "Use ``<Button>`` to render. And <ActualButton />.\n";
+        let r = extract(src, "page.mdx");
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|r| r.kind == EdgeKind::Calls)
+            .map(|r| r.target_name.as_str())
+            .collect();
+        assert_eq!(calls, vec!["ActualButton"]);
     }
 }

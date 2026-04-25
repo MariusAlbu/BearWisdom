@@ -7,8 +7,8 @@ use crate::db::Database;
 
 #[test]
 fn detects_two_type_scoped() {
-    let re_two = build_two_type_regex();
-    let re_one = build_one_type_regex();
+    let re_two = (*RE_DI_TWO_TYPE).clone();
+    let re_one = (*RE_DI_ONE_TYPE).clone();
     let mut out = Vec::new();
     detect_in_source(
         r#"services.AddScoped<ICatalogService, CatalogService>();"#,
@@ -25,8 +25,8 @@ fn detects_two_type_scoped() {
 
 #[test]
 fn detects_two_type_transient() {
-    let re_two = build_two_type_regex();
-    let re_one = build_one_type_regex();
+    let re_two = (*RE_DI_TWO_TYPE).clone();
+    let re_one = (*RE_DI_ONE_TYPE).clone();
     let mut out = Vec::new();
     detect_in_source(
         r#"services.AddTransient<IOrderService, OrderService>();"#,
@@ -43,8 +43,8 @@ fn detects_two_type_transient() {
 
 #[test]
 fn detects_two_type_singleton() {
-    let re_two = build_two_type_regex();
-    let re_one = build_one_type_regex();
+    let re_two = (*RE_DI_TWO_TYPE).clone();
+    let re_one = (*RE_DI_ONE_TYPE).clone();
     let mut out = Vec::new();
     detect_in_source(
         r#"services.AddSingleton<ICache, RedisCache>();"#,
@@ -61,8 +61,8 @@ fn detects_two_type_singleton() {
 
 #[test]
 fn detects_one_type_form() {
-    let re_two = build_two_type_regex();
-    let re_one = build_one_type_regex();
+    let re_two = (*RE_DI_TWO_TYPE).clone();
+    let re_one = (*RE_DI_ONE_TYPE).clone();
     let mut out = Vec::new();
     detect_in_source(
         r#"services.AddScoped<CatalogService>();"#,
@@ -78,8 +78,8 @@ fn detects_one_type_form() {
 
 #[test]
 fn two_type_takes_priority_over_one_type() {
-    let re_two = build_two_type_regex();
-    let re_one = build_one_type_regex();
+    let re_two = (*RE_DI_TWO_TYPE).clone();
+    let re_one = (*RE_DI_ONE_TYPE).clone();
     let mut out = Vec::new();
     detect_in_source(
         r#"services.AddScoped<IFoo, Foo>();"#,
@@ -94,8 +94,8 @@ fn two_type_takes_priority_over_one_type() {
 
 #[test]
 fn empty_source_produces_no_registrations() {
-    let re_two = build_two_type_regex();
-    let re_one = build_one_type_regex();
+    let re_two = (*RE_DI_TWO_TYPE).clone();
+    let re_one = (*RE_DI_ONE_TYPE).clone();
     let mut out = Vec::new();
     detect_in_source("// no registrations here", 1, &re_two, &re_one, &mut out);
     assert!(out.is_empty());

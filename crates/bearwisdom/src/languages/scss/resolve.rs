@@ -80,7 +80,22 @@ impl LanguageResolver for ScssResolver {
             return None;
         }
 
-        // Skip CSS built-in functions.
+        // Property-value `call_expression` refs (tagged by the extractor):
+        // these are CSS/SCSS built-in function evaluations
+        // (`rgb(…)`, `calc(…)`, `color-mix(…)`, `steps(…)`, …) and should
+        // not hit the project symbol index. The previous approach — a
+        // hardcoded `is_scss_builtin` list — drifted (missed `color-mix`,
+        // `oklch`, and every future CSS Level 5+ addition). The hint
+        // works generically: the resolver trusts the extractor's
+        // positional distinction between `@include mixin(…)` and
+        // property-value `fn(…)`.
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if module == super::extract::SCSS_CSS_FN_HINT {
+                return None;
+            }
+        }
+
+        // Legacy safety net: kept until extractor migration fully settled.
         if predicates::is_scss_builtin(target) {
             return None;
         }
@@ -103,6 +118,15 @@ impl LanguageResolver for ScssResolver {
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
+
+        // Property-value `call_expression` ref tagged by the extractor is
+        // a CSS/SCSS built-in function evaluation. Always external, no
+        // list required.
+        if let Some(module) = &ref_ctx.extracted_ref.module {
+            if module == super::extract::SCSS_CSS_FN_HINT {
+                return Some("css".to_string());
+            }
+        }
 
         // @use / @forward of a Sass built-in module — the path itself is the
         // external namespace (e.g. "sass:math", "sass:color").

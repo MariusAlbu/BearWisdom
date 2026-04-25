@@ -191,11 +191,9 @@ fn add_from_ref(
 }
 
 /// A module specifier points to an external package rather than project-local
-/// code. Mirrors the logic in
-/// `crate::indexer::resolve::mod::is_local_module_specifier` but inverted —
-/// shared here to avoid a cross-crate dep. Bare-specifier rule: no leading
-/// `./`, `../`, `/`, `@/`, `~/`, no drive-letter prefix, and either a scoped
-/// package (`@scope/pkg`) or a single-segment name.
+/// code. Bare-specifier rule: no leading `./`, `../`, `/`, `@/`, `~/`, no
+/// drive-letter prefix, and either a scoped package (`@scope/pkg`) or a
+/// single-segment name.
 pub(crate) fn is_bare_specifier(m: &str) -> bool {
     if m.is_empty() {
         return false;

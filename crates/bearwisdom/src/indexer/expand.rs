@@ -193,12 +193,16 @@ pub fn expand_chain_reachability_with_index(
 
     // Write with origin='external'. The write path upserts on path, so any
     // accidental duplicate of a pass-1 file is harmless.
+    let mut new_parsed = new_parsed;
     let (_file_map, new_id_map) =
         write::write_parsed_files_with_origin(db, &new_parsed, "external")
             .context("expand: failed to write expanded external symbols")?;
     stats.new_files = new_parsed.len();
     stats.new_symbols = new_id_map.len();
     symbol_id_map.extend(new_id_map);
+    for pf in new_parsed.iter_mut() {
+        pf.slim_for_resolve();
+    }
     parsed.extend(new_parsed);
 
     info!(

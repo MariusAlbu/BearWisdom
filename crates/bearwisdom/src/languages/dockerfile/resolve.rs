@@ -79,9 +79,23 @@ impl LanguageResolver for DockerfileResolver {
             return Some("docker".to_string());
         }
 
-        // Base image references in FROM (Imports) are always external; common
-        // handler returns Some(ns) for Imports edges, using "builtin" fallback.
-        // Override the namespace label to "docker" for all Dockerfile externals.
+        // `FROM <image>` emits both Imports and Inherits edges targeting the
+        // same base image. Classify both as external when they fall through
+        // to this function — by this point, `resolve()` has already caught
+        // the multi-stage `FROM builder AS final` case where the target
+        // names a same-file stage alias (internal edge), so whatever's left
+        // is a registry image reference. Without this, Inherits edges
+        // silently pile up in `unresolved_refs` — e.g. `dotnet-abp` had 8
+        // of them pointing at `mcr.microsoft.com/dotnet/sdk:…`.
+        if matches!(
+            ref_ctx.extracted_ref.kind,
+            crate::types::EdgeKind::Imports | crate::types::EdgeKind::Inherits
+        ) {
+            return Some("docker".to_string());
+        }
+
+        // Any other edge kind — defer to the common handler (handles builtins
+        // and module-qualified references).
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_dockerfile_builtin)
             .map(|_| "docker".to_string())
     }

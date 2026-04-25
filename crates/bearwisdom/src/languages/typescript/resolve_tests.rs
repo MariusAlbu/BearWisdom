@@ -394,6 +394,153 @@ fn test_external_import_not_resolved() {
 }
 
 #[test]
+fn test_deep_import_strips_to_package_qname() {
+    // `import { tap } from 'rxjs/operators'` — externals index rxjs's operators
+    // under the bare `rxjs.` prefix, so `rxjs/operators.tap` misses but
+    // `rxjs.tap` (after stripping the deep path) hits.
+    let rxjs_file = make_ts_file(
+        "ext:ts:rxjs/dist/types/./internal/operators/tap.d.ts",
+        vec![make_symbol(
+            "tap",
+            "rxjs.tap",
+            SymbolKind::Function,
+            Visibility::Public,
+            Some("rxjs"),
+        )],
+        vec![],
+    );
+
+    let app_file = make_ts_file(
+        "src/auth.service.ts",
+        vec![make_symbol(
+            "AuthService",
+            "AuthService",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        // Import binding ref: target="tap", module="rxjs/operators"
+        vec![make_import_ref(0, "tap", "rxjs/operators", 3)],
+    );
+
+    let (index, id_map) = build_test_env(&[&rxjs_file, &app_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&app_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &app_file.refs[0],
+        source_symbol: &app_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = result.expect("rxjs/operators.tap should strip to rxjs.tap");
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(res.strategy, "ts_import_deep");
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "ext:ts:rxjs/dist/types/./internal/operators/tap.d.ts".to_string(),
+                "rxjs.tap".to_string(),
+            ))
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_deep_import_stops_at_scope_boundary() {
+    // `import { Injectable } from '@angular/core/testing'` — when the index
+    // only holds `@angular/core.Injectable`, the stripper must descend to
+    // `@angular/core` but never past it: a bare `@angular.Injectable` would
+    // never be a valid package qname, and stopping there prevents a
+    // false-positive resolution if some unrelated `@angular.Injectable`
+    // somehow existed.
+    let angular_file = make_ts_file(
+        "ext:ts:@angular/core/types/core.d.ts",
+        vec![make_symbol(
+            "Injectable",
+            "@angular/core.Injectable",
+            SymbolKind::Variable,
+            Visibility::Public,
+            Some("@angular/core"),
+        )],
+        vec![],
+    );
+
+    let app_file = make_ts_file(
+        "src/app.ts",
+        vec![make_symbol(
+            "App",
+            "App",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "Injectable", "@angular/core/testing", 1)],
+    );
+
+    let (index, id_map) = build_test_env(&[&angular_file, &app_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&app_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &app_file.refs[0],
+        source_symbol: &app_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let res = result.expect("@angular/core/testing should strip once to @angular/core");
+    assert_eq!(res.confidence, 1.0);
+    assert_eq!(
+        res.target_symbol_id,
+        *id_map
+            .get(&(
+                "ext:ts:@angular/core/types/core.d.ts".to_string(),
+                "@angular/core.Injectable".to_string(),
+            ))
+            .unwrap()
+    );
+}
+
+#[test]
+fn test_deep_import_no_match_returns_none() {
+    // When the package prefix doesn't appear in the index at all, stripping
+    // shouldn't manufacture a match — the resolver still returns None so
+    // Tier 1.5 classifies the ref as external.
+    let app_file = make_ts_file(
+        "src/app.ts",
+        vec![make_symbol(
+            "App",
+            "App",
+            SymbolKind::Class,
+            Visibility::Public,
+            None,
+        )],
+        vec![make_import_ref(0, "format", "date-fns/utcToZonedTime", 1)],
+    );
+
+    let (index, _) = build_test_env(&[&app_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&app_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &app_file.refs[0],
+        source_symbol: &app_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+
+    assert!(
+        resolver.resolve(&file_ctx, &ref_ctx, &index).is_none(),
+        "unknown package deep import should not resolve"
+    );
+}
+
+#[test]
 fn test_qualified_name_resolution() {
     // A dotted reference resolves directly.
     let file1 = make_ts_file(
@@ -1924,13 +2071,11 @@ fn tsconfig_alias_parser_extracts_wildcard_mappings() {
 /// Phase 2 walks `chai.Assertion.toBe`, Phase 3 resolves the final segment.
 #[test]
 fn call_root_chain_expect_from_chai_resolves_to_be() {
-    use crate::ecosystem::js_test_chains::synthetic_test_chain_files;
     use crate::indexer::resolve::chain_walker::external_type_qname;
 
-    // Use the real chai synthetic as the "external" file.
-    // synthetic_test_chain_files needs a dir with chai present — since we
-    // can't guarantee node_modules here, call chai_synthetic() via the
-    // public test path. Instead, build the minimal index manually.
+    // Build a minimal index manually — the chai chain-type synthetic
+    // that used to supply this shape has been deleted, but the chain
+    // walker's behaviour is still specified here independently.
     let chai_assertion_sym = make_symbol(
         "Assertion", "chai.Assertion", SymbolKind::Interface, Visibility::Public, Some("chai"),
     );

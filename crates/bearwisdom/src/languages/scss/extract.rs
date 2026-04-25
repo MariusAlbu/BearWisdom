@@ -19,6 +19,12 @@
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
 
+/// Tag placed in `ExtractedRef.module` to mark property-value
+/// `call_expression`-derived Calls refs. The resolver treats these as
+/// CSS/SCSS built-in function evaluation rather than user-defined mixin
+/// calls. Public so the resolver can import the same constant.
+pub(crate) const SCSS_CSS_FN_HINT: &str = "__scss_css_fn__";
+
 pub fn extract(source: &str, _file_path: &str) -> super::ExtractionResult {
     let language: tree_sitter::Language = tree_sitter_scss_local::LANGUAGE.into();
     let mut parser = Parser::new();
@@ -38,7 +44,109 @@ pub fn extract(source: &str, _file_path: &str) -> super::ExtractionResult {
     let root = tree.root_node();
     visit_node(&root, source, &mut symbols, &mut refs, None);
 
+    // Error-recovery fallback: tree-sitter-scss-local degrades to a root
+    // `ERROR` node for any file containing a construct the grammar can't
+    // handle (e.g. `#{$a}/#{$b}` interpolations in a `font:` shorthand,
+    // or `@mixin name()` with empty parens). When that happens the tree
+    // has NO `mixin_statement` / `function_statement` nodes anywhere —
+    // the `@mixin` keyword is broken into loose identifier / parameters
+    // / ERROR tokens and `visit_node` finds nothing to extract.
+    //
+    // We don't want to miss every mixin in a Font Awesome / Bootstrap /
+    // legacy SCSS file over a single malformed line, so do a byte-level
+    // scan for `@mixin NAME` and `@function NAME` when the grammar parse
+    // is in error state and emitted zero symbols. The scan is skipped on
+    // clean parses so it never double-emits.
+    if has_errors && symbols.is_empty() {
+        recover_mixin_symbols_from_text(source, &mut symbols);
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Byte-level scan for `@mixin NAME` / `@function NAME` declarations.
+/// Called only when the tree-sitter parse fails catastrophically and
+/// zero structured symbols were extracted — a defensible fallback, not
+/// a replacement for the grammar-driven path.
+fn recover_mixin_symbols_from_text(source: &str, symbols: &mut Vec<ExtractedSymbol>) {
+    for (kind_label, at_keyword) in [("@mixin", "@mixin"), ("@function", "@function")] {
+        let mut line_no: u32 = 0;
+        let mut last_nl: usize = 0;
+        let bytes = source.as_bytes();
+        let kw = at_keyword.as_bytes();
+        let mut i = 0;
+        while i < bytes.len() {
+            if bytes[i] == b'\n' {
+                line_no += 1;
+                last_nl = i + 1;
+                i += 1;
+                continue;
+            }
+            // Match the @keyword only at a line start (after whitespace) so
+            // we don't pick up `@mixin` appearing in a selector string.
+            if bytes[i] == b'@' && bytes.len() - i >= kw.len() && &bytes[i..i + kw.len()] == kw {
+                // Require that the previous non-space char on the line is
+                // either nothing (start of line) or whitespace — i.e. this
+                // `@` begins a statement.
+                let mut j = i;
+                while j > last_nl {
+                    let prev = bytes[j - 1];
+                    if prev == b' ' || prev == b'\t' {
+                        j -= 1;
+                    } else {
+                        break;
+                    }
+                }
+                if j != last_nl {
+                    i += 1;
+                    continue;
+                }
+                // Skip the keyword and any trailing whitespace.
+                let mut k = i + kw.len();
+                while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\t') {
+                    k += 1;
+                }
+                // Name runs until `(`, `{`, whitespace, or end-of-line.
+                let name_start = k;
+                while k < bytes.len()
+                    && bytes[k] != b'('
+                    && bytes[k] != b'{'
+                    && bytes[k] != b' '
+                    && bytes[k] != b'\t'
+                    && bytes[k] != b'\r'
+                    && bytes[k] != b'\n'
+                {
+                    k += 1;
+                }
+                if k > name_start {
+                    let name = &source[name_start..k];
+                    // Skip if already captured via the grammar path (the
+                    // guard at call-site ensures the first pass emitted
+                    // zero symbols, so this is cheap insurance).
+                    let already = symbols.iter().any(|s| s.name == name);
+                    if !already {
+                        symbols.push(ExtractedSymbol {
+                            name: name.to_string(),
+                            qualified_name: name.to_string(),
+                            kind: SymbolKind::Function,
+                            visibility: Some(Visibility::Public),
+                            start_line: line_no,
+                            end_line: line_no,
+                            start_col: (i - last_nl) as u32,
+                            end_col: (k - last_nl) as u32,
+                            signature: Some(format!("{kind_label} {name}")),
+                            doc_comment: None,
+                            scope_path: None,
+                            parent_index: None,
+                        });
+                    }
+                }
+                i = k;
+                continue;
+            }
+            i += 1;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -465,15 +573,21 @@ fn handle_call_expr(
         target
     };
 
-    // Emit Calls refs for all call expressions including CSS builtins.
-    // The graph engine resolves which targets are user-defined; builtins
-    // will simply have no matching symbol and be treated as external calls.
+    // Emit a Calls ref tagged as a property-value function call (via the
+    // `module` hint below). The resolver uses this to distinguish CSS/SCSS
+    // built-in function evaluation (`rgb(…)`, `calc(…)`, `color-mix(…)`,
+    // `steps(…)`, `oklch(…)`, `map-get(…)` …) from user-defined
+    // `@include mixin-name(…)` calls. Without the hint, the resolver
+    // would either have to maintain a drifting hardcoded list of CSS
+    // built-ins (which misses every new CSS Level 5+ addition) or
+    // treat all unresolved calls as external, which hides genuinely
+    // broken `@include` references.
     refs.push(ExtractedRef {
         source_symbol_index,
         target_name: target,
         kind: EdgeKind::Calls,
         line: node.start_position().row as u32,
-        module: None,
+        module: Some(SCSS_CSS_FN_HINT.to_string()),
         chain: None,
         byte_offset: 0,
     });

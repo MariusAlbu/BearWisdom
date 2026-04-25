@@ -385,7 +385,16 @@ fn extract_node(
                 // - call_expression → emit_call_ref directly, then recurse into args
                 // - new_expression  → emit_new_ref directly
                 // - anything else   → recurse with extract_calls for nested calls
-                let sym_idx = parent_index.unwrap_or(0);
+                //
+                // Attribute refs to the field symbol (not its parent class) so the
+                // chain walker's SelfRef phase receives a non-empty scope_chain —
+                // a class-level source symbol has `scope_path=None`, which makes
+                // `this.foo.bar()` inside a field initializer fail at Phase 1.
+                let sym_idx = if symbols.len() > field_idx {
+                    field_idx
+                } else {
+                    parent_index.unwrap_or(0)
+                };
                 if let Some(value) = child.child_by_field_name("value") {
                     match value.kind() {
                         "call_expression" => {
@@ -658,6 +667,20 @@ fn extract_node(
             "new_expression" => {
                 let sym_idx = parent_index.unwrap_or(0);
                 calls::emit_new_ref(&child, src, sym_idx, refs);
+                extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
+            }
+
+            // JSX element tags at any level not covered by a function body
+            // explicitly calling `extract_calls`. The classic hole was arrow-
+            // function-const React components like
+            //   const PollProvider = (props) => <PollContext.Provider …/>;
+            // whose body was reached via extract_node's default recursion
+            // and whose `<X.Provider>` never saw the JSX arm in extract_calls.
+            // Emit PascalCase / dotted JSX tags here; lowercase HTML
+            // intrinsics are skipped (same rule as extract_calls).
+            "jsx_self_closing_element" | "jsx_opening_element" => {
+                let sym_idx = parent_index.unwrap_or(0);
+                calls::emit_jsx_component_ref(&child, src, sym_idx, refs);
                 extract_node(child, src, scope_tree, symbols, refs, parent_index, demand);
             }
 
@@ -1217,6 +1240,33 @@ fn is_ts_primitive(name: &str) -> bool {
 /// All refs are attributed to `sym_idx` (symbol 0 for the file-level pass).
 /// The coverage metric only needs a ref at the correct line — sym_idx is not
 /// checked by the correlation logic.
+/// True when every leaf named child of `node` (walking nested
+/// union_type / intersection_type wrappers) is a `literal_type`.
+///
+/// Longer literal unions (`'a' | 'b' | 'c' | 'd' | 'e'`) parse as a
+/// LEFT-NESTED chain of union_types — the outer union's children are
+/// not all literal_type directly, they include an inner union_type
+/// that itself contains literals. A flat `children.all(literal_type)`
+/// check would miss this shape and leak the first literal's content
+/// as a coverage TypeRef.
+fn is_pure_literal_type_composite(node: tree_sitter::Node) -> bool {
+    let mut cursor = node.walk();
+    let mut any = false;
+    for child in node.named_children(&mut cursor) {
+        match child.kind() {
+            "literal_type" => any = true,
+            "union_type" | "intersection_type" | "parenthesized_type" => {
+                if !is_pure_literal_type_composite(child) {
+                    return false;
+                }
+                any = true;
+            }
+            _ => return false,
+        }
+    }
+    any
+}
+
 fn scan_all_type_identifiers(
     node: tree_sitter::Node,
     src: &[u8],
@@ -1322,6 +1372,20 @@ fn scan_all_type_identifiers(
                         //     `className`, `params` into unresolved_refs.
                         let target = match tn.kind() {
                             "nested_type_identifier" | "member_expression" => name.clone(),
+                            // Pure string/number/etc. literal-type unions like
+                            // `'default' | 'success' | 'warning'` — the first
+                            // alphanumeric token of the text is the content of
+                            // the FIRST literal (`"default"`), not a real type
+                            // reference. Use the primitive sentinel so it
+                            // doesn't leak into unresolved_refs.
+                            "union_type" | "intersection_type"
+                                if is_pure_literal_type_composite(tn) =>
+                            {
+                                "_primitive".to_string()
+                            }
+                            // Literal type by itself (rare — typically sits in
+                            // a union, handled above) — never a real ref.
+                            "literal_type" => "_primitive".to_string(),
                             "type_identifier"
                             | "identifier"
                             | "generic_type"
@@ -1331,8 +1395,7 @@ fn scan_all_type_identifiers(
                             | "intersection_type"
                             | "parenthesized_type"
                             | "type_query"
-                            | "readonly_type"
-                            | "literal_type" => name
+                            | "readonly_type" => name
                                 .split(|c: char| !c.is_alphanumeric() && c != '_')
                                 .find(|s| !s.is_empty())
                                 .unwrap_or("_")

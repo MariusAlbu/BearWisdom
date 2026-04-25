@@ -1,9 +1,16 @@
 //! HTML host-level extraction.
 //!
-//! Emits a file-stem `Class` symbol plus one `Field` symbol per
-//! element carrying an `id="…"` attribute (navigable anchor).
+//! Emits:
+//!   * A file-stem `Class` symbol so the host file is navigable.
+//!   * One `Field` symbol per element carrying an `id="…"` attribute
+//!     (navigable anchor).
+//!   * One `Imports` ref per `<script src="…">` tag, consumed downstream
+//!     by the demand-driven script-tag indexer stage.
 
-use crate::types::{ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
+use crate::languages::common::extract_script_refs;
+use crate::types::{
+    EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
+};
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
@@ -26,12 +33,28 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     });
     let host_index = 0usize;
 
+    // Script-src refs are collected via a byte-level scan that tolerates
+    // templated/`@`/`{{`-laden source and doesn't require tree-sitter-html
+    // to accept every unusual syntax.
+    let mut refs: Vec<ExtractedRef> = extract_script_refs(source)
+        .into_iter()
+        .map(|sr| ExtractedRef {
+            source_symbol_index: host_index,
+            target_name: sr.url.clone(),
+            kind: EdgeKind::Imports,
+            line: sr.line,
+            module: Some(sr.url),
+            chain: None,
+            byte_offset: 0,
+        })
+        .collect();
+
     let language: tree_sitter::Language = tree_sitter_html::LANGUAGE.into();
     let mut parser = Parser::new();
     if parser.set_language(&language).is_err() {
         return ExtractionResult {
             symbols,
-            refs: Vec::new(),
+            refs,
             routes: Vec::new(),
             db_sets: Vec::new(),
             has_errors: true,
@@ -43,7 +66,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     let Some(tree) = parser.parse(source, None) else {
         return ExtractionResult {
             symbols,
-            refs: Vec::new(),
+            refs,
             routes: Vec::new(),
             db_sets: Vec::new(),
             has_errors: true,
@@ -53,10 +76,11 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     };
 
     collect_anchors(&tree.root_node(), source, &file_name, host_index, &mut symbols);
+    let _ = &mut refs; // silence unused-mut lint when no refs were added
 
     ExtractionResult {
         symbols,
-        refs: Vec::new(),
+        refs,
         routes: Vec::new(),
         db_sets: Vec::new(),
         has_errors: tree.root_node().has_error(),

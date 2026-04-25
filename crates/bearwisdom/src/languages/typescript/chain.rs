@@ -241,10 +241,52 @@ pub(super) fn resolve_via_chain(
         }
     }
 
+    // Inheritance walk: if the method isn't on `effective_type` directly,
+    // follow the `extends` chain. `BehaviorSubject extends Subject<T>` and
+    // `Subject` is where `asObservable` lives — class-member-only lookup
+    // would stop at BehaviorSubject and miss every inherited method. Cap
+    // at 10 hops to guard against malformed cycles.
+    let mut ancestor = effective_type.as_str();
+    for _ in 0..10 {
+        let parent = match lookup.parent_class_qname(ancestor) {
+            Some(p) => p,
+            None => break,
+        };
+        let candidate = format!("{parent}.{}", last.name);
+        if let Some(sym) = lookup.by_qualified_name(&candidate) {
+            if kind_compatible(edge_kind, &sym.kind) {
+                debug!(
+                    strategy = "ts_chain_inheritance",
+                    chain_len = segments.len(),
+                    ancestor = %parent,
+                    target = %last.name,
+                    "resolved via extends chain"
+                );
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.9,
+                    strategy: "ts_chain_inheritance",
+                    resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                });
+            }
+        }
+        for sym in lookup.members_of(parent) {
+            if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: "ts_chain_inheritance",
+                    resolved_yield_type: ts_yield_type(sym, &last.type_args, lookup, &mut env),
+                });
+            }
+        }
+        ancestor = parent;
+    }
+
     // Final-segment miss: the walker landed on `effective_type` but no
-    // member named `last.name` is indexed under it. Same R3 reload signal
-    // as the intermediate-segment bail-out — feed `effective_type` to
-    // resolve_symbol so its definition file gets pulled.
+    // member named `last.name` is indexed under it or any ancestor. Same
+    // R3 reload signal as the intermediate-segment bail-out — feed
+    // `effective_type` to resolve_symbol so its definition file gets pulled.
     lookup.record_chain_miss(ChainMiss {
         current_type: effective_type,
         target_name: last.name.clone(),

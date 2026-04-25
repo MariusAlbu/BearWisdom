@@ -89,28 +89,42 @@ pub(super) fn extract_doc_comment(node: &Node, src: &[u8]) -> Option<String> {
 }
 
 pub(super) fn build_method_signature(node: &Node, src: &[u8]) -> Option<String> {
-    let name = node_text(node.child_by_field_name("name")?, src);
-    let ret = node
-        .child_by_field_name("returns")
-        .map(|t| node_text(t, src))
-        .unwrap_or_default();
-    let type_params = node
-        .child_by_field_name("type_parameters")
-        .map(|tp| node_text(tp, src))
-        .unwrap_or_default();
-    let params = node
-        .child_by_field_name("parameters")
-        .map(|p| node_text(p, src))
-        .unwrap_or_default();
-    Some(format!("{ret} {name}{type_params}{params}").trim().to_string())
+    let name_node = node.child_by_field_name("name")?;
+    // Build directly into one buffer. The old path did
+    // `format!(...).trim().to_string()` — two allocations per method.
+    // On Smartstore's ~50k methods that's 100k redundant allocations.
+    let ret = node.child_by_field_name("returns").map(|t| node_text(t, src));
+    let type_params = node.child_by_field_name("type_parameters").map(|tp| node_text(tp, src));
+    let params = node.child_by_field_name("parameters").map(|p| node_text(p, src));
+
+    let mut sig = String::with_capacity(128);
+    if let Some(r) = ret.as_deref() {
+        let t = r.trim();
+        if !t.is_empty() {
+            sig.push_str(t);
+            sig.push(' ');
+        }
+    }
+    sig.push_str(&node_text(name_node, src));
+    if let Some(tp) = type_params.as_deref() {
+        sig.push_str(tp);
+    }
+    if let Some(p) = params.as_deref() {
+        sig.push_str(p);
+    }
+    Some(sig)
 }
 
 pub(super) fn find_child_kind<'a>(node: &'a Node<'a>, kind: &str) -> Option<Node<'a>> {
-    let children: Vec<Node<'a>> = {
-        let mut cursor = node.walk();
-        node.children(&mut cursor).collect()
-    };
-    children.into_iter().find(|c| c.kind() == kind)
+    // Short-circuit on first match; the old path collected every child
+    // into a Vec<Node> before searching, wasting an allocation per call.
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == kind {
+            return Some(child);
+        }
+    }
+    None
 }
 
 /// Returns true for C# primitive / standard-library type names that are not

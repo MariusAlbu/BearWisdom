@@ -32,13 +32,12 @@ pub mod symbol_index;
 pub use symbol_index::SymbolLocationIndex;
 
 pub mod android_sdk;
+pub mod blazor_runtime;
 pub mod cabal;
 pub mod bazel_central_registry;
-pub mod clay_ui_synthetics;
 pub mod sdl_synthetics;
 pub mod cargo;
 pub mod clojure_core;
-pub mod compose_icons_stubs;
 pub mod composer;
 pub mod cpan;
 pub mod cpython_stdlib;
@@ -80,10 +79,6 @@ pub mod ruby_stdlib;
 pub mod rubygems;
 pub mod rust_stdlib;
 pub mod scala_stdlib;
-pub mod dayjs_synthetics;
-pub mod jquery_synthetics;
-pub use jquery_synthetics::JquerySynthEcosystem;
-pub mod js_test_chains;
 pub mod spm;
 pub mod spring_stubs;
 pub mod swift_foundation;
@@ -95,12 +90,11 @@ pub mod zig_pkg;
 pub mod zig_std;
 pub use android_sdk::AndroidSdkEcosystem;
 pub use bazel_central_registry::BazelCentralRegistryEcosystem;
-pub use clay_ui_synthetics::ClayUiSyntheticsEcosystem;
+pub use blazor_runtime::BlazorRuntimeEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
 pub use clojure_core::ClojureCoreEcosystem;
-pub use compose_icons_stubs::ComposeIconsStubsEcosystem;
 pub use composer::ComposerEcosystem;
 pub use cpan::CpanEcosystem;
 pub use cpython_stdlib::CpythonStdlibEcosystem;
@@ -547,11 +541,10 @@ pub fn default_locator(
         "scala-stdlib" => Some(Arc::new(ScalaStdlibEcosystem)),
         "groovy-stdlib" => Some(Arc::new(GroovyStdlibEcosystem)),
         "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
-        "compose-icons-stubs" => Some(Arc::new(ComposeIconsStubsEcosystem)),
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
-        "jquery-synthetics" => Some(Arc::new(JquerySynthEcosystem)),
         "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
+        "blazor-runtime" => Some(Arc::new(BlazorRuntimeEcosystem)),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
@@ -567,7 +560,6 @@ pub fn default_locator(
         "node-builtins" => Some(Arc::new(NodeBuiltinsEcosystem)),
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
-        "clay-ui-synthetics" => Some(Arc::new(ClayUiSyntheticsEcosystem)),
         "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
         _ => None,
     }
@@ -622,11 +614,10 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ScalaStdlibEcosystem));
         reg.register(Arc::new(GroovyStdlibEcosystem));
         reg.register(Arc::new(ClojureCoreEcosystem));
-        reg.register(Arc::new(ComposeIconsStubsEcosystem));
         reg.register(Arc::new(ErlangOtpEcosystem));
         reg.register(Arc::new(ElixirStdlibEcosystem));
-        reg.register(Arc::new(JquerySynthEcosystem));
         reg.register(Arc::new(SpringStubsEcosystem));
+        reg.register(Arc::new(BlazorRuntimeEcosystem));
         reg.register(Arc::new(SwiftFoundationEcosystem));
         reg.register(Arc::new(SwiftPmDslStubsEcosystem));
         reg.register(Arc::new(VbaTypelibsEcosystem));
@@ -639,7 +630,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(GleamStdlibEcosystem));
         reg.register(Arc::new(NodeBuiltinsEcosystem));
         reg.register(Arc::new(ZigStdEcosystem));
-        reg.register(Arc::new(ClayUiSyntheticsEcosystem));
         reg.register(Arc::new(SdlSyntheticsEcosystem));
         reg
     })

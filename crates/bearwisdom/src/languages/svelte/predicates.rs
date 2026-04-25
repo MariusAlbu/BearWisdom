@@ -16,11 +16,6 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
 pub(super) fn is_svelte_builtin(name: &str) -> bool {
     let root = name.split('.').next().unwrap_or(name);
 
-    // Delegate JS/TS runtime globals first.
-    if crate::languages::typescript::predicates::is_js_runtime_global(root) {
-        return true;
-    }
-
     matches!(
         root,
         // ── Svelte 4 lifecycle / context ────────────────────────────────────

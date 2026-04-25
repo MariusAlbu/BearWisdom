@@ -132,35 +132,7 @@ pub(super) fn extract_calls(
             // to the component function/class.  Emit a Calls edge for user-
             // defined components (PascalCase) — lowercase tags are HTML intrinsics.
             "jsx_self_closing_element" | "jsx_opening_element" => {
-                // The tag name is the first named child (identifier or member_expression).
-                let tag = child
-                    .child_by_field_name("name")
-                    .or_else(|| child.named_child(0));
-                if let Some(tag_node) = tag {
-                    let tag_name = node_text(tag_node, src);
-                    // PascalCase = user component; lowercase = HTML intrinsic.
-                    if !tag_name.is_empty()
-                        && tag_name.chars().next().map_or(false, |c| c.is_uppercase())
-                    {
-                        // Member expression: `<Foo.Bar />` → chain + TypeRef.
-                        let chain = build_chain(tag_node, src);
-                        let target = chain
-                            .as_ref()
-                            .and_then(|c| c.segments.last())
-                            .map(|s| s.name.clone())
-                            .unwrap_or(tag_name);
-                        crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
-                        refs.push(ExtractedRef {
-                            source_symbol_index,
-                            target_name: target,
-                            kind: EdgeKind::Calls,
-                            line: tag_node.start_position().row as u32,
-                            module: None,
-                            chain,
-                            byte_offset: 0,
-                        });
-                    }
-                }
+                emit_jsx_component_ref(&child, src, source_symbol_index, refs);
                 extract_calls(&child, src, source_symbol_index, refs);
             }
             _ => {
@@ -168,6 +140,51 @@ pub(super) fn extract_calls(
             }
         }
     }
+}
+
+/// Emit a `Calls` ref + receiver `TypeRef` for a JSX component tag.
+///
+/// Handles both the bare form (`<Component …/>`) and member-expression
+/// form (`<Foo.Bar …/>`) — the latter produces a structured MemberChain
+/// so the resolver's chain walker can follow the receiver's inferred
+/// type (e.g. `PollContext` → `React.Context<T>`) to the tail member
+/// (`Provider` / `Consumer`).
+///
+/// Skips lowercase tags (HTML intrinsics — not graph-resolvable symbols).
+pub(super) fn emit_jsx_component_ref(
+    element: &Node,
+    src: &[u8],
+    source_symbol_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let Some(tag_node) = element
+        .child_by_field_name("name")
+        .or_else(|| element.named_child(0))
+    else {
+        return;
+    };
+    let tag_name = node_text(tag_node, src);
+    if tag_name.is_empty()
+        || !tag_name.chars().next().map_or(false, |c| c.is_uppercase())
+    {
+        return;
+    }
+    let chain = build_chain(tag_node, src);
+    let target = chain
+        .as_ref()
+        .and_then(|c| c.segments.last())
+        .map(|s| s.name.clone())
+        .unwrap_or(tag_name);
+    crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &tag_node, refs);
+    refs.push(ExtractedRef {
+        source_symbol_index,
+        target_name: target,
+        kind: EdgeKind::Calls,
+        line: tag_node.start_position().row as u32,
+        module: None,
+        chain,
+        byte_offset: tag_node.start_byte() as u32,
+    });
 }
 
 /// Build a structured member access chain from tree-sitter AST nodes.

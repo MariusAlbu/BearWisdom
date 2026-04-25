@@ -62,7 +62,14 @@ impl Ecosystem for TsLibDomEcosystem {
 
     fn supports_reachability(&self) -> bool { true }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    // lib.*.d.ts is the fallback for "bare method call whose receiver type we
+    // couldn't infer": `x.trim()`, `event.preventDefault()`, `setTimeout(...)`.
+    // A demand-filtered index skips most of lib.dom.d.ts (it's 1.8MB of
+    // declarations), so those calls land in unresolved even though the
+    // answer is right there in the ingested file. Full indexing costs a
+    // one-time parse but lets the resolver's name lookup find every
+    // top-level DOM/ES symbol without guessing.
+    fn uses_demand_driven_parse(&self) -> bool { false }
 
     fn build_symbol_index(
         &self,
@@ -123,11 +130,41 @@ fn make_root(dir: &Path, tag: &str) -> ExternalDepRoot {
 }
 
 fn find_typescript_lib(project_root: &Path) -> Option<PathBuf> {
+    // Project-local: walk up from project_root checking every ancestor's
+    // node_modules/typescript/lib. Covers monorepos with hoisted installs.
     for dir in ancestors_with_node_modules(project_root) {
         let lib = dir.join("typescript").join("lib");
         if lib.is_dir() { return Some(lib); }
     }
+    // User-global npm install — common fallback for pure-backend projects
+    // (ASP.NET, Django, Rails) that embed a handful of JS files under
+    // `wwwroot/`/`public/`/`static/` without a project-level npm install.
+    // Without this, the natural resolution pipeline can't see
+    // `setTimeout`/`Array.prototype.map`/etc. and those references fall
+    // through to unresolved. Probes Windows (`APPDATA\npm`), Unix
+    // (`/usr/lib`, `/usr/local/lib`, `~/.npm-global`, `~/.nvm/current`).
+    for root in global_npm_roots() {
+        let lib = root.join("typescript").join("lib");
+        if lib.is_dir() { return Some(lib); }
+    }
     None
+}
+
+fn global_npm_roots() -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    if let Some(appdata) = std::env::var_os("APPDATA") {
+        out.push(PathBuf::from(appdata).join("npm").join("node_modules"));
+    }
+    if let Some(home) = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE")) {
+        let home = PathBuf::from(home);
+        out.push(home.join(".npm-global").join("lib").join("node_modules"));
+        out.push(home.join(".nvm").join("current").join("lib").join("node_modules"));
+        out.push(home.join("node_modules"));
+    }
+    out.push(PathBuf::from("/usr/local/lib/node_modules"));
+    out.push(PathBuf::from("/usr/lib/node_modules"));
+    out.push(PathBuf::from("/opt/homebrew/lib/node_modules"));
+    out
 }
 
 fn find_types_node(project_root: &Path) -> Option<PathBuf> {

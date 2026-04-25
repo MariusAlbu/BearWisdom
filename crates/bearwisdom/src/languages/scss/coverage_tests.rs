@@ -26,6 +26,90 @@ fn cov_mixin_statement_emits_function() {
 }
 
 #[test]
+fn cov_error_root_text_fallback_recovers_mixins() {
+    // The tree-sitter-scss-local grammar degrades the root node to `ERROR`
+    // when it hits unsupported constructs — `#{$a}/#{$b}` inside a `font:`
+    // shorthand is the classic offender (Font Awesome 4 `_mixins.scss`
+    // trips on it in the very first mixin). When the root is `ERROR`,
+    // tree-sitter does not produce `mixin_statement` nodes anywhere in
+    // the tree — `@mixin NAME { … }` declarations collapse to loose
+    // identifier / parameters / declaration tokens with no wrapper node
+    // the visitor recognises.
+    //
+    // The extractor's text-level fallback scans for `@mixin NAME` and
+    // `@function NAME` when the grammar parse is in error state and
+    // produced zero symbols. Recovers the mixin names that sibling
+    // partials `@include` against; without this, every Font Awesome-style
+    // project had a long tail of unresolved mixin refs.
+    let src = "// Mixins\n\
+@mixin fa-icon() {\n\
+  display: inline-block;\n\
+  font: normal normal normal #{$fa-font-size-base}/#{$fa-line-height-base} FontAwesome;\n\
+}\n\
+\n\
+@mixin fa-icon-rotate($degrees, $rotation) {\n\
+  -webkit-transform: rotate($degrees);\n\
+}\n\
+\n\
+@mixin fa-icon-flip($horiz, $vert, $rotation) {\n\
+  -webkit-transform: scale($horiz, $vert);\n\
+}\n\
+\n\
+@mixin sr-only {\n\
+  position: absolute;\n\
+}\n";
+    let r = extract::extract(src, "_mixins.scss");
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    for required in &["fa-icon", "fa-icon-rotate", "fa-icon-flip", "sr-only"] {
+        assert!(
+            names.contains(required),
+            "missing `{required}` from text-fallback recovery; names: {names:?}"
+        );
+    }
+    for sym in &r.symbols {
+        if ["fa-icon", "fa-icon-rotate", "fa-icon-flip", "sr-only"]
+            .contains(&sym.name.as_str())
+        {
+            assert_eq!(
+                sym.kind,
+                SymbolKind::Function,
+                "recovered mixin `{}` must be Function kind",
+                sym.name
+            );
+        }
+    }
+}
+
+#[test]
+fn cov_error_root_fallback_not_triggered_on_clean_parse() {
+    // On a clean parse the text fallback must not fire — grammar-driven
+    // symbols already capture everything and double-emission would leave
+    // duplicate rows in `symbols`.
+    let src = "@mixin rounded($r: 4px) { border-radius: $r; }\n\
+@mixin shadow { box-shadow: 0 0 4px #0003; }\n";
+    let r = extract::extract(src, "_mixins.scss");
+    assert!(!r.has_errors, "this source should parse cleanly");
+    let rounded_count = r.symbols.iter().filter(|s| s.name == "rounded").count();
+    let shadow_count = r.symbols.iter().filter(|s| s.name == "shadow").count();
+    assert_eq!(rounded_count, 1);
+    assert_eq!(shadow_count, 1);
+}
+
+#[test]
+fn cov_error_root_fallback_at_function_recovery() {
+    // `@function` declarations should also be recovered — same grammar
+    // collapse pattern, same byte-level fallback path.
+    let src = "@mixin broken() {\n  font: normal #{$a}/#{$b} X;\n}\n\
+@function to-rem($px) {\n  @return ($px / 16) * 1rem;\n}\n";
+    let r = extract::extract(src, "_fns.scss");
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(
+        names.contains(&"to-rem"),
+        "@function declaration must be recovered via text fallback; names: {names:?}"
+    );
+}
+
+#[test]
 fn cov_mixin_statement_signature() {
     let r = extract::extract("@mixin flex-center { display: flex; align-items: center; }", "");
     let sym = r.symbols.iter().find(|s| s.name == "flex-center");

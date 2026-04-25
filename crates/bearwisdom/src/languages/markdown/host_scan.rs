@@ -150,21 +150,24 @@ fn collect_link_refs(
     let mut i = 0;
     while i < chars.len() {
         if chars[i] == '[' || (chars[i] == '!' && chars.get(i + 1) == Some(&'[')) {
-            let open = if chars[i] == '!' { i + 1 } else { i };
+            let is_image = chars[i] == '!';
+            let open = if is_image { i + 1 } else { i };
             if let Some(close) = find_match_bracket(&chars, open) {
                 if chars.get(close + 1) == Some(&'(') {
                     if let Some(paren_close) = find_match_paren(&chars, close + 1) {
-                        let target: String = chars[close + 2..paren_close].iter().collect();
-                        if let Some(normalized) = normalize_link_target(&target) {
-                            refs.push(ExtractedRef {
-                                source_symbol_index: host_index,
-                                target_name: normalized,
-                                kind: EdgeKind::Imports,
-                                line: line_no,
-                                module: None,
-                                chain: None,
-                                byte_offset: 0,
-                            });
+                        if !is_image {
+                            let target: String = chars[close + 2..paren_close].iter().collect();
+                            if let Some(normalized) = normalize_link_target(&target) {
+                                refs.push(ExtractedRef {
+                                    source_symbol_index: host_index,
+                                    target_name: normalized,
+                                    kind: EdgeKind::Imports,
+                                    line: line_no,
+                                    module: None,
+                                    chain: None,
+                                    byte_offset: 0,
+                                });
+                            }
                         }
                         i = paren_close + 1;
                         continue;
@@ -214,6 +217,12 @@ fn normalize_link_target(target: &str) -> Option<String> {
     if target.contains("://") || target.starts_with("mailto:") {
         return None;
     }
+    // Site-absolute routes (e.g. Blazor `/WhatsNew-Archive`, Docusaurus
+    // `/docs/foo`) are not filesystem paths — they route against a site
+    // root, not the repo root. Skip them.
+    if target.starts_with('/') {
+        return None;
+    }
     let mut t = target;
     if let Some(stripped) = t.strip_prefix("./") {
         t = stripped;
@@ -224,7 +233,36 @@ fn normalize_link_target(target: &str) -> Option<String> {
     if t.is_empty() {
         return None;
     }
+    // Bare identifiers like `caDocsUrl` are template placeholders, not
+    // file paths — a real file ref has either a path separator or an
+    // extension. Reject tokens with neither.
+    if !t.contains('/') && !t.contains('\\') && !t.contains('.') {
+        return None;
+    }
     let path = std::path::Path::new(t);
+    // Skip links to non-indexed asset types. Images are already filtered
+    // at the `![...]()` syntax level, but bare `[...](foo.png)` still
+    // lands here — same rationale applies.
+    if let Some(ext) = path.extension().and_then(|e| e.to_str()) {
+        if is_non_indexable_asset(&ext.to_ascii_lowercase()) {
+            return None;
+        }
+    }
+    // Docs-site route URLs (Docusaurus, VitePress, MkDocs, etc.) render
+    // as `./appendix/emojis` or `./guides/overview` in READMEs at the
+    // repo root. They resolve to generated-site paths, not to any file
+    // in the repo, so stem-matching against indexed files always misses
+    // and the ref just pollutes `unresolved_refs`. Heuristic: if the
+    // path has no extension AND is not a parent-relative reference
+    // (`../` prefix, which is almost always a real file ref), treat it
+    // as a site URL and skip. Parent-relative forms like `../CHANGELOG`
+    // stay: they reliably target repo files.
+    if path.extension().is_none()
+        && !target.starts_with("../")
+        && !target.starts_with("..\\")
+    {
+        return None;
+    }
     let stem = path
         .file_stem()
         .and_then(|s| s.to_str())
@@ -239,6 +277,18 @@ fn normalize_link_target(target: &str) -> Option<String> {
         format!("{}/{}", parent.replace('\\', "/"), stem)
     };
     Some(normalized)
+}
+
+fn is_non_indexable_asset(ext: &str) -> bool {
+    matches!(
+        ext,
+        "png" | "jpg" | "jpeg" | "gif" | "svg" | "webp" | "ico" | "bmp" | "tiff" | "tif"
+        | "pdf" | "mp4" | "webm" | "mov" | "avi" | "mkv"
+        | "mp3" | "wav" | "ogg" | "flac"
+        | "zip" | "tar" | "gz" | "7z" | "rar"
+        | "exe" | "dll" | "so" | "dylib"
+        | "woff" | "woff2" | "ttf" | "otf" | "eot"
+    )
 }
 
 pub(crate) fn file_stem(file_path: &str) -> String {

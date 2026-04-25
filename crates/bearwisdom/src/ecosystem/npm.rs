@@ -277,15 +277,32 @@ impl ExternalSourceLocator for NpmEcosystem {
         }
     }
 
-    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
-        let mut files = super::js_test_chains::synthetic_test_chain_files(project_root);
-        if let Some(dayjs) = super::dayjs_synthetics::synthetic_dayjs_file(project_root) {
-            files.push(dayjs);
-        }
-        // jQuery synthetics are now owned by JquerySynthEcosystem (activates
-        // on JS/TS language presence so Rails / classic-asset projects get
-        // them too). Do not re-emit from here.
-        if files.is_empty() { None } else { Some(files) }
+    fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
+        // Per-library chain-type synthetics (jquery, dayjs, chai/vitest,
+        // clay-ui, compose-icons) all lived here at various points. They
+        // were all symptoms of two architectural gaps that have since
+        // been closed generically:
+        //
+        // 1. `<script src>` discovery + IIFE globals harvest replaces
+        //    `jquery_synthetics.rs` — `wwwroot/lib/jquery/jquery.js` is
+        //    followed from Razor/HTML refs and the JS extractor lifts
+        //    IIFE-installed globals (`$`, `jQuery`, `angular`, …) to
+        //    file-scope symbols. See `indexer::script_tag_deps` and
+        //    `languages::javascript::extract::harvest_top_level_globals`.
+        //
+        // 2. Scope-aware return-type resolution in the TypeInfo builder
+        //    replaces `dayjs_synthetics.rs`, `js_test_chains.rs`,
+        //    `clay_ui_synthetics.rs`, `compose_icons_stubs.rs`. The
+        //    real `.d.ts` files (e.g. `node_modules/dayjs/esm/index.d.ts`,
+        //    `node_modules/@types/chai/index.d.ts`) are walked by the
+        //    npm locator, their methods emit TypeRef refs for return
+        //    types, and the builder's scope-probe
+        //    (`indexer::resolve::engine::resolve_type_name_in_scope`)
+        //    qualifies raw type names like `Assertion` or `Dayjs`
+        //    against the namespace they're declared in.
+        //
+        // No metadata-only synthetic file is emitted any more.
+        None
     }
 }
 
@@ -351,18 +368,29 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     for dep in &data.dependencies {
         if builtins.contains(dep.as_str()) { continue }
         if dep.starts_with('@') && !dep.contains('/') { continue }
-        if dep.starts_with("@types/") { continue }
+
+        // `@types/foo` deps are normally picked up as companions of `foo`
+        // below, so we used to skip them here. But for packages whose runtime
+        // ships pre-compiled JS without inline types (jasmine, mocha, test
+        // runners, ambient-only modules) the user declares `@types/foo`
+        // directly without a matching `foo`. Those direct declarations must
+        // still get a dep root — especially for KNOWN_GLOBAL_PACKAGES whose
+        // `declare global { ... }` contents are what register `describe`,
+        // `it`, `expect` etc. as global symbols.
+        let is_types_only = dep.starts_with("@types/");
 
         let mut pkg_roots: Vec<PathBuf> = Vec::new();
         for nm_root in &node_modules_roots {
             let primary = nm_root.join(dep);
             if primary.is_dir() { pkg_roots.push(primary) }
-            if !dep.starts_with('@') {
-                let types_dir = nm_root.join("@types").join(dep);
-                if types_dir.is_dir() { pkg_roots.push(types_dir) }
-            } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
-                let types_dir = nm_root.join("@types").join(&escaped);
-                if types_dir.is_dir() { pkg_roots.push(types_dir) }
+            if !is_types_only {
+                if !dep.starts_with('@') {
+                    let types_dir = nm_root.join("@types").join(dep);
+                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
+                    let types_dir = nm_root.join("@types").join(&escaped);
+                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                }
             }
         }
 
@@ -486,9 +514,18 @@ fn discover_ts_externals_scoped(
     workspace_root: &Path,
     package_abs_path: &Path,
 ) -> Vec<ExternalDepRoot> {
-    let Some(mut declared) = read_single_package_json_deps(package_abs_path) else {
-        return Vec::new();
-    };
+    // Primary: the package's own package.json (classic monorepo layout —
+    // one package.json per package dir).
+    let mut declared = read_single_package_json_deps(package_abs_path).unwrap_or_default();
+
+    // Fallback: polyglot repos where a .NET / Rust / Go package owns a
+    // nested TypeScript sub-app with its own package.json
+    // (`src/Web/ClientApp/package.json` in Clean-Architecture layouts,
+    // `web/frontend/package.json` in Go services, etc.). Walk the
+    // package subtree for any package.json files and merge their deps.
+    // Skip `node_modules/` during the walk so we don't pick up
+    // third-party package.json files.
+    declared.extend(read_nested_package_json_deps(package_abs_path));
 
     if package_abs_path != workspace_root {
         if let Some(root_deps) = read_single_package_json_deps(workspace_root) {
@@ -513,18 +550,23 @@ fn discover_ts_externals_scoped(
     for dep in &declared {
         if builtins.contains(dep.as_str()) { continue }
         if dep.starts_with('@') && !dep.contains('/') { continue }
-        if dep.starts_with("@types/") { continue }
+        // See `discover_ts_externals` — direct `@types/foo` declarations
+        // must not be silently dropped; they may be the sole type source
+        // for an ambient-only package (jasmine, mocha, etc.).
+        let is_types_only = dep.starts_with("@types/");
 
         let mut pkg_roots: Vec<PathBuf> = Vec::new();
         for nm_root in &node_modules_roots {
             let primary = nm_root.join(dep);
             if primary.is_dir() { pkg_roots.push(primary) }
-            if !dep.starts_with('@') {
-                let types_dir = nm_root.join("@types").join(dep);
-                if types_dir.is_dir() { pkg_roots.push(types_dir) }
-            } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
-                let types_dir = nm_root.join("@types").join(&escaped);
-                if types_dir.is_dir() { pkg_roots.push(types_dir) }
+            if !is_types_only {
+                if !dep.starts_with('@') {
+                    let types_dir = nm_root.join("@types").join(dep);
+                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
+                    let types_dir = nm_root.join("@types").join(&escaped);
+                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                }
             }
         }
         for pkg_dir in pkg_roots {
@@ -604,6 +646,62 @@ fn read_single_package_json_deps(dir: &Path) -> Option<std::collections::HashSet
     Some(deps)
 }
 
+/// Walk `dir`'s subtree for `package.json` files (skipping `node_modules/`
+/// so we don't pick up third-party manifests) and union the declared
+/// dependencies. Used to discover deps from a TypeScript sub-app nested
+/// inside a non-TS package — e.g. `src/Web/ClientApp/package.json` inside
+/// a .NET `src/Web` project.
+///
+/// Bounded depth (6) keeps the walk cheap on real repos; in practice
+/// the nested manifest is at most 2–3 levels below the package root.
+fn read_nested_package_json_deps(dir: &Path) -> std::collections::HashSet<String> {
+    let mut out = std::collections::HashSet::new();
+    walk_for_package_json(dir, dir, &mut out, 0);
+    out
+}
+
+fn walk_for_package_json(
+    cur: &Path,
+    root: &Path,
+    out: &mut std::collections::HashSet<String>,
+    depth: usize,
+) {
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(cur) else { return };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else { continue };
+        let name = entry.file_name();
+        let name_lossy = name.to_string_lossy();
+        if file_type.is_dir() {
+            // Skip canonical exclusion dirs so we don't recurse into
+            // artifacts or vendor code.
+            if name_lossy.starts_with('.')
+                || matches!(
+                    name_lossy.as_ref(),
+                    "node_modules" | "target" | "dist" | "build" | ".turbo" | ".next"
+                        | "bin" | "obj" | "coverage"
+                )
+            {
+                continue;
+            }
+            walk_for_package_json(&entry.path(), root, out, depth + 1);
+        } else if name == "package.json" {
+            // Skip the exact same package.json the caller already read
+            // (when cur == root).
+            if entry.path().parent() == Some(root) {
+                continue;
+            }
+            if let Some(deps) = read_single_package_json_deps(
+                entry.path().parent().unwrap_or(cur),
+            ) {
+                out.extend(deps);
+            }
+        }
+    }
+}
+
 fn find_node_modules_with_ancestors(start: &Path, workspace_root: &Path) -> Vec<PathBuf> {
     if let Some(raw) = std::env::var_os("BEARWISDOM_TS_NODE_MODULES") {
         let mut out = Vec::new();
@@ -620,20 +718,14 @@ fn find_node_modules_with_ancestors(start: &Path, workspace_root: &Path) -> Vec<
     };
 
     push_if_dir(start.join("node_modules"), &mut out);
-    if let Ok(entries) = std::fs::read_dir(start) {
-        for entry in entries.flatten() {
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue }
-            let name = entry.file_name();
-            let name_lossy = name.to_string_lossy();
-            if name_lossy.starts_with('.')
-                || matches!(
-                    name_lossy.as_ref(),
-                    "node_modules" | "target" | "dist" | "build" | ".turbo" | ".next"
-                )
-            { continue }
-            push_if_dir(entry.path().join("node_modules"), &mut out);
-        }
-    }
+    // Walk the subtree under `start` (bounded depth) for nested
+    // node_modules dirs. Polyglot layouts bury their TypeScript
+    // sub-apps 2–3 levels deep inside a non-TS package
+    // (`src/Web/ClientApp/node_modules`, `web/admin/node_modules`, …)
+    // and the old single-level scan missed them. Skips
+    // `node_modules/` / build-artifact dirs so we don't recurse into
+    // third-party trees.
+    walk_for_nested_node_modules(start, &mut out, 0);
 
     let mut current = start.parent();
     while let Some(dir) = current {
@@ -642,6 +734,39 @@ fn find_node_modules_with_ancestors(start: &Path, workspace_root: &Path) -> Vec<
         current = dir.parent();
     }
     out
+}
+
+fn walk_for_nested_node_modules(cur: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 6 {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(cur) else { return };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else { continue };
+        if !file_type.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_lossy = name.to_string_lossy();
+        if name_lossy == "node_modules" {
+            let path = entry.path();
+            if !out.contains(&path) {
+                out.push(path);
+            }
+            // Don't recurse into node_modules — we want the outermost
+            // for each install pocket.
+            continue;
+        }
+        if name_lossy.starts_with('.')
+            || matches!(
+                name_lossy.as_ref(),
+                "target" | "dist" | "build" | ".turbo" | ".next" | "bin" | "obj" | "coverage"
+            )
+        {
+            continue;
+        }
+        walk_for_nested_node_modules(&entry.path(), out, depth + 1);
+    }
 }
 
 fn find_node_modules(project_root: &Path) -> Vec<PathBuf> {
@@ -658,22 +783,63 @@ fn find_node_modules(project_root: &Path) -> Vec<PathBuf> {
         if !out.is_empty() { return out }
     }
 
-    push_if_dir(project_root.join("node_modules"), &mut out);
+    // Walk the project tree looking for top-level `node_modules/` dirs at
+    // ANY depth. Polyglot repos routinely bury their TypeScript side deep
+    // inside a backend layout (`src/Web/ClientApp/`, `frontend/`,
+    // `apps/web/`, `webclient/`, …) and the prior single-level scan missed
+    // them, leaving every imported package unresolved.
+    //
+    // Each discovered `node_modules/` dir is recorded exactly once and we
+    // do NOT descend into one to find nested ones (that path is reserved
+    // for `BEARWISDOM_TS_WALK_NESTED` and npm package-level walking —
+    // it's not how app-level dependency discovery works).
+    //
+    // CRITICAL: do NOT enable gitignore. Every JS/TS project's
+    // `.gitignore` starts with `node_modules/`, which would hide the
+    // very directory we're looking for. We keep the default filters
+    // that ignore hidden dirs (`.git/`, `.turbo/`, `.next/`) and
+    // common build-artifact trees so the walk stays cheap, but
+    // gitignore matching is disabled explicitly.
+    use ignore::WalkBuilder;
+    let walker = WalkBuilder::new(project_root)
+        .follow_links(false)
+        .git_ignore(false)
+        .git_global(false)
+        .git_exclude(false)
+        .ignore(false)
+        .parents(false)
+        .hidden(true)
+        .filter_entry(|entry| {
+            // Prune artifact trees to keep the scan bounded without
+            // needing gitignore rules.
+            let name = entry.file_name().to_string_lossy();
+            !matches!(
+                name.as_ref(),
+                "target" | "dist" | "build" | ".turbo" | ".next" | "bin" | "obj"
+            )
+        })
+        .build();
 
-    if let Ok(entries) = std::fs::read_dir(project_root) {
-        for entry in entries.flatten() {
-            if !entry.file_type().map(|t| t.is_dir()).unwrap_or(false) { continue }
-            let name = entry.file_name();
-            let name_lossy = name.to_string_lossy();
-            if name_lossy.starts_with('.')
-                || matches!(
-                    name_lossy.as_ref(),
-                    "node_modules" | "target" | "dist" | "build" | ".turbo" | ".next"
-                )
-            { continue }
-            push_if_dir(entry.path().join("node_modules"), &mut out);
+    for entry in walker.flatten() {
+        let p = entry.path();
+        if !p.file_name().map(|n| n == "node_modules").unwrap_or(false) {
+            continue;
         }
+        if !p.is_dir() {
+            continue;
+        }
+        // Skip nested node_modules — only count the outermost for any
+        // given package-install pocket.
+        let is_nested = p
+            .ancestors()
+            .skip(1)
+            .any(|a| a.file_name().map(|n| n == "node_modules").unwrap_or(false));
+        if is_nested {
+            continue;
+        }
+        push_if_dir(p.to_path_buf(), &mut out);
     }
+
     out
 }
 

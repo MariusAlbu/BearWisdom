@@ -63,6 +63,16 @@ pub fn extract(source: &str) -> super::ExtractionResult {
 
     extract_js_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None);
 
+    // Global-binding harvest: walk top-level statements (and the bodies of
+    // top-level IIFEs) for assignments to `window.X`, `global.X`,
+    // `globalThis.X`, `self.X`, `root.X`, or `this.X`. Each one registers
+    // `X` as a file-top-level symbol so cross-file resolvers can find the
+    // bindings that classic `<script src="…">` libraries install into the
+    // browser global object (jQuery's `$`, Bootstrap's `bootstrap`,
+    // AngularJS's `angular`, etc.). Without this, `jquery.js` produces
+    // only function-scoped symbols and `$` stays unresolved project-wide.
+    harvest_top_level_globals(root, src_bytes, &mut symbols);
+
     // Post-traversal full-tree scan: catch every type_identifier node that the
     // main walker missed (e.g. JSDoc-annotated variables, class heritage in
     // unusual positions, etc.).  JS has no type system so hits are sparse but
@@ -182,9 +192,12 @@ fn extract_js_node(
             }
 
             // `expression_statement` may wrap `module.exports = ...` or
-            // `exports.X = ...` assignments.
+            // `exports.X = ...` assignments, or ES5 prototype-method
+            // installs (`Builder.prototype.withUrl = function () { … }`)
+            // emitted by webpack/TS-to-ES5 transpilation.
             "expression_statement" => {
                 extract_module_exports(&child, src, symbols.len(), refs);
+                extract_prototype_method(&child, src, scope_tree, symbols, refs, parent_index);
                 extract_js_node(child, src, scope_tree, symbols, refs, parent_index);
             }
 
@@ -853,37 +866,57 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
             }
 
             "function_declaration" | "generator_function_declaration" => {
-                // Named: `export function foo() {}` → use the function name.
-                // Anonymous: `export default function() {}` → fallback handled below.
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let name = node_text(name_node, src);
-                    if !name.is_empty() {
-                        refs.push(Ref {
-                            source_symbol_index,
-                            target_name: name,
-                            kind: EdgeKind::Imports,
-                            line,
-                            module: None,
-                            chain: None,
-                            byte_offset: 0,
-                        });
+                // `export function foo() {}` / `export default function foo() {}`
+                // Re-export form (`export { foo } from './mod'`) is handled in
+                // the `export_clause` arm above; those land here only when an
+                // anonymous default function is the export target, which we
+                // skip — the inner function symbol already covers the line.
+                //
+                // For the NAMED form, emitting a self-targeted Imports ref is
+                // pure noise: the function symbol exists in the same file,
+                // there's no module path to resolve against, and the ref
+                // always lands in `unresolved_refs` since name-collision with
+                // `init` / `main` / etc. across unrelated files makes the
+                // heuristic pick the wrong target (fluentui-blazor has 26+
+                // unrelated `init` symbols across .cs / .razor.js files).
+                //
+                // Skip. Coverage comes from the function symbol itself.
+                if module_path.is_some() {
+                    if let Some(name_node) = child.child_by_field_name("name") {
+                        let name = node_text(name_node, src);
+                        if !name.is_empty() {
+                            refs.push(Ref {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::Imports,
+                                line,
+                                module: module_path.clone(),
+                                chain: None,
+                                byte_offset: 0,
+                            });
+                        }
                     }
                 }
             }
 
             "class_declaration" | "class" => {
-                if let Some(name_node) = child.child_by_field_name("name") {
-                    let name = node_text(name_node, src);
-                    if !name.is_empty() {
-                        refs.push(Ref {
-                            source_symbol_index,
-                            target_name: name,
-                            kind: EdgeKind::Imports,
-                            line,
-                            module: None,
-                            chain: None,
-                            byte_offset: 0,
-                        });
+                // Same rationale as `function_declaration` above — only emit
+                // for re-export forms where the module path gives the
+                // resolver something to match against.
+                if module_path.is_some() {
+                    if let Some(name_node) = child.child_by_field_name("name") {
+                        let name = node_text(name_node, src);
+                        if !name.is_empty() {
+                            refs.push(Ref {
+                                source_symbol_index,
+                                target_name: name,
+                                kind: EdgeKind::Imports,
+                                line,
+                                module: module_path.clone(),
+                                chain: None,
+                                byte_offset: 0,
+                            });
+                        }
                     }
                 }
             }
@@ -1112,16 +1145,30 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                     }
                     // Regular call — emit with chain for member access resolution.
                     else if !callee.is_empty() {
-                        crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
-                        refs.push(Ref {
-                            source_symbol_index,
-                            target_name: callee,
-                            kind: EdgeKind::Calls,
-                            line: func_node.start_position().row as u32,
-                            module: None,
-                            chain,
-                            byte_offset: func_node.start_byte() as u32,
-                        });
+                        // Parameter-shadow filter — see `emit_call_ref_js`
+                        // comment for rationale. Receiver-first on chains
+                        // of ≥2 segments; callee-only for bare calls.
+                        let receiver_name = chain
+                            .as_ref()
+                            .filter(|c| c.segments.len() >= 2)
+                            .and_then(|c| c.segments.first())
+                            .map(|s| s.name.as_str());
+                        let shadowed = match receiver_name {
+                            Some(recv) => is_enclosing_function_parameter(func_node, src, recv),
+                            None => is_enclosing_function_parameter(func_node, src, &callee),
+                        };
+                        if !shadowed {
+                            crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
+                            refs.push(Ref {
+                                source_symbol_index,
+                                target_name: callee,
+                                kind: EdgeKind::Calls,
+                                line: func_node.start_position().row as u32,
+                                module: None,
+                                chain,
+                                byte_offset: func_node.start_byte() as u32,
+                            });
+                        }
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -1165,12 +1212,22 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                 extract_calls(&child, src, source_symbol_index, refs);
             }
 
-            // JSX: `<Component />` or `<Component>...</Component>`. Emit a
-            // Calls edge only for user-defined components (PascalCase).
-            // Lowercase tags like `<div>` / `<span>` are HTML intrinsics — not
-            // graph-resolvable symbols — and were previously emitted as
-            // `type_ref` refs that polluted `unresolved_refs`. Match TS
-            // behaviour and skip them entirely.
+            // JSX: `<Component />`, `<Component>...</Component>`, or the
+            // member-expression form `<Foo.Bar />` that React Context uses
+            // for `<MyContext.Provider value={x}>`. Emit a Calls edge only
+            // for user-defined components (PascalCase first char). Lowercase
+            // tags like `<div>` / `<span>` are HTML intrinsics — not graph-
+            // resolvable symbols — and were previously emitted as `type_ref`
+            // refs that polluted `unresolved_refs`.
+            //
+            // For the member-expression form we emit the TAIL segment name
+            // (`Provider`) as `target_name` with a structured MemberChain
+            // `[MyContext, Provider]` so the chain walker can resolve the
+            // receiver's inferred React.Context<T> type to the Provider
+            // member. Previously we stuffed the full `"MyContext.Provider"`
+            // string into `target_name` — which never resolved against any
+            // symbol and polluted unresolved_refs on every .jsx file that
+            // used the Context pattern. Matches the TypeScript extractor.
             "jsx_self_closing_element" | "jsx_opening_element" => {
                 let tag = child
                     .child_by_field_name("name")
@@ -1179,14 +1236,26 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                     let tag_name = node_text(tag_node, src);
                     let is_component = tag_name.chars().next().map_or(false, |c| c.is_uppercase());
                     if !tag_name.is_empty() && is_component {
+                        let chain = build_member_chain(tag_node, src);
+                        let target = chain
+                            .as_ref()
+                            .and_then(|c| c.segments.last())
+                            .map(|s| s.name.clone())
+                            .unwrap_or(tag_name);
+                        crate::languages::emit_chain_type_ref(
+                            &chain,
+                            source_symbol_index,
+                            &tag_node,
+                            refs,
+                        );
                         refs.push(Ref {
                             source_symbol_index,
-                            target_name: tag_name,
+                            target_name: target,
                             kind: EdgeKind::Calls,
                             line: tag_node.start_position().row as u32,
                             module: None,
-                            chain: None,
-                            byte_offset: 0,
+                            chain,
+                            byte_offset: tag_node.start_byte() as u32,
                         });
                     }
                 }
@@ -1223,10 +1292,24 @@ fn callee_name(node: Node, src: &[u8]) -> String {
                 .map(|n| node_text(n, src))
                 .unwrap_or_else(|| node_text(node, src))
         }
-        _ => {
-            let t = node_text(node, src);
-            t.rsplit('.').next().unwrap_or(&t).to_string()
-        }
+        // Unwrap parens and recurse: `(foo.bar)()` → `bar`.
+        "parenthesized_expression" => node
+            .named_child(0)
+            .map(|inner| callee_name(inner, src))
+            .unwrap_or_default(),
+        // Keyword-shaped callees: `import('mod')` (dynamic import) and
+        // `super(...)` both parse with a keyword node as the call's
+        // function. The call sites downstream branch on the string value
+        // (`"import"` → Imports edge; `"super"` → filtered as a keyword).
+        "import" | "super" => node_text(node, src),
+        // IIFEs (`(function(){})()`, `(() => {})()`) and other dynamic
+        // callees have no named target — emitting a ref for them used to
+        // dump the whole function body source into `target_name` via the
+        // `rsplit('.')` fallback, producing garbage like:
+        //     "data;\n            });\n        }\n\n        init();\n    }\n})"
+        // that polluted `unresolved_refs` (SimplCommerce alone: ~100 such
+        // rows from AngularJS module IIFEs). No target name ⇒ no ref.
+        _ => String::new(),
     }
 }
 
@@ -1277,6 +1360,25 @@ fn emit_call_ref_js(
             });
         }
     } else if !callee.is_empty() && !is_js_keyword(&callee) {
+        // Parameter-shadow filter: `(setter) => setter(e.target.value)`
+        // emits a Calls ref for `setter` that can never resolve because
+        // the binding is a local parameter, not a declared function. Same
+        // for chain receivers — `(function ($, currentSearchOption) { …
+        // currentSearchOption.hasOwnProperty(k) … })` puts
+        // `currentSearchOption` in `unresolved_refs` as a TypeRef. Drop
+        // both forms when the target matches an enclosing parameter.
+        let receiver_name = chain
+            .as_ref()
+            .filter(|c| c.segments.len() >= 2)
+            .and_then(|c| c.segments.first())
+            .map(|s| s.name.as_str());
+        if let Some(recv) = receiver_name {
+            if is_enclosing_function_parameter(func_node, src, recv) {
+                return;
+            }
+        } else if is_enclosing_function_parameter(func_node, src, &callee) {
+            return;
+        }
         // Emit a TypeRef for the chain receiver when it looks like a type name.
         crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
         refs.push(Ref {
@@ -1308,6 +1410,117 @@ fn is_js_keyword(name: &str) -> bool {
             | "extends" | "const" | "let" | "var" | "static" | "async"
             | "true" | "false" | "null" | "undefined"
     )
+}
+
+/// True when `name` is bound as a parameter of any enclosing function in
+/// the AST (function declaration, function expression, arrow function,
+/// method, generator). Used to filter unresolved-ref emission for chain
+/// walkers whose receiver / callee / iterable is a local parameter rather
+/// than a global type or function — the resolver has nothing to point it
+/// at and `unresolved_refs` would only carry noise.
+///
+/// Walks the parent chain from `at` up to the program root. Handles
+/// destructured (`{ a, b }`), array (`[x, y]`), rest (`...rest`), and
+/// default (`x = 1`) parameter forms.
+fn is_enclosing_function_parameter(at: Node, src: &[u8], name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let mut cur = at;
+    while let Some(parent) = cur.parent() {
+        if matches!(
+            parent.kind(),
+            "function_declaration"
+                | "function_expression"
+                | "arrow_function"
+                | "method_definition"
+                | "generator_function_declaration"
+                | "generator_function"
+        ) {
+            let params = parent
+                .child_by_field_name("parameters")
+                .or_else(|| parent.child_by_field_name("parameter"));
+            if let Some(params) = params {
+                if parameter_list_binds(params, src, name) {
+                    return true;
+                }
+            }
+        }
+        cur = parent;
+    }
+    false
+}
+
+/// True when `name` appears as a binding identifier in a function
+/// parameter list node (`formal_parameters`, or a single `identifier` in
+/// the arrow-short form `x => …`). Recurses through patterns to handle
+/// destructuring, rest, and defaults.
+fn parameter_list_binds(params: Node, src: &[u8], name: &str) -> bool {
+    if pattern_binds_name(params, src, name) {
+        return true;
+    }
+    let mut cursor = params.walk();
+    for child in params.named_children(&mut cursor) {
+        if pattern_binds_name(child, src, name) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Recursive walk of a binding pattern to check whether `name` appears
+/// as one of the introduced identifiers. Covers:
+///   - plain identifier:     `x`
+///   - object pattern:       `{ a, b: c, ...rest }`
+///   - array pattern:        `[x, y, ...z]`
+///   - rest pattern:         `...rest`
+///   - default-value:        `x = 1`
+///   - assignment pattern:   `{ a = 1 }`
+///   - typed params:         tree-sitter-typescript wraps these but the
+///                           JS grammar also accepts them in .tsx files.
+fn pattern_binds_name(node: Node, src: &[u8], name: &str) -> bool {
+    match node.kind() {
+        "identifier" | "shorthand_property_identifier_pattern" => {
+            node_text(node, src) == name
+        }
+        "rest_pattern" | "spread_element" => {
+            // `...rest` — the identifier lives under the rest marker.
+            node.named_child(0)
+                .map(|c| pattern_binds_name(c, src, name))
+                .unwrap_or(false)
+        }
+        "assignment_pattern" => {
+            // `x = default` — check the left (the bound name).
+            node.child_by_field_name("left")
+                .or_else(|| node.named_child(0))
+                .map(|c| pattern_binds_name(c, src, name))
+                .unwrap_or(false)
+        }
+        "object_pattern" | "array_pattern" | "object_assignment_pattern" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if pattern_binds_name(child, src, name) {
+                    return true;
+                }
+            }
+            false
+        }
+        "pair_pattern" => {
+            // `{ a: b }` — the bound name is the VALUE, not the key.
+            node.child_by_field_name("value")
+                .map(|c| pattern_binds_name(c, src, name))
+                .unwrap_or(false)
+        }
+        "required_parameter" | "optional_parameter" | "formal_parameters" => {
+            let inner = node
+                .child_by_field_name("pattern")
+                .or_else(|| node.named_child(0));
+            inner
+                .map(|c| pattern_binds_name(c, src, name))
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
 }
 
 /// Emit a Calls ref for a single `new_expression` node.
@@ -1397,10 +1610,14 @@ fn extract_module_exports(
 
         // Determine what is being exported.
         let export_name = if lhs == "module.exports" {
-            // Try to get the RHS name for reference target.
+            // `module.exports = SomeIdentifier` — link the export to that
+            // symbol. For non-identifier RHS (`module.exports = factory()`,
+            // `= { … }`, `= someCall()`) there's no concrete target to
+            // point at; emitting the literal "module.exports" as Imports
+            // target is just noise in `unresolved_refs`. Skip silently.
             match right.kind() {
                 "identifier" => node_text(right, src),
-                _ => lhs.clone(),
+                _ => continue,
             }
         } else {
             // `exports.Foo = bar` → export name is "Foo"
@@ -1418,6 +1635,112 @@ fn extract_module_exports(
             chain: None,
             byte_offset: 0,
         });
+    }
+}
+
+// ---------------------------------------------------------------------------
+// ES5 prototype-method installs (webpack / TS-to-ES5 transpile output)
+// ---------------------------------------------------------------------------
+
+/// Detect `X.prototype.Y = function (…) { … }` (or arrow) assignments and
+/// emit `Y` as a Method under qualified name `X.Y`. This is how ES5-style
+/// classes install instance methods — SignalR's `signalr.js`, any code that
+/// targets `lib: ES5`, and most TypeScript `target: "es5"` transpile output
+/// land on this pattern. Without it, the chain walker sees the constructor
+/// function `X` but none of its methods, so `new X().foo()` leaves `foo`
+/// unresolved.
+fn extract_prototype_method(
+    stmt_node: &Node,
+    src: &[u8],
+    scope_tree: &ScopeTree,
+    symbols: &mut Vec<Sym>,
+    refs: &mut Vec<Ref>,
+    parent_index: Option<usize>,
+) {
+    use crate::parser::scope_tree;
+
+    let mut cursor = stmt_node.walk();
+    for child in stmt_node.children(&mut cursor) {
+        if child.kind() != "assignment_expression" {
+            continue;
+        }
+        let Some(left) = child.child_by_field_name("left") else { continue };
+        let Some(right) = child.child_by_field_name("right") else { continue };
+
+        // Left must be a member_expression: {object: member_expression, property: identifier}.
+        if left.kind() != "member_expression" {
+            continue;
+        }
+        let Some(outer_object) = left.child_by_field_name("object") else { continue };
+        let Some(outer_property) = left.child_by_field_name("property") else { continue };
+        if outer_property.kind() != "property_identifier"
+            && outer_property.kind() != "identifier"
+        {
+            continue;
+        }
+        if outer_object.kind() != "member_expression" {
+            continue;
+        }
+        // Inner member's property must be "prototype" and its object a plain identifier.
+        let Some(inner_object) = outer_object.child_by_field_name("object") else { continue };
+        let Some(inner_property) = outer_object.child_by_field_name("property") else { continue };
+        if inner_object.kind() != "identifier" {
+            continue;
+        }
+        if node_text(inner_property, src) != "prototype" {
+            continue;
+        }
+
+        // Right must be a function-like expression. Bail on everything else
+        // so we don't misattribute field initializers (`.prototype.x = []`).
+        let is_callable = matches!(
+            right.kind(),
+            "function_expression" | "arrow_function" | "generator_function"
+        );
+        if !is_callable {
+            continue;
+        }
+
+        let class_name = node_text(inner_object, src);
+        let method_name = node_text(outer_property, src);
+        if class_name.is_empty() || method_name.is_empty() {
+            continue;
+        }
+
+        let parent_scope = if stmt_node.start_byte() > 0 {
+            scope_tree::find_scope_at(scope_tree, stmt_node.start_byte() - 1)
+        } else {
+            None
+        };
+        let scope_path = scope_tree::scope_path(parent_scope);
+
+        let kind = if method_name == "constructor" {
+            SymbolKind::Constructor
+        } else {
+            SymbolKind::Method
+        };
+
+        let idx = symbols.len();
+        symbols.push(Sym {
+            name: method_name.clone(),
+            qualified_name: format!("{class_name}.{method_name}"),
+            kind,
+            visibility: None,
+            start_line: outer_property.start_position().row as u32,
+            end_line: right.end_position().row as u32,
+            start_col: outer_property.start_position().column as u32,
+            end_col: right.end_position().column as u32,
+            signature: Some(format!("{class_name}.prototype.{method_name} = function")),
+            doc_comment: extract_jsdoc(stmt_node, src),
+            scope_path,
+            parent_index,
+        });
+
+        // Harvest calls inside the function body so in-method refs attach
+        // to the method symbol rather than the enclosing scope.
+        if let Some(body) = right.child_by_field_name("body") {
+            extract_calls(&body, src, idx, refs);
+        }
     }
 }
 
@@ -1528,7 +1851,14 @@ fn extract_for_loop_var(
     if let Some(right) = node.child_by_field_name("right") {
         if right.kind() == "identifier" {
             let target = node_text(right, src);
-            if !target.is_empty() {
+            // Parameter-shadow filter: `for (k in currentSearchOption)`
+            // where `currentSearchOption` is an IIFE / outer-function
+            // parameter — the iterable binds to the parameter value at
+            // runtime, not to any declared symbol, so the TypeRef only
+            // pollutes unresolved_refs with no possible resolution target.
+            if !target.is_empty()
+                && !is_enclosing_function_parameter(right, src, &target)
+            {
                 refs.push(Ref {
                     source_symbol_index: idx,
                     target_name: target,
@@ -1769,6 +2099,477 @@ fn scan_all_type_identifiers(
         // Recurse into ALL children regardless.
         scan_all_type_identifiers(child, src, sym_idx, refs);
     }
+}
+
+// ---------------------------------------------------------------------------
+// Top-level global-binding harvest
+//
+// Classic browser-distributed libraries (`<script src="jquery.js">`,
+// `angular.js`, `bootstrap.js`, …) wrap their bodies in an IIFE and
+// install their public API by assigning to the global object:
+//
+//     (function(root, factory) {
+//         /* … */
+//         root.jQuery = root.$ = factory();
+//     })(typeof window !== "undefined" ? window : this, function() { … });
+//
+// Without special handling, a vanilla extract walks the IIFE body and
+// emits function-scoped symbols that no cross-file resolver can match
+// against `$` / `jQuery` calls in project code. This pass fishes out
+// those global assignments and emits them as file-top-level symbols so
+// the Tier-1 resolver finds them alongside ordinary top-level
+// declarations.
+//
+// Recognised LHS shapes (object part of `member_expression` or
+// `subscript_expression`):
+//
+//     * `identifier` with name in {window, global, globalThis, self, root}
+//     * `this`  (top-level `this.X = …` in sloppy-mode UMD wrappers)
+//     * IIFE parameter name that was bound to `window` / `global` via the
+//       IIFE's argument list (handled implicitly: all IIFEs have their
+//       first parameter treated as a global receiver)
+// ---------------------------------------------------------------------------
+
+fn harvest_top_level_globals(root: Node, src: &[u8], symbols: &mut Vec<Sym>) {
+    // Pass 1: top-level statements (window.X, IIFE root.X, this.X).
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        scan_statement_for_globals(child, src, &[], symbols);
+    }
+    // Pass 2: AngularJS DI registrations anywhere in the AST.
+    // Patterns like `angular.module(...).service('Upload', ...)` or
+    // `ngFileUpload.factory('Foo', [...])` register DI tokens that are
+    // consumed across files. Without this, consumer code referencing
+    // `Upload.upload(...)` leaves `Upload` unresolved.
+    scan_angular_registrations(root, src, symbols);
+}
+
+/// AngularJS module-registration methods. Map each to the SymbolKind that
+/// best describes what consumers can do with the DI token:
+///   - service/factory/provider/component/controller → class-like (has
+///     methods, often used as chain receivers → `Upload.upload(...)`).
+///   - directive/filter → function-like (invoked directly or as a tag).
+///   - value/constant → variable (opaque value).
+///   - decorator/run/config → not DI tokens; skip.
+fn angular_registration_kind(method: &str) -> Option<SymbolKind> {
+    match method {
+        "service" | "factory" | "provider" | "component" | "controller" => {
+            Some(SymbolKind::Class)
+        }
+        "directive" | "filter" => Some(SymbolKind::Function),
+        "value" | "constant" => Some(SymbolKind::Variable),
+        _ => None,
+    }
+}
+
+/// Walk the AST recursively and emit a top-level symbol for each AngularJS
+/// DI registration of the form `X.service('Name', …)`, `.factory(...)`,
+/// `.filter(...)`, etc. The string-literal first argument becomes the
+/// symbol name; the SymbolKind is chosen by `angular_registration_kind`.
+fn scan_angular_registrations(node: Node, src: &[u8], symbols: &mut Vec<Sym>) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if child.kind() == "call_expression" {
+            try_emit_angular_registration(&child, src, symbols);
+        }
+        scan_angular_registrations(child, src, symbols);
+    }
+}
+
+fn try_emit_angular_registration(call: &Node, src: &[u8], symbols: &mut Vec<Sym>) {
+    let Some(func) = call.child_by_field_name("function") else { return };
+    if func.kind() != "member_expression" {
+        return;
+    }
+    let Some(prop) = func.child_by_field_name("property") else { return };
+    let method = node_text(prop, src);
+    let Some(kind) = angular_registration_kind(&method) else { return };
+
+    let Some(args) = call.child_by_field_name("arguments") else { return };
+    let mut acursor = args.walk();
+    let Some(first_arg) = args.named_children(&mut acursor).next() else { return };
+    if first_arg.kind() != "string" {
+        return;
+    }
+    let Some(name) = string_literal_value(first_arg, src) else { return };
+    push_typed_global_symbol(&name, kind, call, symbols);
+}
+
+/// Unwrap a string-literal node's text into its content, rejecting empty
+/// strings and content that doesn't look like an identifier/DI-token name
+/// (to avoid polluting the index with arbitrary string literals).
+fn string_literal_value(node: Node, src: &[u8]) -> Option<String> {
+    if node.kind() != "string" {
+        return None;
+    }
+    // Prefer the inner string_fragment node (tree-sitter-javascript parses
+    // "foo" as string { string_fragment "foo" }).
+    let mut cursor = node.walk();
+    let content = node
+        .named_children(&mut cursor)
+        .find(|c| c.kind() == "string_fragment")
+        .map(|c| node_text(c, src))
+        .unwrap_or_else(|| {
+            let raw = node_text(node, src);
+            raw.trim_matches(|c| c == '"' || c == '\'').to_string()
+        });
+    if content.is_empty() {
+        return None;
+    }
+    // Accept names that look like identifiers or DI tokens ($http, ng-click,
+    // etc.). Reject anything with whitespace / quotes / slashes to avoid
+    // stuffing arbitrary literals ("api/products", "/path/to") in symbols.
+    let ok = content
+        .chars()
+        .all(|c| c.is_alphanumeric() || matches!(c, '_' | '$' | '-'));
+    if !ok {
+        return None;
+    }
+    Some(content)
+}
+
+fn push_typed_global_symbol(
+    name: &str,
+    kind: SymbolKind,
+    anchor: &Node,
+    symbols: &mut Vec<Sym>,
+) {
+    // Dedup: if a top-level symbol with the same (name, kind) already exists,
+    // skip. But allow multiple kinds for the same name (a name may exist as
+    // both Class (service) and Variable (window alias)).
+    if symbols
+        .iter()
+        .any(|s| s.name == name && s.parent_index.is_none() && s.kind == kind)
+    {
+        return;
+    }
+    let line = anchor.start_position().row as u32;
+    symbols.push(Sym {
+        name: name.to_string(),
+        qualified_name: name.to_string(),
+        kind,
+        visibility: Some(crate::types::Visibility::Public),
+        start_line: line,
+        end_line: line,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    });
+}
+
+/// Examine one statement node (or the body of a recursively-walked IIFE)
+/// for global assignments. `alias_globals` is the set of identifier names
+/// that should be treated as "the global object" inside the current
+/// scope — starts empty at the file level and is populated with the
+/// IIFE's first parameter name when we descend into one.
+fn scan_statement_for_globals(
+    node: Node,
+    src: &[u8],
+    alias_globals: &[String],
+    symbols: &mut Vec<Sym>,
+) {
+    match node.kind() {
+        "expression_statement" => {
+            if let Some(inner) = node.named_child(0) {
+                match inner.kind() {
+                    "assignment_expression" => {
+                        try_emit_global_assignment(&inner, src, alias_globals, symbols);
+                    }
+                    "call_expression" => {
+                        // Top-level IIFE — recurse into its body with the
+                        // first parameter promoted to a global alias.
+                        descend_iife(&inner, src, alias_globals, symbols);
+                    }
+                    // `(function(){…}(args))` — the UMD form where arguments
+                    // are INSIDE the outer parens. The call_expression lives
+                    // one level deeper than the `(function(){})(args)` form.
+                    "parenthesized_expression" => {
+                        if let Some(call) = inner.named_child(0) {
+                            if call.kind() == "call_expression" {
+                                descend_iife(&call, src, alias_globals, symbols);
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        // `var jQuery = window.jQuery = ...` / `var $ = jQuery` at top level —
+        // the main extractor already captures these. Nothing to do here.
+        _ => {}
+    }
+}
+
+/// If `call` is an IIFE (`(function(){…})()` / `(()=>{})()`), walk its
+/// body's top-level statements. The IIFE's first parameter name is added
+/// to `alias_globals` so assignments like `root.X = …` inside register
+/// globals too.
+///
+/// Also pairs each parameter with its call-site argument. When an argument
+/// is `this` / `window` / `global` / `globalThis` / `self`, the parameter
+/// joins `alias_globals`. When an argument is a string literal, it is
+/// recorded so UMD-style `root[paramName] = factory()` assignments can
+/// resolve the subscript and emit the literal as a global (the slugify /
+/// jQuery UMD template).
+fn descend_iife(
+    call: &Node,
+    src: &[u8],
+    alias_globals: &[String],
+    symbols: &mut Vec<Sym>,
+) {
+    let Some(func) = call.child_by_field_name("function") else { return };
+    let inner_func = match func.kind() {
+        "parenthesized_expression" => match func.named_child(0) {
+            Some(n) => n,
+            None => return,
+        },
+        "function_expression" | "arrow_function" => func,
+        _ => return,
+    };
+    if !matches!(
+        inner_func.kind(),
+        "function_expression" | "arrow_function"
+    ) {
+        return;
+    }
+    // Collect parameter names (positional).
+    let param_names: Vec<String> = inner_func
+        .child_by_field_name("parameters")
+        .map(|params| {
+            let mut pcursor = params.walk();
+            params
+                .named_children(&mut pcursor)
+                .map(|p| match p.kind() {
+                    "identifier" => node_text(p, src),
+                    "required_parameter" | "optional_parameter" | "formal_parameters" => p
+                        .child_by_field_name("pattern")
+                        .or_else(|| p.named_child(0))
+                        .filter(|n| n.kind() == "identifier")
+                        .map(|n| node_text(n, src))
+                        .unwrap_or_default(),
+                    _ => String::new(),
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    // Collect call-site argument nodes (positional).
+    let args: Vec<Node> = call
+        .child_by_field_name("arguments")
+        .map(|args_node| {
+            let mut ac = args_node.walk();
+            args_node.named_children(&mut ac).collect()
+        })
+        .unwrap_or_default();
+
+    // Build the alias/binding state. Any parameter bound to a root-like
+    // value becomes a global alias. Any parameter bound to a string literal
+    // is recorded for UMD subscript resolution.
+    let mut new_aliases: Vec<String> = alias_globals.to_vec();
+    let mut string_bindings: HashMap<String, String> = HashMap::new();
+
+    for (i, pname) in param_names.iter().enumerate() {
+        if pname.is_empty() {
+            continue;
+        }
+        // Preserve legacy behavior: the FIRST parameter always becomes a
+        // global alias (the historical jQuery / Bootstrap IIFE pattern has
+        // no args and relies on parameter-position convention).
+        if i == 0 {
+            new_aliases.push(pname.clone());
+        }
+        let Some(arg) = args.get(i) else { continue };
+        match arg.kind() {
+            "this" => {
+                if !new_aliases.contains(pname) {
+                    new_aliases.push(pname.clone());
+                }
+            }
+            "identifier" => {
+                let ident = node_text(*arg, src);
+                if matches!(ident.as_str(), "window" | "global" | "globalThis" | "self" | "root") {
+                    if !new_aliases.contains(pname) {
+                        new_aliases.push(pname.clone());
+                    }
+                }
+            }
+            "string" => {
+                if let Some(lit) = string_literal_value(*arg, src) {
+                    string_bindings.insert(pname.clone(), lit);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    let Some(body) = inner_func.child_by_field_name("body") else { return };
+
+    // UMD subscript pass: scan for `root[name] = factory()` where `root` is
+    // a global alias and `name` is a parameter bound to a string literal.
+    if !string_bindings.is_empty() {
+        scan_umd_subscript_exports(body, src, &new_aliases, &string_bindings, symbols);
+    }
+
+    // Existing top-level-assignment pass inside the IIFE body.
+    let mut bcursor = body.walk();
+    for child in body.named_children(&mut bcursor) {
+        scan_statement_for_globals(child, src, &new_aliases, symbols);
+    }
+}
+
+/// Walk an IIFE body and emit globals for UMD subscript assignments like
+/// `root[name] = factory()` where `root` is an IIFE parameter bound to a
+/// root-like value (`this`, `window`, …) and `name` is an IIFE parameter
+/// bound to a string literal passed at the call site. These are the
+/// canonical UMD export pattern for classic libraries (slugify, dayjs-style
+/// single-file modules, etc.).
+fn scan_umd_subscript_exports(
+    node: Node,
+    src: &[u8],
+    alias_globals: &[String],
+    string_bindings: &HashMap<String, String>,
+    symbols: &mut Vec<Sym>,
+) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        if child.kind() == "assignment_expression" {
+            try_emit_umd_subscript(&child, src, alias_globals, string_bindings, symbols);
+        }
+        scan_umd_subscript_exports(child, src, alias_globals, string_bindings, symbols);
+    }
+}
+
+fn try_emit_umd_subscript(
+    assign: &Node,
+    src: &[u8],
+    alias_globals: &[String],
+    string_bindings: &HashMap<String, String>,
+    symbols: &mut Vec<Sym>,
+) {
+    let Some(left) = assign.child_by_field_name("left") else { return };
+    if left.kind() != "subscript_expression" {
+        return;
+    }
+    let Some(object) = left.child_by_field_name("object") else { return };
+    if object.kind() != "identifier" {
+        return;
+    }
+    let object_name = node_text(object, src);
+    if !alias_globals.iter().any(|a| a == &object_name) {
+        return;
+    }
+    let Some(index) = left.child_by_field_name("index") else { return };
+    if index.kind() != "identifier" {
+        return;
+    }
+    let index_name = node_text(index, src);
+    let Some(literal) = string_bindings.get(&index_name) else { return };
+    // Emit as Function: UMD exports are almost always callable (factory()).
+    push_typed_global_symbol(literal, SymbolKind::Function, assign, symbols);
+}
+
+/// Recognise `obj.X = Y` / `obj.X = obj.Y = Z` and emit every property
+/// name on the LHS (including chained assignments) as a top-level global.
+fn try_emit_global_assignment(
+    assign: &Node,
+    src: &[u8],
+    alias_globals: &[String],
+    symbols: &mut Vec<Sym>,
+) {
+    let Some(left) = assign.child_by_field_name("left") else { return };
+    let Some(right) = assign.child_by_field_name("right") else { return };
+
+    if lhs_targets_global(&left, src, alias_globals) {
+        if let Some(name) = member_property_name(&left, src) {
+            push_global_symbol(&name, assign, symbols);
+        }
+    }
+
+    // Chained assignment: RHS may itself be an assignment_expression.
+    if right.kind() == "assignment_expression" {
+        try_emit_global_assignment(&right, src, alias_globals, symbols);
+    }
+}
+
+/// True when the LHS of an assignment resolves to a property of a known
+/// global object — directly (`window.X`), via an IIFE parameter alias
+/// (`root.X` when `root` was the IIFE's first parameter), or via
+/// top-level `this` (UMD wrappers in sloppy mode).
+fn lhs_targets_global(lhs: &Node, src: &[u8], alias_globals: &[String]) -> bool {
+    let (object, _) = match lhs.kind() {
+        "member_expression" | "subscript_expression" => (
+            match lhs.child_by_field_name("object") {
+                Some(o) => o,
+                None => return false,
+            },
+            lhs.kind(),
+        ),
+        _ => return false,
+    };
+    match object.kind() {
+        "identifier" => {
+            let name = node_text(object, src);
+            matches!(name.as_str(), "window" | "global" | "globalThis" | "self" | "root")
+                || alias_globals.iter().any(|a| a == &name)
+        }
+        "this" => true,
+        _ => false,
+    }
+}
+
+/// Extract the string property name from a member or subscript LHS.
+fn member_property_name(lhs: &Node, src: &[u8]) -> Option<String> {
+    match lhs.kind() {
+        "member_expression" => lhs
+            .child_by_field_name("property")
+            .map(|n| node_text(n, src))
+            .filter(|s| !s.is_empty()),
+        "subscript_expression" => {
+            // `foo["X"]` — only accept string-literal indices.
+            let idx = lhs.child_by_field_name("index")?;
+            if idx.kind() != "string" {
+                return None;
+            }
+            let raw = node_text(idx, src);
+            let trimmed = raw
+                .strip_prefix('"')
+                .and_then(|s| s.strip_suffix('"'))
+                .or_else(|| raw.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))?;
+            if trimmed.is_empty() {
+                None
+            } else {
+                Some(trimmed.to_string())
+            }
+        }
+        _ => None,
+    }
+}
+
+fn push_global_symbol(name: &str, anchor: &Node, symbols: &mut Vec<Sym>) {
+    // Deduplicate against symbols already pushed in this file. The main
+    // extractor may have captured the same name via another path (unlikely
+    // for globals inside IIFE bodies, but cheap insurance).
+    if symbols.iter().any(|s| s.name == name && s.parent_index.is_none()) {
+        return;
+    }
+    let line = anchor.start_position().row as u32;
+    symbols.push(Sym {
+        name: name.to_string(),
+        qualified_name: name.to_string(),
+        kind: crate::types::SymbolKind::Variable,
+        visibility: Some(crate::types::Visibility::Public),
+        start_line: line,
+        end_line: line,
+        start_col: 0,
+        end_col: 0,
+        signature: None,
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    });
 }
 
 // ---------------------------------------------------------------------------

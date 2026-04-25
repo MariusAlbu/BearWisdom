@@ -25,6 +25,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use rayon::prelude::*;
 use tracing::debug;
 
 use super::{
@@ -461,46 +462,76 @@ fn parse_dotnet_externals_with_source(
     );
 
     let lang_id = dominant_dotnet_language(&project_files);
+
+    // Per-coord work runs in parallel — DLL metadata reads and per-file
+    // source parses are I/O + CPU bound and independent across packages.
+    // Dedupe (seen_dll / seen_src) is done single-threaded after the
+    // parallel pass so Vec ordering stays deterministic. On a big .NET
+    // solution (2000+ transitives) this is the dominant externals cost
+    // and a near-linear win per available core.
+    struct CoordResult {
+        dll: Option<(PathBuf, crate::types::ParsedFile)>,
+        srcs: Vec<(PathBuf, crate::types::ParsedFile)>,
+    }
+
+    let per_coord: Vec<CoordResult> = coords
+        .par_iter()
+        .map(|coord| {
+            let pkg_dir = nuget_root.join(coord.name.to_lowercase());
+            if !pkg_dir.is_dir() {
+                return CoordResult { dll: None, srcs: Vec::new() };
+            }
+
+            let version = if let Some(v) = &coord.version {
+                let concrete = pkg_dir.join(v);
+                if concrete.is_dir() { v.clone() }
+                else {
+                    match largest_version_subdir(&pkg_dir) {
+                        Some(v) => v,
+                        None => return CoordResult { dll: None, srcs: Vec::new() },
+                    }
+                }
+            } else {
+                match largest_version_subdir(&pkg_dir) {
+                    Some(v) => v,
+                    None => return CoordResult { dll: None, srcs: Vec::new() },
+                }
+            };
+            let version_dir = pkg_dir.join(&version);
+
+            let dll = find_dll_in_version_dir(&version_dir, &coord.name)
+                .and_then(|dll_path| match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
+                    Ok(pf) => Some((dll_path, pf)),
+                    Err(e) => {
+                        debug!("Failed .NET metadata read {}: {e}", dll_path.display());
+                        None
+                    }
+                });
+
+            let mut srcs = Vec::new();
+            for src_path in discover_nuget_source_files(&version_dir) {
+                match parse_cs_source_file(&src_path, &coord.name, lang_id) {
+                    Ok(pf) => srcs.push((src_path, pf)),
+                    Err(e) => debug!("NuGet source parse error {}: {e}", src_path.display()),
+                }
+            }
+
+            CoordResult { dll, srcs }
+        })
+        .collect();
+
     let mut dll_out = Vec::new();
     let mut src_out = Vec::new();
     let mut seen_dll: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     let mut seen_src: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
-
-    for coord in coords {
-        let pkg_dir = nuget_root.join(coord.name.to_lowercase());
-        if !pkg_dir.is_dir() { continue }
-
-        let version = if let Some(v) = &coord.version {
-            let concrete = pkg_dir.join(v);
-            if concrete.is_dir() { v.clone() }
-            else { match largest_version_subdir(&pkg_dir) { Some(v) => v, None => continue } }
-        } else {
-            match largest_version_subdir(&pkg_dir) { Some(v) => v, None => continue }
-        };
-        let version_dir = pkg_dir.join(&version);
-
-        // DLL metadata path — unchanged from original.
-        if let Some(dll_path) = find_dll_in_version_dir(&version_dir, &coord.name) {
-            if seen_dll.insert(dll_path.clone()) {
-                match parse_dotnet_dll(&dll_path, &coord.name, lang_id) {
-                    Ok(pf) => dll_out.push(pf),
-                    Err(e) => debug!("Failed .NET metadata read {}: {e}", dll_path.display()),
-                }
-            }
+    for res in per_coord {
+        if let Some((path, pf)) = res.dll {
+            if seen_dll.insert(path) { dll_out.push(pf); }
         }
-
-        // Supplementary source path — additive, no DLL walk displacement.
-        for src_path in discover_nuget_source_files(&version_dir) {
-            if !seen_src.insert(src_path.clone()) { continue }
-            match parse_cs_source_file(&src_path, &coord.name, lang_id) {
-                Ok(pf) => {
-                    debug!(
-                        "NuGet source: {} symbols from {}",
-                        pf.symbols.len(), src_path.display()
-                    );
-                    src_out.push(pf);
-                }
-                Err(e) => debug!("NuGet source parse error {}: {e}", src_path.display()),
+        for (path, pf) in res.srcs {
+            if seen_src.insert(path) {
+                debug!("NuGet source: {} symbols from {}", pf.symbols.len(), pf.path);
+                src_out.push(pf);
             }
         }
     }

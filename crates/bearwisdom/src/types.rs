@@ -694,6 +694,22 @@ pub struct ParsedFile {
     pub demand_contributions: Vec<(String, String)>,
 }
 
+impl ParsedFile {
+    /// Drop per-file fields whose only consumers (write / FTS / chunks /
+    /// route table / db_set table) have already read them. `symbols`,
+    /// `refs`, `flow`, `connection_points`, and the origin vectors stay —
+    /// resolution, connector detection, and flow matching read them
+    /// downstream. Call this after `write_parsed_files*` returns, for
+    /// both internal and external files. Frees hundreds of MB on big
+    /// .NET / TS workspaces where external `content` would otherwise
+    /// live until the end of resolve.
+    pub fn slim_for_resolve(&mut self) {
+        self.content = None;
+        self.routes = Vec::new();
+        self.db_sets = Vec::new();
+    }
+}
+
 // ---------------------------------------------------------------------------
 // DB row types (with IDs — returned from query layer)
 // ---------------------------------------------------------------------------

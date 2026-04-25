@@ -148,6 +148,32 @@ pub fn extract(source: &str) -> ExtractionResult {
         .filter(|m| m.contains('.'))
         .collect();
 
+    // Precompute a per-file `qualified_name -> [SymbolKind…]` index. The
+    // old probe did `symbols.iter().any(|s| s.qualified_name == candidate
+    // && ref_kind_matches_symbol(…))` inside a loop that ran up to
+    // (refs × scope_depth × (1 + usings_count)) times per file. On a big
+    // auto-generated .cs file (800 unresolved refs, 8-level nesting, 30
+    // usings, 2000 symbols) that is ~380M string comparisons. This index
+    // replaces the inner O(N) scan with an O(1) hash probe + a tiny
+    // overload-list walk (typically 1-5 kinds per qname).
+    let mut sym_by_qname: std::collections::HashMap<&str, Vec<SymbolKind>> =
+        std::collections::HashMap::with_capacity(symbols.len());
+    for s in &symbols {
+        sym_by_qname.entry(s.qualified_name.as_str()).or_default().push(s.kind);
+    }
+    // Reusable scratch buffer for candidate qnames so the qualification
+    // loop doesn't allocate a fresh String per probe.
+    let mut candidate = String::with_capacity(128);
+    let qname_has_matching_kind = |
+        buf: &str,
+        index: &std::collections::HashMap<&str, Vec<SymbolKind>>,
+        ref_kind: EdgeKind,
+    | -> bool {
+        index
+            .get(buf)
+            .is_some_and(|kinds| kinds.iter().any(|&k| ref_kind_matches_symbol(ref_kind, k)))
+    };
+
     // Second pass: qualify unresolved call/instantiates/type_ref targets using scope + usings.
     for r in &mut refs {
         if r.target_name.contains('.') {
@@ -176,18 +202,24 @@ pub fn extract(source: &str) -> ExtractionResult {
             let mut chain = scope.qualified_name.as_str();
             let mut found = false;
             loop {
-                let candidate = format!("{chain}.{}", r.target_name);
-                if symbols.iter().any(|s| s.qualified_name == candidate && ref_kind_matches_symbol(ref_kind, s.kind)) {
-                    r.target_name = candidate;
+                candidate.clear();
+                candidate.push_str(chain);
+                candidate.push('.');
+                candidate.push_str(&r.target_name);
+                if qname_has_matching_kind(&candidate, &sym_by_qname, ref_kind) {
+                    r.target_name = candidate.clone();
                     found = true;
                     break;
                 }
                 match chain.rfind('.') {
                     Some(pos) => chain = &chain[..pos],
                     None => {
-                        let candidate = format!("{chain}.{}", r.target_name);
-                        if symbols.iter().any(|s| s.qualified_name == candidate && ref_kind_matches_symbol(ref_kind, s.kind)) {
-                            r.target_name = candidate;
+                        candidate.clear();
+                        candidate.push_str(chain);
+                        candidate.push('.');
+                        candidate.push_str(&r.target_name);
+                        if qname_has_matching_kind(&candidate, &sym_by_qname, ref_kind) {
+                            r.target_name = candidate.clone();
                             found = true;
                         }
                         break;
@@ -199,9 +231,12 @@ pub fn extract(source: &str) -> ExtractionResult {
 
         // Try using directives
         for ns in &usings {
-            let candidate = format!("{ns}.{}", r.target_name);
-            if symbols.iter().any(|s| s.qualified_name == candidate && ref_kind_matches_symbol(ref_kind, s.kind)) {
-                r.target_name = candidate;
+            candidate.clear();
+            candidate.push_str(ns);
+            candidate.push('.');
+            candidate.push_str(&r.target_name);
+            if qname_has_matching_kind(&candidate, &sym_by_qname, ref_kind) {
+                r.target_name = candidate.clone();
                 break;
             }
         }

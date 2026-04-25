@@ -1,0 +1,288 @@
+{
+  "captured_at": "2026-04-24T00:00:00Z",
+  "projects": [
+    {
+      "assertions": {
+        "min_resolution_rate": 97
+      },
+      "code_chunks": 48315,
+      "files": 1449,
+      "flow_edge_types": {
+        "di_binding": 60
+      },
+      "flow_edges": 60,
+      "internal_edges": 11651,
+      "internal_unresolved": 250,
+      "languages": {
+        "csharp": 811,
+        "css": 14,
+        "dockerfile": 2,
+        "html": 98,
+        "javascript": 207,
+        "json": 81,
+        "markdown": 5,
+        "powershell": 1,
+        "razor": 181,
+        "scss": 14,
+        "shell": 3,
+        "sql": 27,
+        "xml": 4,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/SimplCommerce",
+      "perf": {
+        "end_ws_mb": 118,
+        "files_per_sec": 60,
+        "index_duration_ms": 24350
+      },
+      "project": "SimplCommerce",
+      "resolution_rate": 97.9,
+      "routes": 688,
+      "symbols": 16709,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 187,
+        "javascript.type_ref": 34,
+        "razor.calls": 17,
+        "razor.type_ref": 7,
+        "scss.calls": 5
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 100
+      },
+      "code_chunks": 15290,
+      "files": 734,
+      "flow_edge_types": {
+        "di_binding": 27,
+        "event_handler": 48
+      },
+      "flow_edges": 75,
+      "internal_edges": 5044,
+      "internal_unresolved": 0,
+      "languages": {
+        "csharp": 527,
+        "css": 30,
+        "html": 1,
+        "javascript": 5,
+        "json": 39,
+        "markdown": 5,
+        "proto": 2,
+        "razor": 58,
+        "typescript": 5,
+        "xml": 60,
+        "yaml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/eShop",
+      "perf": {
+        "end_ws_mb": 108,
+        "files_per_sec": 31,
+        "index_duration_ms": 23405
+      },
+      "project": "eShop",
+      "resolution_rate": 100.0,
+      "routes": 87,
+      "symbols": 6760,
+      "unresolved_by_lang_kind": {}
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 93
+      },
+      "code_chunks": 2797,
+      "files": 196,
+      "flow_edge_types": {
+        "di_binding": 11
+      },
+      "flow_edges": 11,
+      "internal_edges": 1665,
+      "internal_unresolved": 114,
+      "languages": {
+        "angular_template": 10,
+        "csharp": 110,
+        "html": 2,
+        "javascript": 18,
+        "json": 21,
+        "markdown": 6,
+        "scss": 4,
+        "typescript": 25
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture",
+      "perf": {
+        "end_ws_mb": 104,
+        "files_per_sec": 16,
+        "index_duration_ms": 12044
+      },
+      "project": "dotnet-CleanArchitecture",
+      "resolution_rate": 93.59,
+      "routes": 12,
+      "symbols": 1631,
+      "unresolved_by_lang_kind": {
+        "angular_template.calls": 7,
+        "javascript.calls": 18,
+        "typescript.calls": 57,
+        "typescript.instantiates": 4,
+        "typescript.type_ref": 28
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 2965,
+      "files": 138,
+      "flow_edge_types": {
+        "di_binding": 8
+      },
+      "flow_edges": 8,
+      "internal_edges": 709,
+      "internal_unresolved": 2,
+      "languages": {
+        "csharp": 90,
+        "css": 1,
+        "dockerfile": 2,
+        "javascript": 2,
+        "json": 14,
+        "markdown": 4,
+        "razor": 22,
+        "xml": 2,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject",
+      "perf": {
+        "end_ws_mb": 100,
+        "files_per_sec": 15,
+        "index_duration_ms": 9317
+      },
+      "project": "dotnet-EquinoxProject",
+      "resolution_rate": 99.72,
+      "routes": 40,
+      "symbols": 1074,
+      "unresolved_by_lang_kind": {
+        "razor.calls": 2
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 35962,
+      "files": 465,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 8414,
+      "internal_unresolved": 1,
+      "languages": {
+        "csharp": 440,
+        "json": 7,
+        "markdown": 15,
+        "powershell": 3
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-spectre-console",
+      "perf": {
+        "end_ws_mb": 114,
+        "files_per_sec": 23,
+        "index_duration_ms": 20010
+      },
+      "project": "dotnet-spectre-console",
+      "resolution_rate": 99.99,
+      "routes": 0,
+      "symbols": 12661,
+      "unresolved_by_lang_kind": {
+        "markdown.imports": 1
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 40351,
+      "files": 925,
+      "flow_edge_types": {
+        "di_binding": 59
+      },
+      "flow_edges": 59,
+      "internal_edges": 12585,
+      "internal_unresolved": 9,
+      "languages": {
+        "astro": 19,
+        "csharp": 688,
+        "css": 13,
+        "dockerfile": 1,
+        "hcl": 52,
+        "javascript": 2,
+        "json": 15,
+        "markdown": 10,
+        "mdx": 50,
+        "powershell": 3,
+        "razor": 67,
+        "typescript": 2,
+        "xml": 2,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-starter-kit",
+      "perf": {
+        "end_ws_mb": 128,
+        "files_per_sec": 51,
+        "index_duration_ms": 18148
+      },
+      "project": "dotnet-starter-kit",
+      "resolution_rate": 99.93,
+      "routes": 141,
+      "symbols": 19787,
+      "unresolved_by_lang_kind": {
+        "astro.calls": 2,
+        "astro.type_ref": 5,
+        "mdx.calls": 1,
+        "powershell.type_ref": 1
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 98
+      },
+      "code_chunks": 319172,
+      "files": 3408,
+      "flow_edge_types": {
+        "di_binding": 166
+      },
+      "flow_edges": 166,
+      "internal_edges": 8360,
+      "internal_unresolved": 89,
+      "languages": {
+        "csharp": 749,
+        "css": 128,
+        "html": 636,
+        "javascript": 52,
+        "json": 141,
+        "markdown": 26,
+        "powershell": 4,
+        "razor": 1376,
+        "typescript": 8,
+        "xml": 282,
+        "yaml": 6
+      },
+      "path": "F:/Work/Projects/TestProjects/dotnet-fluentui-blazor",
+      "perf": {
+        "end_ws_mb": 186,
+        "files_per_sec": 13,
+        "index_duration_ms": 265679
+      },
+      "project": "dotnet-fluentui-blazor",
+      "resolution_rate": 98.95,
+      "routes": 92,
+      "symbols": 88112,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 53,
+        "javascript.imports": 2,
+        "javascript.type_ref": 7,
+        "powershell.calls": 2,
+        "powershell.type_ref": 1,
+        "typescript.calls": 4,
+        "typescript.instantiates": 7,
+        "typescript.type_ref": 13
+      }
+    }
+  ],
+  "version": "0.2.0-dev"
+}

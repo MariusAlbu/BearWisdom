@@ -119,9 +119,116 @@ fn node_text_bytes(node: Node, src: &[u8]) -> String {
         .to_string()
 }
 
-/// When a call has a chain (e.g. `Foo::bar()`, `Foo.bar()`), emit a `TypeRef`
-/// for the type prefix — the segment before the final method name — if it
-/// looks like a type (starts with uppercase).
+/// True when `name` is bound as a parameter of any enclosing JS/TS
+/// function in the AST. Shared by both the JavaScript and TypeScript
+/// extractors — both grammars use the same node kinds for function-like
+/// constructs and their parameter list nodes (formal_parameters,
+/// required_parameter, etc.) and destructuring patterns (object_pattern,
+/// array_pattern, rest_pattern, assignment_pattern).
+///
+/// Walks the parent chain from `at` up to the program root. Returns true
+/// the first time it finds a function whose parameter list binds `name`.
+/// Used to filter ref-emission for chain receivers, callees, and for-loop
+/// iterables whose identifier is a local parameter rather than a type or
+/// declared function.
+pub fn is_enclosing_js_function_parameter(at: Node, src: &[u8], name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let mut cur = at;
+    while let Some(parent) = cur.parent() {
+        if matches!(
+            parent.kind(),
+            "function_declaration"
+                | "function_expression"
+                | "arrow_function"
+                | "method_definition"
+                | "generator_function_declaration"
+                | "generator_function"
+        ) {
+            let params = parent
+                .child_by_field_name("parameters")
+                .or_else(|| parent.child_by_field_name("parameter"));
+            if let Some(params) = params {
+                if js_parameter_list_binds(params, src, name) {
+                    return true;
+                }
+            }
+        }
+        cur = parent;
+    }
+    false
+}
+
+fn js_parameter_list_binds(params: Node, src: &[u8], name: &str) -> bool {
+    if js_pattern_binds_name(params, src, name) {
+        return true;
+    }
+    let mut cursor = params.walk();
+    for child in params.named_children(&mut cursor) {
+        if js_pattern_binds_name(child, src, name) {
+            return true;
+        }
+    }
+    false
+}
+
+fn js_pattern_binds_name(node: Node, src: &[u8], name: &str) -> bool {
+    match node.kind() {
+        "identifier" | "shorthand_property_identifier_pattern" => node_text_bytes(node, src) == name,
+        "rest_pattern" | "spread_element" => node
+            .named_child(0)
+            .map(|c| js_pattern_binds_name(c, src, name))
+            .unwrap_or(false),
+        "assignment_pattern" => node
+            .child_by_field_name("left")
+            .or_else(|| node.named_child(0))
+            .map(|c| js_pattern_binds_name(c, src, name))
+            .unwrap_or(false),
+        "object_pattern" | "array_pattern" | "object_assignment_pattern" => {
+            let mut cursor = node.walk();
+            for child in node.named_children(&mut cursor) {
+                if js_pattern_binds_name(child, src, name) {
+                    return true;
+                }
+            }
+            false
+        }
+        "pair_pattern" => node
+            .child_by_field_name("value")
+            .map(|c| js_pattern_binds_name(c, src, name))
+            .unwrap_or(false),
+        "required_parameter" | "optional_parameter" | "formal_parameters" => {
+            let inner = node
+                .child_by_field_name("pattern")
+                .or_else(|| node.named_child(0));
+            inner
+                .map(|c| js_pattern_binds_name(c, src, name))
+                .unwrap_or(false)
+        }
+        _ => false,
+    }
+}
+
+/// When a call has a chain (e.g. `Foo::bar()`, `Foo.bar()`, or the nested-
+/// namespace form `Stripe.Event.create()`), emit a `TypeRef` for the type
+/// prefix — the segment immediately before the final method name — if it
+/// looks like a type (starts with uppercase) **AND** the chain root is
+/// itself a type / namespace entry point (also uppercase).
+///
+/// The root-uppercase guard matters because intermediate chain segments
+/// with PascalCase names are overwhelmingly property accesses when the
+/// root is a lowercase identifier (parameter, local variable, `this`).
+/// `item.App.toLowerCase()` has chain `[item, App, toLowerCase]`; without
+/// the guard the old logic emitted `App` as a TypeRef — but `App` is a
+/// property name on the array-literal element `{ App: string }`, not a
+/// type. Those TypeRefs never resolve and pollute `unresolved_refs` with
+/// every field access that happens to be PascalCase (see `App`, `Color`,
+/// `Name` in fluentui-blazor's ColorsUtils.ts).
+///
+/// With the guard: `Stripe.Event.create()` still emits `Event` as
+/// TypeRef (root `Stripe` is uppercase → a namespace), while
+/// `item.App.toLowerCase()` emits nothing from this helper.
 pub fn emit_chain_type_ref(
     chain: &Option<crate::types::MemberChain>,
     source_symbol_index: usize,
@@ -132,6 +239,15 @@ pub fn emit_chain_type_ref(
         Some(c) if c.segments.len() >= 2 => c,
         _ => return,
     };
+    let root_seg = &c.segments[0];
+    let root_is_type_like = root_seg
+        .name
+        .chars()
+        .next()
+        .map_or(false, |ch| ch.is_uppercase());
+    if !root_is_type_like {
+        return;
+    }
     let type_seg = &c.segments[c.segments.len() - 2];
     if type_seg.name.chars().next().map_or(false, |ch| ch.is_uppercase()) {
         refs.push(crate::types::ExtractedRef {
@@ -144,6 +260,179 @@ pub fn emit_chain_type_ref(
             byte_offset: 0,
         });
     }
+}
+
+// ---------------------------------------------------------------------------
+// Script-tag `src=` extraction — works on any HTML-like source
+// (HTML, Razor, cshtml, Vue, Svelte, Astro, ERB, Blade, etc.)
+// ---------------------------------------------------------------------------
+
+/// A `<script src="…">` reference discovered in an HTML-dialect source.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ScriptRef {
+    /// Raw URL as it appears in the `src` attribute (before any `~/` → webroot
+    /// rewriting — that's the indexer's job, not the extractor's).
+    pub url: String,
+    /// 0-based line of the opening `<script` tag.
+    pub line: u32,
+}
+
+/// Scan `source` for every `<script … src="…" …></script>` (or self-closing)
+/// tag and return the referenced URLs.
+///
+/// Byte-level scan — deliberately does not go through tree-sitter-html so
+/// Razor / cshtml / Blade / ERB files with `@`, `{{`, `<%%>` syntax don't
+/// trip the HTML parser. Case-insensitive tag match. Handles double-quoted,
+/// single-quoted, and unquoted attribute values.
+///
+/// Skips:
+///   * Absolute URLs (`http://…`, `https://…`, `//cdn.example.com/…`) — these
+///     are CDN references, not filesystem paths.
+///   * `data:` URIs.
+///
+/// Inline `<script>…</script>` blocks (with no `src`) are ignored here —
+/// the embedded-region pipeline handles those.
+pub fn extract_script_refs(source: &str) -> Vec<ScriptRef> {
+    let bytes = source.as_bytes();
+    let mut refs = Vec::new();
+    let mut line: u32 = 0;
+    let mut i = 0;
+    while i < bytes.len() {
+        if bytes[i] == b'\n' {
+            line += 1;
+            i += 1;
+            continue;
+        }
+        if bytes[i] != b'<' {
+            i += 1;
+            continue;
+        }
+        if !case_insensitive_prefix(bytes, i + 1, b"script") {
+            i += 1;
+            continue;
+        }
+        // Must be followed by a tag-boundary char (whitespace, `>`, or `/`).
+        let after = bytes.get(i + 7).copied();
+        if !matches!(after, Some(b' ' | b'\t' | b'\n' | b'\r' | b'>' | b'/')) {
+            i += 1;
+            continue;
+        }
+        let tag_start = i;
+        let Some(tag_end) = memchr_byte(bytes, tag_start + 7, b'>') else {
+            break;
+        };
+        let attrs = &bytes[tag_start + 7..tag_end];
+        if let Some(url) = find_attribute_value(attrs, b"src") {
+            if is_extractable_script_url(&url) {
+                refs.push(ScriptRef { url, line });
+            }
+        }
+        // Advance past the tag; line counter picks up newlines inside the tag.
+        i = tag_end + 1;
+    }
+    refs
+}
+
+fn case_insensitive_prefix(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
+    if start + needle.len() > bytes.len() {
+        return false;
+    }
+    bytes[start..start + needle.len()]
+        .iter()
+        .zip(needle.iter())
+        .all(|(a, b)| a.eq_ignore_ascii_case(b))
+}
+
+fn memchr_byte(bytes: &[u8], start: usize, needle: u8) -> Option<usize> {
+    (start..bytes.len()).find(|&i| bytes[i] == needle)
+}
+
+/// Scan a slice of attribute bytes for `name=VALUE` and return the value.
+/// Returns `None` when the attribute isn't present.
+fn find_attribute_value(attrs: &[u8], name: &[u8]) -> Option<String> {
+    let mut i = 0;
+    while i < attrs.len() {
+        // Skip whitespace.
+        while i < attrs.len() && attrs[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= attrs.len() {
+            break;
+        }
+        let name_start = i;
+        while i < attrs.len()
+            && !attrs[i].is_ascii_whitespace()
+            && attrs[i] != b'='
+            && attrs[i] != b'/'
+        {
+            i += 1;
+        }
+        let attr_name = &attrs[name_start..i];
+        // Skip whitespace before `=`.
+        while i < attrs.len() && attrs[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= attrs.len() || attrs[i] != b'=' {
+            // Valueless attribute.
+            continue;
+        }
+        i += 1;
+        // Skip whitespace after `=`.
+        while i < attrs.len() && attrs[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i >= attrs.len() {
+            break;
+        }
+        let value = match attrs[i] {
+            b'"' | b'\'' => {
+                let quote = attrs[i];
+                i += 1;
+                let v_start = i;
+                while i < attrs.len() && attrs[i] != quote {
+                    i += 1;
+                }
+                let v = std::str::from_utf8(&attrs[v_start..i]).ok()?.to_string();
+                if i < attrs.len() {
+                    i += 1;
+                } // past closing quote
+                v
+            }
+            _ => {
+                let v_start = i;
+                while i < attrs.len() && !attrs[i].is_ascii_whitespace() {
+                    i += 1;
+                }
+                let v = std::str::from_utf8(&attrs[v_start..i]).ok()?.to_string();
+                // Self-closing tag: `<script src=foo.js/>` — strip the
+                // trailing `/` that belongs to the tag, not the value.
+                v.strip_suffix('/').map(str::to_string).unwrap_or(v)
+            }
+        };
+        if attr_name.eq_ignore_ascii_case(name) {
+            return Some(value);
+        }
+    }
+    None
+}
+
+/// True when a `src` URL points at a repo-local file that the indexer can
+/// resolve. Filters out CDN URLs, data URIs, and obviously non-path values.
+fn is_extractable_script_url(url: &str) -> bool {
+    let u = url.trim();
+    if u.is_empty() {
+        return false;
+    }
+    if u.starts_with("http://")
+        || u.starts_with("https://")
+        || u.starts_with("//")
+        || u.starts_with("data:")
+        || u.starts_with("javascript:")
+        || u.starts_with("blob:")
+    {
+        return false;
+    }
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -487,5 +776,106 @@ mod tests {
         let src = "\n\n---\nconst x = 1;\n---\n<p/>\n";
         let fm = extract_astro_frontmatter(src).expect("frontmatter");
         assert!(fm.text.contains("const x = 1;"));
+    }
+
+    #[test]
+    fn script_ref_double_quoted_url() {
+        let src = r#"<html><head>
+<script src="~/lib/jquery/jquery.js"></script>
+</head></html>"#;
+        let refs = extract_script_refs(src);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].url, "~/lib/jquery/jquery.js");
+        assert_eq!(refs[0].line, 1);
+    }
+
+    #[test]
+    fn script_ref_single_quoted_url() {
+        let src = "<script src='/js/app.js'></script>\n";
+        let refs = extract_script_refs(src);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].url, "/js/app.js");
+    }
+
+    #[test]
+    fn script_ref_unquoted_url() {
+        let src = "<script src=lib/foo.js></script>\n";
+        let refs = extract_script_refs(src);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].url, "lib/foo.js");
+    }
+
+    #[test]
+    fn script_ref_with_extra_attrs() {
+        // Typical ASP.NET MVC pattern with tag helper before src.
+        let src = r#"<script simpl-append-version="true" src="~/lib/bootstrap/dist/js/bootstrap.js"></script>"#;
+        let refs = extract_script_refs(src);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].url, "~/lib/bootstrap/dist/js/bootstrap.js");
+    }
+
+    #[test]
+    fn script_ref_cdn_skipped() {
+        let src = r#"
+<script src="https://cdn.jsdelivr.net/npm/vue"></script>
+<script src="//cdn.example.com/jquery.js"></script>
+<script src="http://localhost/foo.js"></script>
+<script src="data:application/javascript,console.log(1)"></script>
+"#;
+        assert!(extract_script_refs(src).is_empty());
+    }
+
+    #[test]
+    fn inline_script_without_src_ignored() {
+        let src = "<script>console.log('hi');</script>";
+        assert!(extract_script_refs(src).is_empty());
+    }
+
+    #[test]
+    fn multiple_script_refs_collected() {
+        let src = r#"
+<script src="~/lib/jquery/jquery.js"></script>
+<script src="~/lib/angular/angular.js"></script>
+<script src="/custom/app.js"></script>
+"#;
+        let refs = extract_script_refs(src);
+        assert_eq!(refs.len(), 3);
+        assert_eq!(refs[0].url, "~/lib/jquery/jquery.js");
+        assert_eq!(refs[1].url, "~/lib/angular/angular.js");
+        assert_eq!(refs[2].url, "/custom/app.js");
+    }
+
+    #[test]
+    fn script_ref_skips_similar_tag_names() {
+        // `<scripts>` and `<scriptoid>` must not trigger a match — only
+        // `<script` followed by whitespace, `>`, or `/`.
+        let src = r#"
+<scripts src="foo.js"></scripts>
+<scriptoid src="bar.js"></scriptoid>
+"#;
+        assert!(extract_script_refs(src).is_empty());
+    }
+
+    #[test]
+    fn script_ref_case_insensitive_tag() {
+        let src = r#"<SCRIPT SRC="lib/foo.js"></SCRIPT>"#;
+        let refs = extract_script_refs(src);
+        assert_eq!(refs.len(), 1);
+        assert_eq!(refs[0].url, "lib/foo.js");
+    }
+
+    #[test]
+    fn script_ref_survives_razor_at_syntax() {
+        // Razor files mix `@...` directives with HTML; our byte scan must
+        // not choke on them.
+        let src = r#"@{
+    Layout = "_Layout";
+}
+<script src="~/lib/jquery/jquery.js"></script>
+@section Scripts {
+    <script src="~/js/page.js"></script>
+}"#;
+        let refs = extract_script_refs(src);
+        assert_eq!(refs.len(), 2);
     }
 }

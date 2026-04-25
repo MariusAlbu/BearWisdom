@@ -237,12 +237,11 @@ fn run_incremental_pipeline(
     }
 
     // --- Step 7: Write files + symbols (shared pipeline) ---
-    let file_id_map = if !parsed.is_empty() {
+    let (file_id_map, symbol_id_map) = if !parsed.is_empty() {
         let (fmap, smap) =
             write::write_parsed_files(db, &parsed).context("Failed to write index")?;
         stats.symbols_written = smap.len() as u32;
-        let _ = smap; // symbol IDs for parsed files are subset of full map below
-        fmap
+        (fmap, smap)
     } else {
         Default::default()
     };
@@ -253,10 +252,19 @@ fn run_incremental_pipeline(
         write::update_chunks(db, &parsed, &file_id_map, false)?;
     }
 
-    // --- Step 9: Load full symbol map (post-commit) ---
-    // Needed by the heuristic resolver to match targets from any file.
-    // The engine resolver gets completeness from SymbolIndex::augment_from_db.
-    let symbol_id_map = write::load_symbol_id_map(db)?;
+    // --- Step 9: (skipped) ---
+    //
+    // The previous step here ran `write::load_symbol_id_map` — a full
+    // SELECT over every symbol in the DB just to build a (path, qname)
+    // → id map for the heuristic resolver. On a 280k-symbol index that
+    // alloced ~100MB per save. The same data now comes from the resolve
+    // step's `SymbolIndex::augment_from_db_collecting_ids`, which folds
+    // the project-wide map into the same SELECT it already runs to
+    // populate the SymbolIndex. One DB scan instead of two.
+    //
+    // What we keep here in `symbol_id_map` is just the changed-file
+    // entries from the write call — the heuristic gets full coverage
+    // by merging this with `augmented_id_map` inside resolve.
 
     // --- Step 10: Blast radius re-resolution ---
     // Find files with unresolved refs matching symbols from changed files.
@@ -377,23 +385,26 @@ fn run_incremental_pipeline(
     // state + plugin-emitted points from the changed-file slice only. The
     // registry's dedupe drops overlap with points already stored from prior
     // runs.
-    let file_id_map: std::collections::HashMap<String, i64> = symbol_id_map
-        .keys()
-        .map(|(path, _qname)| path.clone())
-        .collect::<std::collections::HashSet<_>>()
-        .into_iter()
-        .filter_map(|path| {
-            let id = db
-                .conn()
-                .query_row(
-                    "SELECT id FROM files WHERE path = ?1",
-                    [&path],
-                    |r| r.get::<_, i64>(0),
-                )
-                .ok()?;
-            Some((path, id))
-        })
-        .collect();
+    // One scan of the files table beats the previous N-query loop.
+    // On a 50k-file index that's ~50k driver round-trips collapsed into
+    // a single SELECT. The connector pass below needs the full map
+    // (cross-file matches), so scoping the query is not an option.
+    let file_id_map: std::collections::HashMap<String, i64> = {
+        let conn = db.conn();
+        let mut stmt = conn
+            .prepare("SELECT path, id FROM files")
+            .context("Failed to prepare files-id query")?;
+        let rows = stmt
+            .query_map([], |r| {
+                Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+            })
+            .context("Failed to query files table")?;
+        let mut map = std::collections::HashMap::new();
+        for row in rows.flatten() {
+            map.insert(row.0, row.1);
+        }
+        map
+    };
     let plugin_points = crate::connectors::from_plugins::collect_plugin_connection_points(
         &parsed,
         &file_id_map,

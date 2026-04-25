@@ -71,6 +71,15 @@ fn strip_generic_args(s: &str) -> String {
     base.trim_end_matches('.').to_string()
 }
 
+/// Detect an ambient-global TypeScript declaration file — `lib.*.d.ts` shipped
+/// with the TypeScript compiler, or any file under `@types/node/`. Methods
+/// declared in these files are the JS/DOM/ES runtime surface and need no
+/// explicit import to call.
+fn is_ambient_global_lib_path(path: &str) -> bool {
+    let normalized = path.replace('\\', "/");
+    normalized.contains("/typescript/lib/lib.") || normalized.contains("/@types/node/")
+}
+
 fn is_type_like_kind(kind: &str) -> bool {
     matches!(
         kind,
@@ -204,6 +213,23 @@ pub trait SymbolLookup {
     /// Find a symbol by exact qualified name.
     fn by_qualified_name(&self, qname: &str) -> Option<&SymbolInfo>;
 
+    /// Find every symbol sharing the exact qualified name, in insertion
+    /// order. Default returns the one-winner slice of `by_qualified_name`.
+    ///
+    /// TypeScript declaration merging exports interface + variable under the
+    /// same qname (e.g. `@angular/core.Injectable` is both the decorator
+    /// function AND the options-type interface). `by_qualified_name` picks
+    /// whichever lost the first-wins race; when the caller needs a specific
+    /// kind (e.g. a `Calls` ref against a `variable`/`function`/`class`),
+    /// the interface overload is useless. This lookup exposes all
+    /// overloads so the caller can scan for a kind-compatible target.
+    fn all_by_qualified_name(&self, qname: &str) -> &[SymbolInfo] {
+        std::slice::from_ref(match self.by_qualified_name(qname) {
+            Some(s) => s,
+            None => return &[],
+        })
+    }
+
     /// Find the direct children of a type/namespace by exact parent qualified name.
     ///
     /// For `parent_qname = "context.Context"`, returns all symbols whose
@@ -287,6 +313,35 @@ pub trait SymbolLookup {
     /// root segment of a member chain is externally known, the whole chain is
     /// external and need not be resolved against the project index.
     fn is_external_name(&self, name: &str, language: &str) -> bool;
+
+    /// Check whether a file path is known external-origin.
+    ///
+    /// Two signals combine: the historical `ext:` path-prefix convention
+    /// (used by the npm / nuget / go / maven / pypi external pipelines)
+    /// AND the explicit external-paths set (seeded from the DB for files
+    /// written with `origin='external'` that kept a project-relative path,
+    /// e.g. script-tag-discovered vendor JS like `wwwroot/lib/jquery.min.js`).
+    ///
+    /// Chain-classification filters in `infer_external_from_chain` use this
+    /// to tell user source from vendored symbols with matching names.
+    fn is_external_file(&self, path: &str) -> bool {
+        path.starts_with("ext:")
+    }
+
+    /// Is `name` declared as a member (method or property) on any interface
+    /// in an ambient-global declaration file (`typescript/lib/lib.*.d.ts`,
+    /// `@types/node`)? Those declarations ARE the JS/DOM/ES runtime
+    /// surface — a name found there is definitely a runtime API call on
+    /// an untyped receiver, regardless of which interface we can't prove.
+    ///
+    /// Callers use this as an external-classification signal: `x.addEventListener(...)`
+    /// where `x`'s type can't be inferred still resolves to "external (DOM)"
+    /// because `addEventListener` only exists on `EventTarget`/`HTMLElement`/etc.,
+    /// all in lib.dom.d.ts. Replaces the hardcoded `is_common_builtin_method`
+    /// list — the index is the source of truth.
+    fn is_ambient_global_method(&self, _name: &str) -> bool {
+        false
+    }
 
     /// Return all symbols belonging to a workspace package.
     ///
@@ -479,22 +534,49 @@ pub struct SymbolIndex {
     /// Keyed by child qname (dotted form), value is the direct parent qname.
     /// Transitive ancestors are reached by chaining lookups.
     inherits_map: FxHashMap<String, String>,
+    /// All symbols sharing a qualified name, keyed by qname. Backs
+    /// `SymbolLookup::all_by_qualified_name` so callers that care about
+    /// kind compatibility can scan past the first-wins match in `by_qname`.
+    ///
+    /// Only populated for qnames with > 1 symbol — the common case (one
+    /// symbol per qname) reads through `by_qname` as before.
+    qname_duplicates: FxHashMap<String, Vec<SymbolInfo>>,
+    /// Names of methods/properties declared inside ambient-global
+    /// declaration files (`lib.dom.d.ts`, `lib.es5.d.ts`, `lib.webworker.d.ts`,
+    /// `@types/node/*`). Used as the last-resort external signal for
+    /// untyped chain calls: `x.addEventListener(...)` with unknown `x`
+    /// still classifies as external because `addEventListener` only lives
+    /// on EventTarget in lib.dom.d.ts. Replaces the hardcoded
+    /// `is_common_builtin_method` list.
+    ambient_global_method_names: HashSet<String>,
+    /// File paths explicitly marked `origin='external'` in the DB but stored
+    /// without an `ext:` prefix — i.e. script-tag-discovered vendor JS like
+    /// `wwwroot/lib/jquery.min.js`. Chain walkers consult this set (via
+    /// `SymbolLookup::is_external_file`) so a vendored `$` declaration
+    /// doesn't masquerade as project code when classifying jQuery chains.
+    ///
+    /// Empty when the caller didn't supply a set (tests, synthetic lookups),
+    /// in which case the existing `ext:` prefix check is the sole authority.
+    external_paths: HashSet<String>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
     /// Interior-mutable accumulator for chain walker bail-outs.
     /// `record_chain_miss` pushes; `take_chain_misses` drains.
     ///
-    /// Uses `Mutex` rather than `RefCell` so the resolver can parallelize
-    /// per-file work in a later refactor without rewriting every
-    /// `SymbolLookup` call site. Single-threaded use pays the cost of
-    /// uncontended `Mutex::lock` calls — nanoseconds per call, negligible
-    /// against the SQL writes that dominate the resolution loop.
+    /// `Mutex` is needed because `SymbolIndex` is shared by `&` across
+    /// rayon workers in the parallel resolve loop. Contention is bounded —
+    /// chain misses are a small fraction of resolves, and locking is fast
+    /// compared to the SQL writes the workers are also doing.
     chain_misses: std::sync::Mutex<Vec<ChainMiss>>,
-    /// Per-file forward-inference cache for local variables (R5). Installed
-    /// at the start of each file's resolution pass, consulted by chain
-    /// walkers in Phase 1, cleared at end of file. The resolution loop is
-    /// sequential so `RefCell` is sufficient.
-    local_type_cache: RefCell<LocalTypeCache>,
+}
+
+// Per-worker forward-inference cache for local variables (R5). Each rayon
+// worker gets its own thread-local copy, so parallel resolve workers don't
+// trample each other's per-file scopes. Reset at the start of each file's
+// resolution by `install_local_cache`; reusing the same TLS across files
+// (rayon worker threads are persistent) is safe because of that reset.
+thread_local! {
+    static LOCAL_TYPE_CACHE: RefCell<LocalTypeCache> = RefCell::new(LocalTypeCache::default());
 }
 
 // ---------------------------------------------------------------------------
@@ -576,6 +658,8 @@ impl SymbolIndex {
     ) -> Self {
         let mut by_name: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut by_qname: BTreeMap<String, SymbolInfo> = BTreeMap::new();
+        let mut qname_duplicates: FxHashMap<String, Vec<SymbolInfo>> =
+            FxHashMap::default();
         let mut by_file: FxHashMap<String, Vec<SymbolInfo>> = FxHashMap::default();
         let mut members_by_parent: FxHashMap<String, Vec<SymbolInfo>> =
             FxHashMap::default();
@@ -607,10 +691,27 @@ impl SymbolIndex {
                 let simple = sym.name.clone();
                 by_name.entry(simple).or_default().push(info.clone());
 
-                // Qualified name index (first wins for duplicates)
-                by_qname
-                    .entry(sym.qualified_name.clone())
-                    .or_insert_with(|| info.clone());
+                // Qualified name index (first wins for duplicates).
+                // When a duplicate arrives, copy the existing winner into
+                // `qname_duplicates` (if not already there) and append the
+                // new one — `qname_duplicates` stores the FULL set of
+                // symbols sharing that qname, in insertion order. The
+                // kind-compatible scan reads from there to find the right
+                // overload when TypeScript declaration merging makes the
+                // first-wins race pick the wrong kind (e.g.
+                // `@angular/core.Injectable` exists as both interface and
+                // variable — Calls refs need the variable).
+                match by_qname.entry(sym.qualified_name.clone()) {
+                    std::collections::btree_map::Entry::Vacant(e) => {
+                        e.insert(info.clone());
+                    }
+                    std::collections::btree_map::Entry::Occupied(occ) => {
+                        let entry = qname_duplicates
+                            .entry(sym.qualified_name.clone())
+                            .or_insert_with(|| vec![occ.get().clone()]);
+                        entry.push(info.clone());
+                    }
+                }
 
                 // File index — key stays String (one allocation per file, not per symbol)
                 by_file
@@ -670,8 +771,12 @@ impl SymbolIndex {
                     // Properties/fields: first TypeRef is the field type.
                     // Subsequent TypeRefs from the same symbol may be generic type args.
                     SymbolKind::Property | SymbolKind::Field => {
-                        field_type
-                            .insert(sym.qualified_name.clone(), type_refs[0].to_string());
+                        let resolved = resolve_type_name_in_scope(
+                            type_refs[0],
+                            sym.scope_path.as_deref(),
+                            &by_qname,
+                        );
+                        field_type.insert(sym.qualified_name.clone(), resolved);
                         // If there are additional TypeRefs, they're generic type arguments.
                         // e.g., `repo: Repository<User>` emits ["Repository", "User"]
                         if type_refs.len() > 1 {
@@ -688,8 +793,12 @@ impl SymbolIndex {
                     // Only non-chain TypeRefs land here; chain-bearing ones are handled
                     // by the chain-inference pass below.
                     SymbolKind::Variable => {
-                        field_type
-                            .insert(sym.qualified_name.clone(), type_refs[0].to_string());
+                        let resolved = resolve_type_name_in_scope(
+                            type_refs[0],
+                            sym.scope_path.as_deref(),
+                            &by_qname,
+                        );
+                        field_type.insert(sym.qualified_name.clone(), resolved);
                         if type_refs.len() > 1 {
                             field_type_args.insert(
                                 sym.qualified_name.clone(),
@@ -719,8 +828,30 @@ impl SymbolIndex {
                     | SymbolKind::Function
                     | SymbolKind::Constructor => {
                         if let Some(&last) = type_refs.last() {
+                            // Scope-resolve the raw type name so chain walking
+                            // works across namespace/class boundaries.
+                            // `class Dayjs { clone(): Dayjs }` inside
+                            // `namespace dayjs` emits a TypeRef with
+                            // target_name="Dayjs" — the raw text in the
+                            // source. The chain walker needs the fully
+                            // qualified "dayjs.Dayjs" to traverse the
+                            // symbol graph. We probe candidate FQNs built
+                            // from the method's scope_path (innermost
+                            // scope first, walking outward) and store the
+                            // first one that matches a known qualified
+                            // name. Without this, every `.d.ts` file's
+                            // namespaced interface chain is invisible and
+                            // we end up needing per-library synthetics to
+                            // hand-qualify the return types — exactly
+                            // what `dayjs_synthetics`, `js_test_chains`,
+                            // and friends do.
+                            let resolved = resolve_type_name_in_scope(
+                                last,
+                                sym.scope_path.as_deref(),
+                                &by_qname,
+                            );
                             return_type
-                                .insert(sym.qualified_name.clone(), last.to_string());
+                                .insert(sym.qualified_name.clone(), resolved);
                         }
                         // Extra pass: some extractors emit no TypeRef refs
                         // but DO populate a signature string with the return
@@ -733,7 +864,12 @@ impl SymbolIndex {
                         if !return_type.contains_key(&sym.qualified_name) {
                             if let Some(sig) = &sym.signature {
                                 if let Some(rt) = parse_return_type_from_signature(sig) {
-                                    return_type.insert(sym.qualified_name.clone(), rt);
+                                    let resolved = resolve_type_name_in_scope(
+                                        &rt,
+                                        sym.scope_path.as_deref(),
+                                        &by_qname,
+                                    );
+                                    return_type.insert(sym.qualified_name.clone(), resolved);
                                 }
                             }
                         }
@@ -1015,6 +1151,24 @@ impl SymbolIndex {
             }
         }
 
+        // Build the ambient-global method-name set. Any method/property
+        // declared in a file whose path looks like a TypeScript ambient
+        // declaration (`typescript/lib/lib.*.d.ts`, `@types/node/*`) goes
+        // in. Chain walkers hit this when a receiver can't be typed but
+        // the called name is a known runtime API — the honest answer is
+        // "external (DOM/ES runtime)", not "unresolved".
+        let mut ambient_global_method_names: HashSet<String> = HashSet::new();
+        for pf in parsed {
+            if !is_ambient_global_lib_path(&pf.path) {
+                continue;
+            }
+            for sym in &pf.symbols {
+                if matches!(sym.kind, SymbolKind::Method | SymbolKind::Property | SymbolKind::Function) {
+                    ambient_global_method_names.insert(sym.name.clone());
+                }
+            }
+        }
+
         // Build test-framework globals from manifest dependencies.
         // Build per-language primitive sets for all languages present in parsed files.
         let mut primitives_by_language: FxHashMap<String, HashSet<&'static str>> =
@@ -1100,10 +1254,12 @@ impl SymbolIndex {
             tsconfig_paths_by_pkg,
             tsconfig_paths_union,
             inherits_map,
+            qname_duplicates,
+            ambient_global_method_names,
+            external_paths: HashSet::new(),
             empty: Vec::new(),
             empty_reexports: Vec::new(),
             chain_misses: std::sync::Mutex::new(Vec::new()),
-            local_type_cache: RefCell::new(LocalTypeCache::default()),
         }
     }
 
@@ -1120,6 +1276,19 @@ impl SymbolIndex {
             .collect()
     }
 
+    /// Seed the external-paths set.
+    ///
+    /// The caller reads this from the DB (`files WHERE origin='external'`)
+    /// and installs it before resolution starts. It covers the gap between
+    /// "path starts with `ext:`" (the implicit convention used by most
+    /// external pipelines) and "file was written with origin='external'
+    /// but kept its project-relative path" (specifically the
+    /// script-tag-vendor-JS pipeline). Chain walkers consult both signals
+    /// via `SymbolLookup::is_external_file`.
+    pub fn set_external_paths(&mut self, paths: HashSet<String>) {
+        self.external_paths = paths;
+    }
+
     /// Load all symbols from the database into the index, filling gaps left by
     /// an incremental build where only changed files were parsed.
     ///
@@ -1130,6 +1299,20 @@ impl SymbolIndex {
     ///
     /// Call this AFTER `build_with_context` for incremental resolution.
     pub fn augment_from_db(&mut self, conn: &rusqlite::Connection) {
+        let _ = self.augment_from_db_collecting_ids(conn);
+    }
+
+    /// Same as `augment_from_db`, but also returns the `(path, qname) → id`
+    /// map for every row scanned. The incremental resolve path needs this
+    /// map to drive the heuristic resolver — emitting it from the same
+    /// SELECT halves the per-save DB I/O on huge indexes (was ~200MB on
+    /// aspnetcore between this and the standalone `load_symbol_id_map`).
+    pub fn augment_from_db_collecting_ids(
+        &mut self,
+        conn: &rusqlite::Connection,
+    ) -> HashMap<(String, String), i64> {
+        let mut id_map: HashMap<(String, String), i64> = HashMap::new();
+
         let mut stmt = match conn.prepare(
             "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
                     s.scope_path, s.visibility, f.package_id
@@ -1137,7 +1320,7 @@ impl SymbolIndex {
              JOIN files f ON f.id = s.file_id",
         ) {
             Ok(s) => s,
-            Err(_) => return,
+            Err(_) => return id_map,
         };
 
         let rows = match stmt.query_map([], |row| {
@@ -1153,7 +1336,7 @@ impl SymbolIndex {
             ))
         }) {
             Ok(r) => r,
-            Err(_) => return,
+            Err(_) => return id_map,
         };
 
         for row in rows {
@@ -1161,6 +1344,11 @@ impl SymbolIndex {
             else {
                 continue;
             };
+
+            // Always collect the (path, qname) → id mapping — heuristic
+            // needs full project coverage even for symbols already in the
+            // index from `parsed`.
+            id_map.insert((file_path.clone(), qname.clone()), id);
 
             // Skip symbols already indexed from parsed files.
             if self.by_qname.contains_key(&qname) {
@@ -1204,6 +1392,7 @@ impl SymbolIndex {
             // by_file key stays String (one allocation per file, not per symbol)
             self.by_file.entry(file_path).or_default().push(info);
         }
+        id_map
     }
 }
 
@@ -1265,6 +1454,60 @@ fn tuple_element(raw: &str, idx: usize) -> Option<String> {
 /// Used by the TypeInfo builder to populate return_type for synthetic
 /// .NET DLL metadata symbols that have no TypeRef edges but do carry
 /// a dotscope-formatted signature string.
+/// Resolve a raw type-name reference (as written in source, e.g. `Dayjs`)
+/// against the set of known fully-qualified names in the index, using the
+/// referring symbol's `scope_path` as the walk starting point.
+///
+/// The algorithm mirrors how TypeScript / C# / Java name resolution works:
+/// when we see `Dayjs` inside `namespace dayjs { class Dayjs { clone(): Dayjs } }`,
+/// the symbol's scope_path is `dayjs.Dayjs`. We try, in order:
+///
+///   1. `dayjs.Dayjs.Dayjs` — "Dayjs" in the innermost scope (class)
+///   2. `dayjs.Dayjs`       — "Dayjs" in the parent scope (namespace)
+///   3. `dayjs`             — "Dayjs" at root (won't match unless global)
+///   4. `Dayjs`             — the raw text itself (top-level / file-scope)
+///
+/// The first candidate present in `by_qname` wins. Falls back to the raw
+/// name when no scope-qualified form matches — that preserves historical
+/// behaviour for languages / cases where scope-path wasn't populated or
+/// where the type really is a top-level name.
+///
+/// Pre-qualified targets (containing a dot already, like `dayjs.Dayjs`)
+/// are returned as-is since they've already been resolved upstream.
+fn resolve_type_name_in_scope(
+    raw: &str,
+    scope_path: Option<&str>,
+    by_qname: &BTreeMap<String, SymbolInfo>,
+) -> String {
+    // Extractor-emitted FQNs flow through unchanged.
+    if raw.contains('.') {
+        return raw.to_string();
+    }
+    let Some(scope) = scope_path else {
+        return raw.to_string();
+    };
+    // Walk scope_path outward: "dayjs.Dayjs" → ["dayjs.Dayjs", "dayjs", ""].
+    let mut cur: &str = scope;
+    loop {
+        let candidate = if cur.is_empty() {
+            raw.to_string()
+        } else {
+            format!("{cur}.{raw}")
+        };
+        if by_qname.contains_key(&candidate) {
+            return candidate;
+        }
+        if cur.is_empty() {
+            break;
+        }
+        match cur.rfind('.') {
+            Some(idx) => cur = &cur[..idx],
+            None => cur = "",
+        }
+    }
+    raw.to_string()
+}
+
 fn parse_return_type_from_signature(sig: &str) -> Option<String> {
     // Find the top-level `):` separator. Scan right-to-left tracking
     // paren depth from zero upward — the FIRST `)` at depth 0 (from
@@ -1488,6 +1731,23 @@ impl SymbolLookup for SymbolIndex {
         self.by_qname.get(qname)
     }
 
+    fn all_by_qualified_name(&self, qname: &str) -> &[SymbolInfo] {
+        // Fast path: the common case is one symbol per qname. Return the
+        // single-winner slice backed by `by_qname` without allocating.
+        // When a duplicate exists we fall through to the combined vec built
+        // at construction time — but we can't splice the by_qname winner
+        // onto the duplicates slice at read time without allocating, so at
+        // build time we stash the full set (winner + duplicates) under the
+        // qname in `qname_duplicates` whenever it grows past one entry.
+        if let Some(all) = self.qname_duplicates.get(qname) {
+            return all.as_slice();
+        }
+        match self.by_qname.get(qname) {
+            Some(s) => std::slice::from_ref(s),
+            None => &[],
+        }
+    }
+
     fn members_of(&self, parent_qname: &str) -> &[SymbolInfo] {
         self.members_by_parent
             .get(parent_qname)
@@ -1630,6 +1890,14 @@ impl SymbolLookup for SymbolIndex {
         false
     }
 
+    fn is_external_file(&self, path: &str) -> bool {
+        path.starts_with("ext:") || self.external_paths.contains(path)
+    }
+
+    fn is_ambient_global_method(&self, name: &str) -> bool {
+        self.ambient_global_method_names.contains(name)
+    }
+
     fn symbols_in_package(&self, package_id: i64) -> &[SymbolInfo] {
         self.by_package
             .get(&package_id)
@@ -1704,29 +1972,33 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn local_type(&self, name: &str) -> Option<String> {
-        self.local_type_cache.borrow().lookup(name).map(|s| s.to_string())
+        LOCAL_TYPE_CACHE.with(|c| c.borrow().lookup(name).map(|s| s.to_string()))
     }
 
     fn install_local_cache(&self, narrowings: Vec<crate::types::Narrowing>) {
-        let mut cache = self.local_type_cache.borrow_mut();
-        cache.forward.clear();
-        cache.narrowings = narrowings;
-        cache.cursor = 0;
+        LOCAL_TYPE_CACHE.with(|c| {
+            let mut cache = c.borrow_mut();
+            cache.forward.clear();
+            cache.narrowings = narrowings;
+            cache.cursor = 0;
+        });
     }
 
     fn set_cursor(&self, byte: u32) {
-        self.local_type_cache.borrow_mut().cursor = byte;
+        LOCAL_TYPE_CACHE.with(|c| c.borrow_mut().cursor = byte);
     }
 
     fn record_local_type(&self, name: String, type_name: String) {
-        self.local_type_cache.borrow_mut().forward.insert(name, type_name);
+        LOCAL_TYPE_CACHE.with(|c| c.borrow_mut().forward.insert(name, type_name));
     }
 
     fn clear_local_cache(&self) {
-        let mut cache = self.local_type_cache.borrow_mut();
-        cache.forward.clear();
-        cache.narrowings.clear();
-        cache.cursor = 0;
+        LOCAL_TYPE_CACHE.with(|c| {
+            let mut cache = c.borrow_mut();
+            cache.forward.clear();
+            cache.narrowings.clear();
+            cache.cursor = 0;
+        });
     }
 }
 
@@ -2363,11 +2635,15 @@ pub fn infer_external_from_chain(
     // is external (not in the index, or a variable with no resolvable type).
     //
     // IMPORTANT: all `by_name` lookups in this function must filter out
-    // external-origin symbols (file_path starts with "ext:"). Otherwise a
-    // Python external type like `sqlalchemy.Table` would match a TS `table`
-    // root and convince the walker the chain is "internal", suppressing the
-    // external classification for entirely unrelated code.
-    let is_internal = |s: &SymbolInfo| -> bool { !s.file_path.starts_with("ext:") };
+    // external-origin symbols. Two signals combine: the `ext:` path-prefix
+    // convention AND the explicit external-paths set (DB origin='external'
+    // files that kept a project-relative path — script-tag-discovered
+    // vendor JS like `wwwroot/lib/jquery.min.js`). Otherwise a Python
+    // external type like `sqlalchemy.Table` or a vendored `$` declaration
+    // would match a user-code root and convince the walker the chain is
+    // "internal", suppressing the external classification for code that
+    // genuinely calls into third-party library surface.
+    let is_internal = |s: &SymbolInfo| -> bool { !lookup.is_external_file(&s.file_path) };
 
     let mut current_type = match root_type {
         Some(t) => t,
@@ -2485,6 +2761,78 @@ mod tests {
     fn test_scope_chain_from_path() {
         let chain = build_scope_chain(Some("A.B.C"));
         assert_eq!(chain, vec!["A.B.C", "A.B", "A"]);
+    }
+
+    fn dummy_sym(qname: &str) -> SymbolInfo {
+        SymbolInfo {
+            id: 0,
+            name: qname.rsplit('.').next().unwrap().to_string(),
+            qualified_name: qname.to_string(),
+            kind: "class".to_string(),
+            visibility: None,
+            file_path: Arc::from(""),
+            scope_path: None,
+            package_id: None,
+        }
+    }
+
+    #[test]
+    fn scope_resolve_walks_outward_and_matches_first() {
+        // dayjs shape: `namespace dayjs { class Dayjs { clone(): Dayjs } }`.
+        // Method scope_path is "dayjs.Dayjs"; return-type ref is the raw
+        // "Dayjs" from source. The resolver must probe
+        // "dayjs.Dayjs.Dayjs" → "dayjs.Dayjs" → "dayjs" → "Dayjs" and
+        // pick the first present in the index.
+        let mut map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
+        map.insert("dayjs.Dayjs".to_string(), dummy_sym("dayjs.Dayjs"));
+
+        let resolved =
+            resolve_type_name_in_scope("Dayjs", Some("dayjs.Dayjs"), &map);
+        assert_eq!(resolved, "dayjs.Dayjs");
+    }
+
+    #[test]
+    fn scope_resolve_prefers_innermost_shadow() {
+        // Type name shadowing: if there's a class-scoped type with the
+        // same name as an outer namespace type, innermost wins.
+        let mut map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
+        map.insert("ns.Outer.X".to_string(), dummy_sym("ns.Outer.X"));
+        map.insert("ns.X".to_string(), dummy_sym("ns.X"));
+
+        let resolved =
+            resolve_type_name_in_scope("X", Some("ns.Outer"), &map);
+        assert_eq!(resolved, "ns.Outer.X");
+    }
+
+    #[test]
+    fn scope_resolve_fallback_to_raw_when_no_match() {
+        // When nothing matches, return the raw text so downstream
+        // consumers can still use it (e.g. builtin type lookups).
+        let map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
+        let resolved =
+            resolve_type_name_in_scope("boolean", Some("dayjs.Dayjs"), &map);
+        assert_eq!(resolved, "boolean");
+    }
+
+    #[test]
+    fn scope_resolve_preserves_already_qualified_name() {
+        // Extractor-emitted fully-qualified names pass through unchanged
+        // even when the shorter form would match.
+        let mut map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
+        map.insert("dayjs.Dayjs".to_string(), dummy_sym("dayjs.Dayjs"));
+        let resolved = resolve_type_name_in_scope(
+            "dayjs.Dayjs",
+            Some("dayjs.Dayjs"),
+            &map,
+        );
+        assert_eq!(resolved, "dayjs.Dayjs");
+    }
+
+    #[test]
+    fn scope_resolve_without_scope_returns_raw() {
+        let mut map: BTreeMap<String, SymbolInfo> = BTreeMap::new();
+        map.insert("Foo".to_string(), dummy_sym("Foo"));
+        assert_eq!(resolve_type_name_in_scope("Foo", None, &map), "Foo");
     }
 
     #[test]

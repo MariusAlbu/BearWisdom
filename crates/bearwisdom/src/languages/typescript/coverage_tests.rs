@@ -291,6 +291,284 @@ fn coverage_jsx_opening_element() {
 }
 
 #[test]
+fn coverage_ts_rallly_exact_poll_provider_structure() {
+    // Byte-exact copy of the structure in ts-rallly's poll-context.tsx
+    // (names changed, types simplified, but the SYNTAX shape is preserved).
+    let r = extract::extract(
+        r#"
+import React from 'react';
+import { useTranslation } from 'react-i18next';
+
+type PollContextValue = { poll: { id: string } };
+const PollContext = React.createContext<PollContextValue | null>(null);
+
+export const PollContextProvider: React.FunctionComponent<{
+  poll: { id: string };
+  children?: React.ReactNode;
+}> = ({ poll, children }) => {
+  const { t } = useTranslation();
+  const contextValue = React.useMemo<PollContextValue>(
+    () => ({ poll }),
+    [poll, t],
+  );
+  return (
+    <PollContext.Provider value={contextValue}>{children}</PollContext.Provider>
+  );
+};
+"#,
+        true,
+    );
+    let provider_calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
+        .collect();
+    assert!(
+        !provider_calls.is_empty(),
+        "Provider Calls ref must emit for the ts-rallly poll-context.tsx structure; got refs: {:#?}",
+        r.refs
+            .iter()
+            .map(|r| (r.kind, r.target_name.clone()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_annotated_const_with_destructured_params_jsx() {
+    // Exact shape used in ts-rallly's poll-context.tsx:
+    //   export const Foo: React.FC<Props> = ({ a, b }) => { return <X.Provider ...> }
+    let r = extract::extract(
+        r#"
+import React from 'react';
+const PollContext = React.createContext(null);
+export const PollContextProvider: React.FC<{ x: number }> = ({ x }) => {
+    return <PollContext.Provider value={x}>x</PollContext.Provider>;
+};
+"#,
+        true,
+    );
+    let provider_calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
+        .collect();
+    assert!(
+        !provider_calls.is_empty(),
+        "annotated-const with destructured params must still emit Provider Calls; refs: {:?}",
+        r.refs
+            .iter()
+            .map(|r| (r.kind, r.target_name.clone()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_real_ts_rallly_options_context_pattern() {
+    // Exact shape of ts-rallly's poll-context.tsx OptionsProvider.
+    let r = extract::extract(
+        r#"
+import React from 'react';
+type OptionsContextValue = {
+    pollType: string;
+    options: string[];
+};
+const OptionsContext = React.createContext<OptionsContextValue>({} as OptionsContextValue);
+const OptionsProvider = (props: { children: React.ReactNode }) => {
+    const options: OptionsContextValue = { pollType: "date", options: [] };
+    return (
+        <OptionsContext.Provider value={options}>
+            {props.children}
+        </OptionsContext.Provider>
+    );
+};
+"#,
+        true,
+    );
+    let provider_calls: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
+        .collect();
+    assert!(
+        !provider_calls.is_empty(),
+        "expected Provider Calls ref; refs: {:?}",
+        r.refs
+            .iter()
+            .map(|r| (r.kind, r.target_name.clone()))
+            .collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn coverage_destructure_default_string_does_not_emit_typeref() {
+    // ONLY the destructure-with-default-value pattern, no interface with
+    // literal unions.
+    let src = r#"
+const { variant = 'default', size = 'sm' } = Astro.props;
+"#;
+    let r = extract::extract(src, false);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    eprintln!("destructure-default type_refs: {type_refs:?}");
+    for literal in &["default", "sm"] {
+        assert!(
+            !type_refs.contains(literal),
+            "destructure default value `'{literal}'` must not emit TypeRef"
+        );
+    }
+}
+
+#[test]
+fn coverage_interface_union_only_does_not_emit_typeref() {
+    // ONLY the interface literal union, no destructuring.
+    let src = r#"
+interface Props {
+    variant?: 'default' | 'success';
+}
+"#;
+    let r = extract::extract(src, false);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    eprintln!("interface-union type_refs: {type_refs:?}");
+    for literal in &["default", "success"] {
+        assert!(
+            !type_refs.contains(literal),
+            "union literal `'{literal}'` must not emit TypeRef"
+        );
+    }
+}
+
+#[test]
+fn coverage_union_with_five_literals() {
+    let src = "interface Props {\n  variant?: 'default' | 'success' | 'warning' | 'danger' | 'outline';\n}\n";
+    let r = extract::extract(src, false);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    eprintln!("5-literal type_refs: {type_refs:?}");
+    for literal in &["default", "success", "warning", "danger", "outline"] {
+        assert!(
+            !type_refs.contains(literal),
+            "`{literal}` must not emit TypeRef"
+        );
+    }
+}
+
+#[test]
+fn coverage_literal_type_union_does_not_emit_typeref() {
+    // Astro frontmatter pattern — a Props interface with string-literal
+    // type unions. Each literal is a `literal_type` node wrapping a
+    // `string` — must NOT emit TypeRef for the string content.
+    let src = r#"
+interface Props {
+    variant?: 'default' | 'success' | 'warning' | 'danger' | 'outline';
+    size?: 'sm' | 'md';
+}
+const { variant = 'default', size = 'sm' } = Astro.props;
+"#;
+    let r = extract::extract(src, false);
+    let type_refs: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::TypeRef)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    for literal in &["default", "success", "warning", "danger", "outline", "sm", "md"] {
+        assert!(
+            !type_refs.contains(literal),
+            "string-literal `'{literal}'` must not emit a TypeRef; type_refs: {type_refs:?}"
+        );
+    }
+}
+
+#[test]
+fn coverage_arrow_function_const_provider_emits_chain() {
+    // The real-world pattern from ts-rallly's poll-context.tsx:
+    //   export const PollContextProvider = (props) => {
+    //     return <PollContext.Provider value={v}>{children}</PollContext.Provider>;
+    //   };
+    let r = extract::extract(
+        "import React from 'react';\n\
+         const PollContext = React.createContext(null);\n\
+         export const PollContextProvider = (props) => {\n\
+             return <PollContext.Provider value={1}>{props.children}</PollContext.Provider>;\n\
+         };",
+        true,
+    );
+    let provider_ref = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
+        .unwrap_or_else(|| panic!(
+            "arrow-const Provider ref must be emitted; refs: {:?}",
+            r.refs.iter().map(|r| (r.kind, r.target_name.clone())).collect::<Vec<_>>()
+        ));
+    let chain = provider_ref.chain.as_ref().expect("chain must be set");
+    assert_eq!(chain.segments[0].name, "PollContext");
+    assert_eq!(chain.segments[1].name, "Provider");
+}
+
+#[test]
+fn coverage_create_context_destructured_then_provider() {
+    // Named-import createContext + <Foo.Provider> — common React pattern.
+    let r = extract::extract(
+        "import { createContext } from 'react';\n\
+         const MyCtx = createContext(null);\n\
+         function W() { return <MyCtx.Provider value={1}>x</MyCtx.Provider>; }",
+        true,
+    );
+    // Note: we ASSERT the ref is emitted. Resolution (to Context.Provider)
+    // is the resolver's job and covered by resolve tests.
+    let provider_ref = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
+        .expect("Provider Calls ref must be emitted");
+    let chain = provider_ref.chain.as_ref().expect("chain must be set");
+    assert_eq!(chain.segments[0].name, "MyCtx");
+    assert_eq!(chain.segments[1].name, "Provider");
+}
+
+#[test]
+fn coverage_jsx_context_provider_emits_chain() {
+    // React Context pattern — essential for any non-trivial React codebase.
+    // `<PollContext.Provider value={x}>` must emit a Calls ref for
+    // `Provider` carrying the chain `[PollContext, Provider]` so the chain
+    // walker can resolve it through `PollContext`'s inferred
+    // `React.Context<T>` type to the Provider member on that interface.
+    let r = extract::extract(
+        "function Wrap() { return <PollContext.Provider value={1}>x</PollContext.Provider>; }",
+        true,
+    );
+    let provider_ref = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "Provider")
+        .unwrap_or_else(|| panic!(
+            "expected Calls ref with target_name=Provider for Context.Provider JSX; got: {:?}",
+            r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+        ));
+    let chain = provider_ref.chain.as_ref().expect("Provider ref must carry a chain");
+    let seg_names: Vec<&str> = chain.segments.iter().map(|s| s.name.as_str()).collect();
+    assert_eq!(
+        seg_names,
+        vec!["PollContext", "Provider"],
+        "chain must be [PollContext, Provider] for <PollContext.Provider>"
+    );
+}
+
+#[test]
 fn coverage_extends_clause() {
     let r = extract::extract("class Dog extends Animal {}", false);
     assert!(
@@ -1509,5 +1787,61 @@ fn coverage_require_call_dynamic() {
         r.refs.iter().any(|r| r.kind == EdgeKind::Calls || r.kind == EdgeKind::Imports),
         "require() call should produce at least one Calls or Imports ref; got: {:?}",
         r.refs.iter().map(|r| (r.kind, &r.target_name)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn dts_class_method_emits_return_type_ref() {
+    // Dayjs-shaped .d.ts: ambient class inside a namespace, methods have
+    // return types but no bodies. This is the exact pattern dayjs,
+    // moment, chai, etc. use — and the reason why `dayjs_synthetics.rs`
+    // exists today. The extractor must emit a TypeRef from every method
+    // to its return type so `engine::TypeInfo::return_type` is populated
+    // and the chain walker can follow `dayjs().clone().format()`.
+    let src = r#"
+declare namespace dayjs {
+  class Dayjs {
+    constructor(config?: string)
+    clone(): Dayjs
+    isValid(): boolean
+    year(): number
+    year(value: number): Dayjs
+    format(template?: string): string
+  }
+}
+"#;
+    let r = extract::extract(src, false);
+
+    // Symbol sanity: the method symbols must exist.
+    let clone_idx = r
+        .symbols
+        .iter()
+        .position(|s| s.qualified_name.ends_with("Dayjs.clone") && s.kind == SymbolKind::Method)
+        .expect("Dayjs.clone method symbol missing");
+    let year_overloads: Vec<_> = r
+        .symbols
+        .iter()
+        .enumerate()
+        .filter(|(_, s)| s.qualified_name.ends_with("Dayjs.year") && s.kind == SymbolKind::Method)
+        .collect();
+    assert!(
+        !year_overloads.is_empty(),
+        "Dayjs.year overloads missing; symbols: {:?}",
+        r.symbols.iter().map(|s| &s.qualified_name).collect::<Vec<_>>()
+    );
+
+    // Return-type TypeRef: clone(): Dayjs must produce TypeRef target_name=Dayjs.
+    let clone_return_refs: Vec<_> = r
+        .refs
+        .iter()
+        .filter(|x| x.source_symbol_index == clone_idx && x.kind == EdgeKind::TypeRef)
+        .collect();
+    assert!(
+        clone_return_refs.iter().any(|x| x.target_name == "Dayjs"),
+        "clone(): Dayjs should emit TypeRef to Dayjs; got refs: {:?}",
+        clone_return_refs
+            .iter()
+            .map(|x| (&x.target_name, x.kind))
+            .collect::<Vec<_>>()
     );
 }

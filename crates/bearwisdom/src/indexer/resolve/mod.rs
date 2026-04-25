@@ -23,8 +23,181 @@ use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile};
 use anyhow::{Context, Result};
 use engine::{build_scope_chain, ChainMiss, ImportEntry, RefContext, ResolutionEngine, SymbolIndex};
+use rayon::prelude::*;
 use std::collections::HashMap;
 use tracing::{debug, info, warn};
+
+// Per-file output buffer. Each rayon worker fills its own; the main thread
+// merges + bulk-writes after the parallel section. Avoids sharing the
+// rusqlite Transaction across workers (it isn't `Sync`).
+#[derive(Default)]
+struct FileWriteBuf {
+    /// (source_id, target_id, kind, source_line, confidence, strategy)
+    edges: Vec<(i64, i64, &'static str, u32, f64, &'static str)>,
+    /// (source_id, target_name, kind, source_line, namespace, package_id)
+    externals: Vec<(i64, String, &'static str, u32, String, Option<i64>)>,
+    /// (source_id, target_name, kind, source_line, module, package_id, from_snippet)
+    unresolved: Vec<(i64, String, &'static str, u32, Option<String>, Option<i64>, bool)>,
+}
+
+impl FileWriteBuf {
+    fn merge(&mut self, mut other: Self) {
+        self.edges.append(&mut other.edges);
+        self.externals.append(&mut other.externals);
+        self.unresolved.append(&mut other.unresolved);
+    }
+}
+
+/// Counters accumulated per file; reduced into the global ResolutionStats
+/// after the parallel section. Excludes `chain_misses`, which are pushed
+/// directly into the SymbolIndex's Mutex-protected accumulator by the
+/// chain walker (already thread-safe).
+#[derive(Default, Clone, Copy)]
+struct FileStats {
+    resolved: u64,
+    engine_resolved: u64,
+    unresolved: u64,
+    external: u64,
+}
+
+impl FileStats {
+    fn merge(&mut self, other: Self) {
+        self.resolved += other.resolved;
+        self.engine_resolved += other.engine_resolved;
+        self.unresolved += other.unresolved;
+        self.external += other.external;
+    }
+}
+
+/// Bulk-flush a `FileWriteBuf` into the resolve transaction. Uses
+/// multi-row VALUES inserts in fixed-size chunks so prepare_cached can
+/// hit on every full chunk. Mirrors the batched write path in
+/// `indexer/write.rs`.
+fn flush_resolve_buf(
+    tx: &rusqlite::Transaction<'_>,
+    buf: &FileWriteBuf,
+) -> Result<()> {
+    use rusqlite::types::Value;
+
+    // SQLITE_MAX_VARIABLE_NUMBER defaults to 32766; chunk sizes here
+    // keep total vars well under that.
+    const EDGE_CHUNK: usize = 256;
+    const EXTERNAL_CHUNK: usize = 256;
+    const UNRESOLVED_CHUNK: usize = 256;
+
+    fn placeholders(rows: usize, cols: usize) -> String {
+        let mut s = String::with_capacity(rows * (cols * 2 + 4));
+        for i in 0..rows {
+            if i > 0 { s.push(','); }
+            s.push('(');
+            for j in 0..cols {
+                if j > 0 { s.push(','); }
+                s.push('?');
+            }
+            s.push(')');
+        }
+        s
+    }
+
+    // Edges: (source_id, target_id, kind, source_line, confidence, strategy)
+    if !buf.edges.is_empty() {
+        let mut start = 0;
+        while start < buf.edges.len() {
+            let end = (start + EDGE_CHUNK).min(buf.edges.len());
+            let rows = end - start;
+            let sql = format!(
+                "INSERT OR IGNORE INTO edges \
+                 (source_id, target_id, kind, source_line, confidence, strategy) \
+                 VALUES {}",
+                placeholders(rows, 6),
+            );
+            let mut params: Vec<Value> = Vec::with_capacity(rows * 6);
+            for (sid, tid, kind, line, conf, strat) in &buf.edges[start..end] {
+                params.push(Value::Integer(*sid));
+                params.push(Value::Integer(*tid));
+                params.push(Value::Text((*kind).to_string()));
+                params.push(Value::Integer(*line as i64));
+                params.push(Value::Real(*conf));
+                params.push(Value::Text((*strat).to_string()));
+            }
+            tx.prepare_cached(&sql)
+                .context("Failed to prepare batched edges insert")?
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .context("Failed to execute batched edges insert")?;
+            start = end;
+        }
+    }
+
+    // External refs: (source_id, target_name, kind, source_line, namespace, package_id)
+    if !buf.externals.is_empty() {
+        let mut start = 0;
+        while start < buf.externals.len() {
+            let end = (start + EXTERNAL_CHUNK).min(buf.externals.len());
+            let rows = end - start;
+            let sql = format!(
+                "INSERT INTO external_refs \
+                 (source_id, target_name, kind, source_line, namespace, package_id) \
+                 VALUES {}",
+                placeholders(rows, 6),
+            );
+            let mut params: Vec<Value> = Vec::with_capacity(rows * 6);
+            for (sid, name, kind, line, ns, pkg) in &buf.externals[start..end] {
+                params.push(Value::Integer(*sid));
+                params.push(Value::Text(name.clone()));
+                params.push(Value::Text((*kind).to_string()));
+                params.push(Value::Integer(*line as i64));
+                params.push(Value::Text(ns.clone()));
+                params.push(match pkg {
+                    Some(v) => Value::Integer(*v),
+                    None => Value::Null,
+                });
+            }
+            tx.prepare_cached(&sql)
+                .context("Failed to prepare batched external_refs insert")?
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .context("Failed to execute batched external_refs insert")?;
+            start = end;
+        }
+    }
+
+    // Unresolved refs: (source_id, target_name, kind, source_line, module, package_id, from_snippet)
+    if !buf.unresolved.is_empty() {
+        let mut start = 0;
+        while start < buf.unresolved.len() {
+            let end = (start + UNRESOLVED_CHUNK).min(buf.unresolved.len());
+            let rows = end - start;
+            let sql = format!(
+                "INSERT INTO unresolved_refs \
+                 (source_id, target_name, kind, source_line, module, package_id, from_snippet) \
+                 VALUES {}",
+                placeholders(rows, 7),
+            );
+            let mut params: Vec<Value> = Vec::with_capacity(rows * 7);
+            for (sid, name, kind, line, module, pkg, from_snippet) in &buf.unresolved[start..end] {
+                params.push(Value::Integer(*sid));
+                params.push(Value::Text(name.clone()));
+                params.push(Value::Text((*kind).to_string()));
+                params.push(Value::Integer(*line as i64));
+                params.push(match module {
+                    Some(s) => Value::Text(s.clone()),
+                    None => Value::Null,
+                });
+                params.push(match pkg {
+                    Some(v) => Value::Integer(*v),
+                    None => Value::Null,
+                });
+                params.push(Value::Integer(if *from_snippet { 1 } else { 0 }));
+            }
+            tx.prepare_cached(&sql)
+                .context("Failed to prepare batched unresolved_refs insert")?
+                .execute(rusqlite::params_from_iter(params.iter()))
+                .context("Failed to execute batched unresolved_refs insert")?;
+            start = end;
+        }
+    }
+
+    Ok(())
+}
 
 /// Stats returned by `resolve_and_write` / `resolve_iteration`.
 #[derive(Debug, Clone, Default)]
@@ -118,13 +291,29 @@ fn resolve_iteration_inner(
     augment_from_db: bool,
 ) -> Result<ResolutionStats> {
     let engine = ResolutionEngine::new();
+    // Ext-origin files without an `ext:` path prefix — specifically,
+    // script-tag-parsed vendored JS like `wwwroot/lib/jquery.min.js` — live
+    // under regular project-relative paths in the DB but carry
+    // `origin='external'`. The chain walker's "is this root internal?"
+    // filter needs to see them as external so `$`-rooted jQuery chains in
+    // user JS classify correctly instead of matching against those vendor
+    // symbols as if they were project code.
+    let external_paths = read_external_file_paths(db.conn());
     let mut index = SymbolIndex::build_with_context(parsed, symbol_id_map, project_ctx);
+    if !external_paths.is_empty() {
+        index.set_external_paths(external_paths);
+    }
 
     // For incremental: load symbols from unchanged files so the engine
-    // resolver can find cross-file targets (CR #9).
-    if augment_from_db {
-        index.augment_from_db(db.conn());
-    }
+    // resolver can find cross-file targets (CR #9). The augment SELECT
+    // also collects (path, qname) → id pairs so the heuristic gets
+    // project-wide coverage from the same scan — eliminates the separate
+    // `load_symbol_id_map` full DB scan that incremental.rs used to do.
+    let augmented_id_map: Option<HashMap<(String, String), i64>> = if augment_from_db {
+        Some(index.augment_from_db_collecting_ids(db.conn()))
+    } else {
+        None
+    };
 
     let conn = db.conn();
     let tx = conn
@@ -133,9 +322,22 @@ fn resolve_iteration_inner(
 
     let mut stats = ResolutionStats::default();
 
-    // Pre-build heuristic lookup structures (needed for fallback).
-    let name_to_ids = heuristic::build_name_index(symbol_id_map, parsed);
-    let qname_to_id = heuristic::build_qname_index(symbol_id_map);
+    // Build heuristic lookup structures from the merged symbol map.
+    // For full reindex, `symbol_id_map` already covers everything.
+    // For incremental, we merge in the `augmented_id_map` so heuristic
+    // sees both changed-file IDs (from caller) and unchanged-file IDs
+    // (from the augment SELECT) without paying for two full scans.
+    let merged_id_map: HashMap<(String, String), i64>;
+    let merged_id_map_ref: &HashMap<(String, String), i64> = match augmented_id_map {
+        Some(mut m) => {
+            m.extend(symbol_id_map.iter().map(|(k, v)| (k.clone(), *v)));
+            merged_id_map = m;
+            &merged_id_map
+        }
+        None => symbol_id_map,
+    };
+    let name_to_ids = heuristic::build_name_index(merged_id_map_ref, parsed);
+    let qname_to_id = heuristic::build_qname_index(merged_id_map_ref);
     let module_to_files = heuristic::build_module_to_files(parsed);
     let import_map = heuristic::build_import_map(parsed);
     let file_namespace_map = heuristic::build_file_namespace_map(parsed);
@@ -151,19 +353,60 @@ fn resolve_iteration_inner(
     let parsed_by_path: std::collections::HashMap<&str, &ParsedFile> =
         parsed.iter().map(|p| (p.path.as_str(), p)).collect();
 
-    for pf in parsed {
-        // Externals are indexed for lookup only — we don't chase their internal
-        // refs, otherwise a handful of third-party packages explode the edge
-        // table with intra-library calls the user doesn't care about.
-        if pf.path.starts_with("ext:") {
-            continue;
+    // Pre-fetch companion-file imports from DB for files whose companion
+    // isn't in this run's parse slice (incremental: companion unchanged,
+    // not re-parsed). Keeps the inner per-file loop free of `&Connection`
+    // so it can run on rayon workers.
+    let companion_db_imports: HashMap<String, Vec<ImportEntry>> = {
+        let mut needed: std::collections::HashSet<String> = std::collections::HashSet::new();
+        for pf in parsed {
+            if pf.path.starts_with("ext:") { continue }
+            if let Some(host_resolver) = engine.resolver_for(&pf.language) {
+                if let Some(companion_path) = host_resolver.companion_file_for_imports(&pf.path) {
+                    if !parsed_by_path.contains_key(companion_path.as_str()) {
+                        needed.insert(companion_path);
+                    }
+                }
+            }
         }
+        let mut map: HashMap<String, Vec<ImportEntry>> = HashMap::with_capacity(needed.len());
+        for path in needed {
+            let imports = read_file_imports_from_db(conn, &path);
+            if !imports.is_empty() {
+                map.insert(path, imports);
+            }
+        }
+        map
+    };
 
+    // Per-file resolve runs in parallel via rayon — each worker owns its
+    // own `FileWriteBuf` + `FileStats`; results are reduced into the
+    // global combined values. The shared inputs (`engine`, `index`,
+    // `project_ctx`, all the lookup maps, `parsed_by_path`) are
+    // immutable after build so they can be passed by `&` across threads.
+    // `SymbolIndex.local_type_cache` is thread-local; chain misses go
+    // through a Mutex (bounded contention). The closure captures only
+    // `Send + Sync` state.
+    //
+    // External (`ext:`) files are filtered out — they're indexed for
+    // lookup only, never as resolution sources.
+    let (combined_buf, local_stats_total) = parsed
+        .par_iter()
+        .filter(|pf| !pf.path.starts_with("ext:"))
+        .map(|pf| -> (FileWriteBuf, FileStats) {
+            let mut buf = FileWriteBuf::default();
+            let mut local_stats = FileStats::default();
+
+        // Look up source IDs against the MERGED map so incremental
+        // resolves can find symbol IDs for files that weren't in this
+        // run's `parsed` slice (e.g. blast-radius files re-parsed for
+        // resolve but whose IDs come from the augment SELECT, not from
+        // the caller's changed-only map).
         let file_symbol_ids: Vec<Option<i64>> = pf
             .symbols
             .iter()
             .map(|sym| {
-                symbol_id_map
+                merged_id_map_ref
                     .get(&(pf.path.clone(), sym.qualified_name.clone()))
                     .copied()
             })
@@ -183,13 +426,13 @@ fn resolve_iteration_inner(
                         let comp_ctx = comp_resolver.build_file_context(comp_pf, project_ctx);
                         ctx.imports.extend(comp_ctx.imports);
                     }
-                } else {
+                } else if let Some(db_imports) = companion_db_imports.get(&companion_path) {
                     // Companion file isn't in this run's parse slice
-                    // (incremental re-index, companion unchanged).
-                    // Read its persisted import rows directly so the
-                    // template still inherits them.
-                    let db_imports = read_file_imports_from_db(conn, &companion_path);
-                    ctx.imports.extend(db_imports);
+                    // (incremental re-index, companion unchanged). The
+                    // imports were prefetched into `companion_db_imports`
+                    // before the parallel section so the per-file body
+                    // doesn't need `conn`.
+                    ctx.imports.extend(db_imports.iter().cloned());
                 }
             }
             ctx
@@ -266,7 +509,7 @@ fn resolve_iteration_inner(
             // missing-symbol references.  They cannot resolve to a single target and
             // should not appear in the unresolved_refs table.
             if r.kind == EdgeKind::Imports && r.target_name == "*" {
-                stats.external += 1; // count as "handled" so they don't inflate unresolved rate
+                local_stats.external += 1; // count as "handled" so they don't inflate unresolved rate
                 continue;
             }
 
@@ -330,30 +573,17 @@ fn resolve_iteration_inner(
                         }
                     }
 
-                    let result = tx
-                        .prepare_cached(
-                            "INSERT OR IGNORE INTO edges
-                               (source_id, target_id, kind, source_line, confidence, strategy)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                        )
-                        .and_then(|mut stmt| {
-                            stmt.execute(rusqlite::params![
-                                source_id,
-                                resolution.target_symbol_id,
-                                r.kind.as_str(),
-                                r.line,
-                                resolution.confidence,
-                                resolution.strategy,
-                            ])
-                        });
-                    match result {
-                        Ok(_) => {
-                            stats.resolved += 1;
-                            stats.engine_resolved += 1;
-                            resolved_by_engine = true;
-                        }
-                        Err(e) => debug!("Engine edge insert failed: {e}"),
-                    }
+                    buf.edges.push((
+                        source_id,
+                        resolution.target_symbol_id,
+                        r.kind.as_str(),
+                        r.line,
+                        resolution.confidence,
+                        resolution.strategy,
+                    ));
+                    local_stats.resolved += 1;
+                    local_stats.engine_resolved += 1;
+                    resolved_by_engine = true;
                 }
             }
 
@@ -378,23 +608,15 @@ fn resolve_iteration_inner(
                         .map_or(false, |params| params.iter().any(|p| p == &r.target_name))
                 });
                 if is_generic_param {
-                    tx.prepare_cached(
-                        "INSERT INTO external_refs
-                           (source_id, target_name, kind, source_line, namespace, package_id)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.execute(rusqlite::params![
-                            source_id,
-                            r.target_name,
-                            r.kind.as_str(),
-                            r.line,
-                            "generic_param",
-                            pf.package_id,
-                        ])
-                    })
-                    .ok();
-                    stats.external += 1;
+                    buf.externals.push((
+                        source_id,
+                        r.target_name.clone(),
+                        r.kind.as_str(),
+                        r.line,
+                        "generic_param".to_string(),
+                        pf.package_id,
+                    ));
+                    local_stats.external += 1;
                     continue;
                 }
             }
@@ -450,12 +672,25 @@ fn resolve_iteration_inner(
             // an entry in this file's import list whose source module has zero
             // local symbols in the project index, classify as external.
             //
-            // Catches transitive-dep imports that language-specific manifest
-            // checks miss — e.g. Java `import tools.jackson.databind.ObjectMapper`
-            // (Jackson 3.x, pulled in via spring-boot-starter, not declared in
-            // pom.xml) or Python `from sqlalchemy import Engine` (transitive of
-            // sqlmodel). Language-agnostic: relies only on the project's own
-            // symbol index, not on manifest lockfiles or hardcoded root lists.
+            // Catches three practical cases the language-specific manifest
+            // checks miss:
+            //   1. Transitive bare-package deps — e.g. Java `import
+            //      tools.jackson.databind.ObjectMapper` (Jackson 3.x, pulled in
+            //      via spring-boot-starter, not declared in pom.xml) or Python
+            //      `from sqlalchemy import Engine` (transitive of sqlmodel).
+            //   2. Bare-package deep imports like `rxjs/operators`,
+            //      `lodash/fp`, `date-fns/utcToZonedTime` — the slash-bearing
+            //      specifier isn't a relative path, it's a sub-module of an
+            //      indexed package that the manifest may not enumerate.
+            //   3. Relative imports to files that don't exist in the index —
+            //      e.g. NSwag-generated `'../web-api-client'` that's produced
+            //      at build time and absent at scan time.
+            //
+            // Language-agnostic: relies only on the project's own symbol
+            // index via `is_module_in_project` as the sole "is this actually
+            // local?" authority. Imports whose target the module resolvers
+            // couldn't reach, by any path, are called external — honest to
+            // "we don't have its definition" without inventing a fake edge.
             let inferred_ns = inferred_ns.or_else(|| {
                 if r.module.is_some() {
                     return None;
@@ -469,9 +704,6 @@ fn resolve_iteration_inner(
                     let Some(module_path) = module_path_opt.as_deref() else {
                         continue;
                     };
-                    if is_local_module_specifier(module_path) {
-                        continue;
-                    }
                     if is_module_in_project(module_path, &module_to_files, &index) {
                         continue;
                     }
@@ -514,30 +746,15 @@ fn resolve_iteration_inner(
             });
 
             if let Some(ns) = &inferred_ns {
-                // Known external framework ref → external_refs table.
-                if let Err(e) = tx
-                    .prepare_cached(
-                        "INSERT INTO external_refs
-                           (source_id, target_name, kind, source_line, namespace, package_id)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.execute(rusqlite::params![
-                            source_id,
-                            r.target_name,
-                            r.kind.as_str(),
-                            r.line,
-                            ns,
-                            pf.package_id,
-                        ])
-                    })
-                {
-                    warn!(
-                        "external_refs INSERT failed for '{}' (source_id={source_id}): {e}",
-                        r.target_name
-                    );
-                }
-                stats.external += 1;
+                buf.externals.push((
+                    source_id,
+                    r.target_name.clone(),
+                    r.kind.as_str(),
+                    r.line,
+                    ns.clone(),
+                    pf.package_id,
+                ));
+                local_stats.external += 1;
                 continue;
             }
 
@@ -567,26 +784,15 @@ fn resolve_iteration_inner(
 
             match resolution {
                 Some((target_id, confidence, strategy)) => {
-                    let result = tx
-                        .prepare_cached(
-                            "INSERT OR IGNORE INTO edges
-                               (source_id, target_id, kind, source_line, confidence, strategy)
-                             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                        )
-                        .and_then(|mut stmt| {
-                            stmt.execute(rusqlite::params![
-                                source_id,
-                                target_id,
-                                r.kind.as_str(),
-                                r.line,
-                                confidence,
-                                strategy,
-                            ])
-                        });
-                    match result {
-                        Ok(_) => stats.resolved += 1,
-                        Err(e) => debug!("Heuristic edge insert failed: {e}"),
-                    }
+                    buf.edges.push((
+                        source_id,
+                        target_id,
+                        r.kind.as_str(),
+                        r.line,
+                        confidence,
+                        strategy,
+                    ));
+                    local_stats.resolved += 1;
                 }
                 None => {
                     // Truly unresolved — no external namespace identified,
@@ -600,7 +806,7 @@ fn resolve_iteration_inner(
                     if pf.path.starts_with("ext:") {
                         continue;
                     }
-                    let module_value = r.module.as_deref();
+                    let module_value = r.module.as_deref().map(|s| s.to_string());
                     // E3: propagate snippet flag from source symbol for
                     // aggregate-stats exclusion.
                     let from_snippet = pf
@@ -608,32 +814,45 @@ fn resolve_iteration_inner(
                         .get(r.source_symbol_index)
                         .copied()
                         .unwrap_or(false);
-                    tx.prepare_cached(
-                        "INSERT INTO unresolved_refs
-                           (source_id, target_name, kind, source_line, module, package_id, from_snippet)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-                    )
-                    .and_then(|mut stmt| {
-                        stmt.execute(rusqlite::params![
-                            source_id,
-                            r.target_name,
-                            r.kind.as_str(),
-                            r.line,
-                            module_value,
-                            pf.package_id,
-                            from_snippet as i32,
-                        ])
-                    })
-                    .ok();
-                    stats.unresolved += 1;
+                    buf.unresolved.push((
+                        source_id,
+                        r.target_name.clone(),
+                        r.kind.as_str(),
+                        r.line,
+                        module_value,
+                        pf.package_id,
+                        from_snippet,
+                    ));
+                    local_stats.unresolved += 1;
                 }
             }
         }
 
-        // R5: wipe the local-type cache so bindings from this file don't
-        // leak into the next.
-        index.clear_local_cache();
-    }
+            // R5: wipe the local-type cache so bindings from this file don't
+            // leak into the next file processed on the same rayon worker.
+            // (TLS cache survives across rayon tasks on the same worker
+            // thread; explicit clear keeps it tight.)
+            index.clear_local_cache();
+
+            (buf, local_stats)
+        })
+        .reduce(
+            || (FileWriteBuf::default(), FileStats::default()),
+            |(mut buf_a, mut stats_a), (buf_b, stats_b)| {
+                buf_a.merge(buf_b);
+                stats_a.merge(stats_b);
+                (buf_a, stats_a)
+            },
+        );
+
+    // Bulk-flush the per-file buffers in one transaction. Multi-row
+    // VALUES inserts cut driver round-trips ~Nx vs the previous per-ref
+    // path. Identical chunk sizes hit the rusqlite stmt cache.
+    flush_resolve_buf(&tx, &combined_buf)?;
+    stats.resolved += local_stats_total.resolved;
+    stats.engine_resolved += local_stats_total.engine_resolved;
+    stats.unresolved += local_stats_total.unresolved;
+    stats.external += local_stats_total.external;
 
     tx.commit()
         .context("Failed to commit resolution transaction")?;
@@ -699,36 +918,6 @@ pub fn finalize_resolution(db: &mut Database) -> Result<()> {
     Ok(())
 }
 
-/// A module specifier that points to project-local code rather than an
-/// external package. Covers relative paths (`./foo`, `../foo`), rooted paths
-/// (`/foo`), common monorepo aliases (`@/foo`, `~/foo`), Windows absolute
-/// paths (`C:/foo`), and the most common tsconfig-style path aliases —
-/// slash-containing specifiers that are not scoped npm packages.
-fn is_local_module_specifier(module_path: &str) -> bool {
-    if module_path.is_empty() {
-        return true;
-    }
-    if module_path.starts_with('.')
-        || module_path.starts_with('/')
-        || module_path.starts_with("@/")
-        || module_path.starts_with("~/")
-    {
-        return true;
-    }
-    // Windows absolute path: single letter drive + ':'
-    let bytes = module_path.as_bytes();
-    if bytes.len() >= 2 && bytes[1] == b':' {
-        return true;
-    }
-    // Slash-containing specifier that is NOT a scoped npm package
-    // (`@scope/pkg`) — likely a tsconfig `paths` alias or similar.
-    // Scoped npm is still allowed as external (`@tanstack/react-query`).
-    if module_path.contains('/') && !module_path.starts_with('@') {
-        return true;
-    }
-    false
-}
-
 /// Does the project's symbol index cover this import module?
 ///
 /// Returns true if the module appears as a local namespace (any symbol has
@@ -736,6 +925,12 @@ fn is_local_module_specifier(module_path: &str) -> bool {
 /// A module that walks through multiple segments (`a.b.c`) is local when any
 /// of those segments is covered — this prevents a false "external" classification
 /// for package-qualified imports like Python `from app.core.db import engine`.
+///
+/// Relative specifiers (`./foo`, `../bar/Baz.astro`) are probed by the
+/// trailing basename stem — `module_to_files` is keyed by stem, not by
+/// fully-qualified path. Without this, every relative-path import of an
+/// indexed file would appear external just because the map can't be queried
+/// with the raw `../` form.
 fn is_module_in_project(
     module_path: &str,
     module_to_files: &rustc_hash::FxHashMap<String, Vec<String>>,
@@ -748,7 +943,70 @@ fn is_module_in_project(
     if lower != module_path && module_to_files.contains_key(&lower) {
         return true;
     }
-    index.has_in_namespace(module_path)
+    if index.has_in_namespace(module_path) {
+        return true;
+    }
+    // Relative/slash-bearing path: probe by trailing basename.
+    // `../../components/Aside.astro` → basename `Aside.astro` → stem `Aside`.
+    // `./auth.service`               → basename `auth.service` (extension-less;
+    //                                   `build_module_to_files` stores `auth.service`).
+    // Try the full basename as-is (for extension-less module paths, where the
+    // file `auth.service.ts` is keyed as `auth.service` in module_to_files)
+    // AND the once-stripped stem (for paths carrying an explicit extension
+    // like `Aside.astro`). Whichever matches first wins.
+    if let Some(basename) = module_path.rsplit(['/', '\\']).next() {
+        if basename != module_path && !basename.is_empty() {
+            if module_to_files.contains_key(basename) {
+                return true;
+            }
+            let basename_lower = basename.to_lowercase();
+            if basename_lower != basename
+                && module_to_files.contains_key(&basename_lower)
+            {
+                return true;
+            }
+            if let Some((stem, _)) = basename.rsplit_once('.') {
+                if !stem.is_empty() {
+                    if module_to_files.contains_key(stem) {
+                        return true;
+                    }
+                    let stem_lower = stem.to_lowercase();
+                    if stem_lower != stem
+                        && module_to_files.contains_key(&stem_lower)
+                    {
+                        return true;
+                    }
+                }
+            }
+        }
+    }
+    false
+}
+
+/// Pull the set of `origin='external'` file paths from the `files` table.
+///
+/// Used to seed the SymbolIndex so chain walkers can tell
+/// script-tag-parsed vendor JS (`wwwroot/lib/jquery.min.js`, written with
+/// `origin='external'` but keeping its regular project-relative path)
+/// apart from user source. Without this signal, the internal filter in
+/// `infer_external_from_chain` — which only checks for an `ext:` path
+/// prefix — would count a vendored `$` / `jQuery` declaration as project
+/// code and suppress external classification for every jQuery chain in
+/// the user's own JS.
+///
+/// Returns an empty set on any SQL error; a missing external_paths set
+/// degrades gracefully to the old `ext:`-prefix-only behaviour.
+fn read_external_file_paths(
+    conn: &rusqlite::Connection,
+) -> std::collections::HashSet<String> {
+    let sql = "SELECT path FROM files WHERE origin = 'external'";
+    let Ok(mut stmt) = conn.prepare_cached(sql) else {
+        return std::collections::HashSet::new();
+    };
+    let Ok(rows) = stmt.query_map([], |r| r.get::<_, String>(0)) else {
+        return std::collections::HashSet::new();
+    };
+    rows.filter_map(|r| r.ok()).collect()
 }
 
 /// Pull a file's persisted `imports` rows directly from the DB and

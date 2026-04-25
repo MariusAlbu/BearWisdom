@@ -341,7 +341,7 @@ pub fn full_index(
 
             let origin = if is_vendored_c { "external" } else { "internal" };
             let file_id =
-                write::write_one_parsed_file(&tx, &pf, origin, now, &mut symbol_id_map)
+                write::write_one_parsed_file(&tx, &pf, origin, now, &mut symbol_id_map, /*is_full*/ true)
                     .with_context(|| format!("streaming write failed for {}", pf.path))?;
             file_id_map.insert(pf.path.clone(), file_id);
 
@@ -492,7 +492,7 @@ pub fn full_index(
     }
     mem_probe::probe("06_demand_built");
     let ExternalParsingResult {
-        parsed: external_parsed,
+        parsed: mut external_parsed,
         symbol_index,
         demand_driven_roots,
         demand_driven_ecosystems,
@@ -513,6 +513,44 @@ pub fn full_index(
             ext_symbol_map.len()
         );
         symbol_id_map.extend(ext_symbol_map);
+        for pf in external_parsed.iter_mut() {
+            pf.slim_for_resolve();
+        }
+    }
+
+    // --- Step 4d.1: Demand-driven script-tag dep parse ---
+    //
+    // Host-language extractors (HTML, Razor, cshtml, Vue, Svelte, Astro)
+    // emit `Imports` refs for every `<script src="…">` tag. This stage
+    // resolves those URLs against the discovered webroot (or the host
+    // file's directory for relative paths) and parses the referenced
+    // vendor files as `origin='external'`.
+    //
+    // This is the demand-driven counterpart to the per-ecosystem
+    // external locator above: instead of eagerly crawling every
+    // `wwwroot/lib/*` directory (which the walker intentionally excludes
+    // to avoid `.min.js` noise), we only pull in files the project
+    // actually references. Replaces per-library synthetics like
+    // `ecosystem/jquery_synthetics.rs` with generic reference following.
+    let mut script_tag_parsed = super::script_tag_deps::parse_script_tag_deps(
+        project_root, &parsed, registry,
+    );
+    if !script_tag_parsed.is_empty() {
+        info!(
+            "Parsed {} script-tag-referenced vendor files",
+            script_tag_parsed.len()
+        );
+        let (_st_file_map, st_symbol_map) =
+            write::write_parsed_files_with_origin(db, &script_tag_parsed, "external")
+                .context("Failed to write script-tag external index")?;
+        info!(
+            "Wrote {} script-tag vendor symbols",
+            st_symbol_map.len()
+        );
+        symbol_id_map.extend(st_symbol_map);
+        for pf in script_tag_parsed.iter_mut() {
+            pf.slim_for_resolve();
+        }
     }
 
     // Vendored C/C++ files are already persisted with origin="external"
@@ -521,10 +559,14 @@ pub fn full_index(
     // Combined slice the resolver sees. External files are skipped by the
     // ref-iteration loop in resolve_and_write but their symbols are still
     // indexed as lookup targets.
-    let total_cap = parsed.len() + external_parsed.len() + vendored_c_parsed.len();
+    let total_cap = parsed.len()
+        + external_parsed.len()
+        + script_tag_parsed.len()
+        + vendored_c_parsed.len();
     let mut combined_parsed: Vec<ParsedFile> = Vec::with_capacity(total_cap);
     combined_parsed.extend(parsed);
     combined_parsed.extend(external_parsed);
+    combined_parsed.extend(script_tag_parsed);
     combined_parsed.extend(vendored_c_parsed);
     let mut parsed = combined_parsed;
     let mut symbol_id_map = symbol_id_map;
@@ -543,7 +585,7 @@ pub fn full_index(
     // demand so those resolutions land as edges on pass 1. Chain walker
     // still drives the loop below for deeper hops.
     if !symbol_index.is_empty() {
-        let seeded = seed_demand_from_user_refs(
+        let mut seeded = seed_demand_from_user_refs(
             &parsed, &symbol_index, registry,
         );
         if !seeded.is_empty() {
@@ -555,6 +597,9 @@ pub fn full_index(
                 write::write_parsed_files_with_origin(db, &seeded, "external")
                     .context("Failed to write seeded external index")?;
             symbol_id_map.extend(seeded_sym_map);
+            for pf in seeded.iter_mut() {
+                pf.slim_for_resolve();
+            }
             parsed.extend(seeded);
         }
     }

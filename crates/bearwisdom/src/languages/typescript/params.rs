@@ -287,7 +287,16 @@ pub(super) fn extract_for_loop_var(
 
     if let Some(chain) = build_chain(chain_source, src) {
         let target = chain.segments.last().map(|s| s.name.clone()).unwrap_or_default();
-        if !target.is_empty() {
+        // Parameter-shadow filter: `(mutations) => { for (const m of mutations) }`
+        // has `mutations` as an arrow-function parameter. The iterable TypeRef
+        // would never resolve — the binding is a local, not a declared type.
+        let shadowed = chain.segments.len() == 1
+            && crate::languages::common::is_enclosing_js_function_parameter(
+                iterable_node,
+                src,
+                &target,
+            );
+        if !target.is_empty() && !shadowed {
             refs.push(ExtractedRef {
                 source_symbol_index: idx,
                 target_name: target,
@@ -302,7 +311,12 @@ pub(super) fn extract_for_loop_var(
         // Simple identifier iterable: `for (const item of items)` — emit a
         // plain TypeRef so the index builder can look up `items` type.
         let target = node_text(iterable_node, src);
-        if !target.is_empty() {
+        let shadowed = crate::languages::common::is_enclosing_js_function_parameter(
+            iterable_node,
+            src,
+            &target,
+        );
+        if !target.is_empty() && !shadowed {
             refs.push(ExtractedRef {
                 source_symbol_index: idx,
                 target_name: target,

@@ -21,5 +21,6 @@ pub mod project_context;
 pub mod ref_cache;
 pub mod resolve;
 pub mod scip;
+pub mod script_tag_deps;
 pub mod test_file_detection;
 pub mod write;
