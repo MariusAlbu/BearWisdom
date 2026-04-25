@@ -240,6 +240,96 @@ pub(super) fn build_chain_inner(
             Some(())
         }
 
+        // `import("module").then(...)` — dynamic import. Tree-sitter
+        // typescript emits the `import` keyword as the function of the
+        // call_expression. Without a chain root the walker bails and
+        // `then` / `catch` / `finally` end up unresolved. Inject a
+        // synthetic root segment whose `declared_type` is `Promise` so
+        // Phase 1 picks Promise as the root and Phase 3 resolves the
+        // method against `Promise.then` etc.
+        "import" => {
+            segments.push(ChainSegment {
+                name: "import".to_string(),
+                node_kind: "import".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: Some("Promise".to_string()),
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        // `[1,2,3].map(...)` / `[].push(...)` — array literal as chain
+        // root. Without a synthetic root the walker bails on
+        // `Array.map` / `.filter` / `.forEach` etc.
+        "array" => {
+            segments.push(ChainSegment {
+                name: "Array".to_string(),
+                node_kind: "array".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: Some("Array".to_string()),
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        // `{a: 1}.hasOwnProperty(...)` / `{...}.method()` — object
+        // literal as chain root.
+        "object" => {
+            segments.push(ChainSegment {
+                name: "Object".to_string(),
+                node_kind: "object".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: Some("Object".to_string()),
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        // String literal `"foo".charAt(0)`, `'bar'.split(',')` — chain
+        // root resolves to the String type (lib.es5.d.ts).
+        "string" | "template_string" => {
+            segments.push(ChainSegment {
+                name: "String".to_string(),
+                node_kind: node.kind().to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: Some("String".to_string()),
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        // Numeric literal `(42).toString()` — chain root resolves to
+        // the Number type. Rare but cheap to handle alongside the
+        // others.
+        "number" => {
+            segments.push(ChainSegment {
+                name: "Number".to_string(),
+                node_kind: "number".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: Some("Number".to_string()),
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
+        // Regex literal `/foo/.test(s)` — RegExp type.
+        "regex" => {
+            segments.push(ChainSegment {
+                name: "RegExp".to_string(),
+                node_kind: "regex".to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: Some("RegExp".to_string()),
+                type_args: vec![],
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
         "member_expression" => {
             let object = node.child_by_field_name("object")?;
             let property = node.child_by_field_name("property")?;
