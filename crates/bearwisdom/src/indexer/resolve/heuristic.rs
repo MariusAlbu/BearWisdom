@@ -316,9 +316,14 @@ pub(super) fn resolve_ref(
     // --- Priority 4: Name + kind (0.50 base, with ambiguity decay) ---
     // Names like `get`, `create`, `update` appear in hundreds of symbols.
     // Resolving them produces false edges that poison graph quality.
-    // Hard cap: skip resolution entirely when > 10 kind-compatible candidates.
-    // Soft decay: confidence scales as 0.50 / sqrt(candidate_count) so that
-    // edge weights reflect how ambiguous the resolution is.
+    // Hard cap: skip resolution entirely when > 10 DISTINCT kind-compatible
+    // candidates (grouped by qname+kind). Duplicate entries with the same
+    // qname+kind get collapsed first — this matters in pnpm monorepos
+    // where each package bundles its own copy of `node_modules/typescript`,
+    // so `Record`/`Pick`/`Omit` show up 80+ times despite being the SAME
+    // logical TS lib symbol. Without dedup, AMBIGUITY_LIMIT discards them.
+    // Soft decay: confidence scales as 0.50 / sqrt(distinct_count) so that
+    // edge weights reflect how ambiguous the resolution actually is.
     if let Some(candidates) = name_to_ids.get(target_name) {
         // Filter to kind-compatible candidates first; fall back to all if none match.
         let kind_matched: Vec<_> = candidates
@@ -331,26 +336,50 @@ pub(super) fn resolve_ref(
             kind_matched
         };
 
-        // Ambiguity threshold: > 10 matching candidates -> too noisy, skip.
-        const AMBIGUITY_LIMIT: usize = 10;
-        if pool.len() > AMBIGUITY_LIMIT {
+        if pool.is_empty() {
             return None;
         }
 
-        if !pool.is_empty() {
-            // Prefer same-file, then same-directory, then first candidate.
-            let best = pool
-                .iter()
-                .min_by_key(|(file, _, _, _)| {
-                    if *file == source_file { 0 }
-                    else if parent_dir(file) == parent_dir(source_file) { 1 }
-                    else { 2 }
-                })
-                .unwrap();
-            // Confidence decays with candidate count: 0.50 / sqrt(n).
-            let confidence = 0.50 / (pool.len() as f64).sqrt();
-            return Some((best.3, confidence, "heuristic_name_kind"));
+        // Dedup pool by (qname, kind). Within each group, pick the canonical
+        // entry: prefer same-file, then same-directory, then shallowest path
+        // (shallowest = closest to package root, the canonical entry point).
+        let mut groups: FxHashMap<(&str, &str), Vec<&&(String, String, String, i64)>> =
+            FxHashMap::default();
+        for entry in &pool {
+            groups.entry((entry.1.as_str(), entry.2.as_str())).or_default().push(entry);
         }
+
+        // Ambiguity threshold: > 10 DISTINCT (qname, kind) groups -> skip.
+        const AMBIGUITY_LIMIT: usize = 10;
+        if groups.len() > AMBIGUITY_LIMIT {
+            return None;
+        }
+
+        // Pick canonical per group, then pick best across groups.
+        let canonicals: Vec<&(String, String, String, i64)> = groups
+            .into_values()
+            .map(|mut group_entries| {
+                group_entries.sort_by_key(|(file, _, _, _)| {
+                    let same_file = if *file == source_file { 0 } else { 1 };
+                    let same_dir = if parent_dir(file) == parent_dir(source_file) { 0 } else { 1 };
+                    let depth = file.matches('/').count();
+                    (same_file, same_dir, depth)
+                });
+                *group_entries[0]
+            })
+            .collect();
+
+        let best = canonicals
+            .iter()
+            .min_by_key(|(file, _, _, _)| {
+                if *file == source_file { 0 }
+                else if parent_dir(file) == parent_dir(source_file) { 1 }
+                else { 2 }
+            })
+            .unwrap();
+        // Confidence decays with DISTINCT candidate count, not raw pool size.
+        let confidence = 0.50 / (canonicals.len() as f64).sqrt();
+        return Some((best.3, confidence, "heuristic_name_kind"));
     }
 
     None
