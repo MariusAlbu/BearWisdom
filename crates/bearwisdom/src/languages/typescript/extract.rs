@@ -1645,6 +1645,34 @@ fn collect_type_param_scopes(
             out.push((name, start_line, end_line));
         }
     }
+    // `[K in keyof T]: V[K]` mapped types bind `K` for the body of the
+    // mapped type. tree-sitter-typescript represents the `[K in keyof T]`
+    // header as a `mapped_type_clause` node with the binding in its
+    // `name` field. Without this, `TRecord[TKey]` in
+    // `{ [TKey in keyof TRecord]: TRecord[TKey] }` leaks `TKey` as
+    // an external TypeRef (the `indexed_access_type` walker treats
+    // the index as a regular type ref).
+    //
+    // Scope is the parent `mapped_type` (whose line range covers both
+    // the clause AND the body). Falls back to the clause itself if
+    // somehow detached.
+    if node.kind() == "mapped_type_clause" {
+        if let Some(name_node) = node.child_by_field_name("name") {
+            if let Ok(name) = name_node.utf8_text(src) {
+                if !name.is_empty() {
+                    let scope_node = node
+                        .parent()
+                        .filter(|p| p.kind() == "mapped_type")
+                        .unwrap_or(node);
+                    out.push((
+                        name.to_string(),
+                        scope_node.start_position().row as u32,
+                        scope_node.end_position().row as u32,
+                    ));
+                }
+            }
+        }
+    }
     // `infer X` introduces a type variable inside a `conditional_type` —
     // `T extends Foo<infer X> ? X : never`. The variable is in scope for
     // the entire conditional expression. Without this, real source code
