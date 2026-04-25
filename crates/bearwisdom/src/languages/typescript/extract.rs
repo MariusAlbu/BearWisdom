@@ -25,6 +25,13 @@ pub(crate) static TS_SCOPE_KINDS: &[ScopeKind] = &[
     ScopeKind { node_kind: "interface_declaration", name_field: "name" },
     ScopeKind { node_kind: "function_declaration", name_field: "name" },
     ScopeKind { node_kind: "method_definition", name_field: "name" },
+    // `namespace Foo { ... }` / `module Foo { ... }` — TS namespace blocks.
+    // Without this, `interface ProcessEnv` declared inside `namespace NodeJS`
+    // would be qualified as `ProcessEnv` instead of `NodeJS.ProcessEnv`,
+    // breaking dotted-name TypeRef resolution against @types/node /
+    // @playwright/test / @types/jest etc. tree-sitter-typescript emits both
+    // `namespace` and `module` keywords as `internal_module`.
+    ScopeKind { node_kind: "internal_module", name_field: "name" },
 ];
 
 // ---------------------------------------------------------------------------
