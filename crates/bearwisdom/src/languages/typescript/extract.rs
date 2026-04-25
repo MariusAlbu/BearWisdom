@@ -1249,13 +1249,41 @@ fn is_ts_primitive(name: &str) -> bool {
 /// that itself contains literals. A flat `children.all(literal_type)`
 /// check would miss this shape and leak the first literal's content
 /// as a coverage TypeRef.
+/// Walk a union_type / intersection_type / parenthesized_type and return the
+/// text of the first non-`literal_type` named child. Skips union/intersection
+/// wrappers recursively. Returns `None` when every member is a literal_type
+/// (caller should treat that as `_primitive`).
+fn first_non_literal_descendant_text(node: tree_sitter::Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
+        match child.kind() {
+            "literal_type" => continue,
+            // `'a'[]` and `('a' | 'b')` and `Readonly<'a' | 'b'>` are all
+            // structurally pure-literal containers — recurse so we don't
+            // grab their literal contents as a TypeRef target.
+            "union_type" | "intersection_type" | "parenthesized_type"
+            | "array_type" | "readonly_type" | "tuple_type" => {
+                if let Some(t) = first_non_literal_descendant_text(child, src) {
+                    return Some(t);
+                }
+            }
+            _ => return Some(helpers::node_text(child, src)),
+        }
+    }
+    None
+}
+
 fn is_pure_literal_type_composite(node: tree_sitter::Node) -> bool {
     let mut cursor = node.walk();
     let mut any = false;
     for child in node.named_children(&mut cursor) {
         match child.kind() {
             "literal_type" => any = true,
-            "union_type" | "intersection_type" | "parenthesized_type" => {
+            // Structural wrappers around literals are still "pure literal"
+            // for coverage purposes — `'a' | 'b'`, `'a'[]`, `('a' | 'b')`,
+            // `readonly 'a'[]`, `['a', 'b']` all carry no real type ref.
+            "union_type" | "intersection_type" | "parenthesized_type"
+            | "array_type" | "readonly_type" | "tuple_type" => {
                 if !is_pure_literal_type_composite(child) {
                     return false;
                 }
@@ -1378,7 +1406,13 @@ fn scan_all_type_identifiers(
                             // the FIRST literal (`"default"`), not a real type
                             // reference. Use the primitive sentinel so it
                             // doesn't leak into unresolved_refs.
+                            // Pure-literal composites of any shape — `'a' | 'b'`,
+                            // `'a'[]`, `('a' | 'b')`, `readonly 'a'[]`, `['a', 'b']` —
+                            // emit only the primitive sentinel; the literal
+                            // content isn't a real type ref.
                             "union_type" | "intersection_type"
+                            | "array_type" | "tuple_type"
+                            | "parenthesized_type" | "readonly_type"
                                 if is_pure_literal_type_composite(tn) =>
                             {
                                 "_primitive".to_string()
@@ -1395,11 +1429,31 @@ fn scan_all_type_identifiers(
                             | "intersection_type"
                             | "parenthesized_type"
                             | "type_query"
-                            | "readonly_type" => name
-                                .split(|c: char| !c.is_alphanumeric() && c != '_')
-                                .find(|s| !s.is_empty())
-                                .unwrap_or("_")
-                                .to_string(),
+                            | "readonly_type" => {
+                                // Walk past leading literal_type children when
+                                // splitting by first segment — `'400' | Array<...>`
+                                // would otherwise pick up the string contents
+                                // (`400`) as the type name. Find the first
+                                // non-literal direct named child and split its
+                                // text instead.
+                                let split_target = first_non_literal_descendant_text(tn, src)
+                                    .unwrap_or_else(|| name.clone());
+                                let candidate = split_target
+                                    .split(|c: char| !c.is_alphanumeric() && c != '_')
+                                    .find(|s| !s.is_empty())
+                                    .unwrap_or("_")
+                                    .to_string();
+                                // Numeric-only fallback (`200`, `400`) means the
+                                // text we split was still literal content; use
+                                // the primitive sentinel.
+                                if !candidate.is_empty()
+                                    && candidate.chars().all(|c| c.is_ascii_digit())
+                                {
+                                    "_primitive".to_string()
+                                } else {
+                                    candidate
+                                }
+                            }
                             // Structured types — the first identifier in the text
                             // is a property or parameter name, not a type reference.
                             _ => "_primitive".to_string(),
