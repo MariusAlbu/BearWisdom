@@ -526,6 +526,17 @@ pub struct SymbolIndex {
     /// Project-wide union of tsconfig alias entries; used when no
     /// `package_id` is set or the package has no per-package entry.
     tsconfig_paths_union: Vec<(String, String)>,
+    /// Set of package names (as listed in `tsconfig.json`'s
+    /// `compilerOptions.types` array) whose external file paths are
+    /// treated as ambient-global providers — symbols from these
+    /// packages are auto-loaded by TypeScript without an explicit
+    /// `import` statement, so the resolver should prefer them when
+    /// disambiguating bare-name refs (`expect`, `describe`, `process`,
+    /// etc.). Each entry is the raw value as listed (`"vitest/globals"`,
+    /// `"node"`, `"@types/jest"`). Used by `is_ambient_path` to test
+    /// whether a candidate's external file path falls under any
+    /// listed package.
+    tsconfig_types_union: Vec<String>,
     /// Class inheritance map: child class qualified_name → parent class qualified_name.
     /// Built from `Inherits` refs at index construction time.  Used by language
     /// resolvers to walk the ancestor chain when `$this->method()` calls cannot
@@ -1213,9 +1224,11 @@ impl SymbolIndex {
         // Prepend the package path to each target at snapshot time.
         let mut tsconfig_paths_by_pkg: FxHashMap<i64, Vec<(String, String)>> = FxHashMap::default();
         let mut tsconfig_paths_union: Vec<(String, String)> = Vec::new();
+        let mut tsconfig_types_union: Vec<String> = Vec::new();
         if let Some(ctx) = project_ctx {
             if let Some(npm) = ctx.manifest(crate::ecosystem::manifest::ManifestKind::Npm) {
                 tsconfig_paths_union = npm.tsconfig_paths.clone();
+                tsconfig_types_union = npm.tsconfig_types.clone();
             }
             for (&pkg_id, manifests) in &ctx.by_package {
                 if let Some(npm) = manifests.get(&crate::ecosystem::manifest::ManifestKind::Npm) {
@@ -1253,6 +1266,7 @@ impl SymbolIndex {
             workspace_pkg_by_declared_name,
             tsconfig_paths_by_pkg,
             tsconfig_paths_union,
+            tsconfig_types_union,
             inherits_map,
             qname_duplicates,
             ambient_global_method_names,
@@ -1261,6 +1275,64 @@ impl SymbolIndex {
             empty_reexports: Vec::new(),
             chain_misses: std::sync::Mutex::new(Vec::new()),
         }
+    }
+
+    /// Test whether a file path belongs to a package listed in any
+    /// project's `tsconfig.json#compilerOptions.types`. Such packages
+    /// supply ambient globals — symbols available without an `import`
+    /// statement — so the heuristic resolver should prefer their
+    /// candidates when disambiguating bare-name refs.
+    ///
+    /// `tsconfig_types_union` entries are raw values like
+    /// `"vitest/globals"`, `"node"`, `"@types/jest"`. We match by
+    /// asking whether the candidate path contains
+    /// `node_modules/<name>/...` for any name in the list. Slash
+    /// inside an entry means a sub-path inside the package — we still
+    /// match against the package root since the whole package is
+    /// pulled in by the types declaration.
+    pub fn is_ambient_path(&self, path: &str) -> bool {
+        let lower = path.to_lowercase();
+
+        // 1. Packages explicitly listed in `tsconfig.json#compilerOptions.types`
+        //    — the project opted into these as ambient providers.
+        for entry in &self.tsconfig_types_union {
+            // Take the package portion: `vitest/globals` → `vitest`.
+            // Scoped packages (`@scope/pkg/sub`) keep both segments:
+            // `@scope/pkg/sub` → `@scope/pkg`.
+            let pkg_root = if let Some(stripped) = entry.strip_prefix('@') {
+                let mut parts = stripped.splitn(3, '/');
+                match (parts.next(), parts.next()) {
+                    (Some(scope), Some(name)) => format!("@{scope}/{name}"),
+                    _ => entry.clone(),
+                }
+            } else {
+                entry.split('/').next().unwrap_or(entry).to_string()
+            };
+            let needle = format!("node_modules/{}/", pkg_root.to_lowercase());
+            if lower.contains(&needle) {
+                return true;
+            }
+        }
+
+        // 2. `@types/*` packages — TypeScript auto-includes these as
+        //    ambient by default when `compilerOptions.types` is not
+        //    explicitly set, and most projects don't override that.
+        //    `@types/node` provides `process` / `Buffer`, `@types/jest`
+        //    provides `expect` / `describe`, etc. Match the path suffix
+        //    so per-package nesting (`@types/node/fs.d.ts`) is covered.
+        if lower.contains("/@types/") || lower.contains("node_modules/@types/") {
+            return true;
+        }
+
+        // 3. Convention fallback: any file literally named `globals.d.ts`.
+        //    Some packages (e.g. `@playwright/test`, `@vitest/runner`)
+        //    distribute their declare-global block here regardless of
+        //    whether they're in @types or in the project's types list.
+        if lower.ends_with("/globals.d.ts") || lower.ends_with("\\globals.d.ts") {
+            return true;
+        }
+
+        false
     }
 
     /// Augment an already-built index with symbols from `new_files` —

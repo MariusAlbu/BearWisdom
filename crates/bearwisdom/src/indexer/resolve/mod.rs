@@ -841,6 +841,7 @@ fn resolve_iteration_body(
                 &module_to_files,
                 symbol_id_map,
                 parsed,
+                &|p| index.is_ambient_path(p),
             );
 
             match resolution {

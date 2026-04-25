@@ -125,6 +125,7 @@ pub fn resolve_and_write(
                 &module_to_files,
                 symbol_id_map,
                 parsed,
+                &|_| false,
             );
 
             match resolution {
@@ -200,6 +201,12 @@ pub(super) fn resolve_ref(
     module_to_files: &FxHashMap<String, Vec<String>>,
     symbol_id_map: &HashMap<(String, String), i64>,
     parsed: &[ParsedFile],
+    // Predicate testing whether a candidate's file path lies inside a
+    // `tsconfig.json#compilerOptions.types` declared package — i.e.
+    // the package contributes ambient globals to user code. Used by
+    // the declare-global preference path to disambiguate bare-name
+    // refs in TS projects without coupling heuristic.rs to SymbolIndex.
+    is_ambient_path: &dyn Fn(&str) -> bool,
 ) -> Option<(i64, f64, &'static str)> {
     // --- Priority 0: Direct module match (0.95) ---
     // The extractor set `module` on this ref (e.g., Erlang `lists:map()`,
@@ -264,41 +271,45 @@ pub(super) fn resolve_ref(
         return Some((id, 0.80, "heuristic_namespace"));
     }
 
-    // --- Priority 3.8: declare-global preference (0.75) ---
+    // --- Priority 3.8: ambient-package preference (0.75) ---
     //
-    // `declare global { const expect: ... }` in a `.d.ts` declares a
-    // runtime global, meaning bare-name refs to it should pair with THAT
-    // symbol even when many other packages happen to export the same
-    // simple name (chai.expect, playwright.expect, @types/chai.expect …).
-    // Without this shortcut, Priority 4's ambiguity cap kills the
-    // resolution — 10+ candidates across packages becomes 0 edges.
+    // TypeScript projects declare which packages contribute AMBIENT
+    // globals via `tsconfig.json`'s `compilerOptions.types` array:
+    //   { "compilerOptions": { "types": ["vitest/globals", "node"] } }
     //
-    // File-path signal: any candidate whose external path ends with
-    // `globals.d.ts` (by convention the declare-global carrier inside
-    // an npm package) wins; vitest, @types/jest, @types/mocha, and
-    // @types/node all follow this pattern.
+    // Symbols from those packages are auto-loaded by the TS compiler
+    // — user code can call `expect(x).toBe(y)` or read `process.env`
+    // without an `import` statement. The resolver mirrors that by
+    // preferring candidates whose file path lies inside a listed
+    // package, which lets bare-name refs resolve cleanly even when
+    // 10+ identically-named symbols exist across other packages
+    // (Priority 4's ambiguity cap would otherwise kill resolution).
+    //
+    // Using the project's own tsconfig declaration generalises beyond
+    // test frameworks: `@types/node` provides `process` / `Buffer`,
+    // `@types/dom-mediacapture-record` provides MediaRecorder
+    // augmentations, etc. The previous path-shape `globals.d.ts`
+    // heuristic only caught packages following that convention; this
+    // one catches anything the project itself opted into.
     if let Some(candidates) = name_to_ids.get(target_name) {
         // Kind check is lenient here: `declare global { const expect: ... }`
         // emits as a `variable` symbol but the runtime type is a callable
-        // function. Accept any kind for call-style edges against a globals
-        // file — the file-path signal alone is strong.
-        let globals: Vec<_> = candidates
+        // function. Accept any kind for call-style edges against an
+        // ambient-package file — the path signal alone is strong.
+        let ambient: Vec<_> = candidates
             .iter()
-            .filter(|(file, _, _, _)| {
-                let lower = file.to_lowercase();
-                lower.ends_with("/globals.d.ts") || lower.ends_with("globals.d.ts")
-            })
+            .filter(|(file, _, _, _)| is_ambient_path(file))
             .collect();
-        if !globals.is_empty() {
-            let best = globals
+        if !ambient.is_empty() {
+            let best = ambient
                 .iter()
                 .min_by_key(|(file, _, _, _)| {
-                    // Prefer the globals file that's a direct package child
-                    // (e.g. `vitest/globals.d.ts`) over deeper ones.
+                    // Prefer the file closest to the package root (the
+                    // canonical entry point) over deeply-nested ones.
                     file.matches('/').count()
                 })
                 .unwrap();
-            return Some((best.3, 0.75, "heuristic_declare_global"));
+            return Some((best.3, 0.75, "heuristic_ambient_package"));
         }
     }
 

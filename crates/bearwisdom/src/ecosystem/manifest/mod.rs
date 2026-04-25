@@ -87,6 +87,18 @@ pub struct ManifestData {
     /// `src/utils`. Populated only for the NuGet-sibling TS ecosystem;
     /// other manifest kinds leave this empty.
     pub tsconfig_paths: Vec<(String, String)>,
+    /// TypeScript: `compilerOptions.types` from tsconfig.json — the list
+    /// of packages whose type definitions are auto-loaded as ambient
+    /// globals (the same way TS itself treats them). Each entry is the
+    /// raw package name as listed: `"vitest/globals"`, `"node"`,
+    /// `"@types/jest"`, `"@playwright/test"`, etc. The resolver uses
+    /// these to identify which external package files contribute
+    /// ambient symbols (no `import` statement needed in user code) so
+    /// bare-name refs like `expect`, `describe`, `process` prefer those
+    /// candidates over identically-named symbols in non-ambient
+    /// packages, even when ambiguity strikes. Empty when no tsconfig
+    /// or no `types` field declared.
+    pub tsconfig_types: Vec<String>,
 }
 
 // ---------------------------------------------------------------------------

@@ -65,6 +65,7 @@ impl ManifestReader for NpmManifest {
             let tsconfig_path = package_dir.join("tsconfig.json");
             if let Ok(ts_content) = std::fs::read_to_string(&tsconfig_path) {
                 data.tsconfig_paths = parse_tsconfig_paths(&ts_content);
+                data.tsconfig_types = parse_tsconfig_types(&ts_content);
             }
 
             // Vite / Vue CLI / webpack / Nuxt configs also carry `resolve.alias`
@@ -177,6 +178,38 @@ pub fn parse_tsconfig_paths(content: &str) -> Vec<(String, String)> {
         out.push((alias_prefix.to_string(), target_prefix.to_string()));
     }
     out
+}
+
+/// Parse `compilerOptions.types` from a tsconfig.json file.
+///
+/// `types` is a TypeScript-native mechanism declaring which packages
+/// contribute AMBIENT globals — symbols available without an explicit
+/// `import` statement. Common entries: `"vitest/globals"` (provides
+/// `expect` / `describe` / `it`), `"node"` (provides `process` /
+/// `Buffer`), `"@types/jest"`, `"@playwright/test"`, etc.
+///
+/// Returns the raw package name strings as listed. The resolver matches
+/// them against external file paths (`node_modules/<name>/...`) to
+/// classify which candidates supply ambient globals.
+///
+/// Same JSONC tolerance as `parse_tsconfig_paths` — strips `//` and
+/// `/* */` comments before parsing. Does not follow `extends`.
+pub fn parse_tsconfig_types(content: &str) -> Vec<String> {
+    let stripped = strip_json_comments(content);
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(&stripped) else {
+        return Vec::new();
+    };
+    let Some(arr) = value
+        .get("compilerOptions")
+        .and_then(|co| co.get("types"))
+        .and_then(|t| t.as_array())
+    else {
+        return Vec::new();
+    };
+    arr.iter()
+        .filter_map(|v| v.as_str().map(|s| s.to_string()))
+        .filter(|s| !s.is_empty())
+        .collect()
 }
 
 /// Strip `//` line comments and `/* */` block comments, respecting strings
