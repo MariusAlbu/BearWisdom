@@ -126,6 +126,7 @@ pub fn resolve_and_write(
                 symbol_id_map,
                 parsed,
                 &|_| false,
+                &|_, _, _, _| None,
             );
 
             match resolution {
@@ -207,6 +208,20 @@ pub(super) fn resolve_ref(
     // the declare-global preference path to disambiguate bare-name
     // refs in TS projects without coupling heuristic.rs to SymbolIndex.
     is_ambient_path: &dyn Fn(&str) -> bool,
+    // Cross-package re-export chain resolver. Given a name and its
+    // imported-from module specifier, follows `export { X } from 'pkg'`
+    // / `export * from 'pkg'` chains across npm package boundaries to
+    // find the package that actually defines the symbol. Returns
+    // `Some(id)` when one of the candidates lies inside any reachable
+    // package, `None` otherwise. Decoupled from heuristic.rs the same
+    // way `is_ambient_path` is — keeps the resolver agnostic of
+    // SymbolIndex.
+    resolve_external_reexport: &dyn Fn(
+        &str,
+        &str,
+        &str,
+        &[(String, String, String, i64)],
+    ) -> Option<i64>,
 ) -> Option<(i64, f64, &'static str)> {
     // --- Priority 0: Direct module match (0.95) ---
     // The extractor set `module` on this ref (e.g., Erlang `lists:map()`,
@@ -239,6 +254,71 @@ pub(super) fn resolve_ref(
     // --- Priority 1: Import match (0.95) ---
     if let Some(id) = resolve_via_import(target_name, source_file, file_imports, name_to_ids, symbol_id_map, parsed) {
         return Some((id, 0.95, "heuristic_import"));
+    }
+
+    // --- Priority 1.2: Cross-package re-export chain (0.93) ---
+    //
+    // Handles two related shapes:
+    //
+    //   a) Direct: `import { X } from 'pkg-a'` and the user uses `X`. The
+    //      definition actually lives in `pkg-b` (via `pkg-a` re-exporting
+    //      from it). Priority 1's path-match fails because the candidate's
+    //      file is in `pkg-b`, not `pkg-a`.
+    //
+    //   b) Dotted member access: `import { Ns } from 'pkg-a'` then user
+    //      writes `Ns.Inner` as a TypeRef. target_name comes through as
+    //      `Ns.Inner`; look up `Inner` in the chain reachable from
+    //      `pkg-a`. Catches the typescript-eslint pattern (TSESTree.Node)
+    //      and any namespace-import-alias-then-member usage.
+    //
+    // Walks the package-level re-export graph and accepts a candidate
+    // whose file lives in any reachable package. Bare specifiers only —
+    // relative re-exports stay intra-package and are already covered by
+    // expand_reexports' per-file walk.
+    {
+        // Shape (a): the imported name is the same as target_name.
+        let direct = file_imports.iter().find(|(n, _)| n == target_name);
+        if let Some(matching) = direct {
+            if let Some(module) = matching.1.as_deref() {
+                if !module.starts_with("./") && !module.starts_with("../") && !module.is_empty() {
+                    if let Some(candidates) = name_to_ids.get(target_name) {
+                        if let Some(id) = resolve_external_reexport(
+                            target_name,
+                            target_name,
+                            module,
+                            candidates.as_slice(),
+                        ) {
+                            return Some((id, 0.93, "heuristic_reexport_chain"));
+                        }
+                    }
+                }
+            }
+        }
+        // Shape (b): target_name is dotted; first segment may be an import
+        // alias (`import { TSESTree } from '@typescript-eslint/utils'`),
+        // last segment is the actual symbol to look up.
+        if let Some(dot) = target_name.find('.') {
+            let prefix = &target_name[..dot];
+            let suffix = target_name.rsplit('.').next().unwrap_or(target_name);
+            if !prefix.is_empty() && !suffix.is_empty() && suffix != target_name {
+                if let Some(matching) = file_imports.iter().find(|(n, _)| n == prefix) {
+                    if let Some(module) = matching.1.as_deref() {
+                        if !module.starts_with("./") && !module.starts_with("../") && !module.is_empty() {
+                            if let Some(candidates) = name_to_ids.get(suffix) {
+                                if let Some(id) = resolve_external_reexport(
+                                    suffix,
+                                    prefix,
+                                    module,
+                                    candidates.as_slice(),
+                                ) {
+                                    return Some((id, 0.93, "heuristic_reexport_chain"));
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
     }
 
     // --- Priority 1.5: Namespace import match (0.92) ---

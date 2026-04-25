@@ -493,6 +493,13 @@ pub struct SymbolIndex {
     type_info: FxHashMap<String, TypeInfo>,
     /// Re-export map: file_path → Vec<(original_name, source_module)>.
     reexport_map: FxHashMap<String, Vec<(String, String)>>,
+    /// Package-level re-export map: package_name → Vec<(name_or_*, target_module)>.
+    /// Aggregates `reexport_map` entries by the npm package containing each
+    /// file. Used by the external re-export chain resolver to follow names
+    /// through `export * from 'pkg'` / `export { X } from 'pkg'` chains
+    /// across package boundaries. Wildcard `"*"` entries forward every
+    /// name; specific-name entries forward just one.
+    pkg_reexports: FxHashMap<String, Vec<(String, String)>>,
     /// Module specifier resolution: maps specifiers to actual file paths.
     /// Populated by ecosystem-specific ModuleResolvers during index construction.
     /// Used for bare/aliased specifiers where source-file context doesn't
@@ -1097,6 +1104,43 @@ impl SymbolIndex {
             }
         }
 
+        // Aggregate re-exports by the npm package they belong to. Only
+        // bare cross-package re-exports matter (relative ones stay
+        // intra-package and are followed via the per-file map). The
+        // resulting map answers: "package P forwards which names to which
+        // packages?", which the chain resolver walks at lookup time.
+        let mut pkg_reexports: FxHashMap<String, Vec<(String, String)>> = FxHashMap::default();
+        for (file_path, entries) in &reexport_map {
+            let Some(pkg) = npm_package_from_external_path(file_path) else {
+                continue;
+            };
+            for (name, target_module) in entries {
+                if target_module.starts_with("./") || target_module.starts_with("../") {
+                    continue;
+                }
+                if target_module.is_empty() {
+                    continue;
+                }
+                let Some(target_pkg) = npm_package_from_specifier(target_module) else {
+                    continue;
+                };
+                if target_pkg == pkg {
+                    continue;
+                }
+                pkg_reexports
+                    .entry(pkg.clone())
+                    .or_default()
+                    .push((name.clone(), target_pkg));
+            }
+        }
+        // Dedup each package's entries — many d.ts files re-export the same
+        // names; storing duplicates blows up walk cost without changing
+        // outcomes.
+        for v in pkg_reexports.values_mut() {
+            v.sort();
+            v.dedup();
+        }
+
         // Build module-to-file mapping using ecosystem-specific ModuleResolvers.
         // For each import ref that carries a module specifier, resolve it to an
         // actual indexed file path and cache the result.
@@ -1259,6 +1303,7 @@ impl SymbolIndex {
             types_by_name,
             type_info,
             reexport_map,
+            pkg_reexports,
             module_to_file,
             module_to_file_per_source,
             primitives_by_language,
@@ -1333,6 +1378,70 @@ impl SymbolIndex {
         }
 
         false
+    }
+
+    /// Walk the cross-package re-export chain starting from `module_path`
+    /// (a bare specifier the user imported `target_name` from), looking
+    /// for a candidate file that actually owns `target_name`.
+    ///
+    /// Why: many npm libraries split a public package from one or more
+    /// internal packages. A user file does
+    ///   `import { TSESTree } from '@typescript-eslint/utils'`
+    /// but the actual definition lives in `@typescript-eslint/types` (the
+    /// public package re-exports `TSESTree` via `export { TSESTree } from
+    /// '@typescript-eslint/types'`). Priority 1's path-match alone fails
+    /// because the candidate's path is in a different package than the
+    /// import specifier. Walking the chain catches the right one.
+    ///
+    /// Bounded by depth 4 — covers the common 1–3 hop chains without
+    /// opening up arbitrary search space. Visited set on the package
+    /// frontier prevents cycles.
+    ///
+    /// Returns the first candidate id found in any reachable package, or
+    /// None when the chain doesn't lead to a known symbol.
+    pub fn resolve_via_external_reexport(
+        &self,
+        suffix: &str,
+        prefix: &str,
+        module_path: &str,
+        _heuristic_candidates: &[(String, String, String, i64)],
+    ) -> Option<i64> {
+        if module_path.is_empty() { return None; }
+        let importing_pkg = npm_package_from_specifier(module_path)?;
+        // We query SymbolIndex's full by_name index here rather than the
+        // heuristic's name_to_ids — the heuristic filters out most
+        // external d.ts files (only `@types/*` and TS stdlib survive),
+        // so transitive re-export targets like `@typescript-eslint/types`
+        // would be invisible to it. The chain walker needs the complete
+        // external symbol set.
+        let candidates = self.by_name(suffix);
+        if candidates.is_empty() { return None; }
+        let mut visited: std::collections::HashSet<String> = std::collections::HashSet::new();
+        let mut frontier: Vec<String> = vec![importing_pkg.clone()];
+        visited.insert(importing_pkg);
+        for _depth in 0..4 {
+            for pkg in &frontier {
+                for sym in candidates {
+                    if file_belongs_to_npm_package(&sym.file_path, pkg) {
+                        return Some(sym.id);
+                    }
+                }
+            }
+            let mut next: Vec<String> = Vec::new();
+            for pkg in &frontier {
+                let Some(reexports) = self.pkg_reexports.get(pkg) else { continue };
+                for (name, target_pkg) in reexports {
+                    if name != "*" && name != prefix { continue }
+                    if visited.insert(target_pkg.clone()) {
+                        next.push(target_pkg.clone());
+                    }
+                }
+            }
+            if next.is_empty() { break }
+            frontier = next;
+        }
+        let _ = suffix; let _ = prefix; // silence if unused
+        None
     }
 
     /// Augment an already-built index with symbols from `new_files` —
@@ -3076,6 +3185,68 @@ pub fn build_scope_chain(scope_path: Option<&str>) -> Vec<String> {
     }
 
     chain
+}
+
+/// Extract the npm package name from an external file path.
+///
+/// External paths from the TS externals walker look like:
+///   `ext:ts:@scope/pkg/dist/whatever.d.ts` → `@scope/pkg`
+///   `ext:ts:lodash/index.d.ts`             → `lodash`
+///
+/// Returns None when the path isn't an `ext:ts:` external or doesn't have
+/// a recognisable package prefix. Used by the cross-package re-export
+/// chain resolver to bucket files by their owning npm package.
+pub fn npm_package_from_external_path(path: &str) -> Option<String> {
+    let rest = path.strip_prefix("ext:ts:")?;
+    if rest.starts_with('@') {
+        let mut parts = rest.splitn(3, '/');
+        match (parts.next(), parts.next()) {
+            (Some(scope), Some(name)) if !scope.is_empty() && !name.is_empty() => {
+                Some(format!("{scope}/{name}"))
+            }
+            _ => None,
+        }
+    } else {
+        let pkg = rest.split('/').next().unwrap_or("");
+        if pkg.is_empty() { None } else { Some(pkg.to_string()) }
+    }
+}
+
+/// Extract the npm package name from an import / re-export specifier.
+///
+/// Specifiers can carry sub-paths: `@scope/pkg/sub`, `lodash/fp`. We keep
+/// only the first segment (or first two for scoped packages). Returns
+/// None for relative specifiers (`./x`, `../y`) since those don't cross
+/// package boundaries.
+pub fn npm_package_from_specifier(spec: &str) -> Option<String> {
+    if spec.starts_with("./") || spec.starts_with("../") || spec.is_empty() {
+        return None;
+    }
+    if spec.starts_with('@') {
+        let mut parts = spec.splitn(3, '/');
+        match (parts.next(), parts.next()) {
+            (Some(scope), Some(name)) if !scope.is_empty() && !name.is_empty() => {
+                Some(format!("{scope}/{name}"))
+            }
+            _ => None,
+        }
+    } else {
+        let pkg = spec.split('/').next().unwrap_or("");
+        if pkg.is_empty() { None } else { Some(pkg.to_string()) }
+    }
+}
+
+/// Test whether `file_path` belongs to the given npm package (`pkg`).
+/// Matches the synthetic `ext:ts:<pkg>/...` prefix as well as raw
+/// `node_modules/<pkg>/...` substring (for files that landed via
+/// non-prefixed paths in older indexes).
+pub fn file_belongs_to_npm_package(file_path: &str, pkg: &str) -> bool {
+    let needle_ext = format!("ext:ts:{pkg}/");
+    if file_path.starts_with(&needle_ext) {
+        return true;
+    }
+    let needle_nm = format!("node_modules/{pkg}/");
+    file_path.contains(&needle_nm)
 }
 
 // ---------------------------------------------------------------------------

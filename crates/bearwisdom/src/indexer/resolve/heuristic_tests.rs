@@ -159,6 +159,7 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         &symbol_id_map,
         &parsed,
         &|_| false,
+        &|_, _, _, _| None,
     );
     assert_eq!(
         resolution.map(|(id, conf, _)| (id, conf)),
@@ -205,6 +206,7 @@ fn p4_kind_matching_prefers_method_for_calls() {
         &symbol_id_map,
         &parsed,
         &|_| false,
+        &|_, _, _, _| None,
     );
     assert_eq!(
         resolution.map(|(id, _, _)| id),

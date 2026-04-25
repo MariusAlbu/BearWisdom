@@ -424,24 +424,38 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     // tree). Entries for packages we already have are skipped.
     let existing: std::collections::HashSet<String> =
         roots.iter().map(|r| r.module_path.clone()).collect();
-    let mut transitive_specs: std::collections::HashSet<String> =
+    // Each transitive spec is paired with its origin dep's own local
+    // `node_modules/` — pnpm stores transitive packages there as siblings,
+    // not at the workspace's top-level node_modules. Without this, packages
+    // re-exported from a dep but not declared in the consumer's
+    // package.json (e.g. `@typescript-eslint/types` re-exported through
+    // `@typescript-eslint/utils`) stay invisible.
+    let mut transitive_specs: std::collections::HashSet<(String, PathBuf)> =
         std::collections::HashSet::new();
     for r in &roots {
         let entry = match resolve_package_entry_path(r) {
             Some(e) => e,
             None => continue,
         };
-        let Ok(src) = std::fs::read_to_string(&entry) else { continue };
-        for spec in extract_bare_reexport_specifiers(&src) {
+        let local_nm = dep_local_node_modules(&r.root).unwrap_or_default();
+        for spec in collect_bare_reexports_recursive(&entry) {
             if !existing.contains(&spec) && !builtins.contains(spec.as_str()) {
-                transitive_specs.insert(spec);
+                transitive_specs.insert((spec, local_nm.clone()));
             }
         }
     }
 
-    for spec in transitive_specs {
+    for (spec, parent_local_nm) in transitive_specs {
         if spec.starts_with('@') && !spec.contains('/') { continue }
-        for nm_root in &node_modules_roots {
+        // Try the standard workspace node_modules roots first (npm/yarn
+        // hoist transitives there). Fall back to the parent dep's own
+        // `node_modules/` (pnpm stores them there).
+        let mut probe_roots: Vec<&Path> =
+            node_modules_roots.iter().map(|p| p.as_path()).collect();
+        if !parent_local_nm.as_os_str().is_empty() {
+            probe_roots.push(parent_local_nm.as_path());
+        }
+        for nm_root in probe_roots {
             let candidate = nm_root.join(&spec);
             if !candidate.is_dir() { continue }
             if !seen.insert(candidate.clone()) { continue }
@@ -453,10 +467,65 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 package_id: None,
                 requested_imports: Vec::new(),
             });
+            break; // one canonical install per spec is enough
         }
     }
 
     roots
+}
+
+/// Compute a dep's own `node_modules/` directory — the place where pnpm
+/// stores its transitive dependencies as siblings. For a package at
+/// `<store>/node_modules/<scope>/<name>` returns `<store>/node_modules`,
+/// for `<store>/node_modules/<name>` returns `<store>/node_modules`. None
+/// when the directory layout doesn't match either shape.
+///
+/// Resolves through symlinks first so pnpm's symlink layout
+/// (`pkg/node_modules/<scope>/<dep>` → `<store>/node_modules/<scope>/<dep>`)
+/// produces the real on-disk store path, where the dep's own deps live as
+/// siblings. Without canonicalisation the parent walks land on the symlink
+/// container, which only holds packages declared in the consumer's own
+/// `package.json`, missing every transitive.
+fn dep_local_node_modules(dep_root: &Path) -> Option<PathBuf> {
+    let real_root = std::fs::canonicalize(dep_root).ok().unwrap_or_else(|| dep_root.to_path_buf());
+    let parent = real_root.parent()?;
+    let parent_name = parent.file_name()?.to_str()?;
+    if parent_name.starts_with('@') {
+        parent.parent().map(|p| p.to_path_buf())
+    } else {
+        Some(parent.to_path_buf())
+    }
+}
+
+/// Walk the relative re-export chain starting at `entry`, collecting every
+/// bare (cross-package) re-export specifier reachable via relative `./x` /
+/// `../x` chains. Bounded by `REEXPORT_MAX_DEPTH` and a visited set so
+/// cyclic re-exports (rare but seen in @types) don't loop.
+///
+/// Necessary because most npm packages keep cross-package re-exports out of
+/// their entry file:
+///   `dist/index.d.ts`     export * from './ts-estree'
+///   `dist/ts-estree.d.ts` export { TSESTree } from '@typescript-eslint/types'
+/// — scanning only the entry misses `@typescript-eslint/types`, leaving its
+/// symbols absent from the index. Walking the relative chain catches them.
+fn collect_bare_reexports_recursive(entry: &Path) -> Vec<String> {
+    let mut out: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut stack: Vec<(PathBuf, u32)> = vec![(entry.to_path_buf(), 0)];
+    while let Some((file, depth)) = stack.pop() {
+        if !seen.insert(file.clone()) { continue }
+        if depth > REEXPORT_MAX_DEPTH { continue }
+        let Ok(src) = std::fs::read_to_string(&file) else { continue };
+        for spec in extract_bare_reexport_specifiers(&src) {
+            out.insert(spec);
+        }
+        for rel in extract_relative_reexports(&src) {
+            if let Some(next) = resolve_relative_ts_path(&file, &rel) {
+                stack.push((next, depth + 1));
+            }
+        }
+    }
+    out.into_iter().collect()
 }
 
 /// Scan a source file for `export ... from '<spec>'` / `import ... from '<spec>'`
@@ -591,23 +660,28 @@ fn discover_ts_externals_scoped(
     // package.json but is re-exported from the dep's public entry.
     let existing: std::collections::HashSet<String> =
         roots.iter().map(|r| r.module_path.clone()).collect();
-    let mut transitive_specs: std::collections::HashSet<String> =
+    let mut transitive_specs: std::collections::HashSet<(String, PathBuf)> =
         std::collections::HashSet::new();
     for r in &roots {
         let entry = match resolve_package_entry_path(r) {
             Some(e) => e,
             None => continue,
         };
-        let Ok(src) = std::fs::read_to_string(&entry) else { continue };
-        for spec in extract_bare_reexport_specifiers(&src) {
+        let local_nm = dep_local_node_modules(&r.root).unwrap_or_default();
+        for spec in collect_bare_reexports_recursive(&entry) {
             if !existing.contains(&spec) && !builtins.contains(spec.as_str()) {
-                transitive_specs.insert(spec);
+                transitive_specs.insert((spec, local_nm.clone()));
             }
         }
     }
-    for spec in transitive_specs {
+    for (spec, parent_local_nm) in transitive_specs {
         if spec.starts_with('@') && !spec.contains('/') { continue }
-        for nm_root in &node_modules_roots {
+        let mut probe_roots: Vec<&Path> =
+            node_modules_roots.iter().map(|p| p.as_path()).collect();
+        if !parent_local_nm.as_os_str().is_empty() {
+            probe_roots.push(parent_local_nm.as_path());
+        }
+        for nm_root in probe_roots {
             let candidate = nm_root.join(&spec);
             if !candidate.is_dir() { continue }
             if !seen.insert(candidate.clone()) { continue }
@@ -619,6 +693,7 @@ fn discover_ts_externals_scoped(
                 package_id: None,
                 requested_imports: Vec::new(),
             });
+            break;
         }
     }
 

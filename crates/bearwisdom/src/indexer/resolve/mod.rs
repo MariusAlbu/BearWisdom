@@ -842,6 +842,9 @@ fn resolve_iteration_body(
                 symbol_id_map,
                 parsed,
                 &|p| index.is_ambient_path(p),
+                &|suffix, prefix, module, cands| {
+                    index.resolve_via_external_reexport(suffix, prefix, module, cands)
+                },
             );
 
             match resolution {
