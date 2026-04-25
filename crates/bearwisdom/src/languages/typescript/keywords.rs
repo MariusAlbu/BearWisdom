@@ -74,4 +74,17 @@ pub(crate) const KEYWORDS: &[&str] = &[
     // classifying them as "primitive" external suppresses spurious
     // unresolved_refs entries.
     "super", "this", "new.target", "import.meta",
+    // Svelte 5 runes — compiler intrinsics callable in `<script>` blocks
+    // and `.svelte.ts` files. The Svelte plugin reuses TS keywords, so
+    // listing them here covers both `.svelte` host files (where pf.language
+    // is "svelte") and `.svelte.ts` files (where pf.language is "typescript").
+    // No import statement is needed in source — they're resolved by the
+    // Svelte compiler — so they should be classified as "primitive".
+    "$state", "$derived", "$effect", "$props", "$bindable", "$inspect", "$host",
+    // Svelte 4 / SvelteKit specials. `$$props`, `$$restProps`, `$$slots`
+    // are auto-injected in template scope; `$page`, `$navigating`, `$updated`
+    // are SvelteKit auto-imported store proxies (the leading `$` is the
+    // store-auto-subscribe prefix).
+    "$$props", "$$restProps", "$$slots",
+    "$page", "$navigating", "$updated",
 ];
