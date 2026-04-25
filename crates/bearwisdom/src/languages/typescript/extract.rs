@@ -1645,10 +1645,55 @@ fn collect_type_param_scopes(
             out.push((name, start_line, end_line));
         }
     }
+    // `infer X` introduces a type variable inside a `conditional_type` —
+    // `T extends Foo<infer X> ? X : never`. The variable is in scope for
+    // the entire conditional expression. Without this, real source code
+    // patterns like `T extends [infer Head, ...infer Tails]` leak `Head`
+    // and `Tails` as unresolved external TypeRefs (very common in
+    // tanstack-query / trpc / solid-query type gymnastics).
+    if node.kind() == "infer_type" {
+        let mut name_node = node.child_by_field_name("name");
+        if name_node.is_none() {
+            let mut cursor = node.walk();
+            for c in node.children(&mut cursor) {
+                if matches!(c.kind(), "type_identifier" | "identifier") {
+                    name_node = Some(c);
+                    break;
+                }
+            }
+        }
+        if let Some(n) = name_node {
+            if let Ok(name) = n.utf8_text(src) {
+                if !name.is_empty() {
+                    let scope_node = enclosing_conditional_type(&node).unwrap_or(node);
+                    out.push((
+                        name.to_string(),
+                        scope_node.start_position().row as u32,
+                        scope_node.end_position().row as u32,
+                    ));
+                }
+            }
+        }
+    }
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         collect_type_param_scopes(child, src, out);
     }
+}
+
+/// Walk parents until we find the enclosing `conditional_type` node — the
+/// scope an `infer X` binding is visible in. Falls back to `None` if the
+/// `infer_type` is somehow detached from a conditional context (which the
+/// TS grammar shouldn't produce, but defensive coding doesn't hurt).
+fn enclosing_conditional_type<'a>(node: &tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+    let mut cur = node.parent();
+    while let Some(p) = cur {
+        if p.kind() == "conditional_type" {
+            return Some(p);
+        }
+        cur = p.parent();
+    }
+    None
 }
 
 // ---------------------------------------------------------------------------
