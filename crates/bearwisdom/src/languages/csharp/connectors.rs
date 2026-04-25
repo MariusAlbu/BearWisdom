@@ -59,64 +59,78 @@ impl Connector for DotnetDiConnector {
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        let registrations = detect_di_registrations(conn, project_root)
+        let registrations = detect_di_registrations(conn, project_root, None)
             .context(".NET DI registration detection failed")?;
+        Ok(di_registrations_to_points(conn, &registrations))
+    }
 
-        let mut points = Vec::new();
+    fn incremental_extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+        changed_paths: &std::collections::HashSet<String>,
+    ) -> Result<Vec<ConnectionPoint>> {
+        // Scan only the changed/dependent files from disk; CASCADE-deleted
+        // edges from prior runs free up old DI bindings in the DB without
+        // needing a re-scan. On a 10k-file project this drops the disk
+        // I/O cost from 10k file reads to ~3 (typical changed set).
+        let registrations = detect_di_registrations(conn, project_root, Some(changed_paths))
+            .context(".NET DI registration detection failed")?;
+        Ok(di_registrations_to_points(conn, &registrations))
+    }
+}
 
-        for reg in &registrations {
-            // Skip self-registrations — no interface/impl distinction.
-            if reg.interface_type == reg.implementation_type {
-                continue;
-            }
-
-            let metadata = serde_json::json!({
-                "lifetime": reg.lifetime,
-                "implementation": reg.implementation_type,
-            })
-            .to_string();
-
-            // Resolve interface → its definition site in the symbols table.
-            let iface_def = resolve_symbol_def(conn, &reg.interface_type);
-            // Resolve concrete impl → its definition site.
-            let impl_def = resolve_symbol_def(conn, &reg.implementation_type);
-
-            // Start: the interface definition (the dependency being requested).
-            // Fall back to registration site if the interface isn't in the symbol table.
-            let (iface_file, iface_sym, iface_line) =
-                iface_def.unwrap_or((reg.file_id, None, reg.line));
-
-            points.push(ConnectionPoint {
-                file_id: iface_file,
-                symbol_id: iface_sym,
-                line: iface_line,
-                protocol: Protocol::Di,
-                direction: FlowDirection::Start,
-                key: reg.interface_type.clone(),
-                method: String::new(),
-                framework: "dotnet".to_string(),
-                metadata: Some(metadata.clone()),
-            });
-
-            // Stop: the implementation definition (the type that fulfills the binding).
-            let (impl_file, impl_sym, impl_line) =
-                impl_def.unwrap_or((reg.file_id, None, reg.line));
-
-            points.push(ConnectionPoint {
-                file_id: impl_file,
-                symbol_id: impl_sym,
-                line: impl_line,
-                protocol: Protocol::Di,
-                direction: FlowDirection::Stop,
-                key: reg.interface_type.clone(),
-                method: String::new(),
-                framework: "dotnet".to_string(),
-                metadata: Some(metadata),
-            });
+fn di_registrations_to_points(
+    conn: &Connection,
+    registrations: &[DiRegistration],
+) -> Vec<ConnectionPoint> {
+    let mut points = Vec::new();
+    for reg in registrations {
+        // Skip self-registrations — no interface/impl distinction.
+        if reg.interface_type == reg.implementation_type {
+            continue;
         }
 
-        Ok(points)
+        let metadata = serde_json::json!({
+            "lifetime": reg.lifetime,
+            "implementation": reg.implementation_type,
+        })
+        .to_string();
+
+        let iface_def = resolve_symbol_def(conn, &reg.interface_type);
+        let impl_def = resolve_symbol_def(conn, &reg.implementation_type);
+
+        let (iface_file, iface_sym, iface_line) =
+            iface_def.unwrap_or((reg.file_id, None, reg.line));
+
+        points.push(ConnectionPoint {
+            file_id: iface_file,
+            symbol_id: iface_sym,
+            line: iface_line,
+            protocol: Protocol::Di,
+            direction: FlowDirection::Start,
+            key: reg.interface_type.clone(),
+            method: String::new(),
+            framework: "dotnet".to_string(),
+            metadata: Some(metadata.clone()),
+        });
+
+        let (impl_file, impl_sym, impl_line) =
+            impl_def.unwrap_or((reg.file_id, None, reg.line));
+
+        points.push(ConnectionPoint {
+            file_id: impl_file,
+            symbol_id: impl_sym,
+            line: impl_line,
+            protocol: Protocol::Di,
+            direction: FlowDirection::Stop,
+            key: reg.interface_type.clone(),
+            method: String::new(),
+            framework: "dotnet".to_string(),
+            metadata: Some(metadata),
+        });
     }
+    points
 }
 
 // ===========================================================================
@@ -140,59 +154,83 @@ impl Connector for EventBusConnector {
     }
 
     fn extract(&self, conn: &Connection, project_root: &Path) -> Result<Vec<ConnectionPoint>> {
-        let mut points = Vec::new();
-
-        // Start points: integration event classes.
-        let events =
-            find_integration_events(conn).context("Integration event detection failed")?;
-
-        for event in &events {
-            let file_id = resolve_file_id(conn, &event.file_path);
-            if let Some(file_id) = file_id {
-                let line = resolve_symbol_line(conn, event.symbol_id);
-                points.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: Some(event.symbol_id),
-                    line,
-                    protocol: Protocol::EventBus,
-                    direction: FlowDirection::Start,
-                    key: event.name.clone(),
-                    method: String::new(),
-                    framework: String::new(),
-                    metadata: None,
-                });
-            }
-        }
-
-        // Stop points: event handler classes.
-        let handlers =
-            find_event_handlers(conn, project_root).context("Event handler detection failed")?;
-
-        for handler in &handlers {
-            let file_id = resolve_file_id(conn, &handler.file_path);
-            if let Some(file_id) = file_id {
-                let line = resolve_symbol_line(conn, handler.symbol_id);
-                points.push(ConnectionPoint {
-                    file_id,
-                    symbol_id: Some(handler.symbol_id),
-                    line,
-                    protocol: Protocol::EventBus,
-                    direction: FlowDirection::Stop,
-                    key: handler.event_type.clone(),
-                    method: String::new(),
-                    framework: String::new(),
-                    metadata: Some(
-                        serde_json::json!({
-                            "handler": handler.name,
-                        })
-                        .to_string(),
-                    ),
-                });
-            }
-        }
-
-        Ok(points)
+        Ok(events_to_points(conn, project_root, None)?)
     }
+
+    fn incremental_extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+        changed_paths: &std::collections::HashSet<String>,
+    ) -> Result<Vec<ConnectionPoint>> {
+        Ok(events_to_points(conn, project_root, Some(changed_paths))?)
+    }
+}
+
+fn events_to_points(
+    conn: &Connection,
+    project_root: &Path,
+    restrict_to_paths: Option<&std::collections::HashSet<String>>,
+) -> Result<Vec<ConnectionPoint>> {
+    let mut points = Vec::new();
+
+    // Start points: integration event classes. The DB-side query is
+    // already cheap (an indexed JOIN); restricting it to changed paths
+    // would skip events whose Stop handlers live in changed files —
+    // matching needs both sides, so always emit Start from the full
+    // project. The `find_event_handlers` Stop scan IS the disk-read
+    // cost we're scoping.
+    let events =
+        find_integration_events(conn).context("Integration event detection failed")?;
+
+    for event in &events {
+        let file_id = resolve_file_id(conn, &event.file_path);
+        if let Some(file_id) = file_id {
+            let line = resolve_symbol_line(conn, event.symbol_id);
+            points.push(ConnectionPoint {
+                file_id,
+                symbol_id: Some(event.symbol_id),
+                line,
+                protocol: Protocol::EventBus,
+                direction: FlowDirection::Start,
+                key: event.name.clone(),
+                method: String::new(),
+                framework: String::new(),
+                metadata: None,
+            });
+        }
+    }
+
+    // Stop points: event handler classes. Disk scan scoped to changed
+    // paths on incremental — handlers in unchanged files keep their
+    // edges via the FK CASCADE pattern.
+    let handlers = find_event_handlers(conn, project_root, restrict_to_paths)
+        .context("Event handler detection failed")?;
+
+    for handler in &handlers {
+        let file_id = resolve_file_id(conn, &handler.file_path);
+        if let Some(file_id) = file_id {
+            let line = resolve_symbol_line(conn, handler.symbol_id);
+            points.push(ConnectionPoint {
+                file_id,
+                symbol_id: Some(handler.symbol_id),
+                line,
+                protocol: Protocol::EventBus,
+                direction: FlowDirection::Stop,
+                key: handler.event_type.clone(),
+                method: String::new(),
+                framework: String::new(),
+                metadata: Some(
+                    serde_json::json!({
+                        "handler": handler.name,
+                    })
+                    .to_string(),
+                ),
+            });
+        }
+    }
+
+    Ok(points)
 }
 
 // ===========================================================================
@@ -221,16 +259,24 @@ pub struct DiRegistration {
 pub fn detect_di_registrations(
     conn: &Connection,
     project_root: &Path,
+    restrict_to_paths: Option<&std::collections::HashSet<String>>,
 ) -> Result<Vec<DiRegistration>> {
     let mut stmt = conn
         .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
         .context("Failed to prepare C# files query")?;
 
-    let files: Vec<(i64, String)> = stmt
+    let mut files: Vec<(i64, String)> = stmt
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
         .context("Failed to query C# files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect C# file rows")?;
+
+    // Incremental: skip the disk read for files that didn't change. The
+    // CASCADE-deleted edges from a prior run are already gone from the DB
+    // for changed files; unchanged files keep their existing DI bindings.
+    if let Some(scope) = restrict_to_paths {
+        files.retain(|(_, path)| scope.contains(path));
+    }
 
     // Per-file disk read + regex scan is independent work. On a 3000-file
     // project this turns ~30 s of serial I/O-bound work into ~4 s on an
@@ -443,16 +489,24 @@ pub fn find_integration_events(conn: &Connection) -> Result<Vec<IntegrationEvent
 }
 
 /// Find all classes that implement `IIntegrationEventHandler<T>` in C# files.
-pub fn find_event_handlers(conn: &Connection, project_root: &Path) -> Result<Vec<EventHandler>> {
+pub fn find_event_handlers(
+    conn: &Connection,
+    project_root: &Path,
+    restrict_to_paths: Option<&std::collections::HashSet<String>>,
+) -> Result<Vec<EventHandler>> {
     let mut stmt = conn
         .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
         .context("Failed to prepare C# files query")?;
 
-    let files: Vec<(i64, String)> = stmt
+    let mut files: Vec<(i64, String)> = stmt
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
         .context("Failed to query C# files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect C# file rows")?;
+
+    if let Some(scope) = restrict_to_paths {
+        files.retain(|(_, path)| scope.contains(path));
+    }
 
     // Phase 1 (parallel): read every file and regex-scan for handler
     // matches. Produces lightweight `(rel_path, line_no, event_type)`
@@ -1087,7 +1141,22 @@ impl Connector for CsharpRestConnector {
     ) -> Result<Vec<ConnectionPoint>> {
         let mut points = Vec::new();
         extract_csharp_rest_stops(conn, &mut points)?;
-        extract_csharp_rest_starts(conn, project_root, &mut points)?;
+        extract_csharp_rest_starts(conn, project_root, &mut points, None)?;
+        Ok(points)
+    }
+
+    fn incremental_extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+        changed_paths: &std::collections::HashSet<String>,
+    ) -> Result<Vec<ConnectionPoint>> {
+        // Stops come from the routes table — already a cheap indexed
+        // SELECT, no scoping needed. Starts read every .cs from disk to
+        // regex-match HttpClient calls — scope to changed files.
+        let mut points = Vec::new();
+        extract_csharp_rest_stops(conn, &mut points)?;
+        extract_csharp_rest_starts(conn, project_root, &mut points, Some(changed_paths))?;
         Ok(points)
     }
 }
@@ -1134,29 +1203,46 @@ fn extract_csharp_rest_stops(conn: &Connection, out: &mut Vec<ConnectionPoint>) 
     Ok(())
 }
 
+// Compiled once at process start; the old code rebuilt these every call.
+// `re_api_const` was even worse — rebuilt PER FILE inside the inner loop
+// on every connector pass (10k+ regex compilations per save).
+static RE_REST_DIRECT: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"HttpClient\s*\.\s*(?P<method>Get|Post|Put|Delete|Patch)Async\s*\(\s*(?:"(?P<url1>[^"]+)"|@?"(?P<url2>[^"]+)")"#,
+    ).expect("csharp httpclient regex")
+});
+static RE_REST_WRAPPER: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?:_\w+|this\.\w+)\s*\.\s*(?P<method>Get|Post|Put|Delete|Patch)Async\s*(?:<[^>]*>)?\s*\(\s*(?:(?:"(?P<url>[^"]+)")|(?:\$"(?P<interp>[^"]+)"))"#,
+    ).expect("csharp wrapper regex")
+});
+static RE_REST_API_CONST: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(
+        r#"(?:const|static\s+readonly)\s+string\s+\w*(?:Api|Url|Base|Endpoint)\w*\s*=\s*"([^"]+)""#,
+    ).expect("api const regex")
+});
+
 fn extract_csharp_rest_starts(
     conn: &Connection,
     project_root: &Path,
     out: &mut Vec<ConnectionPoint>,
+    restrict_to_paths: Option<&std::collections::HashSet<String>>,
 ) -> Result<()> {
-    // HttpClient.GetAsync("url"), PostAsync, PutAsync, DeleteAsync
-    let re_direct = Regex::new(
-        r#"HttpClient\s*\.\s*(?P<method>Get|Post|Put|Delete|Patch)Async\s*\(\s*(?:"(?P<url1>[^"]+)"|@?"(?P<url2>[^"]+)")"#,
-    ).expect("csharp httpclient regex");
-
-    // _provider.GetAsync<T>("url") or _provider.GetAsync<T>($"url")
-    let re_wrapper = Regex::new(
-        r#"(?:_\w+|this\.\w+)\s*\.\s*(?P<method>Get|Post|Put|Delete|Patch)Async\s*(?:<[^>]*>)?\s*\(\s*(?:(?:"(?P<url>[^"]+)")|(?:\$"(?P<interp>[^"]+)"))"#,
-    ).expect("csharp wrapper regex");
+    let re_direct = &*RE_REST_DIRECT;
+    let re_wrapper = &*RE_REST_WRAPPER;
 
     let mut stmt = conn
         .prepare("SELECT id, path FROM files WHERE language = 'csharp'")
         .context("Failed to prepare C# files query")?;
-    let files: Vec<(i64, String)> = stmt
+    let mut files: Vec<(i64, String)> = stmt
         .query_map([], |row| Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?)))
         .context("Failed to query C# files")?
         .collect::<rusqlite::Result<Vec<_>>>()
         .context("Failed to collect C# file rows")?;
+
+    if let Some(scope) = restrict_to_paths {
+        files.retain(|(_, path)| scope.contains(path));
+    }
 
     for (file_id, rel_path) in files {
         if csharp_rest_is_test_file(&rel_path) {
@@ -1168,11 +1254,7 @@ fn extract_csharp_rest_starts(
             Err(_) => continue,
         };
 
-        // Collect API URL base constants from the file for interpolation.
-        let re_api_const = Regex::new(
-            r#"(?:const|static\s+readonly)\s+string\s+\w*(?:Api|Url|Base|Endpoint)\w*\s*=\s*"([^"]+)""#,
-        ).expect("api const regex");
-        let api_bases: Vec<String> = re_api_const
+        let api_bases: Vec<String> = RE_REST_API_CONST
             .captures_iter(&source)
             .filter_map(|c| c.get(1).map(|m| m.as_str().to_string()))
             .collect();

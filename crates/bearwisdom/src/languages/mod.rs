@@ -176,6 +176,21 @@ pub trait LanguagePlugin: Send + Sync + 'static {
         Vec::new()
     }
 
+    /// Incremental variant — pass `changed_paths` so plugins owning
+    /// connectors with disk-read scans (e.g. C# DI / event-handler regex
+    /// sweeps) can scope to changed files. Default falls back to the
+    /// full `resolve_connection_points` for plugins that don't
+    /// distinguish.
+    fn resolve_connection_points_incremental(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+        _changed_paths: &std::collections::HashSet<String>,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        self.resolve_connection_points(db, project_root, ctx)
+    }
+
     /// Node kinds that SHOULD produce symbols, per the extraction rules.
     /// Used by `bw coverage` to measure extraction completeness.
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
@@ -526,6 +541,30 @@ pub fn drive_connector(
         Err(e) => {
             tracing::warn!(
                 "connector {}: resolve_connection_points failed: {e}",
+                c.descriptor().name
+            );
+            Vec::new()
+        }
+    }
+}
+
+/// Incremental variant of `drive_connector` — routes to the connector's
+/// `incremental_extract` so disk scans get scoped to `changed_paths`.
+pub fn drive_connector_incremental(
+    c: &dyn crate::connectors::traits::Connector,
+    db: &crate::db::Database,
+    project_root: &std::path::Path,
+    ctx: &crate::indexer::project_context::ProjectContext,
+    changed_paths: &std::collections::HashSet<String>,
+) -> Vec<crate::connectors::types::ConnectionPoint> {
+    if !c.detect(ctx) {
+        return Vec::new();
+    }
+    match c.incremental_extract(db.conn(), project_root, changed_paths) {
+        Ok(pts) => pts,
+        Err(e) => {
+            tracing::warn!(
+                "connector {}: incremental_resolve_connection_points failed: {e}",
                 c.descriptor().name
             );
             Vec::new()

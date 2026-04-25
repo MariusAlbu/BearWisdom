@@ -413,19 +413,26 @@ fn run_incremental_pipeline(
 
     let mut resolved_plugin_points: Vec<crate::connectors::types::ConnectionPoint> = Vec::new();
     for plugin in registry.all() {
-        let points = plugin.resolve_connection_points(db, project_root, &project_ctx);
+        let points = plugin.resolve_connection_points_incremental(
+            db, project_root, &project_ctx, &changed_paths,
+        );
         if !points.is_empty() {
             resolved_plugin_points.extend(points);
         }
     }
 
     let connector_registry = crate::connectors::registry::build_default_registry();
-    if let Err(e) = connector_registry.run_with_plugin_points(
+    // Incremental path: scope per-connector disk scans to changed +
+    // dependent files. The C# DI / event-bus connectors override
+    // `incremental_extract` to skip the full project sweep — saves
+    // ~10k disk reads on a typical save event.
+    if let Err(e) = connector_registry.run_incremental(
         db.conn(),
         project_root,
         &project_ctx,
         &plugin_points,
         &resolved_plugin_points,
+        &changed_paths,
     ) {
         warn!("Incremental connector pass failed: {e}");
     }

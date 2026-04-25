@@ -7,6 +7,7 @@
 
 use anyhow::Result;
 use rusqlite::Connection;
+use std::collections::HashSet;
 use std::path::Path;
 
 use super::types::{ConnectionPoint, Protocol, ResolvedFlow};
@@ -43,6 +44,23 @@ pub trait Connector: Send + Sync {
         conn: &Connection,
         project_root: &Path,
     ) -> Result<Vec<ConnectionPoint>>;
+
+    /// Incremental variant: extract connection points only from files in
+    /// `changed_paths`. Connectors that re-read source files from disk
+    /// (e.g. C# DI registration scan, event-handler scan) override this
+    /// to skip the full project sweep — saving 10k+ disk reads on every
+    /// incremental save.
+    ///
+    /// Default falls back to `extract` (full project scan), which is
+    /// correct but wasteful on incremental.
+    fn incremental_extract(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+        _changed_paths: &HashSet<String>,
+    ) -> Result<Vec<ConnectionPoint>> {
+        self.extract(conn, project_root)
+    }
 
     /// Optional custom matching pass that replaces the generic `ProtocolMatcher`
     /// for this connector's protocol(s).

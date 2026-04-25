@@ -157,6 +157,36 @@ impl LanguagePlugin for CSharpPlugin {
         out
     }
 
+    fn resolve_connection_points_incremental(
+        &self,
+        db: &crate::db::Database,
+        project_root: &std::path::Path,
+        ctx: &crate::indexer::project_context::ProjectContext,
+        changed_paths: &std::collections::HashSet<String>,
+    ) -> Vec<crate::connectors::types::ConnectionPoint> {
+        // DI + event-bus scans the disk; scope to `changed_paths` so we
+        // don't read 10k .cs files on every save. The DB-only scans
+        // (gRPC, GraphQL, REST attribute-based) stay full-scope — they
+        // only do indexed JOINs and need cross-file coverage.
+        let mut out = Vec::new();
+        out.extend(crate::languages::drive_connector_incremental(
+            &connectors::DotnetDiConnector, db, project_root, ctx, changed_paths,
+        ));
+        out.extend(crate::languages::drive_connector_incremental(
+            &connectors::EventBusConnector, db, project_root, ctx, changed_paths,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::CSharpGrpcConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::CSharpGraphQlConnector, db, project_root, ctx,
+        ));
+        out.extend(crate::languages::drive_connector(
+            &connectors::CsharpRestConnector, db, project_root, ctx,
+        ));
+        out
+    }
+
     fn post_index(
         &self,
         db: &crate::db::Database,

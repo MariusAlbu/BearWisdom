@@ -12,6 +12,7 @@
 use anyhow::Result;
 use rustc_hash::FxHashSet;
 use rusqlite::Connection;
+use std::collections::HashSet;
 use std::path::Path;
 use tracing::{info, warn};
 
@@ -71,6 +72,26 @@ impl ConnectorRegistry {
     /// `extract_connection_points`, their legacy `Connector::extract`
     /// shrinks / vanishes; this variant keeps both sources live during
     /// the migration.
+    /// Incremental variant of `run_with_plugin_points` that scopes each
+    /// connector's source-file scan to `changed_paths`. Used by the
+    /// incremental save path so a 10k-file C# project doesn't pay the
+    /// cost of re-reading every .cs file on every save just to detect
+    /// DI registrations and event handlers in the 2-3 changed files.
+    pub fn run_incremental(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+        ctx: &ProjectContext,
+        plugin_points: &[ConnectionPoint],
+        resolved_plugin_points: &[ConnectionPoint],
+        changed_paths: &HashSet<String>,
+    ) -> Result<u32> {
+        self.run_inner(
+            conn, project_root, ctx, plugin_points, resolved_plugin_points,
+            Some(changed_paths),
+        )
+    }
+
     pub fn run_with_plugin_points(
         &self,
         conn: &Connection,
@@ -78,6 +99,18 @@ impl ConnectorRegistry {
         ctx: &ProjectContext,
         plugin_points: &[ConnectionPoint],
         resolved_plugin_points: &[ConnectionPoint],
+    ) -> Result<u32> {
+        self.run_inner(conn, project_root, ctx, plugin_points, resolved_plugin_points, None)
+    }
+
+    fn run_inner(
+        &self,
+        conn: &Connection,
+        project_root: &Path,
+        ctx: &ProjectContext,
+        plugin_points: &[ConnectionPoint],
+        resolved_plugin_points: &[ConnectionPoint],
+        changed_paths: Option<&HashSet<String>>,
     ) -> Result<u32> {
         // Phase 0: detect — only keep connectors relevant to this project.
         let active: Vec<&dyn Connector> = self
@@ -120,7 +153,11 @@ impl ConnectorRegistry {
 
         for connector in &active {
             let desc = connector.descriptor();
-            match connector.extract(conn, project_root) {
+            let result = match changed_paths {
+                Some(scope) => connector.incremental_extract(conn, project_root, scope),
+                None => connector.extract(conn, project_root),
+            };
+            match result {
                 Ok(points) => {
                     info!("{}: {} connection points", desc.name, points.len());
                     all_points.extend(points);

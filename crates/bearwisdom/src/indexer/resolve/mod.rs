@@ -283,6 +283,41 @@ pub fn resolve_iteration_incremental(
     resolve_iteration_inner(db, parsed, symbol_id_map, project_ctx, true)
 }
 
+/// Reuse-across-iterations variant. The orchestrator (full.rs) builds
+/// the SymbolIndex once and threads it through expand-loop iterations
+/// via `&mut Option<SymbolIndex>`. Each call:
+///   - if `index` is `None`: builds via `build_with_context` (initial)
+///   - if `index` is `Some`: reuses, augmenting with `new_files` if non-empty
+///
+/// On a 280k-symbol aspnetcore index the rebuild costs ~5-10s; running
+/// it 8× across the expand loop is ~40-80s of redundant work this
+/// avoids. Equivalent correctness for the resolved-edge counts.
+pub fn resolve_iteration_with_cached_index(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    cached_index: &mut Option<engine::SymbolIndex>,
+    new_files_slice: &[ParsedFile],
+) -> Result<ResolutionStats> {
+    if cached_index.is_none() {
+        let mut index = engine::SymbolIndex::build_with_context(parsed, symbol_id_map, project_ctx);
+        let external_paths = read_external_file_paths(db.conn());
+        if !external_paths.is_empty() {
+            index.set_external_paths(external_paths);
+        }
+        *cached_index = Some(index);
+    } else if !new_files_slice.is_empty() {
+        if let Some(idx) = cached_index.as_mut() {
+            idx.augment_from_parsed(new_files_slice, symbol_id_map);
+        }
+    }
+    resolve_iteration_inner_with_index(
+        db, parsed, symbol_id_map, project_ctx,
+        cached_index.as_mut().expect("index is set above"),
+    )
+}
+
 fn resolve_iteration_inner(
     db: &mut Database,
     parsed: &[ParsedFile],
@@ -290,7 +325,6 @@ fn resolve_iteration_inner(
     project_ctx: Option<&ProjectContext>,
     augment_from_db: bool,
 ) -> Result<ResolutionStats> {
-    let engine = ResolutionEngine::new();
     // Ext-origin files without an `ext:` path prefix — specifically,
     // script-tag-parsed vendored JS like `wwwroot/lib/jquery.min.js` — live
     // under regular project-relative paths in the DB but carry
@@ -314,6 +348,33 @@ fn resolve_iteration_inner(
     } else {
         None
     };
+
+    resolve_iteration_body(db, parsed, symbol_id_map, project_ctx, &mut index, augmented_id_map)
+}
+
+fn resolve_iteration_inner_with_index(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    index: &mut SymbolIndex,
+) -> Result<ResolutionStats> {
+    resolve_iteration_body(db, parsed, symbol_id_map, project_ctx, index, None)
+}
+
+fn resolve_iteration_body(
+    db: &mut Database,
+    parsed: &[ParsedFile],
+    symbol_id_map: &HashMap<(String, String), i64>,
+    project_ctx: Option<&ProjectContext>,
+    index: &mut SymbolIndex,
+    augmented_id_map: Option<HashMap<(String, String), i64>>,
+) -> Result<ResolutionStats> {
+    let engine = ResolutionEngine::new();
+    // The closure passed to par_iter requires `&SymbolIndex` (for the
+    // SymbolLookup trait), not `&mut SymbolIndex`. Reborrow as
+    // immutable for the duration of the loop.
+    let index: &SymbolIndex = &*index;
 
     let conn = db.conn();
     let tx = conn
@@ -537,7 +598,7 @@ fn resolve_iteration_inner(
                     file_package_id: pf.package_id,
                 };
 
-                if let Some(resolution) = resolver.resolve(&file_ctx, &ref_ctx, &index) {
+                if let Some(resolution) = resolver.resolve(&file_ctx, &ref_ctx, index) {
                     // R5: if this ref is the RHS of `<lhs> = <expr>`, record
                     // the target's yield type (return type for a method call,
                     // declared type for a field) against the named LHS. The
@@ -642,7 +703,7 @@ fn resolve_iteration_inner(
                     file_package_id: pf.package_id,
                 };
                 resolver.infer_external_namespace_with_lookup(
-                    file_ctx, &ref_ctx, project_ctx, &index,
+                    file_ctx, &ref_ctx, project_ctx, index,
                 )
             } else {
                 None
@@ -652,7 +713,7 @@ fn resolve_iteration_inner(
             // classify as external (handles ORM, test framework, fluent API chains).
             let inferred_ns = inferred_ns.or_else(|| {
                 r.chain.as_ref().and_then(|chain| {
-                    engine::infer_external_from_chain(chain, &scope_chain, &index)
+                    engine::infer_external_from_chain(chain, &scope_chain, index)
                 })
             });
 
@@ -704,7 +765,7 @@ fn resolve_iteration_inner(
                     let Some(module_path) = module_path_opt.as_deref() else {
                         continue;
                     };
-                    if is_module_in_project(module_path, &module_to_files, &index) {
+                    if is_module_in_project(module_path, &module_to_files, index) {
                         continue;
                     }
                     return Some(format!("ext:{module_path}"));
