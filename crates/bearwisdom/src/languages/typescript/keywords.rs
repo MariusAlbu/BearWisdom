@@ -19,6 +19,9 @@ pub(crate) const KEYWORDS: &[&str] = &[
     // Wrapper / global objects — all over AMBIGUITY_LIMIT (64-28 candidates)
     "String", "Number", "Boolean", "Object", "Array", "Function", "Symbol",
     "RegExp", "Date", "Error", "Promise", "Map", "Set",
+    // JS namespace globals — appear in `Math.floor()`, `JSON.parse()` etc.
+    // Used as both value and type (`typeof Math`, `JSON.stringify`).
+    "Math", "JSON", "console", "globalThis", "performance",
     // Utility types that exceed AMBIGUITY_LIMIT (11-16 candidates each)
     "Partial", "Required", "Readonly", "ReturnType", "Parameters",
     "ThisType",

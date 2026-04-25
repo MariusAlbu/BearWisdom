@@ -357,6 +357,15 @@ pub(super) fn extract_type_ref_from_annotation(
         "this_type" => {}
         // Literal types (`"foo"`, `42`, `true`) — not type references.
         "literal_type" | "string" | "number" | "true" | "false" | "null" => {}
+        // Object type literal `{ field: T; method(arg: U): V }`. Members are
+        // emitted as Property/Method symbols via `extract_node` (driven by
+        // `recurse_for_object_types` from the type_alias_declaration / interface
+        // handlers). Recursing through the body here would emit the parameter
+        // NAMES (`arg`, `args`, etc.) and property NAMES (`field`) as TypeRefs,
+        // which is wrong — they're identifier *positions*, not type references.
+        // The proper TypeRefs for member types come from the symbol-emission
+        // path on the same nodes.
+        "object_type" => {}
         // Tuple type: `[string, number]` — recurse into element types.
         "tuple_type" => {
             for i in 0..type_node.child_count() {
@@ -404,11 +413,32 @@ pub(super) fn extract_type_refs_recursive(
                 });
             }
         }
-        // Skip inert tokens and binding-only nodes.
-        "infer_type" | "this_type" | "literal_type" => {}
+        // Skip inert tokens and binding-only nodes — including the
+        // `string` / `number` / boolean nodes that can appear directly
+        // (without a `literal_type` wrapper) when used as type members.
+        "infer_type" | "this_type" | "literal_type"
+        | "string" | "number" | "true" | "false" | "null" | "undefined"
+        | "string_fragment" | "regex" => {}
         // Skip punctuation keywords that appear as unnamed children.
         "extends" | "keyof" | "readonly" | "typeof" | "infer" | "is"
         | "?" | ":" | "|" | "&" | "[" | "]" | "(" | ")" | "{" | "}" | "," | "=>" => {}
+        // Object type literal — members are emitted as Property/Method symbols
+        // by `extract_node` (driven by `recurse_for_object_types`). Walking
+        // children here would emit property NAMES (like `action` in
+        // `{ action: string }`) as TypeRefs because property_signature
+        // contains an identifier leaf for the name.
+        "object_type" => {}
+        // Member nodes inside an object_type — same reasoning. extract_node
+        // handles these as symbols; the deep-walk fallback shouldn't visit
+        // them. Without this, the property/parameter NAME identifier leaks
+        // out as a spurious TypeRef.
+        "property_signature" | "method_signature" | "call_signature"
+        | "construct_signature" | "index_signature"
+        | "abstract_method_signature" => {}
+        // Function-type parameter list members. Walking these would emit
+        // parameter NAMES (`req`, `res`, `args`) as TypeRefs. The proper
+        // parameter TYPES are extracted via `extract_param_and_return_types`.
+        "required_parameter" | "optional_parameter" | "rest_parameter" => {}
         // For all structural type nodes, recurse into children.
         // extract_type_ref_from_annotation handles specific nodes with named field
         // lookups for precision; this helper is the deep-walk fallback that ensures
@@ -436,6 +466,15 @@ pub(super) fn extract_type_refs_recursive(
                             }
                         }
                         "infer_type" | "this_type" | "literal_type" => {}
+                        // See top-level match above — these contain identifier
+                        // leaves that aren't type references (property names,
+                        // parameter names) and should be processed by
+                        // extract_node, not the type-ref deep-walk.
+                        "object_type"
+                        | "property_signature" | "method_signature" | "call_signature"
+                        | "construct_signature" | "index_signature"
+                        | "abstract_method_signature"
+                        | "required_parameter" | "optional_parameter" | "rest_parameter" => {}
                         _ => {
                             extract_type_ref_from_annotation(&child, src, source_symbol_index, refs);
                         }
