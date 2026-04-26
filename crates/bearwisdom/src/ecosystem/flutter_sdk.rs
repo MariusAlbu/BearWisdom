@@ -66,6 +66,29 @@ impl Ecosystem for FlutterSdkEcosystem {
     fn build_symbol_index(&self, dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
         super::dart_sdk::build_dart_symbol_index(dep_roots)
     }
+
+    /// Pre-pull every `.dart` file under each Flutter root. Flutter is
+    /// demand-driven but bare type refs (`IconData`,
+    /// `RoundedRectangleBorder`, `EdgeInsets`, `FocusNode`) don't trigger
+    /// chain-miss expansion, so without an eager pull the resolver's
+    /// simple-name lookup never sees Flutter framework types and they
+    /// stay unresolved despite the SDK being discovered. `walk_flutter_
+    /// root` is the same walk used by the legacy eager path — it skips
+    /// `test/`/`tests/` and dotted dirs, bounded by `MAX_WALK_DEPTH`.
+    ///
+    /// Cost: ~700 files across `flutter`/`flutter_test`/
+    /// `flutter_localizations` libs. Well under the walker budget; the
+    /// indexer's parallel pipeline parses them in a few seconds.
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> Vec<WalkedFile> {
+        let mut out = Vec::new();
+        for dep in dep_roots {
+            out.extend(walk_flutter_root(dep));
+        }
+        out
+    }
 }
 
 impl ExternalSourceLocator for FlutterSdkEcosystem {
