@@ -10,8 +10,9 @@
 
 use super::{calls, decorators, helpers, imports, narrowing, params, symbols, types};
 
-use crate::types::ExtractionResult;
+use crate::ecosystem::imports::{resolve_import_refs, ImportEntry, ImportKind};
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
+use crate::types::ExtractionResult;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, SymbolKind};
 use std::collections::{HashMap, HashSet};
 use tree_sitter::{Node, Parser};
@@ -96,13 +97,15 @@ fn extract_inner(
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    // Pre-pass: build a local-alias → module-path map from all import statements.
-    // This is used below to annotate call refs with their source module.
+    // Pre-pass: parse every `import` statement into a per-local-name
+    // `ImportEntry`. Carries enough info (default vs named vs namespace,
+    // exported name for renamed imports) for the shared
+    // `ecosystem::imports::resolve_import_refs` pass below to canonicalize
+    // every ref against the file's import context — splits namespace
+    // prefixes (`Foo.X` → module=Foo's import, target=X), substitutes
+    // renamed imports (`{ X as Y }; Y()` → target=X), attributes calls
+    // and type refs to their source modules.
     let import_map = build_import_map(root, src_bytes);
-    // Also build an alias map that carries the ORIGINAL exported name when it
-    // differs from the local alias (`import { request as __request }`). Used
-    // to rewrite usage-site refs so the resolver can find the real export.
-    let alias_map = build_renamed_import_map(root, src_bytes);
 
     extract_node(root, src_bytes, &scope_tree, &mut symbols, &mut refs, None, demand);
 
@@ -139,24 +142,18 @@ fn extract_inner(
         }
     }
 
-    // Annotate call refs: if a Calls ref has a chain whose first segment is a
-    // known import alias, set module so the resolver can trace it back.
-    if !import_map.is_empty() {
-        annotate_call_modules(&mut refs, &import_map);
-        // Type refs from `nested_type_identifier` arrive as a single dotted
-        // string (`Oazapfts.RequestOpts`) with module=None. Split the
-        // namespace prefix off when the prefix matches an import alias —
-        // routes the ref to its real exporting module so seed_demand can
-        // pull the type's defining file and the resolver can match it.
-        annotate_namespace_type_refs(&mut refs, &import_map);
-    }
-
-    // Rewrite aliased references: `import { request as __request }; __request(...)`
-    // emits a ref with target_name=`__request`, but the exported symbol is
-    // `request`. Substitute the original name + module so the resolver can find it.
-    if !alias_map.is_empty() {
-        rewrite_aliased_refs(&mut refs, &alias_map);
-    }
+    // Apply ECMAScript import semantics to every ref in one pass:
+    //
+    //   - `import * as Foo from 'pkg'; Foo.X`        → target=X, module=pkg
+    //   - `import * as F from 'pkg'; F.A.B`          → target=B, namespace_segments=[A], module=pkg
+    //   - `import { X as Y } from 'pkg'; Y()`        → target=X, module=pkg
+    //   - `import Foo from 'pkg'; Foo.method()`      → chain root annotated, module=pkg
+    //
+    // This replaces three legacy post-passes (annotate_call_modules,
+    // annotate_namespace_type_refs, rewrite_aliased_refs) — the shared
+    // resolver in `ecosystem::imports` handles every shape uniformly so
+    // there's no per-language drift.
+    resolve_import_refs(&mut refs, &import_map);
 
     ExtractionResult::new(symbols, refs, has_errors)
 }
@@ -739,7 +736,8 @@ fn extract_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -785,7 +783,8 @@ fn extract_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // type_identifier is a leaf — no children to recurse into.
             }
@@ -806,7 +805,8 @@ fn extract_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -909,16 +909,19 @@ fn recurse_for_object_types(
 
 /// Build a map of `local_alias → module_path` from all top-level import statements.
 ///
-/// Handles all three import forms:
-/// - `import Foo from './bar'`            → `"Foo" → "./bar"`
-/// - `import { Foo, Bar as B } from ...`  → `"Foo" → ..., "B" → ...`
-/// - `import * as ns from './bar'`        → `"ns" → "./bar"`
+/// Walk every top-level `import` statement and return a per-local-name
+/// map describing where it came from. Drives the shared
+/// `ecosystem::imports::resolve_import_refs` pass, which canonicalizes
+/// every ref against this map before the file is handed to the resolver.
 ///
-/// Used by `annotate_call_modules` to set `module` on call refs that start
-/// with a known import alias (e.g. `UserService.findOne(id)` → module set to
-/// the module that exports `UserService`).
-fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+/// Covers:
+///   - `import Foo from 'pkg'`             → Default
+///   - `import { X } from 'pkg'`           → Named { exported_name=X }
+///   - `import { X as Y } from 'pkg'`      → Named { exported_name=X } keyed under Y
+///   - `import * as ns from 'pkg'`         → Namespace
+///   - `import 'pkg'`                      → SideEffect (no local name; not stored)
+fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, ImportEntry> {
+    let mut map: HashMap<String, ImportEntry> = HashMap::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         // Import statements may be wrapped in export_statement in some grammars,
@@ -945,40 +948,64 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
             let mut cc = clause.walk();
             for item in clause.children(&mut cc) {
                 match item.kind() {
-                    // `import Foo from './bar'` — default import; local name = Foo
+                    // `import Foo from 'pkg'` — default import.
                     "identifier" => {
                         let local = helpers::node_text(item, src);
                         if !local.is_empty() {
-                            map.insert(local, module_path.clone());
+                            map.insert(
+                                local.clone(),
+                                ImportEntry {
+                                    local_name: local,
+                                    module: module_path.clone(),
+                                    kind: ImportKind::Default,
+                                },
+                            );
                         }
                     }
-                    // `import { Foo, Bar as B } from './bar'`
+                    // `import { X } from 'pkg'` / `import { X as Y } from 'pkg'`
                     "named_imports" => {
                         let mut ni = item.walk();
                         for spec in item.children(&mut ni) {
                             if spec.kind() != "import_specifier" {
                                 continue;
                             }
-                            // `alias` field is the local name when `as` is used.
-                            // If no alias, `name` is both the exported and local name.
-                            let local = spec
-                                .child_by_field_name("alias")
-                                .or_else(|| spec.child_by_field_name("name"))
+                            let exported = spec
+                                .child_by_field_name("name")
                                 .map(|n| helpers::node_text(n, src))
                                 .unwrap_or_default();
-                            if !local.is_empty() {
-                                map.insert(local, module_path.clone());
+                            let local = spec
+                                .child_by_field_name("alias")
+                                .map(|n| helpers::node_text(n, src))
+                                .filter(|s| !s.is_empty())
+                                .unwrap_or_else(|| exported.clone());
+                            if local.is_empty() || exported.is_empty() {
+                                continue;
                             }
+                            map.insert(
+                                local.clone(),
+                                ImportEntry {
+                                    local_name: local,
+                                    module: module_path.clone(),
+                                    kind: ImportKind::Named { exported_name: exported },
+                                },
+                            );
                         }
                     }
-                    // `import * as ns from './bar'`
+                    // `import * as ns from 'pkg'`
                     "namespace_import" => {
                         let mut nc = item.walk();
                         for ns_child in item.children(&mut nc) {
                             if ns_child.kind() == "identifier" {
                                 let local = helpers::node_text(ns_child, src);
                                 if !local.is_empty() {
-                                    map.insert(local, module_path.clone());
+                                    map.insert(
+                                        local.clone(),
+                                        ImportEntry {
+                                            local_name: local,
+                                            module: module_path.clone(),
+                                            kind: ImportKind::Namespace,
+                                        },
+                                    );
                                 }
                                 break;
                             }
@@ -990,175 +1017,6 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
         }
     }
     map
-}
-
-/// Build a map of `local_alias → (original_name, module_path)` for every
-/// import statement that uses `as` renaming. Unaliased imports are NOT in
-/// this map — for them, the local name and the exported name are identical
-/// and no rewrite is needed.
-///
-/// Example: `import { request as __request } from './core/request'`
-///   → `{"__request" → ("request", "./core/request")}`
-///
-/// Only captures named imports. `import * as ns` and default imports can't
-/// be renamed to a different exported name.
-fn build_renamed_import_map(root: Node, src: &[u8]) -> HashMap<String, (String, String)> {
-    let mut map = HashMap::new();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        if child.kind() != "import_statement" {
-            continue;
-        }
-        let Some(module_node) = child.child_by_field_name("source") else {
-            continue;
-        };
-        let module_path = helpers::node_text(module_node, src)
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string();
-        if module_path.is_empty() {
-            continue;
-        }
-
-        let mut ic = child.walk();
-        for clause in child.children(&mut ic) {
-            if clause.kind() != "import_clause" {
-                continue;
-            }
-            let mut cc = clause.walk();
-            for item in clause.children(&mut cc) {
-                if item.kind() != "named_imports" {
-                    continue;
-                }
-                let mut ni = item.walk();
-                for spec in item.children(&mut ni) {
-                    if spec.kind() != "import_specifier" {
-                        continue;
-                    }
-                    // Only record if the spec has BOTH `name` (exported) and
-                    // `alias` (local) fields — the `X as Y` form.
-                    let (Some(name_node), Some(alias_node)) = (
-                        spec.child_by_field_name("name"),
-                        spec.child_by_field_name("alias"),
-                    ) else {
-                        continue;
-                    };
-                    let original = helpers::node_text(name_node, src);
-                    let local = helpers::node_text(alias_node, src);
-                    if original.is_empty() || local.is_empty() || original == local {
-                        continue;
-                    }
-                    map.insert(local, (original, module_path.clone()));
-                }
-            }
-        }
-    }
-    map
-}
-
-/// Rewrite refs whose `target_name` matches a known local alias so they point
-/// at the ORIGINAL exported name, with `module` set to the export source.
-///
-/// This handles OpenAPI-generated SDKs, CommonJS interop shims, and any other
-/// pattern where code uses a locally-renamed import like `X as Y`. Without
-/// this pass, calls to `Y(...)` are unresolvable because the target file
-/// exports `X`, not `Y`.
-///
-/// Skips refs that already have a non-empty `module` — those have been
-/// resolved through another path (e.g. chain annotation) and rewriting would
-/// lose information.
-fn rewrite_aliased_refs(
-    refs: &mut Vec<ExtractedRef>,
-    alias_map: &HashMap<String, (String, String)>,
-) {
-    for r in refs.iter_mut() {
-        // Don't touch the TypeRef emitted by push_import itself — those were
-        // already pushed with target_name=original in imports.rs.
-        if r.kind == EdgeKind::Imports {
-            continue;
-        }
-
-        // Case A: simple (non-chain) refs and chain refs whose target_name
-        // (the last segment) happens to BE the alias — e.g. a bare call to
-        // `__request(...)`. Rewrite target_name to the original export.
-        if let Some((original, module_path)) = alias_map.get(&r.target_name) {
-            r.target_name = original.clone();
-            if r.module.is_none() {
-                r.module = Some(module_path.clone());
-            }
-        }
-
-        // Case B: chain refs where the alias is the RECEIVER, e.g.
-        // `__request.get(url)` — target_name is `get` (the last segment),
-        // but the chain walker needs `__request` → `request` so the root
-        // type lookup finds the real exported symbol. Rewrite the first
-        // segment's name in place. This MUST happen independently of Case A
-        // because the last segment rarely matches an alias.
-        if let Some(chain) = r.chain.as_mut() {
-            if let Some(first) = chain.segments.first_mut() {
-                if let Some((original, module_path)) = alias_map.get(&first.name) {
-                    first.name = original.clone();
-                    if r.module.is_none() {
-                        r.module = Some(module_path.clone());
-                    }
-                }
-            }
-        }
-    }
-}
-
-/// For each `Calls` ref that has a chain with ≥2 segments, check whether the
-/// first chain segment matches a known import alias. If so, set `module` to the
-/// corresponding module path so the resolver can trace the call back to its
-/// import source.
-///
-/// Only sets `module` when it is currently `None` — does not overwrite an
-/// already-resolved module.
-fn annotate_call_modules(refs: &mut Vec<ExtractedRef>, import_map: &HashMap<String, String>) {
-    for r in refs.iter_mut() {
-        if r.kind != EdgeKind::Calls || r.module.is_some() {
-            continue;
-        }
-        let Some(chain) = &r.chain else { continue };
-        if chain.segments.len() < 2 {
-            continue;
-        }
-        let first = &chain.segments[0].name;
-        if let Some(module_path) = import_map.get(first) {
-            r.module = Some(module_path.clone());
-        }
-    }
-}
-
-/// Rewrite `Alias.Member` TypeRef targets when `Alias` matches an import
-/// alias. The `nested_type_identifier` extractor emits a single qualified
-/// string (`Oazapfts.RequestOpts`, `zod.ZodType`, `Express.Multer.File`)
-/// with `module=None`; the demand-seed and resolver both need the actual
-/// symbol name (`RequestOpts`, `ZodType`) plus the source module to route
-/// the ref correctly. For multi-segment paths
-/// (`Express.Multer.File`) the leftmost segment is the alias and the
-/// remainder is left in `target_name` so a follow-on namespace walk can
-/// resolve it (`Express.Multer.File` → target=`Multer.File`,
-/// module=`<express types path>`).
-fn annotate_namespace_type_refs(
-    refs: &mut Vec<ExtractedRef>,
-    import_map: &HashMap<String, String>,
-) {
-    for r in refs.iter_mut() {
-        if r.kind != EdgeKind::TypeRef || r.module.is_some() {
-            continue;
-        }
-        let Some((head, rest)) = r.target_name.split_once('.') else {
-            continue;
-        };
-        if rest.is_empty() {
-            continue;
-        }
-        if let Some(module_path) = import_map.get(head) {
-            r.target_name = rest.to_string();
-            r.module = Some(module_path.clone());
-        }
-    }
 }
 
 /// Extract re-export refs from an `export_statement` node.
@@ -1227,7 +1085,8 @@ fn extract_reexports(
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -1254,7 +1113,8 @@ fn extract_reexports(
             module: module_path.clone(),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -1359,7 +1219,8 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // type_identifier is a leaf — no children to recurse into.
             }
@@ -1378,7 +1239,8 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "generic_type" if child.is_named() => {
@@ -1402,7 +1264,8 @@ fn scan_all_type_identifiers(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Still recurse so type arguments inside are also scanned.
@@ -1511,7 +1374,8 @@ fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         } else {
                             // Even for primitive annotations we need a ref at this line
                             // so the type_annotation coverage budget is consumed.
@@ -1525,7 +1389,8 @@ fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -1565,7 +1430,8 @@ fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                         break;
                     }
@@ -1598,7 +1464,8 @@ fn scan_all_type_identifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                         break;
                     }

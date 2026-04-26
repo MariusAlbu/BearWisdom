@@ -6,6 +6,32 @@ fn sym(source: &str) -> Vec<ExtractedSymbol> { extract::extract(source, false).s
 fn refs(source: &str) -> Vec<ExtractedRef>    { extract::extract(source, false).refs }
 
 #[test]
+fn debug_kysely_chain_ref_shape() {
+    let src = r#"
+import { Kysely } from 'kysely';
+class Repo {
+  constructor(private db: Kysely<any>) {}
+  query() {
+    return this.db.selectFrom('users').innerJoin('posts').execute();
+  }
+}
+"#;
+    let r = extract::extract(src, false);
+    eprintln!("--- refs ---");
+    for ref_ in &r.refs {
+        eprintln!(
+            "  kind={:?} target={:?} module={:?} chain.len={:?} chain[0]={:?} ns={:?}",
+            ref_.kind,
+            ref_.target_name,
+            ref_.module,
+            ref_.chain.as_ref().map(|c| c.segments.len()),
+            ref_.chain.as_ref().and_then(|c| c.segments.first().map(|s| s.name.clone())),
+            ref_.namespace_segments,
+        );
+    }
+}
+
+#[test]
 fn namespace_import_qualified_typeref_routes_to_module() {
     // `import * as Oazapfts from "@oazapfts/runtime";` followed by
     // `Oazapfts.RequestOpts` as a parameter type produces a TypeRef

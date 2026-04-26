@@ -81,11 +81,9 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
     }
 
-    // Annotate call refs: if a Calls ref's target_name starts with a known
-    // import alias (e.g. "UserService.findOne"), set module to the import source.
-    if !import_map.is_empty() {
-        annotate_call_modules_js(&mut refs, &import_map);
-    }
+    // Apply ECMAScript import semantics to every ref via the shared
+    // resolver — same module-of-truth as TS/JSX/TSX/Vue/Svelte/Astro.
+    crate::ecosystem::imports::resolve_import_refs(&mut refs, &import_map);
 
     super::ExtractionResult::new(symbols, refs, has_errors)
 }
@@ -793,7 +791,8 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -810,7 +809,8 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                         module: module_path.clone(),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -826,7 +826,8 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -857,7 +858,8 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                                 break 'outer_lex;
                             }
                         }
@@ -893,7 +895,8 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -915,7 +918,8 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -940,7 +944,8 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
             module: module_path,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -966,7 +971,8 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
             module: module_path.clone(),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     let initial_ref_count = refs.len();
@@ -987,7 +993,8 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                             module: module_path.clone(),
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                     // `import { useState, useEffect } from 'react'`
                     "named_imports" => {
@@ -1006,7 +1013,8 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                                     module: module_path.clone(),
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -1024,7 +1032,8 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                                     module: module_path.clone(),
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                                 break;
                             }
                         }
@@ -1047,7 +1056,8 @@ fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut 
                 module: module_path.clone(),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -1072,7 +1082,8 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                     "extends_clause" => {
                         let mut ec = n.walk();
@@ -1086,7 +1097,8 @@ fn extract_heritage(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<R
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -1126,7 +1138,8 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 module: Some(module),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     // import('foo') — dynamic import → Imports edge
@@ -1140,7 +1153,8 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 module: Some(module),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     // Regular call — emit with chain for member access resolution.
@@ -1167,7 +1181,8 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                                 module: None,
                                 chain,
                                 byte_offset: func_node.start_byte() as u32,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -1187,7 +1202,8 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -1206,7 +1222,8 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -1256,7 +1273,8 @@ fn extract_calls(node: &Node, src: &[u8], source_symbol_index: usize, refs: &mut
                             module: None,
                             chain,
                             byte_offset: tag_node.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -1345,7 +1363,8 @@ fn emit_call_ref_js(
                 module: Some(module),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     } else if callee == "import" {
         if let Some(module) = extract_first_string_arg(call_node, src) {
@@ -1357,7 +1376,8 @@ fn emit_call_ref_js(
                 module: Some(module),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     } else if !callee.is_empty() && !is_js_keyword(&callee) {
         // Parameter-shadow filter: `(setter) => setter(e.target.value)`
@@ -1389,7 +1409,8 @@ fn emit_call_ref_js(
             module: None,
             chain,
             byte_offset: func_node.start_byte() as u32,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -1543,7 +1564,8 @@ fn emit_new_ref_js(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -1634,7 +1656,8 @@ fn extract_module_exports(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -1775,7 +1798,8 @@ fn try_emit_require(
             module: Some(module),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -1867,7 +1891,8 @@ fn extract_for_loop_var(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }
@@ -1955,12 +1980,14 @@ fn extract_catch_variable(
 /// Build a map of `local_alias → module_path` from all top-level import
 /// statements in the JavaScript file.
 ///
-/// Handles all three import forms:
-/// - `import Foo from './bar'`            → `"Foo" → "./bar"`
-/// - `import { Foo, Bar as B } from ...`  → `"Foo" → ..., "B" → ...`
-/// - `import * as ns from './bar'`        → `"ns" → "./bar"`
-fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
-    let mut map = HashMap::new();
+/// Walk every top-level `import` statement and return a per-local-name
+/// `ImportEntry`. Drives the shared
+/// `ecosystem::imports::resolve_import_refs` pass, which canonicalizes
+/// every ref against this map. Same shape as the TS extractor's version
+/// — both feed the same downstream resolver.
+fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, crate::ecosystem::imports::ImportEntry> {
+    use crate::ecosystem::imports::{ImportEntry, ImportKind};
+    let mut map: HashMap<String, ImportEntry> = HashMap::new();
     let mut cursor = root.walk();
     for child in root.children(&mut cursor) {
         if child.kind() != "import_statement" {
@@ -1989,7 +2016,14 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
                     "identifier" => {
                         let local = node_text(item, src);
                         if !local.is_empty() {
-                            map.insert(local, module_path.clone());
+                            map.insert(
+                                local.clone(),
+                                ImportEntry {
+                                    local_name: local,
+                                    module: module_path.clone(),
+                                    kind: ImportKind::Default,
+                                },
+                            );
                         }
                     }
                     // `import { Foo, Bar as B } from './bar'`
@@ -1999,16 +2033,26 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
                             if spec.kind() != "import_specifier" {
                                 continue;
                             }
-                            // `alias` is the local name when `as` is used; otherwise
-                            // `name` is both the exported and local name.
-                            let local = spec
-                                .child_by_field_name("alias")
-                                .or_else(|| spec.child_by_field_name("name"))
+                            let exported = spec
+                                .child_by_field_name("name")
                                 .map(|n| node_text(n, src))
                                 .unwrap_or_default();
-                            if !local.is_empty() {
-                                map.insert(local, module_path.clone());
+                            let local = spec
+                                .child_by_field_name("alias")
+                                .map(|n| node_text(n, src))
+                                .filter(|s| !s.is_empty())
+                                .unwrap_or_else(|| exported.clone());
+                            if local.is_empty() || exported.is_empty() {
+                                continue;
                             }
+                            map.insert(
+                                local.clone(),
+                                ImportEntry {
+                                    local_name: local,
+                                    module: module_path.clone(),
+                                    kind: ImportKind::Named { exported_name: exported },
+                                },
+                            );
                         }
                     }
                     // `import * as ns from './bar'`
@@ -2018,7 +2062,14 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
                             if ns_child.kind() == "identifier" {
                                 let local = node_text(ns_child, src);
                                 if !local.is_empty() {
-                                    map.insert(local, module_path.clone());
+                                    map.insert(
+                                        local.clone(),
+                                        ImportEntry {
+                                            local_name: local,
+                                            module: module_path.clone(),
+                                            kind: ImportKind::Namespace,
+                                        },
+                                    );
                                 }
                                 break;
                             }
@@ -2030,38 +2081,6 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, String> {
         }
     }
     map
-}
-
-/// Annotate `Calls` refs whose `target_name` is a qualified member access
-/// (e.g. `"UserService.findOne"`) with the module of the first segment when
-/// that segment is a known import alias.
-///
-/// The JS extractor encodes member calls as `"obj.method"` in `target_name`
-/// with `chain: None`. We split on the first `.` to extract the object name.
-fn annotate_call_modules_js(refs: &mut Vec<ExtractedRef>, import_map: &HashMap<String, String>) {
-    for r in refs.iter_mut() {
-        if r.kind != EdgeKind::Calls || r.module.is_some() {
-            continue;
-        }
-        // Try the chain-based path first (in case chain is ever populated).
-        if let Some(chain) = &r.chain {
-            if chain.segments.len() >= 2 {
-                let first = &chain.segments[0].name;
-                if let Some(module_path) = import_map.get(first) {
-                    r.module = Some(module_path.clone());
-                    continue;
-                }
-            }
-        }
-        // Fall back to splitting the dotted target_name.
-        if r.target_name.contains('.') {
-            if let Some(prefix) = r.target_name.splitn(2, '.').next() {
-                if let Some(module_path) = import_map.get(prefix) {
-                    r.module = Some(module_path.clone());
-                }
-            }
-        }
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2093,7 +2112,8 @@ fn scan_all_type_identifiers(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // Recurse into ALL children regardless.

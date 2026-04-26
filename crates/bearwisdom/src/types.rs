@@ -248,15 +248,39 @@ pub struct MemberChain {
 pub struct ExtractedRef {
     /// Index into the Vec<ExtractedSymbol> that CONTAINS this reference.
     pub source_symbol_index: usize,
-    /// The name being referenced.
-    /// For chain-bearing refs, this is the LAST segment name (the method/property).
-    /// For simple refs, this is the full target name.
+    /// **Canonical exported name** in the resolved module.
+    ///
+    /// Post-import-resolution invariant: `target_name` is the name as
+    /// defined in `module`'s export list, not the local alias from the
+    /// importing file. For `import { foo as bar } from 'pkg'; bar()`
+    /// the ref carries `target_name="foo"`, not `"bar"`. For
+    /// `import * as F from 'pkg'; F.A.B` the ref carries
+    /// `target_name="B"`, `namespace_segments=["A"]`, `module="pkg"`.
+    ///
+    /// For chain-bearing call refs, this is the LAST segment name (the
+    /// method/property at the chain leaf).
     pub target_name: String,
     pub kind: EdgeKind,
     /// 0-based source line of the reference site.
     pub line: u32,
-    /// For imports: the module path (e.g. "System.Linq", "./catalog-api").
+    /// **Resolved final module** the target is exported from.
+    ///
+    /// Set by per-ecosystem import-resolution passes (see
+    /// `ecosystem::npm::imports::resolve_import_refs` and analogues).
+    /// `None` means "no import context — bare identifier" (e.g. a local
+    /// variable, an in-file type, or a name we couldn't trace back to
+    /// any import).
     pub module: Option<String>,
+    /// Intermediate namespace segments between `module` and
+    /// `target_name`. Empty for plain refs. Populated when a ref like
+    /// `Foo.Bar.Baz` resolves to module `pkg`, target `Baz` with
+    /// `namespace_segments=["Bar"]` — the resolver walks these as
+    /// nested-namespace steps when looking up the canonical symbol.
+    ///
+    /// Most languages and most refs leave this empty. Currently used by
+    /// ECMAScript-family extractors (TS/JS/JSX/TSX/Vue/Svelte/Astro
+    /// scripts) and Dart.
+    pub namespace_segments: Vec<String>,
     /// Structured member access chain from tree-sitter AST.
     /// `None` for simple identifier refs (e.g., `foo()`, import bindings, type refs).
     pub chain: Option<MemberChain>,

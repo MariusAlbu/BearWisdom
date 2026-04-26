@@ -26,6 +26,7 @@ use crate::types::ParsedFile;
 use crate::walker::WalkedFile;
 
 pub mod externals;
+pub mod imports;
 pub mod manifest;
 pub mod symbol_index;
 
