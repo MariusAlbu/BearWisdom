@@ -90,6 +90,31 @@ impl Ecosystem for PubEcosystem {
         build_dart_symbol_index(dep_roots)
     }
 
+    /// Pre-pull every dep's `lib/<package>.dart` entry file plus the
+    /// export chain it transitively re-exports. Bare type references from
+    /// `import 'package:foo/foo.dart'` (no member access, no `.X` chain
+    /// step) never reach the chain-miss expand pass — they bottom out at
+    /// the resolver's simple-name lookup, which only finds symbols already
+    /// in the DB. Without this pre-pull, types like `WidgetRef`,
+    /// `ConsumerWidget`, `PageRouteInfo` stay unresolved even though their
+    /// packages are discovered, because nothing demanded a file pull for
+    /// them.
+    ///
+    /// The entry walk is the same one `resolve_import` returns; cost is
+    /// bounded by `DART_EXPORT_MAX_DEPTH`. Per-root cost: a handful of
+    /// .dart files per package — total a few MB on a 79-pub-root project
+    /// like ts-immich/mobile.
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> Vec<WalkedFile> {
+        let mut out = Vec::new();
+        for dep in dep_roots {
+            out.extend(resolve_dart_package_entry(dep));
+        }
+        out
+    }
+
     fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
@@ -218,30 +243,42 @@ pub fn discover_dart_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     if declared.is_empty() { return Vec::new() }
 
     // Strategy 1: .dart_tool/package_config.json
+    //
+    // Walks every package the resolver wrote into the config — declared
+    // deps AND their transitives. Pub re-export chains routinely hand
+    // public types out from a transitive (`hooks_riverpod` re-exports
+    // `package:flutter_riverpod/...` which defines `WidgetRef` and
+    // `ConsumerWidget`); restricting discovery to direct deps makes those
+    // types unindexable because `expand_dart_exports_into` skips
+    // cross-package `export` specs by design (each package is its own
+    // root). The Strategy 2 lock-file path already includes transitives;
+    // this brings package_config.json behavior in line.
     let pkg_config = parse_dart_package_config(project_root);
     if !pkg_config.is_empty() {
         let mut result = Vec::new();
         let project_canonical = project_root
             .canonicalize()
             .unwrap_or_else(|_| project_root.to_path_buf());
-        for dep_name in &declared {
-            if let Some(entry) = pkg_config.get(dep_name.as_str()) {
-                let lib_dir = entry.root.join(&entry.package_uri);
-                if !lib_dir.is_dir() { continue }
-                if let Ok(canonical) = lib_dir.canonicalize() {
-                    if canonical.starts_with(&project_canonical) { continue }
-                }
-                result.push(ExternalDepRoot {
-                    module_path: dep_name.clone(),
-                    version: entry.version.clone(),
-                    root: lib_dir,
-                    ecosystem: LEGACY_ECOSYSTEM_TAG,
-                    package_id: None,
-                    requested_imports: Vec::new(),
-                });
+        for (pkg_name, entry) in &pkg_config {
+            let lib_dir = entry.root.join(&entry.package_uri);
+            if !lib_dir.is_dir() { continue }
+            if let Ok(canonical) = lib_dir.canonicalize() {
+                if canonical.starts_with(&project_canonical) { continue }
             }
+            result.push(ExternalDepRoot {
+                module_path: pkg_name.clone(),
+                version: entry.version.clone(),
+                root: lib_dir,
+                ecosystem: LEGACY_ECOSYSTEM_TAG,
+                package_id: None,
+                requested_imports: Vec::new(),
+            });
         }
-        debug!("Dart: {} roots via package_config.json", result.len());
+        debug!(
+            "Dart: {} roots via package_config.json (declared+transitive)",
+            result.len()
+        );
+        let _ = declared; // declared retained above for the early-return guard
         return result;
     }
 
