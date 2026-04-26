@@ -253,7 +253,8 @@ fn walk_node(
                 module: ns,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         return;
     }
@@ -276,7 +277,8 @@ fn walk_node(
                     module: ns,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         } else {
             walk_node(child, src, symbols, refs, parent_idx, locals);
@@ -354,7 +356,8 @@ fn process_list(
             module: head_ns,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     match head.as_str() {
@@ -372,7 +375,8 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             let vis = if head == "defn-" {
                 Visibility::Private
             } else {
@@ -403,7 +407,8 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             let idx = push_sym(
                 node,
                 name,
@@ -427,7 +432,8 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             let idx = push_sym(
                 node,
                 name,
@@ -466,7 +472,8 @@ fn process_list(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             let idx = push_sym(
                 node,
                 name,
@@ -495,7 +502,8 @@ fn process_list(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 let idx = push_sym(
                     node,
                     ns_name,
@@ -781,7 +789,8 @@ fn walk_method_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 past_head = true;
             }
@@ -938,7 +947,8 @@ fn walk_call_args(
                     module: ns,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         } else {
             walk_node(child, src, symbols, refs, parent_idx, locals);
@@ -1053,7 +1063,8 @@ fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

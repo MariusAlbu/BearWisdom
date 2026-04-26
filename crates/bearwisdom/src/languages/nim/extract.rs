@@ -240,7 +240,8 @@ fn parse_import_line(line: &str, line_num: u32) -> Option<Vec<ExtractedRef>> {
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                }
+                                    namespace_segments: Vec::new(),
+}
             })
             .collect();
         if modules.is_empty() { return None; }
@@ -259,7 +260,8 @@ fn parse_import_line(line: &str, line_num: u32) -> Option<Vec<ExtractedRef>> {
             module: None,
             chain: None,
             byte_offset: 0,
-        }]);
+                    namespace_segments: Vec::new(),
+}]);
     }
 
     None

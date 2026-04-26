@@ -212,7 +212,8 @@ fn visit(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // type_identifier is a leaf — no children to recurse into.
@@ -237,7 +238,8 @@ fn visit(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -350,7 +352,8 @@ fn extract_factory_constructor_at_visit(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }
@@ -378,7 +381,8 @@ fn scan_all_type_identifiers(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // Recurse into ALL children regardless

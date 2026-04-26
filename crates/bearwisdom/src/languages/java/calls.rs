@@ -46,7 +46,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain,
                             byte_offset: name_node.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse into arguments — nested calls.
@@ -68,7 +69,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -187,7 +189,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: child.start_byte() as u32,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
@@ -261,7 +264,8 @@ fn extract_catch_clause_refs(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -319,7 +323,8 @@ fn extract_try_with_resources_refs(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
 
@@ -356,7 +361,8 @@ fn extract_cast_expression_refs(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -406,7 +412,8 @@ fn extract_method_reference_calls(
                 module: None,
                 chain: None,
                 byte_offset: node.start_byte() as u32,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 
@@ -433,7 +440,8 @@ fn extract_method_reference_calls(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }
@@ -465,7 +473,8 @@ fn extract_enhanced_for_refs(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 
@@ -511,7 +520,8 @@ fn extract_class_literal_ref(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         break;
     }
@@ -572,7 +582,8 @@ fn extract_instanceof_refs(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     // Pattern variable: the identifier after the type, if present.
     // `user instanceof Admin admin` → emit Variable symbol `admin` with TypeRef to Admin.
@@ -594,7 +605,8 @@ fn extract_instanceof_refs(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 break;
             }

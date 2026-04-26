@@ -681,6 +681,7 @@ fn make_type_ref(sym_index: usize, name: String, line: u32) -> ExtractedRef {
         kind: EdgeKind::TypeRef,
         line,
         module: None,
+        namespace_segments: Vec::new(),
         chain: None,
         byte_offset: 0,
     }

@@ -133,7 +133,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(copybook),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                     continue;
                 }
 
@@ -215,7 +216,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
 
                 // CALL '<program>' or CALL "program"
@@ -228,7 +230,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
                         target_name: prog.clone(),
@@ -237,7 +240,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(prog),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
 
                 // COPY <copybook>
@@ -250,7 +254,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(copybook),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
 
                 // GO TO <para-name>
@@ -263,7 +268,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -297,7 +303,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                         module: Some(copybook),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }

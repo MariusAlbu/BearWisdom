@@ -129,7 +129,8 @@ fn emit_import_ref(
         module,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -730,7 +731,8 @@ fn extract_field_declaration(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             // Also emit a Field symbol (the embedded type acts as an accessible field).
             symbols.push(ExtractedSymbol {
                 name: et.clone(),
@@ -816,7 +818,8 @@ fn emit_type_refs_from_subtree(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
 
@@ -847,7 +850,8 @@ fn emit_type_refs_from_subtree(
                     module: pkg,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
 
@@ -1118,7 +1122,8 @@ pub(super) fn extract_short_var_decl(
                                     module: None,
                                     chain: Some(chain),
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         } else {
                             // Bare function call (single identifier) — still emit TypeRef.
@@ -1132,7 +1137,8 @@ pub(super) fn extract_short_var_decl(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -1163,7 +1169,8 @@ pub(super) fn extract_short_var_decl(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -1316,7 +1323,8 @@ fn extract_const_var_spec(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 
@@ -1451,7 +1459,8 @@ pub(super) fn extract_go_typed_params_as_symbols(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

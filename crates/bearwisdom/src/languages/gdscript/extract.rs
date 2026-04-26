@@ -145,7 +145,8 @@ fn extract_class_name_stmt(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -172,7 +173,8 @@ fn extract_extends_stmt(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -221,7 +223,8 @@ fn extract_inner_class(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Walk class body
@@ -548,7 +551,8 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
 
                     // `preload("res://path/to/foo.gd")` and `load(...)` bring another
                     // script/scene file into scope. The call itself is a builtin that
@@ -578,7 +582,8 @@ fn collect_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Extra
                                     module: Some(normalized),
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }

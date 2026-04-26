@@ -305,7 +305,8 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "qualified_name" => {
@@ -325,7 +326,8 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // `instanceof` binary expression — the RHS is a `class_name` node
@@ -365,7 +367,8 @@ fn scan_type_refs_inner(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Also recurse into the LHS (before instanceof) in case it has nested exprs

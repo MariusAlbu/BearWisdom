@@ -94,7 +94,8 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         module: Some("NS".to_string()),
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let ref_type = ExtractedRef {
         source_symbol_index: 0,
         target_name: "Foo".to_string(),
@@ -103,7 +104,8 @@ fn p1_5_namespace_import_resolves_at_0_92() {
         module: None,
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let file_a = make_parsed_file("a.cs", vec![sym_a], vec![ref_import, ref_type]);
 
     // File B: defines `NS.Foo`.

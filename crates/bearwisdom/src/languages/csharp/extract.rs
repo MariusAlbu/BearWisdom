@@ -678,7 +678,8 @@ fn extract_constructor_initializer_call(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -767,7 +768,8 @@ fn scan_all_type_positions(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 scan_all_type_positions(child, src, sym_idx, refs);
             }
 
@@ -849,7 +851,8 @@ fn emit_csharp_type_ref(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "generic_name" if node.is_named() => {
@@ -867,7 +870,8 @@ fn emit_csharp_type_ref(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

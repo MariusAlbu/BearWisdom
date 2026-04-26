@@ -365,7 +365,8 @@ fn extract_instance(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     Some(idx)
 }
@@ -438,7 +439,8 @@ fn collect_deriving_names(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "deriving" | "tuple" | "list" | "class" | "qualified" => {
@@ -547,7 +549,8 @@ fn extract_import(
         module: Some(module),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -616,7 +619,8 @@ fn extract_apply(
         module: fmodule,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 /// Returns `(function_name, module_qualifier)` for the given callee node.
@@ -718,7 +722,8 @@ fn extract_infix(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------

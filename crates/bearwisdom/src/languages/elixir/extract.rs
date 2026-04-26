@@ -175,7 +175,8 @@ fn visit(
                     module: if name.contains('.') { Some(name) } else { None },
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         } else {
             visit(child, src, symbols, refs, parent_index, qualified_prefix);
@@ -227,7 +228,8 @@ fn dispatch_call(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             // For dot calls (e.g. `Enum.map`), also emit a TypeRef for the receiver module.
             extract_dot_call_module_ref(node, src, sym_idx, refs);
 
@@ -503,7 +505,8 @@ fn extract_implementation(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let do_block_idx = find_do_block_index(node);
     if let Some(i) = do_block_idx {
@@ -549,7 +552,8 @@ fn extract_directive(
                                     module,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                                 emitted = true;
                             }
                         }
@@ -570,7 +574,8 @@ fn extract_directive(
                                             module,
                                             chain: None,
                                             byte_offset: 0,
-                                        });
+                                                                                    namespace_segments: Vec::new(),
+});
                                         emitted = true;
                                     }
                                 }
@@ -606,7 +611,8 @@ fn extract_directive(
             module,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -668,7 +674,8 @@ fn extract_qualified_multi_alias(
                         module: Some(full_module),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                     emitted = true;
                 }
             }
@@ -685,7 +692,8 @@ fn extract_qualified_multi_alias(
             module: Some(name),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         emitted = true;
     }
 
@@ -749,7 +757,8 @@ fn dispatch_attribute(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
 
@@ -782,7 +791,8 @@ fn extract_calls_recursive(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         // For dot calls like `Enum.map(...)`, also emit a TypeRef for
                         // the module part (the `alias` node before the dot).
                         extract_dot_call_module_ref(&child, src, source_symbol_index, refs);
@@ -811,7 +821,8 @@ fn extract_calls_recursive(
                         module: if name.contains('.') { Some(name) } else { None },
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -879,7 +890,8 @@ fn extract_dot_call_module_ref(
                                 module: if name.contains('.') { Some(name) } else { None },
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                         return; // only the receiver, not the function name
                     }
@@ -927,7 +939,8 @@ fn extract_pipe_calls(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         // Also emit TypeRef for module part of dot calls on the right side.
                         extract_dot_call_module_ref(&r, src, source_symbol_index, refs);
                     }
@@ -949,7 +962,8 @@ fn extract_pipe_calls(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             // Also emit TypeRef for module part of dot calls (`Enum.map`, etc.).
             extract_dot_call_module_ref(right, src, source_symbol_index, refs);
         }
@@ -1100,7 +1114,8 @@ fn extract_attribute_type_refs(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         extract_attribute_type_refs(&child, src, source_symbol_index, refs);
@@ -1190,7 +1205,8 @@ fn scan_type_refs_inner(
                     module: if name.contains('.') { Some(name) } else { None },
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             // alias is a leaf — no children to recurse into.
         }
@@ -1214,7 +1230,8 @@ fn scan_type_refs_inner(
                                     module: if name.contains('.') { Some(name) } else { None },
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         break; // only the receiver (first child), not the function name

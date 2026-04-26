@@ -41,6 +41,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         module: None,
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 
@@ -58,6 +59,7 @@ fn make_import_ref(
         module: Some(full_path.to_string()),
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -344,7 +346,8 @@ fn test_build_file_context_alias_import() {
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let resolver = GoResolver;
     let ctx = resolver.build_file_context(&file, None);
@@ -379,7 +382,8 @@ fn test_build_file_context_blank_import_skipped() {
         module: Some("database/sql/driver".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let resolver = GoResolver;
     let ctx = resolver.build_file_context(&file, None);
@@ -604,7 +608,8 @@ fn test_import_alias_resolution() {
         module: Some("github.com/gin-gonic/gin".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let (index, id_map) = build_test_env(&[&gin_file, &main_file]);
     let resolver = GoResolver;
@@ -1004,7 +1009,8 @@ fn test_is_visible_public_always() {
         module: None,
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
         extracted_ref: &sym_ref,
@@ -1045,7 +1051,8 @@ fn test_is_visible_private_same_dir() {
         module: None,
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let source_sym = make_symbol("Run", "pkg.Run", SymbolKind::Function, Visibility::Public, Some("pkg"));
     let ref_ctx = RefContext {
         extracted_ref: &sym_ref,
@@ -1086,7 +1093,8 @@ fn test_is_visible_private_different_dir() {
         module: None,
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let source_sym = make_symbol("main", "main.main", SymbolKind::Function, Visibility::Private, Some("main"));
     let ref_ctx = RefContext {
         extracted_ref: &sym_ref,
@@ -1136,7 +1144,8 @@ fn test_instantiates_ref_resolution() {
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            },
+                            namespace_segments: Vec::new(),
+},
         ],
     );
 

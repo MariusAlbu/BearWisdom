@@ -520,6 +520,7 @@ mod resolve_tests {
             kind,
             line: 1,
             module: Some(module.to_string()),
+            namespace_segments: Vec::new(),
             chain: None,
             byte_offset: 0,
         }
@@ -609,7 +610,8 @@ mod resolve_tests {
             module: None,
             chain: None,
             byte_offset: 0,
-        };
+                    namespace_segments: Vec::new(),
+};
         let consumer_file = make_py_file(
             "posthog/api/views.py",
             vec![consumer_sym],
@@ -663,7 +665,8 @@ mod resolve_tests {
             module: None,
             chain: None,
             byte_offset: 0,
-        };
+                    namespace_segments: Vec::new(),
+};
         let consumer_file = make_py_file(
             "myapp\\api\\views.py",
             vec![consumer_sym],

@@ -431,7 +431,8 @@ pub(super) fn extract_node<'a>(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -469,7 +470,8 @@ fn extract_type_refs_from_type_node(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         return;
     }
@@ -488,7 +490,8 @@ fn extract_type_refs_from_type_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "generic_type" => {
@@ -560,7 +563,8 @@ fn dispatch_body_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -584,7 +588,8 @@ fn dispatch_body_node(
                         module: None,
                         chain,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -604,7 +609,8 @@ fn dispatch_body_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     "stable_type_identifier" => {
@@ -619,7 +625,8 @@ fn dispatch_body_node(
                                 module: Some(full),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     _ => {}
@@ -661,7 +668,8 @@ fn scan_type_refs_inner(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         // type_identifier is a leaf — no children to recurse into.
         return;
@@ -719,7 +727,8 @@ fn infer_type_from_value(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -735,7 +744,8 @@ fn infer_type_from_value(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // `new Repository()` — explicit instantiation (Scala 2 style).
@@ -752,7 +762,8 @@ fn infer_type_from_value(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }

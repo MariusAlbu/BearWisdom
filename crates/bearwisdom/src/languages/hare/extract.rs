@@ -47,7 +47,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             i += 1;
             continue;
         }

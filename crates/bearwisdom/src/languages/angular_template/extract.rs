@@ -114,7 +114,8 @@ fn collect_component_refs(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }

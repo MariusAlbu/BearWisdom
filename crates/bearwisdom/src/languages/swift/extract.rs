@@ -542,7 +542,8 @@ fn infer_type_from_value(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -558,7 +559,8 @@ fn infer_type_from_value(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {}

@@ -348,7 +348,8 @@ fn extract_class(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                             break;
                         }
@@ -363,7 +364,8 @@ fn extract_class(
                                     module: qualifier,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                             break;
                         }
@@ -562,7 +564,8 @@ fn extract_uses(
                     module: Some(name),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }
@@ -657,7 +660,8 @@ fn extract_typeref(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 return; // one ref per typeref is enough
             }
@@ -673,7 +677,8 @@ fn extract_typeref(
                         module: qualifier,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 return;
             }
@@ -707,7 +712,8 @@ fn extract_call(
                 module,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

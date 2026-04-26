@@ -78,7 +78,8 @@ fn emit_annotation(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "annotation" => {
@@ -92,7 +93,8 @@ fn emit_annotation(
                     module: first_arg,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {}

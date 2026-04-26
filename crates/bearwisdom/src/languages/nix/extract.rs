@@ -107,7 +107,8 @@ fn visit_expr(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             // Recurse into sub-expressions
             let mut cursor = node.walk();
@@ -342,7 +343,8 @@ fn extract_value_refs(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             // Recurse into sub-expressions (but not the attrpath — avoid double-emit)
             let mut cursor = node.walk();
@@ -471,7 +473,8 @@ fn extract_inherit_from(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Extract the inherited attribute names
@@ -590,7 +593,8 @@ fn extract_apply(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             return;
@@ -611,7 +615,8 @@ fn extract_apply(
                     module: Some(p),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
         }
@@ -631,7 +636,8 @@ fn extract_apply(
                     module: Some(p),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
         }
@@ -647,7 +653,8 @@ fn extract_apply(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -745,7 +752,8 @@ fn extract_with(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

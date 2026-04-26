@@ -192,7 +192,8 @@ fn extract_from(
             module: Some(img.clone()),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         // Inherits edge: each stage inherits its base image
         refs.push(ExtractedRef {
             source_symbol_index: idx,
@@ -202,7 +203,8 @@ fn extract_from(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     idx
@@ -462,7 +464,8 @@ fn extract_copy(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }
@@ -478,7 +481,8 @@ fn extract_copy(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

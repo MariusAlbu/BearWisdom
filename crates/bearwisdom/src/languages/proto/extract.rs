@@ -147,7 +147,8 @@ fn extract_import(
             module: Some(stripped),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -289,7 +290,8 @@ fn extract_rpc(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // TypeRef to response type
@@ -302,7 +304,8 @@ fn extract_rpc(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -416,7 +419,8 @@ fn extract_field(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -464,7 +468,8 @@ fn extract_map_field(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -539,7 +544,8 @@ fn extract_extend(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------

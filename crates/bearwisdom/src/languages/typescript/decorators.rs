@@ -52,7 +52,8 @@ pub(super) fn extract_decorators(
                 module: first_arg,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

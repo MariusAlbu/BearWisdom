@@ -34,7 +34,8 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse only into argument nodes — NOT into the callee itself.
@@ -69,7 +70,8 @@ pub(super) fn extract_calls_from_body(
                                 module: None,
                                 chain,
                                 byte_offset: child.start_byte() as u32,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -186,7 +188,8 @@ pub(super) fn extract_type_ref_from_type_node(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

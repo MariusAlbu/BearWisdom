@@ -39,7 +39,8 @@ impl LanguagePlugin for GspPlugin {
                             kind: EdgeKind::Imports,
                             line: line_no as u32, module: None, chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

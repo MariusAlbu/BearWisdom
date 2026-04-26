@@ -71,7 +71,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 } else if let Some(rest) = trimmed.strip_prefix("include ") {
                     if let Some(name) = strip_quotes(rest.trim()) {
@@ -83,7 +84,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 } else if let Some(rest) = trimmed.strip_prefix("import ") {
                     let tok = rest.split_whitespace().next().unwrap_or("");
@@ -96,7 +98,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

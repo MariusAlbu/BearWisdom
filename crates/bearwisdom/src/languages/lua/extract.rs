@@ -540,7 +540,8 @@ fn extract_function_call(
                         module: Some(module_path),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             } else if name == "setmetatable" {
                 // `setmetatable(Child, {__index = Parent})` — Lua prototype inheritance.
@@ -554,7 +555,8 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 if let Some(parent) = extract_setmetatable_parent(node, src) {
                     refs.push(ExtractedRef {
                         source_symbol_index: source_idx,
@@ -564,7 +566,8 @@ fn extract_function_call(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             } else if !name.is_empty() {
                 refs.push(ExtractedRef {
@@ -575,7 +578,8 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "dot_index_expression" => {
@@ -589,7 +593,8 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "method_index_expression" => {
@@ -603,7 +608,8 @@ fn extract_function_call(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {}

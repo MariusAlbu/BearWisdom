@@ -403,7 +403,8 @@ fn extract_import(
         module: Some(module_text),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -464,7 +465,8 @@ fn extract_call_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec<ExtractedRef>) {
@@ -509,7 +511,8 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         return;
@@ -531,7 +534,8 @@ fn extract_binary_ref(node: &Node, src: &[u8], source_idx: usize, refs: &mut Vec
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

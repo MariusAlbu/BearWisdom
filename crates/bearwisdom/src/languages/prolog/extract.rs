@@ -193,7 +193,8 @@ fn process_directive(
                 module: Some(module_name),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         return;
     }
@@ -215,7 +216,8 @@ fn process_directive(
                 module: Some(module_name),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         return;
     }
@@ -256,7 +258,8 @@ fn extract_body_goals(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

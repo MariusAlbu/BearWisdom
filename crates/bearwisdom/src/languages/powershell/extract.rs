@@ -127,7 +127,8 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                     module: Some(var_name),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
 
@@ -147,7 +148,8 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                         module: Some(key),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -164,7 +166,8 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                 module: Some("_".to_string()),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
 
         // ---- Part 3: cmdlet-result chains `(Get-Xxx).Member` ----
@@ -180,7 +183,8 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                     module: Some(tag),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
 
@@ -204,7 +208,8 @@ fn emit_dotnet_binding_sentinels(source: &str, refs: &mut Vec<ExtractedRef>) {
                     module: Some(lhs),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }
@@ -542,7 +547,8 @@ fn visit(
                         module,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 visit(child, src, symbols, refs, parent_index, class_prefix);
             }
@@ -688,7 +694,8 @@ fn extract_class(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                     saw_colon = false; // only emit once per `:` separator
                 }
@@ -873,7 +880,8 @@ fn extract_using(
             module: Some(target),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -944,7 +952,8 @@ fn extract_command(
                         module: Some(module),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                     emitted = true;
                     break;
                 }
@@ -960,7 +969,8 @@ fn extract_command(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         return;
     }
@@ -973,7 +983,8 @@ fn extract_command(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -1009,7 +1020,8 @@ fn visit_for_calls(node: &Node, src: &str, source_idx: usize, refs: &mut Vec<Ext
                     module,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             visit_for_calls(&child, src, source_idx, refs);
         } else {
@@ -1190,7 +1202,8 @@ fn extract_member_access(
             module,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

@@ -328,7 +328,8 @@ fn extract_from_node(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse into token-tree arguments for nested calls.
@@ -424,7 +425,8 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "scoped_type_identifier" if child.is_named() => {
@@ -445,7 +447,8 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // Don't recurse into scoped_type_identifier children — we already extracted the leaf.
                 continue;

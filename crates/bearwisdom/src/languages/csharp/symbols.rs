@@ -955,7 +955,8 @@ pub(super) fn push_using_directive(
                             module: Some(full),
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         return;
                     }
                     ";" => return,
@@ -981,7 +982,8 @@ pub(super) fn push_using_directive(
                     module: Some(name),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
             "qualified_name" => {
@@ -994,7 +996,8 @@ pub(super) fn push_using_directive(
                     module: Some(full),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
             _ => {}

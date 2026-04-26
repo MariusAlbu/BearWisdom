@@ -48,6 +48,7 @@ fn make_ref_plain(source_idx: usize, target: &str) -> ExtractedRef {
         module: None,
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> ExtractedRef {
@@ -59,6 +60,7 @@ fn make_ref_with_module(source_idx: usize, target: &str, module: &str) -> Extrac
         module: Some(module.to_string()),
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
@@ -70,6 +72,7 @@ fn make_import(source_idx: usize, target: &str) -> ExtractedRef {
         module: Some(target.to_string()),
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 fn make_file(path: &str, language: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {

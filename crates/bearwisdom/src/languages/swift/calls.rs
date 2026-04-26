@@ -34,7 +34,8 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -154,7 +155,8 @@ pub(super) fn extract_type_ref_from_swift_type(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
     // Recursively walk the entire type subtree to catch ALL type_identifier nodes,
     // including in generic arguments and nested type expressions.
@@ -204,7 +206,8 @@ fn extract_all_type_identifiers(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -309,7 +312,8 @@ pub(super) fn extract_protocol_composition_refs(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

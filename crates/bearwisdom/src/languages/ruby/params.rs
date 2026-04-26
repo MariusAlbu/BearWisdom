@@ -174,7 +174,8 @@ pub(super) fn extract_rescue(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         _ => {}

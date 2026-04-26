@@ -60,7 +60,8 @@ fn tilde_prefixed_url_resolves_to_wwwroot() {
         module: Some("~/lib/jquery/jquery.js".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let registry = crate::languages::default_registry();
     let out = parse_script_tag_deps(root, &[host], registry);
@@ -93,7 +94,8 @@ fn cdn_and_absolute_urls_filtered_at_extraction() {
             module: Some(url.to_string()),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     let registry = crate::languages::default_registry();
@@ -122,7 +124,8 @@ fn relative_url_resolves_against_host_dir() {
         module: Some("app.js".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let registry = crate::languages::default_registry();
     let out = parse_script_tag_deps(root, &[host], registry);
@@ -152,7 +155,8 @@ fn already_parsed_file_not_duplicated() {
             module: Some("js/app.js".to_string()),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         pf
     };
     let already_parsed = empty_parsed("js/app.js", "javascript");

@@ -164,7 +164,8 @@ pub fn extract(source: &str) -> crate::types::ExtractionResult {
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 i += 1;
                 continue;
             }
@@ -345,7 +346,8 @@ fn extract_struct_body(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
 
@@ -474,7 +476,8 @@ fn extract_builtin_calls_from_line(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         } else {
             i += 1;
@@ -634,7 +637,8 @@ fn extract_call_identifiers(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             continue;
         }
@@ -662,7 +666,8 @@ fn extract_call_identifiers(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }

@@ -126,7 +126,8 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain: None,
                         byte_offset: func_node.start_byte() as u32,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                     extract_calls_from_body(&child, source, source_symbol_index, refs, import_map);
                     continue;
                 }
@@ -165,7 +166,8 @@ pub(super) fn extract_calls_from_body(
                         module: resolved_module,
                         chain,
                         byte_offset: func_node.start_byte() as u32,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -235,7 +237,8 @@ fn emit_isinstance_type_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // `isinstance(x, (Admin, User))` — tuple of types.
@@ -253,7 +256,8 @@ fn emit_isinstance_type_node(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -270,7 +274,8 @@ fn emit_isinstance_type_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {}
@@ -364,7 +369,8 @@ pub(super) fn extract_import_statement(
                     module,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
@@ -384,7 +390,8 @@ pub(super) fn extract_import_statement(
                         module,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             _ => {}
@@ -427,7 +434,8 @@ pub(super) fn extract_import_from_statement(
                     module: module.clone(),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             "aliased_import" => {
                 if let Some(name_node) = child.child_by_field_name("name") {
@@ -440,7 +448,8 @@ pub(super) fn extract_import_from_statement(
                         module: module.clone(),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "wildcard_import" => {
@@ -452,7 +461,8 @@ pub(super) fn extract_import_from_statement(
                     module: module.clone(),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             _ => {}
         }

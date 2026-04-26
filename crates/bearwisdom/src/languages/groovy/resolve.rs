@@ -156,7 +156,8 @@ mod tests {
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            };
+                            namespace_segments: Vec::new(),
+};
             let ref_ctx = RefContext {
                 extracted_ref: &r,
                 source_symbol: &sym,
@@ -186,7 +187,8 @@ mod tests {
             module: None,
             chain: None,
             byte_offset: 0,
-        };
+                    namespace_segments: Vec::new(),
+};
         let ref_ctx = RefContext {
             extracted_ref: &r,
             source_symbol: &sym,
@@ -211,7 +213,8 @@ mod tests {
             module: None,
             chain: None,
             byte_offset: 0,
-        };
+                    namespace_segments: Vec::new(),
+};
         let ref_ctx = RefContext {
             extracted_ref: &r,
             source_symbol: &sym,

@@ -145,7 +145,8 @@ fn walk_node(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                     break;
                 }
@@ -164,7 +165,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -187,7 +189,8 @@ fn walk_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     // derived_type_member_expression: obj%method
@@ -210,7 +213,8 @@ fn walk_node(
                                     module: if obj_text.is_empty() { None } else { Some(obj_text) },
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         } else if count == 1 {
                             // Single named child — use as target_name, no module
@@ -226,7 +230,8 @@ fn walk_node(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -365,7 +370,8 @@ fn extract_extends(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }

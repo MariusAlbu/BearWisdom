@@ -38,7 +38,8 @@ pub(super) fn extract_type_ref_from_annotation(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         "generic_type" => {
             // Repository<User> → extract "Repository" as the ref target,
@@ -55,7 +56,8 @@ pub(super) fn extract_type_ref_from_annotation(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 // Also extract type arguments for generic parameter resolution.
                 if let Some(type_args_node) = type_node.child_by_field_name("type_arguments") {
                     for i in 0..type_args_node.child_count() {
@@ -95,7 +97,8 @@ pub(super) fn extract_type_ref_from_annotation(
                                         module: None,
                                         chain: None,
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                 }
                             }
                         }
@@ -114,7 +117,8 @@ pub(super) fn extract_type_ref_from_annotation(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         "function_type" => {
             // (req: Request, res: Response) => void
@@ -269,7 +273,8 @@ pub(super) fn extract_type_ref_from_annotation(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             } else {
                 // Fallback: first named non-keyword child.
@@ -286,7 +291,8 @@ pub(super) fn extract_type_ref_from_annotation(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                                 break;
                             }
                         }
@@ -410,7 +416,8 @@ pub(super) fn extract_type_refs_recursive(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // Skip inert tokens and binding-only nodes — including the
@@ -462,7 +469,8 @@ pub(super) fn extract_type_refs_recursive(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         "infer_type" | "this_type" | "literal_type" => {}

@@ -439,7 +439,8 @@ fn emit_annotation_ref(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -512,7 +513,8 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             // Recurse ONLY into type_arguments children (for generic params like
             // `List<Foo>`) — skip everything else.  FQN segments of a qualified
@@ -543,7 +545,8 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -570,7 +573,8 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             // Recurse to handle type args inside annotations and nested annotations.
             let mut cursor = node.walk();
@@ -611,7 +615,8 @@ fn scan_type_refs_inner(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
@@ -730,7 +735,8 @@ fn infer_type_from_initializer(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -746,7 +752,8 @@ fn infer_type_from_initializer(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             _ => {}

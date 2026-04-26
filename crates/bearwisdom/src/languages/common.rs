@@ -258,7 +258,8 @@ pub fn emit_chain_type_ref(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

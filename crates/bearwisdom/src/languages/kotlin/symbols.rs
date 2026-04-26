@@ -410,7 +410,8 @@ fn extract_class_parameter(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 
@@ -556,7 +557,8 @@ pub(super) fn emit_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 } else {
                     let target = parts.last().cloned().unwrap_or_default();
                     let full = parts.join(".");
@@ -568,7 +570,8 @@ pub(super) fn emit_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 return;
             }
@@ -583,7 +586,8 @@ pub(super) fn emit_import(
                     module: Some(full),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
             _ => {}
@@ -624,7 +628,8 @@ pub(super) fn extract_delegation_specifiers(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     _ => {}

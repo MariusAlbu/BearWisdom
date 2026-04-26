@@ -139,7 +139,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             } else {
                 // Fallback: take full text of first child that looks like a namespace
@@ -161,7 +162,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -181,7 +183,8 @@ fn walk_node(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -199,7 +202,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -217,7 +221,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -237,7 +242,8 @@ fn walk_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             } else {
                 // Ordinary field: `Private _timeout As Integer`
                 // Name lives in the child variable_declarator's `name` field.

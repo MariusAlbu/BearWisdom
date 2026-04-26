@@ -41,6 +41,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         module: None,
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 /// Make an import binding ref — the TS extractor emits these as TypeRef with module set.
@@ -53,6 +54,7 @@ fn make_import_ref(source_idx: usize, target: &str, module: &str, line: u32) -> 
         module: Some(module.to_string()),
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 fn make_ts_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>) -> ParsedFile {
@@ -988,6 +990,7 @@ fn make_reexport_ref(source_idx: usize, exported_name: &str, from_module: &str, 
         module: Some(from_module.to_string()),
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 #[test]
@@ -1711,7 +1714,8 @@ fn tsconfig_alias_follows_barrel_reexport() {
         module: Some("./quick-create-button".to_string()),
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let barrel = make_ts_file_in_pkg(
         "apps/web/src/features/quick-create/index.ts",
         Some(7),
@@ -1944,7 +1948,8 @@ fn passthrough_alias_barrel_classifies_as_external() {
         module: Some("react-i18next".to_string()),
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let barrel = make_ts_file_in_pkg(
         "apps/landing/src/i18n/client/trans.tsx",
         Some(7),
@@ -2116,7 +2121,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         module: None,
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let tobe_rt_ref = ExtractedRef {
         source_symbol_index: 2,
         target_name: "chai.Assertion".to_string(),
@@ -2125,7 +2131,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         module: None,
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let chai_file = ParsedFile {
         path: "ext:ts:chai/__bw_synthetic__.d.ts".to_string(),
         language: "typescript".to_string(),
@@ -2176,7 +2183,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
             ],
         }),
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let import_ref = ExtractedRef {
         source_symbol_index: 0,
         target_name: "expect".to_string(),
@@ -2185,7 +2193,8 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         module: Some("chai".to_string()),
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let test_sym = make_symbol("myTest", "myTest", SymbolKind::Function, Visibility::Public, None);
     let consumer_file = ParsedFile {
         path: "src/app.test.ts".to_string(),
@@ -2284,7 +2293,8 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         target_name: "chai.Assertion".to_string(),
         kind: EdgeKind::TypeRef,
         line: 0, module: None, chain: None, byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
 
     let synth_file = ParsedFile {
         path: "ext:ts:vitest/__bw_synthetic__.d.ts".to_string(),
@@ -2331,7 +2341,8 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
             ],
         }),
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let test_sym = make_symbol("myTest", "myTest", SymbolKind::Function, Visibility::Public, None);
     let consumer_file = ParsedFile {
         path: "compat/test/browser/PureComponent.test.jsx".to_string(),

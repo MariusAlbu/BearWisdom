@@ -69,7 +69,8 @@ pub(super) fn extract_impl(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 
@@ -89,7 +90,8 @@ pub(super) fn extract_impl(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 
@@ -190,7 +192,8 @@ pub(super) fn extract_impl(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -289,7 +292,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: macro_node.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse into the token-tree arguments for nested calls inside the macro.
@@ -313,7 +317,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse into the value expression for nested calls.
@@ -393,7 +398,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: name_node.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         // Also emit TypeRef so the type graph is connected.
                         refs.push(ExtractedRef {
                             source_symbol_index,
@@ -403,7 +409,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -462,7 +469,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain,
                             byte_offset: func.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse into the entire call node (function + arguments) so that
@@ -497,7 +505,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -513,7 +522,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -720,7 +730,8 @@ pub(super) fn extract_extern_crate(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -782,7 +793,8 @@ fn walk_use_tree(
                 module: if module.is_empty() { None } else { Some(module) },
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
 
         "scoped_use_list" => {
@@ -848,7 +860,8 @@ fn walk_use_tree(
                 module,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
 
         "use_wildcard" => {
@@ -865,7 +878,8 @@ fn walk_use_tree(
                 module,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
 
         "identifier" => {
@@ -886,7 +900,8 @@ fn walk_use_tree(
                 module,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
 
         _ => {
@@ -1042,7 +1057,8 @@ fn infer_rust_variable_type(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -1085,7 +1101,8 @@ fn infer_rust_variable_type(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }

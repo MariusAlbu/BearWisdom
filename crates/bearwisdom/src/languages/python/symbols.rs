@@ -481,7 +481,8 @@ pub(super) fn extract_python_typed_params_as_symbols(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
 
             // Untyped default: `def foo(x=5)` — emit as Variable (no TypeRef).
@@ -648,7 +649,8 @@ fn extract_superclass_refs(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             "attribute" => {
                 if let Some(attr) = child.child_by_field_name("attribute") {
@@ -664,7 +666,8 @@ fn extract_superclass_refs(
                         module: obj,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             _ => {}
@@ -908,7 +911,8 @@ fn infer_python_variable_type(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 fn classify_assignment_name(name: &str, _inside_class: bool) -> SymbolKind {
@@ -1103,7 +1107,8 @@ fn extract_with_item(
                                 module: None,
                                 chain: Some(chain),
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -1268,7 +1273,8 @@ pub(super) fn extract_named_expression(
                         module: None,
                         chain: Some(chain),
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -1438,7 +1444,8 @@ fn extract_pattern_refs(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             // Recurse into argument patterns for nested captures.
@@ -1852,7 +1859,8 @@ fn extract_except_clause(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             // Recurse into the body block.
@@ -1892,7 +1900,8 @@ fn extract_except_type_refs(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "attribute" => {
@@ -1907,7 +1916,8 @@ fn extract_except_type_refs(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -1956,7 +1966,8 @@ fn extract_raise_statement(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "call" => {
@@ -1973,7 +1984,8 @@ fn extract_raise_statement(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         "attribute" => {
@@ -1988,7 +2000,8 @@ fn extract_raise_statement(
                                         module: None,
                                         chain: None,
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                 }
                             }
                         }
@@ -2030,7 +2043,8 @@ fn extract_augmented_assignment(
                         module: None,
                         chain: Some(chain),
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -2125,7 +2139,8 @@ fn extract_type_refs_from_annotation(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // `uuid.UUID` or `sqlalchemy.orm.Session` — emit a single ref for the
@@ -2149,7 +2164,8 @@ fn extract_type_refs_from_annotation(
                         module,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }

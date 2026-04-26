@@ -73,7 +73,8 @@ pub fn extract(source: &str) -> ExtractionResult {
                     module: Some(module),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }

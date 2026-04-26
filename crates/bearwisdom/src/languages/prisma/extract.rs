@@ -211,7 +211,8 @@ fn extract_field(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Scan the rest of the line for @relation(... references mentions

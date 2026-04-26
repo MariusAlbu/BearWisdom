@@ -118,7 +118,8 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         return;
     }
 
@@ -132,7 +133,8 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

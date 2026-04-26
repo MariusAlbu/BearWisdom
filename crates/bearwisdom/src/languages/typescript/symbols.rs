@@ -357,7 +357,8 @@ fn infer_field_type_from_initializer(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             // `new Foo<Bar, Baz>()` — emit each generic arg as an extra
             // TypeRef so the field_type_args map picks them up (mirrors
             // what extract_type_ref_from_annotation does for annotated
@@ -381,7 +382,8 @@ fn infer_field_type_from_initializer(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -636,7 +638,8 @@ pub(super) fn extract_type_ref_from_type_assertion(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 return;
             }
@@ -652,7 +655,8 @@ pub(super) fn extract_type_ref_from_type_assertion(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 return;
@@ -860,7 +864,8 @@ pub(super) fn push_variable_decl(
                                             module: None,
                                             chain: Some(chain),
                                             byte_offset: 0,
-                                        });
+                                                                                    namespace_segments: Vec::new(),
+});
                                     }
                                 }
                             }
@@ -882,7 +887,8 @@ pub(super) fn push_variable_decl(
                                         module: None,
                                         chain: None,
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                 }
                             }
                         } else if init_node.kind() == "member_expression" {
@@ -902,7 +908,8 @@ pub(super) fn push_variable_decl(
                                         module: None,
                                         chain: Some(chain),
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                 }
                             }
                         } else if init_node.kind() == "as_expression" {
@@ -985,7 +992,8 @@ pub(super) fn push_variable_decl(
                                 module: None,
                                 chain: Some(prop_chain),
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 } else if name_node.kind() == "array_pattern" {
@@ -1100,7 +1108,8 @@ pub(super) fn push_variable_decl(
                                     module: None,
                                     chain: Some(elem_chain),
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
 

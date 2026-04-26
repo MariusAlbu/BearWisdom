@@ -36,7 +36,8 @@ pub(super) fn push_import(
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                         "named_imports" => {
                             let mut ni = item.walk();
@@ -56,7 +57,8 @@ pub(super) fn push_import(
                                         module: module_path.clone(),
                                         chain: None,
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                 }
                             }
                         }
@@ -74,7 +76,8 @@ pub(super) fn push_import(
                                         module: module_path.clone(),
                                         chain: None,
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                     break;
                                 }
                             }
@@ -115,7 +118,8 @@ pub(super) fn push_import(
                         module: require_module,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             _ => {}
@@ -154,7 +158,8 @@ pub(super) fn extract_heritage(
                                         module: None,
                                         chain: None,
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                 }
                             }
                         }
@@ -172,7 +177,8 @@ pub(super) fn extract_heritage(
                                         module: None,
                                         chain: None,
                                         byte_offset: 0,
-                                    });
+                                                                            namespace_segments: Vec::new(),
+});
                                 }
                             }
                         }
@@ -193,7 +199,8 @@ pub(super) fn extract_heritage(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -211,7 +218,8 @@ pub(super) fn extract_heritage(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

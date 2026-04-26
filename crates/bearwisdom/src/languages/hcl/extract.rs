@@ -289,7 +289,8 @@ fn extract_module_block(
             module: Some(source_val),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     extract_block_refs(node, src, idx, symbols, refs);
@@ -542,7 +543,8 @@ fn extract_reference_chain(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 /// Emit a Calls edge for a function_call node.
@@ -561,7 +563,8 @@ fn extract_function_call_ref(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

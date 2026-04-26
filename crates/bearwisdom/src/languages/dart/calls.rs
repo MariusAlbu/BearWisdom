@@ -37,7 +37,8 @@ pub(super) fn emit_dart_type_ref(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -99,7 +100,8 @@ pub(super) fn extract_dart_calls(
                             module: None,
                             chain,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_dart_calls(&child, src, source_symbol_index, refs);
@@ -159,7 +161,8 @@ pub(super) fn extract_dart_calls(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_dart_calls(&child, src, source_symbol_index, refs);
@@ -314,7 +317,8 @@ fn extract_postfix_call(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -416,7 +420,8 @@ fn extract_inline_call_from_statement(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -483,7 +488,8 @@ fn extract_new_expression_ref(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             return;
         }
     }
@@ -501,7 +507,8 @@ fn extract_new_expression_ref(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
         }
@@ -745,7 +752,8 @@ pub(super) fn extract_const_object_refs(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                     return;
                 }
             }

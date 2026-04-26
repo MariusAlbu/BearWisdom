@@ -339,7 +339,8 @@ pub(super) fn extract_refs_from_body(
                                         None
                                     },
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }
@@ -370,7 +371,8 @@ pub(super) fn extract_refs_from_body(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         // Second TypeRef at the same line — consumed by the
                         // `type_identifier` budget inside the qualified_type.
                         refs.push(ExtractedRef {
@@ -381,7 +383,8 @@ pub(super) fn extract_refs_from_body(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -400,7 +403,8 @@ pub(super) fn extract_refs_from_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // type_identifier is a leaf — no children to recurse into.
             }
@@ -422,7 +426,8 @@ pub(super) fn extract_refs_from_body(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
@@ -465,7 +470,8 @@ pub(super) fn extract_refs_from_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
             }
@@ -489,7 +495,8 @@ pub(super) fn extract_refs_from_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // Also recurse into type arguments for their contained type refs.
                 extract_refs_from_body(&child, source, source_symbol_index, refs);
@@ -625,7 +632,8 @@ fn extract_call_ref(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &func_node, refs);
@@ -637,7 +645,8 @@ fn extract_call_ref(
         module: None,
         chain,
         byte_offset: func_node.start_byte() as u32,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 /// For `make(chan User, 10)` emit a TypeRef to `User` (the channel element type).
@@ -685,7 +694,8 @@ fn extract_make_chan_type_ref(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 break;
             }
@@ -832,7 +842,8 @@ pub(super) fn extract_composite_literal_ref(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -876,7 +887,8 @@ pub(super) fn extract_type_assertion_ref(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 /// Emit TypeRefs for each case type in a `type_switch_statement`.
@@ -914,7 +926,8 @@ pub(super) fn extract_type_switch_refs(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     _ => {}
@@ -1076,7 +1089,8 @@ fn emit_type_refs_from_type_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // `pkg.Type` — emit one TypeRef for `qualified_type` and one for the
@@ -1098,7 +1112,8 @@ fn emit_type_refs_from_type_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                     refs.push(ExtractedRef {
                         source_symbol_index,
                         target_name: name,
@@ -1107,7 +1122,8 @@ fn emit_type_refs_from_type_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }

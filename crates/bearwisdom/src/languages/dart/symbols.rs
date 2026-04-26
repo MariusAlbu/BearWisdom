@@ -548,7 +548,8 @@ fn extract_import_spec_recursive(
                     module: Some(module),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             } else if ck == "import_specification" || ck == "library_import" || ck == "library_export" {
                 extract_import_spec_recursive(&child, src, current_symbol_count, refs);
             }
@@ -581,7 +582,8 @@ pub(super) fn extract_part_directive(
                 module: Some(module),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -817,7 +819,8 @@ pub(super) fn extract_dart_heritage(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         } else {
             // Fallback: scan children of superclass for type_identifier.
@@ -832,7 +835,8 @@ pub(super) fn extract_dart_heritage(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -852,7 +856,8 @@ pub(super) fn extract_dart_heritage(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }
@@ -872,7 +877,8 @@ pub(super) fn extract_dart_heritage(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     };
@@ -948,7 +954,8 @@ fn infer_type_from_dart_initializer(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             _ => {
@@ -966,7 +973,8 @@ fn infer_type_from_dart_initializer(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                             return;
                         }
                     }

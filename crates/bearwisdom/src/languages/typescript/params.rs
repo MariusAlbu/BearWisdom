@@ -305,7 +305,8 @@ pub(super) fn extract_for_loop_var(
                 module: None,
                 chain: Some(chain),
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     } else if iterable_node.kind() == "identifier" {
         // Simple identifier iterable: `for (const item of items)` — emit a
@@ -325,7 +326,8 @@ pub(super) fn extract_for_loop_var(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

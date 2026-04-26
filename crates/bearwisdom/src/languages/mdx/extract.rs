@@ -57,7 +57,8 @@ fn collect_jsx_refs(source: &str, host_index: usize, refs: &mut Vec<ExtractedRef
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 i += consumed;
                 continue;
             }

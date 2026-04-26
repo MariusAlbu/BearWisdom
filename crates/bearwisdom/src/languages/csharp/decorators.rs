@@ -116,7 +116,8 @@ fn extract_from_attribute_list(
                     module: first_arg,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             // Also extract TypeRefs from attribute arguments (typeof, generic_name, cast, etc.)
             extract_attribute_arg_type_refs(&child, src, source_symbol_index, refs);

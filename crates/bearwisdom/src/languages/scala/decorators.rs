@@ -66,7 +66,8 @@ fn emit_annotation(
             module: first_arg,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -214,7 +215,8 @@ fn extract_pattern_refs(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -233,7 +235,8 @@ fn extract_pattern_refs(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     _ => {}

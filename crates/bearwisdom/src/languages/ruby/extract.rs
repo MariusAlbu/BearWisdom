@@ -169,7 +169,8 @@ pub(super) fn extract_from_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -188,7 +189,8 @@ pub(super) fn extract_from_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -260,7 +262,8 @@ fn scan_all_constants(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "scope_resolution" if child.is_named() => {
@@ -276,7 +279,8 @@ fn scan_all_constants(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // Don't recurse into scope_resolution — we already extracted the name.
                 continue;

@@ -76,6 +76,7 @@ fn make_source_import(raw_path: &str) -> ExtractedRef {
         module: Some(raw_path.to_string()),
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 
@@ -88,6 +89,7 @@ fn make_calls_ref(target: &str) -> ExtractedRef {
         module: None,
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 

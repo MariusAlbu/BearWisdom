@@ -99,7 +99,8 @@ fn walk_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     "selected_component" => {
@@ -114,7 +115,8 @@ fn walk_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     _ => {}
@@ -134,7 +136,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);
@@ -152,7 +155,8 @@ fn walk_node(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             walk_children(node, src, symbols, refs, parent_idx);

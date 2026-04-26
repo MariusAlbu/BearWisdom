@@ -75,7 +75,8 @@ fn emit_attribute(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -210,7 +211,8 @@ fn extract_binding_pattern_type(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -294,7 +296,8 @@ fn extract_pattern_type_refs(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 } else if child.kind() == "simple_identifier" {
                     let name = node_text(child, src);
@@ -307,7 +310,8 @@ fn extract_pattern_type_refs(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -326,7 +330,8 @@ fn extract_pattern_type_refs(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }
@@ -382,7 +387,8 @@ pub(super) fn extract_extension_conformances(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }

@@ -86,7 +86,8 @@ pub(super) fn extract_class(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     if let Some(body) = node.child_by_field_name("body") {
@@ -328,7 +329,8 @@ pub(super) fn extract_call_statement(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 }
@@ -356,7 +358,8 @@ pub(super) fn extract_call_statement(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         break;
                     }
                 }
@@ -377,7 +380,8 @@ pub(super) fn extract_call_statement(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         } else {
                             refs.push(ExtractedRef {
                                 source_symbol_index: pidx,
@@ -387,7 +391,8 @@ pub(super) fn extract_call_statement(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                 } else if let Some(mname) = method_name.as_deref() {
@@ -399,7 +404,8 @@ pub(super) fn extract_call_statement(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -447,7 +453,8 @@ fn extract_require(
                     module,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 break;
             }
         }

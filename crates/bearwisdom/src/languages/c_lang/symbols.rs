@@ -55,7 +55,8 @@ fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<E
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 /// Walk a `type_descriptor` (or any node) and emit TypeRef for every
@@ -456,7 +457,8 @@ pub(super) fn push_include(
                     module: Some(path.to_string()),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
             _ => {}
@@ -682,7 +684,8 @@ pub(super) fn push_using_decl(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 return;
             }
@@ -802,7 +805,8 @@ pub(super) fn extract_bases(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                     "base_class_specifier" => {
                         let mut ic = base.walk();
@@ -817,7 +821,8 @@ pub(super) fn extract_bases(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                     }

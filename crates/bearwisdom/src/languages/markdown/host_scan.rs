@@ -166,7 +166,8 @@ fn collect_link_refs(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         i = paren_close + 1;

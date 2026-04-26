@@ -176,7 +176,8 @@ fn extract_prerequisites(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     _ => {}
@@ -298,7 +299,8 @@ fn extract_include_directive(
                 module: Some(path),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -347,7 +349,8 @@ fn extract_function_calls_in_subtree(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {}

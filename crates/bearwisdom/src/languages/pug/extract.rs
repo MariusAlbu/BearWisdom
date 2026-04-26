@@ -63,7 +63,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         } else if let Some(rest) = trimmed.strip_prefix("extends ") {
             let target = normalize_template_path(rest.trim());
@@ -76,7 +77,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }

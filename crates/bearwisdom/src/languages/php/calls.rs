@@ -37,7 +37,8 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain,
                         byte_offset: name_node.start_byte() as u32,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // Recurse into the object expression and arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -57,7 +58,8 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain,
                         byte_offset: name_node.start_byte() as u32,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // Recurse into arguments to find nested calls.
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -92,7 +94,8 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -108,7 +111,8 @@ pub(super) fn extract_calls_from_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 
@@ -194,7 +198,8 @@ pub(super) fn extract_include_require(
                 module,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -428,7 +433,8 @@ fn extract_catch_type_refs(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // `ExceptionA|ExceptionB` — union of exception types.
@@ -557,7 +563,8 @@ pub(super) fn extract_type_refs_from_php_type(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {}
@@ -734,7 +741,8 @@ fn push_fq_import(
         module,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 pub(super) fn extract_trait_use(
@@ -762,7 +770,8 @@ pub(super) fn extract_trait_use(
                 module,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

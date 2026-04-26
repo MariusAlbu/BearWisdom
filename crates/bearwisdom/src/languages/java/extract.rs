@@ -427,7 +427,8 @@ fn scan_all_type_identifiers(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // Recurse into ALL children regardless.

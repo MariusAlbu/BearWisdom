@@ -251,7 +251,8 @@ fn extract_open(
         module: Some(module),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -678,7 +679,8 @@ fn extract_interface_implementation(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         break;
     }
@@ -712,7 +714,8 @@ fn extract_class_inherits(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             break;
         }
     }
@@ -793,7 +796,8 @@ fn collect_applications(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "dot_expression" => {
@@ -810,7 +814,8 @@ fn collect_applications(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

@@ -105,7 +105,8 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     } else if tag.chars().next().map_or(false, |c| c.is_uppercase())
         && !BUILTIN_HTML_TAGS.contains(&tag.as_str())
     {
@@ -118,7 +119,8 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Scan attributes for Angular bindings
@@ -184,7 +186,8 @@ fn process_attribute(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         return;
     }
 
@@ -223,7 +226,8 @@ fn extract_handler_from_value(value: &str, node: &Node, refs: &mut Vec<Extracted
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -268,7 +272,8 @@ fn extract_pipes_from_expression(expr: &str, line: u32, refs: &mut Vec<Extracted
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 

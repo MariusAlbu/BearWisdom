@@ -98,9 +98,11 @@ fn imports_ref(name: &str, line: u32) -> ExtractedRef {
     let p = std::path::Path::new(name);
     let target = p.file_stem().and_then(|s| s.to_str()).unwrap_or(name).to_string();
     ExtractedRef { source_symbol_index: 0, target_name: target,
-        kind: EdgeKind::Imports, line, module: None, chain: None,
-            byte_offset: 0,
-        }
+        kind: EdgeKind::Imports, line, module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+    }
 }
 fn quoted(s: &str) -> Option<String> {
     let s = s.trim();

@@ -63,7 +63,8 @@ pub(super) fn extract_base_types(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         // Also extract TypeRefs from generic type arguments in base types.
                         // e.g. `class Repo : BaseRepository<User>` → also emit TypeRef to User.
                         if base.kind() == "generic_name" {
@@ -114,7 +115,8 @@ pub(super) fn extract_type_refs_from_type_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "qualified_name" => {
@@ -129,7 +131,8 @@ pub(super) fn extract_type_refs_from_type_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "generic_name" => {
@@ -149,7 +152,8 @@ pub(super) fn extract_type_refs_from_type_node(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     "type_argument_list" => {

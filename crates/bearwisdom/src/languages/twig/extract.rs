@@ -143,7 +143,8 @@ fn handle_tag(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "use" | "import" => {
@@ -157,7 +158,8 @@ fn handle_tag(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "from" => {
@@ -173,7 +175,8 @@ fn handle_tag(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {}

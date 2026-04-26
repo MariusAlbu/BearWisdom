@@ -628,7 +628,8 @@ fn synth_relation_file(
         module: None,
         chain: None,
         byte_offset: 0,
-    }];
+            namespace_segments: Vec::new(),
+}];
 
     ParsedFile {
         path: format!("ext:laravel-stubs:eloquent/relations/{class_short}.php"),

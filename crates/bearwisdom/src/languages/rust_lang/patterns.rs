@@ -426,6 +426,7 @@ fn make_typeref(source_symbol_index: usize, name: String, line: u32) -> Extracte
         kind: EdgeKind::TypeRef,
         line,
         module: None,
+        namespace_segments: Vec::new(),
         chain: None,
         byte_offset: 0,
     }
@@ -494,7 +495,8 @@ fn emit_inherits_from_trait_bounds(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "scoped_type_identifier" | "scoped_identifier" => {
@@ -514,7 +516,8 @@ fn emit_inherits_from_trait_bounds(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "generic_type" => {
@@ -529,7 +532,8 @@ fn emit_inherits_from_trait_bounds(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

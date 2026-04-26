@@ -146,7 +146,8 @@ pub(super) fn extract_from_node(
                                     module: Some("__future__".to_string()),
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         _ => {}
@@ -305,7 +306,8 @@ fn emit_type_ref_from_annotation(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         // `uuid.UUID` / `sqlalchemy.orm.Session` — emit a single qualified ref
@@ -327,7 +329,8 @@ fn emit_type_ref_from_annotation(
                         module,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -378,7 +381,8 @@ fn scan_type_annotation_nodes(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 // Still recurse — annotations can nest (e.g. `Optional[List[Foo]]`).
             }
             "generic_type" | "union_type" if child.is_named() => {
@@ -395,7 +399,8 @@ fn scan_type_annotation_nodes(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             _ => {}
         }
@@ -427,7 +432,8 @@ fn emit_type_ref_from_type_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         _ => {

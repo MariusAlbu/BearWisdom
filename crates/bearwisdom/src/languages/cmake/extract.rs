@@ -150,7 +150,8 @@ fn visit_def_body(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -197,7 +198,8 @@ fn extract_normal_command(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     let cmd_lower = cmd.to_lowercase();
@@ -340,7 +342,8 @@ fn extract_include_command(
         module: Some(path),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +367,8 @@ fn extract_find_package_command(
         module: Some(pkg),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -388,7 +392,8 @@ fn extract_add_subdirectory_command(
         module: Some(dir),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -443,7 +448,8 @@ fn extract_target_link_libraries(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -697,7 +703,8 @@ fn collect_all_normal_commands(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         return; // Don't recurse inside normal_command
@@ -738,7 +745,8 @@ fn collect_variable_refs(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
     let mut cursor = node.walk();

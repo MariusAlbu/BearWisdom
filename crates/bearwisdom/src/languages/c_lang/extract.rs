@@ -348,7 +348,8 @@ fn extract_node<'a>(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         "template_type" | "qualified_identifier" => {
@@ -472,7 +473,8 @@ fn sweep_typerefs<'a>(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // type_identifier is a leaf — no children to recurse into.
             }
@@ -498,7 +500,8 @@ fn sweep_typerefs<'a>(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         "base_class_specifier" => {
@@ -515,7 +518,8 @@ fn sweep_typerefs<'a>(
                                             module: None,
                                             chain: None,
                                             byte_offset: 0,
-                                        });
+                                                                                    namespace_segments: Vec::new(),
+});
                                     }
                                 }
                             }

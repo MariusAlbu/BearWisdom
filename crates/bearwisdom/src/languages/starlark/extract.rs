@@ -167,7 +167,8 @@ fn extract_assignment(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 
@@ -259,7 +260,8 @@ fn extract_call(
                 module: None,
                 chain,
                 byte_offset: fn_node.start_byte() as u32,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -358,7 +360,8 @@ fn extract_load_refs(
             module: Some(module_label.clone()),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         // Remaining args are symbol names or alias=name pairs.
         for arg in &children[1..] {
             let sym = match arg.kind() {
@@ -380,7 +383,8 @@ fn extract_load_refs(
                     module: Some(module_label.clone()),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }

@@ -319,7 +319,8 @@ fn extract_class_inherits_from_source(src: &str, class_idx: usize, refs: &mut Ve
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         break; // class declaration is always a single logical line
@@ -518,7 +519,8 @@ fn extract_class(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -629,7 +631,8 @@ fn extract_type_list_refs(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             _ => {
@@ -804,7 +807,8 @@ fn extract_import(
         module: Some(module_path),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -836,7 +840,8 @@ fn extract_call(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------

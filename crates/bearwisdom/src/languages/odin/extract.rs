@@ -160,7 +160,8 @@ fn extract_import(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -364,7 +365,8 @@ fn extract_using(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -401,7 +403,8 @@ fn extract_calls_in_subtree(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             // Recurse into arguments
             extract_calls_in_subtree(child, src, source_symbol_index, refs);

@@ -78,7 +78,8 @@ fn emit_annotation(
             module: first_arg,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -276,7 +277,8 @@ fn extract_when_entry_condition(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     "type" => {
@@ -289,7 +291,8 @@ fn extract_when_entry_condition(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     _ => {}

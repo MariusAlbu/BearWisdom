@@ -277,7 +277,8 @@ fn extract_create_index(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -301,7 +302,8 @@ fn extract_alter_table(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -595,7 +597,8 @@ fn extract_column(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Check for REFERENCES clause (foreign key inline constraint)
@@ -630,7 +633,8 @@ fn extract_fk_refs(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             saw_references = false;
         }

@@ -308,7 +308,8 @@ fn extract_class_definition(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Recurse into the class body.
@@ -609,7 +610,8 @@ fn extract_resource_declaration(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 fn find_resource_type(node: &Node, src: &str) -> Option<String> {
@@ -669,7 +671,8 @@ fn extract_include_or_require(
                 module: Some(name.clone()),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
             // Calls edge.
             refs.push(ExtractedRef {
                 source_symbol_index: source_idx,
@@ -679,7 +682,8 @@ fn extract_include_or_require(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -727,7 +731,8 @@ fn extract_function_call(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -788,7 +793,8 @@ fn collect_all_function_calls(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         // Recurse into function_call children to find nested calls
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {
@@ -833,7 +839,8 @@ fn collect_resource_references(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
         // Still recurse to find nested resource_references
         let mut cursor = node.walk();
         for child in node.children(&mut cursor) {

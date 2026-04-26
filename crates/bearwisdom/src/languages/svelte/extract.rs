@@ -127,7 +127,8 @@ fn process_element(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Scan attributes for on:event directives
@@ -202,7 +203,8 @@ fn try_extract_on_handler(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) 
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------
@@ -231,7 +233,8 @@ fn extract_svelte_blocks(node: &Node, src: &str, refs: &mut Vec<ExtractedRef>) {
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
     }

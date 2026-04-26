@@ -36,6 +36,7 @@ fn make_ref(source_idx: usize, target: &str, kind: EdgeKind, line: u32) -> Extra
         module: None,
         chain: None,
         byte_offset: 0,
+        namespace_segments: Vec::new(),
     }
 }
 
@@ -245,7 +246,8 @@ fn test_using_directive_resolution() {
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let (index, id_map) = build_test_env(&[&file1, &file2]);
     let resolver = CSharpResolver;
@@ -352,7 +354,8 @@ fn test_private_visibility_cross_file() {
         module: Some("App.Internal".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let (index, _) = build_test_env(&[&file1, &file2]);
     let resolver = CSharpResolver;
@@ -610,7 +613,8 @@ fn test_infer_no_false_positive_on_project_ref() {
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let resolver = CSharpResolver;
     // Pass ProjectContext — the file has only project usings (App.Models)
@@ -657,7 +661,8 @@ fn test_infer_without_project_context_fallback() {
         module: Some("App.Models".to_string()),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 
     let resolver = CSharpResolver;
     let file_ctx = resolver.build_file_context(&file, None);
@@ -690,7 +695,8 @@ fn workspace_project_namespace_not_classified_as_external() {
         module: Some(target.to_string()),
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let file = make_file(
         "App/Foo.cs",
         vec![make_symbol(
@@ -738,7 +744,8 @@ fn workspace_project_guard_root_prefix_beats_nuget_collision() {
         module: Some(target.to_string()),
         chain: None,
         byte_offset: 0,
-    };
+            namespace_segments: Vec::new(),
+};
     let file = make_file(
         "App/Foo.cs",
         vec![make_symbol(

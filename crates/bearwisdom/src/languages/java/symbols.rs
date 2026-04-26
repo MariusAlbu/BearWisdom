@@ -464,7 +464,8 @@ pub(super) fn extract_type_refs_recursive(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "generic_type" => {
@@ -483,7 +484,8 @@ pub(super) fn extract_type_refs_recursive(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                     }
                     "type_arguments" => {
@@ -513,7 +515,8 @@ pub(super) fn extract_type_refs_recursive(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         }
         "array_type" => {
@@ -570,7 +573,8 @@ pub(super) fn push_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 } else {
                     // `import com.foo.Bar;` — exact import.
                     let imported = full.rsplit('.').next().unwrap_or(&full).to_string();
@@ -582,7 +586,8 @@ pub(super) fn push_import(
                         module: Some(full),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 return;
             }
@@ -596,7 +601,8 @@ pub(super) fn push_import(
                     module: Some(name),
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return;
             }
             _ => {}
@@ -629,7 +635,8 @@ pub(super) fn extract_class_inheritance(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 break;
             }
         }
@@ -692,7 +699,8 @@ fn extract_type_list_as_implements(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -767,6 +775,7 @@ pub(super) fn extract_java_typed_params_as_symbols(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }

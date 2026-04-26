@@ -38,7 +38,8 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -63,7 +64,8 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_calls_from_body(&child, src, source_symbol_index, refs);
@@ -86,7 +88,8 @@ pub(super) fn extract_calls_from_body(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         // `stable_type_identifier` = qualified type like `foo.Bar`
@@ -102,7 +105,8 @@ pub(super) fn extract_calls_from_body(
                                     module: Some(name),
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                         }
                         _ => {}
@@ -151,7 +155,8 @@ fn extract_type_refs_from_type_arguments(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "generic_type" | "compound_type" | "function_type" | "type_arguments" => {

@@ -59,7 +59,8 @@ pub(super) fn extract_decorators(
                 module: first_arg,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
 
             // For #[derive(...)], also extract each derived trait as a TypeRef
             if name == "derive" {
@@ -161,7 +162,8 @@ fn extract_trait_names_from_token_tree(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "scoped_identifier" => {
@@ -176,7 +178,8 @@ fn extract_trait_names_from_token_tree(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "token_tree" => {

@@ -31,7 +31,8 @@ pub(super) fn emit_call_ref(
                 module: None,
                 chain,
                 byte_offset: func_node.start_byte() as u32,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -58,7 +59,8 @@ pub(super) fn emit_new_ref(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -91,7 +93,8 @@ pub(super) fn extract_calls(
                             module: None,
                             chain,
                             byte_offset: func_node.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 extract_calls(&child, src, source_symbol_index, refs);
@@ -122,7 +125,8 @@ pub(super) fn extract_calls(
                             module: None,
                             chain,
                             byte_offset: tag.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse for any nested calls inside the template.
@@ -184,7 +188,8 @@ pub(super) fn emit_jsx_component_ref(
         module: None,
         chain,
         byte_offset: tag_node.start_byte() as u32,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 /// Build a structured member access chain from tree-sitter AST nodes.

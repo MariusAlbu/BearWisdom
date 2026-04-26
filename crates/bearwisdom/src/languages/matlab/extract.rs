@@ -214,7 +214,8 @@ fn walk_node(
                             module: if module_text.is_empty() { None } else { Some(module_text) },
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                     // Recurse into the function_call's arguments but not into the
                     // call node itself (to avoid duplicate emission).
@@ -244,7 +245,8 @@ fn walk_node(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
             walk_children(node, src, symbols, refs, parent_idx);
         }

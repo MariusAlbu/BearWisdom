@@ -43,7 +43,8 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain,
                             byte_offset: callee.start_byte() as u32,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 // Recurse into arguments and method chain — calls may be nested.
@@ -61,7 +62,8 @@ pub(super) fn extract_calls_from_body(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                     // Also emit TypeRefs for type arguments: `new Dictionary<string, Foo>()`
                     super::types::extract_type_refs_from_type_node(type_node, src, source_symbol_index, refs);
@@ -163,7 +165,8 @@ pub(super) fn extract_calls_from_body(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                         }
                         break;
                     }
@@ -581,7 +584,8 @@ fn extract_is_expression_refs(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 return;
@@ -654,7 +658,8 @@ fn extract_is_expression_refs(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         break;
     }
@@ -699,7 +704,8 @@ fn extract_pattern_type_refs_recursive(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -758,7 +764,8 @@ fn emit_pattern_type_ref(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }

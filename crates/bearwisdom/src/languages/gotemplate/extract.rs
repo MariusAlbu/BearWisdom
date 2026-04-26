@@ -52,7 +52,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                             kind: EdgeKind::Imports,
                             line, module: None, chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
             }

@@ -137,7 +137,8 @@ fn extract_resource_declaration(
             module: None,
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     // Collect call_expression refs inside the body (decorators, function calls).
@@ -185,7 +186,8 @@ fn extract_module_declaration(
             module: Some(path),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     extract_calls_in_subtree(node, src, idx, refs);
@@ -390,7 +392,8 @@ fn extract_import_statement(
             module: Some(path),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -408,7 +411,8 @@ fn extract_using_statement(
             module: Some(path),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 }
 
@@ -434,7 +438,8 @@ fn extract_calls_in_subtree(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
             }
         } else {
             // Fallback: first identifier child.
@@ -451,7 +456,8 @@ fn extract_calls_in_subtree(
                             module: None,
                             chain: None,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                         break;
                     }
                 }
@@ -621,7 +627,8 @@ fn collect_all_call_expressions(
                 module: None,
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         // Don't recurse further into call_expression — avoid double-counting nested calls
         return;

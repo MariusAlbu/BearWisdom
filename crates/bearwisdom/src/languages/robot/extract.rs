@@ -153,7 +153,8 @@ fn extract_settings_line(
                         module: Some(t),
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
         }
@@ -243,7 +244,8 @@ fn extract_keyword_invocation(
         module,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------

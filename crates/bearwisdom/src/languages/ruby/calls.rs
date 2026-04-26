@@ -41,7 +41,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                 module: None,
                                 chain: None,
                                 byte_offset: 0,
-                            });
+                                                            namespace_segments: Vec::new(),
+});
                             // Don't also emit a Calls edge for `.new`.
                             // Recurse into arguments but not the receiver again.
                             if let Some(syms) = symbols.as_deref_mut() {
@@ -63,7 +64,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain,
                         byte_offset: child.start_byte() as u32,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
                     extract_calls_from_body_with_symbols(&child, src, source_symbol_index, refs, Some(syms));
@@ -87,7 +89,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 } else {
                     // Bare command: first identifier is the method name.
@@ -104,7 +107,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                                     module: None,
                                     chain: None,
                                     byte_offset: 0,
-                                });
+                                                                    namespace_segments: Vec::new(),
+});
                             }
                             break;
                         }
@@ -132,7 +136,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                             module: None,
                             chain,
                             byte_offset: 0,
-                        });
+                                                    namespace_segments: Vec::new(),
+});
                     }
                 }
                 if let Some(syms) = symbols.as_deref_mut() {
@@ -214,7 +219,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // Do NOT recurse further — constituent parts are captured above.
             }
@@ -231,7 +237,8 @@ pub(super) fn extract_calls_from_body_with_symbols(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
 

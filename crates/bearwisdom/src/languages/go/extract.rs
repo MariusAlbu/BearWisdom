@@ -226,7 +226,8 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
             }
             "qualified_type" if child.is_named() => {
@@ -242,7 +243,8 @@ fn scan_all_type_identifiers(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                    });
+                                            namespace_segments: Vec::new(),
+});
                 }
                 // Don't recurse into qualified_type children — we already extracted the name.
                 continue;

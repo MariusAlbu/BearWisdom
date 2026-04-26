@@ -301,7 +301,8 @@ fn extract_binary_operator(
                     module: None,
                     chain: None,
                     byte_offset: 0,
-                });
+                                    namespace_segments: Vec::new(),
+});
                 return Some(idx);
             }
             // Otherwise emit the call as a ref and fall through to Variable
@@ -374,7 +375,8 @@ fn extract_call(
                 module: Some(pkg),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
         return None;
     }
@@ -428,7 +430,8 @@ fn extract_call(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
     None
 }
 
@@ -462,7 +465,8 @@ fn extract_namespace_operator(
         module: Some(pkg),
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 // ---------------------------------------------------------------------------

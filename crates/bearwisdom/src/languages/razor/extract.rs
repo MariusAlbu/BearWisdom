@@ -50,7 +50,8 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             module: Some(sr.url),
             chain: None,
             byte_offset: 0,
-        });
+                    namespace_segments: Vec::new(),
+});
     }
 
     ExtractionResult {

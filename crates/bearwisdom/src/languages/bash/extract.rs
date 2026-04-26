@@ -307,7 +307,8 @@ fn extract_source_import(
                 module: Some(raw),
                 chain: None,
                 byte_offset: 0,
-            });
+                            namespace_segments: Vec::new(),
+});
         }
     }
 }
@@ -342,7 +343,8 @@ fn extract_command_call(
         module: None,
         chain: None,
         byte_offset: 0,
-    });
+            namespace_segments: Vec::new(),
+});
 }
 
 
