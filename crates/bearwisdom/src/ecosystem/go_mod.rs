@@ -36,6 +36,15 @@ impl Ecosystem for GoModEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[("go.mod", "go")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        // Go's vendor convention; Go modules cache lives outside the project.
+        &["vendor"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

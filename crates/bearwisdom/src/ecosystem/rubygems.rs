@@ -37,6 +37,21 @@ impl Ecosystem for RubygemsEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        // Gemfile alone marks an app; .gemspec is matched by extension.
+        &[("Gemfile", "ruby")]
+    }
+
+    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
+        &[(".gemspec", "ruby")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        // `vendor/bundle` is the Bundler default. Nothing else needs to
+        // hide here — no top-level vendor prune (would conflict with PHP).
+        &[]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

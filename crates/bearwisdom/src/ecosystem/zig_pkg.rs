@@ -37,6 +37,18 @@ impl Ecosystem for ZigPkgEcosystem {
     fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[
+            ("build.zig",     "zig"),
+            ("build.zig.zon", "zig"),
+        ]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["zig-cache", "zig-out"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

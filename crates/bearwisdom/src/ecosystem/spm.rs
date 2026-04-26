@@ -37,6 +37,22 @@ impl Ecosystem for SpmEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        // Package.swift is SPM. Podfile is CocoaPods, but we don't have a
+        // separate CocoaPods ecosystem and Swift mobile apps frequently
+        // ship one — the marker still gets this dir registered as a
+        // Swift workspace package. Project.swift is Tuist's variant.
+        &[
+            ("Package.swift", "swift"),
+            ("Project.swift", "swift"),
+            ("Podfile",       "cocoapods"),
+        ]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &[".build", "DerivedData", "Pods"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

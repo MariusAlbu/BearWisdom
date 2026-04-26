@@ -39,6 +39,20 @@ impl Ecosystem for PypiEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        // pyproject.toml is the modern marker; setup.py persists in older
+        // projects. Both legitimately mark a package root.
+        &[
+            ("pyproject.toml", "python"),
+            ("setup.py",       "python"),
+        ]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["__pycache__", ".venv", "venv", ".tox", ".pytest_cache",
+          ".mypy_cache", ".ruff_cache", "site-packages", ".eggs"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

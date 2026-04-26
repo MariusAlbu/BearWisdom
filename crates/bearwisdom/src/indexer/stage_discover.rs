@@ -147,13 +147,32 @@ pub(crate) fn collect_package_dep_rows(
 
 /// Detect workspace packages. Returns `(packages, workspace_kind)`.
 ///
-/// Uses bearwisdom-profile's monorepo detection first (Cargo workspace,
-/// npm workspaces, Turborepo, Nx, Lerna), then falls back to scanning
-/// for manifest files in immediate subdirectories.
+/// Two sources are unioned:
+///
+/// 1. **Workspace-aware detection** via `bearwisdom_profile::scanner::monorepo`
+///    handles named workspace systems (Cargo workspace, npm/pnpm workspaces,
+///    Turborepo, Nx, Lerna) — these expose authoritative declared names
+///    through their workspace manifest.
+///
+/// 2. **Recursive manifest scan** (`scan_all_manifests`) walks the tree
+///    looking for every known per-ecosystem manifest (package.json,
+///    pubspec.yaml, Cargo.toml, go.mod, pyproject.toml, mix.exs,
+///    Package.swift, composer.json, Gemfile, pom.xml, build.gradle,
+///    .csproj/.fsproj/.vbproj, gleam.toml, build.sbt). Polyglot monorepos
+///    (Dart in `mobile/`, Swift in `ios/`, Rust in `src-tauri/`) carry
+///    siblings the workspace manifest never names — this scan finds them.
+///
+/// Dedup is by `(path, kind)`. Workspace-source rows are inserted first so
+/// they win on conflict (their `declared_name` is more reliable). Same path
+/// with different kind always coexists (e.g., a Tauri root with both
+/// `Cargo.toml` and `package.json`).
 pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<String>) {
-    // 1. Try bearwisdom-profile monorepo detection.
+    let mut packages: Vec<PackageInfo> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> = std::collections::HashSet::new();
+    let mut workspace_kind: Option<String> = None;
+
+    // 1. Workspace-aware detection (named monorepo systems).
     if let Some(mono) = bearwisdom_profile::scanner::monorepo::detect_monorepo(project_root) {
-        let workspace_kind = mono.kind.clone();
         let kind_hint = match mono.kind.as_str() {
             "cargo-workspace" => "cargo",
             "npm-workspaces" | "pnpm-workspace" | "turborepo" | "lerna" => "npm",
@@ -161,17 +180,16 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
             other => other,
         };
 
-        let mut packages: Vec<PackageInfo> = Vec::new();
+        let mut ws_packages: Vec<PackageInfo> = Vec::new();
 
         if mono.packages.is_empty() {
             // Profile detected a monorepo kind but no explicit package list.
             // Scan common workspace directories (packages/, apps/, libs/, crates/).
-            packages = scan_workspace_dirs(project_root, kind_hint);
+            ws_packages = scan_workspace_dirs(project_root, kind_hint);
         } else {
             // Profile returned explicit package paths — these may be globs or
             // directory names. Resolve each to a PackageInfo.
             for rel_path in &mono.packages {
-                // Handle glob patterns like "crates/*" from Cargo workspace members.
                 if rel_path.contains('*') {
                     let base = rel_path.trim_end_matches("/*").trim_end_matches("\\*");
                     let base_dir = project_root.join(base);
@@ -186,7 +204,7 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                                 let full_rel = format!("{}/{}", base, sub_name);
                                 let abs = project_root.join(&full_rel);
                                 let declared_name = package_name_from_manifest(&abs, kind_hint);
-                                packages.push(PackageInfo {
+                                ws_packages.push(PackageInfo {
                                     id: None,
                                     name: sub_name.clone(),
                                     path: full_rel.replace('\\', "/"),
@@ -201,7 +219,7 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
                     let abs = project_root.join(rel_path);
                     if !abs.is_dir() { continue; }
                     let declared_name = package_name_from_manifest(&abs, kind_hint);
-                    packages.push(PackageInfo {
+                    ws_packages.push(PackageInfo {
                         id: None,
                         name: dir_name(rel_path),
                         path: rel_path.replace('\\', "/"),
@@ -213,20 +231,184 @@ pub(crate) fn detect_packages(project_root: &Path) -> (Vec<PackageInfo>, Option<
             }
         }
 
+        for pkg in ws_packages {
+            let key = (pkg.path.clone(), pkg.kind.clone().unwrap_or_default());
+            if seen.insert(key) { packages.push(pkg); }
+        }
+
         if !packages.is_empty() {
-            info!("Monorepo detected ({}) — {} packages", workspace_kind, packages.len());
-            return (packages, Some(workspace_kind));
+            workspace_kind = Some(mono.kind);
         }
     }
 
-    // 2. Fallback: scan workspace-style directories.
-    let packages = scan_workspace_dirs(project_root, "unknown");
-    if packages.len() >= 2 {
-        info!("Fallback package scan — {} packages", packages.len());
-        (packages, None)
-    } else {
-        (Vec::new(), None)
+    // 2. Always run a recursive manifest scan. Picks up sibling ecosystems
+    //    that workspace manifests never name (Dart subprojects, iOS, etc.)
+    //    plus filling in when no workspace system is detected at all.
+    for pkg in scan_all_manifests(project_root) {
+        let key = (pkg.path.clone(), pkg.kind.clone().unwrap_or_default());
+        if seen.insert(key) { packages.push(pkg); }
     }
+
+    if !packages.is_empty() {
+        info!(
+            "Workspace detection — {} packages ({})",
+            packages.len(),
+            workspace_kind.as_deref().unwrap_or("recursive scan only")
+        );
+    }
+    (packages, workspace_kind)
+}
+
+/// Recursively walk the project tree looking for every known ecosystem
+/// manifest. Bounded depth, prunes dependency caches and build outputs.
+/// Multiple manifests in the same directory each register their own
+/// PackageInfo (kept distinct downstream by the `(path, kind)` composite
+/// key on the `packages` table).
+///
+/// Markers and prune lists come from the `EcosystemRegistry` — each
+/// ecosystem owns the truth about its own manifests and its own
+/// dependency cache directories. The orchestrator doesn't carry hardcoded
+/// per-ecosystem knowledge.
+///
+/// Visible to tests via `pub(crate)` so the new fixture-driven tests can
+/// exercise the scanner directly.
+pub(crate) fn scan_all_manifests(project_root: &Path) -> Vec<PackageInfo> {
+    const MAX_DEPTH: u32 = 8;
+    let registry = crate::ecosystem::default_registry();
+    let scan_config = ScanConfig::from_registry(registry);
+    let mut out = Vec::new();
+    walk_for_manifests(project_root, project_root, 0, MAX_DEPTH, &scan_config, &mut out);
+    out
+}
+
+/// Pre-flattened scan inputs harvested from the ecosystem registry once
+/// per `scan_all_manifests` call. Hot paths (per-directory matching) read
+/// from `&[..]` slices instead of dispatching through the trait per file.
+struct ScanConfig {
+    /// `(filename, kind)` pairs from every ecosystem's
+    /// `workspace_package_files()`. Multiple ecosystems may declare the
+    /// same `(filename, kind)` — that's fine, the per-directory match
+    /// emits one PackageInfo per `(filename, kind)` and the downstream
+    /// dedup keys on `(path, kind)`.
+    files: Vec<(&'static str, &'static str)>,
+    /// `(extension, kind)` pairs from every ecosystem's
+    /// `workspace_package_extensions()`. Per-file suffix match.
+    extensions: Vec<(&'static str, &'static str)>,
+    /// Union of every ecosystem's `pruned_dir_names()` plus the universal
+    /// VCS metadata directories (`.git`, `.hg`, `.svn`).
+    pruned: std::collections::HashSet<&'static str>,
+}
+
+impl ScanConfig {
+    fn from_registry(reg: &crate::ecosystem::EcosystemRegistry) -> Self {
+        let mut files: Vec<(&'static str, &'static str)> = Vec::new();
+        let mut extensions: Vec<(&'static str, &'static str)> = Vec::new();
+        let mut pruned: std::collections::HashSet<&'static str> = std::collections::HashSet::new();
+        // Universal prune set — VCS metadata is owned by no ecosystem.
+        for vcs in &[".git", ".hg", ".svn"] { pruned.insert(*vcs); }
+        for eco in reg.all() {
+            files.extend(eco.workspace_package_files().iter().copied());
+            extensions.extend(eco.workspace_package_extensions().iter().copied());
+            for d in eco.pruned_dir_names() { pruned.insert(*d); }
+        }
+        Self { files, extensions, pruned }
+    }
+}
+
+/// Recursive helper for `scan_all_manifests`. Single allocation-light walk:
+/// for each directory, list children once, register every matching manifest,
+/// then descend into non-pruned subdirectories.
+fn walk_for_manifests(
+    project_root: &Path,
+    dir: &Path,
+    depth: u32,
+    max_depth: u32,
+    cfg: &ScanConfig,
+    out: &mut Vec<PackageInfo>,
+) {
+    if depth > max_depth { return; }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let mut subdirs: Vec<std::path::PathBuf> = Vec::new();
+    let mut filenames: Vec<String> = Vec::new();
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else { continue };
+        let raw_name = entry.file_name();
+        let name = raw_name.to_string_lossy().into_owned();
+        if file_type.is_dir() {
+            // Skip every dotted directory at any depth (`.git`,
+            // `.dart_tool`, `.idea`, `.venv`, `.vscode`, ...). Catches the
+            // common cases without enumeration; ecosystems still list
+            // their non-dotted caches (`node_modules`, `target`, `vendor`,
+            // ...) explicitly.
+            if name.starts_with('.') && name != "." && name != ".." { continue; }
+            if cfg.pruned.contains(name.as_str()) { continue; }
+            subdirs.push(entry.path());
+        } else if file_type.is_file() {
+            filenames.push(name);
+        }
+    }
+
+    // Exact filename match — registry-driven. Multiple kinds at the same
+    // dir are legitimate; the downstream dedup keys on `(path, kind)`.
+    for (manifest_name, kind) in &cfg.files {
+        if filenames.iter().any(|n| n.as_str() == *manifest_name) {
+            register_manifest(project_root, dir, manifest_name, kind, out);
+        }
+    }
+    // Extension match — `<name>.csproj`, `<name>.cabal`, etc. One
+    // PackageInfo per matched file (each project file is its own package).
+    for fname in &filenames {
+        for (ext, kind) in &cfg.extensions {
+            if fname.ends_with(ext) {
+                register_manifest(project_root, dir, fname, kind, out);
+            }
+        }
+    }
+
+    for sub in subdirs {
+        walk_for_manifests(project_root, &sub, depth + 1, max_depth, cfg, out);
+    }
+}
+
+fn register_manifest(
+    project_root: &Path,
+    pkg_dir: &Path,
+    manifest_filename: &str,
+    kind: &str,
+    out: &mut Vec<PackageInfo>,
+) {
+    let rel_dir = pkg_dir
+        .strip_prefix(project_root)
+        .map(|p| p.to_string_lossy().replace('\\', "/"))
+        .unwrap_or_default();
+    let folder_name = if rel_dir.is_empty() {
+        // Root-level manifest. Use the project root's directory name as a
+        // friendly label; falls back to "root" if the path is unusual.
+        project_root
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_else(|| "root".to_string())
+    } else {
+        rel_dir
+            .rsplit('/')
+            .next()
+            .unwrap_or(&rel_dir)
+            .to_string()
+    };
+    let manifest_rel = if rel_dir.is_empty() {
+        manifest_filename.to_string()
+    } else {
+        format!("{}/{}", rel_dir, manifest_filename)
+    };
+    let declared_name = package_name_from_manifest(pkg_dir, kind);
+    out.push(PackageInfo {
+        id: None,
+        name: folder_name,
+        path: rel_dir,
+        kind: Some(kind.to_string()),
+        manifest: Some(manifest_rel),
+        declared_name,
+    });
 }
 
 /// Scan common workspace directory patterns (packages/, apps/, libs/, crates/, etc.)

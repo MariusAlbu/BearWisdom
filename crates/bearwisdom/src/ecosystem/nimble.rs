@@ -32,6 +32,15 @@ impl Ecosystem for NimbleEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
+        // Nim packages use `<pkg>.nimble` (extension match).
+        &[(".nimble", "nim")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["nimcache"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

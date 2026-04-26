@@ -36,6 +36,17 @@ impl Ecosystem for CranEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        // R packages declare metadata in DESCRIPTION (case-sensitive,
+        // capitalized).
+        &[("DESCRIPTION", "r")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        // R doesn't have a strong project-local cache convention.
+        &[]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

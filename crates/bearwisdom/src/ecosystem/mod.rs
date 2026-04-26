@@ -323,6 +323,61 @@ pub trait Ecosystem: Send + Sync {
     /// typically return an empty slice (activation is probe-based).
     fn manifest_specs(&self) -> &'static [ManifestSpec] { &[] }
 
+    /// `(filename, kind_label)` pairs declaring exact workspace-package
+    /// markers for this ecosystem. The detector registers one `PackageInfo`
+    /// row per matched file with `packages.kind = kind_label`.
+    ///
+    /// One ecosystem may publish multiple filenames under one kind
+    /// (`pyproject.toml` and `setup.py` → kind `python`) or several kinds
+    /// (Maven's `pom.xml` → `maven`, `build.gradle{,.kts}` → `gradle`,
+    /// `build.sbt` → `sbt`). The kind label is the user-visible ecosystem
+    /// name, distinct from the internal `EcosystemId`.
+    ///
+    /// Used by the workspace package detector during a recursive tree
+    /// walk. For every non-pruned directory it asks each registered
+    /// ecosystem "do you own a manifest here?" and registers per match.
+    /// Multiple ecosystems may match the same directory (Tauri repo root:
+    /// `Cargo.toml` + `package.json`) — they coexist via the `(path, kind)`
+    /// composite key on the `packages` table.
+    ///
+    /// Distinct from `manifest_specs()` which uses globs and drives
+    /// project-wide manifest *parsing*. Workspace-package detection is the
+    /// shallower question of "is this dir a package root?".
+    ///
+    /// Default: empty. Stdlib ecosystems and probe-based ones (which find
+    /// roots via SDK discovery, not user-authored manifests) leave this
+    /// at the default.
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] { &[] }
+
+    /// `(extension, kind_label)` pairs (extensions include the leading dot)
+    /// that mark workspace packages when matched against any file in a
+    /// directory. Used by ecosystems where the manifest filename embeds
+    /// the project name — `.NET` (`<Proj>.csproj`/`.fsproj`/`.vbproj`),
+    /// Haskell (`<pkg>.cabal`), Nim (`<pkg>.nimble`). The detector treats
+    /// each matched file as a distinct workspace package.
+    ///
+    /// Default: empty. Most ecosystems use exact filenames instead.
+    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] { &[] }
+
+    /// Directory basenames this ecosystem creates that should be pruned
+    /// from recursive package scans — dependency caches and build outputs,
+    /// not user-authored workspace folders.
+    ///
+    /// Examples:
+    ///   - npm: `node_modules`, `bower_components`
+    ///   - pub: `.dart_tool`, `.pub-cache`
+    ///   - cargo: `target`
+    ///   - python: `__pycache__`, `.venv`, `.tox`, `.pytest_cache`
+    ///   - maven/gradle: `.gradle`, `.mvn`
+    ///   - cocoapods/spm: `Pods`, `DerivedData`
+    ///
+    /// The orchestrator unions these across every registered ecosystem and
+    /// adds a small universal set (`.git`, `.hg`, `.svn`) outside any
+    /// ecosystem's purview.
+    ///
+    /// Default: empty.
+    fn pruned_dir_names(&self) -> &'static [&'static str] { &[] }
+
     /// When is this ecosystem active for a given project?
     fn activation(&self) -> EcosystemActivation;
 

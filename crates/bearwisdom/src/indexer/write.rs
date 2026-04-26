@@ -627,13 +627,16 @@ pub fn write_packages(
     let mut result = Vec::with_capacity(packages.len());
 
     for pkg in packages {
+        // Composite identity is (path, kind); kind is NOT NULL in the new
+        // schema. Old detectors that left kind unset get bucketed as
+        // 'unknown' so the conflict target stays well-defined.
+        let kind_value = pkg.kind.clone().unwrap_or_else(|| "unknown".to_string());
         let id: i64 = conn
             .prepare_cached(
                 "INSERT INTO packages (name, path, kind, manifest, declared_name)
                  VALUES (?1, ?2, ?3, ?4, ?5)
-                 ON CONFLICT(path) DO UPDATE SET
+                 ON CONFLICT(path, kind) DO UPDATE SET
                    name = excluded.name,
-                   kind = excluded.kind,
                    manifest = excluded.manifest,
                    declared_name = excluded.declared_name
                  RETURNING id",
@@ -642,36 +645,49 @@ pub fn write_packages(
                 rusqlite::params![
                     pkg.name,
                     pkg.path,
-                    pkg.kind,
+                    kind_value,
                     pkg.manifest,
                     pkg.declared_name,
                 ],
                 |r| r.get(0),
             )
-            .with_context(|| format!("Failed to upsert package {}", pkg.name))?;
+            .with_context(|| format!("Failed to upsert package {} ({})", pkg.name, kind_value))?;
 
         result.push(crate::types::PackageInfo {
             id: Some(id),
             name: pkg.name.clone(),
             path: pkg.path.clone(),
-            kind: pkg.kind.clone(),
+            kind: Some(kind_value),
             manifest: pkg.manifest.clone(),
             declared_name: pkg.declared_name.clone(),
         });
     }
 
-    // Remove packages that are no longer detected.
-    let known_paths: Vec<&str> = packages.iter().map(|p| p.path.as_str()).collect();
-    if !known_paths.is_empty() {
-        let placeholders: String = (1..=known_paths.len())
-            .map(|i| format!("?{i}"))
+    // Remove packages that are no longer detected. Composite key means we
+    // delete by (path, kind) tuples — a path may legitimately be re-used
+    // across ecosystems (Tauri root: cargo + npm).
+    if !packages.is_empty() {
+        let kind_buf: Vec<String> = packages
+            .iter()
+            .map(|p| p.kind.clone().unwrap_or_else(|| "unknown".to_string()))
+            .collect();
+        let tuples: String = (1..=packages.len())
+            .map(|i| format!("(?{}, ?{})", i * 2 - 1, i * 2))
             .collect::<Vec<_>>()
             .join(",");
-        let sql = format!("DELETE FROM packages WHERE path NOT IN ({placeholders})");
+        let sql = format!(
+            "DELETE FROM packages WHERE (path, kind) NOT IN (VALUES {tuples})"
+        );
         let mut stmt = conn.prepare_cached(&sql)?;
-        let params: Vec<&dyn rusqlite::types::ToSql> =
-            known_paths.iter().map(|p| p as &dyn rusqlite::types::ToSql).collect();
+        let mut params: Vec<&dyn rusqlite::types::ToSql> = Vec::with_capacity(packages.len() * 2);
+        for (pkg, kind) in packages.iter().zip(kind_buf.iter()) {
+            params.push(&pkg.path as &dyn rusqlite::types::ToSql);
+            params.push(kind as &dyn rusqlite::types::ToSql);
+        }
         stmt.execute(params.as_slice())?;
+    } else {
+        // No packages detected this run — clear all stale rows.
+        conn.execute("DELETE FROM packages", [])?;
     }
 
     Ok(result)

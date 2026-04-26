@@ -69,6 +69,23 @@ impl Ecosystem for MavenEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        // Maven covers the JVM tool family in BearWisdom: pom.xml + Gradle
+        // (build.gradle / .kts) + SBT. Each filename gets its own kind label
+        // so users querying packages.kind can tell them apart.
+        &[
+            ("pom.xml",          "maven"),
+            ("build.gradle",     "gradle"),
+            ("build.gradle.kts", "gradle"),
+            ("build.sbt",        "sbt"),
+            ("deps.edn",         "clojure"),
+        ]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["target", ".gradle", ".mvn", "out", "build"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         // Any JVM manifest or any JVM source file triggers activation. In
         // Phase 4 this becomes the single activation gate; today the legacy

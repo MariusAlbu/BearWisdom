@@ -35,6 +35,18 @@ impl Ecosystem for CabalEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[("cabal.project", "haskell")]
+    }
+
+    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
+        &[(".cabal", "haskell")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["dist", "dist-newstyle", ".stack-work"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

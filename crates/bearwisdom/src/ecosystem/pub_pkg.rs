@@ -38,6 +38,17 @@ impl Ecosystem for PubEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        // Kind label "dart" matches the legacy ecosystem tag and the kind
+        // string used by the Pub manifest reader (see ManifestKind::Pubspec
+        // → "dart" in stage_discover::manifest_kind_to_ecosystem).
+        &[("pubspec.yaml", "dart")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &[".dart_tool", ".pub-cache"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,
@@ -465,17 +476,34 @@ fn parse_dart_package_config(project_root: &Path) -> std::collections::HashMap<S
         let Some(name) = pkg.get("name").and_then(|v| v.as_str()) else { continue };
         let Some(root_uri) = pkg.get("rootUri").and_then(|v| v.as_str()) else { continue };
         let package_uri = pkg.get("packageUri").and_then(|v| v.as_str()).unwrap_or("lib/").to_string();
-        let root = if root_uri.starts_with("file:///") {
-            PathBuf::from(&root_uri[7..].replace('/', std::path::MAIN_SEPARATOR_STR))
-        } else if root_uri.starts_with("file://") {
-            PathBuf::from(&root_uri[7..].replace('/', std::path::MAIN_SEPARATOR_STR))
-        } else {
-            config_dir.join(root_uri.replace('/', std::path::MAIN_SEPARATOR_STR))
-        };
+        let root = parse_file_uri(root_uri, config_dir);
         let version = pkg.get("version").and_then(|v| v.as_str()).unwrap_or("").to_string();
         map.insert(name.to_string(), DartPackageEntry { root, package_uri, version });
     }
     map
+}
+
+/// Resolve a `file:///`-style URI from `package_config.json` to a usable
+/// `PathBuf`. On Windows, `file:///C:/foo/bar` must drop the eight-byte
+/// `file:///` prefix to leave `C:/foo/bar`; on Unix the same `file:///`
+/// signals an absolute path so we drop seven (`file://`) and keep the
+/// remaining leading slash. Earlier code stripped seven on both, leaving
+/// `/C:/foo/bar` on Windows, which `PathBuf::from` interpreted as a
+/// drive-rooted path on the current drive — every `is_dir()` check then
+/// returned false and the entire pub-cache pipeline was a no-op for
+/// monorepos with `package_config.json` under non-default project roots.
+fn parse_file_uri(uri: &str, fallback_dir: &Path) -> PathBuf {
+    if let Some(after_scheme) = uri.strip_prefix("file:///") {
+        if cfg!(windows) {
+            PathBuf::from(after_scheme)
+        } else {
+            PathBuf::from(format!("/{}", after_scheme))
+        }
+    } else if let Some(after_scheme) = uri.strip_prefix("file://") {
+        PathBuf::from(after_scheme)
+    } else {
+        fallback_dir.join(uri)
+    }
 }
 
 // ---------------------------------------------------------------------------

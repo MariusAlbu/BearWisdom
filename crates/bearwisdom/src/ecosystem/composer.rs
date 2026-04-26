@@ -34,6 +34,17 @@ impl Ecosystem for ComposerEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[("composer.json", "php")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        // Composer's vendor directory holds installed deps. Conflicts with
+        // Go's vendor convention but PHP and Go monorepos don't coexist in
+        // practice — accept the overlap.
+        &["vendor"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

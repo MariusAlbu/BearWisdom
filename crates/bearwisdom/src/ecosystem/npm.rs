@@ -70,6 +70,17 @@ impl Ecosystem for NpmEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[("package.json", "npm")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        // Cache + framework build outputs that nest under user packages and
+        // should never be treated as workspace package roots themselves.
+        &["node_modules", "bower_components", ".next", ".nuxt",
+          ".svelte-kit", ".turbo", ".nyc_output"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

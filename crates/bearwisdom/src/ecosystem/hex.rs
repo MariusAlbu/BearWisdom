@@ -59,6 +59,21 @@ impl Ecosystem for HexEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        // Hex covers the Erlang/Elixir/Gleam triumvirate. Each tool brings
+        // its own manifest filename; map them to distinct kinds so users
+        // can tell them apart in queries.
+        &[
+            ("mix.exs",      "elixir"),
+            ("rebar.config", "erlang"),
+            ("gleam.toml",   "gleam"),
+        ]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["_build", "deps"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

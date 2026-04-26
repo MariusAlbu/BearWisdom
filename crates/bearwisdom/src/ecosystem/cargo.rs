@@ -49,6 +49,14 @@ impl Ecosystem for CargoEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[("Cargo.toml", "cargo")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["target"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

@@ -50,6 +50,24 @@ impl Ecosystem for NugetEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
 
+    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
+        // .NET project files embed the project name as the filename stem,
+        // so they must be matched by extension. One row per project file.
+        &[
+            (".csproj", "dotnet"),
+            (".fsproj", "dotnet"),
+            (".vbproj", "dotnet"),
+        ]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        // No `packages/` here — that's a canonical npm-monorepo workspace
+        // directory and pruning it would block sibling Dart/iOS/Rust pkgs.
+        // NuGet's package cache lives at `~/.nuget/packages/`, not in the
+        // repo.
+        &["bin", "obj", ".nuget"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,

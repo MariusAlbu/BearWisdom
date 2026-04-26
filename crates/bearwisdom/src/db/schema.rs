@@ -195,45 +195,46 @@ fn migrate(conn: &Connection) -> rusqlite::Result<()> {
         "CREATE INDEX IF NOT EXISTS idx_edges_strategy
            ON edges(strategy) WHERE strategy IS NOT NULL"
     )?;
-    // v0.10: drop UNIQUE(name) on packages. A2 made `name` folder-derived,
-    // and nested workspaces commonly have repeating folder names
-    // (`apps/routes/`, `packages/routes/`). Identity is `path`. Old DBs
-    // built before this change still carry the UNIQUE inline — detect via
-    // sqlite_master and rebuild the table when needed.
-    let needs_packages_rebuild: bool = conn
-        .query_row(
-            "SELECT EXISTS(
-                SELECT 1 FROM sqlite_master
-                WHERE type='table'
-                  AND name='packages'
-                  AND sql LIKE '%name%TEXT%NOT NULL%UNIQUE%'
-             )",
-            [],
-            |r| r.get::<_, i64>(0),
-        )
-        .map(|n| n == 1)
-        .unwrap_or(false);
-    if needs_packages_rebuild {
+    // v0.10 + v0.12 packages-table rebuild. Both gated on
+    // `PRAGMA user_version < 12` so they can't re-run on already-migrated
+    // DBs. The earlier `LIKE '%name%TEXT%NOT NULL%UNIQUE%'` check
+    // spuriously matches the v0.12 schema (because of the table-level
+    // `UNIQUE(path, kind)` clause containing the keyword UNIQUE), so the
+    // pattern alone is unreliable as a stop condition. user_version is
+    // the canonical SQLite-native version counter.
+    //
+    // Migration body is the v0.12 form (composite UNIQUE, kind NOT NULL
+    // DEFAULT 'unknown'). Very old DBs that still carry the v0.10
+    // `name UNIQUE` constraint pass through this rebuild and end up with
+    // the v0.12 shape directly — v0.10's intermediate `path UNIQUE` form
+    // is short-lived and not worth a separate hop.
+    let user_version: i64 = conn
+        .query_row("PRAGMA user_version", [], |r| r.get(0))
+        .unwrap_or(0);
+    if user_version < 12 {
         conn.execute_batch(
             "BEGIN;
-             CREATE TABLE packages_new (
+             UPDATE packages SET kind = 'unknown' WHERE kind IS NULL;
+             CREATE TABLE packages_v12 (
                  id            INTEGER PRIMARY KEY,
                  name          TEXT    NOT NULL,
-                 path          TEXT    NOT NULL UNIQUE,
-                 kind          TEXT,
+                 path          TEXT    NOT NULL,
+                 kind          TEXT    NOT NULL DEFAULT 'unknown',
                  manifest      TEXT,
-                 parent_id     INTEGER REFERENCES packages_new(id) ON DELETE SET NULL,
+                 parent_id     INTEGER REFERENCES packages_v12(id) ON DELETE SET NULL,
                  is_service    INTEGER NOT NULL DEFAULT 0,
-                 declared_name TEXT
+                 declared_name TEXT,
+                 UNIQUE(path, kind)
              );
-             INSERT INTO packages_new (id, name, path, kind, manifest, parent_id, is_service, declared_name)
-                 SELECT id, name, path, kind, manifest, parent_id, is_service, declared_name FROM packages;
+             INSERT INTO packages_v12 (id, name, path, kind, manifest, parent_id, is_service, declared_name)
+                 SELECT id, name, path, COALESCE(kind, 'unknown'), manifest, parent_id, is_service, declared_name FROM packages;
              DROP TABLE packages;
-             ALTER TABLE packages_new RENAME TO packages;
+             ALTER TABLE packages_v12 RENAME TO packages;
              CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);
              CREATE INDEX IF NOT EXISTS idx_packages_declared_name
                  ON packages(declared_name)
                  WHERE declared_name IS NOT NULL;
+             PRAGMA user_version = 12;
              COMMIT;",
         )?;
     }
@@ -287,15 +288,16 @@ CREATE TABLE IF NOT EXISTS packages (
     id            INTEGER PRIMARY KEY,
     -- Folder-derived sort key. NOT unique — nested workspaces frequently
     -- have repeating folder names (`apps/routes/`, `packages/routes/`).
-    -- Identity is `path`. Use `declared_name` to find a package by its
-    -- manifest-reported name.
+    -- Identity is `(path, kind)`. Use `declared_name` to find a package by
+    -- its manifest-reported name.
     name          TEXT    NOT NULL,
-    path          TEXT    NOT NULL UNIQUE,  -- relative to workspace root
-    kind          TEXT,                     -- ecosystem hint: npm, cargo, dotnet, go, etc.
-    manifest      TEXT,                     -- relative path to manifest file
+    path          TEXT    NOT NULL,                   -- relative to workspace root
+    kind          TEXT    NOT NULL DEFAULT 'unknown', -- ecosystem hint: npm, cargo, dotnet, go, pub, etc.
+    manifest      TEXT,                               -- relative path to manifest file
     parent_id     INTEGER REFERENCES packages(id) ON DELETE SET NULL,
-    is_service    INTEGER NOT NULL DEFAULT 0,  -- 1 if a Dockerfile was found in this package
-    declared_name TEXT                         -- manifest-declared name (@myorg/foo, etc.)
+    is_service    INTEGER NOT NULL DEFAULT 0,         -- 1 if a Dockerfile was found in this package
+    declared_name TEXT,                               -- manifest-declared name (@myorg/foo, etc.)
+    UNIQUE(path, kind)                                -- polyglot monorepos: same path may host multiple ecosystems
 );
 
 CREATE INDEX IF NOT EXISTS idx_packages_path ON packages(path);

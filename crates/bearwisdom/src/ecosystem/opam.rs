@@ -32,6 +32,19 @@ impl Ecosystem for OpamEcosystem {
     fn kind(&self) -> EcosystemKind { EcosystemKind::Package }
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
     fn manifest_specs(&self) -> &'static [ManifestSpec] { MANIFESTS }
+
+    fn workspace_package_files(&self) -> &'static [(&'static str, &'static str)] {
+        &[("dune-project", "ocaml")]
+    }
+
+    fn workspace_package_extensions(&self) -> &'static [(&'static str, &'static str)] {
+        &[(".opam", "ocaml")]
+    }
+
+    fn pruned_dir_names(&self) -> &'static [&'static str] {
+        &["_build", "_opam"]
+    }
+
     fn activation(&self) -> EcosystemActivation {
         EcosystemActivation::Any(&[
             EcosystemActivation::ManifestMatch,
