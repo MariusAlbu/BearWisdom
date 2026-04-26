@@ -143,6 +143,12 @@ fn extract_inner(
     // known import alias, set module so the resolver can trace it back.
     if !import_map.is_empty() {
         annotate_call_modules(&mut refs, &import_map);
+        // Type refs from `nested_type_identifier` arrive as a single dotted
+        // string (`Oazapfts.RequestOpts`) with module=None. Split the
+        // namespace prefix off when the prefix matches an import alias —
+        // routes the ref to its real exporting module so seed_demand can
+        // pull the type's defining file and the resolver can match it.
+        annotate_namespace_type_refs(&mut refs, &import_map);
     }
 
     // Rewrite aliased references: `import { request as __request }; __request(...)`
@@ -1119,6 +1125,37 @@ fn annotate_call_modules(refs: &mut Vec<ExtractedRef>, import_map: &HashMap<Stri
         }
         let first = &chain.segments[0].name;
         if let Some(module_path) = import_map.get(first) {
+            r.module = Some(module_path.clone());
+        }
+    }
+}
+
+/// Rewrite `Alias.Member` TypeRef targets when `Alias` matches an import
+/// alias. The `nested_type_identifier` extractor emits a single qualified
+/// string (`Oazapfts.RequestOpts`, `zod.ZodType`, `Express.Multer.File`)
+/// with `module=None`; the demand-seed and resolver both need the actual
+/// symbol name (`RequestOpts`, `ZodType`) plus the source module to route
+/// the ref correctly. For multi-segment paths
+/// (`Express.Multer.File`) the leftmost segment is the alias and the
+/// remainder is left in `target_name` so a follow-on namespace walk can
+/// resolve it (`Express.Multer.File` → target=`Multer.File`,
+/// module=`<express types path>`).
+fn annotate_namespace_type_refs(
+    refs: &mut Vec<ExtractedRef>,
+    import_map: &HashMap<String, String>,
+) {
+    for r in refs.iter_mut() {
+        if r.kind != EdgeKind::TypeRef || r.module.is_some() {
+            continue;
+        }
+        let Some((head, rest)) = r.target_name.split_once('.') else {
+            continue;
+        };
+        if rest.is_empty() {
+            continue;
+        }
+        if let Some(module_path) = import_map.get(head) {
+            r.target_name = rest.to_string();
             r.module = Some(module_path.clone());
         }
     }

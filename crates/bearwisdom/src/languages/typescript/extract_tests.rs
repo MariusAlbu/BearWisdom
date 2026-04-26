@@ -6,6 +6,31 @@ fn sym(source: &str) -> Vec<ExtractedSymbol> { extract::extract(source, false).s
 fn refs(source: &str) -> Vec<ExtractedRef>    { extract::extract(source, false).refs }
 
 #[test]
+fn namespace_import_qualified_typeref_routes_to_module() {
+    // `import * as Oazapfts from "@oazapfts/runtime";` followed by
+    // `Oazapfts.RequestOpts` as a parameter type produces a TypeRef
+    // emitted by `nested_type_identifier` as a single qualified string.
+    // The post-pass `annotate_namespace_type_refs` must split the prefix
+    // off and set `module` so demand-seed can pull the type's defining
+    // file and the resolver can match it.
+    let src = r#"
+import * as Oazapfts from "@oazapfts/runtime";
+export function call(opts?: Oazapfts.RequestOpts): void {}
+"#;
+    let r = extract::extract(src, false);
+    let ns_ref = r
+        .refs
+        .iter()
+        .find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "RequestOpts")
+        .expect("expected TypeRef target_name='RequestOpts' after rewrite");
+    assert_eq!(
+        ns_ref.module.as_deref(),
+        Some("@oazapfts/runtime"),
+        "expected module set to the import path"
+    );
+}
+
+#[test]
 fn extracts_class() {
     let src = "export class UserService {}";
     let symbols = sym(src);
