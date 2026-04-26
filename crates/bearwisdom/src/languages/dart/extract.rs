@@ -44,7 +44,58 @@ pub fn extract(source: &str) -> super::ExtractionResult {
         scan_all_type_identifiers(tree.root_node(), source, 0, &mut refs);
     }
 
+    // Drop noise refs: type_refs whose target matches a Dart library prefix
+    // (the `i1` in `import 'package:foo/foo.dart' as i1`). Generated code
+    // (Drift, auto_route, json_serializable, freezed, riverpod_generator)
+    // emits qualified types like `i1.AssetFaceEntityCompanion` which the
+    // tree-sitter walk records as TWO type_refs — one for the prefix
+    // `i1` and one for the type. The prefix is a namespace anchor, never
+    // a type, and would never resolve. Skipping it cleanly removes
+    // ~1k noise unresolved refs per ts-immich/mobile.
+    let aliases = collect_dart_import_aliases(source);
+    if !aliases.is_empty() {
+        refs.retain(|r| {
+            r.kind != EdgeKind::TypeRef || !aliases.contains(&r.target_name)
+        });
+    }
+
     super::ExtractionResult::new(symbols, refs, has_errors)
+}
+
+/// Scan a Dart source for `import '<uri>' as <name>` directives,
+/// returning the set of `<name>` library prefixes. Used by `extract` to
+/// drop `type_ref` refs whose target is just a library prefix rather than
+/// a real type.
+///
+/// Dart's `as <prefix>` only appears in `import` directives — it's the
+/// library prefix for qualified references (`import 'foo.dart' as p;
+/// p.SomeType`). Exports never take a prefix; `show`/`hide` lists never
+/// rename. The regex is therefore safely scoped to imports.
+///
+/// Robust to multi-line directives:
+///
+/// ```dart
+/// import 'package:foo/foo.dart'
+///     as i1
+///     show Bar;
+/// ```
+fn collect_dart_import_aliases(source: &str) -> std::collections::HashSet<String> {
+    use regex::Regex;
+    use std::sync::OnceLock;
+    static IMPORT_AS_RE: OnceLock<Regex> = OnceLock::new();
+    let re = IMPORT_AS_RE.get_or_init(|| {
+        // import ... as <ident> ... ; — `\s` covers newlines for
+        // multi-line directives. `(?s)` lets `.` cross newlines.
+        Regex::new(r"(?s)\bimport\b[^;]*?\bas\s+([A-Za-z_][A-Za-z0-9_]*)[^;]*?;")
+            .expect("static regex compiles")
+    });
+    let mut out = std::collections::HashSet::new();
+    for cap in re.captures_iter(source) {
+        if let Some(m) = cap.get(1) {
+            out.insert(m.as_str().to_string());
+        }
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
