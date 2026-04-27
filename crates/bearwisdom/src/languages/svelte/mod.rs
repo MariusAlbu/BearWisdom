@@ -24,9 +24,76 @@ pub mod extract;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+use crate::indexer::project_context::ProjectContext;
+use crate::indexer::resolve::engine::{
+    FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
+};
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
+
+// ---------------------------------------------------------------------------
+// SvelteResolver — wraps TypeScriptResolver, claims "svelte" as its language_id.
+//
+// Svelte SFC template refs (language = "svelte") need a resolver registered
+// under "svelte" in the engine's resolver map. TypeScriptResolver itself only
+// declares `["typescript", "javascript", "tsx", "jsx"]` so it never picked up
+// .svelte files — those refs fell through with no Tier-1 resolver, lost
+// access to file_ctx.imports, and could only attempt the heuristic (which
+// has no per-file import context). The result was thousands of unresolved
+// `<Button>` template refs in immich-style projects where Button is imported
+// in `<script lang="ts">` from a workspace UI package.
+//
+// Mirrors VueResolver's approach exactly. All logic delegates to
+// TypeScriptResolver since Svelte's `<script>` block IS TypeScript.
+// ---------------------------------------------------------------------------
+pub(crate) struct SvelteResolver;
+
+impl LanguageResolver for SvelteResolver {
+    fn language_ids(&self) -> &[&str] {
+        &["svelte"]
+    }
+
+    fn build_file_context(
+        &self,
+        file: &crate::types::ParsedFile,
+        project_ctx: Option<&ProjectContext>,
+    ) -> FileContext {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .build_file_context(file, project_ctx)
+    }
+
+    fn resolve(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .resolve(file_ctx, ref_ctx, lookup)
+    }
+
+    fn infer_external_namespace(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+    ) -> Option<String> {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .infer_external_namespace(file_ctx, ref_ctx, project_ctx)
+    }
+
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        crate::languages::typescript::resolve::TypeScriptResolver
+            .infer_external_namespace_with_lookup(file_ctx, ref_ctx, project_ctx, lookup)
+    }
+}
 
 pub struct SveltePlugin;
 
@@ -90,7 +157,7 @@ impl LanguagePlugin for SveltePlugin {
     }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
-        Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
+        Some(std::sync::Arc::new(SvelteResolver))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {

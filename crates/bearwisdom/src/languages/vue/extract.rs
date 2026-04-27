@@ -40,8 +40,18 @@ pub fn extract(source: &str, file_path: &str) -> super::ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    // Infer component name from filename stem (e.g. MyButton.vue → MyButton)
-    let component_name = file_stem(file_path);
+    // Infer component name from filename stem. Kebab-case filenames are
+    // converted to PascalCase: `my-button.vue` → `MyButton`. This matches
+    // what users write in import statements
+    // (`import MyButton from './my-button.vue'`) — without the conversion,
+    // the symbol's name field is `my-button` and the resolver can't match
+    // the imported alias against any indexed symbol in the file.
+    let stem = file_stem(file_path);
+    let component_name = if stem.contains('-') {
+        kebab_to_pascal(&stem)
+    } else {
+        stem.clone()
+    };
     symbols.push(ExtractedSymbol {
         name: component_name.clone(),
         qualified_name: component_name.clone(),
