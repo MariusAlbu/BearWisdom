@@ -4,7 +4,7 @@
 
 use crate::indexer::resolve::chain_walker::external_type_qname;
 use crate::indexer::resolve::engine::{ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup};
-use crate::indexer::resolve::type_env::TypeEnvironment;
+use crate::type_checker::type_env::TypeEnvironment;
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;

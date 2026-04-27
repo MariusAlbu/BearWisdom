@@ -28,6 +28,7 @@ pub mod panic_hook;
 pub mod parser;
 pub mod query;
 pub mod search;
+pub mod type_checker;
 pub mod types;
 pub mod walker;
 

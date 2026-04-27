@@ -227,6 +227,17 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// The engine collects resolvers by calling this on every registered plugin.
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> { None }
 
+    /// Return the language type checker for this plugin, if one exists.
+    ///
+    /// One impl per typed language (TypeScript, C#, Rust, etc.). Untyped /
+    /// dynamically-typed languages return `None` and the engine treats them
+    /// as having no type-level capabilities. Aggregated by
+    /// `crate::type_checker::default_type_checkers()`.
+    ///
+    /// PR 1 of the type-checker consolidation — see decision-2026-04-27-e75.
+    /// Trait surface stays minimal until subsequent PRs port behavior in.
+    fn type_checker(&self) -> Option<Arc<dyn crate::type_checker::TypeChecker>> { None }
+
     /// Return language-specific connectors provided by this plugin.
     ///
     /// Each connector implements the full `Connector` trait (detect/extract/match).

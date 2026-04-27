@@ -14,7 +14,6 @@ pub mod engine;
 mod heuristic;
 pub mod inheritance;
 pub mod rules;
-pub mod type_env;
 
 use engine::SymbolLookup;
 

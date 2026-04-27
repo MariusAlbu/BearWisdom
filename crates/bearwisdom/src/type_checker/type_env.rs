@@ -1,5 +1,5 @@
 // =============================================================================
-// indexer/resolve/type_env.rs — Scoped generic type parameter environment
+// type_checker/type_env.rs — Scoped generic type parameter environment
 //
 // Replaces ad-hoc `resolve_generic_type()` single-level lookups in chain
 // resolvers with a proper scoped environment that handles nested generics,

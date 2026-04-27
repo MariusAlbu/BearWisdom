@@ -7,7 +7,7 @@
 // =============================================================================
 
 use crate::indexer::project_context::ProjectContext;
-use crate::indexer::resolve::type_env::TypeEnvironment;
+use crate::type_checker::type_env::TypeEnvironment;
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
@@ -3758,7 +3758,7 @@ mod tests {
         // Sanity check: ensure `TypeEnvironment::enter_generic_context` used
         // by the chain walker correctly binds call-site type args so the
         // yield type comes out substituted.
-        use crate::indexer::resolve::type_env::TypeEnvironment;
+        use crate::type_checker::type_env::TypeEnvironment;
         let mut env = TypeEnvironment::new();
         let pushed = env.enter_generic_context(
             "UserRepo.findOne",
