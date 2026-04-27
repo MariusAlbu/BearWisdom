@@ -140,23 +140,7 @@ impl Ecosystem for NpmEcosystem {
     }
 
     fn post_process_parsed(&self, _dep: &ExternalDepRoot, parsed: &mut crate::types::ParsedFile) {
-        if let Some(pkg) = ts_package_from_virtual_path(&parsed.path).map(str::to_string) {
-            // Backfill any `declare global { ... }` names the TypeScript
-            // extractor missed (it descends inconsistently into ambient
-            // blocks, so only a subset of the inner decls normally surface
-            // as top-level symbols). Re-scan the source with the regex
-            // helper and inject missing names with kind=variable; the
-            // heuristic resolver's declare-global priority then resolves
-            // bare-name refs (vitest's `it`/`beforeEach`/etc., any .d.ts
-            // that declares runtime globals) to the right file.
-            let source_snapshot = parsed.content.clone();
-            if let Some(source) = source_snapshot.as_deref() {
-                if source.contains("declare global") {
-                    backfill_declare_global_symbols(parsed, source);
-                }
-            }
-            prefix_ts_external_symbols(parsed, &pkg);
-        }
+        ts_post_process_external(parsed);
     }
 
     fn build_symbol_index(
@@ -277,15 +261,7 @@ impl ExternalSourceLocator for NpmEcosystem {
     }
 
     fn post_process_parsed(&self, parsed: &mut crate::types::ParsedFile) {
-        if let Some(pkg) = ts_package_from_virtual_path(&parsed.path).map(str::to_string) {
-            let source_snapshot = parsed.content.clone();
-            if let Some(source) = source_snapshot.as_deref() {
-                if source.contains("declare global") {
-                    backfill_declare_global_symbols(parsed, source);
-                }
-            }
-            prefix_ts_external_symbols(parsed, &pkg);
-        }
+        ts_post_process_external(parsed);
     }
 
     fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<crate::types::ParsedFile>> {
@@ -1307,6 +1283,18 @@ fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile, source: &s
     let existing: std::collections::HashSet<String> =
         pf.symbols.iter().map(|s| s.name.clone()).collect();
     for name in globals {
+        // Dotted names (`Express.Multer.File`) are namespace paths whose
+        // inner symbols the TS extractor already lifts as proper
+        // class/interface/namespace symbols at the right qname. Emitting a
+        // synthetic Variable here would only duplicate them under a name
+        // the heuristic resolver's qname-derived index still wouldn't key
+        // on (it uses the qname's last segment, not `sym.name`). Restrict
+        // the backfill to flat top-level decls (`expect`, `describe`,
+        // `Buffer`, `process`) where the extractor's ambient-block descent
+        // is the unreliable bit.
+        if name.contains('.') {
+            continue;
+        }
         if existing.contains(&name) {
             continue;
         }
@@ -1325,6 +1313,26 @@ fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile, source: &s
             parent_index: None,
         });
     }
+}
+
+/// Post-process a TS external file pulled through the demand-driven path.
+/// Mirrors what the eager-walk locator's `post_process_parsed` does: scan
+/// for `declare global` / `declare namespace` blocks and inject any names
+/// the extractor missed, then prefix every symbol's qname with the owning
+/// package. Both demand-driven entry points (`stage_link::seed_demand_*`
+/// and `expand::expand_*`) must call this so the symbol table is shaped
+/// the same regardless of which pass pulled the file in.
+pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
+    let Some(pkg) = ts_package_from_virtual_path(&pf.path).map(str::to_string) else {
+        return;
+    };
+    let source_snapshot = pf.content.clone();
+    if let Some(source) = source_snapshot.as_deref() {
+        if source.contains("declare global") || source.contains("declare namespace") {
+            backfill_declare_global_symbols(pf, source);
+        }
+    }
+    prefix_ts_external_symbols(pf, &pkg);
 }
 
 pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
@@ -1799,43 +1807,132 @@ fn scan_ts_header(source: &str, language: &str) -> (Vec<String>, Vec<String>) {
     (regular, exports.globals)
 }
 
-/// Extract names from `declare global { ... }` blocks via brace-aware
-/// source scan. Used as a grammar-independent belt against tree-sitter
-/// variance in how the `global` keyword lands in the CST.
+/// Extract names declared inside `declare global { ... }` and top-level
+/// `declare namespace X { ... }` blocks. Returns a flat list including
+/// dotted names for declarations nested inside `namespace` wrappers.
+///
+/// Examples of names emitted:
+/// - `declare global { const expect; }` → `expect`
+/// - `declare global { namespace Express { interface Request {} } }` → `Express`, `Express.Request`
+/// - `declare namespace google.maps { class Map {} class LatLng {} }` → `google.maps.Map`, `google.maps.LatLng`
+/// - `declare namespace google { namespace maps { class Map {} } }` → `google`, `google.maps.Map`
+///
+/// Source-scan approach (rather than tree-sitter) is grammar-independent
+/// against tree-sitter-typescript's variance in how `global` and ambient
+/// `namespace` wrappers land in the CST.
 fn scan_declare_global_blocks(source: &str) -> Vec<String> {
-    if !source.contains("declare global") {
+    let has_global = source.contains("declare global");
+    let has_ns = source.contains("declare namespace");
+    if !has_global && !has_ns {
         return Vec::new();
     }
-    let marker_re = regex::Regex::new(r"declare\s+global\s*\{").expect("declare global regex");
-    let decl_re = regex::Regex::new(
-        r"(?m)^\s*(?:export\s+)?(?:const|let|var|function|class|type|interface)\s+(\w+)",
-    )
-    .expect("declare global decl regex");
+    let bytes = source.as_bytes();
 
     let mut out: Vec<String> = Vec::new();
-    for m in marker_re.find_iter(source) {
-        // Opening `{` is the last char of the match.
-        let open_brace = m.end() - 1;
-        let bytes = source.as_bytes();
-        let mut depth = 1i32;
-        let mut i = open_brace + 1;
-        while i < bytes.len() && depth > 0 {
-            match bytes[i] {
-                b'{' => depth += 1,
-                b'}' => depth -= 1,
-                _ => {}
+
+    if has_global {
+        let marker_re = regex::Regex::new(r"declare\s+global\s*\{").expect("declare global regex");
+        for m in marker_re.find_iter(source) {
+            // Opening `{` is the last char of the match.
+            let open_brace = m.end() - 1;
+            if let Some(close) = find_matching_brace(bytes, open_brace) {
+                let block = &source[open_brace + 1..close];
+                collect_namespace_decls("", block, &mut out);
             }
-            i += 1;
-        }
-        if depth != 0 {
-            continue;
-        }
-        let block = &source[open_brace + 1..i - 1];
-        for cap in decl_re.captures_iter(block) {
-            out.push(cap[1].to_string());
         }
     }
+
+    if has_ns {
+        // Top-level `declare namespace X.Y { ... }` and `declare namespace X { ... }`.
+        // The namespace path can be dotted (e.g. `declare namespace google.maps`).
+        let ns_re = regex::Regex::new(
+            r"(?m)^\s*declare\s+namespace\s+([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*\{",
+        )
+        .expect("declare namespace regex");
+        for cap in ns_re.captures_iter(source) {
+            let path: String = cap[1].chars().filter(|c| !c.is_whitespace()).collect();
+            let m = cap.get(0).unwrap();
+            let open_brace = m.end() - 1;
+            if let Some(close) = find_matching_brace(bytes, open_brace) {
+                let block = &source[open_brace + 1..close];
+                out.push(path.clone());
+                collect_namespace_decls(&path, block, &mut out);
+            }
+        }
+    }
+
     out
+}
+
+/// Given a source byte offset pointing at an opening `{`, return the offset
+/// of the matching `}`, or `None` if unbalanced. Naïve brace counter — does
+/// not skip braces inside strings/comments, but `.d.ts` declaration files
+/// don't realistically contain those at significant depth.
+fn find_matching_brace(bytes: &[u8], open_brace: usize) -> Option<usize> {
+    let mut depth = 1i32;
+    let mut i = open_brace + 1;
+    while i < bytes.len() && depth > 0 {
+        match bytes[i] {
+            b'{' => depth += 1,
+            b'}' => depth -= 1,
+            _ => {}
+        }
+        if depth == 0 {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+/// Walk a block body, emitting names for each top-level declaration. When
+/// a nested `namespace Y { ... }` appears, recurse with the prefix extended
+/// (`prefix.Y`) so leaf decls land as `prefix.Y.Leaf`.
+///
+/// `prefix` is the current dotted namespace path (`""` at the outermost
+/// `declare global` body). Decls at the current level are pushed as
+/// `prefix.name` (or just `name` when prefix is empty). Inner namespace
+/// wrapper names are pushed too, so a chain ref like `Express.Multer` (one
+/// hop short of a leaf) still finds *something* in the index.
+fn collect_namespace_decls(prefix: &str, block: &str, out: &mut Vec<String>) {
+    let decl_re = regex::Regex::new(
+        r"(?m)^\s*(?:export\s+)?(?:const|let|var|function|class|abstract\s+class|type|interface|enum)\s+(\w+)",
+    )
+    .expect("namespace decl regex");
+    for cap in decl_re.captures_iter(block) {
+        let name = &cap[1];
+        out.push(if prefix.is_empty() {
+            name.to_string()
+        } else {
+            format!("{prefix}.{name}")
+        });
+    }
+
+    // Nested namespace wrappers: `namespace X { ... }` (with optional
+    // `export`). Path can be dotted: `namespace X.Y { ... }`.
+    let ns_re = regex::Regex::new(
+        r"(?m)^\s*(?:export\s+)?namespace\s+([A-Za-z_$][\w$]*(?:\s*\.\s*[A-Za-z_$][\w$]*)*)\s*\{",
+    )
+    .expect("nested namespace regex");
+    let bytes = block.as_bytes();
+    for cap in ns_re.captures_iter(block) {
+        let path: String = cap[1].chars().filter(|c| !c.is_whitespace()).collect();
+        let m = cap.get(0).unwrap();
+        let open_brace = m.end() - 1;
+        if let Some(close) = find_matching_brace(bytes, open_brace) {
+            let inner = &block[open_brace + 1..close];
+            let new_prefix = if prefix.is_empty() {
+                path.clone()
+            } else {
+                format!("{prefix}.{path}")
+            };
+            // The wrapper name itself is also a useful index entry — chain
+            // refs that stop one hop short of a leaf (`Express.Multer`)
+            // still resolve to *something* rather than going unmatched.
+            out.push(new_prefix.clone());
+            collect_namespace_decls(&new_prefix, inner, out);
+        }
+    }
 }
 
 /// Inspect one direct child of the source-file root and record any top-level
@@ -2132,6 +2229,62 @@ declare global {
     fn declare_global_source_without_marker_returns_empty() {
         let src = "export const foo = 1;\nexport function bar() {}\n";
         assert!(scan_declare_global_blocks(src).is_empty());
+    }
+
+    #[test]
+    fn declare_global_namespace_emits_dotted_names() {
+        // @types/express shape — `Express.Multer.File` is the user-visible name.
+        let src = r#"
+declare global {
+  namespace Express {
+    interface Request {}
+    namespace Multer {
+      interface File {}
+    }
+  }
+}
+"#;
+        let names = scan_declare_global_blocks(src);
+        assert!(names.iter().any(|n| n == "Express"));
+        assert!(names.iter().any(|n| n == "Express.Request"));
+        assert!(names.iter().any(|n| n == "Express.Multer"));
+        assert!(names.iter().any(|n| n == "Express.Multer.File"));
+    }
+
+    #[test]
+    fn declare_namespace_top_level_emits_dotted_names() {
+        // @types/google.maps shape — `declare namespace google.maps { class Map {} }`.
+        let src = r#"
+declare namespace google.maps {
+  class Map {}
+  class LatLng {}
+}
+"#;
+        let names = scan_declare_global_blocks(src);
+        assert!(names.iter().any(|n| n == "google.maps"));
+        assert!(names.iter().any(|n| n == "google.maps.Map"));
+        assert!(names.iter().any(|n| n == "google.maps.LatLng"));
+    }
+
+    #[test]
+    fn declare_namespace_nested_wrappers_emit_dotted_names() {
+        // Alternative @types shape: declare namespace google { namespace maps { class Map {} } }.
+        let src = r#"
+declare namespace google {
+  namespace maps {
+    class Map {}
+    namespace places {
+      class Autocomplete {}
+    }
+  }
+}
+"#;
+        let names = scan_declare_global_blocks(src);
+        assert!(names.iter().any(|n| n == "google"));
+        assert!(names.iter().any(|n| n == "google.maps"));
+        assert!(names.iter().any(|n| n == "google.maps.Map"));
+        assert!(names.iter().any(|n| n == "google.maps.places"));
+        assert!(names.iter().any(|n| n == "google.maps.places.Autocomplete"));
     }
 
     #[test]

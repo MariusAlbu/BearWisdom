@@ -170,13 +170,7 @@ pub fn expand_chain_reachability_with_index(
             let demand = per_file_demand.get(&w.absolute_path);
             match parse_file_with_demand(w, registry, demand) {
                 Ok(mut pf) => {
-                    if let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(
-                        &pf.path,
-                    )
-                    .map(str::to_string)
-                    {
-                        crate::ecosystem::npm::prefix_ts_external_symbols(&mut pf, &pkg);
-                    }
+                    crate::ecosystem::npm::ts_post_process_external(&mut pf);
                     Some(pf)
                 }
                 Err(e) => {

@@ -366,41 +366,36 @@ fn scan_type_annotation_nodes(
     for child in node.children(&mut cursor) {
         match child.kind() {
             "type" if child.is_named() => {
-                // Always emit a ref at the `type` node's own start line so the
-                // coverage budget for this node is consumed.  The target name is
-                // the first non-builtin identifier we find inside the annotation;
-                // if there is none (pure builtins like `str`) we use a placeholder.
-                let type_line = child.start_position().row as u32;
-                let name = collect_first_nonbuiltin_type_name(&child, source)
-                    .unwrap_or_else(|| "__type__".to_string());
-                refs.push(ExtractedRef {
-                    source_symbol_index: sym_idx,
-                    target_name: name,
-                    kind: EdgeKind::TypeRef,
-                    line: type_line,
-                    module: None,
-                    chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-});
-                // Still recurse — annotations can nest (e.g. `Optional[List[Foo]]`).
+                // Emit a TypeRef at the `type` node's start line for the first
+                // non-builtin identifier inside the annotation. Pure-builtin
+                // annotations (e.g. bare `str`) emit nothing — there's no real
+                // target to reference.
+                if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                        byte_offset: 0,
+                        namespace_segments: Vec::new(),
+                    });
+                }
             }
             "generic_type" | "union_type" if child.is_named() => {
-                // Emit a ref at the generic_type / union_type node's own start line
-                // so the coverage budget for these node kinds is consumed.
-                let type_line = child.start_position().row as u32;
-                let name = collect_first_nonbuiltin_type_name(&child, source)
-                    .unwrap_or_else(|| "__type__".to_string());
-                refs.push(ExtractedRef {
-                    source_symbol_index: sym_idx,
-                    target_name: name,
-                    kind: EdgeKind::TypeRef,
-                    line: type_line,
-                    module: None,
-                    chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-});
+                if let Some(name) = collect_first_nonbuiltin_type_name(&child, source) {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: name,
+                        kind: EdgeKind::TypeRef,
+                        line: child.start_position().row as u32,
+                        module: None,
+                        chain: None,
+                        byte_offset: 0,
+                        namespace_segments: Vec::new(),
+                    });
+                }
             }
             _ => {}
         }

@@ -448,13 +448,12 @@ fn seed_demand_from_user_refs_inner(
         };
 
         // Per-locator post-processing: npm rewrites symbols to
-        // `<pkg>.<name>` so the resolver matches user's
-        // `import { X } from 'pkg'` against the pulled file's symbols.
-        if let Some(pkg) =
-            crate::ecosystem::externals::ts_package_from_virtual_path(&pf.path).map(str::to_string)
-        {
-            crate::ecosystem::npm::prefix_ts_external_symbols(&mut pf, &pkg);
-        }
+        // `<pkg>.<name>` and backfills any `declare global` /
+        // `declare namespace` decls the extractor missed, so the
+        // resolver matches user's `import { X } from 'pkg'` (and
+        // ambient namespace refs like `Express.Multer.File`) against
+        // the pulled file's symbols.
+        crate::ecosystem::npm::ts_post_process_external(&mut pf);
 
         // Inheritance closure: follow `extends` across sibling files in the
         // same package. `BehaviorSubject.d.ts` has

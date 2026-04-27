@@ -336,6 +336,32 @@ pub(super) fn resolve_ref(
         }
     }
 
+    // --- Priority 2.2: Ambient namespace path (0.88) ---
+    // Dotted PascalCase targets (`Express.Multer.File`, `google.maps.Map`)
+    // come from TypeScript ambient `declare global { namespace X { ... } }`
+    // and `declare namespace X.Y { ... }` blocks in @types packages. Their
+    // inner symbols are indexed at qnames like `@types/multer.Express.Multer.File`,
+    // so `qname_to_id.get("Express.Multer.File")` (Priority 2) misses them
+    // because of the package prefix. Look up the leaf via `name_to_ids` and
+    // accept any candidate whose qname ends with `.<target>` — that's the
+    // shape produced by the prefixing pass on a `declare global` namespace.
+    if target_name.contains('.') {
+        let leaf = target_name.rsplit('.').next().unwrap_or(target_name);
+        if let Some(candidates) = name_to_ids.get(leaf) {
+            let suffix = format!(".{target_name}");
+            let matched: Vec<_> = candidates
+                .iter()
+                .filter(|(_, qname, _, _)| qname.ends_with(&suffix))
+                .collect();
+            if let Some(best) = matched
+                .iter()
+                .min_by_key(|(file, _, _, _)| file.matches('/').count())
+            {
+                return Some((best.3, 0.88, "heuristic_ambient_namespace_path"));
+            }
+        }
+    }
+
     // --- Priority 2.5: Same-namespace match (0.85) ---
     // In C#, types in the same namespace are visible without a `using` directive.
     // e.g., Transaction.cs and Category.cs are both in FamilyBudget.Api.Entities —
