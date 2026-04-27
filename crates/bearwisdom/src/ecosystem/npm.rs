@@ -1712,6 +1712,73 @@ fn scan_ts_file_exports(source: &str, language: &str) -> FileExports {
     // wraps this inconsistently across minor grammar releases, so fall back
     // to a regex sweep of the source.
     out.globals = scan_declare_global_blocks(source);
+
+    // `declare module 'vue' { interface GlobalComponents { ... } }` —
+    // member names are auto-registered as global Vue template components
+    // by `app.use(<plugin>)`. Source forms covered:
+    //
+    //   declare module 'vue' { interface GlobalComponents { NButton: ...; } }
+    //   declare module '@vue/runtime-core' { interface GlobalComponents { RouterLink: ...; } }
+    //   declare module 'vue/types/vue' { interface GlobalComponents { ... } }
+    //
+    // Lifted into `out.globals` so the existing `__npm_globals__` demand-pull
+    // path and heuristic ambient-path priority pick them up identically to
+    // `declare global { const expect; }`-style names.
+    if source.contains("GlobalComponents") {
+        out.globals.extend(scan_vue_global_components(source));
+    }
+
+    out
+}
+
+/// Extract member names from `declare module 'vue' { interface GlobalComponents { ... } }`
+/// and equivalent augmentations (`@vue/runtime-core`, `vue/types/vue`).
+/// Each property declaration inside the interface contributes its name.
+///
+/// Two member shapes are common:
+///   - explicit-list (Naive UI volar.d.ts, Vue Router, Element Plus,
+///     unplugin-vue-components-generated `components.d.ts`):
+///     `NButton: (typeof import('naive-ui'))['NButton']`
+///   - reference shape (Vue Router): `RouterLink: typeof RouterLink`
+///
+/// Both surface as a property whose name is the leftmost identifier — only
+/// the name is extracted; the type expression is irrelevant for resolution
+/// since the symbol gets pulled by name via `__npm_globals__`.
+fn scan_vue_global_components(source: &str) -> Vec<String> {
+    // Match `declare module '<vue-ish>'` opening braces.
+    let module_re = regex::Regex::new(
+        r#"declare\s+module\s+['"](?:vue|@vue/runtime-core|vue/types/vue)['"]\s*\{"#,
+    )
+    .expect("vue module regex");
+    let bytes = source.as_bytes();
+
+    let mut out: Vec<String> = Vec::new();
+    for m in module_re.find_iter(source) {
+        let open_brace = m.end() - 1;
+        let Some(close) = find_matching_brace(bytes, open_brace) else { continue };
+        let module_block = &source[open_brace + 1..close];
+
+        // Find `interface GlobalComponents` (with optional `export`/`extends`)
+        // inside the module block, then collect property names from its body.
+        let iface_re = regex::Regex::new(
+            r"(?:export\s+)?interface\s+GlobalComponents(?:\s+extends\s+[^{]+)?\s*\{",
+        )
+        .expect("globalcomponents interface regex");
+        let iface_block_bytes = module_block.as_bytes();
+        for cap in iface_re.find_iter(module_block) {
+            let body_open = cap.end() - 1;
+            let Some(body_close) = find_matching_brace(iface_block_bytes, body_open) else { continue };
+            let body = &module_block[body_open + 1..body_close];
+            // Property declarations: `Name: <type>` or `Name?: <type>`.
+            // Skip nested braces (e.g. mapped types) by only matching at the
+            // shallow level — naïve approach via line-anchored regex.
+            let prop_re = regex::Regex::new(r"(?m)^\s*([A-Za-z_$][\w$]*)\s*\??\s*:")
+                .expect("property regex");
+            for prop_cap in prop_re.captures_iter(body) {
+                out.push(prop_cap[1].to_string());
+            }
+        }
+    }
     out
 }
 
@@ -2264,6 +2331,67 @@ declare namespace google.maps {
         assert!(names.iter().any(|n| n == "google.maps"));
         assert!(names.iter().any(|n| n == "google.maps.Map"));
         assert!(names.iter().any(|n| n == "google.maps.LatLng"));
+    }
+
+    #[test]
+    fn vue_global_components_explicit_list_extracts_names() {
+        // Naive UI / Element Plus / unplugin-vue-components shape.
+        let src = r#"
+declare module 'vue' {
+  export interface GlobalComponents {
+    NButton: (typeof import('naive-ui'))['NButton']
+    NCard: (typeof import('naive-ui'))['NCard']
+    RouterLink: typeof RouterLink
+  }
+}
+"#;
+        let names = scan_vue_global_components(src);
+        assert!(names.iter().any(|n| n == "NButton"));
+        assert!(names.iter().any(|n| n == "NCard"));
+        assert!(names.iter().any(|n| n == "RouterLink"));
+    }
+
+    #[test]
+    fn vue_global_components_optional_props_extracts_names() {
+        let src = r#"
+declare module '@vue/runtime-core' {
+  interface GlobalComponents {
+    ElButton?: typeof ElButton
+    ElCard: typeof ElCard
+  }
+}
+"#;
+        let names = scan_vue_global_components(src);
+        assert!(names.iter().any(|n| n == "ElButton"));
+        assert!(names.iter().any(|n| n == "ElCard"));
+    }
+
+    #[test]
+    fn vue_global_components_extends_form_emits_no_explicit_names() {
+        // Vuestic-UI shape: extends-only, no explicit member list.
+        // We don't enumerate the extended type today (deep type-resolution
+        // territory), so this returns nothing — covered by a separate
+        // package-export discovery path or stays unresolved.
+        let src = r#"
+declare module 'vue' {
+  interface GlobalComponents extends VuesticComponents {}
+}
+"#;
+        let names = scan_vue_global_components(src);
+        assert!(names.is_empty(), "extends-only shape yields no explicit names");
+    }
+
+    #[test]
+    fn vue_global_components_ignores_unrelated_modules() {
+        let src = r#"
+declare module 'react' {
+  interface GlobalComponents {
+    SomeReactThing: any
+  }
+}
+"#;
+        let names = scan_vue_global_components(src);
+        assert!(names.is_empty(), "non-vue module augmentations ignored");
     }
 
     #[test]
