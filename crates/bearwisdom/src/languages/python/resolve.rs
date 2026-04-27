@@ -27,7 +27,8 @@
 // =============================================================================
 
 
-use super::{predicates, chain};
+use super::{predicates, type_checker::PythonChecker};
+use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
@@ -107,9 +108,11 @@ impl LanguageResolver for PythonResolver {
             return None;
         }
 
-        // Chain-aware resolution.
+        // Chain-aware resolution: dispatch to PythonChecker.
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = chain::resolve_via_chain(chain_val, edge_kind, ref_ctx, lookup) {
+            if let Some(res) = PythonChecker.resolve_chain(
+                chain_val, edge_kind, None, ref_ctx, lookup,
+            ) {
                 return Some(res);
             }
         }

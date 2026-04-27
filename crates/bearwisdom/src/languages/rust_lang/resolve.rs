@@ -35,7 +35,8 @@
 // =============================================================================
 
 
-use super::{keywords, predicates, chain};
+use super::{keywords, predicates, type_checker::RustChecker};
+use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -134,7 +135,7 @@ impl LanguageResolver for RustResolver {
 
         // `Self` → resolve to the enclosing struct/enum/trait.
         if target == "Self" {
-            let enclosing = chain::find_enclosing_type(&ref_ctx.scope_chain, lookup)?;
+            let enclosing = super::type_checker::find_enclosing_type(&ref_ctx.scope_chain, lookup)?;
             let sym = lookup.by_qualified_name(&enclosing)?;
             if predicates::kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
@@ -201,9 +202,11 @@ impl LanguageResolver for RustResolver {
             return None;
         }
 
-        // Chain-aware resolution.
+        // Chain-aware resolution: dispatch to RustChecker.
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = chain::resolve_via_chain(chain_val, edge_kind, ref_ctx, lookup) {
+            if let Some(res) = RustChecker.resolve_chain(
+                chain_val, edge_kind, None, ref_ctx, lookup,
+            ) {
                 return Some(res);
             }
         }

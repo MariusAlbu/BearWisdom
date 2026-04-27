@@ -12,7 +12,7 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
-mod chain;
+pub(crate) mod type_checker;
 pub mod resolve;
 
 #[cfg(test)]
@@ -116,6 +116,10 @@ impl LanguagePlugin for RustLangPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::RustResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::RustChecker))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {

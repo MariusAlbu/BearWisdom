@@ -34,7 +34,8 @@
 // =============================================================================
 
 
-use super::{predicates, chain};
+use super::{predicates, type_checker::GoChecker};
+use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -129,7 +130,9 @@ impl LanguageResolver for GoResolver {
         // Chain-aware resolution: if we have a structured MemberChain, walk it
         // step-by-step following field types.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, ref_ctx, lookup) {
+            if let Some(res) = GoChecker.resolve_chain(
+                chain_ref, edge_kind, None, ref_ctx, lookup,
+            ) {
                 return Some(res);
             }
 

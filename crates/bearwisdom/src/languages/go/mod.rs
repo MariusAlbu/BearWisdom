@@ -10,7 +10,7 @@ mod tags;
 pub mod extract;
 
 mod predicates;
-mod chain;
+pub(crate) mod type_checker;
 pub mod connectors;
 pub mod resolve;
 
@@ -104,6 +104,10 @@ impl LanguagePlugin for GoPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::GoResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::GoChecker))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {

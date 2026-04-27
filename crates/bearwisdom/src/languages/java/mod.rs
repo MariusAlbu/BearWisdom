@@ -11,7 +11,7 @@ mod symbols;
 pub mod extract;
 
 mod predicates;
-mod chain;
+pub(crate) mod type_checker;
 pub mod resolve;
 
 #[cfg(test)]
@@ -112,6 +112,10 @@ impl LanguagePlugin for JavaPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::JavaResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::JavaChecker))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {

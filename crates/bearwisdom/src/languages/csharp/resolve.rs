@@ -17,7 +17,8 @@
 // =============================================================================
 
 
-use super::{predicates, chain};
+use super::{predicates, type_checker::CSharpChecker};
+use crate::type_checker::TypeChecker;
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
     FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolInfo, SymbolLookup,
@@ -109,12 +110,11 @@ impl LanguageResolver for CSharpResolver {
             return None;
         }
 
-        // Chain-aware resolution: if we have a structured MemberChain, walk it
-        // step-by-step following field types.
+        // Chain-aware resolution: dispatch to CSharpChecker.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) =
-                chain::resolve_via_chain(chain_ref, edge_kind, file_ctx, ref_ctx, lookup)
-            {
+            if let Some(res) = CSharpChecker.resolve_chain(
+                chain_ref, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
                 return Some(res);
             }
         }
