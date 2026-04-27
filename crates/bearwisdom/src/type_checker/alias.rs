@@ -66,6 +66,27 @@ pub fn expand_alias(
         let target = lookup.alias_target(&head)?;
         let (root, target_args) = match target {
             AliasTarget::Application { root, args: tas } => (root.clone(), tas.clone()),
+            // `type X = typeof someValue` — dereference the value
+            // reference to its type. Look up the value's declared
+            // `field_type` first (covers `const x: T = ...` and class
+            // properties), then fall back to its `return_type` (for
+            // `typeof someFn` where the alias should resolve to the
+            // function's return type). The result becomes the new head
+            // and the loop re-enters in case the value's type is itself
+            // an alias.
+            AliasTarget::Typeof(value_name) => {
+                let resolved = lookup
+                    .field_type_name(value_name)
+                    .or_else(|| lookup.return_type_name(value_name))
+                    .map(|s| s.to_string());
+                let Some(new_head) = resolved else {
+                    // Value not indexed or has no recorded type — leave
+                    // the chain walker with what it had before so it can
+                    // record a proper miss against the alias name.
+                    return None;
+                };
+                (new_head, Vec::new())
+            }
             // Non-application shapes have no single "head" to follow.
             // Future PRs add their own machinery (member-set semantics for
             // Union/Intersection, mapped/conditional expanders).

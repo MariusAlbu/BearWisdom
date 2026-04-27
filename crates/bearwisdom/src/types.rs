@@ -194,7 +194,14 @@ pub enum AliasTarget {
     /// No expansion needed here; the marker exists so callers can tell
     /// "this alias has its own structural shape" from "we don't know".
     Object,
-    /// Anything else — `keyof`, `typeof`, mapped, conditional, indexed,
+    /// `type Foo = typeof someValue` — the alias evaluates to the *type*
+    /// of a value reference. The chain walker dereferences this by
+    /// looking up the value's `field_type` (or `return_type` if it's a
+    /// function) and continuing with that. The string is the value's
+    /// referenced name as written in the source (e.g. `"api"`,
+    /// `"users.get"`). PR 10.
+    Typeof(String),
+    /// Anything else — `keyof`, mapped, conditional, indexed,
     /// template-literal types, etc. These need their own machinery in
     /// later PRs. Chain walkers must NOT treat this as `Application`.
     Other,

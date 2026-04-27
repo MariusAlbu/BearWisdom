@@ -18,6 +18,8 @@ use std::collections::HashMap;
 struct AliasFixture {
     aliases: HashMap<String, AliasTarget>,
     generic_params: HashMap<String, Vec<String>>,
+    field_types: HashMap<String, String>,
+    return_types: HashMap<String, String>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
 }
@@ -27,6 +29,8 @@ impl AliasFixture {
         Self {
             aliases: HashMap::new(),
             generic_params: HashMap::new(),
+            field_types: HashMap::new(),
+            return_types: HashMap::new(),
             empty: Vec::new(),
             empty_reexports: Vec::new(),
         }
@@ -42,6 +46,16 @@ impl AliasFixture {
             name.to_string(),
             params.iter().map(|s| s.to_string()).collect(),
         );
+        self
+    }
+
+    fn with_field_type(mut self, name: &str, ty: &str) -> Self {
+        self.field_types.insert(name.to_string(), ty.to_string());
+        self
+    }
+
+    fn with_return_type(mut self, name: &str, ty: &str) -> Self {
+        self.return_types.insert(name.to_string(), ty.to_string());
         self
     }
 }
@@ -68,11 +82,11 @@ impl SymbolLookup for AliasFixture {
     fn in_file(&self, _: &str) -> &[SymbolInfo] {
         &self.empty
     }
-    fn field_type_name(&self, _: &str) -> Option<&str> {
-        None
+    fn field_type_name(&self, name: &str) -> Option<&str> {
+        self.field_types.get(name).map(|s| s.as_str())
     }
-    fn return_type_name(&self, _: &str) -> Option<&str> {
-        None
+    fn return_type_name(&self, name: &str) -> Option<&str> {
+        self.return_types.get(name).map(|s| s.as_str())
     }
     fn field_type_args(&self, _: &str) -> Option<&[String]> {
         None
@@ -241,10 +255,71 @@ fn object_alias_returns_none() {
 
 #[test]
 fn other_alias_returns_none() {
-    // mapped, conditional, keyof, typeof, etc. — not expanded in PR 9.
+    // mapped, conditional, keyof, etc. — not expanded yet.
     let lookup = AliasFixture::new().with_alias("Mapped", AliasTarget::Other);
     let mut env = TypeEnvironment::new();
     assert_eq!(expand_alias("Mapped", &[], &lookup, &mut env), None);
+}
+
+// ---------------------------------------------------------------------------
+// PR 10: typeof
+// ---------------------------------------------------------------------------
+
+#[test]
+fn typeof_resolves_through_field_type() {
+    // type X = typeof someValue; someValue: User
+    //   → expand("X") = ("User", [])
+    let lookup = AliasFixture::new()
+        .with_alias("X", AliasTarget::Typeof("someValue".to_string()))
+        .with_field_type("someValue", "User");
+    let mut env = TypeEnvironment::new();
+    let (root, args) = expand_alias("X", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "User");
+    assert!(args.is_empty());
+}
+
+#[test]
+fn typeof_resolves_through_return_type_for_function_value() {
+    // type X = typeof someFn; someFn(): Result
+    //   → expand("X") = ("Result", [])
+    let lookup = AliasFixture::new()
+        .with_alias("X", AliasTarget::Typeof("someFn".to_string()))
+        .with_return_type("someFn", "Result");
+    let mut env = TypeEnvironment::new();
+    let (root, _) = expand_alias("X", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "Result");
+}
+
+#[test]
+fn typeof_chains_into_alias_target() {
+    // type Inner = typeof obj; obj: UserMap
+    // type UserMap = Map<string, User>
+    //   → expand("Inner") = ("Map", ["string", "User"])
+    let lookup = AliasFixture::new()
+        .with_alias("Inner", AliasTarget::Typeof("obj".to_string()))
+        .with_field_type("obj", "UserMap")
+        .with_alias(
+            "UserMap",
+            AliasTarget::Application {
+                root: "Map".to_string(),
+                args: s(&["string", "User"]),
+            },
+        );
+    let mut env = TypeEnvironment::new();
+    let (root, args) = expand_alias("Inner", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "Map");
+    assert_eq!(args, s(&["string", "User"]));
+}
+
+#[test]
+fn typeof_unknown_value_returns_none() {
+    // type X = typeof neverDeclared
+    //   → expand("X") = None (the chain walker should miss against X, not
+    //     against some made-up head).
+    let lookup = AliasFixture::new()
+        .with_alias("X", AliasTarget::Typeof("neverDeclared".to_string()));
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("X", &[], &lookup, &mut env), None);
 }
 
 #[test]

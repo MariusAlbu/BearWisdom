@@ -2969,3 +2969,196 @@ fn alias_expansion_refuses_union_aliases() {
         "Union aliases must NOT expand — chain must miss, not pick a branch"
     );
 }
+
+// ---------------------------------------------------------------------------
+// PR 10: typeof
+// ---------------------------------------------------------------------------
+
+/// `const api: User; type ApiType = typeof api; class C { a: ApiType; do() { this.a.greet() } }`.
+/// `ApiType` is a `Typeof("api")` alias. The walker should dereference
+/// it to `api`'s field_type ("User") and then resolve `User.greet`.
+#[test]
+fn typeof_alias_dereferences_to_value_type() {
+    let user_class = make_symbol("User", "User", SymbolKind::Class, Visibility::Public, None);
+    let user_greet = ExtractedSymbol {
+        name: "greet".to_string(),
+        qualified_name: "User.greet".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("greet(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("User".to_string()),
+        parent_index: Some(0),
+    };
+    // The value `api: User`. Variable kind so the engine reads the
+    // first TypeRef into `field_type["api"] = "User"`.
+    let api_value = ExtractedSymbol {
+        name: "api".to_string(),
+        qualified_name: "api".to_string(),
+        kind: SymbolKind::Variable,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("const api: User".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    };
+    let api_typeref = ExtractedRef {
+        source_symbol_index: 2, // api_value
+        target_name: "User".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let api_type_alias = make_symbol(
+        "ApiType",
+        "ApiType",
+        SymbolKind::TypeAlias,
+        Visibility::Public,
+        None,
+    );
+    let c_class = make_symbol("C", "C", SymbolKind::Class, Visibility::Public, None);
+    let a_field = ExtractedSymbol {
+        name: "a".to_string(),
+        qualified_name: "C.a".to_string(),
+        kind: SymbolKind::Property,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("a: ApiType".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(4),
+    };
+    let do_method = ExtractedSymbol {
+        name: "do".to_string(),
+        qualified_name: "C.do".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("do(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(4),
+    };
+
+    let a_typeref = ExtractedRef {
+        source_symbol_index: 5, // a_field
+        target_name: "ApiType".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 6, // do_method
+        target_name: "greet".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "a".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "greet".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let file = ParsedFile {
+        path: "src/typeof.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![
+            user_class,
+            user_greet,
+            api_value,
+            api_type_alias,
+            c_class,
+            a_field,
+            do_method,
+        ],
+        refs: vec![api_typeref, a_typeref, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None; 7],
+        ref_origin_languages: vec![None; 3],
+        symbol_from_snippet: vec![false; 7],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: vec![(
+            "ApiType".to_string(),
+            AliasTarget::Typeof("api".to_string()),
+        )],
+    };
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[2],
+        source_symbol: &file.symbols[6],
+        scope_chain: build_scope_chain(file.symbols[6].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "this.a.greet() must resolve via ApiType (typeof api) → User"
+    );
+    let user_greet_id = id_map
+        .get(&("src/typeof.ts".to_string(), "User.greet".to_string()))
+        .expect("User.greet must be indexed");
+    assert_eq!(result.unwrap().target_symbol_id, *user_greet_id);
+}

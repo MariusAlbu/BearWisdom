@@ -124,10 +124,38 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             AliasTarget::Intersection(branches)
         }
         "object_type" => AliasTarget::Object,
-        // Everything else — `keyof T`, `typeof x`, mapped, conditional,
+        // `type X = typeof someValue` — the alias resolves to whatever
+        // type the value reference has. Capture the value's name as
+        // written; the chain walker later looks up its `field_type` /
+        // `return_type` to continue.
+        "type_query" => {
+            // tree-sitter exposes the referenced name via the `name`
+            // field on `type_query`, but synthetic test grammars and
+            // some real-world parses don't always populate it — fall
+            // back to the first non-keyword child the way the existing
+            // TypeRef extractor does.
+            if let Some(name_node) = node.child_by_field_name("name") {
+                let name = node_text(name_node, src);
+                if !name.is_empty() {
+                    return AliasTarget::Typeof(name);
+                }
+            }
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if child.kind() == "typeof" {
+                    continue;
+                }
+                let name = node_text(child, src);
+                if !name.is_empty() {
+                    return AliasTarget::Typeof(name);
+                }
+            }
+            AliasTarget::Other
+        }
+        // Everything else — `keyof T`, mapped, conditional,
         // indexed-access, template-literal, function types, tuples,
         // type predicates, infer, this, literals — is a non-application
-        // shape we don't expand in PR 9. Recorded as `Other` so callers
+        // shape we don't expand yet. Recorded as `Other` so callers
         // don't fall back to the field_type heuristic.
         _ => AliasTarget::Other,
     }
