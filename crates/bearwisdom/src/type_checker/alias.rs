@@ -89,9 +89,11 @@ pub fn expand_alias(
             }
             // Non-application shapes have no single "head" to follow.
             // Future PRs add their own machinery (member-set semantics for
-            // Union/Intersection, mapped/conditional expanders).
+            // Union/Intersection, mapped/conditional expanders). `Keyof`
+            // produces a string-literal union — also no head to walk.
             AliasTarget::Union(_)
             | AliasTarget::Intersection(_)
+            | AliasTarget::Keyof(_)
             | AliasTarget::Object
             | AliasTarget::Other => return None,
         };

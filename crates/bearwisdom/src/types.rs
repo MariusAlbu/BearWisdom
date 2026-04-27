@@ -201,7 +201,15 @@ pub enum AliasTarget {
     /// referenced name as written in the source (e.g. `"api"`,
     /// `"users.get"`). PR 10.
     Typeof(String),
-    /// Anything else — `keyof`, mapped, conditional, indexed,
+    /// `type Foo = keyof T` — produces a union of `T`'s property names
+    /// as string-literal types. Not expandable as a chain head (you
+    /// can't call a method on a string union), so chain walkers always
+    /// miss against a `Keyof` alias. Captured for downstream consumers
+    /// (`T[keyof T]` indexed access in PR 12, `{[K in keyof T]: ...}`
+    /// mapped types in PR 13) that need to enumerate `T`'s members.
+    /// PR 11.
+    Keyof(String),
+    /// Anything else — mapped, conditional, indexed,
     /// template-literal types, etc. These need their own machinery in
     /// later PRs. Chain walkers must NOT treat this as `Application`.
     Other,

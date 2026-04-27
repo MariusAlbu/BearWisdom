@@ -124,6 +124,25 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             AliasTarget::Intersection(branches)
         }
         "object_type" => AliasTarget::Object,
+        // `type X = keyof T` — tree-sitter exposes this as either
+        // `keyof_type` or `index_type_query` depending on grammar
+        // version. The operand is the target type whose members will
+        // be enumerated; the chain walker can't expand this to a head
+        // (it's a string union) but downstream PRs (indexed access,
+        // mapped types) consume the captured target name.
+        "keyof_type" | "index_type_query" => {
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if matches!(child.kind(), "keyof") {
+                    continue;
+                }
+                let name = head_type_name(&child, src);
+                if !name.is_empty() {
+                    return AliasTarget::Keyof(name);
+                }
+            }
+            AliasTarget::Other
+        }
         // `type X = typeof someValue` — the alias resolves to whatever
         // type the value reference has. Capture the value's name as
         // written; the chain walker later looks up its `field_type` /

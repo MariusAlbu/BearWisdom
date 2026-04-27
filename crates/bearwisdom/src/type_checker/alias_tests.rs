@@ -255,7 +255,7 @@ fn object_alias_returns_none() {
 
 #[test]
 fn other_alias_returns_none() {
-    // mapped, conditional, keyof, etc. — not expanded yet.
+    // mapped, conditional, indexed-access, template-literal — not expanded yet.
     let lookup = AliasFixture::new().with_alias("Mapped", AliasTarget::Other);
     let mut env = TypeEnvironment::new();
     assert_eq!(expand_alias("Mapped", &[], &lookup, &mut env), None);
@@ -309,6 +309,19 @@ fn typeof_chains_into_alias_target() {
     let (root, args) = expand_alias("Inner", &[], &lookup, &mut env).expect("expanded");
     assert_eq!(root, "Map");
     assert_eq!(args, s(&["string", "User"]));
+}
+
+// ---------------------------------------------------------------------------
+// PR 11: keyof
+// ---------------------------------------------------------------------------
+
+#[test]
+fn keyof_alias_returns_none() {
+    // `type Keys = keyof User` — produces a string union, not a chain head.
+    let lookup = AliasFixture::new()
+        .with_alias("Keys", AliasTarget::Keyof("User".to_string()));
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("Keys", &[], &lookup, &mut env), None);
 }
 
 #[test]
