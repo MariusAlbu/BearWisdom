@@ -27,7 +27,8 @@
 //     walk handles them automatically.
 // =============================================================================
 
-use super::{predicates, chain};
+use super::{predicates, type_checker::TypeScriptChecker};
+use crate::type_checker::TypeChecker;
 
 use crate::ecosystem::manifest::ManifestKind;
 use crate::indexer::resolve::engine::{
@@ -105,9 +106,12 @@ impl LanguageResolver for TypeScriptResolver {
         }
 
         // Chain-aware resolution: if we have a structured MemberChain, walk it
-        // step-by-step following field types.
+        // step-by-step following field types. Dispatch to the TypeChecker —
+        // PR 3 of decision-2026-04-27-e75 routed TS chain logic onto this seam.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
-            if let Some(res) = chain::resolve_via_chain(chain_ref, edge_kind, file_ctx, ref_ctx, lookup) {
+            if let Some(res) = TypeScriptChecker.resolve_chain(
+                chain_ref, edge_kind, Some(file_ctx), ref_ctx, lookup,
+            ) {
                 return Some(res);
             }
         }

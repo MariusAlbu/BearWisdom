@@ -64,26 +64,27 @@ pub trait TypeChecker: Send + Sync {
 
     /// Walk a `MemberChain` step-by-step to resolve its final segment.
     ///
-    /// Default implementation delegates to `chain::resolve_via_chain` driven
-    /// by the supplied `ChainConfig`. Per-language checkers can override when
-    /// the unified algorithm doesn't cover a language-specific shape (e.g.
-    /// TypeScript's call-root inference for imported callees, declaration
-    /// merging, or future type-alias / mapped-type expansion).
+    /// Each TypeChecker provides its own implementation. Languages whose
+    /// chain semantics fit the unified `ChainConfig` walker delegate their
+    /// override to `crate::type_checker::chain::resolve_via_chain` with a
+    /// language-specific config. Languages with bespoke chain rules
+    /// (TypeScript's call-root inference, declaration-merging-aware lookups,
+    /// alias/mapped/conditional expansion) embed that logic directly.
     ///
-    /// PR 2 of decision-2026-04-27-e75 — established here, callers move to
-    /// invoking it through the trait in PR 3+ (TypeScript first, then the
-    /// other per-language chain.rs files collapse onto this seam).
+    /// `file_ctx` is `Option` so callers without a built file context (rare,
+    /// but the trait surface stays generic) can still invoke. Implementations
+    /// that need it can `let file_ctx = file_ctx?;` and bail.
+    ///
+    /// PR 2 introduced the trait; PR 3 makes it load-bearing for TypeScript.
+    /// The unified-config languages migrate in subsequent PRs.
     fn resolve_chain(
         &self,
-        config: &chain::ChainConfig,
         chain_ref: &MemberChain,
         edge_kind: EdgeKind,
         file_ctx: Option<&FileContext>,
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution> {
-        chain::resolve_via_chain(config, chain_ref, edge_kind, file_ctx, ref_ctx, lookup)
-    }
+    ) -> Option<Resolution>;
 }
 
 /// Aggregate the type checkers from every registered language plugin.

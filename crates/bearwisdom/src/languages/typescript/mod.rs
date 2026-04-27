@@ -22,7 +22,7 @@ pub mod extract;
 
 // Resolution sub-modules
 pub(crate) mod predicates;
-mod chain;
+pub(crate) mod type_checker;
 pub mod resolve;
 
 #[cfg(test)]
@@ -153,6 +153,10 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::TypeScriptResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::TypeScriptChecker))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
