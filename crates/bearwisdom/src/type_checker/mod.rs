@@ -80,19 +80,18 @@ pub trait TypeChecker: Send + Sync {
 
     /// Walk a `MemberChain` step-by-step to resolve its final segment.
     ///
-    /// Each TypeChecker provides its own implementation. Languages whose
-    /// chain semantics fit the unified `ChainConfig` walker delegate their
+    /// Default returns `None` — no chain resolution. Languages whose chain
+    /// semantics fit the unified `ChainConfig` walker delegate their
     /// override to `crate::type_checker::chain::resolve_via_chain` with a
     /// language-specific config. Languages with bespoke chain rules
     /// (TypeScript's call-root inference, declaration-merging-aware lookups,
     /// alias/mapped/conditional expansion) embed that logic directly.
+    /// Untyped or chain-less languages (Bash, YAML, SQL, etc.) inherit the
+    /// `None` default and don't override.
     ///
     /// `file_ctx` is `Option` so callers without a built file context (rare,
     /// but the trait surface stays generic) can still invoke. Implementations
     /// that need it can `let file_ctx = file_ctx?;` and bail.
-    ///
-    /// PR 2 introduced the trait; PR 3 makes it load-bearing for TypeScript.
-    /// The unified-config languages migrate in subsequent PRs.
     fn resolve_chain(
         &self,
         chain_ref: &MemberChain,
@@ -100,7 +99,10 @@ pub trait TypeChecker: Send + Sync {
         file_ctx: Option<&FileContext>,
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
-    ) -> Option<Resolution>;
+    ) -> Option<Resolution> {
+        let _ = (chain_ref, edge_kind, file_ctx, ref_ctx, lookup);
+        None
+    }
 }
 
 /// Aggregate the type checkers from every registered language plugin.

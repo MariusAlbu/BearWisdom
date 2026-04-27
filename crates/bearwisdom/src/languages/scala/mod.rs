@@ -10,6 +10,7 @@ pub mod extract;
 
 mod predicates;
 pub mod resolve;
+pub(crate) mod type_checker;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -89,6 +90,10 @@ impl LanguagePlugin for ScalaPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::ScalaResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::ScalaChecker))
     }
 
     fn flow_config(&self) -> Option<&'static crate::indexer::flow::FlowConfig> {

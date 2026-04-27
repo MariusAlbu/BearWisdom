@@ -10,6 +10,7 @@ pub mod extract;
 
 mod predicates;
 pub mod resolve;
+pub(crate) mod type_checker;
 
 #[cfg(test)]
 #[path = "extract_tests.rs"]
@@ -90,6 +91,10 @@ impl LanguagePlugin for DartPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::DartResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::DartChecker))
     }
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
