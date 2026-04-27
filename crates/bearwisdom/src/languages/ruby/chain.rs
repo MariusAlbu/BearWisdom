@@ -2,7 +2,7 @@
 // ruby/chain.rs — Ruby chain-aware resolution
 // =============================================================================
 
-use crate::indexer::resolve::chain_walker::simple_yield_type;
+use crate::type_checker::chain::simple_yield_type;
 use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};

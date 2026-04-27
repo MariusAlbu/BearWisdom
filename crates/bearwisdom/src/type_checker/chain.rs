@@ -1,5 +1,5 @@
 // =============================================================================
-// indexer/resolve/chain_walker.rs — Unified chain-aware resolution
+// type_checker/chain.rs — Unified chain-aware resolution
 //
 // Replaces 8 per-language chain.rs files with a single parameterized
 // implementation. Language differences are captured in `ChainConfig`,
@@ -9,6 +9,11 @@
 //   Phase 1: Determine root type (SelfRef → enclosing class, Identifier → field type)
 //   Phase 2: Walk intermediate segments following field_type_name / return_type_name
 //   Phase 3: Resolve final segment on the resolved type
+//
+// PR 2 of the type checker consolidation (decision-2026-04-27-e75): moved
+// here from `indexer/resolve/chain_walker.rs`. The `TypeChecker` trait gains
+// a default `resolve_chain` method that delegates to `resolve_via_chain`;
+// per-language checkers can override in subsequent PRs.
 // =============================================================================
 
 use crate::indexer::resolve::engine::{

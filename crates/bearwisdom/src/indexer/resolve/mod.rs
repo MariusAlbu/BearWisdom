@@ -9,7 +9,6 @@
 // `full.rs` and `incremental.rs` after symbols are written to the DB.
 // =============================================================================
 
-pub mod chain_walker;
 pub mod engine;
 mod heuristic;
 pub mod inheritance;

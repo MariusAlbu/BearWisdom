@@ -2,7 +2,7 @@
 // php/chain.rs — PHP chain-aware resolution
 // =============================================================================
 
-use crate::indexer::resolve::chain_walker::{external_type_qname, simple_yield_type};
+use crate::type_checker::chain::{external_type_qname, simple_yield_type};
 use crate::indexer::resolve::engine::{ChainMiss, FileContext, RefContext, Resolution, SymbolLookup};
 use super::predicates::kind_compatible;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};

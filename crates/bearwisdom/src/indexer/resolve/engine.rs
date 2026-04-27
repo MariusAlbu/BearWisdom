@@ -399,7 +399,7 @@ pub trait SymbolLookup {
 
     /// Record a chain walker bail-out for the R3 second-pass reload.
     ///
-    /// Called by `chain_walker::resolve_via_chain` when it resolved
+    /// Called by `crate::type_checker::chain::resolve_via_chain` when it resolved
     /// `current_type` but couldn't continue because the next segment isn't
     /// indexed under it. Default impl is a no-op so test/synthetic lookups
     /// don't have to opt in.

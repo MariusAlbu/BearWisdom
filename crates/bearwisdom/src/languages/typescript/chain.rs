@@ -2,7 +2,7 @@
 // typescript/chain.rs — TypeScript chain-aware resolution
 // =============================================================================
 
-use crate::indexer::resolve::chain_walker::external_type_qname;
+use crate::type_checker::chain::external_type_qname;
 use crate::indexer::resolve::engine::{ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup};
 use crate::type_checker::type_env::TypeEnvironment;
 use super::predicates::kind_compatible;

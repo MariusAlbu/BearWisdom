@@ -22,7 +22,7 @@
 
 use super::predicates;
 use crate::ecosystem::manifest::ManifestKind;
-use crate::indexer::resolve::chain_walker::{
+use crate::type_checker::chain::{
     self, ChainConfig, NamespaceLookup, identity_normalize,
 };
 use crate::indexer::resolve::engine::{
@@ -99,7 +99,7 @@ impl LanguageResolver for SwiftResolver {
                 namespace_lookup: NamespaceLookup::None,
                 kind_compatible: predicates::kind_compatible,
             };
-            if let Some(res) = chain_walker::resolve_via_chain(
+            if let Some(res) = chain::resolve_via_chain(
                 &config, chain_val, edge_kind, Some(file_ctx), ref_ctx, lookup,
             ) {
                 return Some(res);

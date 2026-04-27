@@ -32,10 +32,15 @@
 // See decision-2026-04-27-e75 in the knowledge memory for full rationale.
 // =============================================================================
 
+pub mod chain;
 pub mod type_env;
 
 pub use type_env::TypeEnvironment;
 
+use crate::indexer::resolve::engine::{
+    FileContext, RefContext, Resolution, SymbolLookup,
+};
+use crate::types::{EdgeKind, MemberChain};
 use std::sync::Arc;
 
 /// First-class type checker for a single language.
@@ -56,6 +61,29 @@ pub trait TypeChecker: Send + Sync {
     /// subset of — e.g. TypeScriptChecker handles "typescript" but not "tsx",
     /// at least for the type-level operations TS shares with JS).
     fn language_id(&self) -> &str;
+
+    /// Walk a `MemberChain` step-by-step to resolve its final segment.
+    ///
+    /// Default implementation delegates to `chain::resolve_via_chain` driven
+    /// by the supplied `ChainConfig`. Per-language checkers can override when
+    /// the unified algorithm doesn't cover a language-specific shape (e.g.
+    /// TypeScript's call-root inference for imported callees, declaration
+    /// merging, or future type-alias / mapped-type expansion).
+    ///
+    /// PR 2 of decision-2026-04-27-e75 — established here, callers move to
+    /// invoking it through the trait in PR 3+ (TypeScript first, then the
+    /// other per-language chain.rs files collapse onto this seam).
+    fn resolve_chain(
+        &self,
+        config: &chain::ChainConfig,
+        chain_ref: &MemberChain,
+        edge_kind: EdgeKind,
+        file_ctx: Option<&FileContext>,
+        ref_ctx: &RefContext,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<Resolution> {
+        chain::resolve_via_chain(config, chain_ref, edge_kind, file_ctx, ref_ctx, lookup)
+    }
 }
 
 /// Aggregate the type checkers from every registered language plugin.

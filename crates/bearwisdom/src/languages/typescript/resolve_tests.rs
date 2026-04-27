@@ -2076,7 +2076,7 @@ fn tsconfig_alias_parser_extracts_wildcard_mappings() {
 /// Phase 2 walks `chai.Assertion.toBe`, Phase 3 resolves the final segment.
 #[test]
 fn call_root_chain_expect_from_chai_resolves_to_be() {
-    use crate::indexer::resolve::chain_walker::external_type_qname;
+    use crate::type_checker::chain::external_type_qname;
 
     // Build a minimal index manually — the chai chain-type synthetic
     // that used to supply this shape has been deleted, but the chain

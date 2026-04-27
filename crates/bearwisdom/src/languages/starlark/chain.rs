@@ -20,7 +20,7 @@
 // MemberChain (emitted by the updated extractor for attribute-access calls).
 // =============================================================================
 
-use crate::indexer::resolve::chain_walker::{
+use crate::type_checker::chain::{
     ChainConfig, NamespaceLookup, identity_normalize, resolve_via_chain,
 };
 use crate::indexer::resolve::engine::{FileContext, RefContext, Resolution, SymbolLookup};

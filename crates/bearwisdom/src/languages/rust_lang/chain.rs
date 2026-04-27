@@ -2,7 +2,7 @@
 // rust_lang/chain.rs — Rust chain-aware resolution
 // =============================================================================
 
-use crate::indexer::resolve::chain_walker::simple_yield_type;
+use crate::type_checker::chain::simple_yield_type;
 use crate::indexer::resolve::engine::{ChainMiss, RefContext, Resolution, SymbolLookup};
 use super::predicates::{kind_compatible, normalize_path};
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
