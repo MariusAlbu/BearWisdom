@@ -115,12 +115,13 @@ pub fn expand_alias(
                 (new_head, Vec::new())
             }
             // Non-application shapes have no single "head" to follow.
-            // Future PRs add their own machinery (member-set semantics for
-            // Union/Intersection, mapped/conditional expanders). `Keyof`
-            // produces a string-literal union — also no head to walk.
+            // Future PRs add their own machinery (member-set
+            // semantics for Union/Intersection, dynamic member
+            // synthesis for Mapped, member enumeration for Keyof).
             AliasTarget::Union(_)
             | AliasTarget::Intersection(_)
             | AliasTarget::Keyof(_)
+            | AliasTarget::Mapped(_)
             | AliasTarget::Object
             | AliasTarget::Other => return None,
         };

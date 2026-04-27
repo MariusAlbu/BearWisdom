@@ -312,6 +312,21 @@ fn typeof_chains_into_alias_target() {
 }
 
 // ---------------------------------------------------------------------------
+// PR 13: mapped types (capture-only; expansion deferred)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn mapped_alias_returns_none() {
+    // `type Partial<T> = { [K in keyof T]?: T[K] }` is a Mapped("T")
+    // capture; chain walking can't synthesize members on the fly so
+    // returns None. The structural form is preserved for future PRs.
+    let lookup = AliasFixture::new()
+        .with_alias("Partial", AliasTarget::Mapped("T".to_string()));
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("Partial", &[], &lookup, &mut env), None);
+}
+
+// ---------------------------------------------------------------------------
 // PR 12: T[K] indexed access
 // ---------------------------------------------------------------------------
 

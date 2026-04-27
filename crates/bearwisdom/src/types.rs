@@ -218,9 +218,18 @@ pub enum AliasTarget {
     /// - `keyof T` key, union, etc.: union of all member types —
     ///   deferred (no single head). PR 12.
     IndexedAccess { object: String, key: String },
-    /// Anything else — mapped, conditional, template-literal types,
-    /// etc. These need their own machinery in later PRs. Chain
-    /// walkers must NOT treat this as `Application`.
+    /// `type Foo<T> = { [K in keyof T]: U }` — mapped type. The
+    /// payload is the keyof source target (the `T` in
+    /// `[K in keyof T]`); empty when the source isn't a `keyof T`
+    /// shape (e.g. `[K in "a" | "b"]`). Chain walking returns None
+    /// because realising the synthesized members requires either
+    /// pre-population in the index or a dynamic
+    /// `members_of(mapped, base_type)` lookup. The structural form
+    /// is captured for a future PR to consume. PR 13.
+    Mapped(String),
+    /// Anything else — conditional, template-literal types, function
+    /// types, tuples, infer, type predicates, this — chain walkers
+    /// must NOT treat as `Application`.
     Other,
 }
 

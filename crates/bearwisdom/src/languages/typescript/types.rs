@@ -124,6 +124,42 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             AliasTarget::Intersection(branches)
         }
         "object_type" => AliasTarget::Object,
+        // `type Foo<T> = { [K in keyof T]: U }` — mapped type. Walk
+        // the `mapped_type_clause` child to find the keyof source.
+        // We record only the source target name (or empty string if
+        // the iteration source isn't a keyof). The chain walker
+        // doesn't expand mapped types yet; this capture is for a
+        // future PR that synthesises members on demand.
+        "mapped_type" => {
+            let mut source = String::new();
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if child.kind() != "mapped_type_clause" {
+                    continue;
+                }
+                // The clause's `type` field is the iteration source —
+                // either a `keyof_type`/`index_type_query` or a
+                // type expression to iterate over (`"a" | "b"`).
+                if let Some(type_node) = child.child_by_field_name("type") {
+                    if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
+                        // Find the operand of keyof.
+                        for j in 0..type_node.child_count() {
+                            let Some(op) = type_node.child(j) else { continue };
+                            if op.kind() == "keyof" {
+                                continue;
+                            }
+                            let name = head_type_name(&op, src);
+                            if !name.is_empty() {
+                                source = name;
+                                break;
+                            }
+                        }
+                    }
+                }
+                break;
+            }
+            return AliasTarget::Mapped(source);
+        }
         // `type X = T[K]` — indexed access. Capture the object's
         // head type and the key as written. The key may be a literal
         // string ("foo"), a generic param (`K`), or another type
