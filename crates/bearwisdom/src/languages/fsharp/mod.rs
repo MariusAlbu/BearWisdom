@@ -14,6 +14,7 @@
 
 pub(crate) mod keywords;
 mod predicates;
+pub(crate) mod type_checker;
 pub(crate) mod connectors;
 pub(crate) mod resolve;
 pub mod extract;
@@ -87,4 +88,8 @@ impl LanguagePlugin for FSharpPlugin {
         )
     }
 
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::FSharpChecker))
+    }
 }

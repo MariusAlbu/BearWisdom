@@ -2,6 +2,7 @@
 
 mod helpers;
 pub(crate) mod predicates;
+pub(crate) mod type_checker;
 pub(crate) mod keywords;
 pub mod extract;
 
@@ -75,4 +76,8 @@ impl LanguagePlugin for JavascriptPlugin {
         Some(std::sync::Arc::new(crate::languages::typescript::resolve::TypeScriptResolver))
     }
 
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::JavaScriptChecker))
+    }
 }

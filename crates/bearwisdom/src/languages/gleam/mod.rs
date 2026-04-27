@@ -15,6 +15,7 @@
 pub mod extract;
 pub mod resolve;
 mod predicates;
+pub(crate) mod type_checker;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -82,4 +83,8 @@ impl LanguagePlugin for GleamPlugin {
         Some(std::sync::Arc::new(resolve::GleamResolver))
     }
 
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::GleamChecker))
+    }
 }

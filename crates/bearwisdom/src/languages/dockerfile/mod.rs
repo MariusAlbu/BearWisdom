@@ -1,6 +1,7 @@
 //! Dockerfile language plugin.
 
 mod predicates;
+pub(crate) mod type_checker;
 pub mod connectors;
 pub mod keywords;
 pub mod embedded;
@@ -80,5 +81,9 @@ impl LanguagePlugin for DockerfilePlugin {
         _ctx: &crate::indexer::project_context::ProjectContext,
     ) {
         connectors::run_docker_compose(db, project_root);
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::DockerfileChecker))
     }
 }

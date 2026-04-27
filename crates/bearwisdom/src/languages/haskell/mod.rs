@@ -5,6 +5,7 @@
 //! type synonyms, imports, and function-application calls.
 
 mod predicates;
+pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
@@ -74,4 +75,8 @@ impl LanguagePlugin for HaskellPlugin {
         Some(std::sync::Arc::new(resolve::HaskellResolver))
     }
 
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::HaskellChecker))
+    }
 }

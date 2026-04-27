@@ -19,6 +19,7 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
 pub use resolve::NimResolver;
@@ -96,4 +97,8 @@ impl LanguagePlugin for NimPlugin {
         Some(std::sync::Arc::new(resolve::NimResolver))
     }
 
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::NimChecker))
+    }
 }

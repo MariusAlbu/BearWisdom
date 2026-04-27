@@ -7,6 +7,7 @@ pub(crate) mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod type_checker;
 pub mod resolve;
 
 #[cfg(test)]
@@ -89,5 +90,9 @@ impl LanguagePlugin for ElixirPlugin {
         crate::languages::drive_connector(
             &connectors::PhoenixRouteConnector, db, project_root, ctx,
         )
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::ElixirChecker))
     }
 }

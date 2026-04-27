@@ -16,6 +16,7 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod type_checker;
 pub mod resolve;
 
 #[cfg(test)]
@@ -88,5 +89,9 @@ impl LanguagePlugin for OdinPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::OdinResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::OdinChecker))
     }
 }

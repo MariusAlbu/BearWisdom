@@ -10,6 +10,7 @@
 //! - `defmacro` → Function (macro)
 
 mod predicates;
+pub(crate) mod type_checker;
 pub(crate) mod resolve;
 pub mod keywords;
 pub mod extract;
@@ -70,4 +71,8 @@ impl LanguagePlugin for ClojurePlugin {
         Some(std::sync::Arc::new(resolve::ClojureResolver))
     }
 
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::ClojureChecker))
+    }
 }

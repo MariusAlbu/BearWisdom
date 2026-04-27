@@ -15,6 +15,7 @@ pub(crate) mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod type_checker;
 pub mod resolve;
 
 #[cfg(test)]
@@ -79,5 +80,9 @@ impl LanguagePlugin for GroovyPlugin {
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
         vec![]
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::GroovyChecker))
     }
 }

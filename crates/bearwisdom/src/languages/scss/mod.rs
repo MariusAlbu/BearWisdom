@@ -4,6 +4,7 @@
 //! compiled from MSVC-compatible pre-expanded C source.
 
 pub(crate) mod predicates;
+pub(crate) mod type_checker;
 pub mod keywords;
 pub mod extract;
 pub mod resolve;
@@ -70,4 +71,8 @@ impl LanguagePlugin for ScssPlugin {
         Some(std::sync::Arc::new(resolve::ScssResolver))
     }
 
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::ScssChecker))
+    }
 }

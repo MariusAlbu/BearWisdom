@@ -68,15 +68,15 @@ pub trait TypeChecker: Send + Sync {
     /// idioms — e.g. TypeScript accepts `variable` for `Calls` (callable
     /// values like `const Button = (...) => ...`) where Java does not.
     ///
-    /// Each `TypeChecker` impl provides its own. PR 5 lifts this off
-    /// per-language `predicates::kind_compatible` free functions onto the
-    /// trait so chain walkers, inheritance walkers, and future type-level
-    /// operations (alias expansion, mapped types) can consult it through
-    /// the checker without importing language-specific predicate modules.
-    ///
-    /// Languages without a `TypeChecker` keep their predicate-file
-    /// `kind_compatible` until they migrate.
-    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool;
+    /// Default returns `true` (permissive — accept any kind). Languages with
+    /// type-system kind rules override and consult their language-specific
+    /// `predicates::kind_compatible` free function. Languages without a
+    /// dedicated `kind_compatible` predicate inherit the permissive default,
+    /// matching how their resolution paths already operate.
+    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+        let _ = (edge_kind, sym_kind);
+        true
+    }
 
     /// Walk a `MemberChain` step-by-step to resolve its final segment.
     ///

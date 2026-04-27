@@ -17,6 +17,7 @@
 //! the indexer processes the embedded text as a separate extraction target.
 
 pub(crate) mod predicates;
+pub(crate) mod type_checker;
 pub mod connectors;
 pub mod extract;
 
@@ -162,5 +163,9 @@ impl LanguagePlugin for SveltePlugin {
 
     fn connectors(&self) -> Vec<Box<dyn crate::connectors::traits::Connector>> {
         vec![]
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::SvelteChecker))
     }
 }

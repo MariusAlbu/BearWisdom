@@ -1,6 +1,7 @@
 //! Bicep (Azure IaC) language plugin.
 
 mod predicates;
+pub(crate) mod type_checker;
 pub mod embedded;
 pub mod extract;
 pub mod resolve;
@@ -95,5 +96,9 @@ impl LanguagePlugin for BicepPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::BicepResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::BicepChecker))
     }
 }

@@ -6,6 +6,7 @@ pub mod keywords;
 pub mod extract;
 pub mod resolve;
 pub(crate) mod predicates;
+pub(crate) mod type_checker;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
@@ -82,5 +83,9 @@ impl LanguagePlugin for HclPlugin {
         _ctx: &crate::indexer::project_context::ProjectContext,
     ) {
         connectors::run_kubernetes(db, project_root);
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::HclChecker))
     }
 }

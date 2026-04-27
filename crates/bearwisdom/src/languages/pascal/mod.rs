@@ -6,6 +6,7 @@ pub mod keywords;
 pub mod extract;
 
 mod predicates;
+pub(crate) mod type_checker;
 pub(crate) mod resolve;
 
 pub use resolve::PascalResolver;
@@ -72,5 +73,9 @@ impl LanguagePlugin for PascalPlugin {
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::PascalResolver))
+    }
+
+    fn type_checker(&self) -> Option<std::sync::Arc<dyn crate::type_checker::TypeChecker>> {
+        Some(std::sync::Arc::new(type_checker::PascalChecker))
     }
 }
