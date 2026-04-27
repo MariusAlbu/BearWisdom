@@ -948,6 +948,7 @@ pub(crate) fn parse_file_with_demand(
             flow: crate::types::FlowMeta::default(),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         });
     }
 
@@ -1043,6 +1044,7 @@ pub(crate) fn parse_file_with_demand(
         flow: flow_meta,
         connection_points,
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     })
 }
 

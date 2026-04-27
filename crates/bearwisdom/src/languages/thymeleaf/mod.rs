@@ -30,6 +30,7 @@ impl LanguagePlugin for ThymeleafPlugin {
         ExtractionResult { symbols, refs: Vec::new(), routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         }
     }
     fn embedded_regions(&self, source: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {

@@ -88,6 +88,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
     ExtractionResult { symbols, refs, routes: Vec::new(), db_sets: Vec::new(), has_errors: false,
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 

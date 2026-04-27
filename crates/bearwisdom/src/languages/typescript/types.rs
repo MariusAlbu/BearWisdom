@@ -1,6 +1,179 @@
 use super::helpers::node_text;
-use crate::types::{EdgeKind, ExtractedRef};
+use crate::types::{AliasTarget, EdgeKind, ExtractedRef};
 use tree_sitter::Node;
+
+/// Classify the right-hand side of a `type_alias_declaration` into a
+/// structural [`AliasTarget`].
+///
+/// `value_node` is the node returned by `type_alias_declaration.value`
+/// (i.e. the type expression on the right of `=`). The classifier
+/// unwraps `parenthesized_type` / `readonly_type` wrappers so they
+/// don't disguise the inner shape, then dispatches on node kind.
+///
+/// The shape is captured at extract time so the chain walker can avoid
+/// re-parsing — and so unions / intersections can't be silently
+/// mistaken for single-type applications when the engine flattens
+/// `TypeRef`s into a positional list (which loses the union vs.
+/// generic-args distinction).
+pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarget {
+    let mut node = *value_node;
+    // Unwrap transparent wrappers so they don't bury the real shape.
+    loop {
+        match node.kind() {
+            "parenthesized_type" | "readonly_type" => {
+                let mut found = None;
+                for i in 0..node.child_count() {
+                    let Some(child) = node.child(i) else { continue };
+                    if matches!(child.kind(), "(" | ")" | "readonly") {
+                        continue;
+                    }
+                    found = Some(child);
+                    break;
+                }
+                match found {
+                    Some(inner) => node = inner,
+                    None => break,
+                }
+            }
+            _ => break,
+        }
+    }
+
+    match node.kind() {
+        "type_identifier" | "identifier" => AliasTarget::Application {
+            root: node_text(node, src),
+            args: Vec::new(),
+        },
+        "nested_type_identifier" | "member_expression" => AliasTarget::Application {
+            root: node_text(node, src),
+            args: Vec::new(),
+        },
+        "generic_type" => {
+            let root = node
+                .child_by_field_name("name")
+                .map(|n| node_text(n, src))
+                .unwrap_or_default();
+            let mut args: Vec<String> = Vec::new();
+            if let Some(type_args_node) = node.child_by_field_name("type_arguments") {
+                for i in 0..type_args_node.child_count() {
+                    let Some(arg) = type_args_node.child(i) else { continue };
+                    if matches!(arg.kind(), "<" | ">" | ",") {
+                        continue;
+                    }
+                    let arg_name = head_type_name(&arg, src);
+                    if !arg_name.is_empty() {
+                        args.push(arg_name);
+                    }
+                }
+            }
+            AliasTarget::Application { root, args }
+        }
+        // `User[]` is equivalent to `Array<User>` in TypeScript's type
+        // system. Treating it as `Application { root: "Array", args: [User] }`
+        // means the chain walker can dereference `arr.map(...)` /
+        // `arr.filter(...)` to `Array.map` / `Array.filter` in lib.es5.d.ts
+        // through the same alias-expansion path that handles the explicit
+        // generic form.
+        "array_type" => {
+            let mut element = String::new();
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if matches!(child.kind(), "[" | "]") {
+                    continue;
+                }
+                element = head_type_name(&child, src);
+                if !element.is_empty() {
+                    break;
+                }
+            }
+            AliasTarget::Application {
+                root: "Array".to_string(),
+                args: if element.is_empty() {
+                    Vec::new()
+                } else {
+                    vec![element]
+                },
+            }
+        }
+        "union_type" => {
+            let mut branches = Vec::new();
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if child.kind() == "|" {
+                    continue;
+                }
+                let name = head_type_name(&child, src);
+                if !name.is_empty() {
+                    branches.push(name);
+                }
+            }
+            AliasTarget::Union(branches)
+        }
+        "intersection_type" => {
+            let mut branches = Vec::new();
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if child.kind() == "&" {
+                    continue;
+                }
+                let name = head_type_name(&child, src);
+                if !name.is_empty() {
+                    branches.push(name);
+                }
+            }
+            AliasTarget::Intersection(branches)
+        }
+        "object_type" => AliasTarget::Object,
+        // Everything else — `keyof T`, `typeof x`, mapped, conditional,
+        // indexed-access, template-literal, function types, tuples,
+        // type predicates, infer, this, literals — is a non-application
+        // shape we don't expand in PR 9. Recorded as `Other` so callers
+        // don't fall back to the field_type heuristic.
+        _ => AliasTarget::Other,
+    }
+}
+
+/// Best-effort head name of a type expression. Returns the simple name
+/// for `type_identifier` / `identifier` / `generic_type` (just the
+/// `name` field, not its args), the dotted text for
+/// `nested_type_identifier` / `member_expression`, the element-type
+/// head for `array_type`, and an empty string for shapes whose head
+/// can't be reduced to a single name (unions, intersections, mapped,
+/// conditional, etc.).
+fn head_type_name(node: &Node, src: &[u8]) -> String {
+    match node.kind() {
+        "type_identifier" | "identifier" => node_text(*node, src),
+        "nested_type_identifier" | "member_expression" => node_text(*node, src),
+        "generic_type" => node
+            .child_by_field_name("name")
+            .map(|n| node_text(n, src))
+            .unwrap_or_default(),
+        "array_type" => {
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if matches!(child.kind(), "[" | "]") {
+                    continue;
+                }
+                let name = head_type_name(&child, src);
+                if !name.is_empty() {
+                    return name;
+                }
+            }
+            String::new()
+        }
+        "parenthesized_type" | "readonly_type" => {
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if matches!(child.kind(), "(" | ")" | "readonly") {
+                    continue;
+                }
+                return head_type_name(&child, src);
+            }
+            String::new()
+        }
+        _ => String::new(),
+    }
+}
 
 pub(super) fn extract_type_ref_from_annotation(
     node: &Node,

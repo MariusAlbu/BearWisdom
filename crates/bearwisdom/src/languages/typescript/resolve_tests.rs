@@ -78,6 +78,7 @@ fn make_ts_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRe
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 
@@ -113,6 +114,7 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             flow: crate::types::FlowMeta::default(),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: f.alias_targets.clone(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -2153,6 +2155,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     // The consumer file: `import { expect } from 'chai'` + the chain ref.
@@ -2216,6 +2219,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&chai_file, &consumer_file]);
@@ -2311,6 +2315,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     // Consumer file: NO import for `expect` — globals mode.
@@ -2360,6 +2365,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
@@ -2402,4 +2408,564 @@ fn project_context_workspace_package_id_handles_deep_imports() {
     assert_eq!(ctx.workspace_package_id("@myorg/utils/sub/mod"), Some(7));
     assert_eq!(ctx.workspace_package_id("@myorg/other"), None);
     assert_eq!(ctx.workspace_package_id("react"), None);
+}
+
+// ---------------------------------------------------------------------------
+// PR 9: Type-alias expansion in chain walking
+// ---------------------------------------------------------------------------
+
+/// `type UserMap = Map<string, User>; class M { users: UserMap; do() { this.users.get(k) } }`.
+/// The chain walker hits `current_type = "UserMap"` after Phase 2's field
+/// lookup. Without alias expansion, Phase 3's `Map.get` lookup would fail
+/// because `UserMap.get` is not indexed. With expansion, `current_type` is
+/// rewritten to `Map` before the leaf lookup and `Map.get` resolves.
+#[test]
+fn alias_expansion_dereferences_type_alias_through_chain() {
+    // Synthetic Map: signature carries the generic params so the engine
+    // populates generic_params(["K", "V"]) for alias-arg substitution.
+    let map_iface = ExtractedSymbol {
+        name: "Map".to_string(),
+        qualified_name: "Map".to_string(),
+        kind: SymbolKind::Interface,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("interface Map<K, V>".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    };
+    let map_get = ExtractedSymbol {
+        name: "get".to_string(),
+        qualified_name: "Map.get".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("get(key: K): V | undefined".to_string()),
+        doc_comment: None,
+        scope_path: Some("Map".to_string()),
+        parent_index: Some(0),
+    };
+    let synth_file = ParsedFile {
+        path: "ext:ts:lib/__bw_synthetic__.d.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: "synthetic".to_string(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![map_iface, map_get],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None, None],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![false, false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+    };
+
+    // Consumer file: User class, UserMap alias, UserManager class with the chain ref.
+    let user_sym = make_symbol("User", "User", SymbolKind::Class, Visibility::Public, None);
+    let user_map_alias = make_symbol(
+        "UserMap",
+        "UserMap",
+        SymbolKind::TypeAlias,
+        Visibility::Public,
+        None,
+    );
+    let user_manager = make_symbol(
+        "UserManager",
+        "UserManager",
+        SymbolKind::Class,
+        Visibility::Public,
+        None,
+    );
+    let users_field = ExtractedSymbol {
+        name: "users".to_string(),
+        qualified_name: "UserManager.users".to_string(),
+        kind: SymbolKind::Property,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("users: UserMap".to_string()),
+        doc_comment: None,
+        scope_path: Some("UserManager".to_string()),
+        parent_index: Some(2),
+    };
+    let do_method = ExtractedSymbol {
+        name: "do".to_string(),
+        qualified_name: "UserManager.do".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("do(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("UserManager".to_string()),
+        parent_index: Some(2),
+    };
+
+    // TypeRef from UserManager.users → "UserMap" — the engine reads this
+    // into field_type["UserManager.users"] = "UserMap".
+    let users_typeref = ExtractedRef {
+        source_symbol_index: 3, // users_field
+        target_name: "UserMap".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    // The chain ref: this.users.get(k) emitted from `do`.
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 4, // do_method
+        target_name: "get".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "users".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "get".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    // Consumer ParsedFile, including the explicit alias_targets payload that
+    // the TS extractor would normally produce from `type UserMap = Map<string, User>`.
+    let consumer_file = ParsedFile {
+        path: "src/manager.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![
+            user_sym,
+            user_map_alias,
+            user_manager,
+            users_field,
+            do_method,
+        ],
+        refs: vec![users_typeref, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None, None, None, None, None],
+        ref_origin_languages: vec![None, None],
+        symbol_from_snippet: vec![false, false, false, false, false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: vec![(
+            "UserMap".to_string(),
+            AliasTarget::Application {
+                root: "Map".to_string(),
+                args: vec!["string".to_string(), "User".to_string()],
+            },
+        )],
+    };
+
+    let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[1], // chain_ref
+        source_symbol: &consumer_file.symbols[4], // do_method
+        scope_chain: build_scope_chain(consumer_file.symbols[4].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "this.users.get(k) must resolve via UserMap → Map alias expansion"
+    );
+    let map_get_id = id_map
+        .get(&(
+            "ext:ts:lib/__bw_synthetic__.d.ts".to_string(),
+            "Map.get".to_string(),
+        ))
+        .expect("Map.get must be indexed");
+    assert_eq!(
+        result.unwrap().target_symbol_id,
+        *map_get_id,
+        "chain must resolve to Map.get, not UserMap.get"
+    );
+}
+
+/// `type Numbers = number[]; class C { ns: Numbers; do() { this.ns.map(f) } }`.
+/// `array_type` aliases are stored as `Application{root: "Array", args: [elem]}`,
+/// so `Numbers` expands to `Array` and `Array.map` resolves through the same
+/// alias path as the explicit-generic form.
+#[test]
+fn alias_expansion_handles_array_type_form() {
+    let array_iface = ExtractedSymbol {
+        name: "Array".to_string(),
+        qualified_name: "Array".to_string(),
+        kind: SymbolKind::Interface,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("interface Array<T>".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    };
+    let array_map = ExtractedSymbol {
+        name: "map".to_string(),
+        qualified_name: "Array.map".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("map<U>(fn: (x: T) => U): Array<U>".to_string()),
+        doc_comment: None,
+        scope_path: Some("Array".to_string()),
+        parent_index: Some(0),
+    };
+    let synth_file = ParsedFile {
+        path: "ext:ts:lib/__bw_synthetic_arr__.d.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: "synthetic".to_string(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![array_iface, array_map],
+        refs: vec![],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None, None],
+        ref_origin_languages: vec![],
+        symbol_from_snippet: vec![false, false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+    };
+
+    let numbers_alias = make_symbol(
+        "Numbers",
+        "Numbers",
+        SymbolKind::TypeAlias,
+        Visibility::Public,
+        None,
+    );
+    let c_class = make_symbol("C", "C", SymbolKind::Class, Visibility::Public, None);
+    let ns_field = ExtractedSymbol {
+        name: "ns".to_string(),
+        qualified_name: "C.ns".to_string(),
+        kind: SymbolKind::Property,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("ns: Numbers".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(1),
+    };
+    let do_method = ExtractedSymbol {
+        name: "do".to_string(),
+        qualified_name: "C.do".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("do(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(1),
+    };
+
+    let ns_typeref = ExtractedRef {
+        source_symbol_index: 2, // ns_field
+        target_name: "Numbers".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 3, // do_method
+        target_name: "map".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "ns".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "map".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let consumer_file = ParsedFile {
+        path: "src/arr.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![numbers_alias, c_class, ns_field, do_method],
+        refs: vec![ns_typeref, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None, None, None, None],
+        ref_origin_languages: vec![None, None],
+        symbol_from_snippet: vec![false, false, false, false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: vec![(
+            "Numbers".to_string(),
+            AliasTarget::Application {
+                root: "Array".to_string(),
+                args: vec!["number".to_string()],
+            },
+        )],
+    };
+
+    let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&consumer_file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &consumer_file.refs[1],
+        source_symbol: &consumer_file.symbols[3],
+        scope_chain: build_scope_chain(consumer_file.symbols[3].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "this.ns.map(f) must resolve via Numbers (array_type alias) → Array"
+    );
+    let array_map_id = id_map
+        .get(&(
+            "ext:ts:lib/__bw_synthetic_arr__.d.ts".to_string(),
+            "Array.map".to_string(),
+        ))
+        .expect("Array.map must be indexed");
+    assert_eq!(result.unwrap().target_symbol_id, *array_map_id);
+}
+
+/// `type Status = "open" | "closed"; class C { s: Status; do() { this.s.foo() } }`.
+/// Union aliases are NOT expanded — chain must miss (Phase-3 records a
+/// chain miss and returns None) rather than incorrectly walking into the
+/// first branch's members.
+#[test]
+fn alias_expansion_refuses_union_aliases() {
+    let status_alias = make_symbol(
+        "Status",
+        "Status",
+        SymbolKind::TypeAlias,
+        Visibility::Public,
+        None,
+    );
+    let c_class = make_symbol("C", "C", SymbolKind::Class, Visibility::Public, None);
+    let s_field = ExtractedSymbol {
+        name: "s".to_string(),
+        qualified_name: "C.s".to_string(),
+        kind: SymbolKind::Property,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("s: Status".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(1),
+    };
+    let do_method = ExtractedSymbol {
+        name: "do".to_string(),
+        qualified_name: "C.do".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("do(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(1),
+    };
+
+    let s_typeref = ExtractedRef {
+        source_symbol_index: 2,
+        target_name: "Status".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 3,
+        target_name: "foo".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "s".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "foo".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let file = ParsedFile {
+        path: "src/u.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![status_alias, c_class, s_field, do_method],
+        refs: vec![s_typeref, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None, None, None, None],
+        ref_origin_languages: vec![None, None],
+        symbol_from_snippet: vec![false, false, false, false],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: vec![(
+            "Status".to_string(),
+            AliasTarget::Union(vec!["\"open\"".to_string(), "\"closed\"".to_string()]),
+        )],
+    };
+
+    let (index, _) = build_test_env(&[&file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[1],
+        source_symbol: &file.symbols[3],
+        scope_chain: build_scope_chain(file.symbols[3].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_none(),
+        "Union aliases must NOT expand — chain must miss, not pick a branch"
+    );
 }

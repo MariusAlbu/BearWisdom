@@ -30,6 +30,7 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         flow: FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 

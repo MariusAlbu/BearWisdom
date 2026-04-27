@@ -162,6 +162,44 @@ pub struct ScopeNode {
 // Intermediate extraction types (parser output, not yet in DB)
 // ---------------------------------------------------------------------------
 
+/// Structural shape of a type alias's right-hand side.
+///
+/// Captured at extract time so the chain walker can decide whether the
+/// alias is *expandable* (a single concrete type application) or carries
+/// non-application semantics that need different machinery (unions need
+/// member-set semantics, intersections combine member sets, mapped types
+/// generate fields, etc.).
+///
+/// Only TypeScript classifies aliases this finely today; other languages
+/// (C/C++ typedefs, Dart typedefs, F# abbrevs) emit simple applications
+/// and rely on the engine to derive an `Application` from their first
+/// `TypeRef`. The `Other` arm is the conservative bucket — chain walkers
+/// must not expand it, since the underlying shape is unknown.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AliasTarget {
+    /// Single type application: `type Foo = Bar` or `type Foo<T> = Map<string, T>`.
+    /// `root` is the head type's name; `args` are the in-source type arguments
+    /// (already substituted with the alias's own generic params if any).
+    Application { root: String, args: Vec<String> },
+    /// `type Foo = A | B | C` — record the branch types for future
+    /// member-set / narrowing logic. Chain walking does not expand unions
+    /// in PR 9; this arm is captured so a future PR can wire keyof and
+    /// member-set semantics without re-touching extract.
+    Union(Vec<String>),
+    /// `type Foo = A & B` — branch types stored for the same future use.
+    Intersection(Vec<String>),
+    /// `type Foo = { ... }` — members are emitted as Property/Method
+    /// symbols by the existing `recurse_for_object_types` walk, so chain
+    /// walking against the alias name already finds them via members_of.
+    /// No expansion needed here; the marker exists so callers can tell
+    /// "this alias has its own structural shape" from "we don't know".
+    Object,
+    /// Anything else — `keyof`, `typeof`, mapped, conditional, indexed,
+    /// template-literal types, etc. These need their own machinery in
+    /// later PRs. Chain walkers must NOT treat this as `Application`.
+    Other,
+}
+
 /// A symbol discovered during tree-sitter extraction.
 /// All positions are 0-based line numbers matching tree-sitter's convention.
 #[derive(Debug, Clone)]
@@ -354,6 +392,11 @@ pub struct ExtractionResult {
     /// decide which external files to pull. Empty default; plugins fill it
     /// one ecosystem at a time as they migrate.
     pub demand_contributions: Vec<(String, String)>,
+    /// Structural shape of every type alias emitted in this file.
+    /// Pairs the alias's qualified name with its `AliasTarget`. Only TS
+    /// populates this today; other languages leave it empty and the engine
+    /// derives an `Application` shape from `field_type` for their typedefs.
+    pub alias_targets: Vec<(String, AliasTarget)>,
 }
 
 // ---------------------------------------------------------------------------
@@ -560,6 +603,7 @@ impl ExtractionResult {
             has_errors,
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         }
     }
 
@@ -578,6 +622,7 @@ impl ExtractionResult {
             has_errors,
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         }
     }
 
@@ -590,6 +635,7 @@ impl ExtractionResult {
             has_errors: false,
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         }
     }
 }
@@ -716,6 +762,11 @@ pub struct ParsedFile {
     /// decide which external files to pull. Kept on the struct for
     /// diagnostics even after the accumulator consumes it. Empty default.
     pub demand_contributions: Vec<(String, String)>,
+    /// Structural shape of every type alias emitted in this file.
+    /// Pairs the alias's qualified name with its `AliasTarget`. Consumed
+    /// by `SymbolIndex::build_with_context` to build the project-wide
+    /// alias_target map used by chain walkers for alias expansion.
+    pub alias_targets: Vec<(String, AliasTarget)>,
 }
 
 impl ParsedFile {

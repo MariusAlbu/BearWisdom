@@ -22,6 +22,7 @@ fn make_parsed_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<Extract
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 

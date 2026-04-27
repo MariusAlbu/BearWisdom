@@ -32,6 +32,7 @@
 // See decision-2026-04-27-e75 in the knowledge memory for full rationale.
 // =============================================================================
 
+pub mod alias;
 pub mod chain;
 pub mod inheritance;
 pub mod type_env;

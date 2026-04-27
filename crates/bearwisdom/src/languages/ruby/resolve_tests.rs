@@ -71,6 +71,7 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 
@@ -105,6 +106,7 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             flow: crate::types::FlowMeta::default(),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);

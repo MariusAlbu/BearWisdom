@@ -60,6 +60,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             has_errors: true,
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         };
     }
     let Some(tree) = parser.parse(source, None) else {
@@ -71,6 +72,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
             has_errors: true,
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         };
     };
 
@@ -84,6 +86,7 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
         has_errors: tree.root_node().has_error(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 

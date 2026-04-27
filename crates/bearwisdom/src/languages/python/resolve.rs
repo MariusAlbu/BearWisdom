@@ -550,6 +550,7 @@ mod resolve_tests {
             flow: crate::types::FlowMeta::default(),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         }
     }
 
@@ -584,6 +585,7 @@ mod resolve_tests {
                 flow: crate::types::FlowMeta::default(),
                 connection_points: Vec::new(),
                 demand_contributions: Vec::new(),
+                alias_targets: Vec::new(),
             })
             .collect();
         let index = SymbolIndex::build(&owned, &id_map);

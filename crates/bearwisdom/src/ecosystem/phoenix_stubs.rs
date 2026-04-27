@@ -238,6 +238,7 @@ fn synth_module_file(module_qname: &str, macros: &[&str]) -> ParsedFile {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 

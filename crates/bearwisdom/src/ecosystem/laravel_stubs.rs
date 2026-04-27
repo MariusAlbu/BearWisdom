@@ -651,6 +651,7 @@ fn synth_relation_file(
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     }
 }
 
@@ -718,6 +719,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -749,6 +751,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -780,6 +783,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -806,6 +810,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -838,6 +843,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     let collection_alias = synth_class("Collection", "Collection", COLLECTION_METHODS, 0);
@@ -861,6 +867,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         flow: crate::types::FlowMeta::default(),
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
     };
 
     // -------------------------------------------------------------------------

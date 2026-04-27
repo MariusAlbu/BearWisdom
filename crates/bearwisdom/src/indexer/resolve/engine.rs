@@ -8,7 +8,9 @@
 
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::type_env::TypeEnvironment;
-use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility};
+use crate::types::{
+    AliasTarget, EdgeKind, ExtractedRef, ExtractedSymbol, ParsedFile, SymbolKind, Visibility,
+};
 use rustc_hash::FxHashMap;
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -298,6 +300,22 @@ pub trait SymbolLookup {
     /// e.g., "Repository" → Some(["T"]) for `interface Repository<T>`
     fn generic_params(&self, type_name: &str) -> Option<&[String]>;
 
+    /// Look up the structural shape of a type alias.
+    ///
+    /// Returns `Some(&AliasTarget)` when `name` is a registered alias
+    /// (currently only the TypeScript extractor classifies its aliases
+    /// this finely; other languages get a derived `Application` shape
+    /// or `None`). Used by `crate::type_checker::alias::expand_alias`
+    /// at the top of every chain segment iteration so the walker can
+    /// follow `type UserMap = Map<string, User>` aliases through to
+    /// the underlying concrete head and type args.
+    ///
+    /// Default returns `None` so synthetic test lookups don't have to
+    /// opt in.
+    fn alias_target(&self, _name: &str) -> Option<&crate::types::AliasTarget> {
+        None
+    }
+
     /// Look up re-export chain entries for a barrel file.
     ///
     /// Returns all `(original_name, source_module)` pairs that are re-exported
@@ -552,6 +570,13 @@ pub struct SymbolIndex {
     /// Keyed by child qname (dotted form), value is the direct parent qname.
     /// Transitive ancestors are reached by chaining lookups.
     inherits_map: FxHashMap<String, String>,
+    /// Structural shape of every TypeAlias symbol in the project.
+    /// Indexed by both qualified name AND simple name so chain walkers can
+    /// look up an alias whether or not the encountered name carries its
+    /// scope prefix. Populated from `ParsedFile::alias_targets` (which TS
+    /// emits) plus a derived `Application` fallback for languages that
+    /// only provide a single TypeRef per typedef.
+    alias_target: FxHashMap<String, AliasTarget>,
     /// All symbols sharing a qualified name, keyed by qname. Backs
     /// `SymbolLookup::all_by_qualified_name` so callers that care about
     /// kind compatibility can scan past the first-wins match in `by_qname`.
@@ -1081,6 +1106,63 @@ impl SymbolIndex {
             }
         }
 
+        // Build alias_target map. Two sources, in priority order:
+        //   1. Structurally-classified shapes from per-file `alias_targets`
+        //      (TS extractor populates these — Application / Union /
+        //      Intersection / Object / Other).
+        //   2. A derived `Application` shape for any TypeAlias symbol the
+        //      explicit map didn't cover. Sources: typedefs in C/C++,
+        //      Dart/F#/Erlang/Bicep type abbreviations, and TS aliases that
+        //      didn't make it through (e.g. parsed under demand filtering
+        //      that skipped the symbol body). The fallback uses the
+        //      `field_type` already populated by the TypeAlias arm above.
+        let mut alias_target_map: FxHashMap<String, AliasTarget> = FxHashMap::default();
+        for pf in parsed {
+            for (qname, target) in &pf.alias_targets {
+                alias_target_map.insert(qname.clone(), target.clone());
+                // Mirror by simple name so chain walkers can resolve aliases
+                // regardless of whether the encountered current_type is
+                // namespaced or bare.
+                if let Some(simple) = qname.rsplit('.').next() {
+                    if simple != qname {
+                        alias_target_map
+                            .entry(simple.to_string())
+                            .or_insert_with(|| target.clone());
+                    }
+                }
+            }
+        }
+        // Fallback for languages that don't emit alias_targets explicitly:
+        // synthesize Application{root, args} from the type_info maps the
+        // TypeAlias arm above already populated. type_args may carry the
+        // generic args when the typedef points at a parameterized type.
+        for pf in parsed {
+            for sym in &pf.symbols {
+                if sym.kind != SymbolKind::TypeAlias {
+                    continue;
+                }
+                if alias_target_map.contains_key(&sym.qualified_name) {
+                    continue;
+                }
+                let Some(ti) = type_info.get(&sym.qualified_name) else {
+                    continue;
+                };
+                let Some(root) = ti.field_type.clone() else {
+                    continue;
+                };
+                let target = AliasTarget::Application {
+                    root,
+                    args: ti.type_args.clone(),
+                };
+                alias_target_map.insert(sym.qualified_name.clone(), target.clone());
+                if sym.name != sym.qualified_name {
+                    alias_target_map
+                        .entry(sym.name.clone())
+                        .or_insert(target);
+                }
+            }
+        }
+
         // Build re-export map from Imports refs that have a module set.
         // These are emitted by the TS/JS extractor for:
         //   export { X } from './y'   → Imports ref, target_name="X", module="./y"
@@ -1313,6 +1395,7 @@ impl SymbolIndex {
             tsconfig_paths_union,
             tsconfig_types_union,
             inherits_map,
+            alias_target: alias_target_map,
             qname_duplicates,
             ambient_global_method_names,
             external_paths: HashSet::new(),
@@ -2300,6 +2383,10 @@ impl SymbolLookup for SymbolIndex {
                 Some(ti.generic_params.as_slice())
             }
         })
+    }
+
+    fn alias_target(&self, name: &str) -> Option<&AliasTarget> {
+        self.alias_target.get(name)
     }
 
     fn reexports_from(&self, file_path: &str) -> &[(String, String)] {
@@ -3467,6 +3554,7 @@ mod tests {
             flow: crate::types::FlowMeta::default(),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         };
 
         let mut id_map = HashMap::new();
@@ -3536,6 +3624,7 @@ mod tests {
             flow: crate::types::FlowMeta::default(),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         }
     }
 

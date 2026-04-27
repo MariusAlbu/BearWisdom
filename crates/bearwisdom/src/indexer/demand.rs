@@ -290,6 +290,7 @@ mod tests {
             flow: FlowMeta::default(),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
         }
     }
 

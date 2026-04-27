@@ -24,11 +24,40 @@ use super::predicates;
 use crate::indexer::resolve::engine::{
     ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
+use crate::type_checker::alias::expand_alias;
 use crate::type_checker::chain::external_type_qname;
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::type_checker::TypeChecker;
 use crate::types::{EdgeKind, MemberChain, SegmentKind};
 use tracing::debug;
+
+/// Apply alias expansion to `current_type` in-place. When the type is
+/// registered as an `AliasTarget::Application`, the expander rewrites
+/// `current_type` to the target's head and binds the target's type args
+/// to the head's generic params via a fresh scope on `env`. Idempotent
+/// for non-aliases — returns immediately without touching `env`.
+///
+/// `current_args_hint` carries any type args the chain walker just bound
+/// for `current_type` (e.g., the args from a `field_type_args` lookup).
+/// `expand_alias` uses these to substitute the alias's declared params
+/// when resolving the target's args.
+fn expand_current_type(
+    current_type: &mut String,
+    current_args_hint: &[String],
+    lookup: &dyn SymbolLookup,
+    env: &mut TypeEnvironment,
+) {
+    let Some((root, args)) = expand_alias(current_type, current_args_hint, lookup, env) else {
+        return;
+    };
+    *current_type = root;
+    if !args.is_empty() {
+        env.push_scope();
+        env.enter_generic_context(current_type, &args, |n| {
+            lookup.generic_params(n).map(|p| p.to_vec())
+        });
+    }
+}
 
 /// TypeScript type checker. Unit struct — owns no state; constructed on
 /// demand by `TypeScriptPlugin::type_checker()` and held in the engine's
@@ -138,8 +167,24 @@ impl TypeChecker for TypeScriptChecker {
             });
         }
 
+        // Alias expansion at the root: if the resolved root type is itself
+        // a type alias (e.g., `type UserMap = Map<string, User>`), unwrap it
+        // before Phase 2's field/method lookups — those would otherwise
+        // attempt `UserMap.member` and find nothing.
+        expand_current_type(
+            &mut current_type,
+            &initial_generic_args,
+            lookup,
+            &mut env,
+        );
+
         // Phase 2: Walk intermediate segments, following field types or return types.
         for seg in &segments[1..segments.len() - 1] {
+            // Each iteration may have just inherited `current_type` from a
+            // field_type / return_type continuation in the previous body —
+            // unwrap any alias before computing the member qname so the
+            // lookups target the underlying type, not the alias name.
+            expand_current_type(&mut current_type, &[], lookup, &mut env);
             let member_qname = format!("{current_type}.{}", seg.name);
 
             // Try field type (property access).
@@ -244,6 +289,17 @@ impl TypeChecker for TypeScriptChecker {
 
         // Phase 3: Resolve the final segment on the resolved type.
         let last = &segments[segments.len() - 1];
+
+        // Final alias expansion before the leaf lookup. Covers two cases the
+        // Phase-2 loop misses:
+        //   - Chains of length 2 (`x.foo` style) where the loop body never
+        //     runs, so the post-Phase-1 expansion is the only one that fired.
+        //     If the previous iter ended with `current_type` updated to an
+        //     alias, this dereferences it before the leaf lookup.
+        //   - Chains where the last intermediate hop landed on an alias name
+        //     (e.g., `x.subscriptions.first()` where `subscriptions` is typed
+        //     as a `SubscriptionList = Subscription[]`).
+        expand_current_type(&mut current_type, &[], lookup, &mut env);
 
         // Resolve `current_type` to its external qname if it's a short name
         // (e.g., "Assertion" -> "chai.Assertion") so the final lookups hit the
