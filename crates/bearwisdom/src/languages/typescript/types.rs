@@ -160,6 +160,40 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             }
             return AliasTarget::Mapped(source);
         }
+        // `type Foo<T> = T extends U ? X : Y` — conditional type.
+        // Read the four sub-expressions in source order. tree-sitter
+        // exposes them as positional named children of
+        // `conditional_type` separated by `extends`/`?`/`:` tokens.
+        // Branch selection is deferred (no subtype checker yet) but
+        // the captured shape lets a future PR wire it without
+        // re-touching extract.
+        "conditional_type" => {
+            let mut parts: Vec<String> = Vec::new();
+            for i in 0..node.child_count() {
+                let Some(child) = node.child(i) else { continue };
+                if matches!(child.kind(), "extends" | "?" | ":" | "(" | ")") {
+                    continue;
+                }
+                if !child.is_named() {
+                    continue;
+                }
+                let name = head_type_name(&child, src);
+                if !name.is_empty() {
+                    parts.push(name);
+                } else {
+                    parts.push(node_text(child, src));
+                }
+            }
+            if parts.len() >= 4 {
+                return AliasTarget::Conditional {
+                    check: parts[0].clone(),
+                    extends: parts[1].clone(),
+                    true_branch: parts[2].clone(),
+                    false_branch: parts[3].clone(),
+                };
+            }
+            return AliasTarget::Other;
+        }
         // `type X = T[K]` — indexed access. Capture the object's
         // head type and the key as written. The key may be a literal
         // string ("foo"), a generic param (`K`), or another type

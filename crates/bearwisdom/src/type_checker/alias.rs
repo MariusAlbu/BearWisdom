@@ -117,11 +117,14 @@ pub fn expand_alias(
             // Non-application shapes have no single "head" to follow.
             // Future PRs add their own machinery (member-set
             // semantics for Union/Intersection, dynamic member
-            // synthesis for Mapped, member enumeration for Keyof).
+            // synthesis for Mapped, subtype-check-driven branch
+            // selection for Conditional, member enumeration for
+            // Keyof).
             AliasTarget::Union(_)
             | AliasTarget::Intersection(_)
             | AliasTarget::Keyof(_)
             | AliasTarget::Mapped(_)
+            | AliasTarget::Conditional { .. }
             | AliasTarget::Object
             | AliasTarget::Other => return None,
         };

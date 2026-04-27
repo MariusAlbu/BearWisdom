@@ -327,6 +327,28 @@ fn mapped_alias_returns_none() {
 }
 
 // ---------------------------------------------------------------------------
+// PR 14: conditional types (capture-only; expansion deferred)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn conditional_alias_returns_none() {
+    // `type Cond<T> = T extends string ? X : Y` is a Conditional capture;
+    // branch selection needs a subtype check the resolver doesn't have, so
+    // chain walking returns None. The structural form is preserved.
+    let lookup = AliasFixture::new().with_alias(
+        "Cond",
+        AliasTarget::Conditional {
+            check: "T".to_string(),
+            extends: "string".to_string(),
+            true_branch: "X".to_string(),
+            false_branch: "Y".to_string(),
+        },
+    );
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("Cond", &[], &lookup, &mut env), None);
+}
+
+// ---------------------------------------------------------------------------
 // PR 12: T[K] indexed access
 // ---------------------------------------------------------------------------
 

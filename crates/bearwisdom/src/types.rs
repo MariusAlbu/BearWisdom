@@ -227,9 +227,22 @@ pub enum AliasTarget {
     /// `members_of(mapped, base_type)` lookup. The structural form
     /// is captured for a future PR to consume. PR 13.
     Mapped(String),
-    /// Anything else — conditional, template-literal types, function
-    /// types, tuples, infer, type predicates, this — chain walkers
-    /// must NOT treat as `Application`.
+    /// `type Foo<T> = T extends U ? X : Y` — conditional type. The
+    /// four type expressions are stored as written (each reduced to
+    /// its head name); the chain walker returns None because branch
+    /// selection requires a subtype check the resolver doesn't yet
+    /// implement. The structural form is captured so a future PR
+    /// can wire `is_assignable_to(check, extends)` and pick the
+    /// right branch without re-touching the extractor. PR 14.
+    Conditional {
+        check: String,
+        extends: String,
+        true_branch: String,
+        false_branch: String,
+    },
+    /// Anything else — template-literal types, function types,
+    /// tuples, infer, type predicates, this — chain walkers must NOT
+    /// treat as `Application`.
     Other,
 }
 
