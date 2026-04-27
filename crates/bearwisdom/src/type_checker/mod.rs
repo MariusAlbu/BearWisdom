@@ -33,6 +33,7 @@
 // =============================================================================
 
 pub mod chain;
+pub mod inheritance;
 pub mod type_env;
 
 pub use type_env::TypeEnvironment;

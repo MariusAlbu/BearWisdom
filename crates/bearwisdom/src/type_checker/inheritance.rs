@@ -1,8 +1,13 @@
 // =============================================================================
-// indexer/resolve/inheritance.rs — Shared inheritance-chain walk helper
+// type_checker/inheritance.rs — Shared inheritance-chain walk helper
 //
 // Used by JVM-family and C# resolvers to resolve bare method calls that come
 // from a parent class not visible to the scope-chain walk (Step 1).
+//
+// PR 4 of decision-2026-04-27-e75: moved here from `indexer/resolve/`. PR 5
+// will lift `resolve_via_inheritance` into a `TypeChecker::walk_inheritance`
+// default method once `kind_compatible` is on the trait too — both are
+// consumed together by the JVM/C# call sites.
 //
 // Design:
 //   The caller has already failed Steps 1–N (scope chain, package/namespace,
