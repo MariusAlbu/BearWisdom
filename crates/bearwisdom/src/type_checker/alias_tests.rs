@@ -312,6 +312,70 @@ fn typeof_chains_into_alias_target() {
 }
 
 // ---------------------------------------------------------------------------
+// PR 12: T[K] indexed access
+// ---------------------------------------------------------------------------
+
+#[test]
+fn indexed_access_with_literal_key_resolves_via_field_type() {
+    // type Name = User["name"]; field_type[User.name] = "string"
+    //   → expand("Name") = ("string", [])
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Name",
+            AliasTarget::IndexedAccess {
+                object: "User".to_string(),
+                key: "name".to_string(),
+            },
+        )
+        .with_field_type("User.name", "string");
+    let mut env = TypeEnvironment::new();
+    let (root, _) = expand_alias("Name", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "string");
+}
+
+#[test]
+fn indexed_access_chains_into_alias_target() {
+    // type Bar = Container["data"]; field_type[Container.data] = "UserMap"
+    // type UserMap = Map<string, User>
+    //   → expand("Bar") = ("Map", ["string", "User"])
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Bar",
+            AliasTarget::IndexedAccess {
+                object: "Container".to_string(),
+                key: "data".to_string(),
+            },
+        )
+        .with_field_type("Container.data", "UserMap")
+        .with_alias(
+            "UserMap",
+            AliasTarget::Application {
+                root: "Map".to_string(),
+                args: s(&["string", "User"]),
+            },
+        );
+    let mut env = TypeEnvironment::new();
+    let (root, args) = expand_alias("Bar", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "Map");
+    assert_eq!(args, s(&["string", "User"]));
+}
+
+#[test]
+fn indexed_access_unknown_member_returns_none() {
+    // No field_type entry for User.missing — chain walker should miss
+    // against the alias.
+    let lookup = AliasFixture::new().with_alias(
+        "X",
+        AliasTarget::IndexedAccess {
+            object: "User".to_string(),
+            key: "missing".to_string(),
+        },
+    );
+    let mut env = TypeEnvironment::new();
+    assert_eq!(expand_alias("X", &[], &lookup, &mut env), None);
+}
+
+// ---------------------------------------------------------------------------
 // PR 11: keyof
 // ---------------------------------------------------------------------------
 

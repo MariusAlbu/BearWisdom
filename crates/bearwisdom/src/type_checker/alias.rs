@@ -87,6 +87,33 @@ pub fn expand_alias(
                 };
                 (new_head, Vec::new())
             }
+            // `type Foo = T[K]` — extract the type of property K from
+            // T. Three cases (in priority order):
+            //   1. K is a generic param bound in env (`type Foo<K> = T[K]`
+            //      with K bound to "name"): resolve through env, then
+            //      treat as a literal key.
+            //   2. K is a literal string already (extractor stripped
+            //      the quotes): look up `T.K`'s field_type directly.
+            //   3. K is something else (`keyof T`, a generic param not
+            //      yet bound, etc.): bail with None — no single head.
+            AliasTarget::IndexedAccess { object, key } => {
+                // Resolve the object through env in case it carries a
+                // generic param too (`type Foo<T> = T["x"]`).
+                let object = env.resolve(object);
+                // Substitute K via env if it's a bound param.
+                let key = env.resolve(key);
+                // After substitution, if the key still looks like a
+                // type-expression rather than a property name (starts
+                // with uppercase + carries no whitespace looks heuristic
+                // and unreliable), the lookup will simply miss — which
+                // is correct.
+                let member_qname = format!("{object}.{key}");
+                let resolved = lookup.field_type_name(&member_qname).map(|s| s.to_string());
+                let Some(new_head) = resolved else {
+                    return None;
+                };
+                (new_head, Vec::new())
+            }
             // Non-application shapes have no single "head" to follow.
             // Future PRs add their own machinery (member-set semantics for
             // Union/Intersection, mapped/conditional expanders). `Keyof`

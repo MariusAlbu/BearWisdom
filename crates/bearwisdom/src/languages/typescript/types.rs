@@ -124,6 +124,44 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
             AliasTarget::Intersection(branches)
         }
         "object_type" => AliasTarget::Object,
+        // `type X = T[K]` — indexed access. Capture the object's
+        // head type and the key as written. The key may be a literal
+        // string ("foo"), a generic param (`K`), or another type
+        // expression like `keyof T` — the chain walker decides what
+        // to do with each shape at expansion time. Anything where the
+        // object isn't reducible to a single head bails to `Other`.
+        "indexed_access_type" => {
+            let object_node = node.child_by_field_name("object");
+            let index_node = node.child_by_field_name("index");
+            let object_name = match object_node {
+                Some(n) => head_type_name(&n, src),
+                None => String::new(),
+            };
+            let key_text = match index_node {
+                Some(n) => {
+                    // For literal types ("foo"), strip quotes so the
+                    // chain walker can look up `T.foo` directly.
+                    // tree-sitter wraps literals in `literal_type` →
+                    // `string` / `number` / etc.
+                    let raw = node_text(n, src);
+                    let trimmed = raw.trim();
+                    let stripped = trimmed
+                        .strip_prefix('"')
+                        .and_then(|s| s.strip_suffix('"'))
+                        .or_else(|| trimmed.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+                        .unwrap_or(trimmed);
+                    stripped.to_string()
+                }
+                None => String::new(),
+            };
+            if object_name.is_empty() || key_text.is_empty() {
+                return AliasTarget::Other;
+            }
+            return AliasTarget::IndexedAccess {
+                object: object_name,
+                key: key_text,
+            };
+        }
         // `type X = keyof T` — tree-sitter exposes this as either
         // `keyof_type` or `index_type_query` depending on grammar
         // version. The operand is the target type whose members will

@@ -209,9 +209,18 @@ pub enum AliasTarget {
     /// mapped types in PR 13) that need to enumerate `T`'s members.
     /// PR 11.
     Keyof(String),
-    /// Anything else — mapped, conditional, indexed,
-    /// template-literal types, etc. These need their own machinery in
-    /// later PRs. Chain walkers must NOT treat this as `Application`.
+    /// `type Foo = T[K]` — indexed access. Extracts the type of
+    /// property `K` from object type `T`. Resolution paths:
+    /// - Literal string key (`T["foo"]`): look up
+    ///   `field_type(T.foo)` and return that as the head.
+    /// - Generic param key (`T[K]` where K is bound in env): resolve
+    ///   K via the type environment to a literal, then look up.
+    /// - `keyof T` key, union, etc.: union of all member types —
+    ///   deferred (no single head). PR 12.
+    IndexedAccess { object: String, key: String },
+    /// Anything else — mapped, conditional, template-literal types,
+    /// etc. These need their own machinery in later PRs. Chain
+    /// walkers must NOT treat this as `Application`.
     Other,
 }
 
