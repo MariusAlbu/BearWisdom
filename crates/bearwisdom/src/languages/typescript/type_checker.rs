@@ -20,7 +20,7 @@
 // mostly delegating to a per-operation module under `type_checker/`.
 // =============================================================================
 
-use super::predicates::kind_compatible;
+use super::predicates;
 use crate::indexer::resolve::engine::{
     ChainMiss, FileContext, RefContext, Resolution, SymbolInfo, SymbolLookup,
 };
@@ -38,6 +38,14 @@ pub struct TypeScriptChecker;
 impl TypeChecker for TypeScriptChecker {
     fn language_id(&self) -> &str {
         "typescript"
+    }
+
+    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool {
+        // Delegates to the per-language predicate fn. The fn predates the
+        // TypeChecker seam and is still consumed by JS-only paths that
+        // don't go through this trait yet, so it stays public in the
+        // predicates module.
+        predicates::kind_compatible(edge_kind, sym_kind)
     }
 
     /// Walk a MemberChain step-by-step, following field types to resolve
@@ -247,7 +255,7 @@ impl TypeChecker for TypeScriptChecker {
 
         // Direct qualified name match.
         if let Some(sym) = lookup.by_qualified_name(&candidate) {
-            if kind_compatible(edge_kind, &sym.kind) {
+            if self.kind_compatible(edge_kind, &sym.kind) {
                 debug!(
                     strategy = "ts_chain_resolution",
                     chain_len = segments.len(),
@@ -266,7 +274,7 @@ impl TypeChecker for TypeScriptChecker {
 
         // Members scoped to the resolved type.
         for sym in lookup.members_of(&effective_type) {
-            if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
+            if sym.name == last.name && self.kind_compatible(edge_kind, &sym.kind) {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
                     confidence: 0.95,
@@ -289,7 +297,7 @@ impl TypeChecker for TypeScriptChecker {
             };
             let candidate = format!("{parent}.{}", last.name);
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
-                if kind_compatible(edge_kind, &sym.kind) {
+                if self.kind_compatible(edge_kind, &sym.kind) {
                     debug!(
                         strategy = "ts_chain_inheritance",
                         chain_len = segments.len(),
@@ -306,7 +314,7 @@ impl TypeChecker for TypeScriptChecker {
                 }
             }
             for sym in lookup.members_of(parent) {
-                if sym.name == last.name && kind_compatible(edge_kind, &sym.kind) {
+                if sym.name == last.name && self.kind_compatible(edge_kind, &sym.kind) {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 0.85,

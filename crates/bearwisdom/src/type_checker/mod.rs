@@ -63,6 +63,21 @@ pub trait TypeChecker: Send + Sync {
     /// at least for the type-level operations TS shares with JS).
     fn language_id(&self) -> &str;
 
+    /// Whether `sym_kind` is a valid resolution target for an edge of kind
+    /// `edge_kind` in this language's type system. Encodes language-specific
+    /// idioms — e.g. TypeScript accepts `variable` for `Calls` (callable
+    /// values like `const Button = (...) => ...`) where Java does not.
+    ///
+    /// Each `TypeChecker` impl provides its own. PR 5 lifts this off
+    /// per-language `predicates::kind_compatible` free functions onto the
+    /// trait so chain walkers, inheritance walkers, and future type-level
+    /// operations (alias expansion, mapped types) can consult it through
+    /// the checker without importing language-specific predicate modules.
+    ///
+    /// Languages without a `TypeChecker` keep their predicate-file
+    /// `kind_compatible` until they migrate.
+    fn kind_compatible(&self, edge_kind: EdgeKind, sym_kind: &str) -> bool;
+
     /// Walk a `MemberChain` step-by-step to resolve its final segment.
     ///
     /// Each TypeChecker provides its own implementation. Languages whose
