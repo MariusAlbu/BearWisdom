@@ -551,6 +551,7 @@ mod resolve_tests {
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
         }
     }
 
@@ -586,6 +587,7 @@ mod resolve_tests {
                 connection_points: Vec::new(),
                 demand_contributions: Vec::new(),
                 alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
             })
             .collect();
         let index = SymbolIndex::build(&owned, &id_map);

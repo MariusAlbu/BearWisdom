@@ -820,6 +820,19 @@ pub struct ParsedFile {
     /// by `SymbolIndex::build_with_context` to build the project-wide
     /// alias_target map used by chain walkers for alias expansion.
     pub alias_targets: Vec<(String, AliasTarget)>,
+    /// Angular `@Component` selector metadata extracted from TypeScript files.
+    ///
+    /// Each entry is `(raw_selector, class_qualified_name)`. Raw selector is
+    /// the string as it appears in the decorator argument:
+    ///   - element selector: `"app-user-card"` → class `"UserCardComponent"`
+    ///   - attribute selector: `"appHighlight"` (brackets stripped)
+    ///   - class selector: `"my-thing"` (dot stripped)
+    ///   - comma list: split into multiple entries.
+    ///
+    /// Consumed by `SymbolIndex::build_with_context` to build the
+    /// project-wide `angular_selectors` map.  Empty for non-TypeScript files
+    /// and TypeScript files that contain no `@Component` decorators.
+    pub component_selectors: Vec<(String, String)>,
 }
 
 impl ParsedFile {
@@ -835,6 +848,7 @@ impl ParsedFile {
         self.content = None;
         self.routes = Vec::new();
         self.db_sets = Vec::new();
+        self.component_selectors = Vec::new();
     }
 }
 

@@ -65,10 +65,23 @@ pub(super) fn extract_decorators(
 fn collect_decorator_nodes<'a>(node: &'a Node<'a>) -> Vec<Node<'a>> {
     match node.kind() {
         "class_declaration" | "abstract_class_declaration" => {
-            // Decorators are direct children of the class node.
+            // Decorators may be direct children of the class node itself
+            // (non-exported class), OR children of the wrapping
+            // `export_statement` when `export class Foo {}` is used. In the
+            // latter case the AST looks like:
+            //   export_statement
+            //     decorator   ← sibling of class_declaration, child of export_statement
+            //     export
+            //     class_declaration
+            // Check the parent node first; fall back to direct children.
+            let search_node = if let Some(parent) = node.parent() {
+                if parent.kind() == "export_statement" { parent } else { *node }
+            } else {
+                *node
+            };
             let mut result = Vec::new();
-            let mut cursor = node.walk();
-            for child in node.children(&mut cursor) {
+            let mut cursor = search_node.walk();
+            for child in search_node.children(&mut cursor) {
                 if child.kind() == "decorator" {
                     result.push(child);
                 }
@@ -163,88 +176,138 @@ fn extract_first_string_arg(call_expr: &Node, src: &[u8]) -> Option<String> {
 }
 
 // ---------------------------------------------------------------------------
+// Angular @Component selector extraction
+// ---------------------------------------------------------------------------
+
+/// Extract the `selector` field value(s) from an `@Component({...})` decorator
+/// on a class node.
+///
+/// Returns the raw selector strings (not yet normalized) extracted from the
+/// `selector: '...'` property of the decorator's object argument. Multiple
+/// selectors separated by commas are returned as individual strings. Bracket
+/// wrappers for attribute selectors (`[appHighlight]` → `appHighlight`) and
+/// dot prefixes for class selectors (`.my-class` → `my-class`) are stripped.
+///
+/// Returns an empty vec when the class has no `@Component` decorator or the
+/// decorator has no parseable `selector` property.
+pub(crate) fn component_selectors_from_class(node: &Node, src: &[u8]) -> Vec<String> {
+    let decorator_nodes = collect_decorator_nodes(node);
+    for dec in &decorator_nodes {
+        if let Some(selectors) = try_extract_selector_from_decorator(dec, src) {
+            return selectors;
+        }
+    }
+    Vec::new()
+}
+
+/// Try to extract the `selector` property from a single `decorator` node.
+/// Returns `Some(selectors)` only when the decorator is named `Component`
+/// and has a parseable `selector` value.
+fn try_extract_selector_from_decorator(dec: &Node, src: &[u8]) -> Option<Vec<String>> {
+    let mut cursor = dec.walk();
+    for child in dec.children(&mut cursor) {
+        if child.kind() != "call_expression" {
+            continue;
+        }
+        // Verify this is `@Component(...)` — not `@Directive(...)` etc.
+        let func = child.child_by_field_name("function")?;
+        let dec_name = match func.kind() {
+            "identifier" => node_text(func, src),
+            _ => continue,
+        };
+        if dec_name != "Component" {
+            continue;
+        }
+        // Walk the arguments list for an object expression.
+        let args = child.child_by_field_name("arguments")?;
+        let mut ac = args.walk();
+        for arg in args.children(&mut ac) {
+            if arg.kind() == "object" {
+                if let Some(selectors) = extract_selector_from_object(&arg, src) {
+                    return Some(selectors);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Walk an `object` node (the `@Component({...})` argument) and extract the
+/// `selector` property's string value(s).
+fn extract_selector_from_object(obj: &Node, src: &[u8]) -> Option<Vec<String>> {
+    let mut cursor = obj.walk();
+    for prop in obj.children(&mut cursor) {
+        // Property nodes: `pair`, `shorthand_property_identifier`
+        if prop.kind() != "pair" {
+            continue;
+        }
+        let key = prop.child_by_field_name("key")?;
+        let key_text = node_text(key, src);
+        if key_text != "selector" {
+            continue;
+        }
+        let val = prop.child_by_field_name("value")?;
+        let raw_value = unquote_string_node(&val, src)?;
+        return Some(split_and_normalize_selectors(&raw_value));
+    }
+    None
+}
+
+/// Strip surrounding quotes from a `string` or `template_string` node.
+fn unquote_string_node(node: &Node, src: &[u8]) -> Option<String> {
+    let raw = node_text(*node, src);
+    if raw.is_empty() {
+        return None;
+    }
+    let stripped = raw
+        .trim_start_matches('`')
+        .trim_end_matches('`')
+        .trim_start_matches('"')
+        .trim_end_matches('"')
+        .trim_start_matches('\'')
+        .trim_end_matches('\'')
+        .to_string();
+    if stripped.is_empty() { None } else { Some(stripped) }
+}
+
+/// Split a raw selector string on commas and normalize each part:
+///
+///   - Element selectors: `"app-user-card"` → `"app-user-card"` (unchanged)
+///   - Attribute selectors: `"[appHighlight]"` → `"appHighlight"`
+///   - Class selectors: `".my-class"` → `"my-class"`
+///   - Comma lists: `"app-foo, [bar], .baz"` → `["app-foo", "bar", "baz"]`
+pub(crate) fn split_and_normalize_selectors(raw: &str) -> Vec<String> {
+    raw.split(',')
+        .map(|s| normalize_single_selector(s.trim()))
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+fn normalize_single_selector(s: &str) -> String {
+    if s.starts_with('[') && s.ends_with(']') {
+        // Attribute selector: strip `[` and `]`, then strip any `=...` suffix.
+        let inner = &s[1..s.len() - 1];
+        // `[ngModel]` → `ngModel`; `[ngModel]="x"` is not a selector value form
+        // but handle `[(ngModel)]` as Angular two-way binding: strip `(` and `)`.
+        inner
+            .trim_start_matches('(')
+            .trim_end_matches(')')
+            .split('=')
+            .next()
+            .unwrap_or(inner)
+            .to_string()
+    } else if s.starts_with('.') {
+        // Class selector: strip leading `.`
+        s[1..].to_string()
+    } else {
+        s.to_string()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use crate::languages::typescript::extract::extract;
-    use crate::types::{EdgeKind, ExtractedRef};
-
-    fn refs(source: &str) -> Vec<ExtractedRef> {
-        extract(source, false).refs
-    }
-
-    fn decorator_refs(source: &str) -> Vec<ExtractedRef> {
-        refs(source)
-            .into_iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .collect()
-    }
-
-    #[test]
-    fn class_decorator_no_args() {
-        let src = "@Injectable()\nclass UserService {}";
-        let dr = decorator_refs(src);
-        assert!(
-            dr.iter().any(|r| r.target_name == "Injectable"),
-            "refs: {dr:?}"
-        );
-    }
-
-    #[test]
-    fn class_decorator_with_route_arg() {
-        let src = r#"@Controller('/api/users')
-class UserController {}"#;
-        let dr = decorator_refs(src);
-        let ctrl = dr.iter().find(|r| r.target_name == "Controller");
-        assert!(ctrl.is_some(), "refs: {dr:?}");
-        assert_eq!(ctrl.unwrap().module, Some("/api/users".to_string()));
-    }
-
-    #[test]
-    fn multiple_class_decorators() {
-        let src = "@Injectable()\n@Controller('/users')\nclass C {}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|r| r.target_name == "Injectable"), "refs: {dr:?}");
-        assert!(dr.iter().any(|r| r.target_name == "Controller"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn method_decorator_no_args() {
-        let src = "class C {\n    @Get()\n    find() {}\n}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|r| r.target_name == "Get"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn method_decorator_with_path() {
-        let src = r#"class C {
-    @Get(':id')
-    findOne() {}
-}"#;
-        let dr = decorator_refs(src);
-        let get = dr.iter().find(|r| r.target_name == "Get");
-        assert!(get.is_some(), "refs: {dr:?}");
-        assert_eq!(get.unwrap().module, Some(":id".to_string()));
-    }
-
-    #[test]
-    fn member_expression_decorator() {
-        // @Roles.Admin() → decorator name is "Roles"
-        let src = "class C {\n    @Roles.Admin()\n    admin() {}\n}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|r| r.target_name == "Roles"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn no_decorators_no_extra_refs() {
-        let src = "class Svc { find() {} }";
-        let dr = decorator_refs(src);
-        // Only heritage / type refs from the class itself — no decorator refs.
-        assert!(
-            dr.iter().all(|r| r.target_name != "Injectable" && r.target_name != "Get"),
-            "unexpected refs: {dr:?}"
-        );
-    }
-}
+#[path = "decorators_tests.rs"]
+mod tests;

@@ -17,6 +17,16 @@
 // no naming-pattern heuristic, no per-library hardcoding, and any future
 // Angular component library (Material, PrimeNG, anything) gets the same
 // treatment automatically.
+//
+// Selector-map path (PR 18):
+// When the template extractor emits a `Calls` ref for a kebab-case tag
+// (e.g. `<app-user-card>`), it stores the raw tag in `ref_ctx.extracted_ref.module`
+// and the PascalCase fallback in `target_name`. `resolve()` here first checks the
+// project-wide Angular selector map (`lookup.angular_selector(raw)`) built from
+// `@Component({selector:'...'})` metadata. When a match is found the real class
+// qname is used for DB lookup — exact, no heuristic. When no match exists the
+// call falls through to the TypeScriptResolver (which eventually hits the
+// external-namespace heuristic for third-party component libraries).
 // =============================================================================
 
 use crate::indexer::project_context::ProjectContext;
@@ -39,7 +49,7 @@ pub struct AngularResolver;
 /// same for `.container` / `.dialog`). Returning the path lets the resolve
 /// driver fetch that file's imports and merge them into the template's
 /// `FileContext`.
-fn paired_ts_for_template(file_path: &str) -> Option<String> {
+pub(crate) fn paired_ts_for_template(file_path: &str) -> Option<String> {
     const SUFFIXES: &[&str] = &[".component.html", ".container.html", ".dialog.html"];
     for suffix in SUFFIXES {
         if let Some(stem) = file_path.strip_suffix(suffix) {
@@ -82,6 +92,40 @@ impl LanguageResolver for AngularResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
+        // Angular selector-map path (PR 18):
+        // The template extractor stores the raw kebab/attribute selector in
+        // `ref_ctx.extracted_ref.module` for Calls refs emitted from template
+        // tags. Check the project-wide selector map first — an exact hit
+        // replaces the PascalCase heuristic guess with the real class qname.
+        if ref_ctx.extracted_ref.kind == crate::types::EdgeKind::Calls {
+            if let Some(raw_selector) = &ref_ctx.extracted_ref.module {
+                if let Some(class_qname) = lookup.angular_selector(raw_selector) {
+                    // The selector matched a @Component class in this project.
+                    // Try to resolve to the real DB symbol.
+                    if let Some(sym) = lookup.by_qualified_name(class_qname) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "angular_selector_map",
+                            resolved_yield_type: None,
+                        });
+                    }
+                    // The class is indexed by qname — also try by_name as fallback.
+                    let short = class_qname.rsplit('.').next().unwrap_or(class_qname);
+                    for sym in lookup.by_name(short) {
+                        if sym.qualified_name == class_qname {
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 1.0,
+                                strategy: "angular_selector_map",
+                                resolved_yield_type: None,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
         TypeScriptResolver.resolve(file_ctx, ref_ctx, lookup)
     }
 
@@ -149,54 +193,6 @@ impl LanguageResolver for AngularResolver {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
-
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn paired_ts_for_component_template() {
-        assert_eq!(
-            paired_ts_for_template("src/app/foo.component.html").as_deref(),
-            Some("src/app/foo.component.ts")
-        );
-    }
-
-    #[test]
-    fn paired_ts_for_container_template() {
-        assert_eq!(
-            paired_ts_for_template("src/app/bar.container.html").as_deref(),
-            Some("src/app/bar.container.ts")
-        );
-    }
-
-    #[test]
-    fn paired_ts_for_dialog_template() {
-        assert_eq!(
-            paired_ts_for_template("src/app/baz.dialog.html").as_deref(),
-            Some("src/app/baz.dialog.ts")
-        );
-    }
-
-    #[test]
-    fn paired_ts_returns_none_for_plain_html() {
-        assert_eq!(paired_ts_for_template("index.html"), None);
-        assert_eq!(paired_ts_for_template("src/app/foo.component.ts"), None);
-    }
-
-    #[test]
-    fn companion_file_for_imports_delegates_to_paired_ts() {
-        let r = AngularResolver;
-        assert_eq!(
-            r.companion_file_for_imports("src/app/foo.component.html").as_deref(),
-            Some("src/app/foo.component.ts")
-        );
-        assert_eq!(
-            r.companion_file_for_imports("src/app/unrelated.html"),
-            None
-        );
-    }
-}
+#[path = "resolve_tests.rs"]
+mod tests;

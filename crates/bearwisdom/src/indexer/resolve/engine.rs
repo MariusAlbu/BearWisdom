@@ -395,6 +395,19 @@ pub trait SymbolLookup {
         None
     }
 
+    /// Look up the class qualified name for an Angular component selector.
+    ///
+    /// `raw_selector` is the selector as stored in `@Component({selector:'...'})`,
+    /// post-normalization (brackets/dots stripped).  Element selectors look like
+    /// `"app-user-card"`; attribute selectors like `"appHighlight"`.
+    ///
+    /// Returns `Some(qname)` when a `@Component` class with that selector was
+    /// indexed.  Default returns `None` — test lookups and non-Angular
+    /// projects pay no cost.
+    fn angular_selector(&self, _raw_selector: &str) -> Option<&str> {
+        None
+    }
+
     /// Return the direct parent class qualified name for the given class.
     ///
     /// Built from `Inherits` edges at index construction time.  Returns `None`
@@ -601,6 +614,18 @@ pub struct SymbolIndex {
     /// Empty when the caller didn't supply a set (tests, synthetic lookups),
     /// in which case the existing `ext:` prefix check is the sole authority.
     external_paths: HashSet<String>,
+    /// Project-wide Angular component selector map: raw selector string →
+    /// component class qualified name.
+    ///
+    /// Populated in `build_with_context` from `ParsedFile::component_selectors`
+    /// (which the full-index pipeline fills from `@Component({selector:'...'}`
+    /// decoration metadata in TypeScript sources).
+    ///
+    /// Element selectors: `"app-user-card"` → `"src/app/user-card.UserCardComponent"`
+    /// Attribute selectors: `"appHighlight"` → `"src/directives.HighlightDirective"`
+    ///
+    /// Empty for non-Angular projects. Exposed via `SymbolLookup::angular_selector`.
+    angular_selectors: FxHashMap<String, String>,
     empty: Vec<SymbolInfo>,
     empty_reexports: Vec<(String, String)>,
     /// Interior-mutable accumulator for chain walker bail-outs.
@@ -1377,6 +1402,18 @@ impl SymbolIndex {
             }
         }
 
+        // Build the Angular selector map: raw selector → class qualified name.
+        // Source: `ParsedFile::component_selectors` populated by the full-index
+        // pipeline for TypeScript/Angular files with `@Component({selector:...})`.
+        let mut angular_selectors: FxHashMap<String, String> = FxHashMap::default();
+        for pf in parsed {
+            for (selector, class_qname) in &pf.component_selectors {
+                if !selector.is_empty() && !class_qname.is_empty() {
+                    angular_selectors.insert(selector.clone(), class_qname.clone());
+                }
+            }
+        }
+
         Self {
             by_name,
             by_qname,
@@ -1399,6 +1436,7 @@ impl SymbolIndex {
             qname_duplicates,
             ambient_global_method_names,
             external_paths: HashSet::new(),
+            angular_selectors,
             empty: Vec::new(),
             empty_reexports: Vec::new(),
             chain_misses: std::sync::Mutex::new(Vec::new()),
@@ -1780,6 +1818,15 @@ impl SymbolIndex {
                         .unwrap_or(&candidates[0])
                 };
                 self.inherits_map.insert(child_qname.clone(), best.qualified_name.clone());
+            }
+        }
+
+        // Pass 6: Angular selector map for new files.
+        for pf in new_files {
+            for (selector, class_qname) in &pf.component_selectors {
+                if !selector.is_empty() && !class_qname.is_empty() {
+                    self.angular_selectors.insert(selector.clone(), class_qname.clone());
+                }
             }
         }
     }
@@ -2477,6 +2524,10 @@ impl SymbolLookup for SymbolIndex {
 
     fn parent_class_qname(&self, class_qname: &str) -> Option<&str> {
         self.inherits_map.get(class_qname).map(|s| s.as_str())
+    }
+
+    fn angular_selector(&self, raw_selector: &str) -> Option<&str> {
+        self.angular_selectors.get(raw_selector).map(|s| s.as_str())
     }
 
     fn record_chain_miss(&self, miss: ChainMiss) {
@@ -3555,6 +3606,7 @@ mod tests {
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
         };
 
         let mut id_map = HashMap::new();
@@ -3625,6 +3677,7 @@ mod tests {
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
         }
     }
 

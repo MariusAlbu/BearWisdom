@@ -1,7 +1,8 @@
 //! Host-level extraction for Angular templates. Emits a file-stem
 //! symbol + `Calls` refs for every child component tag encountered
 //! (PascalCase and kebab-case both accepted — `my-widget` normalized
-//! to `MyWidget`).
+//! to `MyWidget`). Also emits `Calls` refs for attribute-based
+//! directives (`[appHighlight]`, `*ngFor`, `[(ngModel)]`).
 
 use crate::types::{EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility};
 use tree_sitter::{Node, Parser};
@@ -19,7 +20,7 @@ use tree_sitter::{Node, Parser};
 ///
 /// Angular's structural pseudo-elements (`ng-template`, `ng-container`,
 /// `ng-content`) contain `-` but aren't components; explicitly skip them.
-fn is_standard_html_element(tag: &str) -> bool {
+pub(crate) fn is_standard_html_element(tag: &str) -> bool {
     // Structural Angular pseudo-elements: templated, not component refs.
     if matches!(tag, "ng-template" | "ng-container" | "ng-content") {
         return true;
@@ -102,6 +103,7 @@ fn collect_component_refs(
         if matches!(kind, "element" | "self_closing_element") {
             if let Some(tag) = element_tag_name(&child, source) {
                 if !is_standard_html_element(&tag) {
+                    // Determine the PascalCase normalized name used as `target_name`.
                     let normalized = if tag.chars().next().map_or(false, |c| c.is_uppercase()) {
                         tag.clone()
                     } else if tag.contains('-') {
@@ -109,21 +111,154 @@ fn collect_component_refs(
                     } else {
                         tag.clone()
                     };
+
+                    // For kebab-case tags store the raw tag in `module` so the
+                    // `AngularResolver` can look it up in the project-wide selector
+                    // map built from `@Component({selector:'...'})` metadata.
+                    // When the resolver finds a match it replaces `target_name`
+                    // with the real class qname. When no match is found the existing
+                    // `kebab_to_pascal` fallback in `target_name` is still used.
+                    let raw_selector = if tag.contains('-') || !tag.chars().next().map_or(false, |c| c.is_uppercase()) {
+                        Some(tag.clone())
+                    } else {
+                        None
+                    };
+
                     refs.push(ExtractedRef {
                         source_symbol_index: host_index,
                         target_name: normalized,
                         kind: EdgeKind::Calls,
                         line: child.start_position().row as u32,
-                        module: None,
+                        module: raw_selector,
                         chain: None,
                         byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                    });
                 }
             }
+
+            // Attribute directives — emit a Calls ref for every attribute
+            // whose name looks like an Angular directive selector:
+            //   - camelCase names without `-` (e.g. `appHighlight`, `ngFor`)
+            //   - Angular structural directive prefix: `*ngFor`, `*ngIf`
+            //   - Two-way binding: `[(ngModel)]` → normalizes to `ngModel`
+            //   - Property binding: `[ngClass]` → normalizes to `ngClass`
+            //
+            // Standard HTML attributes (all-lowercase, no camelCase, no special
+            // prefix) are skipped to avoid false positives.
+            collect_attribute_directive_refs(&child, source, host_index, refs);
         }
         collect_component_refs(&child, source, host_index, refs);
     }
+}
+
+/// Walk the start_tag / self_closing_tag children of an element and emit
+/// `Calls` refs for attribute names that look like Angular directive selectors.
+fn collect_attribute_directive_refs(
+    element: &Node,
+    source: &str,
+    host_index: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = element.walk();
+    for child in element.children(&mut cursor) {
+        let ck = child.kind();
+        if !matches!(ck, "start_tag" | "self_closing_tag") {
+            continue;
+        }
+        let mut ac = child.walk();
+        for attr in child.children(&mut ac) {
+            if attr.kind() != "attribute" {
+                continue;
+            }
+            // tree-sitter-html uses `attribute_name` as the child node kind,
+            // not as a named field — use child_by_field_name("name") first and
+            // fall back to walking children for the `attribute_name` node.
+            let raw_attr: &str = {
+                if let Some(n) = attr.child_by_field_name("name") {
+                    source.get(n.start_byte()..n.end_byte()).unwrap_or("")
+                } else {
+                    let mut found = "";
+                    let mut nc = attr.walk();
+                    for n in attr.children(&mut nc) {
+                        if n.kind() == "attribute_name" {
+                            found = source.get(n.start_byte()..n.end_byte()).unwrap_or("");
+                            break;
+                        }
+                    }
+                    found
+                }
+            };
+            if let Some(selector) = normalize_attribute_as_directive(raw_attr) {
+                refs.push(ExtractedRef {
+                    source_symbol_index: host_index,
+                    target_name: selector.clone(),
+                    kind: EdgeKind::Calls,
+                    line: attr.start_position().row as u32,
+                    // Raw selector stored in `module` for resolver lookup.
+                    module: Some(selector),
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
+            }
+        }
+    }
+}
+
+/// Decide whether an HTML attribute name looks like an Angular directive
+/// selector and return its normalized form, or `None` if it's a plain
+/// HTML attribute.
+///
+/// Rules:
+/// - `*ngFor`, `*ngIf`, `*ngSwitchCase` → strip `*` prefix → `ngFor`, `ngIf`
+/// - `[(ngModel)]` → strip `[(` and `)]` → `ngModel`
+/// - `[ngClass]`, `[appHighlight]` → strip `[` and `]`
+/// - `(click)`, `(submit)` → event bindings — skip (these are DOM events not directives)
+/// - `appHighlight`, `ngFor` (without brackets) → keep as-is if camelCase
+/// - All-lowercase / hyphenated standard HTML attrs → `None`
+///
+/// Only emits refs for camelCase names (has at least one uppercase letter)
+/// or names with the `ng`/`app`/`lib` prefix pattern to avoid flooding with
+/// standard HTML attributes like `class`, `href`, `data-*`.
+pub(crate) fn normalize_attribute_as_directive(raw: &str) -> Option<String> {
+    // Strip Angular binding wrappers:
+    let name = if raw.starts_with("[(") && raw.ends_with(")]") {
+        // Two-way binding `[(ngModel)]` → `ngModel`
+        &raw[2..raw.len() - 2]
+    } else if raw.starts_with('[') && raw.ends_with(']') {
+        // Property binding `[ngClass]` → `ngClass`
+        // Skip if value looks like a native HTML attr (all lowercase).
+        let inner = &raw[1..raw.len() - 1];
+        if inner.chars().all(|c| c.is_ascii_lowercase() || c == '-') {
+            return None;
+        }
+        inner
+    } else if raw.starts_with('(') && raw.ends_with(')') {
+        // Event binding `(click)` — DOM events, skip.
+        return None;
+    } else if let Some(stripped) = raw.strip_prefix('*') {
+        // Structural directive `*ngFor` → `ngFor`
+        stripped
+    } else {
+        // Bare attribute name — only keep if camelCase.
+        raw
+    };
+
+    // Only emit for names with at least one uppercase letter (camelCase),
+    // or names that start with standard Angular/community prefixes.
+    let has_upper = name.chars().any(|c| c.is_ascii_uppercase());
+    let has_ng_prefix = name.starts_with("ng")
+        || name.starts_with("app")
+        || name.starts_with("lib")
+        || name.starts_with("cdk")
+        || name.starts_with("mat");
+
+    if name.is_empty() || (!has_upper && !has_ng_prefix) {
+        return None;
+    }
+
+    Some(name.to_string())
 }
 
 fn element_tag_name(node: &Node, src: &str) -> Option<String> {
@@ -147,7 +282,7 @@ fn element_tag_name(node: &Node, src: &str) -> Option<String> {
     None
 }
 
-fn kebab_to_pascal(s: &str) -> String {
+pub(crate) fn kebab_to_pascal(s: &str) -> String {
     s.split('-')
         .map(|part| {
             let mut c = part.chars();
@@ -180,42 +315,5 @@ fn file_stem(file_path: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn file_stem_strips_component_suffix() {
-        assert_eq!(file_stem("src/app/user.component.html"), "user");
-        assert_eq!(file_stem("foo.dialog.html"), "foo");
-    }
-
-    #[test]
-    fn pascal_component_tag_becomes_calls_ref() {
-        let src = r#"<div><UserCard name="x" /></div>"#;
-        let r = extract(src, "parent.component.html");
-        let calls: Vec<&str> = r.refs.iter().map(|r| r.target_name.as_str()).collect();
-        assert_eq!(calls, vec!["UserCard"]);
-    }
-
-    #[test]
-    fn kebab_tag_normalizes_to_pascal() {
-        let src = "<app-user-card></app-user-card>";
-        let r = extract(src, "parent.component.html");
-        let calls: Vec<&str> = r.refs.iter().map(|r| r.target_name.as_str()).collect();
-        assert_eq!(calls, vec!["AppUserCard"]);
-    }
-
-    #[test]
-    fn html_builtins_not_emitted() {
-        let src = "<div><p>text</p></div>";
-        let r = extract(src, "x.component.html");
-        assert!(r.refs.is_empty());
-    }
-
-    #[test]
-    fn ng_container_ignored_as_builtin() {
-        let src = "<ng-container><p>x</p></ng-container>";
-        let r = extract(src, "x.component.html");
-        assert!(r.refs.is_empty());
-    }
-}
+#[path = "extract_tests.rs"]
+mod tests;
