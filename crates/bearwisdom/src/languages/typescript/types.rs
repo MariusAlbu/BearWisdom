@@ -458,6 +458,29 @@ pub(super) fn extract_type_ref_from_annotation(
         "nested_type_identifier" | "member_expression" => {
             // db.Kysely → extract the full dotted name
             let type_name = node_text(type_node, src);
+            // Special case: TypeScript's import-type expression
+            // `import('module').Type` lands in this arm because the
+            // grammar treats the `.Type` part as a member access on
+            // the `import('module')` call. Without this, the whole
+            // string `import('node:stream').Readable` lands in
+            // unresolved_refs as a single target_name that no resolver
+            // can match. Parse out the module specifier and the type
+            // name, then emit a TypeRef with `module` set so the
+            // standard import-resolution pipeline picks it up the
+            // same way `import { Readable } from 'node:stream'` does.
+            if let Some((module, ty)) = parse_import_type_expression(&type_name) {
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: ty,
+                    kind: EdgeKind::TypeRef,
+                    line: type_node.start_position().row as u32,
+                    module: Some(module),
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
+                return;
+            }
             refs.push(ExtractedRef {
                 source_symbol_index,
                 target_name: type_name,
@@ -976,3 +999,55 @@ pub(super) fn extract_typed_params_as_symbols(
         extract_type_ref_from_annotation(&type_ann, src, idx, refs);
     }
 }
+
+/// Parse the TypeScript import-type expression syntax
+/// `import('module').Type` (or `import("module").Type`) and return
+/// `Some((module, type))`. The expression frequently appears in
+/// `.d.ts` files (e.g. `import('node:stream').Readable`,
+/// `import('typescript').Diagnostic`) and in user code as a way to
+/// reference a type without adding an `import` statement.
+///
+/// Accepts an optional dotted suffix (`Foo.Bar.Baz`) — only the
+/// leftmost segment is the type name; the trailing segments fold
+/// into a dotted target. Whitespace inside the parens is tolerated
+/// (e.g. `import( 'foo' )`).
+///
+/// Returns `None` when the input doesn't match the syntactic shape
+/// — caller falls back to emitting the whole string as a regular
+/// type reference.
+pub(super) fn parse_import_type_expression(s: &str) -> Option<(String, String)> {
+    let s = s.trim();
+    let after_import = s.strip_prefix("import")?.trim_start();
+    let after_lparen = after_import.strip_prefix('(')?.trim_start();
+    // Match either single or double quoted module specifier.
+    let (module, after_quote) = if let Some(rest) = after_lparen.strip_prefix('\'') {
+        let end = rest.find('\'')?;
+        (&rest[..end], &rest[end + 1..])
+    } else if let Some(rest) = after_lparen.strip_prefix('"') {
+        let end = rest.find('"')?;
+        (&rest[..end], &rest[end + 1..])
+    } else {
+        return None;
+    };
+    let after_rparen = after_quote.trim_start().strip_prefix(')')?;
+    // Optional `.Type[.More]` suffix. When absent (`import('foo')`
+    // alone, used as a type annotation referring to the module's
+    // default export), emit the module name as the type — the
+    // existing import-resolver path handles bare-module type refs.
+    let suffix = after_rparen.trim_start();
+    let type_part = if let Some(rest) = suffix.strip_prefix('.') {
+        rest.trim()
+    } else if suffix.is_empty() {
+        return Some((module.to_string(), module.to_string()));
+    } else {
+        return None;
+    };
+    if type_part.is_empty() {
+        return None;
+    }
+    Some((module.to_string(), type_part.to_string()))
+}
+
+#[cfg(test)]
+#[path = "import_type_expression_tests.rs"]
+mod import_type_expression_tests;
