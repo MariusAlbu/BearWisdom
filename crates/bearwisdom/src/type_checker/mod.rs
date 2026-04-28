@@ -35,6 +35,7 @@
 pub mod alias;
 pub mod chain;
 pub mod inheritance;
+pub mod subtype;
 pub mod type_env;
 
 pub use type_env::TypeEnvironment;

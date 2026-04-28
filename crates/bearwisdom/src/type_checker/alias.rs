@@ -17,6 +17,7 @@
 // =============================================================================
 
 use crate::indexer::resolve::engine::SymbolLookup;
+use crate::type_checker::subtype::is_assignable_to;
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::types::AliasTarget;
 
@@ -157,15 +158,39 @@ pub fn expand_alias(
                 }
                 (resolved_source, Vec::new())
             }
+            // `type Foo<T> = T extends U ? X : Y` — pick a branch
+            // when the subtype check decides definitively. Resolve
+            // `check` and `extends` through env first so generic
+            // params bind to their concrete args before the check
+            // fires. Undecidable cases bail with None — chain
+            // walker correctly misses, never picks the wrong branch.
+            AliasTarget::Conditional {
+                check,
+                extends,
+                true_branch,
+                false_branch,
+            } => {
+                let resolved_check = env.resolve(check);
+                let resolved_extends = env.resolve(extends);
+                let next = match is_assignable_to(
+                    &resolved_check,
+                    &resolved_extends,
+                    lookup,
+                ) {
+                    Some(true) => true_branch,
+                    Some(false) => false_branch,
+                    None => return None,
+                };
+                let resolved_next = env.resolve(next);
+                (resolved_next, Vec::new())
+            }
             // Non-application shapes have no single "head" to follow.
             // Future PRs add their own machinery (member-set
-            // semantics for Union/Intersection, subtype-check-driven
-            // branch selection for Conditional, member enumeration
+            // semantics for Union/Intersection, member enumeration
             // for Keyof).
             AliasTarget::Union(_)
             | AliasTarget::Intersection(_)
             | AliasTarget::Keyof(_)
-            | AliasTarget::Conditional { .. }
             | AliasTarget::Object
             | AliasTarget::Other => return None,
         };

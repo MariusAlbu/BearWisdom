@@ -393,25 +393,87 @@ fn mapped_with_unbound_source_returns_none() {
 }
 
 // ---------------------------------------------------------------------------
-// PR 14: conditional types (capture-only; expansion deferred)
+// PR 14/16: conditional types
 // ---------------------------------------------------------------------------
 
 #[test]
-fn conditional_alias_returns_none() {
-    // `type Cond<T> = T extends string ? X : Y` is a Conditional capture;
-    // branch selection needs a subtype check the resolver doesn't have, so
-    // chain walking returns None. The structural form is preserved.
+fn conditional_picks_true_branch_on_identity() {
+    // `type Cond = string extends string ? X : Y` — identity check
+    // resolves true, expands to X.
     let lookup = AliasFixture::new().with_alias(
         "Cond",
         AliasTarget::Conditional {
-            check: "T".to_string(),
+            check: "string".to_string(),
             extends: "string".to_string(),
-            true_branch: "X".to_string(),
-            false_branch: "Y".to_string(),
+            true_branch: "TrueBranch".to_string(),
+            false_branch: "FalseBranch".to_string(),
+        },
+    );
+    let mut env = TypeEnvironment::new();
+    let (root, _) = expand_alias("Cond", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "TrueBranch");
+}
+
+#[test]
+fn conditional_picks_false_branch_on_disjoint_primitives() {
+    // `type Cond = string extends number ? X : Y` — disjoint primitives,
+    // branch goes false.
+    let lookup = AliasFixture::new().with_alias(
+        "Cond",
+        AliasTarget::Conditional {
+            check: "string".to_string(),
+            extends: "number".to_string(),
+            true_branch: "TrueBranch".to_string(),
+            false_branch: "FalseBranch".to_string(),
+        },
+    );
+    let mut env = TypeEnvironment::new();
+    let (root, _) = expand_alias("Cond", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "FalseBranch");
+}
+
+#[test]
+fn conditional_undecidable_returns_none() {
+    // `type Cond = User extends Order ? X : Y` — no parent relationship
+    // recorded, neither side is a primitive — undecidable, returns None.
+    let lookup = AliasFixture::new().with_alias(
+        "Cond",
+        AliasTarget::Conditional {
+            check: "User".to_string(),
+            extends: "Order".to_string(),
+            true_branch: "TrueBranch".to_string(),
+            false_branch: "FalseBranch".to_string(),
         },
     );
     let mut env = TypeEnvironment::new();
     assert_eq!(expand_alias("Cond", &[], &lookup, &mut env), None);
+}
+
+#[test]
+fn conditional_chains_into_alias_target() {
+    // Resolved branch is itself an alias — expand_alias re-enters the
+    // loop and continues collapsing.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Cond",
+            AliasTarget::Conditional {
+                check: "string".to_string(),
+                extends: "string".to_string(),
+                true_branch: "Wrapper".to_string(),
+                false_branch: "Other".to_string(),
+            },
+        )
+        .with_alias(
+            "Wrapper",
+            AliasTarget::Application {
+                root: "Map".to_string(),
+                args: s(&["string", "User"]),
+            },
+        );
+    let mut env = TypeEnvironment::new();
+    let (root, args) = expand_alias("Cond", &[], &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "Map");
+    assert_eq!(args, s(&["string", "User"]));
 }
 
 // ---------------------------------------------------------------------------
