@@ -272,6 +272,81 @@ impl TypeChecker for TypeScriptChecker {
                 continue;
             }
 
+            // Inheritance walk: if the segment isn't a direct field/method of
+            // `current_type`, climb its `parent_class_qname` chain looking
+            // for an inherited member. This is the Phase-2 analogue of the
+            // existing Phase-3 inheritance walk and unblocks the dominant
+            // OO-TypeScript pattern: `this.injectedField.method()` where
+            // `injectedField` is declared on a parent/base class.
+            //
+            //   class BaseRepo { protected db: Kysely<DB>; }
+            //   class UserRepo extends BaseRepo { findOne() { return this.db.selectFrom(...); } }
+            //
+            // Phase 2 hits `db` after `this` resolves to `UserRepo`. UserRepo
+            // doesn't have its own `db` field, but BaseRepo does. Without
+            // this walk the chain dies at the first inherited hop. Cap at
+            // 10 ancestors to guard against malformed inheritance cycles
+            // (matches the Phase-3 cap).
+            let mut inherited_resolution: Option<(String, Vec<String>)> = None;
+            let mut ancestor = current_type.clone();
+            for _ in 0..10 {
+                let Some(parent) = lookup.parent_class_qname(&ancestor) else {
+                    break;
+                };
+                let parent_owned = parent.to_string();
+                let parent_member = format!("{parent_owned}.{}", seg.name);
+                if let Some(next_type) = lookup.field_type_name(&parent_member) {
+                    let new_args = lookup
+                        .field_type_args(&parent_member)
+                        .unwrap_or(&[])
+                        .to_vec();
+                    inherited_resolution = Some((next_type.to_string(), new_args));
+                    break;
+                }
+                if let Some(next_type) = lookup.return_type_name(&parent_member) {
+                    inherited_resolution = Some((next_type.to_string(), Vec::new()));
+                    break;
+                }
+                let mut members_hit: Option<(String, Vec<String>)> = None;
+                for sym in lookup.members_of(&parent_owned) {
+                    if sym.name != seg.name {
+                        continue;
+                    }
+                    if let Some(ft) = lookup.field_type_name(&sym.qualified_name) {
+                        let new_args = lookup
+                            .field_type_args(&sym.qualified_name)
+                            .unwrap_or(&[])
+                            .to_vec();
+                        members_hit = Some((ft.to_string(), new_args));
+                        break;
+                    }
+                    if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
+                        members_hit = Some((rt.to_string(), Vec::new()));
+                        break;
+                    }
+                }
+                if let Some(hit) = members_hit {
+                    inherited_resolution = Some(hit);
+                    break;
+                }
+                if parent_owned == ancestor {
+                    // Self-referential parent map — bail before looping.
+                    break;
+                }
+                ancestor = parent_owned;
+            }
+            if let Some((next_type, new_args)) = inherited_resolution {
+                let resolved_type = env.resolve(&next_type);
+                env.push_scope();
+                if !new_args.is_empty() {
+                    env.enter_generic_context(&resolved_type, &new_args, |name| {
+                        lookup.generic_params(name).map(|p| p.to_vec())
+                    });
+                }
+                current_type = resolved_type;
+                continue;
+            }
+
             // Lost the chain — can't determine the next type. Record a miss
             // so the R3 reload pass can pull current_type's definition file.
             // Upgrade short names ("Assertion") to full external qnames

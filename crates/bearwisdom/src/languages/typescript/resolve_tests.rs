@@ -3379,3 +3379,326 @@ fn transparent_mapped_partial_resolves_through_source() {
         .expect("User.greet must be indexed");
     assert_eq!(result.unwrap().target_symbol_id, *user_greet_id);
 }
+
+// ---------------------------------------------------------------------------
+// PR 19: Phase 2 inheritance walking — intermediate field/method lookups
+// climb the parent_class_qname chain so `this.injectedField.method()`
+// resolves when injectedField is declared on a base class.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn phase2_inheritance_resolves_inherited_field() {
+    let repo = make_symbol("Repo", "Repo", SymbolKind::Class, Visibility::Public, None);
+    let repo_find = ExtractedSymbol {
+        name: "find".to_string(),
+        qualified_name: "Repo.find".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("find(): User".to_string()),
+        doc_comment: None,
+        scope_path: Some("Repo".to_string()),
+        parent_index: Some(0),
+    };
+    let base = make_symbol("Base", "Base", SymbolKind::Class, Visibility::Public, None);
+    let base_db = ExtractedSymbol {
+        name: "db".to_string(),
+        qualified_name: "Base.db".to_string(),
+        kind: SymbolKind::Property,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("db: Repo".to_string()),
+        doc_comment: None,
+        scope_path: Some("Base".to_string()),
+        parent_index: Some(2),
+    };
+    let child = make_symbol("Child", "Child", SymbolKind::Class, Visibility::Public, None);
+    let do_method = ExtractedSymbol {
+        name: "do".to_string(),
+        qualified_name: "Child.do".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("do(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("Child".to_string()),
+        parent_index: Some(4),
+    };
+
+    let base_db_typeref = ExtractedRef {
+        source_symbol_index: 3,
+        target_name: "Repo".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+    let child_inherits_base = ExtractedRef {
+        source_symbol_index: 4,
+        target_name: "Base".to_string(),
+        kind: EdgeKind::Inherits,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 5,
+        target_name: "find".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "db".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "find".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let file = ParsedFile {
+        path: "src/inherit.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![repo, repo_find, base, base_db, child, do_method],
+        refs: vec![base_db_typeref, child_inherits_base, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None; 6],
+        ref_origin_languages: vec![None; 3],
+        symbol_from_snippet: vec![false; 6],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+    };
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[2],
+        source_symbol: &file.symbols[5],
+        scope_chain: build_scope_chain(file.symbols[5].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "this.db.find() must climb Child → Base inheritance to find the inherited db field"
+    );
+    let repo_find_id = id_map
+        .get(&("src/inherit.ts".to_string(), "Repo.find".to_string()))
+        .expect("Repo.find must be indexed");
+    assert_eq!(result.unwrap().target_symbol_id, *repo_find_id);
+}
+
+#[test]
+fn phase2_inheritance_resolves_through_two_hops() {
+    let svc = make_symbol("Svc", "Svc", SymbolKind::Class, Visibility::Public, None);
+    let svc_run = ExtractedSymbol {
+        name: "run".to_string(),
+        qualified_name: "Svc.run".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("run(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("Svc".to_string()),
+        parent_index: Some(0),
+    };
+    let grand = make_symbol("Grand", "Grand", SymbolKind::Class, Visibility::Public, None);
+    let grand_svc = ExtractedSymbol {
+        name: "svc".to_string(),
+        qualified_name: "Grand.svc".to_string(),
+        kind: SymbolKind::Property,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("svc: Svc".to_string()),
+        doc_comment: None,
+        scope_path: Some("Grand".to_string()),
+        parent_index: Some(2),
+    };
+    let mid = make_symbol("Mid", "Mid", SymbolKind::Class, Visibility::Public, None);
+    let leaf = make_symbol("Leaf", "Leaf", SymbolKind::Class, Visibility::Public, None);
+    let do_method = ExtractedSymbol {
+        name: "do".to_string(),
+        qualified_name: "Leaf.do".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("do(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("Leaf".to_string()),
+        parent_index: Some(5),
+    };
+
+    let grand_svc_typeref = ExtractedRef {
+        source_symbol_index: 3,
+        target_name: "Svc".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+    let mid_inherits = ExtractedRef {
+        source_symbol_index: 4,
+        target_name: "Grand".to_string(),
+        kind: EdgeKind::Inherits,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+    let leaf_inherits = ExtractedRef {
+        source_symbol_index: 5,
+        target_name: "Mid".to_string(),
+        kind: EdgeKind::Inherits,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 6,
+        target_name: "run".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "svc".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "run".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let file = ParsedFile {
+        path: "src/two_hops.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![svc, svc_run, grand, grand_svc, mid, leaf, do_method],
+        refs: vec![grand_svc_typeref, mid_inherits, leaf_inherits, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None; 7],
+        ref_origin_languages: vec![None; 4],
+        symbol_from_snippet: vec![false; 7],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+    };
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[3],
+        source_symbol: &file.symbols[6],
+        scope_chain: build_scope_chain(file.symbols[6].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "this.svc.run() must climb Leaf → Mid → Grand to find inherited field"
+    );
+    let svc_run_id = id_map
+        .get(&("src/two_hops.ts".to_string(), "Svc.run".to_string()))
+        .expect("Svc.run must be indexed");
+    assert_eq!(result.unwrap().target_symbol_id, *svc_run_id);
+}
