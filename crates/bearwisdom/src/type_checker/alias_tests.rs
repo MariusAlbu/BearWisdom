@@ -312,16 +312,82 @@ fn typeof_chains_into_alias_target() {
 }
 
 // ---------------------------------------------------------------------------
-// PR 13: mapped types (capture-only; expansion deferred)
+// PR 13/15: mapped types
 // ---------------------------------------------------------------------------
 
 #[test]
-fn mapped_alias_returns_none() {
-    // `type Partial<T> = { [K in keyof T]?: T[K] }` is a Mapped("T")
-    // capture; chain walking can't synthesize members on the fly so
-    // returns None. The structural form is preserved for future PRs.
+fn transparent_mapped_partial_collapses_to_source_arg() {
+    // `type Partial<T> = { [K in keyof T]?: T[K] }`
+    // expand("Partial", ["User"]) should collapse to ("User", [])
+    // so subsequent chain-walking lookups hit User's members.
     let lookup = AliasFixture::new()
-        .with_alias("Partial", AliasTarget::Mapped("T".to_string()));
+        .with_alias(
+            "Partial",
+            AliasTarget::Mapped {
+                source: "T".to_string(),
+                value_template: "T[K]".to_string(),
+            },
+        )
+        .with_generic("Partial", &["T"]);
+    let mut env = TypeEnvironment::new();
+    let (root, args) =
+        expand_alias("Partial", &s(&["User"]), &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "User");
+    assert!(args.is_empty());
+}
+
+#[test]
+fn transparent_mapped_readonly_collapses_to_source_arg() {
+    // `type Readonly<T> = { readonly [K in keyof T]: T[K] }` —
+    // the `readonly` modifier is stripped by the extractor; the
+    // value template arrives as "T[K]".
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Readonly",
+            AliasTarget::Mapped {
+                source: "T".to_string(),
+                value_template: "T[K]".to_string(),
+            },
+        )
+        .with_generic("Readonly", &["T"]);
+    let mut env = TypeEnvironment::new();
+    let (root, _) = expand_alias("Readonly", &s(&["Order"]), &lookup, &mut env).expect("expanded");
+    assert_eq!(root, "Order");
+}
+
+#[test]
+fn non_transparent_mapped_returns_none() {
+    // `type Record<K, V> = { [P in K]: V }` — value template is "V",
+    // not "{source}[K]". Can't collapse without member synthesis.
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Record",
+            AliasTarget::Mapped {
+                source: "K".to_string(),
+                value_template: "V".to_string(),
+            },
+        )
+        .with_generic("Record", &["K", "V"]);
+    let mut env = TypeEnvironment::new();
+    assert_eq!(
+        expand_alias("Record", &s(&["string", "boolean"]), &lookup, &mut env),
+        None
+    );
+}
+
+#[test]
+fn mapped_with_unbound_source_returns_none() {
+    // `Partial` referenced without a generic arg (`type Foo = Partial<unknown_T>`)
+    // can't collapse — the source stays as the param name "T".
+    let lookup = AliasFixture::new()
+        .with_alias(
+            "Partial",
+            AliasTarget::Mapped {
+                source: "T".to_string(),
+                value_template: "T[K]".to_string(),
+            },
+        )
+        .with_generic("Partial", &["T"]);
     let mut env = TypeEnvironment::new();
     assert_eq!(expand_alias("Partial", &[], &lookup, &mut env), None);
 }

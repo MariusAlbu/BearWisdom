@@ -114,16 +114,57 @@ pub fn expand_alias(
                 };
                 (new_head, Vec::new())
             }
+            // `type Partial<T> = { [K in keyof T]?: T[K] }` and the
+            // sibling utility types (Required, Readonly) are
+            // *transparent* — accessing a property on the mapped
+            // type behaves the same as accessing it on the source.
+            // Detect the pattern syntactically: `value_template`
+            // matches `{source}[{anything}]`. When it does, the
+            // mapped alias collapses to the concrete source type
+            // bound in the caller's args; chain walking continues
+            // against the source's members directly. Everything
+            // else (Record's flat value, fully custom mappings)
+            // returns None — those need member synthesis a future
+            // PR provides.
+            AliasTarget::Mapped {
+                source,
+                value_template,
+            } => {
+                if !is_transparent_mapped(source, value_template) {
+                    return None;
+                }
+                // Resolve `source` (the alias's generic param,
+                // typically "T") through the caller's args and the
+                // ambient env. The result is the concrete type the
+                // caller passed for that param.
+                let params = lookup
+                    .generic_params(&head)
+                    .map(|p| p.to_vec())
+                    .unwrap_or_default();
+                let resolved_source = if let Some(idx) = params.iter().position(|p| p == source) {
+                    if idx < args.len() {
+                        args[idx].clone()
+                    } else {
+                        env.resolve(source)
+                    }
+                } else {
+                    env.resolve(source)
+                };
+                if resolved_source == *source {
+                    // Still bound to the param name (e.g. `Partial<T>`
+                    // where T is unbound) — nothing to expand into.
+                    return None;
+                }
+                (resolved_source, Vec::new())
+            }
             // Non-application shapes have no single "head" to follow.
             // Future PRs add their own machinery (member-set
-            // semantics for Union/Intersection, dynamic member
-            // synthesis for Mapped, subtype-check-driven branch
-            // selection for Conditional, member enumeration for
-            // Keyof).
+            // semantics for Union/Intersection, subtype-check-driven
+            // branch selection for Conditional, member enumeration
+            // for Keyof).
             AliasTarget::Union(_)
             | AliasTarget::Intersection(_)
             | AliasTarget::Keyof(_)
-            | AliasTarget::Mapped(_)
             | AliasTarget::Conditional { .. }
             | AliasTarget::Object
             | AliasTarget::Other => return None,
@@ -182,6 +223,30 @@ pub fn expand_alias(
     }
 
     Some((head, args))
+}
+
+/// Recognise the *transparent* mapped-type pattern
+/// `{ [K in keyof T]: T[K] }` (with optional readonly/optional
+/// modifiers, which are stripped by the extractor). The check is
+/// purely syntactic: `value_template` must start with `source`,
+/// followed by `[`, followed by any text, followed by `]`. The text
+/// inside the brackets is the iteration variable name; we don't
+/// validate it because the alias-target extractor doesn't capture
+/// the variable name and the iteration variable is necessarily
+/// fresh per mapped type. False positives (`source[other_thing]`
+/// where other_thing isn't K) are extremely rare in real TS code.
+fn is_transparent_mapped(source: &str, value_template: &str) -> bool {
+    if source.is_empty() || value_template.is_empty() {
+        return false;
+    }
+    let Some(rest) = value_template.strip_prefix(source) else {
+        return false;
+    };
+    let rest = rest.trim_start();
+    let Some(rest) = rest.strip_prefix('[') else {
+        return false;
+    };
+    rest.trim_end().ends_with(']')
 }
 
 #[cfg(test)]

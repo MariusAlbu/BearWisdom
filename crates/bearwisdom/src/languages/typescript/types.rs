@@ -125,40 +125,61 @@ pub(super) fn classify_alias_target(value_node: &Node, src: &[u8]) -> AliasTarge
         }
         "object_type" => AliasTarget::Object,
         // `type Foo<T> = { [K in keyof T]: U }` — mapped type. Walk
-        // the `mapped_type_clause` child to find the keyof source.
-        // We record only the source target name (or empty string if
-        // the iteration source isn't a keyof). The chain walker
-        // doesn't expand mapped types yet; this capture is for a
-        // future PR that synthesises members on demand.
+        // the `mapped_type_clause` child to find the keyof source,
+        // then read the value template from the mapped_type's
+        // remaining type child. Both pieces are needed so PR 15's
+        // expander can detect the transparent `T[K]` pattern.
         "mapped_type" => {
             let mut source = String::new();
+            let mut value_template = String::new();
             for i in 0..node.child_count() {
                 let Some(child) = node.child(i) else { continue };
-                if child.kind() != "mapped_type_clause" {
-                    continue;
-                }
-                // The clause's `type` field is the iteration source —
-                // either a `keyof_type`/`index_type_query` or a
-                // type expression to iterate over (`"a" | "b"`).
-                if let Some(type_node) = child.child_by_field_name("type") {
-                    if matches!(type_node.kind(), "keyof_type" | "index_type_query") {
-                        // Find the operand of keyof.
-                        for j in 0..type_node.child_count() {
-                            let Some(op) = type_node.child(j) else { continue };
-                            if op.kind() == "keyof" {
-                                continue;
-                            }
-                            let name = head_type_name(&op, src);
-                            if !name.is_empty() {
-                                source = name;
-                                break;
+                match child.kind() {
+                    "mapped_type_clause" => {
+                        // The clause's `type` field is the iteration
+                        // source — either a `keyof_type` /
+                        // `index_type_query` or a type expression to
+                        // iterate over (`"a" | "b"`).
+                        if let Some(type_node) = child.child_by_field_name("type") {
+                            if matches!(
+                                type_node.kind(),
+                                "keyof_type" | "index_type_query"
+                            ) {
+                                for j in 0..type_node.child_count() {
+                                    let Some(op) = type_node.child(j) else { continue };
+                                    if op.kind() == "keyof" {
+                                        continue;
+                                    }
+                                    let name = head_type_name(&op, src);
+                                    if !name.is_empty() {
+                                        source = name;
+                                        break;
+                                    }
+                                }
                             }
                         }
                     }
+                    // Skip syntactic noise; everything else is the
+                    // value template (the type after `:`).
+                    "{" | "}" | ":" | "?" | "+" | "-" | "readonly" => {}
+                    _ => {
+                        if child.is_named() && value_template.is_empty() {
+                            // Take the raw text — PR 15's expander
+                            // checks for the `T[K]` pattern via a
+                            // simple syntactic match, which is the
+                            // dominant case for utility types
+                            // (Partial / Required / Readonly).
+                            value_template = node_text(child, src)
+                                .trim()
+                                .to_string();
+                        }
+                    }
                 }
-                break;
             }
-            return AliasTarget::Mapped(source);
+            return AliasTarget::Mapped {
+                source,
+                value_template,
+            };
         }
         // `type Foo<T> = T extends U ? X : Y` — conditional type.
         // Read the four sub-expressions in source order. tree-sitter

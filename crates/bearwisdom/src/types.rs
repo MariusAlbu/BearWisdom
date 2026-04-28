@@ -218,15 +218,22 @@ pub enum AliasTarget {
     /// - `keyof T` key, union, etc.: union of all member types —
     ///   deferred (no single head). PR 12.
     IndexedAccess { object: String, key: String },
-    /// `type Foo<T> = { [K in keyof T]: U }` — mapped type. The
-    /// payload is the keyof source target (the `T` in
-    /// `[K in keyof T]`); empty when the source isn't a `keyof T`
-    /// shape (e.g. `[K in "a" | "b"]`). Chain walking returns None
-    /// because realising the synthesized members requires either
-    /// pre-population in the index or a dynamic
-    /// `members_of(mapped, base_type)` lookup. The structural form
-    /// is captured for a future PR to consume. PR 13.
-    Mapped(String),
+    /// `type Foo<T> = { [K in keyof T]: U }` — mapped type.
+    /// `source` is the keyof target (the `T` in `[K in keyof T]`);
+    /// empty when the source isn't a `keyof T` shape.
+    /// `value_template` is the index-signature value type as written
+    /// (e.g. `"T[K]"`, `"V"`, `"boolean"`).
+    /// PR 15 expands the *transparent* pattern: when value_template
+    /// is syntactically `{source}[{key_var}]` (covers
+    /// `Partial<T>` / `Required<T>` / `Readonly<T>`), member access
+    /// on the mapped type falls through to the source's members —
+    /// so `Partial<User>.name` resolves to `User.name`.
+    /// Other shapes (`Record<K, V>`, custom mapped types where the
+    /// value template doesn't reference T[K]) return None. PR 13/15.
+    Mapped {
+        source: String,
+        value_template: String,
+    },
     /// `type Foo<T> = T extends U ? X : Y` — conditional type. The
     /// four type expressions are stored as written (each reduced to
     /// its head name); the chain walker returns None because branch

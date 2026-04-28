@@ -3162,3 +3162,207 @@ fn typeof_alias_dereferences_to_value_type() {
         .expect("User.greet must be indexed");
     assert_eq!(result.unwrap().target_symbol_id, *user_greet_id);
 }
+
+// ---------------------------------------------------------------------------
+// PR 15: transparent mapped type expansion
+// ---------------------------------------------------------------------------
+
+/// `interface User { name: string; greet(): void }`
+/// `type Partial<T> = { [K in keyof T]?: T[K] }`
+/// `class C { p: Partial<User>; do() { this.p.greet() } }`
+/// — `Partial<User>` is a transparent mapped type; member access
+/// should fall through to `User`.
+#[test]
+fn transparent_mapped_partial_resolves_through_source() {
+    let user_class = ExtractedSymbol {
+        name: "User".to_string(),
+        qualified_name: "User".to_string(),
+        kind: SymbolKind::Class,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("class User".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    };
+    let user_greet = ExtractedSymbol {
+        name: "greet".to_string(),
+        qualified_name: "User.greet".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("greet(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("User".to_string()),
+        parent_index: Some(0),
+    };
+    // Partial<T> alias — generic param T captured via signature.
+    let partial_alias = ExtractedSymbol {
+        name: "Partial".to_string(),
+        qualified_name: "Partial".to_string(),
+        kind: SymbolKind::TypeAlias,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("type Partial<T>".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    };
+    let c_class = make_symbol("C", "C", SymbolKind::Class, Visibility::Public, None);
+    // `p: Partial<User>` — engine sees TypeRef(Partial) followed by
+    // TypeRef(User), reads field_type[C.p] = "Partial",
+    // field_type_args[C.p] = ["User"].
+    let p_field = ExtractedSymbol {
+        name: "p".to_string(),
+        qualified_name: "C.p".to_string(),
+        kind: SymbolKind::Property,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("p: Partial<User>".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(3),
+    };
+    let do_method = ExtractedSymbol {
+        name: "do".to_string(),
+        qualified_name: "C.do".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("do(): void".to_string()),
+        doc_comment: None,
+        scope_path: Some("C".to_string()),
+        parent_index: Some(3),
+    };
+
+    let p_typeref_partial = ExtractedRef {
+        source_symbol_index: 4,
+        target_name: "Partial".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+    let p_typeref_user = ExtractedRef {
+        source_symbol_index: 4,
+        target_name: "User".to_string(),
+        kind: EdgeKind::TypeRef,
+        line: 0,
+        module: None,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 5,
+        target_name: "greet".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                ChainSegment {
+                    name: "this".to_string(),
+                    node_kind: "this".to_string(),
+                    kind: SegmentKind::SelfRef,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "p".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "greet".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let file = ParsedFile {
+        path: "src/mapped.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![
+            user_class,
+            user_greet,
+            partial_alias,
+            c_class,
+            p_field,
+            do_method,
+        ],
+        refs: vec![p_typeref_partial, p_typeref_user, chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None; 6],
+        ref_origin_languages: vec![None; 3],
+        symbol_from_snippet: vec![false; 6],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: vec![(
+            "Partial".to_string(),
+            AliasTarget::Mapped {
+                source: "T".to_string(),
+                value_template: "T[K]".to_string(),
+            },
+        )],
+    };
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[2],
+        source_symbol: &file.symbols[5],
+        scope_chain: build_scope_chain(file.symbols[5].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "this.p.greet() on Partial<User> must collapse through to User.greet"
+    );
+    let user_greet_id = id_map
+        .get(&("src/mapped.ts".to_string(), "User.greet".to_string()))
+        .expect("User.greet must be indexed");
+    assert_eq!(result.unwrap().target_symbol_id, *user_greet_id);
+}
