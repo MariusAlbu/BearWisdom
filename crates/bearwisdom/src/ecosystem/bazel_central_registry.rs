@@ -585,6 +585,7 @@ pub fn synth_ctx_api() -> ParsedFile {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 
@@ -658,6 +659,7 @@ pub fn synth_env_api() -> ParsedFile {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 
@@ -734,6 +736,7 @@ pub fn synth_builtin_rules() -> ParsedFile {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 

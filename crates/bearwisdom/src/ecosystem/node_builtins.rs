@@ -333,6 +333,7 @@ fn synth_module(spec: &ModuleSpec, prefix: &str) -> ParsedFile {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 

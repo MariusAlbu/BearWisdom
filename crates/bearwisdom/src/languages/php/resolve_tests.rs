@@ -74,6 +74,7 @@ fn make_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRef>)
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 
@@ -109,6 +110,7 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);

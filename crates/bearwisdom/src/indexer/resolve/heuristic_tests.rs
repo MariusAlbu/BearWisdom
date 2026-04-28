@@ -23,6 +23,7 @@ fn make_parsed_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<Extract
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 

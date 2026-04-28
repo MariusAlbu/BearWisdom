@@ -79,6 +79,7 @@ fn make_ts_file(path: &str, symbols: Vec<ExtractedSymbol>, refs: Vec<ExtractedRe
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 
@@ -115,6 +116,7 @@ fn build_test_env(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, Strin
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: f.alias_targets.clone(),
+            component_selectors: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
@@ -2156,6 +2158,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // The consumer file: `import { expect } from 'chai'` + the chain ref.
@@ -2220,6 +2223,7 @@ fn call_root_chain_expect_from_chai_resolves_to_be() {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&chai_file, &consumer_file]);
@@ -2316,6 +2320,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // Consumer file: NO import for `expect` — globals mode.
@@ -2366,6 +2371,7 @@ fn call_root_chain_expect_global_vitest_resolves_spy_matcher() {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
@@ -2472,6 +2478,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // Consumer file: User class, UserMap alias, UserManager class with the chain ref.
@@ -2606,6 +2613,7 @@ fn alias_expansion_dereferences_type_alias_through_chain() {
                 args: vec!["string".to_string(), "User".to_string()],
             },
         )],
+        component_selectors: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
@@ -2692,6 +2700,7 @@ fn alias_expansion_handles_array_type_form() {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     let numbers_alias = make_symbol(
@@ -2807,6 +2816,7 @@ fn alias_expansion_handles_array_type_form() {
                 args: vec!["number".to_string()],
             },
         )],
+        component_selectors: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&synth_file, &consumer_file]);
@@ -2950,6 +2960,7 @@ fn alias_expansion_refuses_union_aliases() {
             "Status".to_string(),
             AliasTarget::Union(vec!["\"open\"".to_string(), "\"closed\"".to_string()]),
         )],
+        component_selectors: Vec::new(),
     };
 
     let (index, _) = build_test_env(&[&file]);
@@ -3139,6 +3150,7 @@ fn typeof_alias_dereferences_to_value_type() {
             "ApiType".to_string(),
             AliasTarget::Typeof("api".to_string()),
         )],
+        component_selectors: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&file]);
@@ -3343,6 +3355,7 @@ fn transparent_mapped_partial_resolves_through_source() {
                 value_template: "T[K]".to_string(),
             },
         )],
+        component_selectors: Vec::new(),
     };
 
     let (index, id_map) = build_test_env(&[&file]);

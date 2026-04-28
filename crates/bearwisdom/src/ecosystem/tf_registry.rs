@@ -562,6 +562,7 @@ fn build_parsed_file(virtual_path: String, symbols: Vec<ExtractedSymbol>) -> Par
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 

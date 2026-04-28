@@ -19,6 +19,7 @@ use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManife
 use crate::ecosystem::{
     self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
 };
+use crate::languages::vue::global_registry::VueGlobalRegistry;
 use crate::types::PackageInfo;
 
 // ---------------------------------------------------------------------------
@@ -130,6 +131,18 @@ pub struct ProjectContext {
     /// `EcosystemActivation::LanguagePresent(lang)` predicate during
     /// initialization, and is itself a useful signal for diagnostics.
     pub language_presence: HashSet<String>,
+
+    /// Vue-specific: project-wide globally-registered component map, populated
+    /// after the file-scan pass in `full_index` (and the incremental equivalent).
+    ///
+    /// Used by `VueResolver::build_file_context` to inject synthetic import
+    /// entries for components that are registered globally (via `app.use()`,
+    /// `app.component()`, or `unplugin-vue-components`) so that the standard
+    /// TS import-resolution chain can resolve them.
+    ///
+    /// `Default` leaves this empty; the full indexer populates it by calling
+    /// `languages::vue::global_registry::scan_global_registrations`.
+    pub vue_global_registry: VueGlobalRegistry,
 }
 
 // ---------------------------------------------------------------------------
@@ -157,6 +170,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         gradle_catalog_names,
         active_ecosystems: Vec::new(),
         language_presence: HashSet::new(),
+        vue_global_registry: VueGlobalRegistry::default(),
     }
 }
 
@@ -251,6 +265,7 @@ pub fn build_project_context_with_packages(
         gradle_catalog_names,
         active_ecosystems: Vec::new(),
         language_presence: HashSet::new(),
+        vue_global_registry: VueGlobalRegistry::default(),
     }
 }
 

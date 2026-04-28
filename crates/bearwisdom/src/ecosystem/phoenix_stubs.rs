@@ -239,6 +239,7 @@ fn synth_module_file(module_qname: &str, macros: &[&str]) -> ParsedFile {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 

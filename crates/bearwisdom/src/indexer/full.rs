@@ -439,12 +439,35 @@ pub fn full_index(
         }
         set.into_iter().collect()
     };
-    let project_ctx = super::project_context::ProjectContext::initialize(
+    let mut project_ctx = super::project_context::ProjectContext::initialize(
         project_root,
         &written_packages,
         distinct_langs,
         crate::ecosystem::default_registry(),
     );
+
+    // --- Step 4b.1: Vue global component registry ---
+    // Only run when the project contains Vue files — avoids the filesystem
+    // scan cost on pure TS/Java/Go projects.
+    if project_ctx.language_presence.contains("vue") {
+        let parsed_paths: Vec<String> = parsed
+            .iter()
+            .filter(|pf| !pf.path.starts_with("ext:"))
+            .map(|pf| pf.path.clone())
+            .collect();
+        let vue_registry = crate::languages::vue::global_registry::scan_global_registrations(
+            project_root,
+            &parsed_paths,
+        );
+        if !vue_registry.is_empty() {
+            info!(
+                "Vue global registry: {} components/prefixes, unplugin_auto_import={}",
+                vue_registry.components.len(),
+                vue_registry.has_unplugin_auto_import,
+            );
+        }
+        project_ctx.vue_global_registry = vue_registry;
+    }
     mem_probe::probe("04_project_ctx_built");
 
     // --- Step 4c: Write per-package dependency graph (M3) ---
@@ -949,6 +972,7 @@ pub(crate) fn parse_file_with_demand(
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
         });
     }
 
@@ -1024,6 +1048,16 @@ pub(crate) fn parse_file_with_demand(
     let connection_points =
         plugin.extract_connection_points(&content, &walked.relative_path, walked.language);
 
+    // Angular @Component selector metadata — populated for TypeScript and
+    // Angular files so the resolver can map kebab-case template tags to real
+    // component class qualified names without falling back to kebab→PascalCase
+    // guessing.
+    let component_selectors = if matches!(walked.language, "typescript" | "angular") {
+        crate::languages::typescript::extract::extract_component_selectors(&content, &r.symbols)
+    } else {
+        Vec::new()
+    };
+
     Ok(ParsedFile {
         path: walked.relative_path.clone(),
         language: walked.language.to_string(),
@@ -1045,6 +1079,7 @@ pub(crate) fn parse_file_with_demand(
         connection_points,
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors,
     })
 }
 

@@ -816,6 +816,7 @@ fn parse_dotnet_dll(
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     })
 }
 
@@ -1172,6 +1173,7 @@ fn parse_cs_source_file(
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     })
 }
 

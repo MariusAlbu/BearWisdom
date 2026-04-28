@@ -136,6 +136,7 @@ mod tests {
             connection_points: points,
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
         }
     }
 

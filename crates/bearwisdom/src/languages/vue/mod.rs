@@ -17,12 +17,13 @@ pub(crate) mod predicates;
 pub(crate) mod type_checker;
 pub mod connectors;
 pub mod extract;
+pub mod global_registry;
 
 #[cfg(test)]
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
-use crate::indexer::resolve::engine::{FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup};
+use crate::indexer::resolve::engine::{FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup};
 use crate::indexer::project_context::ProjectContext;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -48,8 +49,66 @@ impl LanguageResolver for VueResolver {
         file: &crate::types::ParsedFile,
         project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
-        crate::languages::typescript::resolve::TypeScriptResolver
-            .build_file_context(file, project_ctx)
+        let mut ctx = crate::languages::typescript::resolve::TypeScriptResolver
+            .build_file_context(file, project_ctx);
+
+        // Inject synthetic import entries for globally-registered Vue components.
+        //
+        // For each Calls ref whose target is PascalCase and doesn't already
+        // appear in the file's import list, check the project-wide
+        // `vue_global_registry`.  If a library covers that component (via a
+        // prefix convention), add a synthetic ImportEntry so the TS resolver's
+        // existing import loop resolves `ComponentName` → `package.ComponentName`
+        // against the external index.
+        if let Some(ctx_ref) = project_ctx {
+            let registry = &ctx_ref.vue_global_registry;
+            if !registry.is_empty() {
+                // Collect component names referenced by this file via Calls edges.
+                // We only process refs with no module (i.e., not already imported).
+                let already_imported: std::collections::HashSet<&str> =
+                    ctx.imports.iter().map(|e| e.imported_name.as_str()).collect();
+
+                let mut extra_imports: Vec<ImportEntry> = Vec::new();
+                for r in &file.refs {
+                    let name = &r.target_name;
+                    // Only PascalCase names (component references)
+                    if !name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                        continue;
+                    }
+                    // Already imported — skip
+                    if already_imported.contains(name.as_str()) {
+                        continue;
+                    }
+                    // Avoid duplicates within the extra list
+                    if extra_imports.iter().any(|e| &e.imported_name == name) {
+                        continue;
+                    }
+                    // Check global registry for a library match
+                    if let Some(pkg) = global_registry::library_for_name(registry, name) {
+                        extra_imports.push(ImportEntry {
+                            imported_name: name.clone(),
+                            module_path: Some(pkg.to_string()),
+                            alias: None,
+                            is_wildcard: false,
+                        });
+                    }
+                    // Check explicit single-component registrations — inject a
+                    // wildcard entry so the by-name heuristic can find the symbol.
+                    // We don't know the exact file path at this point, but we
+                    // can mark the component as "global" so it's not classified
+                    // as external.  The heuristic resolver will find it via
+                    // `by_name` if it's indexed.
+                    // (No action needed here — the heuristic already falls back
+                    // to by-name lookup; the entry in the registry is enough to
+                    // prevent external classification via `infer_external_namespace`.)
+                }
+                if !extra_imports.is_empty() {
+                    ctx.imports.extend(extra_imports);
+                }
+            }
+        }
+
+        ctx
     }
 
     fn resolve(
@@ -68,6 +127,20 @@ impl LanguageResolver for VueResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
+        // If this component is globally registered (explicitly via app.component),
+        // suppress external classification so the heuristic resolver can find
+        // it by name in the project index.
+        if let Some(ctx_ref) = project_ctx {
+            let registry = &ctx_ref.vue_global_registry;
+            let name = &ref_ctx.extracted_ref.target_name;
+            if name.chars().next().map_or(false, |c| c.is_uppercase()) {
+                if let Some(global_registry::VueComponentSource::ExplicitRegistration { .. }) =
+                    registry.components.get(name.as_str())
+                {
+                    return None;
+                }
+            }
+        }
         crate::languages::typescript::resolve::TypeScriptResolver
             .infer_external_namespace(file_ctx, ref_ctx, project_ctx)
     }

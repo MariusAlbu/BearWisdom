@@ -652,6 +652,7 @@ fn synth_relation_file(
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 
@@ -720,6 +721,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -752,6 +754,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -784,6 +787,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -811,6 +815,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // -------------------------------------------------------------------------
@@ -844,6 +849,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     let collection_alias = synth_class("Collection", "Collection", COLLECTION_METHODS, 0);
@@ -868,6 +874,7 @@ fn synthesize_all() -> Vec<ParsedFile> {
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     };
 
     // -------------------------------------------------------------------------

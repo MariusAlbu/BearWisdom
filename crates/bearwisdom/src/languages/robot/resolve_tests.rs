@@ -97,6 +97,7 @@ fn make_file(path: &str, language: &str, symbols: Vec<ExtractedSymbol>, refs: Ve
         connection_points: Vec::new(),
         demand_contributions: Vec::new(),
         alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
     }
 }
 
@@ -132,6 +133,7 @@ fn build_index(files: &[&ParsedFile]) -> (SymbolIndex, HashMap<(String, String),
             connection_points: Vec::new(),
             demand_contributions: Vec::new(),
             alias_targets: Vec::new(),
+            component_selectors: Vec::new(),
         })
         .collect();
     let index = SymbolIndex::build(&owned, &id_map);
