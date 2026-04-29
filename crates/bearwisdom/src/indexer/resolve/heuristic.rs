@@ -988,7 +988,18 @@ pub(super) fn build_name_index(
         // without full chain-type inference. Framework-native packages
         // (`@vitest/*`, `@jest/*`) should come through via npm transitive
         // discovery, not heuristic; this filter stays narrow.
-        lower.contains("@types/") && lower.ends_with(".d.ts")
+        if lower.contains("@types/") && lower.ends_with(".d.ts") {
+            return true;
+        }
+        // SCSS files in node_modules are also runtime-global callable.
+        // Sass test frameworks (sass-true, true) and mixin libraries
+        // (bootstrap, foundation) define `@function` / `@mixin`
+        // declarations the user code calls by bare name (`@include
+        // assert-equal(...)`) without an explicit `@import` — the test
+        // runner injects them at compile time. Mirroring the @types
+        // exception keeps these `name_to_ids`-resolvable so the bare-
+        // name heuristic finds them.
+        lower.starts_with("ext:scss:") && lower.ends_with(".scss")
     }
 
     let mut kind_map: FxHashMap<(&str, &str), &str> = FxHashMap::default();

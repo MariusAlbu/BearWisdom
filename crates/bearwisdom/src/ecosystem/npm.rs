@@ -224,7 +224,73 @@ fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::wal
             }
         }
     }
+
+    // SCSS pre-pull. Sass test frameworks (sass-true, true, sass-mq) and
+    // mixin libraries (bootstrap, foundation) ship `.scss` source under
+    // `node_modules/<pkg>/sass/` or `<pkg>/_*.scss`. Demand-driven import
+    // resolution doesn't pull these — SCSS test runners inject the
+    // assertion mixins (`assert-equal`, `assert-true`, `describe`, `it`)
+    // as ambient globals at compile time, so user `.scss` source has no
+    // explicit `@import "sass-true"` for the npm walker to follow. Walk
+    // every dep's `.scss` content eagerly: cheap because most deps have
+    // zero `.scss` files (the walker bails before recursing into trees
+    // dominated by `.js`/`.d.ts`).
+    for dep in dep_roots {
+        out.extend(walk_scss_external_root(dep));
+    }
     out
+}
+
+/// Walk a dep root and yield every indexable `.scss` file. Mirrors
+/// `walk_ts_external_root` but tags files with `language="scss"` so the
+/// SCSS plugin handles parsing. Skips test/example/fixture/dot dirs and
+/// nested `node_modules` (same exclusions as the TS walker).
+fn walk_scss_external_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let mut out = Vec::new();
+    walk_scss_dir_bounded(&dep.root, &dep.root, dep, &mut out, 0);
+    out
+}
+
+fn walk_scss_dir_bounded(
+    dir: &Path,
+    root: &Path,
+    dep: &ExternalDepRoot,
+    out: &mut Vec<WalkedFile>,
+    depth: u32,
+) {
+    if depth >= MAX_WALK_DEPTH { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else { continue };
+        let path = entry.path();
+        if file_type.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name == "node_modules" { continue }
+                if name.starts_with('.') { continue }
+                if matches!(
+                    name,
+                    "__tests__" | "__mocks__" | "test" | "tests" | "docs"
+                        | "example" | "examples" | "_examples" | "fixtures"
+                ) { continue }
+            }
+            walk_scss_dir_bounded(&path, root, dep, out, depth + 1);
+        } else if file_type.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".scss") { continue }
+            if is_test_or_story_file(name) { continue }
+
+            let rel_sub = match path.strip_prefix(root) {
+                Ok(p) => normalize_virtual_rel(&p.to_string_lossy()),
+                Err(_) => continue,
+            };
+            let virtual_path = format!("ext:scss:{}/{}", dep.module_path, rel_sub);
+            out.push(WalkedFile {
+                relative_path: virtual_path,
+                absolute_path: path,
+                language: "scss",
+            });
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
