@@ -276,6 +276,36 @@ impl LanguageResolver for KotlinResolver {
             }
         }
 
+        // Kotlin bare-name fallback. Continues the cross-language
+        // template (PRs 31, 35-40, Lua, Go, Rust). Kotlin extension
+        // functions, top-level declarations, and JVM-bridge static
+        // imports can call bare names without an explicit module
+        // qualifier the engine binds. Gated by `.kt`/`.kts` file
+        // extension and `kind_compatible`.
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_kotlin = path.ends_with(".kt") || path.ends_with(".kts");
+                if !is_kotlin {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "kotlin_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         None
     }
 

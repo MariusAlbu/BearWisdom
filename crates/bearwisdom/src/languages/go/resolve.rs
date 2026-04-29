@@ -291,6 +291,65 @@ impl LanguageResolver for GoResolver {
             }
         }
 
+        // Go bare-name fallback. 9th language using the
+        // `<lang>_bare_name` template (PRs 31, 35-40, plus Lua).
+        // Go's package-qualified calls (`pkg.Func()`) hit the
+        // module path, but bare imports and lambda-style calls
+        // benefit from index-wide name lookup. Gated by `.go`
+        // file-extension and `kind_compatible`.
+        //
+        // Honors Go visibility: exported identifiers start with an
+        // uppercase letter; unexported (lowercase-leading) names
+        // can only resolve to symbols defined in the same package.
+        // Skip lowercase-leading targets here unless the candidate
+        // shares the source file's package directory — same logic
+        // the deterministic paths apply.
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+        {
+            let is_exported = target.chars().next().is_some_and(|c| c.is_uppercase());
+            let source_dir = ref_ctx
+                .extracted_ref
+                .module
+                .as_deref()
+                .unwrap_or("")
+                .to_string();
+            let source_pkg_dir = file_ctx
+                .file_path
+                .rfind('/')
+                .map(|i| &file_ctx.file_path[..i])
+                .unwrap_or("");
+            let _ = source_dir;
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_go = path.ends_with(".go") || path.starts_with("ext:go:");
+                if !is_go {
+                    continue;
+                }
+                if !is_exported {
+                    let target_pkg_dir = path
+                        .rfind('/')
+                        .map(|i| &path[..i])
+                        .unwrap_or("");
+                    if target_pkg_dir != source_pkg_dir {
+                        continue;
+                    }
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "go_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }

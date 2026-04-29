@@ -155,6 +155,34 @@ impl LanguageResolver for DartResolver {
             }
         }
 
+        // Dart bare-name fallback. Continues the cross-language
+        // template (PRs 31, 35-40, plus Lua, Go, Rust, Kotlin, Ruby).
+        // Dart's `import 'package:foo/bar.dart'` brings whole
+        // libraries into scope; bare-name calls fall here when the
+        // engine's module/import path can't bind. Gated by `.dart`
+        // file extension.
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_dart = path.ends_with(".dart");
+                if !is_dart {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "dart_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         None
     }
 

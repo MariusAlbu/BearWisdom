@@ -163,6 +163,33 @@ impl LanguageResolver for SwiftResolver {
             }
         }
 
+        // Swift bare-name fallback. Final language in the cross-language
+        // template (PRs 31, 35-40, plus Lua, Go, Rust, Kotlin, Ruby,
+        // Dart). Swift's protocol extensions and global functions are
+        // callable by bare name across modules. Gated by `.swift`
+        // file extension.
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_swift = path.ends_with(".swift");
+                if !is_swift {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "swift_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         None
     }
 

@@ -78,7 +78,42 @@ impl LanguageResolver for LuaResolver {
             return None;
         }
 
-        engine::resolve_common("lua", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(res) = engine::resolve_common(
+            "lua", file_ctx, ref_ctx, lookup, predicates::kind_compatible,
+        ) {
+            return Some(res);
+        }
+
+        // Lua bare-name fallback. 8th language using the
+        // `<lang>_bare_name` template (PRs 31, 35-40). Lua's
+        // require()-loaded modules and `M.X` table dispatch leave
+        // many calls without an explicit module qualifier the engine
+        // can bind. Index-wide name lookup gated by `.lua`/`.luac`
+        // file-extension and `kind_compatible`.
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+            && !target.contains(':')
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_lua = path.ends_with(".lua") || path.ends_with(".luac");
+                if !is_lua {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "lua_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(

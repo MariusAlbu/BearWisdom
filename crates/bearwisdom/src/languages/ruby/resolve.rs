@@ -263,6 +263,37 @@ impl LanguageResolver for RubyResolver {
             }
         }
 
+        // Ruby bare-name fallback. Continues the cross-language
+        // template (PRs 31, 35-40, plus Lua, Go, Rust, Kotlin).
+        // Ruby's open classes, monkey-patching, and `include`/`extend`
+        // mixins put many methods in scope by bare name. Engine's
+        // module/import path can't follow Ruby's runtime composition.
+        // Gated by `.rb`/`.rbs` file extension.
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains("::")
+            && !target.contains('.')
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_ruby = path.ends_with(".rb") || path.ends_with(".rbs");
+                if !is_ruby {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "ruby_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }
