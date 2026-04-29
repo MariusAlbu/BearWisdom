@@ -205,7 +205,19 @@ fn collect_python_manifests<'a>(
     }
 }
 
-/// Parse package names from `pyproject.toml` (PEP 621 + Poetry formats).
+/// Parse package names from `pyproject.toml` covering:
+///   * PEP 621 `[project]` dependencies array + `[project.optional-dependencies.*]`
+///   * PEP 735 `[dependency-groups]` (the modern dev-deps format that uv,
+///     hatch, and PDM read; paperless-ngx, Django itself, and most
+///     pyproject.toml-driven projects in 2026 use it)
+///   * Poetry `[tool.poetry.dependencies]` + dev-dependencies / group.X
+///   * Poetry `[tool.poetry.group.<name>.dependencies]`
+///
+/// Without `[dependency-groups]` and `[project.optional-dependencies]`
+/// support, dev/test deps (pytest, factory-boy, pytest-django, …) stay
+/// invisible to the externals walker and every test-framework call goes
+/// unresolved — hits hardest on Django projects whose test suites are
+/// the dominant ref source.
 pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
     let mut packages = Vec::new();
     let mut in_deps = false;
@@ -214,13 +226,20 @@ pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
     for line in content.lines() {
         let trimmed = line.trim();
         if trimmed.starts_with('[') {
-            in_deps = matches!(
-                trimmed,
-                "[project.dependencies]"
-                    | "[tool.poetry.dependencies]"
-                    | "[tool.poetry.dev-dependencies]"
-                    | "[tool.poetry.group.dev.dependencies]"
-            ) || trimmed == "[project]";
+            // Headers that put us in a "every line names a dep" section.
+            // Cover all of: `[dependency-groups]` (PEP 735),
+            // `[project.optional-dependencies]` (PEP 621), Poetry's
+            // dependencies / dev-dependencies / `group.<name>.dependencies`,
+            // plus the parent `[project]` table whose `dependencies = [...]`
+            // array we capture via the `in_array` path below.
+            in_deps = trimmed == "[project.dependencies]"
+                || trimmed == "[tool.poetry.dependencies]"
+                || trimmed == "[tool.poetry.dev-dependencies]"
+                || trimmed.starts_with("[tool.poetry.group.")
+                || trimmed == "[dependency-groups]"
+                || trimmed.starts_with("[project.optional-dependencies")
+                || trimmed.starts_with("[tool.poetry.extras")
+                || trimmed == "[project]";
             in_array = false;
             continue;
         }
@@ -241,12 +260,36 @@ pub fn parse_pyproject_deps(content: &str) -> Vec<String> {
             continue;
         }
         if in_deps && !trimmed.starts_with('[') && trimmed.contains('=') {
-            let key = trimmed.split('=').next().unwrap_or("").trim();
+            // PEP 735 / `[project.optional-dependencies]` shape: a key
+            // names a group whose value is an array of PEP 508 specs.
+            //   testing = [
+            //     "pytest~=9.0.0",
+            //     "factory-boy~=3.3.1",
+            //   ]
+            // Poetry's `[tool.poetry.dependencies]` shape: each line is
+            // a single dep, key = name, value = version constraint.
+            //   pytest = "^9.0"
+            // Distinguish by whether the value is a `[`-prefixed array
+            // (PEP 735) or a scalar (Poetry).
+            let (key_part, value_part) = trimmed.split_once('=').unwrap_or((trimmed, ""));
+            let key = key_part.trim();
+            let value = value_part.trim();
             if !key.is_empty()
                 && key != "python"
                 && key.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == '.')
             {
-                packages.push(key.to_string());
+                if value.starts_with('[') {
+                    // PEP 735 / optional-dependencies array. Same
+                    // dependencies-array machinery as above — the
+                    // following lines hold PEP 508 strings until `]`.
+                    in_array = !value.contains(']');
+                    let inner = value
+                        .trim_start_matches('[')
+                        .trim_end_matches(']');
+                    for name in extract_pep508_names(inner) { packages.push(name) }
+                } else {
+                    packages.push(key.to_string());
+                }
             }
         }
     }
