@@ -288,6 +288,50 @@ impl LanguageResolver for PhpResolver {
             }
         }
 
+        // PHP bare-name fallback. 7th language using the
+        // `<lang>_bare_name` template (PRs 31, 35, 36, 37, 38, 39).
+        // PHP's namespace resolution + autoloader registers global
+        // classes (Closure, RuntimeException, ArrayAccess, …) and
+        // PHPUnit assertion methods (`assertEquals`, `assertSame`,
+        // `assertFileContains`) as ambient runtime symbols. Engine's
+        // module/import/scope path can't bind them without a `use`
+        // statement.
+        //
+        // Gated by `.php`/`.phtml`/`.phpt` file-extension and
+        // `kind_compatible` + `is_visible`. PHP visibility is enforced
+        // through is_visible to keep private/protected cross-file refs
+        // unbound.
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        let target = &ref_ctx.extracted_ref.target_name;
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('\\')
+            && !target.contains("::")
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_php = path.ends_with(".php")
+                    || path.ends_with(".phtml")
+                    || path.ends_with(".phpt")
+                    || path.starts_with("ext:php:");
+                if !is_php {
+                    continue;
+                }
+                if !self.is_visible(file_ctx, ref_ctx, sym) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "php_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }
