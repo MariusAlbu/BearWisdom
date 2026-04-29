@@ -1238,6 +1238,18 @@ fn resolve_package_entry_path(dep: &ExternalDepRoot) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
 
     if let Some(pj) = parsed.as_ref() {
+        // Modern conditional exports — `"exports"` field per Node.js
+        // package-entry-points spec. When present, this wins over the
+        // legacy `types`/`typings`/`main` fields because publishers use
+        // it to point bundlers at differently-shaped artifacts (separate
+        // ESM/CJS bundles, different .d.mts/.d.cts type files per
+        // condition). The `types` condition is what we want — TypeScript
+        // resolves type info through it, and so do we.
+        if let Some(exports) = pj.get("exports") {
+            if let Some(rel) = resolve_exports_types(exports) {
+                candidates.push(dep.root.join(rel.trim_start_matches("./")));
+            }
+        }
         for field in ["types", "typings"] {
             if let Some(v) = pj.get(field).and_then(|v| v.as_str()) {
                 candidates.push(dep.root.join(v.trim_start_matches("./")));
@@ -1265,6 +1277,58 @@ fn resolve_package_entry_path(dep: &ExternalDepRoot) -> Option<PathBuf> {
     }
 
     candidates.into_iter().find(|p| p.is_file())
+}
+
+/// Walk the `exports` field of a package.json looking for the `types`
+/// condition that names the package's `.d.ts` entry.
+///
+/// Three top-level shapes per Node.js spec:
+///   * Sugar string — `"exports": "./dist/index.js"`. No types info,
+///     return `None`.
+///   * Subpath map — `"exports": { ".": ..., "./sub": ... }`. Read the
+///     `"."` entry as the root condition tree.
+///   * Direct condition map — `"exports": { "types": "...", "import": ... }`.
+///     The whole object is the root condition tree.
+///
+/// Within the condition tree, `types` (and the older `typings` synonym)
+/// always wins. When `types` is itself an object, recurse — modern
+/// publishers nest it under `import`/`require` to differentiate
+/// `.d.mts`/`.d.cts`. Other condition keys (`node`, `import`, `require`,
+/// `default`, `browser`) are walked as a fallback in case a publisher
+/// only nested `types` inside one of them.
+fn resolve_exports_types(exports: &serde_json::Value) -> Option<String> {
+    let obj = exports.as_object()?;
+    let is_subpath_map = obj.keys().any(|k| k == "." || k.starts_with("./"));
+    let root = if is_subpath_map {
+        obj.get(".")?
+    } else {
+        exports
+    };
+    extract_types_from_conditions(root)
+}
+
+fn extract_types_from_conditions(v: &serde_json::Value) -> Option<String> {
+    let obj = v.as_object()?;
+    for key in ["types", "typings"] {
+        if let Some(child) = obj.get(key) {
+            if let Some(s) = child.as_str() {
+                return Some(s.to_string());
+            }
+            if let Some(s) = extract_types_from_conditions(child) {
+                return Some(s);
+            }
+        }
+    }
+    // No direct `types` — look for it nested under conditional siblings
+    // ordered most-likely-first. Stops at the first hit.
+    for cond in ["node", "import", "require", "default", "browser"] {
+        if let Some(child) = obj.get(cond) {
+            if let Some(s) = extract_types_from_conditions(child) {
+                return Some(s);
+            }
+        }
+    }
+    None
 }
 
 const REEXPORT_MAX_DEPTH: u32 = 3;
@@ -1328,11 +1392,32 @@ fn extract_relative_reexports(src: &str) -> Vec<String> {
 fn resolve_relative_ts_path(from_file: &Path, spec: &str) -> Option<PathBuf> {
     let base = from_file.parent()?;
     let raw = base.join(spec);
-    for ext in [".d.ts", ".ts", ".tsx", ".mts", ".cts"] {
-        let p = PathBuf::from(format!("{}{}", raw.to_string_lossy(), ext));
+    let raw_str = raw.to_string_lossy().to_string();
+
+    // Rollup-bundled type-entry shells re-export from `./chunk.js`-style
+    // companions (vue-router 5.0.4's `dist/vue-router.d.ts` reads
+    // `from "./index-BzEKChPW.js"`, with the actual types at
+    // `index-BzEKChPW.d.ts`). The naïve append-`.d.ts` path misses these
+    // because it would produce `index-BzEKChPW.js.d.ts`. Strip the runtime
+    // extension first and probe the matching declarations companion.
+    for (runtime_ext, type_exts) in [
+        (".js", [".d.ts", ".d.mts", ".d.cts"]),
+        (".mjs", [".d.mts", ".d.ts", ".d.cts"]),
+        (".cjs", [".d.cts", ".d.ts", ".d.mts"]),
+    ] {
+        if let Some(stripped) = raw_str.strip_suffix(runtime_ext) {
+            for type_ext in type_exts {
+                let p = PathBuf::from(format!("{stripped}{type_ext}"));
+                if p.is_file() { return Some(p) }
+            }
+        }
+    }
+
+    for ext in [".d.ts", ".ts", ".tsx", ".mts", ".cts", ".d.mts", ".d.cts"] {
+        let p = PathBuf::from(format!("{raw_str}{ext}"));
         if p.is_file() { return Some(p) }
     }
-    for ext in ["index.d.ts", "index.ts", "index.tsx"] {
+    for ext in ["index.d.ts", "index.ts", "index.tsx", "index.d.mts", "index.d.cts"] {
         let p = raw.join(ext);
         if p.is_file() { return Some(p) }
     }
@@ -2879,6 +2964,126 @@ declare global {
         let files = NpmEcosystem.resolve_import(&dep, "react", &["Component"]);
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].absolute_path, root.join("index.d.ts"));
+    }
+
+    #[test]
+    fn resolve_exports_types_handles_subpath_root_with_types_condition() {
+        // Modern conditional exports — the most common shape on packages
+        // shipping types alongside ESM/CJS bundles (vue-router, Pinia,
+        // RxJS, Zod, etc.). The `"."` subpath has a `types` condition
+        // that points at the .d.ts entry.
+        let exports = serde_json::json!({
+            ".": {
+                "types": "./dist/pkg.d.ts",
+                "import": "./dist/pkg.mjs",
+                "require": "./dist/pkg.cjs"
+            }
+        });
+        assert_eq!(
+            resolve_exports_types(&exports),
+            Some("./dist/pkg.d.ts".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_exports_types_handles_root_condition_map() {
+        // Sugar shape — the conditions live directly under `exports`
+        // without a `"."` subpath wrapper. Some smaller libs use this.
+        let exports = serde_json::json!({
+            "types": "./dist/pkg.d.ts",
+            "import": "./dist/pkg.mjs"
+        });
+        assert_eq!(
+            resolve_exports_types(&exports),
+            Some("./dist/pkg.d.ts".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_exports_types_handles_nested_under_import_or_require() {
+        // Modern dual-publish shape — separate `.d.mts` / `.d.cts`
+        // companions per import/require condition. The walker must
+        // recurse to find the nested `types` value.
+        let exports = serde_json::json!({
+            ".": {
+                "import": {
+                    "types": "./dist/pkg.d.mts",
+                    "default": "./dist/pkg.mjs"
+                },
+                "require": {
+                    "types": "./dist/pkg.d.cts",
+                    "default": "./dist/pkg.cjs"
+                }
+            }
+        });
+        // Walker prefers `import` over `require` per the condition order.
+        assert_eq!(
+            resolve_exports_types(&exports),
+            Some("./dist/pkg.d.mts".to_string())
+        );
+    }
+
+    #[test]
+    fn resolve_exports_types_returns_none_for_sugar_string() {
+        // `"exports": "./entry.js"` — string sugar, no types info to
+        // extract. Falls through to legacy `types`/`typings`/`main` in
+        // the caller.
+        let exports = serde_json::json!("./dist/pkg.js");
+        assert_eq!(resolve_exports_types(&exports), None);
+    }
+
+    #[test]
+    fn resolve_package_entry_path_prefers_exports_over_legacy_types() {
+        // When both fields are present and disagree, modern `exports`
+        // wins — it's how publishers steer build tools at the right
+        // artifact when the legacy `types` field is kept only for
+        // backward compatibility with older toolchains.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("modern-pkg");
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{
+              "name":"modern-pkg",
+              "types":"./legacy.d.ts",
+              "exports":{".":{"types":"./dist/modern.d.ts"}}
+            }"#,
+        ).unwrap();
+        std::fs::write(root.join("legacy.d.ts"), "export const legacy: 1;").unwrap();
+        std::fs::write(root.join("dist").join("modern.d.ts"), "export const modern: 1;").unwrap();
+
+        let dep = mkdep(root.clone(), "modern-pkg");
+        let entry = resolve_package_entry_path(&dep).unwrap();
+        assert_eq!(entry, root.join("dist").join("modern.d.ts"));
+    }
+
+    #[test]
+    fn resolve_relative_ts_path_strips_js_extension_for_dts_companion() {
+        // Rollup-bundled type-entry shells re-export from `./chunk.js`
+        // companions whose actual types live at `./chunk.d.ts`. The
+        // walker must strip `.js` before probing the declarations
+        // companion or it never finds the chunk.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("chunk-abc.d.ts"), "export const x: 1;").unwrap();
+        // Note no `chunk-abc.js.d.ts` exists — only the proper sibling.
+
+        let from_file = dir.join("entry.d.ts");
+        std::fs::write(&from_file, "").unwrap();
+        let resolved = resolve_relative_ts_path(&from_file, "./chunk-abc.js").unwrap();
+        assert_eq!(resolved, dir.join("chunk-abc.d.ts"));
+    }
+
+    #[test]
+    fn resolve_relative_ts_path_strips_mjs_for_dmts_sibling() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let dir = tmp.path();
+        std::fs::write(dir.join("chunk.d.mts"), "export const x: 1;").unwrap();
+
+        let from_file = dir.join("entry.d.ts");
+        std::fs::write(&from_file, "").unwrap();
+        let resolved = resolve_relative_ts_path(&from_file, "./chunk.mjs").unwrap();
+        assert_eq!(resolved, dir.join("chunk.d.mts"));
     }
 
     #[test]
