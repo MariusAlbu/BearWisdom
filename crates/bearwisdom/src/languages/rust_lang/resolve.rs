@@ -579,7 +579,51 @@ impl LanguageResolver for RustResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, None)
+    }
+
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
+    }
+
+    fn is_visible(
+        &self,
+        file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        target: &SymbolInfo,
+    ) -> bool {
+        let vis = target.visibility.as_deref().unwrap_or("public");
+
+        match vis {
+            "private" => {
+                // Private in Rust = visible only within the same module (same file
+                // or same module path). Approximate: same file is always ok.
+                &*target.file_path == file_ctx.file_path
+            }
+            "internal" => {
+                // pub(crate) / pub(super) — same directory as an approximation.
+                let target_dir = predicates::parent_dir(&target.file_path);
+                let source_dir = predicates::parent_dir(&file_ctx.file_path);
+                target_dir == source_dir || &*target.file_path == file_ctx.file_path
+            }
+            _ => true, // public
+        }
+    }
+}
+
+fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: Option<&dyn SymbolLookup>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
 
         // Import refs: `use serde::Deserialize` → classify by the first crate segment.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
@@ -620,12 +664,23 @@ impl LanguageResolver for RustResolver {
         }
 
         // For non-import refs, check if the target came from an external import.
-        // Walk the file's import list for a matching imported_name.
+        // Walk the file's import list, matching either:
+        //   - the simple target name (`use serde::Deserialize;` → `Deserialize`)
+        //   - the first segment of the ref's module path (`fmt::Formatter`
+        //     with `use std::fmt;` → `fmt`)
         let normalized = predicates::normalize_path(target);
         let simple = normalized.split('.').next_back().unwrap_or(&normalized);
+        let module_root = ref_ctx
+            .extracted_ref
+            .module
+            .as_deref()
+            .and_then(|m| m.split("::").next())
+            .filter(|s| !s.is_empty());
 
         for import in &file_ctx.imports {
-            if import.imported_name != simple {
+            if import.imported_name != simple
+                && Some(import.imported_name.as_str()) != module_root
+            {
                 continue;
             }
             let Some(ref mod_path) = import.module_path else {
@@ -658,6 +713,64 @@ impl LanguageResolver for RustResolver {
             }
         }
 
+        // Structural fallback: any walk-imports candidate from a crate
+        // the index has no symbols for is external. Catches re-exports
+        // (`pub use foo::Bar` where Bar lives in an external crate that
+        // isn't in the symbol set) and dev-deps that the manifest pass
+        // missed. Only fires when called via the `_with_lookup` variant.
+        if let Some(lookup) = lookup {
+            for import in &file_ctx.imports {
+                if import.imported_name != simple
+                    && Some(import.imported_name.as_str()) != module_root
+                {
+                    continue;
+                }
+                let Some(ref mod_path) = import.module_path else {
+                    continue;
+                };
+                let first = mod_path.split("::").next().unwrap_or(mod_path);
+                if matches!(first, "crate" | "self" | "super") {
+                    continue;
+                }
+                if !lookup.has_in_namespace(first) {
+                    return Some(first.to_string());
+                }
+            }
+        }
+
+        // Wildcard-import fallback: `use proptest::prelude::*;` brings
+        // arbitrary names into scope. As the last resort, attribute
+        // unresolved targets to the first external wildcard-imported
+        // crate (manifest-known or has_in_namespace external). Lossy
+        // attribution by design — without trait/symbol resolution
+        // through external `.rs`, we can't tell which wildcard sourced
+        // the name. Still better than `unresolved_refs`.
+        for import in &file_ctx.imports {
+            if !import.is_wildcard {
+                continue;
+            }
+            let Some(ref mod_path) = import.module_path else {
+                continue;
+            };
+            let first = mod_path.split("::").next().unwrap_or(mod_path);
+            if matches!(first, "crate" | "self" | "super") {
+                continue;
+            }
+            if keywords::STDLIB_CRATES.contains(&first) {
+                return Some("std".to_string());
+            }
+            if let Some(ctx) = project_ctx {
+                if is_manifest_rust_crate(ctx, first) {
+                    return Some(first.to_string());
+                }
+            }
+            if let Some(lookup) = lookup {
+                if !lookup.has_in_namespace(first) {
+                    return Some(first.to_string());
+                }
+            }
+        }
+
         // Builder chain propagation: if the ref has a chain and the root segment
         // was imported from an external crate, classify the whole chain external.
         if let Some(chain_ref) = &ref_ctx.extracted_ref.chain {
@@ -687,32 +800,7 @@ impl LanguageResolver for RustResolver {
             }
         }
 
-        None
-    }
-
-    fn is_visible(
-        &self,
-        file_ctx: &FileContext,
-        _ref_ctx: &RefContext,
-        target: &SymbolInfo,
-    ) -> bool {
-        let vis = target.visibility.as_deref().unwrap_or("public");
-
-        match vis {
-            "private" => {
-                // Private in Rust = visible only within the same module (same file
-                // or same module path). Approximate: same file is always ok.
-                &*target.file_path == file_ctx.file_path
-            }
-            "internal" => {
-                // pub(crate) / pub(super) — same directory as an approximation.
-                let target_dir = predicates::parent_dir(&target.file_path);
-                let source_dir = predicates::parent_dir(&file_ctx.file_path);
-                target_dir == source_dir || &*target.file_path == file_ctx.file_path
-            }
-            _ => true, // public
-        }
-    }
+    None
 }
 
 // ---------------------------------------------------------------------------

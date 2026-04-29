@@ -44,6 +44,14 @@ pub(super) fn extract_impl(
         } else {
             format!("{outer_prefix}.{type_name}")
         };
+        // Carry the impl block's own type_parameters into the signature
+        // so the engine's generic_params parser picks them up. Without
+        // this, refs to `T` inside an `impl<T> Foo for T` block end up
+        // as unresolved type references.
+        let signature = match node.child_by_field_name("type_parameters") {
+            Some(tp) => format!("impl{} {type_name}", node_text(&tp, source)),
+            None => format!("impl {type_name}"),
+        };
         symbols.push(ExtractedSymbol {
             name: type_name.clone(),
             qualified_name: impl_name,
@@ -53,7 +61,7 @@ pub(super) fn extract_impl(
             end_line: node.end_position().row as u32,
             start_col: node.start_position().column as u32,
             end_col: node.end_position().column as u32,
-            signature: Some(format!("impl {type_name}")),
+            signature: Some(signature),
             doc_comment: None,
             scope_path: scope_from_prefix(outer_prefix),
             parent_index: None,

@@ -236,7 +236,10 @@ pub(super) fn extract_trait(
     let qualified_name = qualify(&name, qualified_prefix);
     let visibility = detect_visibility(node);
     let doc_comment = extract_doc_comment(node, source);
-    let sig = format!("trait {name}");
+    let mut sig = format!("trait {name}");
+    if let Some(tp) = node.child_by_field_name("type_parameters") {
+        sig.push_str(&node_text(&tp, source));
+    }
 
     Some(ExtractedSymbol {
         name,
@@ -567,16 +570,34 @@ pub(super) fn extract_type_refs_from_type_node(
         }
 
         "scoped_type_identifier" => {
-            // `foo::Bar` — emit a TypeRef for the leaf name.
-            let name = node
+            // `foo::Bar` — emit a TypeRef for the leaf name with the
+            // path prefix in `module` so the resolver can route by the
+            // crate root (`fmt::Formatter` → module="fmt", target="Formatter"
+            // → file `use std::fmt;` matches → external "std").
+            let leaf = node
                 .child_by_field_name("name")
                 .map(|n| node_text(&n, source))
                 .unwrap_or_else(|| {
                     let text = node_text(node, source);
                     text.rsplit("::").next().unwrap_or(&text).to_string()
                 });
-            if !name.is_empty() && !is_rust_primitive(&name) {
-                refs.push(make_type_ref(sym_index, name, node.start_position().row as u32));
+            if !leaf.is_empty() && !is_rust_primitive(&leaf) {
+                let full = node_text(node, source);
+                let module = full
+                    .rsplit_once("::")
+                    .map(|(prefix, _)| prefix.to_string())
+                    .filter(|p| !p.is_empty());
+                let line = node.start_position().row as u32;
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_index,
+                    target_name: leaf,
+                    kind: EdgeKind::TypeRef,
+                    line,
+                    module,
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
             }
         }
 

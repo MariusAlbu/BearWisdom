@@ -965,6 +965,9 @@ impl SymbolIndex {
             // type_parameters in their signature (e.g., `interface Repository<T>`,
             // `def process[F[_]]`, `fn compute<T: Clone>`).
             // We detect this by looking at the symbol's signature text.
+            // Includes Namespace because Rust impl blocks emit a Namespace
+            // symbol whose signature carries the generic params (`impl Foo<T>`),
+            // and methods inside the impl reference those params by simple name.
             for sym in &pf.symbols {
                 if !matches!(
                     sym.kind,
@@ -974,6 +977,7 @@ impl SymbolIndex {
                         | SymbolKind::TypeAlias
                         | SymbolKind::Function
                         | SymbolKind::Method
+                        | SymbolKind::Namespace
                 ) {
                     continue;
                 }

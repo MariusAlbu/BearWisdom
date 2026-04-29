@@ -660,11 +660,17 @@ fn resolve_iteration_body(
             // it's a type parameter — not a missing symbol.
             // ---------------------------------------------------------------
             if r.kind == EdgeKind::TypeRef {
-                let is_generic_param = scope_chain.iter().any(|scope| {
-                    index
-                        .generic_params(scope)
-                        .map_or(false, |params| params.iter().any(|p| p == &r.target_name))
-                });
+                // Walk the source symbol's own qualified name first, then up
+                // through its parents. The function/struct itself owns its
+                // type parameters; refs in its signature have its qname (not
+                // its parent) as the relevant scope for generic-param lookup.
+                let is_generic_param = std::iter::once(source_sym.qualified_name.as_str())
+                    .chain(scope_chain.iter().map(String::as_str))
+                    .any(|scope| {
+                        index
+                            .generic_params(scope)
+                            .map_or(false, |params| params.iter().any(|p| p == &r.target_name))
+                    });
                 if is_generic_param {
                     buf.externals.push((
                         source_id,
