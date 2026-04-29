@@ -36,6 +36,7 @@ pub mod android_sdk;
 pub mod blazor_runtime;
 pub mod cabal;
 pub mod bazel_central_registry;
+pub mod bash_completion_synthetics;
 pub mod sdl_synthetics;
 pub mod cargo;
 pub mod clojure_core;
@@ -92,6 +93,7 @@ pub mod zig_std;
 pub use android_sdk::AndroidSdkEcosystem;
 pub use bazel_central_registry::BazelCentralRegistryEcosystem;
 pub use blazor_runtime::BlazorRuntimeEcosystem;
+pub use bash_completion_synthetics::BashCompletionSyntheticsEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
@@ -617,6 +619,7 @@ pub fn default_locator(
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
         "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
+        "bash-completion-synthetics" => Some(Arc::new(BashCompletionSyntheticsEcosystem)),
         _ => None,
     }
 }
@@ -687,6 +690,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(NodeBuiltinsEcosystem));
         reg.register(Arc::new(ZigStdEcosystem));
         reg.register(Arc::new(SdlSyntheticsEcosystem));
+        reg.register(Arc::new(BashCompletionSyntheticsEcosystem));
         reg
     })
 }

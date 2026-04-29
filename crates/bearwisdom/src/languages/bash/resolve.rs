@@ -163,7 +163,41 @@ impl LanguageResolver for BashResolver {
         // whether any candidate for `target` lives in a file whose path ends
         // with that suffix at a path-component boundary.
         if edge_kind == EdgeKind::Calls {
-            return self.resolve_via_shell_source(target, file_ctx, lookup);
+            if let Some(res) = self.resolve_via_shell_source(target, file_ctx, lookup) {
+                return Some(res);
+            }
+        }
+
+        // Bash bare-name fallback. Shell scripts call functions globally —
+        // there's no per-file namespace once a script is sourced into the
+        // shell. Standard module/import resolution can't bind these. The
+        // counterpart is the SCSS resolver's `scss_bare_name` step (PR
+        // 31): index-wide name lookup gated to bash-defined symbols.
+        //
+        // The dominant consumer is bash-completion library functions
+        // (`_filedir`, `_init_completion`, `__git_*`, …) which the
+        // `bash-completion-synthetics` ecosystem injects as ambient
+        // globals. Pre-resolved-via-source step skips refs that we
+        // already saw a `module` qualifier for.
+        if edge_kind == EdgeKind::Calls && ref_ctx.extracted_ref.module.is_none() {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_bash = path.ends_with(".sh")
+                    || path.ends_with(".bash")
+                    || path.starts_with("ext:bash-completion-synthetics:");
+                if !is_bash {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: "bash_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         None

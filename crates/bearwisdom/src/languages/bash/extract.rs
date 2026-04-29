@@ -373,6 +373,29 @@ fn normalize_command_target(raw: &str) -> Option<String> {
     if trimmed.contains('$') || trimmed.contains("${") {
         return None;
     }
+    // Reject words that aren't valid shell command identifiers. Tree-
+    // sitter-bash occasionally splits malformed input into tokens like
+    // `}1`, `}2`, `]`, `)` — fragments of unbalanced brace/paren
+    // sequences that get classified as command-position words. None of
+    // these are real call targets.
+    let first = trimmed.chars().next().unwrap_or('\0');
+    if !(first.is_ascii_alphabetic()
+        || first == '_'
+        || first == '/'
+        || first == '.'
+        || first == '"'
+        || first == '\''
+        || first.is_ascii_digit())
+    {
+        return None;
+    }
+    // Pure-numeric prefix on a single token (`1foo`, `}1`-style noise
+    // that already fails the `}` check above) — reject. Real shell
+    // commands don't start with digits except for absolute-path /-
+    // numbered scripts which fall through the `/` branch already.
+    if first.is_ascii_digit() {
+        return None;
+    }
     // Strip matching wrapping quotes once. `"foo"` / `'foo'` — the
     // inner literal is the command. Mismatched / unbalanced quotes
     // fall through to the no-quote branch.
