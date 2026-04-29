@@ -58,9 +58,15 @@ pub(super) fn is_go_composite_type(name: &str) -> bool {
 /// Check that the edge kind is compatible with the symbol kind.
 pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     match edge_kind {
+        // Go has first-class functions: parameters, locals, package-level
+        // vars, and struct fields can hold function values that are
+        // invoked exactly like named functions. Accept `variable` /
+        // `property` as Calls targets so the scope-chain walker doesn't
+        // reject the obvious match for `h(c)` where `h` is a typed
+        // parameter or `appHandler(c)` where `appHandler := func...`.
         EdgeKind::Calls => matches!(
             sym_kind,
-            "method" | "function" | "constructor" | "test"
+            "method" | "function" | "constructor" | "test" | "variable" | "property"
         ),
         EdgeKind::Inherits => matches!(sym_kind, "struct" | "interface"),
         EdgeKind::Implements => matches!(sym_kind, "interface"),

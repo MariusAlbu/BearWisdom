@@ -1265,6 +1265,35 @@ fn extract_const_var_decl_inner(
 
 /// `const_spec` / `var_spec` children:
 ///   identifier+ (names), [type], [= expression_list]
+/// Extract a clean type name from a var/const spec's type node. Strips
+/// pointer prefixes, peels generic instantiation, returns the final
+/// identifier for selector expressions, and emits the empty string for
+/// anonymous types so the caller skips the TypeRef entirely.
+fn extract_var_type_name(node: &Node, source: &str) -> String {
+    match node.kind() {
+        "type_identifier" => node_text(node, source),
+        "pointer_type" => pointer_type_name(node, source),
+        "qualified_type" => (0..node.named_child_count())
+            .filter_map(|i| node.named_child(i))
+            .filter(|c| c.kind() == "type_identifier")
+            .last()
+            .map(|c| node_text(&c, source))
+            .unwrap_or_default(),
+        "generic_type" => node
+            .named_child(0)
+            .map(|n| extract_var_type_name(&n, source))
+            .unwrap_or_default(),
+        "parenthesized_type" => node
+            .named_child(0)
+            .map(|n| extract_var_type_name(&n, source))
+            .unwrap_or_default(),
+        // Anonymous types — no symbolic target to reference.
+        "struct_type" | "slice_type" | "map_type" | "array_type"
+        | "channel_type" | "function_type" | "interface_type" => String::new(),
+        _ => node_text(node, source),
+    }
+}
+
 fn extract_const_var_spec(
     node: &Node,
     source: &str,
@@ -1304,7 +1333,7 @@ fn extract_const_var_spec(
                 if child.kind() == "struct_type" {
                     type_node_for_struct = Some(child);
                 }
-                type_text = Some(node_text(&child, source));
+                type_text = Some(extract_var_type_name(&child, source));
                 past_names = true;
             }
             _ => {}

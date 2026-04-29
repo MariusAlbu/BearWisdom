@@ -587,6 +587,29 @@ fn extract_call_ref(
         None => return,
     };
 
+    // Anonymous-function IIFE: `func(...) { ... }(args)`. The function is
+    // defined and invoked in place — no resolvable name. Walk inside the
+    // body so any nested call/type refs still surface, but skip emitting
+    // a `Calls` edge with the literal source as the target.
+    if matches!(func_node.kind(), "func_literal" | "parenthesized_expression") {
+        extract_refs_from_body(&func_node, source, source_symbol_index, refs);
+        if let Some(args) = node.child_by_field_name("arguments") {
+            extract_refs_from_body(&args, source, source_symbol_index, refs);
+        }
+        return;
+    }
+
+    // Generic instantiation: `Foo[T](args)` or `pkg.Foo[T](args)` are wrapped
+    // in `index_expression`. Peel it off so the callee resolves to the
+    // unparameterized name (`Foo` / `pkg.Foo`) instead of `Foo[T]`.
+    let func_node = if func_node.kind() == "index_expression" {
+        func_node
+            .child_by_field_name("operand")
+            .unwrap_or(func_node)
+    } else {
+        func_node
+    };
+
     let func_name = node_text(&func_node, source);
 
     // `make(chan T, ...)` — extract the channel element type as a TypeRef.
@@ -827,6 +850,18 @@ pub(super) fn extract_composite_literal_ref(
                 None => node_text(&type_node, source),
             }
         }
+        // Generic type instantiation `Repo[User]` — pull the base name.
+        "generic_type" => type_node
+            .named_child(0)
+            .map(|n| node_text(&n, source))
+            .unwrap_or_default(),
+        // Anonymous types (`struct{}{...}`, `[]int{1,2}`, `map[K]V{}`,
+        // `[N]T{}`, `chan T(...)`, `func(){}` etc.) have no named symbol
+        // to point at — skip rather than emit the literal source as the
+        // target name.
+        "struct_type" | "slice_type" | "map_type" | "array_type"
+        | "channel_type" | "function_type" | "pointer_type"
+        | "interface_type" => return,
         _ => node_text(&type_node, source),
     };
 
