@@ -156,9 +156,33 @@ impl LanguageResolver for PythonResolver {
                         });
                     }
                 }
-            } else if ref_ctx.extracted_ref.chain.is_some() {
-                // Case (B): call ref with extractor-set module (absolute module path).
-                // Try "{module}.{target}" as a qualified name.
+            } else {
+                // Module-qualified ref: the extractor saw a `models.TextChoices`-
+                // shaped reference and split it into target=`TextChoices`,
+                // module=`models`. Two distinct sub-cases share the same
+                // resolution machinery:
+                //
+                //   (B1) Chain-bearing call ref — `Person.objects.filter()`
+                //        with the extractor's post-pass attaching the
+                //        absolute module path.
+                //   (B2) Module-qualified Inherits / TypeRef without a
+                //        chain — `class Foo(models.TextChoices):`,
+                //        `field: models.CharField`. The ref has the
+                //        module attached but no member-chain because
+                //        there's no further dispatch beyond the type
+                //        access.
+                //
+                // Both shapes need the same lookup attempts. Previously
+                // (B2) fell through to the chain-required `else` branch
+                // and short-circuited as "unresolvable", which left every
+                // Django `class Foo(models.TextChoices):` /
+                // `IntegerChoices` / `CharField` ref unresolved despite
+                // the symbols being in the externals index.
+                let is_imports = ref_ctx.extracted_ref.kind == EdgeKind::Imports;
+                if is_imports {
+                    return None;
+                }
+
                 let candidate = format!("{module}.{target}");
                 if let Some(sym) = lookup.by_qualified_name(&candidate) {
                     if predicates::kind_compatible(edge_kind, &sym.kind) {
@@ -175,7 +199,11 @@ impl LanguageResolver for PythonResolver {
                         });
                     }
                 }
-                // Try: look up target by name in files matching the module path.
+                // Look up target by name in files whose path contains the
+                // module path. Handles the dominant Django shape where
+                // `models.TextChoices` lives at qname `TextChoices` in
+                // `django/db/models/enums.py` rather than at
+                // `django.db.models.TextChoices`.
                 let module_as_path = module.replace('.', "/");
                 for sym in lookup.by_name(target) {
                     if sym.file_path.contains(&module_as_path)
@@ -189,16 +217,40 @@ impl LanguageResolver for PythonResolver {
                         );
                         return Some(Resolution {
                             target_symbol_id: sym.id,
-                            confidence: 1.0,
+                            confidence: 0.95,
                             strategy: "python_ref_module_path",
                             resolved_yield_type: None,
                         });
                     }
                 }
+                // Resolve the module against the file's import map. For
+                // `class Foo(models.TextChoices)` where the file has
+                // `from django.db import models`, walk `django/db/` for
+                // a `TextChoices` symbol — same logic as the import-loop
+                // below but threaded by the ref's own module attribute.
+                for import in &file_ctx.imports {
+                    if import.imported_name != *module {
+                        continue;
+                    }
+                    let Some(ref base_mod) = import.module_path else { continue };
+                    let base_dir = base_mod.replace('.', "/");
+                    for sym in lookup.by_name(target) {
+                        let norm = sym.file_path.replace('\\', "/");
+                        let combined = format!("{base_dir}/{module_as_path}");
+                        let in_dir = norm.contains(&combined)
+                            || norm.contains(&format!("{base_dir}/{module}/"))
+                            || norm.contains(&base_dir.as_str());
+                        if in_dir && predicates::kind_compatible(edge_kind, &sym.kind) {
+                            return Some(Resolution {
+                                target_symbol_id: sym.id,
+                                confidence: 0.90,
+                                strategy: "python_ref_module_via_import",
+                                resolved_yield_type: None,
+                            });
+                        }
+                    }
+                }
                 // Case (B) miss — fall through to scope chain walk.
-            } else {
-                // Case (A): import-statement ref, no chain — external or unresolvable.
-                return None;
             }
 
             // Case (A) relative import that failed, or case (B) that fell through.
@@ -380,6 +432,55 @@ impl LanguageResolver for PythonResolver {
                         resolved_yield_type: None,
                     });
                 }
+            }
+        }
+
+        // Python bare-name fallback for unittest-style assertion / mixin
+        // calls. Counterpart to the SCSS / Bash bare-name steps. The chain
+        // walker can't follow `self.assertEqual` through Django's deep
+        // TestCase hierarchy (`APITestCase` → … → `unittest.TestCase`)
+        // without inheritance type-flow, so chain refs that resolve to
+        // a leaf method on `self` fall through here. Bind to any
+        // Python-defined symbol whose simple name matches, gated by file
+        // extension so cross-language collisions don't leak.
+        //
+        // Scoped to Calls/TypeRef: an `Imports` ref already short-circuits
+        // above, and `Inherits` falls outside this leaf-method shape.
+        //
+        // TypeRef accepts `method` here because context-manager call
+        // patterns like `with self.assertLogs(): …` are emitted as
+        // TypeRef by the Python extractor (the `with`-target's type is
+        // technically what's referenced), but the bound symbol is a
+        // method on TestCase. Tightening to TypeRef = class-only would
+        // miss every `with self.assert*` block on Django/DRF tests.
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !effective_target.contains('.')
+        {
+            let kind_ok = |sym_kind: &str| -> bool {
+                if predicates::kind_compatible(edge_kind, sym_kind) {
+                    return true;
+                }
+                edge_kind == EdgeKind::TypeRef && sym_kind == "method"
+            };
+            for sym in lookup.by_name(effective_target) {
+                if !kind_ok(&sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_py = path.ends_with(".py")
+                    || path.ends_with(".pyi")
+                    || path.starts_with("ext:python:")
+                    || path.starts_with("ext:idx:");
+                if !is_py {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "python_bare_name",
+                    resolved_yield_type: None,
+                });
             }
         }
 

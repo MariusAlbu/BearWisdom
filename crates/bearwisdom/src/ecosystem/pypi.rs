@@ -73,14 +73,59 @@ impl Ecosystem for PypiEcosystem {
     fn resolve_import(
         &self,
         dep: &ExternalDepRoot,
-        _package: &str,
+        package: &str,
         _symbols: &[&str],
     ) -> Vec<WalkedFile> {
         // Python packages live as either a directory (with __init__.py) or a
         // single-file module (pkg.py). For directory packages, start from
         // __init__.py and follow relative-import expansion bounded at a
         // small depth. Single-file modules return just themselves.
-        resolve_python_package_entry(dep)
+        let mut out = resolve_python_package_entry(dep);
+
+        // For dotted requests (`from django.test import TestCase` where
+        // dep.module_path is `django`), also walk the requested
+        // sub-package's `__init__.py`. The package's top-level
+        // `__init__.py` rarely re-exports its sub-modules wholesale
+        // (Django's `django/__init__.py` doesn't `from .test import *`),
+        // so demand-driven users requesting `django.test.TestCase` get
+        // nothing without this targeted pull.
+        if dep.root.is_dir() && package.contains('.') {
+            // Only consider subpath segments that match `dep.module_path`'s
+            // leading segment — `django.test.TestCase` is rooted at
+            // `django` if `dep.module_path == "django"`. Anything else is
+            // a different package's request.
+            let mut iter = package.splitn(2, '.');
+            let first = iter.next().unwrap_or("");
+            let rest = iter.next().unwrap_or("");
+            if first == dep.module_path && !rest.is_empty() {
+                let mut subdir = dep.root.clone();
+                let mut parts = rest.split('.').peekable();
+                while let Some(part) = parts.next() {
+                    subdir = subdir.join(part);
+                    let init = subdir.join("__init__.py");
+                    if init.is_file() {
+                        let mut seen: std::collections::HashSet<std::path::PathBuf> =
+                            out.iter().map(|wf| wf.absolute_path.clone()).collect();
+                        expand_python_reexports_into(
+                            dep, &dep.root, &init, &mut out, &mut seen, 0,
+                        );
+                    }
+                    // Final segment may be a leaf .py file.
+                    if parts.peek().is_none() {
+                        let leaf = subdir.with_extension("py");
+                        if leaf.is_file() {
+                            let mut seen: std::collections::HashSet<std::path::PathBuf> =
+                                out.iter().map(|wf| wf.absolute_path.clone()).collect();
+                            expand_python_reexports_into(
+                                dep, &dep.root, &leaf, &mut out, &mut seen, 0,
+                            );
+                        }
+                    }
+                }
+            }
+        }
+
+        out
     }
 
     fn resolve_symbol(
@@ -815,7 +860,22 @@ fn walk_python_dir_bounded(dir: &Path, root: &Path, dep: &ExternalDepRoot, out: 
         let path = entry.path();
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                if matches!(name, "__pycache__" | "tests" | "test" | ".git" | "_test") {
+                // `tests` (plural) and `_test` are conventional Python
+                // test-fixture directories that hold the package's own
+                // `test_X.py` files — skip them so we don't index a
+                // dep's own test suite.
+                //
+                // BUT: `test` (singular) is used by major packages —
+                // Django's `django/test/` exposes `TestCase`, `Client`,
+                // `RequestFactory`, `assertRaisesMessage`, etc. as
+                // public API. unittest itself ships its public API
+                // under the `unittest` package's `case.py`/`mock.py` —
+                // already covered. Skipping `test` indiscriminately
+                // hides every Django test-method ref. Keep `test`
+                // walked; the per-file `test_*.py` / `_test.py` /
+                // `conftest.py` filter below catches actual test
+                // fixtures inside.
+                if matches!(name, "__pycache__" | "tests" | ".git" | "_test") {
                     continue;
                 }
                 if name.ends_with(".dist-info") || name.ends_with(".egg-info") { continue }

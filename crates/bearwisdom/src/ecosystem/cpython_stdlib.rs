@@ -48,11 +48,79 @@ impl Ecosystem for CpythonStdlibEcosystem {
 
     fn uses_demand_driven_parse(&self) -> bool { true }
 
+    fn demand_pre_pull(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> Vec<WalkedFile> {
+        // Eagerly walk a small set of stdlib subtrees that virtually every
+        // Python project transitively depends on. The package-entry
+        // re-export chain (`unittest/__init__.py` → `from .case import
+        // TestCase, …`) doesn't get followed unless something pulls
+        // `__init__.py`, and `walk_python_tree`'s skip list intentionally
+        // excludes `unittest` to keep the bulk-walk cost down.
+        //
+        // Every Django/Flask/FastAPI test class inherits from
+        // `unittest.TestCase` four-to-six levels up, so pulling
+        // `unittest/case.py` puts ~50 inherited assertion mixins
+        // (`assertEqual`, `assertListEqual`, `assertCountEqual`,
+        // `assertLogs`, `addCleanup`, …) into the symbol index where
+        // the bare-name resolver fallback can bind them.
+        //
+        // Cost is bounded: `unittest/` is ~13 files / ~600 KB total.
+        let mut out = Vec::new();
+        for dep in dep_roots {
+            walk_specific_stdlib_subtree(dep, "unittest", &mut out);
+        }
+        out
+    }
+
     fn build_symbol_index(
         &self,
         dep_roots: &[crate::ecosystem::externals::ExternalDepRoot],
     ) -> crate::ecosystem::symbol_index::SymbolLocationIndex {
         super::pypi::build_python_symbol_index(dep_roots)
+    }
+}
+
+/// Eager-walk a single subtree of the stdlib (e.g., `unittest`,
+/// `asyncio`) and emit WalkedFile entries for its `.py` source. Mirrors
+/// `walk_python_tree` but scoped to one subdir so the cost is bounded
+/// when the caller wants per-package eager-pull rather than the whole
+/// stdlib traversal.
+fn walk_specific_stdlib_subtree(
+    dep: &ExternalDepRoot,
+    subdir_name: &str,
+    out: &mut Vec<WalkedFile>,
+) {
+    let subtree = dep.root.join(subdir_name);
+    if !subtree.is_dir() {
+        return;
+    }
+    walk_dir_unfiltered(&subtree, out, 0);
+}
+
+fn walk_dir_unfiltered(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
+    if depth >= 6 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, "__pycache__" | "test" | "tests") { continue }
+                if name.starts_with('.') { continue }
+            }
+            walk_dir_unfiltered(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !name.ends_with(".py") { continue }
+            let display = path.to_string_lossy().replace('\\', "/");
+            out.push(WalkedFile {
+                relative_path: format!("ext:python:{}", display),
+                absolute_path: path,
+                language: "python",
+            });
+        }
     }
 }
 
