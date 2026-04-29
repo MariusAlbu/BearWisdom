@@ -303,81 +303,17 @@ impl LanguageResolver for JavaResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, None)
+    }
 
-        // Import refs (e.g., `import org.springframework.web.bind.annotation.*;`) —
-        // classify the import itself as external if its namespace is known-external.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-
-            // Manifest-driven: check Maven and Gradle group IDs first.
-            // Maven/Gradle group IDs (e.g., "org.springframework") are stored in dependencies.
-            if let Some(ctx) = project_ctx {
-                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
-                        if manifest.dependencies.iter().any(|group_id| {
-                            import_path == group_id
-                                || import_path.starts_with(group_id.as_str())
-                                    && import_path.as_bytes().get(group_id.len())
-                                        == Some(&b'.')
-                        }) {
-                            return Some(import_path.to_string());
-                        }
-                    }
-                }
-            }
-
-            if predicates::is_external_java_namespace(import_path, project_ctx) {
-                return Some(import_path.to_string());
-            }
-            return None;
-        }
-
-        // Java builtins (methods always in scope without import).
-        if predicates::is_java_builtin(target) {
-            return Some("java.lang".to_string());
-        }
-
-        // Check exact import entries for this target name.
-        for import in &file_ctx.imports {
-            let ns = import.module_path.as_deref().unwrap_or("");
-            if ns.is_empty() {
-                continue;
-            }
-
-            // For exact imports: the target name must match.
-            if !import.is_wildcard && import.imported_name != *target {
-                continue;
-            }
-
-            // Manifest-driven check on import namespace.
-            if let Some(ctx) = project_ctx {
-                for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
-                    if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
-                        if manifest.dependencies.iter().any(|group_id| {
-                            ns == group_id
-                                || ns.starts_with(group_id.as_str())
-                                    && ns.as_bytes().get(group_id.len()) == Some(&b'.')
-                        }) {
-                            return Some(ns.to_string());
-                        }
-                    }
-                }
-            }
-
-            // For wildcard imports: the candidate would be `ns.target`.
-            // Either way, check if the namespace is external.
-            if predicates::is_external_java_namespace(ns, project_ctx) {
-                return Some(ns.to_string());
-            }
-        }
-
-        // Check if the target itself looks like a fully-qualified external name.
-        if predicates::effective_target_is_external(target, project_ctx) {
-            return Some(target.clone());
-        }
-
-        None
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
     }
 
     fn is_visible(
@@ -408,6 +344,85 @@ impl LanguageResolver for JavaResolver {
             _ => true,
         }
     }
+}
+
+fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: Option<&dyn SymbolLookup>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let import_path = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+        if let Some(ctx) = project_ctx {
+            for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
+                    if manifest.dependencies.iter().any(|group_id| {
+                        import_path == group_id
+                            || import_path.starts_with(group_id.as_str())
+                                && import_path.as_bytes().get(group_id.len()) == Some(&b'.')
+                    }) {
+                        return Some(import_path.to_string());
+                    }
+                }
+            }
+        }
+        if predicates::is_external_java_namespace(import_path, project_ctx) {
+            return Some(import_path.to_string());
+        }
+        if let Some(lookup) = lookup {
+            // No internal symbols under this fully-qualified namespace
+            // → external. Catches transitive deps and stdlib packages
+            // not in `is_external_java_namespace`'s known prefix list.
+            if !lookup.has_in_namespace(import_path) {
+                return Some(import_path.to_string());
+            }
+        }
+        return None;
+    }
+
+    if predicates::is_java_builtin(target) {
+        return Some("java.lang".to_string());
+    }
+
+    for import in &file_ctx.imports {
+        let ns = import.module_path.as_deref().unwrap_or("");
+        if ns.is_empty() {
+            continue;
+        }
+        if !import.is_wildcard && import.imported_name != *target {
+            continue;
+        }
+        if let Some(ctx) = project_ctx {
+            for kind in [ManifestKind::Maven, ManifestKind::Gradle] {
+                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&kind) {
+                    if manifest.dependencies.iter().any(|group_id| {
+                        ns == group_id
+                            || ns.starts_with(group_id.as_str())
+                                && ns.as_bytes().get(group_id.len()) == Some(&b'.')
+                    }) {
+                        return Some(ns.to_string());
+                    }
+                }
+            }
+        }
+        if predicates::is_external_java_namespace(ns, project_ctx) {
+            return Some(ns.to_string());
+        }
+        if let Some(lookup) = lookup {
+            if !lookup.has_in_namespace(ns) {
+                return Some(ns.to_string());
+            }
+        }
+    }
+
+    if predicates::effective_target_is_external(target, project_ctx) {
+        return Some(target.clone());
+    }
+
+    None
 }
 
 // ---------------------------------------------------------------------------
