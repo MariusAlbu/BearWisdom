@@ -201,7 +201,54 @@ impl LanguageResolver for CLangResolver {
             }
         }
 
-        engine::resolve_common("c", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(res) = engine::resolve_common(
+            "c", file_ctx, ref_ctx, lookup, predicates::kind_compatible,
+        ) {
+            return Some(res);
+        }
+
+        // C bare-name fallback. Counterpart to the SCSS / Bash / Python /
+        // Java / PowerShell `<lang>_bare_name` template. C has no real
+        // namespacing — every external function (libc, POSIX threads,
+        // platform APIs) is callable by bare name once its header is
+        // included. The engine's module/import/scope path can't bind
+        // these. Index-wide name lookup gated by `.c`/`.h`/`.cc`/`.hpp`
+        // file-extension keeps cross-language collisions out.
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+            && !target.contains("::")
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_c_or_cpp = path.ends_with(".c")
+                    || path.ends_with(".h")
+                    || path.ends_with(".cc")
+                    || path.ends_with(".cpp")
+                    || path.ends_with(".cxx")
+                    || path.ends_with(".hpp")
+                    || path.ends_with(".hh")
+                    || path.ends_with(".hxx")
+                    || path.starts_with("ext:c:")
+                    || path.starts_with("ext:cpp:");
+                if !is_c_or_cpp {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "c_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
