@@ -999,7 +999,21 @@ pub(super) fn build_name_index(
         // runner injects them at compile time. Mirroring the @types
         // exception keeps these `name_to_ids`-resolvable so the bare-
         // name heuristic finds them.
-        lower.starts_with("ext:scss:") && lower.ends_with(".scss")
+        if lower.starts_with("ext:scss:") && lower.ends_with(".scss") {
+            return true;
+        }
+        // Python site-packages — Django/DRF test mixins
+        // (`assertCountEqual`, `force_authenticate`), pytest fixtures,
+        // unittest.mock, and any inherited-method call from a deep
+        // base-class hierarchy. Without inheritance walking the chain
+        // walker can't follow `self.client.force_authenticate` to
+        // `APIClient.force_authenticate`; the heuristic name-lookup is
+        // the only mechanism that can bind these refs. Keep all
+        // `ext:idx:` Python paths so DRF's test methods, Django's
+        // assertion helpers, and pytest's decorators resolve by bare
+        // name. Same trade-off as the @types/* exception: name-based
+        // lookup pays off most for runtime-global callable code.
+        lower.starts_with("ext:idx:") && lower.ends_with(".py")
     }
 
     let mut kind_map: FxHashMap<(&str, &str), &str> = FxHashMap::default();
