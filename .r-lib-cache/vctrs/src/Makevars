@@ -1,2 +1,0 @@
-PKG_CPPFLAGS = -I./rlang
-PKG_CFLAGS = $(C_VISIBILITY)

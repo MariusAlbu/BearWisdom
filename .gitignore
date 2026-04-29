@@ -16,6 +16,9 @@ bench-archive/
 bench-results/
 
 # Local / session
+baseline-csharp-huge.json
+baseline-csharp-new.json
+baseline-csharp.json
 .claude/
 *.ndjson
 .env
@@ -23,3 +26,4 @@ research/
 scripts/
 benchmark.md
 CLAUDE.md
+.r-lib-cache/
