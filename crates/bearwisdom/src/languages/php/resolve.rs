@@ -342,73 +342,17 @@ impl LanguageResolver for PhpResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, None)
+    }
 
-        // Import refs (`use` statements) — classify the `use` as external if the namespace is.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let import_path = ref_ctx
-                .extracted_ref
-                .module
-                .as_deref()
-                .unwrap_or(target);
-            let normalized = predicates::normalize_php_ns(import_path);
-
-            // Manifest-driven: check composer.json dependencies first.
-            // Composer packages use `"vendor/package"` format (e.g., `"intervention/image"`).
-            // PHP namespace roots are CamelCase (e.g., `"Intervention"`).
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Composer) {
-                    let ns_root = normalized.split('.').next().unwrap_or(&normalized);
-                    if is_composer_package_match(ns_root, &manifest.dependencies) {
-                        return Some(normalized);
-                    }
-                }
-            }
-
-            if predicates::is_external_php_namespace(&normalized, project_ctx) {
-                return Some(normalized);
-            }
-            return None;
-        }
-
-        // PHP built-in functions — always external.
-        if predicates::is_php_builtin(target) {
-            return Some("php_core".to_string());
-        }
-
-        // Check use statement list for external namespaces.
-        let mut best: Option<String> = None;
-
-        for import in &file_ctx.imports {
-            let ns = import.module_path.as_deref().unwrap_or("");
-            if ns.is_empty() {
-                continue;
-            }
-
-            // Manifest-driven check.
-            let is_ext = if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Composer) {
-                    let ns_root = ns.split('.').next().unwrap_or(ns);
-                    if is_composer_package_match(ns_root, &manifest.dependencies) {
-                        true
-                    } else {
-                        predicates::is_external_php_namespace(ns, project_ctx)
-                    }
-                } else {
-                    predicates::is_external_php_namespace(ns, project_ctx)
-                }
-            } else {
-                predicates::is_external_php_namespace(ns, project_ctx)
-            };
-
-            if is_ext {
-                if best.as_deref().is_none() || ns.len() > best.as_deref().unwrap().len() {
-                    best = Some(ns.to_string());
-                }
-            }
-        }
-
-        best
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
     }
 
     fn is_visible(
@@ -436,6 +380,81 @@ impl LanguageResolver for PhpResolver {
 // ---------------------------------------------------------------------------
 // Private helpers
 // ---------------------------------------------------------------------------
+
+/// Test whether `normalized` should be classified as external. Combines the
+/// composer-manifest match, the hardcoded `is_external_php_namespace` set,
+/// and a structural fallback that uses `lookup.has_in_namespace` to flag
+/// any imported namespace the project's own symbols don't cover (PHP runtime
+/// classes like `Closure`/`Throwable`, vendor packages without a stub on
+/// disk, etc.).
+fn ns_is_external(
+    project_ctx: Option<&ProjectContext>,
+    pkg_id: Option<i64>,
+    lookup: Option<&dyn SymbolLookup>,
+    normalized: &str,
+) -> bool {
+    let ns_root = normalized.split('.').next().unwrap_or(normalized);
+    if let Some(ctx) = project_ctx {
+        if let Some(manifest) = ctx
+            .manifests_for(pkg_id)
+            .get(&ManifestKind::Composer)
+        {
+            if is_composer_package_match(ns_root, &manifest.dependencies) {
+                return true;
+            }
+        }
+    }
+    if predicates::is_external_php_namespace(normalized, project_ctx) {
+        return true;
+    }
+    if let Some(lookup) = lookup {
+        if !lookup.has_in_namespace(normalized) && !lookup.has_in_namespace(ns_root) {
+            return true;
+        }
+    }
+    false
+}
+
+fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: Option<&dyn SymbolLookup>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+    let pkg_id = ref_ctx.file_package_id;
+
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let import_path = ref_ctx
+            .extracted_ref
+            .module
+            .as_deref()
+            .unwrap_or(target);
+        let normalized = predicates::normalize_php_ns(import_path);
+        if ns_is_external(project_ctx, pkg_id, lookup, &normalized) {
+            return Some(normalized);
+        }
+        return None;
+    }
+
+    if predicates::is_php_builtin(target) {
+        return Some("php_core".to_string());
+    }
+
+    let mut best: Option<String> = None;
+    for import in &file_ctx.imports {
+        let ns = import.module_path.as_deref().unwrap_or("");
+        if ns.is_empty() {
+            continue;
+        }
+        if ns_is_external(project_ctx, pkg_id, lookup, ns) {
+            if best.as_deref().is_none() || ns.len() > best.as_deref().unwrap().len() {
+                best = Some(ns.to_string());
+            }
+        }
+    }
+    best
+}
 
 /// Check whether a PHP namespace root matches any composer.json package dependency.
 ///
