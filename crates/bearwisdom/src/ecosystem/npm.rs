@@ -301,6 +301,56 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 }
 
 // ---------------------------------------------------------------------------
+// Module-path validation
+// ---------------------------------------------------------------------------
+
+/// Collapse embedded `/./` segments and normalise backslashes in a path
+/// fragment that's about to land in a virtual `ext:ts:<pkg>/<rel>` URI.
+/// `resolve_relative_ts_path` joins specs like `./internal/foo` without
+/// normalising, so a single .d.ts can otherwise show up under multiple
+/// virtual paths (`dist/types/Observable.d.ts`,
+/// `dist/types/./internal/Observable.d.ts`) and confuse downstream
+/// dedupe + symbol prefixing.
+pub(crate) fn normalize_virtual_rel(rel: &str) -> String {
+    let mut s = rel.replace('\\', "/");
+    while s.contains("/./") { s = s.replace("/./", "/"); }
+    if let Some(rest) = s.strip_prefix("./") { s = rest.to_string(); }
+    s
+}
+
+/// Reject `dep.module_path` shapes that would produce malformed virtual
+/// paths (`ext:ts:./xxx/...`, `ext:ts:F:/xxx/...`, `ext:ts:.ignored_xxx/...`).
+///
+/// Every walker formats `ext:ts:{module_path}/{rel_sub}` and downstream code
+/// assumes a clean npm package shape — `name` or `@scope/name`. Anything
+/// else (relative specifiers, drive letters, pnpm `.ignored_*` shadows,
+/// `.pnpm/` store paths, hidden dirs) breaks `ts_package_from_virtual_path`,
+/// which then either returns garbage prefixes (`F:`, `.`, `.ignored_xxx`)
+/// or fails to identify the package at all — leaving the chain walker
+/// unable to follow library types like `Observable.pipe()` or `HTMLElement.click()`.
+///
+/// Used at every `ExternalDepRoot { module_path: … }` construction site to
+/// gate which paths get into the index in the first place.
+pub(crate) fn is_valid_npm_module_path(name: &str) -> bool {
+    if name.is_empty() { return false; }
+    if name.starts_with('.') { return false; }       // ./, ../, .ignored_, .pnpm
+    if name.contains(':') { return false; }          // F:/Work/...
+    if name.contains('\\') { return false; }         // windows path leak
+    if name.starts_with('@') {
+        // Scoped: must be exactly `@scope/name`.
+        let rest = &name[1..];
+        let Some((scope, pkg)) = rest.split_once('/') else { return false };
+        if scope.is_empty() || pkg.is_empty() { return false }
+        if scope.starts_with('.') || pkg.starts_with('.') { return false }
+        if pkg.contains('/') { return false }        // no nested paths under @scope
+        true
+    } else {
+        // Unscoped: single segment, no slashes.
+        !name.contains('/')
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Node builtins — appear in package.json declared deps but have no on-disk
 // source under node_modules. Skipped during walk.
 // ---------------------------------------------------------------------------
@@ -354,7 +404,10 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
 
     for dep in &data.dependencies {
         if builtins.contains(dep.as_str()) { continue }
-        if dep.starts_with('@') && !dep.contains('/') { continue }
+        if !is_valid_npm_module_path(dep) {
+            debug!("npm: skipping invalid dep name `{dep}` from package.json");
+            continue;
+        }
 
         // `@types/foo` deps are normally picked up as companions of `foo`
         // below, so we used to skip them here. But for packages whose runtime
@@ -366,25 +419,41 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         // `it`, `expect` etc. as global symbols.
         let is_types_only = dep.starts_with("@types/");
 
-        let mut pkg_roots: Vec<PathBuf> = Vec::new();
+        // Each candidate is the directory plus the canonical npm
+        // module_path that should label its content. The declaring `dep`
+        // is the right label only for the runtime install — the
+        // `@types/<name>` fallback directory is DefinitelyTyped content
+        // and must keep its `@types/` prefix regardless of which dep led
+        // us to it. Otherwise iteration order over `declared` (a
+        // hash-randomised `HashSet`) decides whether `node_modules/@types/jest`
+        // is labelled `jest` or `@types/jest`, which flips the heuristic
+        // filter's `@types/`-substring classification on/off across runs.
+        // The TS resolver's `ts_import_definitely_typed` retry handles
+        // the `import from 'jest'` lookup against the `@types/jest` qname
+        // independently, so this label change does not break consumers.
+        let mut pkg_roots: Vec<(PathBuf, String)> = Vec::new();
         for nm_root in &node_modules_roots {
             let primary = nm_root.join(dep);
-            if primary.is_dir() { pkg_roots.push(primary) }
+            if primary.is_dir() { pkg_roots.push((primary, dep.clone())) }
             if !is_types_only {
                 if !dep.starts_with('@') {
                     let types_dir = nm_root.join("@types").join(dep);
-                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                    if types_dir.is_dir() {
+                        pkg_roots.push((types_dir, format!("@types/{dep}")));
+                    }
                 } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
                     let types_dir = nm_root.join("@types").join(&escaped);
-                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                    if types_dir.is_dir() {
+                        pkg_roots.push((types_dir, format!("@types/{escaped}")));
+                    }
                 }
             }
         }
 
-        for pkg_dir in pkg_roots {
+        for (pkg_dir, module_path) in pkg_roots {
             if seen.insert(pkg_dir.clone()) {
                 roots.push(ExternalDepRoot {
-                    module_path: dep.clone(),
+                    module_path,
                     version: String::from("unknown"),
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
@@ -433,7 +502,10 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
 
     for (spec, parent_local_nm) in transitive_specs {
-        if spec.starts_with('@') && !spec.contains('/') { continue }
+        if !is_valid_npm_module_path(&spec) {
+            debug!("npm: skipping invalid transitive spec `{spec}`");
+            continue;
+        }
         // Try the standard workspace node_modules roots first (npm/yarn
         // hoist transitives there). Fall back to the parent dep's own
         // `node_modules/` (pnpm stores them there).
@@ -605,30 +677,41 @@ fn discover_ts_externals_scoped(
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     for dep in &declared {
         if builtins.contains(dep.as_str()) { continue }
-        if dep.starts_with('@') && !dep.contains('/') { continue }
+        if !is_valid_npm_module_path(dep) {
+            debug!("npm: skipping invalid scoped dep name `{dep}` from package.json");
+            continue;
+        }
         // See `discover_ts_externals` — direct `@types/foo` declarations
         // must not be silently dropped; they may be the sole type source
         // for an ambient-only package (jasmine, mocha, etc.).
         let is_types_only = dep.starts_with("@types/");
 
-        let mut pkg_roots: Vec<PathBuf> = Vec::new();
+        // Carry the canonical module_path alongside each candidate
+        // directory. See the matching block in `discover_ts_externals`
+        // for the rationale — `node_modules/@types/X` always labels
+        // as `@types/X` regardless of which declared dep led us here.
+        let mut pkg_roots: Vec<(PathBuf, String)> = Vec::new();
         for nm_root in &node_modules_roots {
             let primary = nm_root.join(dep);
-            if primary.is_dir() { pkg_roots.push(primary) }
+            if primary.is_dir() { pkg_roots.push((primary, dep.clone())) }
             if !is_types_only {
                 if !dep.starts_with('@') {
                     let types_dir = nm_root.join("@types").join(dep);
-                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                    if types_dir.is_dir() {
+                        pkg_roots.push((types_dir, format!("@types/{dep}")));
+                    }
                 } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
                     let types_dir = nm_root.join("@types").join(&escaped);
-                    if types_dir.is_dir() { pkg_roots.push(types_dir) }
+                    if types_dir.is_dir() {
+                        pkg_roots.push((types_dir, format!("@types/{escaped}")));
+                    }
                 }
             }
         }
-        for pkg_dir in pkg_roots {
+        for (pkg_dir, module_path) in pkg_roots {
             if seen.insert(pkg_dir.clone()) {
                 roots.push(ExternalDepRoot {
-                    module_path: dep.clone(),
+                    module_path,
                     version: String::from("unknown"),
                     root: pkg_dir,
                     ecosystem: LEGACY_ECOSYSTEM_TAG,
@@ -662,7 +745,10 @@ fn discover_ts_externals_scoped(
         }
     }
     for (spec, parent_local_nm) in transitive_specs {
-        if spec.starts_with('@') && !spec.contains('/') { continue }
+        if !is_valid_npm_module_path(&spec) {
+            debug!("npm: skipping invalid scoped transitive spec `{spec}`");
+            continue;
+        }
         let mut probe_roots: Vec<&Path> =
             node_modules_roots.iter().map(|p| p.as_path()).collect();
         if !parent_local_nm.as_os_str().is_empty() {
@@ -969,11 +1055,17 @@ fn scan_for_type_decl(
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if name == "node_modules" && !walk_nested { continue }
+                // Skip every dot-prefixed directory: pnpm `.ignored_*`
+                // shadows, the `.pnpm/` store root if it ever leaks through,
+                // `.git`, `.cache`, `.storybook`, `.next`, etc. None of
+                // them carry source we want to index, and `.ignored_*`
+                // specifically would otherwise produce broken `ext:ts:`
+                // paths whose package prefix can't be parsed.
+                if name.starts_with('.') { continue }
                 if matches!(
                     name,
                     "__tests__" | "__mocks__" | "test" | "tests" | "docs"
                         | "example" | "examples" | "_examples" | "fixtures"
-                        | ".storybook" | ".git"
                 ) { continue }
             }
             scan_for_type_decl(&path, root, dep, type_name, out, scanned, depth + 1);
@@ -987,7 +1079,7 @@ fn scan_for_type_decl(
             if !file_declares_type(&content, type_name) { continue }
 
             let rel_sub = match path.strip_prefix(root) {
-                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Ok(p) => normalize_virtual_rel(&p.to_string_lossy()),
                 Err(_) => continue,
             };
             let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
@@ -1078,11 +1170,17 @@ fn walk_ts_dir_bounded(
         if file_type.is_dir() {
             if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
                 if name == "node_modules" && !walk_nested { continue }
+                // Skip every dot-prefixed directory: pnpm `.ignored_*`
+                // shadows, the `.pnpm/` store root if it ever leaks through,
+                // `.git`, `.cache`, `.storybook`, `.next`, etc. None of
+                // them carry source we want to index, and `.ignored_*`
+                // specifically would otherwise produce broken `ext:ts:`
+                // paths whose package prefix can't be parsed.
+                if name.starts_with('.') { continue }
                 if matches!(
                     name,
                     "__tests__" | "__mocks__" | "test" | "tests" | "docs"
                         | "example" | "examples" | "_examples" | "fixtures"
-                        | ".storybook" | ".git"
                 ) { continue }
             }
             walk_ts_dir_bounded(&path, root, dep, out, depth + 1);
@@ -1092,7 +1190,7 @@ fn walk_ts_dir_bounded(
             if is_test_or_story_file(name) { continue }
 
             let rel_sub = match path.strip_prefix(root) {
-                Ok(p) => p.to_string_lossy().replace('\\', "/"),
+                Ok(p) => normalize_virtual_rel(&p.to_string_lossy()),
                 Err(_) => continue,
             };
             let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel_sub);
@@ -1181,7 +1279,12 @@ fn expand_reexports_into(
     if !seen.insert(file.to_path_buf()) { return }
     if !file.is_file() { return }
     let Ok(rel) = file.strip_prefix(&dep.root) else { return };
-    let rel_s = rel.to_string_lossy().replace('\\', "/");
+    // `resolve_relative_ts_path` joins specs like `./internal/foo` against
+    // the parent dir without normalising, so `rel` can carry embedded `/./`
+    // segments through to the virtual path. Collapse them here so the same
+    // file emits a single canonical `ext:ts:<pkg>/dist/types/internal/Foo.d.ts`
+    // shape regardless of which re-export hop pulled it in.
+    let rel_s = normalize_virtual_rel(&rel.to_string_lossy());
     let lang = if rel_s.ends_with(".tsx") || rel_s.ends_with(".jsx") { "tsx" } else { "typescript" };
     out.push(WalkedFile {
         relative_path: format!("ext:ts:{}/{}", dep.module_path, rel_s),
@@ -1326,6 +1429,16 @@ pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
     let Some(pkg) = ts_package_from_virtual_path(&pf.path).map(str::to_string) else {
         return;
     };
+    // TS core lib (lib.dom.d.ts, lib.es*.d.ts, …) declares runtime globals
+    // — `HTMLElement`, `Document`, `Promise`, etc. — at ambient scope.
+    // Prefixing them under a synthetic package would mangle their qnames
+    // away from the bare names the chain walker queries, so we skip the
+    // post-processing entirely for files served from the synthetic
+    // `__ts_lib__` module. Backfill is also a no-op for these — they
+    // don't carry `declare global { … }` blocks.
+    if pkg == crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE {
+        return;
+    }
     let source_snapshot = pf.content.clone();
     if let Some(source) = source_snapshot.as_deref() {
         if source.contains("declare global") || source.contains("declare namespace") {
@@ -2240,6 +2353,62 @@ mod tests {
     use super::*;
 
     #[test]
+    fn is_valid_npm_module_path_accepts_clean_names() {
+        assert!(is_valid_npm_module_path("react"));
+        assert!(is_valid_npm_module_path("lodash"));
+        assert!(is_valid_npm_module_path("typescript"));
+        assert!(is_valid_npm_module_path("@types/node"));
+        assert!(is_valid_npm_module_path("@vitest/expect"));
+        assert!(is_valid_npm_module_path("__ts_lib__"));
+    }
+
+    #[test]
+    fn is_valid_npm_module_path_rejects_relative_specifiers() {
+        assert!(!is_valid_npm_module_path("./rxjs"));
+        assert!(!is_valid_npm_module_path("../packages/server"));
+        assert!(!is_valid_npm_module_path("./.ignored_concurrently"));
+    }
+
+    #[test]
+    fn is_valid_npm_module_path_rejects_pnpm_shadows_and_drives() {
+        assert!(!is_valid_npm_module_path(".ignored_concurrently"));
+        assert!(!is_valid_npm_module_path(".pnpm"));
+        assert!(!is_valid_npm_module_path("F:"));
+        assert!(!is_valid_npm_module_path("F:/Work/typescript"));
+        assert!(!is_valid_npm_module_path(""));
+    }
+
+    #[test]
+    fn is_valid_npm_module_path_rejects_malformed_scoped() {
+        assert!(!is_valid_npm_module_path("@types"));            // scope only
+        assert!(!is_valid_npm_module_path("@types/"));           // empty pkg
+        assert!(!is_valid_npm_module_path("@/foo"));             // empty scope
+        assert!(!is_valid_npm_module_path("@./foo"));            // dot-scope
+        assert!(!is_valid_npm_module_path("@types/./node"));     // dot-pkg
+        assert!(!is_valid_npm_module_path("@types/node/sub"));   // nested under scope
+    }
+
+    #[test]
+    fn normalize_virtual_rel_collapses_dot_segments() {
+        assert_eq!(
+            normalize_virtual_rel("dist/types/./internal/Observable.d.ts"),
+            "dist/types/internal/Observable.d.ts"
+        );
+        assert_eq!(
+            normalize_virtual_rel("./v4/classic/./schemas.d.ts"),
+            "v4/classic/schemas.d.ts"
+        );
+        assert_eq!(
+            normalize_virtual_rel("dist\\types\\internal\\Observable.d.ts"),
+            "dist/types/internal/Observable.d.ts"
+        );
+        assert_eq!(
+            normalize_virtual_rel("dist/types/internal/Observable.d.ts"),
+            "dist/types/internal/Observable.d.ts"
+        );
+    }
+
+    #[test]
     fn declare_global_extracts_const_decls() {
         let src = r#"
 declare global {
@@ -2601,12 +2770,56 @@ declare global {
         std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
 
         let roots = discover_ts_externals_scoped(ws, &pkg);
-        assert!(roots.iter().any(|r| r.module_path == "chai"),
-            "expected chai from workspace root devDeps");
+        // chai is declared as a runtime dep but only `@types/chai` exists
+        // on disk — the dep root labels with the canonical `@types/chai`
+        // module_path so DefinitelyTyped content keeps its `@types/`
+        // prefix. The TS resolver retries `import from 'chai'` against
+        // `@types/chai.*` qnames via `ts_import_definitely_typed`.
+        assert!(roots.iter().any(|r| r.module_path == "@types/chai"),
+            "expected @types/chai from workspace root devDeps");
         assert!(roots.iter().any(|r| r.module_path == "vitest"),
             "expected vitest from workspace root devDeps");
         assert!(roots.iter().any(|r| r.module_path == "preact"),
             "expected preact from sub-package deps");
+    }
+
+    /// Regression: when both `jest` and `@types/jest` are declared, the
+    /// shared `node_modules/@types/jest` directory must label as
+    /// `@types/jest` regardless of `HashSet<String>` iteration order over
+    /// `declared`. Without this, ambient-globals classification (which
+    /// keys on the `@types/` substring) flips on/off across processes.
+    #[test]
+    fn discover_ts_externals_scoped_labels_at_types_canonically() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let ws = tmp.path();
+        std::fs::write(
+            ws.join("package.json"),
+            r#"{"name":"app","devDependencies":{"jest":"25","@types/jest":"25"}}"#,
+        ).unwrap();
+
+        // Only the @types/jest tree exists on disk — jest 25 ships no
+        // bundled types, which is the realistic setup that triggered the
+        // intermittent regression in ts-nestjs-realworld.
+        let types_jest = ws.join("node_modules").join("@types").join("jest");
+        std::fs::create_dir_all(&types_jest).unwrap();
+        std::fs::write(
+            types_jest.join("index.d.ts"),
+            "declare var describe: any; declare const expect: any;",
+        ).unwrap();
+
+        std::env::remove_var("BEARWISDOM_TS_NODE_MODULES");
+
+        let roots = discover_ts_externals_scoped(ws, ws);
+        let labels: Vec<&str> = roots
+            .iter()
+            .filter(|r| r.root == types_jest)
+            .map(|r| r.module_path.as_str())
+            .collect();
+        assert_eq!(
+            labels,
+            vec!["@types/jest"],
+            "node_modules/@types/jest must label as @types/jest, never `jest`"
+        );
     }
 
     #[allow(dead_code)]

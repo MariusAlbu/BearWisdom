@@ -89,6 +89,14 @@ impl ExternalSourceLocator for TsLibDomEcosystem {
     }
 }
 
+/// Synthetic module name used for TypeScript core lib files
+/// (`lib.dom.d.ts`, `lib.es*.d.ts`, etc.). They declare runtime globals
+/// rather than members of a real npm package, so we route them through a
+/// reserved prefix that the resolver and `ts_post_process_external` both
+/// recognise — keeping their symbols un-prefixed instead of mangling them
+/// under whatever an absolute Windows path happens to look like.
+pub const TS_LIB_SYNTHETIC_MODULE: &str = "__ts_lib__";
+
 fn discover_ts_lib_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     let mut roots = Vec::new();
 
@@ -96,20 +104,20 @@ fn discover_ts_lib_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     if let Some(explicit) = std::env::var_os("BEARWISDOM_TS_LIB_DIR") {
         let p = PathBuf::from(explicit);
         if p.is_dir() {
-            roots.push(make_root(&p, "ts-lib"));
+            roots.push(make_root(&p, TS_LIB_SYNTHETIC_MODULE));
         }
     }
 
     if roots.is_empty() {
         if let Some(dir) = find_typescript_lib(project_root) {
-            roots.push(make_root(&dir, "ts-lib"));
+            roots.push(make_root(&dir, TS_LIB_SYNTHETIC_MODULE));
         }
     }
 
     // @types/node is a separate dep root so its files tag as Node rather
     // than DOM.
     if let Some(node_types) = find_types_node(project_root) {
-        roots.push(make_root(&node_types, "types-node"));
+        roots.push(make_root(&node_types, "@types/node"));
     }
 
     if roots.is_empty() {
@@ -118,9 +126,9 @@ fn discover_ts_lib_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     roots
 }
 
-fn make_root(dir: &Path, tag: &str) -> ExternalDepRoot {
+fn make_root(dir: &Path, module_path: &str) -> ExternalDepRoot {
     ExternalDepRoot {
-        module_path: tag.to_string(),
+        module_path: module_path.to_string(),
         version: String::new(),
         root: dir.to_path_buf(),
         ecosystem: LEGACY_ECOSYSTEM_TAG,
@@ -188,11 +196,11 @@ fn ancestors_with_node_modules(project_root: &Path) -> Vec<PathBuf> {
 
 fn walk_ts_lib(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
-    walk_dir(&dep.root, &mut out, 0);
+    walk_dir(dep, &dep.root, &mut out, 0);
     out
 }
 
-fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
+fn walk_dir(dep: &ExternalDepRoot, dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
     if depth >= 8 { return }
     let Ok(entries) = std::fs::read_dir(dir) else { return };
     for entry in entries.flatten() {
@@ -203,13 +211,14 @@ fn walk_dir(dir: &Path, out: &mut Vec<WalkedFile>, depth: u32) {
                 if matches!(name, "test" | "tests" | "__tests__") { continue }
                 if name.starts_with('.') { continue }
             }
-            walk_dir(&path, out, depth + 1);
+            walk_dir(dep, &path, out, depth + 1);
         } else if ft.is_file() {
             let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
             if !name.ends_with(".d.ts") { continue }
-            let display = path.to_string_lossy().replace('\\', "/");
+            let Ok(rel) = path.strip_prefix(&dep.root) else { continue };
+            let rel_s = rel.to_string_lossy().replace('\\', "/");
             out.push(WalkedFile {
-                relative_path: format!("ext:ts:{}", display),
+                relative_path: format!("ext:ts:{}/{}", dep.module_path, rel_s),
                 absolute_path: path,
                 language: "typescript",
             });

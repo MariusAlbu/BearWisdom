@@ -681,6 +681,12 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
             } else {
                 (parts[0].to_string(), parts[1..].join("/"))
             };
+            // Reject pnpm `.ignored_*` shadows and other dot-prefixed
+            // directories that masquerade as packages — same gate npm.rs
+            // applies at the dep-discovery side.
+            if !crate::ecosystem::npm::is_valid_npm_module_path(&pkg) {
+                return None;
+            }
             Some(format!("ext:ts:{pkg}/{rel}"))
         }
         "go" => {
@@ -733,9 +739,13 @@ fn lookup_demand_for_walked<'a>(
 
 /// R6: detect external files whose declarations are ambient globals (visible
 /// project-wide without an import). Matches the file-path shapes emitted by
-/// the `ts-lib-dom` ecosystem: `typescript/lib/lib.*.d.ts` and
-/// `@types/node/**/*.d.ts`.
+/// the `ts-lib-dom` ecosystem: the synthetic `__ts_lib__` module that wraps
+/// `typescript/lib/lib.*.d.ts`, plus `@types/node/**/*.d.ts`.
 fn is_ambient_global_external(relative_path: &str) -> bool {
     let normalized = relative_path.replace('\\', "/");
-    normalized.contains("/typescript/lib/lib.") || normalized.contains("/@types/node/")
+    normalized.starts_with(&format!(
+        "ext:ts:{}/",
+        crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE
+    ))
+        || normalized.contains("/@types/node/")
 }

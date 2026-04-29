@@ -569,8 +569,10 @@ impl LanguageResolver for TypeScriptResolver {
         //
         // Scoped to single-identifier targets to avoid masking real unresolved
         // refs on dotted chains.
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef)
-            && !target.contains('.')
+        if matches!(
+            edge_kind,
+            EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates
+        ) && !target.contains('.')
         {
             let globals_candidate = format!(
                 "{}.{target}",
@@ -585,6 +587,48 @@ impl LanguageResolver for TypeScriptResolver {
                         resolved_yield_type: None,
                     });
                 }
+            }
+
+            // TS core lib + @types/node fallback. Symbols from
+            // `ext:ts:__ts_lib__/...` files keep their bare qname after
+            // Pass A (the post-processor skips prefixing for the synthetic
+            // module so `HTMLElement.click` stays chain-walkable). That
+            // means utility types (`Record`, `Omit`, `Exclude`, `Pick`),
+            // DOM constructors (`HTMLElement`, `Document`, `ShadowRoot`),
+            // and runtime functions whose `declare global` form lives in
+            // `lib.dom.d.ts` / `lib.es*.d.ts` directly aren't reachable
+            // through `__npm_globals__.X`. Probe the bare qname and only
+            // accept the hit when the defining file is an ambient-global
+            // lib file — keeps the fallback from silently grabbing a
+            // user-defined `Foo` class with a colliding short name.
+            for candidate in lookup.all_by_qualified_name(target) {
+                if !crate::indexer::resolve::engine::is_ambient_global_lib_path(
+                    &candidate.file_path,
+                ) {
+                    continue;
+                }
+                // Standard kind compatibility, plus a TS-lib-specific
+                // relaxation: `declare var X: { new(): Y }` is how the
+                // core lib encodes constructors (`Audio`, `Proxy`,
+                // `FileReader`, `Map`, …). The extractor records those
+                // as `variable`, but `new Audio()` carries
+                // `EdgeKind::Instantiates` whose default
+                // `kind_compatible` only accepts class/function. Trust
+                // ambient lib variables for instantiation since the TS
+                // type system already has — anything callable as a
+                // constructor lands in this shape.
+                let kind_ok = predicates::kind_compatible(edge_kind, &candidate.kind)
+                    || (matches!(edge_kind, EdgeKind::Instantiates)
+                        && candidate.kind == "variable");
+                if !kind_ok {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: candidate.id,
+                    confidence: 0.85,
+                    strategy: "ts_lib_globals",
+                    resolved_yield_type: None,
+                });
             }
         }
 

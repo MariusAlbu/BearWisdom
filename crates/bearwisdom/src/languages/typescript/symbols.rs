@@ -939,26 +939,58 @@ pub(super) fn push_variable_decl(
 
                     let mut ppcursor = name_node.walk();
                     for prop in name_node.children(&mut ppcursor) {
-                        let prop_name = if prop.kind()
+                        // `binding_name` is what other code references — the local
+                        // identifier introduced by the pattern. For
+                        // `{ mutate: mutate1 }` the binding is `mutate1`, not
+                        // `mutate`. Without this distinction, callers writing
+                        // `mutate1()` look up a non-existent `mutate` symbol and
+                        // the call goes unresolved.
+                        //
+                        // `source_prop` is the property name on the right-hand
+                        // side, used to extend the type-resolution chain so the
+                        // binding's inferred type matches the destructured field.
+                        let (binding_name, source_prop) = if prop.kind()
                             == "shorthand_property_identifier_pattern"
                             || prop.kind() == "shorthand_property_identifier"
                         {
-                            node_text(prop, src)
+                            // `{ mutate }` — same name on both sides.
+                            let n = node_text(prop, src);
+                            (n.clone(), n)
                         } else if prop.kind() == "pair_pattern" {
-                            prop.child_by_field_name("key")
+                            let key = prop
+                                .child_by_field_name("key")
                                 .map(|k| node_text(k, src))
-                                .unwrap_or_default()
+                                .unwrap_or_default();
+                            let value_node = prop.child_by_field_name("value");
+                            // The value can itself be another pattern
+                            // (`{ a: { b } }`) or an assignment_pattern with a
+                            // default (`{ a: b = 1 }`). Only emit a binding
+                            // symbol when the value is a plain identifier — the
+                            // nested cases are handled by the recursive walk.
+                            let binding = match value_node.map(|v| (v.kind(), v)) {
+                                Some(("identifier", v)) => node_text(v, src),
+                                Some(("assignment_pattern", v)) => v
+                                    .child_by_field_name("left")
+                                    .filter(|l| l.kind() == "identifier")
+                                    .map(|l| node_text(l, src))
+                                    .unwrap_or_default(),
+                                _ => String::new(),
+                            };
+                            if binding.is_empty() {
+                                continue;
+                            }
+                            (binding, key)
                         } else {
                             continue;
                         };
-                        if prop_name.is_empty() {
+                        if binding_name.is_empty() {
                             continue;
                         }
 
-                        let qualified_name = scope_tree::qualify(&prop_name, parent_scope);
+                        let qualified_name = scope_tree::qualify(&binding_name, parent_scope);
                         let prop_idx = symbols.len();
                         symbols.push(ExtractedSymbol {
-                            name: prop_name.clone(),
+                            name: binding_name.clone(),
                             qualified_name,
                             kind: SymbolKind::Variable,
                             visibility: detect_visibility(node, src),
@@ -977,7 +1009,7 @@ pub(super) fn push_variable_decl(
                         if let Some(ref base_chain) = source_chain {
                             let mut prop_chain = base_chain.clone();
                             prop_chain.segments.push(ChainSegment {
-                                name: prop_name.clone(),
+                                name: source_prop.clone(),
                                 node_kind: "property".to_string(),
                                 kind: SegmentKind::Property,
                                 declared_type: None,
@@ -986,14 +1018,14 @@ pub(super) fn push_variable_decl(
                             });
                             refs.push(ExtractedRef {
                                 source_symbol_index: prop_idx,
-                                target_name: prop_name,
+                                target_name: source_prop,
                                 kind: EdgeKind::TypeRef,
                                 line: prop.start_position().row as u32,
                                 module: None,
                                 chain: Some(prop_chain),
                                 byte_offset: 0,
-                                                            namespace_segments: Vec::new(),
-});
+                                            namespace_segments: Vec::new(),
+                            });
                         }
                     }
                 } else if name_node.kind() == "array_pattern" {

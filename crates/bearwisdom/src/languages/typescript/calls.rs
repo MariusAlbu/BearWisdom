@@ -385,6 +385,76 @@ pub(super) fn build_chain_inner(
             build_chain_inner(func, src, segments)
         }
 
+        // `await foo()`, `await x.method()` — peel the `await` so the chain
+        // walker sees the underlying call. Without this, `target_name`
+        // captures the entire `await jsonlStreamConsumer` text and
+        // resolution always misses.
+        "await_expression" => {
+            // The wrapped expression is the only non-keyword child. Field-name
+            // access is grammar-version-dependent, so iterate children.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                if child.kind() != "await" {
+                    return build_chain_inner(child, src, segments);
+                }
+            }
+            None
+        }
+
+        // `obj.foo!()` — TS non-null assertion wraps the callee. Same shape
+        // as await: peel one level and recurse on the inner expression.
+        "non_null_expression" => {
+            let inner = node.child(0)?;
+            build_chain_inner(inner, src, segments)
+        }
+
+        // `f<T>()` — generic instantiation. Tree-sitter wraps the callee in
+        // an `instantiation_expression { function, type_arguments }`. The
+        // chain root is the inner function expression.
+        "instantiation_expression" => {
+            let func = node
+                .child_by_field_name("function")
+                .or_else(|| node.child(0))?;
+            build_chain_inner(func, src, segments)
+        }
+
+        // `(expr).foo()` — parenthesized expression around the callee.
+        "parenthesized_expression" => {
+            if let Some(expr) = node.child_by_field_name("expression") {
+                return build_chain_inner(expr, src, segments);
+            }
+            let mut cursor = node.walk();
+            let mut inner = None;
+            for child in node.children(&mut cursor) {
+                if !matches!(child.kind(), "(" | ")") {
+                    inner = Some(child);
+                    break;
+                }
+            }
+            build_chain_inner(inner?, src, segments)
+        }
+
+        // `(x as Foo).bar()` / `(x satisfies Foo).bar()` — peel the cast.
+        "as_expression" | "satisfies_expression" | "type_assertion" => {
+            // First non-type child is the underlying expression.
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                let k = child.kind();
+                if !matches!(k, "as" | "satisfies" | "<" | ">" | "type_identifier"
+                    | "predefined_type" | "generic_type" | "union_type"
+                    | "intersection_type" | "literal_type" | "tuple_type"
+                    | "array_type" | "object_type" | "type_predicate"
+                    | "function_type" | "constructor_type" | "conditional_type"
+                    | "indexed_access_type" | "lookup_type" | "mapped_type"
+                    | "template_literal_type" | "type_query" | "this_type"
+                    | "readonly")
+                {
+                    return build_chain_inner(child, src, segments);
+                }
+            }
+            None
+        }
+
         // Unknown node — can't build a chain from this.
         _ => None,
     }
@@ -402,7 +472,33 @@ pub(super) fn callee_name_fallback(node: Node, src: &[u8]) -> String {
         }
         _ => {
             let t = node_text(node, src);
-            t.rsplit('.').next().unwrap_or(&t).to_string()
+            sanitize_callee_text(&t)
         }
     }
+}
+
+/// Last-resort sanitisation when neither the chain walker nor the typed
+/// fallbacks could narrow the callee to a single identifier — strip the
+/// surface-syntax wrappers that would otherwise pollute `target_name`.
+///
+/// Without this, multi-token texts like `await jsonlStreamConsumer` or
+/// `getInitialProps!` flow through verbatim and never match a real symbol
+/// in the index. The chain walker handles the same forms structurally
+/// (see the new `await_expression` / `non_null_expression` arms in
+/// `build_chain_inner`); this helper is the safety net for AST shapes
+/// that don't reach the structured path.
+fn sanitize_callee_text(raw: &str) -> String {
+    let mut s = raw.trim();
+    // Peel any number of leading `await ` prefixes.
+    while let Some(rest) = s.strip_prefix("await ") {
+        s = rest.trim_start();
+    }
+    // After a non-null assertion, drop the trailing `!`.
+    let s = s.trim_end_matches('!');
+    // If a generic instantiation leaked through (`fn<T>`), keep only the
+    // identifier preceding the angle-bracket.
+    let s = s.split('<').next().unwrap_or(s);
+    // Member expression — keep the last segment.
+    let s = s.rsplit('.').next().unwrap_or(s);
+    s.trim().to_string()
 }

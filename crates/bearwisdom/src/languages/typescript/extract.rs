@@ -323,7 +323,7 @@ fn extract_node(
                 //   `export { X as Z } from './y'`
                 //   `export * from './y'`
                 //   `export * as ns from './y'`
-                extract_reexports(&child, src, symbols.len(), refs);
+                extract_reexports(&child, src, symbols, refs);
             }
 
             "method_definition" => {
@@ -1047,7 +1047,8 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, ImportEntry> {
 ///
 /// Handles:
 ///   `export { X } from './y'`              → Imports ref, target_name="X", module="./y"
-///   `export { X as Z } from './y'`         → Imports ref, target_name="X", module="./y"
+///   `export { X as Z } from './y'`         → Imports ref + synthetic Z symbol so
+///                                            consumers' `import { Z }` resolves.
 ///   `export * from './y'`                  → Imports ref, target_name="*", module="./y"
 ///   `export * as ns from './y'`            → Imports ref, target_name="*", module="./y"
 ///
@@ -1055,12 +1056,24 @@ fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, ImportEntry> {
 /// `file_symbol_count` — the index one past the last real symbol, which is
 /// how the JS extractor handles them.  If the file has no symbols yet,
 /// index 0 is fine because the resolution engine only uses the module field.
+///
+/// **Why we emit synthetic symbols for renamed re-exports.** A consumer
+/// that writes `import { AnyTRPCRouter } from '@trpc/server'` looks for a
+/// symbol named `AnyTRPCRouter` in the package's entry chain. When the
+/// definition is `export { type AnyRouter as AnyTRPCRouter } from './core'`,
+/// no such symbol exists anywhere in the project — only the `AnyRouter`
+/// original. Emitting an alias-named symbol here gives the resolver
+/// something to land on so the import resolves; the existing Imports ref
+/// continues to encode the redirection back to the source for downstream
+/// chain walks that need the underlying definition.
 fn extract_reexports(
     node: &tree_sitter::Node,
     src: &[u8],
-    file_symbol_count: usize,
+    symbols: &mut Vec<crate::types::ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
+
     // The source module is the `source` field of the export_statement.
     let module_path = node.child_by_field_name("source").map(|s| {
         helpers::node_text(s, src)
@@ -1080,10 +1093,16 @@ fn extract_reexports(
     // Use sentinel index: one past the last symbol (or 0 if no symbols yet).
     // The resolver only needs `target_name` and `module`; the source index is
     // irrelevant for re-export chain following.
-    let source_idx = file_symbol_count.saturating_sub(1);
+    let source_idx = symbols.len().saturating_sub(1);
 
     let line = node.start_position().row as u32;
     let mut has_wildcard = false;
+    // `export type { ... } from '...'` — the whole clause is type-only.
+    // Tree-sitter typescript surfaces this as a `type` keyword child of the
+    // export_statement node itself, before the `export_clause`.
+    let stmt_type_only = (0..node.child_count()).any(|i| {
+        node.child(i).map(|c| c.kind() == "type" && i < 2).unwrap_or(false)
+    });
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -1094,23 +1113,77 @@ fn extract_reexports(
                 for spec in child.children(&mut ec) {
                     if spec.kind() == "export_specifier" {
                         // `name` field = the original exported name (before `as`).
-                        // `alias` field = the local rename (after `as`), unused here.
-                        // We store the original so the resolver can find it in the source.
+                        // `alias` field = the local rename (after `as`).
                         let original_name = spec
                             .child_by_field_name("name")
                             .map(|n| helpers::node_text(n, src))
                             .unwrap_or_default();
+                        let alias_name = spec
+                            .child_by_field_name("alias")
+                            .map(|n| helpers::node_text(n, src))
+                            .unwrap_or_default();
+                        // Per-specifier `type` modifier: `export { type X as Y }`.
+                        let spec_type_only = (0..spec.child_count()).any(|i| {
+                            spec.child(i).map(|c| c.kind() == "type").unwrap_or(false)
+                        });
+                        let type_only = stmt_type_only || spec_type_only;
                         if !original_name.is_empty() {
+                            // The Imports ref encodes the redirection — store
+                            // the original so the resolver can find it in the
+                            // source module. (Unchanged from prior behavior.)
                             refs.push(ExtractedRef {
                                 source_symbol_index: source_idx,
-                                target_name: original_name,
+                                target_name: original_name.clone(),
                                 kind: EdgeKind::Imports,
                                 line: spec.start_position().row as u32,
                                 module: module_path.clone(),
                                 chain: None,
                                 byte_offset: 0,
-                                                            namespace_segments: Vec::new(),
-});
+                                            namespace_segments: Vec::new(),
+                            });
+                        }
+
+                        // Emit a synthetic symbol named after what the export
+                        // exposes (alias when present, original otherwise).
+                        // Without this, consumers' `import { X } from '...'`
+                        // and bare type refs to `X` find nothing in this file
+                        // — the re-export is invisible at the symbol layer.
+                        // The behaviour mirrors the JS extractor and gives
+                        // the resolver a landing point for both renamed and
+                        // bare re-exports without disturbing the existing
+                        // `Imports` ref that drives cross-package chain
+                        // following.
+                        let exposed = if !alias_name.is_empty() {
+                            alias_name.clone()
+                        } else {
+                            original_name.clone()
+                        };
+                        let already_emitted = !exposed.is_empty()
+                            && symbols.iter().any(|s| s.qualified_name == exposed);
+                        if !exposed.is_empty() && !already_emitted {
+                            let kind = if type_only {
+                                SymbolKind::TypeAlias
+                            } else {
+                                // Variable matches both TypeRef and Calls in
+                                // `predicates::kind_compatible`, so the
+                                // consumer ref resolves regardless of how
+                                // the symbol is referenced downstream.
+                                SymbolKind::Variable
+                            };
+                            symbols.push(ExtractedSymbol {
+                                name: exposed.clone(),
+                                qualified_name: exposed,
+                                kind,
+                                visibility: Some(Visibility::Public),
+                                start_line: spec.start_position().row as u32 + 1,
+                                end_line: spec.end_position().row as u32 + 1,
+                                start_col: spec.start_position().column as u32,
+                                end_col: spec.end_position().column as u32,
+                                signature: None,
+                                doc_comment: None,
+                                scope_path: None,
+                                parent_index: None,
+                            });
                         }
                     }
                 }

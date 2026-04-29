@@ -77,9 +77,22 @@ fn strip_generic_args(s: &str) -> String {
 /// with the TypeScript compiler, or any file under `@types/node/`. Methods
 /// declared in these files are the JS/DOM/ES runtime surface and need no
 /// explicit import to call.
-fn is_ambient_global_lib_path(path: &str) -> bool {
+///
+/// Recognises both the historical absolute-path form
+/// (`.../typescript/lib/lib.dom.d.ts`) and the synthetic-module form
+/// emitted post-Pass-A (`ext:ts:__ts_lib__/lib.dom.d.ts`,
+/// `ext:ts:@types/node/process.d.ts`). The substring matchers stay so
+/// older indexes built before the path rewrite still classify correctly.
+pub(crate) fn is_ambient_global_lib_path(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
-    normalized.contains("/typescript/lib/lib.") || normalized.contains("/@types/node/")
+    let synthetic_prefix = format!(
+        "ext:ts:{}/",
+        crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE
+    );
+    normalized.starts_with(&synthetic_prefix)
+        || normalized.starts_with("ext:ts:@types/node/")
+        || normalized.contains("/typescript/lib/lib.")
+        || normalized.contains("/@types/node/")
 }
 
 fn is_type_like_kind(kind: &str) -> bool {
