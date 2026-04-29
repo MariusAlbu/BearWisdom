@@ -131,6 +131,26 @@ fn extract_inner(
         scan_all_type_identifiers(root, src_bytes, 0, &mut refs);
     }
 
+    // Bare re-export post-pass — covers the workspace barrel-file shape
+    //
+    //   ```typescript
+    //   import type { Foo } from 'pkg';
+    //   export type { Foo };
+    //   ```
+    //
+    // where `extract_reexports` (called from inside the main traversal)
+    // can't help: it returns early when the export_statement has no
+    // `source` field, since the target module isn't on the node itself.
+    // Here we have the file's import_map already built — for every
+    // bare-export specifier whose name traces back to an import, emit
+    // the same Imports ref + synthetic symbol pair the with-source path
+    // produces. Without this, every barrel-style workspace package
+    // re-exporting an npm type by name leaves consumers' imports
+    // unresolved against the barrel file.
+    extract_bare_reexports_via_imports(
+        root, src_bytes, &import_map, &mut symbols, &mut refs,
+    );
+
     // Post-filter: suppress TypeRef entries whose target is an in-scope type
     // parameter at the ref's source line. A `function f<Target>(x: Target)`
     // or `type T<Target> = { a: Target }` must not leak `Target` as an
@@ -935,6 +955,130 @@ fn recurse_for_object_types(
 ///
 /// Walk every top-level `import` statement and return a per-local-name
 /// map describing where it came from. Drives the shared
+/// Bare re-export pass — counterpart to `extract_reexports` for clauses
+/// that have no `from '<module>'` source. The exported names are local
+/// bindings; the resolver has no way to find them in another file's
+/// symbol table unless something synthesises a landing point here.
+///
+/// For each `export { name [as alias] }` whose `name` was previously
+/// imported in this file, emit:
+///   * an `Imports` ref pointing back at the original module + the
+///     canonical exported name, so the resolver can chain through to
+///     the underlying definition;
+///   * a synthetic `Variable` (or `TypeAlias` for type-only exports)
+///     under the alias-or-name, so consumers' `import { … } from
+///     './barrel'` finds something concrete in this file.
+///
+/// Names not present in the import map are skipped — those are local
+/// declarations that the main traversal already extracted as proper
+/// symbols, no synthesis required.
+fn extract_bare_reexports_via_imports(
+    root: Node,
+    src: &[u8],
+    import_map: &HashMap<String, ImportEntry>,
+    symbols: &mut Vec<crate::types::ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    use crate::types::{ExtractedSymbol, SymbolKind, Visibility};
+
+    let mut cursor = root.walk();
+    for child in root.children(&mut cursor) {
+        if child.kind() != "export_statement" { continue; }
+        // The with-source path is owned by `extract_reexports`. Skip it
+        // here so we don't double-emit Imports refs for the same clause.
+        if child.child_by_field_name("source").is_some() { continue; }
+
+        // `export type { … }` — the whole clause is type-only. The
+        // grammar surfaces `type` as a top-level keyword child of the
+        // export_statement, before the export_clause.
+        let stmt_type_only = (0..child.child_count()).any(|i| {
+            child.child(i).map(|c| c.kind() == "type" && i < 2).unwrap_or(false)
+        });
+
+        let mut ec = child.walk();
+        for clause in child.children(&mut ec) {
+            if clause.kind() != "export_clause" { continue; }
+            let mut sc = clause.walk();
+            for spec in clause.children(&mut sc) {
+                if spec.kind() != "export_specifier" { continue; }
+                let name = spec
+                    .child_by_field_name("name")
+                    .map(|n| helpers::node_text(n, src))
+                    .unwrap_or_default();
+                if name.is_empty() { continue; }
+
+                let Some(import) = import_map.get(&name) else { continue };
+
+                // The canonical name in the source module — for renamed
+                // imports (`import { X as Y }`), the source's export
+                // list has `X`, not `Y`. The Imports ref must encode the
+                // source-side name so cross-package chain following
+                // matches the actual export.
+                let exported_in_source = match &import.kind {
+                    ImportKind::Named { exported_name } => exported_name.clone(),
+                    ImportKind::Default => name.clone(),
+                    // Namespace re-exports of a `import * as ns`-style binding
+                    // are too ambiguous to resolve generically — skip.
+                    ImportKind::Namespace | ImportKind::SideEffect => continue,
+                };
+
+                let alias = spec
+                    .child_by_field_name("alias")
+                    .map(|n| helpers::node_text(n, src))
+                    .unwrap_or_default();
+                let exposed = if !alias.is_empty() { alias.clone() } else { name.clone() };
+
+                // Per-specifier `type` modifier: `export { type X }`.
+                let spec_type_only = (0..spec.child_count()).any(|i| {
+                    spec.child(i).map(|c| c.kind() == "type").unwrap_or(false)
+                });
+                let type_only = stmt_type_only || spec_type_only;
+
+                let source_idx = symbols.len().saturating_sub(1);
+                refs.push(ExtractedRef {
+                    source_symbol_index: source_idx,
+                    target_name: exported_in_source,
+                    kind: EdgeKind::Imports,
+                    line: spec.start_position().row as u32,
+                    module: Some(import.module.clone()),
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
+
+                let already_emitted = symbols
+                    .iter()
+                    .any(|s| s.qualified_name == exposed);
+                if !already_emitted {
+                    let kind = if type_only {
+                        SymbolKind::TypeAlias
+                    } else {
+                        // Variable matches both TypeRef and Calls in
+                        // `predicates::kind_compatible`, so the consumer
+                        // ref resolves regardless of how downstream
+                        // names this re-export.
+                        SymbolKind::Variable
+                    };
+                    symbols.push(ExtractedSymbol {
+                        name: exposed.clone(),
+                        qualified_name: exposed,
+                        kind,
+                        visibility: Some(Visibility::Public),
+                        start_line: spec.start_position().row as u32 + 1,
+                        end_line: spec.end_position().row as u32 + 1,
+                        start_col: spec.start_position().column as u32,
+                        end_col: spec.end_position().column as u32,
+                        signature: None,
+                        doc_comment: None,
+                        scope_path: None,
+                        parent_index: None,
+                    });
+                }
+            }
+        }
+    }
+}
+
 /// `ecosystem::imports::resolve_import_refs` pass, which canonicalizes
 /// every ref against this map before the file is handed to the resolver.
 ///

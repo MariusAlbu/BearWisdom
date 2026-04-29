@@ -986,6 +986,87 @@ fn reexport_multiple_named_emits_one_ref_per_export() {
     assert_eq!(import_refs.len(), 3, "should emit one Imports ref per export specifier");
 }
 
+#[test]
+fn bare_reexport_of_imported_name_emits_imports_ref() {
+    // The vue-vben-admin barrel-file shape: import a name, then re-export
+    // it without a `from` clause. Without the post-pass synthesis,
+    // downstream consumers' `import { Foo } from './barrel'` has nothing
+    // to land on in this file's symbol table.
+    let result = extract::extract(
+        "import type { Foo } from 'pkg';\nexport type { Foo };",
+        false,
+    );
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports
+            && r.target_name == "Foo"
+            && r.module.as_deref() == Some("pkg")
+    });
+    assert!(
+        r.is_some(),
+        "bare re-export of imported name should emit Imports ref pointing at original module"
+    );
+    let sym = result.symbols.iter().find(|s| s.name == "Foo");
+    assert!(
+        sym.is_some(),
+        "bare re-export of imported name should emit a synthetic symbol consumers can land on"
+    );
+}
+
+#[test]
+fn bare_reexport_with_alias_emits_canonical_target_and_alias_symbol() {
+    // `import { X } from 'pkg'; export { X as Y };`
+    // The Imports ref must carry `target_name="X"` (the canonical
+    // name in `pkg`'s export list), but the synthetic symbol exposes
+    // the alias `Y` so consumers' `import { Y }` resolves.
+    let result = extract::extract(
+        "import { X } from 'pkg';\nexport { X as Y };",
+        false,
+    );
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports
+            && r.target_name == "X"
+            && r.module.as_deref() == Some("pkg")
+    });
+    assert!(r.is_some(), "alias re-export should preserve canonical target_name=X");
+    assert!(
+        result.symbols.iter().any(|s| s.name == "Y"),
+        "alias re-export should emit synthetic symbol under alias `Y`"
+    );
+}
+
+#[test]
+fn bare_reexport_of_renamed_import_resolves_back_to_source_name() {
+    // `import { Source as Local } from 'pkg'; export { Local };`
+    // The Imports ref must carry `target_name="Source"` — the name in
+    // `pkg`'s export list — even though the export specifier names
+    // `Local`, the local binding alias.
+    let result = extract::extract(
+        "import { Source as Local } from 'pkg';\nexport { Local };",
+        false,
+    );
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports
+            && r.target_name == "Source"
+            && r.module.as_deref() == Some("pkg")
+    });
+    assert!(
+        r.is_some(),
+        "bare re-export of renamed import should walk back to the source-side name"
+    );
+}
+
+#[test]
+fn bare_reexport_skips_local_declarations() {
+    // The pre-existing behaviour is preserved for purely-local
+    // re-exports — a `const Foo = 1; export { Foo };` is just a
+    // visibility declaration, no module to chain through.
+    let result = extract::extract("const Foo = 1; export { Foo };", false);
+    let r = result.refs.iter().find(|r| {
+        r.kind == EdgeKind::Imports && r.target_name == "Foo"
+    });
+    assert!(r.is_none(), "local re-export must not synthesize an Imports ref");
+}
+
 // ---------------------------------------------------------------------------
 // Local variable type inference from new_expression
 // ---------------------------------------------------------------------------
