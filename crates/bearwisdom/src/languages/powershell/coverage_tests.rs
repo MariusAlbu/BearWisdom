@@ -268,13 +268,26 @@ fn ref_class_inherits() {
     );
 }
 
-/// ref_node_kind: `member_access`  —  property access (not a call) e.g. `$obj.Property`
+/// ref_node_kind: `member_access` static type access — `[Type]::Member`
+/// emits a TypeRef. Runtime property reads on a `$variable` are skipped
+/// (no type info is available to resolve them, and they otherwise flood
+/// unresolved_refs with hashtable keys / AST property names).
 #[test]
-fn ref_member_access() {
+fn ref_member_access_static_type() {
+    let r = extract("$max = [int]::MaxValue");
+    assert!(
+        r.refs.iter().any(|rf| rf.target_name == "MaxValue" && rf.kind == EdgeKind::TypeRef),
+        "expected TypeRef ref to MaxValue from [int]::MaxValue; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn ref_member_access_runtime_var_is_skipped() {
     let r = extract("$length = $str.Length");
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "Length" && rf.kind == EdgeKind::TypeRef),
-        "expected TypeRef ref to Length from member_access; got {:?}",
+        !r.refs.iter().any(|rf| rf.target_name == "Length"),
+        "did not expect a ref to Length from $str.Length; got {:?}",
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }

@@ -223,8 +223,18 @@ impl LanguageResolver for PowerShellResolver {
         // `Verb-Noun` call doesn't need an explicit import. Route any
         // unresolved ref matching the cmdlet pattern to the stdlib/gallery
         // ecosystem so the demand loop can surface it.
-        if is_cmdlet_name(&ref_ctx.extracted_ref.target_name) {
+        let target = &ref_ctx.extracted_ref.target_name;
+        if is_cmdlet_name(target) {
             return Some("powershell-stdlib".to_string());
+        }
+        // Module-qualified cmdlet call: `PSDscRunAsCredential\Set-X`. The
+        // module prefix names the gallery / DSC module that owns the
+        // cmdlet — classify under that module so DSC resource invocations
+        // leave unresolved_refs without polluting the graph.
+        if let Some((module_part, leaf)) = target.split_once('\\') {
+            if !module_part.is_empty() && is_cmdlet_name(leaf) {
+                return Some(module_part.to_string());
+            }
         }
 
         // External executables invoked as PowerShell commands — `git`,
@@ -292,10 +302,10 @@ fn is_cmdlet_name(name: &str) -> bool {
     let is_ident_part = |s: &str| {
         let mut it = s.chars();
         match it.next() {
-            Some(c) if c.is_ascii_alphabetic() => {}
+            Some(c) if c.is_ascii_alphabetic() || c == '_' => {}
             _ => return false,
         }
-        it.all(|c| c.is_ascii_alphanumeric())
+        it.all(|c| c.is_ascii_alphanumeric() || c == '_')
     };
     is_ident_part(verb) && is_ident_part(noun)
 }

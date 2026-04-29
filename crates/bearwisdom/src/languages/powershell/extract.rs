@@ -1167,32 +1167,53 @@ fn extract_member_access(
             return;
         }
 
-        // Try direct `variable` child first (original pass 1 path).
-        // If not found, walk into element_access / member_access chains (Part 1)
-        // or extract from a type_literal for `[Type]::Member` static access.
-        let module = find_child_text(node, "variable", src)
-            .map(|v| v.trim_start_matches('$').to_string())
-            .filter(|v| !v.is_empty())
-            .or_else(|| {
-                // Find first named child that is not member_name / simple_name
-                let obj_idx = (0..node.child_count()).find(|&i| {
-                    node.child(i).map_or(false, |c| {
-                        c.is_named() && c.kind() != "member_name" && c.kind() != "simple_name"
-                    })
-                });
-                obj_idx
-                    .and_then(|i| node.child(i))
-                    .and_then(|child| match child.kind() {
-                        "element_access" | "member_access" => find_root_variable(&child, src),
-                        // `[Windows.Visibility]::Visible` — type literal static member
-                        "type_literal" => {
-                            let mut parts: Vec<String> = Vec::new();
-                            collect_type_identifiers(child, src, &mut parts);
-                            if parts.is_empty() { None } else { Some(parts.join(".")) }
-                        }
-                        _ => None,
-                    })
-            });
+        // Distinguish two member-access shapes:
+        //   `[Type]::Member`  — static access on a type literal. The receiver
+        //                        is a real type name and the member is a
+        //                        type-system reference; emit TypeRef.
+        //   `$obj.Member`     — runtime property/field access on a variable
+        //                        or expression. The member is hashtable /
+        //                        property data, not a type — skip rather
+        //                        than flooding unresolved_refs with hash
+        //                        keys (`$settings.Rules.PSUseConsistentIndentation.PipelineIndentation`)
+        //                        and AST property names (`$ast.EndBlock.Statements`).
+        let mut module: Option<String> = None;
+        let mut from_type_literal = false;
+
+        // First named child that is not member_name / simple_name.
+        let obj_idx = (0..node.child_count()).find(|&i| {
+            node.child(i).map_or(false, |c| {
+                c.is_named() && c.kind() != "member_name" && c.kind() != "simple_name"
+            })
+        });
+        if let Some(child) = obj_idx.and_then(|i| node.child(i)) {
+            match child.kind() {
+                "type_literal" => {
+                    let mut parts: Vec<String> = Vec::new();
+                    collect_type_identifiers(child, src, &mut parts);
+                    if !parts.is_empty() {
+                        module = Some(parts.join("."));
+                        from_type_literal = true;
+                    }
+                }
+                "variable" => {
+                    let v = node_text(&child, src).trim_start_matches('$');
+                    if !v.is_empty() {
+                        module = Some(v.to_string());
+                    }
+                }
+                "element_access" | "member_access" => {
+                    if let Some(root) = find_root_variable(&child, src) {
+                        module = Some(root);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if !from_type_literal {
+            return;
+        }
 
         refs.push(ExtractedRef {
             source_symbol_index,
@@ -1202,8 +1223,8 @@ fn extract_member_access(
             module,
             chain: None,
             byte_offset: 0,
-                    namespace_segments: Vec::new(),
-});
+            namespace_segments: Vec::new(),
+        });
     }
 }
 
