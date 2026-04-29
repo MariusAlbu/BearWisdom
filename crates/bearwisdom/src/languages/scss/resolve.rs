@@ -108,7 +108,48 @@ impl LanguageResolver for ScssResolver {
             }
         }
 
-        engine::resolve_common("scss", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(res) = engine::resolve_common(
+            "scss", file_ctx, ref_ctx, lookup, predicates::kind_compatible,
+        ) {
+            return Some(res);
+        }
+
+        // SCSS bare-name fallback. SCSS's legacy `@import` model has no
+        // per-file namespacing — `@function` / `@mixin` definitions are
+        // global within the compilation unit, and user code calls them
+        // by bare name (`@include assert-equal(...)`, `color-contrast(...)`)
+        // without a `module` qualifier. `engine::resolve_common`'s
+        // module/import/scope/same-file path can't bind these unless
+        // the import map names the source. Index-wide name lookup is
+        // the right resolver step for this language — it's the
+        // structural counterpart of TypeScript's @types-driven global
+        // access, not a cross-language bypass.
+        //
+        // Skip refs that already carry a module hint (handled above)
+        // and refs whose target is a CSS/Sass built-in (also handled).
+        // The kind compatibility check screens out variable-style refs
+        // matching unrelated identifiers in other languages.
+        if ref_ctx.extracted_ref.module.is_some() {
+            return None;
+        }
+        for sym in lookup.by_name(target) {
+            if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                continue;
+            }
+            // Only resolve to SCSS-defined symbols. Cross-language
+            // collisions (a Python `assert_equal` shadowing the SCSS
+            // mixin) would otherwise leak through the bare-name path.
+            if !sym.file_path.ends_with(".scss") {
+                continue;
+            }
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.85,
+                strategy: "scss_bare_name",
+                resolved_yield_type: None,
+            });
+        }
+        None
     }
 
     fn infer_external_namespace(
