@@ -328,9 +328,9 @@ fn extract_command_call(
     refs: &mut Vec<ExtractedRef>,
 ) {
     let cmd = first_word(node, src);
-    if cmd.is_empty() {
+    let Some(cmd) = normalize_command_target(&cmd) else {
         return;
-    }
+    };
     // Skip pure shell syntax tokens that aren't real invocations
     if is_syntax_keyword(&cmd) {
         return;
@@ -345,6 +345,63 @@ fn extract_command_call(
         byte_offset: 0,
             namespace_segments: Vec::new(),
 });
+}
+
+/// Filter / normalize a raw command-position word into a resolvable
+/// target name. Returns None for words that aren't real call targets.
+///
+///   * `$VAR` / `${VAR}` / `"$VAR"` — variable expansion in command
+///     position is a dynamic dispatch we can't resolve statically;
+///     drop the ref entirely rather than emit it under the variable
+///     name.
+///   * `/usr/bin/find` and similar absolute paths — strip the
+///     directory and resolve against the basename, which is what
+///     `is_bash_builtin` matches anyway.
+///   * Words containing embedded `"$x"` or `${x}` substitutions
+///     (e.g., `__pb10k_prompt_"$seg"`, `_omb_alias_$name`) — same
+///     dynamic-dispatch reasoning, drop.
+///   * Empty / pure-syntax tokens — caller's `is_syntax_keyword`
+///     already covers `[`, `[[`, etc.; we return them as-is.
+fn normalize_command_target(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    if trimmed.is_empty() {
+        return None;
+    }
+    // Reject any word containing a substitution marker. Bash's
+    // `simple_command` AST doesn't always wrap these in a separate
+    // expansion node — they leak into the `word` text verbatim.
+    if trimmed.contains('$') || trimmed.contains("${") {
+        return None;
+    }
+    // Strip matching wrapping quotes once. `"foo"` / `'foo'` — the
+    // inner literal is the command. Mismatched / unbalanced quotes
+    // fall through to the no-quote branch.
+    let unquoted = if trimmed.len() >= 2 {
+        let bytes = trimmed.as_bytes();
+        let first = bytes[0];
+        let last = bytes[trimmed.len() - 1];
+        if (first == b'"' && last == b'"') || (first == b'\'' && last == b'\'') {
+            &trimmed[1..trimmed.len() - 1]
+        } else {
+            trimmed
+        }
+    } else {
+        trimmed
+    };
+    if unquoted.is_empty() {
+        return None;
+    }
+    // Absolute path? Take the basename — `/usr/bin/find` resolves
+    // against `find` in the keyword table.
+    let base = if unquoted.starts_with('/') || unquoted.starts_with("./") || unquoted.starts_with("../") {
+        unquoted.rsplit('/').next().unwrap_or(unquoted)
+    } else {
+        unquoted
+    };
+    if base.is_empty() {
+        return None;
+    }
+    Some(base.to_string())
 }
 
 
