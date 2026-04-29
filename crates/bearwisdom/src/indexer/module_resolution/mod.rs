@@ -14,6 +14,7 @@ pub mod jvm;
 pub mod node;
 pub mod php_mod;
 pub mod python_mod;
+pub mod ruby_mod;
 pub mod rust_mod;
 
 // ---------------------------------------------------------------------------
@@ -60,6 +61,7 @@ pub fn all_resolvers() -> Vec<Box<dyn ModuleResolver>> {
         Box::new(jvm::JvmModuleResolver),
         Box::new(dotnet::DotNetModuleResolver),
         Box::new(php_mod::PhpModuleResolver),
+        Box::new(ruby_mod::RubyModuleResolver),
     ]
 }
 
@@ -76,6 +78,7 @@ pub fn all_resolvers_with_go_module(go_module_path: Option<&str>) -> Vec<Box<dyn
         Box::new(jvm::JvmModuleResolver),
         Box::new(dotnet::DotNetModuleResolver),
         Box::new(php_mod::PhpModuleResolver),
+        Box::new(ruby_mod::RubyModuleResolver),
     ]
 }
 

@@ -12,12 +12,19 @@
 //
 // Ruby import model:
 //   The Ruby extractor emits EdgeKind::Imports refs for require statements:
-//     require 'rails'          → target_name = "rails",   module = None
-//     require_relative './foo' → target_name = "foo",     module = "./foo"
+//     require 'rails'          → target_name = "rails",   module = "rails"
+//     require 'sidekiq/api'    → target_name = "api",     module = "sidekiq/api"
+//     require_relative 'helper'→ target_name = "helper",  module = "./helper"
+//     require_relative '../m/u'→ target_name = "u",       module = "../m/u"
 //
 //   require gives access to library constants/classes by their top-level name
 //   (e.g., requiring 'rails' makes `Rails::Application` available).
 //   require_relative brings in local file symbols.
+//
+//   When the require path resolves to an indexed file (RubyModuleResolver),
+//   we link the Imports edge to the first defined symbol in that file so
+//   the cross-file graph stays connected; otherwise the require is treated
+//   as external by infer_external_namespace.
 //
 // Adding new Ruby features:
 //   - autoload → add to build_file_context.
@@ -121,8 +128,31 @@ impl LanguageResolver for RubyResolver {
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
 
-        // Skip import refs — they're not symbol references.
+        // Imports: try to land the require on a real indexed file.
+        // RubyModuleResolver populates `module_to_file` / `module_to_file_per_source`
+        // for `lib/X.rb` and `require_relative` paths. Pick the first
+        // symbol in the target file so the cross-file edge exists; if
+        // there are no symbols (or the file isn't indexed), fall through
+        // to infer_external_namespace.
         if edge_kind == EdgeKind::Imports {
+            if let Some(module) = &ref_ctx.extracted_ref.module {
+                let syms = lookup.in_module_from(&file_ctx.file_path, module);
+                // Prefer a same-named module/class symbol when present
+                // (e.g., `require "sidekiq/api"` → `Sidekiq::Api`); otherwise
+                // any symbol in the file is enough to anchor the edge.
+                let pick = syms
+                    .iter()
+                    .find(|s| s.name.eq_ignore_ascii_case(target))
+                    .or_else(|| syms.first());
+                if let Some(sym) = pick {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 1.0,
+                        strategy: "ruby_require_file",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
             return None;
         }
 

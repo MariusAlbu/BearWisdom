@@ -432,18 +432,23 @@ fn extract_require(
                     .trim_start_matches('\'')
                     .trim_end_matches('\'')
                     .to_string();
+                // `module` carries the FULL require path so the module
+                // resolver can map it to an indexed file. `target_name`
+                // is the last segment for user-visible identification.
+                // For `require_relative`, prepend `./` if not already
+                // a relative form so the engine's relative-path check
+                // (`module.starts_with('.')`) classifies it correctly.
                 let (target, module) = if is_relative {
-                    let stem = path.rsplit('/').next().unwrap_or(&path);
-                    (stem.to_string(), Some(path))
-                } else {
-                    let parts: Vec<&str> = path.split('/').collect();
-                    let target = parts.last().unwrap_or(&path.as_str()).to_string();
-                    let module = if parts.len() > 1 {
-                        Some(parts[..parts.len() - 1].join("/"))
+                    let stem = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    let module_path = if path.starts_with('.') {
+                        path
                     } else {
-                        None
+                        format!("./{path}")
                     };
-                    (target, module)
+                    (stem, Some(module_path))
+                } else {
+                    let stem = path.rsplit('/').next().unwrap_or(&path).to_string();
+                    (stem, Some(path))
                 };
                 refs.push(ExtractedRef {
                     source_symbol_index: current_symbol_count,

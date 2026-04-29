@@ -41,7 +41,7 @@ end
         let r = extract::extract(source);
         let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
         assert_eq!(imp.target_name, "http");
-        assert_eq!(imp.module.as_deref(), Some("net"));
+        assert_eq!(imp.module.as_deref(), Some("net/http"));
     }
 
     #[test]
@@ -50,6 +50,16 @@ end
         let r = extract::extract(source);
         let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
         assert_eq!(imp.target_name, "user");
+        assert_eq!(imp.module.as_deref(), Some("../models/user"));
+    }
+
+    #[test]
+    fn require_relative_bare_name_gets_dot_prefix() {
+        let source = "require_relative 'helper'\n";
+        let r = extract::extract(source);
+        let imp = r.refs.iter().find(|r| r.kind == EdgeKind::Imports).expect("import ref");
+        assert_eq!(imp.target_name, "helper");
+        assert_eq!(imp.module.as_deref(), Some("./helper"));
     }
 
     #[test]
