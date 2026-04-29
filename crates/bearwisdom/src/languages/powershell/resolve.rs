@@ -152,7 +152,46 @@ impl LanguageResolver for PowerShellResolver {
             }
         }
 
-        engine::resolve_common("powershell", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(res) = engine::resolve_common(
+            "powershell", file_ctx, ref_ctx, lookup, predicates::kind_compatible,
+        ) {
+            return Some(res);
+        }
+
+        // PowerShell bare-name fallback. Counterpart to the SCSS / Bash /
+        // Python / Java `<lang>_bare_name` resolver steps. PowerShell
+        // scripts call functions globally (no per-file namespace once
+        // a script is dot-sourced) and reference module-private cmdlets
+        // by bare name. The module / scope-chain / same-file machinery
+        // can't bind these. Index-wide name lookup gated by `.ps1` /
+        // `.psm1` / `.psd1` file extension.
+        let target = &ref_ctx.extracted_ref.target_name;
+        let edge_kind = ref_ctx.extracted_ref.kind;
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+        {
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_ps = path.ends_with(".ps1")
+                    || path.ends_with(".psm1")
+                    || path.ends_with(".psd1");
+                if !is_ps {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "powershell_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
