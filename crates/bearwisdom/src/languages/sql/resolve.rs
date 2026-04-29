@@ -138,11 +138,6 @@ fn is_sql_builtin_type(name: &str) -> bool {
             | "inet" | "cidr" | "macaddr" | "macaddr8"
             | "tsvector" | "tsquery"
             | "void" | "null" | "unknown"
-            // SQL Server / Postgres index modifiers that surface as
-            // `type_ref` because the grammar parses them adjacent to a
-            // column type position. Treat as built-in keywords.
-            | "clustered" | "nonclustered" | "include" | "rowstore" | "columnstore"
-            | "fillfactor"
             // Aggregate / pseudo-functions sometimes captured as refs
             | "count" | "sum" | "avg" | "min" | "max" | "coalesce" | "nullif"
             | "cast" | "convert" | "isnull" | "ifnull" | "nvl"

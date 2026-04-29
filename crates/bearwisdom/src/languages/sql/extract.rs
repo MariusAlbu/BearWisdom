@@ -435,6 +435,24 @@ fn collect_all_column_definitions(
     symbols: &mut Vec<ExtractedSymbol>,
 ) {
     if node.kind() == "column_definition" {
+        // Same constraint-clause gate as `extract_column` — see the
+        // commentary there. Without skipping these, the fallback
+        // creates fake `Field` symbols named after constraint keywords
+        // (`PK_X`, `FK_Y`) that pollute the symbol table and confuse
+        // downstream lookups.
+        if let Some(first) = node.child(0) {
+            if matches!(
+                first.kind(),
+                "keyword_constraint" | "keyword_primary" | "keyword_foreign"
+                    | "keyword_check" | "keyword_unique" | "keyword_include"
+                    | "keyword_index"
+            ) {
+                return;
+            }
+        }
+        if has_constraint_clause_marker(node, src) {
+            return;
+        }
         let line = node.start_position().row as u32;
         if !existing_lines.contains(&line) {
             // Extract column name: try `name` field, then first identifier
@@ -526,6 +544,50 @@ fn extract_columns_from_list(
     }
 }
 
+/// Detect a `column_definition` node that's actually a table-level
+/// constraint or index modifier. Tree-sitter-sequel parses constraint
+/// clauses (`CONSTRAINT [PK_X] PRIMARY KEY CLUSTERED (cols)`) and
+/// trailing index modifiers (`INCLUDE (cols)`) inconsistently — the
+/// AST may surface the leading keyword as a `keyword_*` child, may
+/// strip it entirely, or may bury it inside a deeper subtree. Guard
+/// by scanning all descendants for a `keyword_constraint` / `keyword_primary`
+/// / `keyword_foreign` / `keyword_check` / `keyword_unique` / `keyword_include`
+/// marker, then fall back to a substring check on the raw source for
+/// the rare malformed-AST case where no keyword node is emitted.
+fn has_constraint_clause_marker(node: Node, src: &str) -> bool {
+    fn walk(n: Node) -> bool {
+        if matches!(
+            n.kind(),
+            "keyword_constraint" | "keyword_primary" | "keyword_foreign"
+                | "keyword_check" | "keyword_unique" | "keyword_include"
+        ) {
+            return true;
+        }
+        let mut cursor = n.walk();
+        for child in n.children(&mut cursor) {
+            if walk(child) {
+                return true;
+            }
+        }
+        false
+    }
+    if walk(node) {
+        return true;
+    }
+    // AST-fallback: case-insensitive keyword scan over the literal text.
+    // Bounded to the leading 80 chars so we don't scan column comments or
+    // multi-kilobyte default expressions.
+    let raw = node_text(node, src);
+    let head = &raw[..raw.len().min(80)];
+    let upper = head.to_ascii_uppercase();
+    upper.contains("CONSTRAINT ")
+        || upper.contains("PRIMARY KEY")
+        || upper.contains("FOREIGN KEY")
+        || upper.contains("INCLUDE (")
+        || upper.starts_with("INCLUDE\t")
+        || upper.starts_with("INCLUDE ")
+}
+
 fn extract_column(
     node: &Node,
     src: &str,
@@ -533,6 +595,35 @@ fn extract_column(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Tree-sitter-sequel lumps table-level constraint clauses
+    // (`CONSTRAINT [PK_X] PRIMARY KEY CLUSTERED (cols)`) and trailing
+    // index modifiers (`INCLUDE (cols)`) into the same `column_definitions`
+    // block as real columns. They have no usable name/type structure and
+    // emitting them here produces synthetic Field symbols (`PK_X`,
+    // `OrganizationId`) plus spurious `TypeRef`s pointing at SQL
+    // keywords like `CLUSTERED` / `INCLUDE` / `NONCLUSTERED`.
+    //
+    // Tree-sitter parses these inconsistently: sometimes the leading
+    // keyword surfaces as the first child (`keyword_constraint`),
+    // sometimes the parser strips it and leaves the constraint name
+    // as the `name` field with the modifier in `type`. Match both: by
+    // child kind for the clean parse, and by leading source-text
+    // keyword for the malformed one.
+    if let Some(first) = node.child(0) {
+        let leading = first.kind();
+        if matches!(
+            leading,
+            "keyword_constraint" | "keyword_primary" | "keyword_foreign"
+                | "keyword_check" | "keyword_unique" | "keyword_include"
+                | "keyword_index"
+        ) {
+            return;
+        }
+    }
+    if has_constraint_clause_marker(*node, src) {
+        return;
+    }
+
     // Try named field first, then first identifier child as fallback
     let name = if let Some(n) = node.child_by_field_name("name") {
         let t = node_text(n, src);
