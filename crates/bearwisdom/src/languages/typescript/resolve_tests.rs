@@ -3702,3 +3702,148 @@ fn phase2_inheritance_resolves_through_two_hops() {
         .expect("Svc.run must be indexed");
     assert_eq!(result.unwrap().target_symbol_id, *svc_run_id);
 }
+
+// ---------------------------------------------------------------------------
+// PR 24: `: this` polymorphic-self return — fluent-API chains keep their
+// receiver type. NestJS DocumentBuilder, query builders, etc.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn this_return_keeps_receiver_through_fluent_chain() {
+    // Mirror DocumentBuilder shape: two methods that both return `this`.
+    // Chain: `new Builder().setA().setB()` — without the `: this` hop,
+    // current_type advances to literal "this" after setA() and setB
+    // can't be found on a class named "this".
+    let builder = make_symbol("Builder", "Builder", SymbolKind::Class, Visibility::Public, None);
+    let set_a = ExtractedSymbol {
+        name: "setA".to_string(),
+        qualified_name: "Builder.setA".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("setA(x: string): this".to_string()),
+        doc_comment: None,
+        scope_path: Some("Builder".to_string()),
+        parent_index: Some(0),
+    };
+    let set_b = ExtractedSymbol {
+        name: "setB".to_string(),
+        qualified_name: "Builder.setB".to_string(),
+        kind: SymbolKind::Method,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("setB(y: number): this".to_string()),
+        doc_comment: None,
+        scope_path: Some("Builder".to_string()),
+        parent_index: Some(0),
+    };
+    let caller = ExtractedSymbol {
+        name: "build".to_string(),
+        qualified_name: "build".to_string(),
+        kind: SymbolKind::Function,
+        visibility: Some(Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some("build(): void".to_string()),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    };
+
+    // Each method's signature carries the `: this` return — the type
+    // checker's signature parser populates return_type from this.
+    let chain_ref = ExtractedRef {
+        source_symbol_index: 3,
+        target_name: "setB".to_string(),
+        kind: EdgeKind::Calls,
+        line: 0,
+        module: None,
+        chain: Some(MemberChain {
+            segments: vec![
+                // The chain builder peels `new Builder()` into the bare
+                // identifier `Builder`, so the root segment is Identifier
+                // (not Construction) — same shape produced for plain class
+                // references like `Builder.staticMethod()`.
+                ChainSegment {
+                    name: "Builder".to_string(),
+                    node_kind: "identifier".to_string(),
+                    kind: SegmentKind::Identifier,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "setA".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+                ChainSegment {
+                    name: "setB".to_string(),
+                    node_kind: "property_identifier".to_string(),
+                    kind: SegmentKind::Property,
+                    declared_type: None,
+                    type_args: vec![],
+                    optional_chaining: false,
+                },
+            ],
+        }),
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    };
+
+    let file = ParsedFile {
+        path: "src/fluent.ts".to_string(),
+        language: "typescript".to_string(),
+        content_hash: String::new(),
+        size: 0,
+        line_count: 0,
+        mtime: None,
+        package_id: None,
+        content: None,
+        has_errors: false,
+        symbols: vec![builder, set_a, set_b, caller],
+        refs: vec![chain_ref],
+        routes: vec![],
+        db_sets: vec![],
+        symbol_origin_languages: vec![None; 4],
+        ref_origin_languages: vec![None; 1],
+        symbol_from_snippet: vec![false; 4],
+        flow: crate::types::FlowMeta::default(),
+        connection_points: Vec::new(),
+        demand_contributions: Vec::new(),
+        alias_targets: Vec::new(),
+        component_selectors: Vec::new(),
+    };
+
+    let (index, id_map) = build_test_env(&[&file]);
+    let resolver = TypeScriptResolver;
+    let file_ctx = resolver.build_file_context(&file, None);
+
+    let ref_ctx = RefContext {
+        extracted_ref: &file.refs[0],
+        source_symbol: &file.symbols[3],
+        scope_chain: build_scope_chain(file.symbols[3].scope_path.as_deref()),
+        file_package_id: None,
+    };
+
+    let result = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    assert!(
+        result.is_some(),
+        "new Builder().setA().setB() must keep the Builder binding through `: this` returns"
+    );
+    let set_b_id = id_map
+        .get(&("src/fluent.ts".to_string(), "Builder.setB".to_string()))
+        .expect("Builder.setB must be indexed");
+    assert_eq!(result.unwrap().target_symbol_id, *set_b_id);
+}

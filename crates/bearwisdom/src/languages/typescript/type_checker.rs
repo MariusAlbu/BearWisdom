@@ -41,6 +41,34 @@ use tracing::debug;
 /// for `current_type` (e.g., the args from a `field_type_args` lookup).
 /// `expand_alias` uses these to substitute the alias's declared params
 /// when resolving the target's args.
+/// Resolve a method's raw return-type into the next chain step's type.
+///
+/// `: this` is the polymorphic-self pattern fluent-API classes use to
+/// keep method-chain calls bound to their receiver type. The classic
+/// shape is NestJS's `DocumentBuilder`:
+///
+///   ```typescript
+///   class DocumentBuilder {
+///     setTitle(title: string): this;
+///     setDescription(description: string): this;
+///     // …
+///     build(): OpenAPIObject;
+///   }
+///   new DocumentBuilder().setTitle('…').setDescription('…').build();
+///   ```
+///
+/// Without this hop, the chain walker advances `current_type` to the
+/// literal string `"this"` after the first method call, losing the
+/// DocumentBuilder binding for every subsequent step. Storing the
+/// receiver's type when the return is `this` keeps the whole chain
+/// resolvable.
+fn next_chain_type(raw_return: &str, current_type: &str, env: &TypeEnvironment) -> String {
+    if raw_return == "this" {
+        return current_type.to_string();
+    }
+    env.resolve(raw_return)
+}
+
 fn expand_current_type(
     current_type: &mut String,
     current_args_hint: &[String],
@@ -150,6 +178,34 @@ impl TypeChecker for TypeScriptChecker {
                     }
                 }
             }
+            SegmentKind::Construction => {
+                // `new X()` chain root — the constructor target is the
+                // chain's receiver type. Without this branch, every
+                // chain that starts with a constructor (NestJS
+                // `new DocumentBuilder().setTitle()…`, builder
+                // patterns generally) falls through to `_ => None`
+                // and the chain walker never starts.
+                //
+                // Mirrors the Identifier path's class-lookup arm:
+                // probe `types_by_name` for a class/interface/enum
+                // matching the segment name and use the short name as
+                // `current_type`. The chain walker's external-type
+                // fallback (`external_type_qname`) promotes it to the
+                // full qname when members are looked up against an
+                // npm package's symbol surface.
+                let name = &segments[0].name;
+                let is_type = lookup.types_by_name(name).iter().any(|s| {
+                    matches!(
+                        s.kind.as_str(),
+                        "class" | "struct" | "interface" | "enum" | "type_alias"
+                    )
+                });
+                if is_type {
+                    Some(name.clone())
+                } else {
+                    segments[0].declared_type.clone()
+                }
+            }
             _ => None,
         };
 
@@ -216,8 +272,11 @@ impl TypeChecker for TypeScriptChecker {
 
             // Try return type (method call result in a fluent chain).
             if let Some(raw_return) = lookup.return_type_name(&member_qname) {
-                // Use TypeEnvironment to substitute type params (e.g., "T" → "User").
-                let resolved = env.resolve(raw_return);
+                // `: this` keeps current_type pinned to the receiver so
+                // fluent-API chains (DocumentBuilder, query builders)
+                // walk back into the same class on every step. Other
+                // return types go through generic substitution.
+                let resolved = next_chain_type(raw_return, &current_type, &env);
                 // Clear current generic bindings and enter context for the new type.
                 env.push_scope();
                 current_type = resolved;
@@ -238,7 +297,7 @@ impl TypeChecker for TypeScriptChecker {
                     break;
                 }
                 if let Some(rt) = lookup.return_type_name(&sym.qualified_name) {
-                    let resolved = env.resolve(rt);
+                    let resolved = next_chain_type(rt, &current_type, &env);
                     env.push_scope();
                     current_type = resolved;
                     found = true;
@@ -261,7 +320,7 @@ impl TypeChecker for TypeScriptChecker {
                     continue;
                 }
                 if let Some(next_type) = lookup.return_type_name(&ext_member) {
-                    let resolved = env.resolve(next_type);
+                    let resolved = next_chain_type(next_type, &current_type, &env);
                     env.push_scope();
                     current_type = resolved;
                     continue;
@@ -336,7 +395,14 @@ impl TypeChecker for TypeScriptChecker {
                 ancestor = parent_owned;
             }
             if let Some((next_type, new_args)) = inherited_resolution {
-                let resolved_type = env.resolve(&next_type);
+                // Inherited `: this`-returning methods (parent-class
+                // fluent APIs called through a subclass receiver) bind
+                // back to the chain's actual receiver, not to the
+                // parent that declared them. Without `next_chain_type`
+                // here, `class Child extends Parent { } /* parent has
+                // setX(): this */ new Child().setX().setY()` loses the
+                // Child binding after the inherited call.
+                let resolved_type = next_chain_type(&next_type, &current_type, &env);
                 env.push_scope();
                 if !new_args.is_empty() {
                     env.enter_generic_context(&resolved_type, &new_args, |name| {

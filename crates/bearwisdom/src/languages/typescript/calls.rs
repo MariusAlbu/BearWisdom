@@ -434,6 +434,30 @@ pub(super) fn build_chain_inner(
             build_chain_inner(inner?, src, segments)
         }
 
+        // `new Foo().bar()` — the chain root is the constructed type. Recurse
+        // into the `constructor` field so identifier (`Foo`) and member-
+        // expression (`pkg.Sub.Class`) constructors both produce the
+        // appropriate root segment, then keep walking up. Without this branch
+        // the chain builder bails on every fluent-builder pattern
+        // (NestJS DocumentBuilder, JS-class instances, Angular Forms
+        // builders) and the call-site ref loses its receiver context.
+        "new_expression" => {
+            let constructor = node
+                .child_by_field_name("constructor")
+                .or_else(|| node.child(1))?;
+            // Strip generic-type-arguments wrapper from the constructor —
+            // `new Map<string, User>()` parses with a generic_type
+            // wrapping the bare class identifier.
+            let target = if constructor.kind() == "generic_type" {
+                constructor
+                    .child_by_field_name("name")
+                    .unwrap_or(constructor)
+            } else {
+                constructor
+            };
+            build_chain_inner(target, src, segments)
+        }
+
         // `(x as Foo).bar()` / `(x satisfies Foo).bar()` — peel the cast.
         "as_expression" | "satisfies_expression" | "type_assertion" => {
             // First non-type child is the underlying expression.
