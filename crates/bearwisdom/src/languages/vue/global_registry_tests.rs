@@ -288,6 +288,56 @@ fn scan_returns_empty_for_non_vue_project() {
     assert!(registry.is_empty());
 }
 
+#[test]
+fn scan_registers_router_link_view_when_vue_router_in_deps() {
+    let dir = tempdir_or_skip();
+    std::fs::write(
+        dir.path().join("package.json"),
+        r#"{"dependencies":{"vue":"^3.5","vue-router":"^4.2"}}"#,
+    )
+    .unwrap();
+
+    let registry = scan_global_registrations(dir.path(), &[]);
+    assert_eq!(library_for_name(&registry, "RouterLink"), Some("vue-router"));
+    assert_eq!(library_for_name(&registry, "RouterView"), Some("vue-router"));
+}
+
+#[test]
+fn scan_skips_router_globals_when_vue_router_not_a_dep() {
+    let dir = tempdir_or_skip();
+    std::fs::write(
+        dir.path().join("package.json"),
+        r#"{"dependencies":{"vue":"^3.5"}}"#,
+    )
+    .unwrap();
+
+    let registry = scan_global_registrations(dir.path(), &[]);
+    assert!(library_for_name(&registry, "RouterLink").is_none());
+    assert!(library_for_name(&registry, "RouterView").is_none());
+}
+
+#[test]
+fn scan_picks_up_workspace_package_with_vue_router() {
+    // Monorepo where the root manifest has no vue-router but a workspace
+    // package declares it. The scanner sees the workspace package.json
+    // through `parsed_paths` and picks it up without re-walking the tree.
+    let dir = tempdir_or_skip();
+    std::fs::write(dir.path().join("package.json"), r#"{"name":"root"}"#).unwrap();
+    let pkg_dir = dir.path().join("apps").join("web");
+    std::fs::create_dir_all(&pkg_dir).unwrap();
+    std::fs::write(
+        pkg_dir.join("package.json"),
+        r#"{"name":"web","dependencies":{"vue-router":"^4"}}"#,
+    )
+    .unwrap();
+
+    let registry = scan_global_registrations(
+        dir.path(),
+        &["apps/web/package.json".to_string()],
+    );
+    assert_eq!(library_for_name(&registry, "RouterLink"), Some("vue-router"));
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

@@ -171,6 +171,28 @@ pub fn scan_global_registrations(
         debug!("vue: unplugin-vue-components detected");
     }
 
+    // Vue Router exposes `RouterLink` / `RouterView` as ambient global
+    // components — every Vue app that calls `app.use(router)` gets them
+    // registered without an explicit `app.component(...)` line, and
+    // single-file-component templates use them by tag name. The existing
+    // `app.use(X)` detector below can't infer this because vue-router 4's
+    // composition-API pattern hides the registration: `createRouter(...)`
+    // returns an instance that's bound to a local variable (`router`),
+    // and `app.use(router)` traces that local back to nothing in the
+    // import map. Detect vue-router via any project package.json instead
+    // and register the two known names directly.
+    if project_declares_vue_router(project_root, parsed_paths) {
+        for name in ["RouterLink", "RouterView"] {
+            registry.components.insert(
+                name.to_string(),
+                VueComponentSource::Library {
+                    package: "vue-router".to_string(),
+                },
+            );
+        }
+        debug!("vue: vue-router detected — registered RouterLink/RouterView as globals");
+    }
+
     // Scan entry-point files for app.use / Vue.use / app.component calls
     let entry_files = collect_entry_files(project_root, parsed_paths);
     debug!("vue: scanning {} entry files for global registrations", entry_files.len());
@@ -265,6 +287,44 @@ pub fn library_for_name<'r>(registry: &'r VueGlobalRegistry, name: &str) -> Opti
 // ---------------------------------------------------------------------------
 // Unplugin detection
 // ---------------------------------------------------------------------------
+
+/// Return true when any package.json reachable from `project_root` declares
+/// vue-router as a runtime or dev dependency. Walks the root manifest plus
+/// any package.json paths the indexer surfaced in `parsed_paths` (covers
+/// monorepo workspace packages without an extra filesystem scan).
+fn project_declares_vue_router(project_root: &Path, parsed_paths: &[String]) -> bool {
+    if manifest_has_vue_router(&project_root.join("package.json")) {
+        return true;
+    }
+    for rel_path in parsed_paths {
+        let normalized = rel_path.replace('\\', "/");
+        if !normalized.ends_with("package.json") || normalized.contains("node_modules") {
+            continue;
+        }
+        let abs = project_root.join(normalized.trim_start_matches('/'));
+        if manifest_has_vue_router(&abs) {
+            return true;
+        }
+    }
+    false
+}
+
+fn manifest_has_vue_router(path: &Path) -> bool {
+    let Ok(content) = std::fs::read_to_string(path) else {
+        return false;
+    };
+    let Ok(json) = serde_json::from_str::<serde_json::Value>(&content) else {
+        return false;
+    };
+    for field in ["dependencies", "devDependencies", "peerDependencies"] {
+        if let Some(deps) = json.get(field).and_then(|v| v.as_object()) {
+            if deps.contains_key("vue-router") {
+                return true;
+            }
+        }
+    }
+    false
+}
 
 fn detect_unplugin(project_root: &Path, parsed_paths: &[String]) -> bool {
     for config_name in VITE_CONFIG_NAMES {
