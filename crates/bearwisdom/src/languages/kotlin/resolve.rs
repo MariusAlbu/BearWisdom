@@ -411,6 +411,39 @@ impl LanguageResolver for KotlinResolver {
         None
     }
 
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
+            return Some(ns);
+        }
+        // Structural fallback: imported namespace with no internal symbols
+        // → external. Catches transitive Maven / Gradle deps and platform
+        // SDKs (Apple Foundation on Native, Servlet on JVM, etc.) that
+        // aren't on the manifest's group-id prefix list.
+        let target = &ref_ctx.extracted_ref.target_name;
+        for import in &file_ctx.imports {
+            let Some(ns) = import.module_path.as_deref() else { continue };
+            if ns.is_empty() {
+                continue;
+            }
+            if !import.is_wildcard
+                && import.imported_name != *target
+                && import.alias.as_deref() != Some(target.as_str())
+            {
+                continue;
+            }
+            if !lookup.has_in_namespace(ns) {
+                return Some(ns.to_string());
+            }
+        }
+        None
+    }
+
     fn is_visible(
         &self,
         file_ctx: &FileContext,
