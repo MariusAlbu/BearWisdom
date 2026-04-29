@@ -101,9 +101,12 @@ pub(super) fn extract_python_type_name(node: &Node, source: &str) -> String {
     match node.kind() {
         "identifier" => node_text(node, source),
         "attribute" => {
-            node.child_by_field_name("attribute")
-                .map(|a| node_text(&a, source))
-                .unwrap_or_default()
+            // Return the full dotted form (`pytest.LogCaptureFixture`) so
+            // downstream resolution can classify by the leading module
+            // name. Previously this discarded the prefix and emitted only
+            // the bare identifier, making external attribution impossible
+            // for module-qualified type annotations.
+            node_text(node, source)
         }
         "generic_type" => {
             if let Some(name_node) = node.child_by_field_name("name") {

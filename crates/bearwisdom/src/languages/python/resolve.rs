@@ -493,81 +493,17 @@ impl LanguageResolver for PythonResolver {
         ref_ctx: &RefContext,
         project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        let target = &ref_ctx.extracted_ref.target_name;
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, None)
+    }
 
-        // Import refs: classify the module as external or stdlib.
-        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
-            let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
-            // Relative imports are internal.
-            if predicates::is_relative_import(module) {
-                return None;
-            }
-            let root = module.split('.').next().unwrap_or(module);
-            if predicates::is_python_stdlib(root) {
-                return Some("stdlib".to_string());
-            }
-            // Manifest-driven: check pyproject.toml / requirements.txt dependencies first.
-            // pip package names may use hyphens; Python imports use underscores.
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::PyProject) {
-                    if manifest.dependencies.contains(root)
-                        || manifest.dependencies.contains(&root.replace('_', "-"))
-                    {
-                        return Some(module.to_string());
-                    }
-                }
-            }
-            let is_ext = match project_ctx {
-                Some(ctx) => is_manifest_python_package(ctx, root),
-                None => true,
-            };
-            if is_ext {
-                return Some(module.to_string());
-            }
-            return None;
-        }
-
-        // Python builtins (built-in functions, types, and common method names).
-        if predicates::is_python_builtin(target) {
-            return Some("python_builtins".to_string());
-        }
-
-        // Walk file imports for a match.
-        let simple = target.split('.').next().unwrap_or(target);
-        for import in &file_ctx.imports {
-            if import.imported_name != simple {
-                continue;
-            }
-            let Some(ref mod_path) = import.module_path else {
-                continue;
-            };
-            if predicates::is_relative_import(mod_path) {
-                continue;
-            }
-            let root = mod_path.split('.').next().unwrap_or(mod_path);
-            if predicates::is_python_stdlib(root) {
-                return Some("stdlib".to_string());
-            }
-            // Manifest-driven check.
-            if let Some(ctx) = project_ctx {
-                if let Some(manifest) = ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::PyProject) {
-                    if manifest.dependencies.contains(root)
-                        || manifest.dependencies.contains(&root.replace('_', "-"))
-                    {
-                        return Some(mod_path.clone());
-                    }
-                }
-            }
-            let is_ext = match project_ctx {
-                Some(ctx) => is_manifest_python_package(ctx, root),
-                None => true,
-            };
-            if is_ext {
-                return Some(mod_path.clone());
-            }
-        }
-
-        None
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        infer_external_inner(file_ctx, ref_ctx, project_ctx, Some(lookup))
     }
 
     // is_visible: default (always true). Python has no enforced access control
@@ -582,6 +518,89 @@ impl LanguageResolver for PythonResolver {
 fn is_manifest_python_package(ctx: &ProjectContext, name: &str) -> bool {
     ctx.has_dependency(ManifestKind::PyProject, name)
         || ctx.has_dependency(ManifestKind::PyProject, &name.replace('_', "-"))
+}
+
+/// Returns Some(namespace) when `module` should be treated as external. Walks
+/// the manifest, the stdlib list, and finally a `has_in_namespace` structural
+/// check that catches transitive deps and stdlib-version gaps without growing
+/// the hardcoded set (e.g. `httpx` pulled in via `httpx-oauth`, or `zoneinfo`
+/// added in 3.9).
+fn module_is_external(
+    project_ctx: Option<&ProjectContext>,
+    pkg_id: Option<i64>,
+    lookup: Option<&dyn SymbolLookup>,
+    module: &str,
+) -> Option<String> {
+    let root = module.split('.').next().unwrap_or(module);
+    if predicates::is_python_stdlib(root) {
+        return Some("stdlib".to_string());
+    }
+    if let Some(ctx) = project_ctx {
+        if let Some(manifest) = ctx
+            .manifests_for(pkg_id)
+            .get(&ManifestKind::PyProject)
+        {
+            if manifest.dependencies.contains(root)
+                || manifest.dependencies.contains(&root.replace('_', "-"))
+            {
+                return Some(module.to_string());
+            }
+        }
+        if is_manifest_python_package(ctx, root) {
+            return Some(module.to_string());
+        }
+    }
+    if let Some(lookup) = lookup {
+        // No internal symbols under this module name → external (transitive
+        // dep, package-rename, or runtime-only library).
+        if !lookup.has_in_namespace(root) {
+            return Some(module.to_string());
+        }
+    }
+    if project_ctx.is_none() {
+        // No manifest visible — be permissive (matches the prior behaviour).
+        return Some(module.to_string());
+    }
+    None
+}
+
+fn infer_external_inner(
+    file_ctx: &FileContext,
+    ref_ctx: &RefContext,
+    project_ctx: Option<&ProjectContext>,
+    lookup: Option<&dyn SymbolLookup>,
+) -> Option<String> {
+    let target = &ref_ctx.extracted_ref.target_name;
+    let pkg_id = ref_ctx.file_package_id;
+
+    if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+        let module = ref_ctx.extracted_ref.module.as_deref().unwrap_or(target);
+        if predicates::is_relative_import(module) {
+            return None;
+        }
+        return module_is_external(project_ctx, pkg_id, lookup, module);
+    }
+
+    if predicates::is_python_builtin(target) {
+        return Some("python_builtins".to_string());
+    }
+
+    let simple = target.split('.').next().unwrap_or(target);
+    for import in &file_ctx.imports {
+        if import.imported_name != simple {
+            continue;
+        }
+        let Some(ref mod_path) = import.module_path else {
+            continue;
+        };
+        if predicates::is_relative_import(mod_path) {
+            continue;
+        }
+        if let Some(ns) = module_is_external(project_ctx, pkg_id, lookup, mod_path) {
+            return Some(ns);
+        }
+    }
+    None
 }
 
 // =============================================================================

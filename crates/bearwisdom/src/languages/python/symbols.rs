@@ -855,6 +855,26 @@ fn extract_assignment_node(
     }
 }
 
+/// Walk a call-expression's function node and return the leaf identifier name
+/// when the receiver is itself a constructor call. Handles
+/// `Path(...).resolve()` → `"Path"`, `Foo().bar().baz()` → `"Foo"`. Returns
+/// `None` for plain attribute / identifier nodes so the caller falls back to
+/// `node_text` for those.
+fn inner_call_function_name(node: &tree_sitter::Node, source: &str) -> Option<String> {
+    if node.kind() != "call" {
+        return None;
+    }
+    let func = node.child_by_field_name("function")?;
+    match func.kind() {
+        "identifier" => Some(node_text(&func, source)),
+        "attribute" => func
+            .child_by_field_name("attribute")
+            .map(|a| node_text(&a, source)),
+        "call" => inner_call_function_name(&func, source),
+        _ => None,
+    }
+}
+
 /// Inspect the Python RHS expression and emit a TypeRef when the type can be
 /// determined heuristically:
 ///
@@ -889,10 +909,16 @@ fn infer_python_variable_type(
         }
         // `Foo.create(args)` or `module.Foo(args)` — attribute call
         "attribute" => {
-            let obj = func_node
-                .child_by_field_name("object")
-                .map(|n| node_text(&n, source))
-                .unwrap_or_default();
+            let object = match func_node.child_by_field_name("object") {
+                Some(n) => n,
+                None => return,
+            };
+            // Skip when the receiver is itself a call expression
+            // (`Path(tempfile.mkdtemp()).resolve()`): the outer chain
+            // would otherwise emit `Path(tempfile.mkdtemp())` as a
+            // type name. Walk into the inner call's function instead.
+            let resolved_obj = inner_call_function_name(&object, source);
+            let obj = resolved_obj.unwrap_or_else(|| node_text(&object, source));
             // Only emit if the object name starts uppercase (class factory pattern).
             if obj.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
                 obj
