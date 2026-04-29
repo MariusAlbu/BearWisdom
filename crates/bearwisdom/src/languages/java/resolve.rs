@@ -248,6 +248,51 @@ impl LanguageResolver for JavaResolver {
             }
         }
 
+        // Java bare-name fallback. Counterpart to the SCSS / Bash /
+        // Python `<lang>_bare_name` resolver steps. Java chain refs
+        // through Spring fluent APIs (`mockMvc.perform(...).andExpect(
+        // model().attributeHasErrors(...))`), Stream / Optional methods,
+        // and AssertJ matchers leave the chain walker without a usable
+        // declared type by the leaf segment. The leaf method itself IS
+        // in the externals index — it just can't be bound by chain
+        // walking alone.
+        //
+        // Index-wide `by_name` lookup gated by `.java` file path and
+        // `kind_compatible`. Cross-language collisions can't leak
+        // because the file-extension filter excludes Python / TS /
+        // etc. defining identically-named methods.
+        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+            && ref_ctx.extracted_ref.module.is_none()
+            && !effective_target.contains('.')
+        {
+            for sym in lookup.by_name(effective_target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                let path = &sym.file_path;
+                let is_java = path.ends_with(".java")
+                    || path.ends_with(".jar")
+                    || path.starts_with("ext:java:")
+                    || path.starts_with("ext:idx:");
+                if !is_java {
+                    continue;
+                }
+                // Honor Java visibility — private methods aren't reachable
+                // across files even by bare name. `is_visible` runs the
+                // same checks as the deterministic resolution paths so a
+                // private cross-file method stays unresolved.
+                if !self.is_visible(file_ctx, ref_ctx, sym) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.80,
+                    strategy: "java_bare_name",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         // Could not resolve deterministically — fall back to heuristic.
         None
     }
