@@ -108,19 +108,41 @@ fn is_sql_builtin_type(name: &str) -> bool {
         // Numeric
         "int" | "integer" | "bigint" | "smallint" | "tinyint" | "numeric" | "decimal"
             | "float" | "real" | "double"
-            // String
+            // String — covers SQL Server, MySQL, Postgres, Oracle.
+            // SQL Server's `n*` prefix denotes Unicode (`nvarchar`, `nchar`,
+            // `ntext`); MySQL's `*text` family adds size variants
+            // (`tinytext`, `mediumtext`, `longtext`); Postgres adds `citext`.
             | "varchar" | "nvarchar" | "char" | "nchar" | "text" | "ntext" | "clob"
-            | "character"
-            // Binary
+            | "character" | "tinytext" | "mediumtext" | "longtext" | "citext"
+            | "varchar2" | "nvarchar2"
+            // Binary — `image` is SQL Server, `mediumblob`/`longblob` are MySQL,
+            // `raw` is Oracle, `bea` is Postgres.
             | "blob" | "binary" | "varbinary" | "bytea" | "bytes"
-            // Date/time
+            | "image" | "tinyblob" | "mediumblob" | "longblob" | "raw"
+            // Date/time — SQL Server adds `datetime2`, `datetimeoffset`,
+            // `smalldatetime`; Postgres adds `timestamptz`, `timetz`.
             | "date" | "time" | "datetime" | "timestamp" | "interval" | "year"
+            | "datetime2" | "datetimeoffset" | "smalldatetime"
+            | "timestamptz" | "timetz"
             // Boolean
             | "boolean" | "bool" | "bit"
-            // Misc
-            | "uuid" | "json" | "jsonb" | "xml" | "money" | "smallmoney"
+            // Misc — `uniqueidentifier` is SQL Server's GUID type
+            // (Bitwarden's whole schema is keyed on it); `hierarchyid` /
+            // `geography` / `geometry` / `sql_variant` / `rowversion` are
+            // SQL Server extras; `inet`/`cidr`/`macaddr` are Postgres
+            // network types; `tsvector`/`tsquery` are Postgres FTS.
+            | "uuid" | "uniqueidentifier" | "json" | "jsonb" | "xml"
+            | "money" | "smallmoney"
             | "serial" | "bigserial" | "smallserial"
+            | "hierarchyid" | "geography" | "geometry" | "sql_variant" | "rowversion"
+            | "inet" | "cidr" | "macaddr" | "macaddr8"
+            | "tsvector" | "tsquery"
             | "void" | "null" | "unknown"
+            // SQL Server / Postgres index modifiers that surface as
+            // `type_ref` because the grammar parses them adjacent to a
+            // column type position. Treat as built-in keywords.
+            | "clustered" | "nonclustered" | "include" | "rowstore" | "columnstore"
+            | "fillfactor"
             // Aggregate / pseudo-functions sometimes captured as refs
             | "count" | "sum" | "avg" | "min" | "max" | "coalesce" | "nullif"
             | "cast" | "convert" | "isnull" | "ifnull" | "nvl"
