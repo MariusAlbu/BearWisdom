@@ -72,20 +72,62 @@ fn visit_file(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Pre-pass: find the file's package declaration so that top-level message,
+    // service, and enum symbols can be qualified as `<package>.<Name>`.
+    let pkg = find_package_name(node, src);
+    visit_file_with_package(node, src, symbols, refs, pkg.as_deref());
+}
+
+fn find_package_name(node: Node, src: &str) -> Option<String> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "source_file" | "file" => {
-                visit_file(child, src, symbols, refs);
+                if let Some(p) = find_package_name(child, src) {
+                    return Some(p);
+                }
+            }
+            "package" => {
+                let name = collect_full_ident(&child, src);
+                if !name.is_empty() {
+                    return Some(name);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn visit_file_with_package(
+    node: Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    pkg: Option<&str>,
+) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "source_file" | "file" => {
+                visit_file_with_package(child, src, symbols, refs, pkg);
             }
             "package" => extract_package(&child, src, symbols),
             "import" => extract_import(&child, src, symbols, refs),
-            "message" => extract_message(&child, src, symbols, refs, None),
-            "service" => extract_service(&child, src, symbols, refs),
-            "enum" => extract_enum(&child, src, symbols, refs, None),
+            "message" => extract_message(&child, src, symbols, refs, None, pkg),
+            "service" => extract_service(&child, src, symbols, refs, pkg),
+            "enum" => extract_enum(&child, src, symbols, refs, None, pkg),
             "extend" => extract_extend(&child, src, symbols, refs),
             _ => {}
         }
+    }
+}
+
+/// Build a fully-qualified name as `[prefix.]name`, skipping prefix if empty.
+fn qualify(prefix: Option<&str>, name: &str) -> String {
+    match prefix {
+        Some(p) if !p.is_empty() => format!("{p}.{name}"),
+        _ => name.to_string(),
     }
 }
 
@@ -162,27 +204,30 @@ fn extract_message(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
+    qname_prefix: Option<&str>,
 ) {
     let name = match message_name(node, src) {
         Some(n) => n,
         None => return,
     };
 
+    let qname = qualify(qname_prefix, &name);
     let idx = symbols.len();
     symbols.push(make_symbol(
         name.clone(),
-        name.clone(),
+        qname.clone(),
         SymbolKind::Struct,
         node,
         Some(format!("message {}", name)),
         parent_index,
     ));
 
-    // Walk message_body for fields, nested messages, enums, oneofs
+    // Walk message_body for fields, nested messages, enums, oneofs.
+    // Nested types qualify as `<message_qname>.<NestedName>`.
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "message_body" {
-            extract_message_body(&child, src, idx, symbols, refs);
+            extract_message_body(&child, src, idx, symbols, refs, Some(qname.as_str()));
         }
     }
 }
@@ -193,6 +238,7 @@ fn extract_message_body(
     parent_index: usize,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
+    qname_prefix: Option<&str>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
@@ -200,8 +246,8 @@ fn extract_message_body(
             "field" => extract_field(&child, src, parent_index, symbols, refs),
             "map_field" => extract_map_field(&child, src, parent_index, symbols, refs),
             "oneof" => extract_oneof(&child, src, parent_index, symbols, refs),
-            "message" => extract_message(&child, src, symbols, refs, Some(parent_index)),
-            "enum" => extract_enum(&child, src, symbols, refs, Some(parent_index)),
+            "message" => extract_message(&child, src, symbols, refs, Some(parent_index), qname_prefix),
+            "enum" => extract_enum(&child, src, symbols, refs, Some(parent_index), qname_prefix),
             "extend" => extract_extend(&child, src, symbols, refs),
             _ => {}
         }
@@ -217,16 +263,18 @@ fn extract_service(
     src: &str,
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
+    qname_prefix: Option<&str>,
 ) {
     let name = match service_name(node, src) {
         Some(n) => n,
         None => return,
     };
 
+    let qname = qualify(qname_prefix, &name);
     let idx = symbols.len();
     symbols.push(make_symbol(
         name.clone(),
-        name.clone(),
+        qname,
         SymbolKind::Interface,
         node,
         Some(format!("service {}", name)),
@@ -319,16 +367,18 @@ fn extract_enum(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_index: Option<usize>,
+    qname_prefix: Option<&str>,
 ) {
     let name = match enum_name(node, src) {
         Some(n) => n,
         None => return,
     };
 
+    let qname = qualify(qname_prefix, &name);
     let idx = symbols.len();
     symbols.push(make_symbol(
         name.clone(),
-        name.clone(),
+        qname,
         SymbolKind::Enum,
         node,
         Some(format!("enum {}", name)),

@@ -249,3 +249,60 @@ fn cov_nested_message_emits_struct() {
     let inner = r.symbols.iter().find(|s| s.name == "Inner" && s.kind == SymbolKind::Struct);
     assert!(inner.is_some(), "expected nested Struct 'Inner'; got: {:?}", r.symbols);
 }
+
+// ---------------------------------------------------------------------------
+// Package-qualified names: top-level and nested messages get FQN as
+// `<package>.<Name>` and `<package>.<Outer>.<Inner>` respectively. Without
+// this, cross-file message refs like `opentelemetry.proto.common.v1.KeyValue`
+// fail to resolve via SymbolLookup::by_qualified_name.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_top_level_message_qualified_with_package() {
+    let r = extract("syntax = \"proto3\";\npackage opentelemetry.proto.common.v1;\nmessage KeyValue {\n  string key = 1;\n}");
+    let sym = r.symbols.iter().find(|s| s.name == "KeyValue" && s.kind == SymbolKind::Struct);
+    assert!(sym.is_some(), "expected Struct 'KeyValue'; got: {:?}", r.symbols.iter().map(|s|&s.name).collect::<Vec<_>>());
+    assert_eq!(
+        sym.unwrap().qualified_name,
+        "opentelemetry.proto.common.v1.KeyValue",
+        "top-level message qualified_name must include package; got: {:?}",
+        sym.unwrap().qualified_name,
+    );
+}
+
+#[test]
+fn cov_nested_message_qualified_with_package_and_parent() {
+    let r = extract("syntax = \"proto3\";\npackage app.api;\nmessage Outer {\n  message Inner {\n    string value = 1;\n  }\n}");
+    let inner = r.symbols.iter().find(|s| s.name == "Inner" && s.kind == SymbolKind::Struct);
+    assert!(inner.is_some(), "expected nested Struct 'Inner'; got: {:?}", r.symbols.iter().map(|s|&s.name).collect::<Vec<_>>());
+    assert_eq!(
+        inner.unwrap().qualified_name,
+        "app.api.Outer.Inner",
+        "nested message qualified_name must include package + parent; got: {:?}",
+        inner.unwrap().qualified_name,
+    );
+}
+
+#[test]
+fn cov_enum_qualified_with_package() {
+    let r = extract("syntax = \"proto3\";\npackage app.api;\nenum Status {\n  UNKNOWN = 0;\n}");
+    let sym = r.symbols.iter().find(|s| s.name == "Status" && s.kind == SymbolKind::Enum);
+    assert!(sym.is_some(), "expected Enum 'Status'; got: {:?}", r.symbols.iter().map(|s|&s.name).collect::<Vec<_>>());
+    assert_eq!(sym.unwrap().qualified_name, "app.api.Status");
+}
+
+#[test]
+fn cov_service_qualified_with_package() {
+    let r = extract("syntax = \"proto3\";\npackage app.api;\nservice Greeter {\n  rpc SayHello (HelloRequest) returns (HelloReply);\n}");
+    let sym = r.symbols.iter().find(|s| s.name == "Greeter" && s.kind == SymbolKind::Interface);
+    assert!(sym.is_some(), "expected Interface 'Greeter'; got: {:?}", r.symbols.iter().map(|s|&s.name).collect::<Vec<_>>());
+    assert_eq!(sym.unwrap().qualified_name, "app.api.Greeter");
+}
+
+#[test]
+fn cov_message_without_package_keeps_bare_qname() {
+    let r = extract("syntax = \"proto3\";\nmessage Standalone {\n  string x = 1;\n}");
+    let sym = r.symbols.iter().find(|s| s.name == "Standalone" && s.kind == SymbolKind::Struct);
+    assert!(sym.is_some());
+    assert_eq!(sym.unwrap().qualified_name, "Standalone");
+}
