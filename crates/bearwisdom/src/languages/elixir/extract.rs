@@ -26,7 +26,7 @@
 
 
 use super::helpers::{
-    attribute_name, call_identifier, directive_target, find_do_block_index,
+    attribute_name, call_identifier, call_qualified_name, directive_target, find_do_block_index,
     function_name_arity, is_private_def, module_name_from_call, node_text, qualify,
     scope_from_prefix,
 };
@@ -219,13 +219,19 @@ fn dispatch_call(
             // Generic call — emit Calls edge from the enclosing symbol (or symbol 0
             // as a fallback for module-level calls that have no enclosing function).
             let sym_idx = parent_index.unwrap_or(0);
-            let name = callee.rsplit('.').next().unwrap_or(&callee).to_string();
+            // Use the qualified form so the module prefix flows through
+            // (`DateTime.utc_now` vs `NaiveDateTime.utc_now` etc.). The
+            // tail-only `callee` from `call_identifier` would have lost
+            // the prefix already.
+            let qualified = call_qualified_name(node, src).unwrap_or_else(|| callee.clone());
+            let name = qualified.rsplit('.').next().unwrap_or(&qualified).to_string();
+            let module = qualified.rfind('.').map(|i| qualified[..i].to_string());
             refs.push(ExtractedRef {
                 source_symbol_index: sym_idx,
                 target_name: name,
                 kind: EdgeKind::Calls,
                 line: node.start_position().row as u32,
-                module: None,
+                module,
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
@@ -782,13 +788,18 @@ fn extract_calls_recursive(
             "call" => {
                 if let Some(callee) = call_identifier(&child, src) {
                     if !matches!(callee.as_str(), "def" | "defp" | "defmacro" | "defmacrop" | "defmodule" | "defstruct" | "defexception" | "defprotocol" | "defimpl" | "defguard" | "defguardp" | "alias" | "import" | "use" | "require") {
-                        let simple = callee.rsplit('.').next().unwrap_or(&callee).to_string();
+                        // Use the qualified form so dotted calls carry the
+                        // module prefix through to the resolver.
+                        let qualified = call_qualified_name(&child, src)
+                            .unwrap_or_else(|| callee.clone());
+                        let simple = qualified.rsplit('.').next().unwrap_or(&qualified).to_string();
+                        let module = qualified.rfind('.').map(|i| qualified[..i].to_string());
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name: simple,
                             kind: EdgeKind::Calls,
                             line: child.start_position().row as u32,
-                            module: None,
+                            module,
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
@@ -931,12 +942,14 @@ fn extract_pipe_calls(
                 let name = extract_pipe_callee_name(&r, src);
                 if let Some(n) = name {
                     if !n.is_empty() {
+                        let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
+                        let module = n.rfind('.').map(|i| n[..i].to_string());
                         refs.push(ExtractedRef {
                             source_symbol_index,
-                            target_name: n,
+                            target_name: simple,
                             kind: EdgeKind::Calls,
                             line: r.start_position().row as u32,
-                            module: None,
+                            module,
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
@@ -954,12 +967,14 @@ fn extract_pipe_calls(
     let name = extract_pipe_callee_name(right, src);
     if let Some(n) = name {
         if !n.is_empty() {
+            let simple = n.rsplit('.').next().unwrap_or(&n).to_string();
+            let module = n.rfind('.').map(|i| n[..i].to_string());
             refs.push(ExtractedRef {
                 source_symbol_index,
-                target_name: n,
+                target_name: simple,
                 kind: EdgeKind::Calls,
                 line: right.start_position().row as u32,
-                module: None,
+                module,
                 chain: None,
                 byte_offset: 0,
                             namespace_segments: Vec::new(),
@@ -983,12 +998,23 @@ fn extract_pipe_callee_name(node: &Node, src: &str) -> Option<String> {
         "call" => {
             // Check if this is a dot-access call: `Enum.map(...)`
             // The call's first child is a `dot` node for qualified calls.
+            // Return the FULL dotted form (`Module.func`) so the caller
+            // can split off `module` for the resolver. Without the
+            // module qualifier, the resolver only sees `func` and can't
+            // disambiguate between `DateTime.utc_now` / `NaiveDateTime.utc_now`
+            // / `Date.utc_today`, etc.
             let mut cursor = node.walk();
             for child in node.children(&mut cursor) {
                 match child.kind() {
                     "dot" => {
                         // `dot` → alias/identifier . identifier
-                        // The last identifier is the function name.
+                        // Reconstruct `module.tail` from text so the
+                        // module prefix flows through.
+                        let text = node_text(child, src);
+                        if !text.is_empty() {
+                            return Some(text);
+                        }
+                        // Fallback: walk children for the last ident
                         let mut dc = child.walk();
                         let mut last_ident: Option<String> = None;
                         for dc_child in child.children(&mut dc) {

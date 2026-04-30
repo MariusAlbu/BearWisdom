@@ -45,6 +45,34 @@ pub(super) fn call_identifier(node: &Node, src: &str) -> Option<String> {
     if first_word.is_empty() { None } else { Some(first_word) }
 }
 
+/// Like `call_identifier`, but for `dot` callees returns the full
+/// dotted form (`DateTime.utc_now`) rather than just the tail
+/// (`utc_now`). The dotted form lets the resolver scope the lookup
+/// to the correct module — without it, `DateTime.utc_now` and
+/// `NaiveDateTime.utc_now` collapse into the same `utc_now` ref and
+/// can't be disambiguated.
+pub(super) fn call_qualified_name(node: &Node, src: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "identifier" => return Some(node_text(child, src)),
+            "alias" => return Some(node_text(child, src)),
+            "dot" => {
+                let text = node_text(child, src);
+                if !text.is_empty() {
+                    return Some(text);
+                }
+                return dot_function_name(&child, src);
+            }
+            _ => {}
+        }
+        if child.kind() != "comment" {
+            break;
+        }
+    }
+    None
+}
+
 /// Extract the function name from a `dot` node (`Module.function` → "function").
 pub(super) fn dot_function_name(dot_node: &Node, src: &str) -> Option<String> {
     // `dot` structure: receiver (alias/identifier) `.` function_name (identifier)
