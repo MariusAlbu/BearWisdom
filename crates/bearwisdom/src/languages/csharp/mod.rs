@@ -51,7 +51,9 @@ impl LanguagePlugin for CSharpPlugin {
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = (file_path, lang_id);
-        extract::extract(source)
+        let mut result = extract::extract(source);
+        crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
+        result
     }
 
     fn extract_connection_points(

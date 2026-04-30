@@ -687,24 +687,27 @@ fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
 }
 
 // ---------------------------------------------------------------------------
-// Ember helper-export detection
+// Handlebars helper-export detection (Ember + Ghost-style themes)
 //
-// Ember helpers live at `**/app/helpers/<name>.{js,ts,gjs,gts}` and are
-// invoked from Handlebars templates by the file's stem name (kebab → snake
-// because the Handlebars→JS wrapper rewrites hyphens to underscores). The
-// helper itself is typically a default export wrapping
-// `helper(function(...){})` — the function name inside doesn't match the
-// invocation name.
+// Helpers and modifiers invoked from Handlebars templates are stored on
+// disk as JavaScript / TypeScript modules whose default export wraps a
+// helper-callable. The invocation name is the file stem (kebab → snake by
+// the Handlebars→JS wrapper), but the inner function name doesn't match
+// it. Without injecting a synthetic file-stem symbol, every template call
+// like `{{gh-pluralize ...}}` lands in unresolved_refs.
 //
-// Append a synthetic Function symbol named after the file stem (underscore
-// form) with `qualified_name = "__npm_globals__.<name>"` so the TS
-// resolver's bare-name fallback at engine.rs::resolve_common's
-// `__npm_globals__` lookup binds template invocations like `{{gh-pluralize
-// items}}` (rewritten to `gh_pluralge(items)`) to this file.
+// Three patterns are detected, all gated on per-file content signals to
+// avoid false-positive matches in unrelated `helpers/` directories:
 //
-// Detection is intentionally narrow: requires both the path pattern and an
-// import from `@ember/component/helper`. Random JS files in directories
-// named `helpers/` don't match.
+//   1. Ember helper:    `**/app/helpers/<name>.{js,ts,gjs,gts}`
+//                       with `@ember/component/helper` or `template-only`.
+//   2. Ember modifier:  `**/app/modifiers/<name>.{js,ts,gjs,gts}`
+//                       with `@ember/component/modifier` or `@ember/render-modifiers`.
+//   3. Ghost theme:     `**/<...>/helpers/<name>.{js,ts}` (any depth)
+//                       with `require('...handlebars...')` or `services/handlebars`.
+//
+// All three append a Function symbol with `qualified_name = "__npm_globals__.<name>"`
+// so the TS resolver's bare-name fallback finds it.
 // ---------------------------------------------------------------------------
 
 pub fn append_ember_helper_default_export(
@@ -712,10 +715,9 @@ pub fn append_ember_helper_default_export(
     source: &str,
     result: &mut crate::types::ExtractionResult,
 ) {
-    let Some(stem) = ember_helper_stem(file_path) else { return };
-    if !is_ember_helper_source(source) {
+    let Some((stem, signature_hint)) = handlebars_helper_stem(file_path, source) else {
         return;
-    }
+    };
     let invocation_name = stem.replace('-', "_");
     let qname = format!("__npm_globals__.{invocation_name}");
     if result.symbols.iter().any(|s| s.qualified_name == qname) {
@@ -730,42 +732,182 @@ pub fn append_ember_helper_default_export(
         end_line: 0,
         start_col: 0,
         end_col: 0,
-        signature: Some(format!("/* Ember helper export of {stem} */")),
+        signature: Some(format!("/* {signature_hint} export of {stem} */")),
         doc_comment: None,
         scope_path: None,
         parent_index: None,
     });
 }
 
-/// Extract the helper name from `**/app/helpers/<name>.{js,ts,gjs,gts}` paths.
-/// Returns None for any path that doesn't match the Ember-helper convention.
-fn ember_helper_stem(file_path: &str) -> Option<&str> {
+/// Detect a Handlebars-callable export and return (stem, signature_hint)
+/// suitable for emitting the synthetic symbol. Returns None if the file
+/// doesn't match any known convention.
+fn handlebars_helper_stem(file_path: &str, source: &str) -> Option<(String, &'static str)> {
     let norm = file_path.replace('\\', "/");
-    // Find the last `/app/helpers/` segment (some monorepos have multiple).
-    let helpers_idx = norm.rfind("/app/helpers/")?;
-    let after = &file_path[helpers_idx + "/app/helpers/".len()..];
+
+    // 1. Ember helper: `app/helpers/<name>.{js,ts,gjs,gts}`
+    if let Some(stem) = path_stem_after_segment(&norm, "/app/helpers/", &EMBER_EXTENSIONS) {
+        if source.contains("@ember/component/helper")
+            || source.contains("@ember/component/template-only")
+        {
+            return Some((stem, "Ember helper"));
+        }
+    }
+
+    // 2. Ember modifier: `app/modifiers/<name>.{js,ts,gjs,gts}`
+    if let Some(stem) = path_stem_after_segment(&norm, "/app/modifiers/", &EMBER_EXTENSIONS) {
+        if source.contains("@ember/component/modifier")
+            || source.contains("@ember/render-modifiers")
+            || source.contains("ember-modifier")
+        {
+            return Some((stem, "Ember modifier"));
+        }
+    }
+
+    // 3. Ghost-style theme helper: any `**/helpers/<name>.{js,ts}` with a
+    //    handlebars-services import. Excludes the `app/helpers/` case
+    //    already handled above (different content signal).
+    if !norm.contains("/app/helpers/") {
+        if let Some(stem) = path_stem_after_segment(&norm, "/helpers/", &THEME_EXTENSIONS) {
+            if is_ghost_style_theme_helper(source) {
+                return Some((stem, "Handlebars theme helper"));
+            }
+        }
+    }
+
+    None
+}
+
+const EMBER_EXTENSIONS: [&str; 4] = [".js", ".ts", ".gjs", ".gts"];
+const THEME_EXTENSIONS: [&str; 2] = [".js", ".ts"];
+
+/// Find the file stem that sits directly inside `segment` (no nested subdir).
+/// Nested helper paths (`segment/sub/name.js`) return None — they require
+/// dotted-name resolution which the bare-name fallback doesn't cover.
+fn path_stem_after_segment(norm: &str, segment: &str, exts: &[&str]) -> Option<String> {
+    let idx = norm.rfind(segment)?;
+    let after = &norm[idx + segment.len()..];
     let after = after.trim_start_matches('/');
-    // Single file under helpers/ — no nested subfolders. Nested helper files
-    // exist (`app/helpers/blog/post-card.js`) but the invocation name then
-    // includes the path with `/` → JS rewrite handles `/` → `.` so the call
-    // becomes `blog.post_card`. We skip nested helpers for now since their
-    // resolution path goes through dotted names not bare-name fallback.
     if after.contains('/') {
         return None;
     }
-    let stem = after.strip_suffix(".js")
-        .or_else(|| after.strip_suffix(".ts"))
-        .or_else(|| after.strip_suffix(".gjs"))
-        .or_else(|| after.strip_suffix(".gts"))?;
-    if stem.is_empty() {
-        return None;
+    for ext in exts {
+        if let Some(stem) = after.strip_suffix(ext) {
+            if !stem.is_empty() {
+                return Some(stem.to_string());
+            }
+        }
     }
-    Some(stem)
+    None
 }
 
-fn is_ember_helper_source(source: &str) -> bool {
-    source.contains("@ember/component/helper")
-        || source.contains("@ember/component/template-only")
+fn is_ghost_style_theme_helper(source: &str) -> bool {
+    // Ghost theme helpers `require('../services/handlebars')` for SafeString
+    // and friends; other Handlebars-host frameworks (Express-Handlebars,
+    // hbs-engine) use `Handlebars.registerHelper`. Either signal qualifies.
+    source.contains("services/handlebars")
+        || source.contains("Handlebars.registerHelper")
+        || source.contains("handlebars').SafeString")
+        || source.contains("handlebars\").SafeString")
+}
+
+// ---------------------------------------------------------------------------
+// Handlebars.RegisterHelper("name", ...) — runtime registration scan
+//
+// Some hosts (Bitwarden's C# Handlebars.Net, JS server-side templating)
+// register helpers imperatively rather than by file convention. The helper
+// name is a string literal in the registration call, and the consuming
+// templates invoke it bare. Without scanning these registrations the
+// invocations land in unresolved_refs.
+//
+// The scan is regex-free deliberately — a small state machine that
+// recognizes the literal `Handlebars.RegisterHelper(` or
+// `Handlebars.registerHelper(` token, then captures the next quoted string
+// argument. Works for C#, JS, TS, and any language that calls the same
+// API. Each captured name is appended as a Function symbol with
+// `qualified_name = "__npm_globals__.<name>"` so the TS resolver's
+// bare-name fallback finds it from a Handlebars-embedded template call.
+// ---------------------------------------------------------------------------
+
+pub fn append_handlebars_register_helper_globals(
+    source: &str,
+    result: &mut crate::types::ExtractionResult,
+) {
+    for name in scan_register_helper_names(source) {
+        let invocation_name = name.replace('-', "_");
+        let qname = format!("__npm_globals__.{invocation_name}");
+        if result.symbols.iter().any(|s| s.qualified_name == qname) {
+            continue;
+        }
+        result.symbols.push(crate::types::ExtractedSymbol {
+            name: invocation_name.clone(),
+            qualified_name: qname,
+            kind: crate::types::SymbolKind::Function,
+            visibility: Some(crate::types::Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(format!("/* Handlebars.RegisterHelper(\"{name}\", ...) */")),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
+fn scan_register_helper_names(source: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let needles = [
+        "Handlebars.RegisterHelper(",
+        "Handlebars.registerHelper(",
+        "handlebars.RegisterHelper(",
+        "handlebars.registerHelper(",
+    ];
+    let bytes = source.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let mut matched_len: Option<usize> = None;
+        for needle in needles {
+            let nb = needle.as_bytes();
+            if i + nb.len() <= bytes.len() && &bytes[i..i + nb.len()] == nb {
+                matched_len = Some(nb.len());
+                break;
+            }
+        }
+        if let Some(after_open) = matched_len {
+            let mut j = i + after_open;
+            while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t' || bytes[j] == b'\n' || bytes[j] == b'\r') {
+                j += 1;
+            }
+            if j < bytes.len() && (bytes[j] == b'"' || bytes[j] == b'\'') {
+                let quote = bytes[j];
+                let start = j + 1;
+                let mut k = start;
+                while k < bytes.len() && bytes[k] != quote {
+                    if bytes[k] == b'\\' && k + 1 < bytes.len() {
+                        k += 2;
+                    } else {
+                        k += 1;
+                    }
+                }
+                if k <= bytes.len() && k > start {
+                    if let Ok(name) = std::str::from_utf8(&bytes[start..k]) {
+                        let trimmed = name.trim();
+                        if !trimmed.is_empty()
+                            && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                        {
+                            out.push(trimmed.to_string());
+                        }
+                    }
+                }
+            }
+            i += after_open;
+        } else {
+            i += 1;
+        }
+    }
+    out
 }
 
 #[cfg(test)]
@@ -1071,5 +1213,141 @@ mod tests {
             1,
             "duplicate detection should keep the symbol unique"
         );
+    }
+
+    #[test]
+    fn ember_modifier_appends_npm_globals_symbol() {
+        let mut r = empty_result();
+        let src = "import Modifier from '@ember/component/modifier';\nexport default class extends Modifier { modify() {} }";
+        append_ember_helper_default_export(
+            "ghost/admin/app/modifiers/react-render.js",
+            src,
+            &mut r,
+        );
+        let sym = r
+            .symbols
+            .iter()
+            .find(|s| s.qualified_name == "__npm_globals__.react_render")
+            .expect("expected synthetic modifier symbol");
+        assert_eq!(sym.name, "react_render");
+        assert!(sym.signature.as_ref().unwrap().contains("Ember modifier"));
+    }
+
+    #[test]
+    fn ember_modifier_via_render_modifiers_import() {
+        let mut r = empty_result();
+        let src = "import { modifier } from 'ember-modifier';\nexport default modifier((el) => {});";
+        append_ember_helper_default_export(
+            "myapp/app/modifiers/on-key.js",
+            src,
+            &mut r,
+        );
+        assert!(r.symbols.iter().any(|s| s.name == "on_key"));
+    }
+
+    #[test]
+    fn ghost_theme_helper_appends_npm_globals_symbol() {
+        let mut r = empty_result();
+        let src = "const {SafeString} = require('../services/handlebars');\nmodule.exports = function tiers(options) { return new SafeString(''); };";
+        append_ember_helper_default_export(
+            "ghost/core/core/frontend/helpers/tiers.js",
+            src,
+            &mut r,
+        );
+        let sym = r
+            .symbols
+            .iter()
+            .find(|s| s.qualified_name == "__npm_globals__.tiers")
+            .expect("expected synthetic theme-helper symbol");
+        assert_eq!(sym.name, "tiers");
+        assert!(sym.signature.as_ref().unwrap().contains("theme helper"));
+    }
+
+    #[test]
+    fn ghost_theme_helper_via_register_helper_pattern() {
+        let mut r = empty_result();
+        let src = "const Handlebars = require('handlebars');\nHandlebars.registerHelper('formatDate', function(d) { return d; });\nmodule.exports = formatDate;";
+        append_ember_helper_default_export(
+            "myapp/lib/helpers/format-date.js",
+            src,
+            &mut r,
+        );
+        assert!(
+            r.symbols.iter().any(|s| s.name == "format_date"),
+            "Handlebars.registerHelper pattern should activate detection"
+        );
+    }
+
+    #[test]
+    fn random_helpers_dir_without_handlebars_signal_skipped() {
+        let mut r = empty_result();
+        // A folder named `helpers/` but with no Handlebars signal — could be
+        // a generic JS utility module. Don't claim it as a template helper.
+        let src = "export function helper() {}\nexport default helper;";
+        append_ember_helper_default_export(
+            "src/helpers/utility.js",
+            src,
+            &mut r,
+        );
+        assert!(r.symbols.is_empty(), "no Handlebars signal → no synthetic");
+    }
+
+    // -----------------------------------------------------------------------
+    // Handlebars.RegisterHelper("name", ...) scan
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn register_helper_csharp_double_quoted_captures_name() {
+        let mut r = empty_result();
+        let src = "Handlebars.RegisterHelper(\"usd\", (writer, ctx, args) => writer.Write(args[0]));";
+        append_handlebars_register_helper_globals(src, &mut r);
+        assert!(r.symbols.iter().any(|s|
+            s.name == "usd" && s.qualified_name == "__npm_globals__.usd"
+        ));
+    }
+
+    #[test]
+    fn register_helper_js_lowercase_captures_name() {
+        let mut r = empty_result();
+        let src = "Handlebars.registerHelper('format-date', function(d) { return d; });";
+        append_handlebars_register_helper_globals(src, &mut r);
+        assert!(r.symbols.iter().any(|s|
+            s.name == "format_date" && s.qualified_name == "__npm_globals__.format_date"
+        ));
+    }
+
+    #[test]
+    fn register_helper_multiple_in_one_file() {
+        let mut r = empty_result();
+        let src = r#"
+            Handlebars.RegisterHelper("date", X);
+            Handlebars.RegisterHelper("usd", Y);
+            Handlebars.RegisterHelper("plurality", Z);
+        "#;
+        append_handlebars_register_helper_globals(src, &mut r);
+        for n in ["date", "usd", "plurality"] {
+            assert!(r.symbols.iter().any(|s| s.name == n), "missing {n}");
+        }
+    }
+
+    #[test]
+    fn register_helper_idempotent_on_duplicate_registration() {
+        let mut r = empty_result();
+        let src = "Handlebars.RegisterHelper(\"eq\", X);\nHandlebars.RegisterHelper(\"eq\", Y);";
+        append_handlebars_register_helper_globals(src, &mut r);
+        assert_eq!(
+            r.symbols.iter().filter(|s| s.name == "eq").count(),
+            1,
+            "duplicate registrations of the same name should yield one symbol"
+        );
+    }
+
+    #[test]
+    fn register_helper_skips_non_string_first_arg() {
+        let mut r = empty_result();
+        // Variable as helper name — can't statically capture it.
+        let src = "Handlebars.RegisterHelper(myHelperName, fn);";
+        append_handlebars_register_helper_globals(src, &mut r);
+        assert!(r.symbols.is_empty());
     }
 }

@@ -38,6 +38,7 @@ impl LanguagePlugin for JavascriptPlugin {
         let _ = lang_id;
         let mut result = extract::extract(source);
         crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
+        crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
         result
     }
 

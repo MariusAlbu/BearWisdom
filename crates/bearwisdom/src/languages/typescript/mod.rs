@@ -87,6 +87,7 @@ impl LanguagePlugin for TypeScriptPlugin {
         let is_tsx = file_path.ends_with(".tsx") || lang_id == "tsx";
         let mut result = extract::extract(source, is_tsx);
         crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
+        crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
         result
     }
 
