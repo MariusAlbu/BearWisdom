@@ -339,7 +339,7 @@ fn classify_row(
     }
 
     // 6. Local false positive — locals.scm / scope-tree miss.
-    if looks_like_local(row.target_name, row.kind) {
+    if looks_like_local(row.target_name, row.kind, row.language) {
         return UnresolvedCategory::LocalFalsePositive;
     }
 
@@ -513,9 +513,22 @@ fn looks_like_sub_language_target(name: &str) -> bool {
     name.chars().next().is_some_and(|c| c.is_ascii_uppercase())
 }
 
-fn looks_like_local(name: &str, kind: &str) -> bool {
+fn looks_like_local(name: &str, kind: &str, language: &str) -> bool {
+    // Languages where bare identifiers are the call surface, not locals.
+    // SCSS/Sass/Less use kebab-case mixin and function names that *look*
+    // like locals to a generic heuristic. CSS uses class/id selectors.
+    // None of these have C-style locals — variables in these languages
+    // are sigil-prefixed (`$var`, `@var`, `--var`).
+    if matches!(language, "scss" | "sass" | "css" | "less" | "stylus") {
+        return false;
+    }
     if name.len() <= 2 && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
         return true;
+    }
+    // Kebab-case identifiers are typically mixin/function/component names
+    // in style and template languages, never C-style locals.
+    if name.contains('-') {
+        return false;
     }
     // Locals are typically lowercase identifiers used as call targets,
     // field/method receivers, or type annotations on parameters. Only
@@ -576,4 +589,9 @@ pub(super) fn _test_classify_row(
         language,
     };
     classify_row(&row, external_names, imports_for_file)
+}
+
+#[cfg(test)]
+pub(super) fn _test_looks_like_local(name: &str, kind: &str, language: &str) -> bool {
+    looks_like_local(name, kind, language)
 }

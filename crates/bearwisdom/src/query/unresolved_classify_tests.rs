@@ -198,6 +198,55 @@ fn local_false_positive_does_not_fire_on_inherits() {
 }
 
 #[test]
+fn scss_kebab_case_is_not_local() {
+    // SCSS @include nb-install-component → kind=calls with kebab-case
+    // name. SCSS variables are sigil-prefixed ($var); bare identifiers
+    // are mixin/function calls, not locals.
+    assert!(!_test_looks_like_local("nb-install-component", "calls", "scss"));
+    assert!(!_test_looks_like_local("media-breakpoint-down", "calls", "scss"));
+    let cat = _test_classify_row(
+        "nb-install-component",
+        "calls",
+        None,
+        "src/widget.scss",
+        "scss",
+        &empty_externals(),
+        None,
+    );
+    assert_ne!(cat, UnresolvedCategory::LocalFalsePositive);
+    assert_eq!(cat, UnresolvedCategory::RealMissingSymbol);
+}
+
+#[test]
+fn css_less_sass_stylus_skip_locals_heuristic() {
+    for lang in ["css", "less", "sass", "stylus"] {
+        let cat = _test_classify_row(
+            "some-mixin",
+            "calls",
+            None,
+            "src/widget.css",
+            lang,
+            &empty_externals(),
+            None,
+        );
+        assert_ne!(
+            cat,
+            UnresolvedCategory::LocalFalsePositive,
+            "lang={lang} should not classify kebab-case as local"
+        );
+    }
+}
+
+#[test]
+fn kebab_case_outside_styles_also_not_local() {
+    // Kebab-case names in TS/JS contexts are template tag names or web-
+    // component selectors, never C-style locals. Same heuristic applies
+    // independent of language.
+    assert!(!_test_looks_like_local("some-component", "calls", "typescript"));
+    assert!(!_test_looks_like_local("date-picker", "calls", "javascript"));
+}
+
+#[test]
 fn unsupported_syntax_generic_residue() {
     let cat = _test_classify_row(
         "Foo<T>",
