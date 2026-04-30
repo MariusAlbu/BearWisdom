@@ -44,9 +44,11 @@ pub struct MarkdownResolver;
 
 impl LanguageResolver for MarkdownResolver {
     fn language_ids(&self) -> &[&str] {
-        // Markdown + MDX share the link-extraction shape (MDX's host scan
-        // is a thin wrapper around Markdown's). One resolver covers both.
-        &["markdown", "md", "mdx"]
+        // MdxResolver wraps this one to dispatch by ref kind (Imports here,
+        // JSX Calls to TypeScriptResolver). Registering MarkdownResolver
+        // only under markdown/md keeps the engine's resolver map keyed
+        // unambiguously to MdxResolver for ".mdx" files.
+        &["markdown", "md"]
     }
 
     fn build_file_context(

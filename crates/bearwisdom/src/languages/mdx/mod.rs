@@ -18,12 +18,13 @@
 
 pub mod embedded;
 pub mod extract;
+pub mod resolve;
 
 use std::sync::Arc;
 
 use crate::indexer::resolve::engine::LanguageResolver;
 use crate::languages::LanguagePlugin;
-use crate::languages::markdown::resolve::MarkdownResolver;
+use resolve::MdxResolver;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
 
@@ -72,11 +73,12 @@ impl LanguagePlugin for MdxPlugin {
     }
 
     fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
-        // MDX inherits Markdown's path-based link resolver. The MDX host
-        // scan reuses `markdown::host_scan::collect_link_refs`, so the
-        // emitted `Imports` refs have the same shape — relative target
-        // names with the markdown extension stripped — and resolve via
-        // the same file-path probing logic.
-        Some(Arc::new(MarkdownResolver))
+        // MDX needs both halves of resolution: Markdown-style relative
+        // link Imports (path probing) AND TS-import-aware JSX Calls
+        // (cross-reference component refs against the file's spliced TS
+        // import bindings). MdxResolver dispatches by ref kind — the
+        // same pattern Vue/Svelte use to bridge template tags onto the
+        // `<script>` block's TypeScript imports.
+        Some(Arc::new(MdxResolver))
     }
 }
