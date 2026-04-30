@@ -80,6 +80,7 @@ pub mod pub_pkg;
 pub mod puppet_forge;
 pub mod puppet_stdlib;
 pub mod pypi;
+pub mod qt_synthetics;
 pub mod robot_builtin_synthetics;
 pub mod robot_seleniumlibrary_synthetics;
 pub mod robot_browser_synthetics;
@@ -123,6 +124,7 @@ pub use hex::HexEcosystem;
 pub use jdk_src::JdkSrcEcosystem;
 pub use jest_synthetics::JestSyntheticsEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
+pub use qt_synthetics::QtSyntheticsEcosystem;
 pub use luarocks::LuarocksEcosystem;
 pub use matlab_runtime::MatlabRuntimeEcosystem;
 pub use matlab_stdlib::MatlabStdlibEcosystem;
@@ -617,6 +619,7 @@ pub fn default_locator(
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
         "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
         "jest-synthetics" => Some(Arc::new(JestSyntheticsEcosystem)),
+        "qt-synthetics" => Some(Arc::new(QtSyntheticsEcosystem)),
         "blazor-runtime" => Some(Arc::new(BlazorRuntimeEcosystem)),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
@@ -698,6 +701,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ElixirStdlibEcosystem));
         reg.register(Arc::new(SpringStubsEcosystem));
         reg.register(Arc::new(JestSyntheticsEcosystem));
+        reg.register(Arc::new(QtSyntheticsEcosystem));
         reg.register(Arc::new(BlazorRuntimeEcosystem));
         reg.register(Arc::new(SwiftFoundationEcosystem));
         reg.register(Arc::new(SwiftPmDslStubsEcosystem));
