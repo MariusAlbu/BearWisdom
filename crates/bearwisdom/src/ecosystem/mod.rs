@@ -59,11 +59,13 @@ pub mod hex;
 pub mod jdk_src;
 pub mod kotlin_stdlib;
 pub mod luarocks;
+pub mod matlab_runtime;
 pub mod matlab_stdlib;
 pub mod maven;
 pub mod nimble;
 pub mod node_builtins;
 pub mod npm;
+pub mod nvim_runtime;
 pub mod nuget;
 pub mod laravel_stubs;
 pub mod opam;
@@ -116,11 +118,13 @@ pub use hex::HexEcosystem;
 pub use jdk_src::JdkSrcEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
+pub use matlab_runtime::MatlabRuntimeEcosystem;
 pub use matlab_stdlib::MatlabStdlibEcosystem;
 pub use maven::MavenEcosystem;
 pub use nimble::NimbleEcosystem;
 pub use node_builtins::NodeBuiltinsEcosystem;
 pub use npm::NpmEcosystem;
+pub use nvim_runtime::NvimRuntimeEcosystem;
 pub use nuget::NugetEcosystem;
 pub use laravel_stubs::LaravelStubsEcosystem;
 pub use phoenix_stubs::PhoenixStubsEcosystem;
@@ -613,7 +617,9 @@ pub fn default_locator(
         "psgallery" => Some(Arc::new(PsGalleryEcosystem)),
         "powershell-stdlib" => Some(Arc::new(PowerShellStdlibEcosystem)),
         "tf-registry" => Some(Arc::new(TfRegistryEcosystem)),
+        "matlab-runtime" => Some(Arc::new(MatlabRuntimeEcosystem)),
         "matlab-stdlib" => Some(Arc::new(MatlabStdlibEcosystem)),
+        "nvim-runtime" => Some(Arc::new(NvimRuntimeEcosystem)),
         "gleam-stdlib" => Some(Arc::new(GleamStdlibEcosystem)),
         "node-builtins" => Some(Arc::new(NodeBuiltinsEcosystem)),
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
@@ -685,7 +691,9 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(DartSdkEcosystem));
         reg.register(Arc::new(FlutterSdkEcosystem));
         reg.register(Arc::new(PowerShellStdlibEcosystem));
+        reg.register(Arc::new(MatlabRuntimeEcosystem));
         reg.register(Arc::new(MatlabStdlibEcosystem));
+        reg.register(Arc::new(NvimRuntimeEcosystem));
         reg.register(Arc::new(GleamStdlibEcosystem));
         reg.register(Arc::new(NodeBuiltinsEcosystem));
         reg.register(Arc::new(ZigStdEcosystem));
