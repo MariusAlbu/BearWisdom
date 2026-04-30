@@ -29,7 +29,11 @@ pub mod extract;
 pub mod fenced;
 pub mod host_scan;
 pub mod info_string;
+pub mod resolve;
 
+use std::sync::Arc;
+
+use crate::indexer::resolve::engine::LanguageResolver;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
@@ -78,5 +82,9 @@ impl LanguagePlugin for MarkdownPlugin {
     }
     fn ref_node_kinds(&self) -> &[&str] {
         &[]
+    }
+
+    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
+        Some(Arc::new(resolve::MarkdownResolver))
     }
 }
