@@ -700,10 +700,34 @@ fn parse_dotnet_dll(
     lang_id: &str,
 ) -> std::result::Result<crate::types::ParsedFile, String> {
     use crate::types::{ExtractedSymbol, ParsedFile, SymbolKind};
+    use dotscope::metadata::cilassemblyview::CilAssemblyView;
     use dotscope::metadata::method::MethodAccessFlags;
+    use dotscope::metadata::validation::ValidationConfig;
     use dotscope::prelude::CilObject;
 
-    let assembly = CilObject::from_path(dll_path).map_err(|e| e.to_string())?;
+    // BCL runtime DLLs (especially `System.Private.CoreLib.dll`) carry
+    // compiler-internal signature shapes that dotscope's strict validators
+    // reject — and `System.Exception`, `System.Object`, and the rest of the
+    // root BCL types live in CoreLib. We only need type/method names +
+    // signatures for symbol discovery, not full ECMA-335 conformance, so
+    // disable validation entirely. Note: dotscope's
+    // `CilObject::from_path_with_validation` always calls
+    // `CilAssemblyView::from_path` internally, which uses
+    // `ValidationConfig::production()` regardless of the config we pass —
+    // Stage 1 (raw) validation runs there. We sidestep that by building the
+    // view explicitly with `disabled()` and constructing the object via
+    // `from_view_with_validation`. This skips both Stage 1 and Stage 2.
+    // Custom config: every validator off + lenient: true. `disabled()` alone
+    // sets validators off but leaves lenient = false, so the data loader
+    // (`CilObjectData::from_assembly_view`) propagates parser errors instead
+    // of treating them as warnings — that path catches CoreLib's custom
+    // attributes with newer CIL element types dotscope hasn't implemented.
+    let mut config = ValidationConfig::disabled();
+    config.lenient = true;
+    let view = CilAssemblyView::from_path_with_validation(dll_path, config.clone())
+        .map_err(|e| e.to_string())?;
+    let assembly = CilObject::from_view_with_validation(view, config)
+        .map_err(|e| e.to_string())?;
     let assembly_name = assembly
         .assembly()
         .map(|a| a.name.clone())

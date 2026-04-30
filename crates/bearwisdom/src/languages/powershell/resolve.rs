@@ -167,7 +167,11 @@ impl LanguageResolver for PowerShellResolver {
         // `.psm1` / `.psd1` file extension.
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+        let bare_kind_ok = matches!(
+            edge_kind,
+            EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates | EdgeKind::Inherits
+        );
+        if bare_kind_ok
             && ref_ctx.extracted_ref.module.is_none()
             && !target.contains('.')
         {
@@ -175,19 +179,38 @@ impl LanguageResolver for PowerShellResolver {
                 if !predicates::kind_compatible(edge_kind, &sym.kind) {
                     continue;
                 }
-                let path = &sym.file_path;
+                let path = sym.file_path.as_ref();
+
+                // Project-internal PS symbol — module-private cmdlets etc.
                 let is_ps = path.ends_with(".ps1")
                     || path.ends_with(".psm1")
                     || path.ends_with(".psd1");
-                if !is_ps {
-                    continue;
+                if is_ps {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.80,
+                        strategy: "powershell_bare_name",
+                        resolved_yield_type: None,
+                    });
                 }
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.80,
-                    strategy: "powershell_bare_name",
-                    resolved_yield_type: None,
-                });
+
+                // Externally-indexed BCL type — `class MyError : Exception`,
+                // `[Hashtable]::new()`. PowerShell auto-uses `System.*` types
+                // unqualified at runtime; bind to the BCL symbol when one
+                // unambiguously matches by simple name (Calls/TypeRef/
+                // Instantiates/Inherits). Gated to dotnet-origin externals so
+                // unrelated `Exception` symbols in node_modules / cargo etc.
+                // don't poison.
+                if path.starts_with("ext:dotnet:")
+                    && matches!(sym.kind.as_str(), "class" | "interface")
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.85,
+                        strategy: "powershell_dotnet_bare_name",
+                        resolved_yield_type: None,
+                    });
+                }
             }
         }
 
@@ -227,6 +250,12 @@ impl LanguageResolver for PowerShellResolver {
         if is_cmdlet_name(target) {
             return Some("powershell-stdlib".to_string());
         }
+        // Unqualified .NET base type used as inheritance / parameter target
+        // (`class MyError : Exception`, `[Object] $x`). Route to dotnet-stdlib
+        // so the ref leaves unresolved_refs without polluting the graph.
+        if is_dotnet_type_name(target) {
+            return Some(DOTNET_BINDING_SENTINEL.to_string());
+        }
         // Module-qualified cmdlet call: `PSDscRunAsCredential\Set-X`. The
         // module prefix names the gallery / DSC module that owns the
         // cmdlet — classify under that module so DSC resource invocations
@@ -253,24 +282,44 @@ impl LanguageResolver for PowerShellResolver {
 }
 
 /// A command name looks like an external executable when it:
-///   * is a short identifier with no `-` (cmdlets use Verb-Noun),
-///   * contains no `.` (dotted paths are method / property access), and
-///   * contains no `$` / whitespace / special shell metacharacters.
+///   * is a bare identifier with no `-` and no `.` (cmdlets use Verb-Noun;
+///     dotted paths are method / property access), or
+///   * ends in a well-known Windows executable extension (`.exe`, `.cmd`,
+///     `.bat`, `.com`, `.msi`) with the stem otherwise looking like an
+///     identifier (`sc.exe`, `taskkill.exe`, `setup.cmd`).
 ///
 /// PowerShell users also commonly invoke well-known CLI tools (`git`,
 /// `docker`, `kubectl`, `az`) this way; they're impossible to resolve
 /// locally but shouldn't pollute `unresolved_refs`.
 fn looks_like_external_executable(name: &str) -> bool {
-    if name.is_empty() || name.contains('-') || name.contains('.') {
+    if name.is_empty() || name.contains('-') {
         return false;
     }
-    // Must start with an alphabetic char (exclude operators, digits, etc.).
+    // `.exe` / `.cmd` / `.bat` / `.com` / `.msi` invocation form.
+    if let Some(stem) = name
+        .strip_suffix(".exe")
+        .or_else(|| name.strip_suffix(".cmd"))
+        .or_else(|| name.strip_suffix(".bat"))
+        .or_else(|| name.strip_suffix(".com"))
+        .or_else(|| name.strip_suffix(".msi"))
+    {
+        return is_bare_executable_stem(stem);
+    }
+    if name.contains('.') {
+        return false;
+    }
+    is_bare_executable_stem(name)
+}
+
+fn is_bare_executable_stem(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
     let mut chars = name.chars();
     match chars.next() {
         Some(c) if c.is_ascii_alphabetic() => {}
         _ => return false,
     }
-    // Remaining chars: alphanumeric or underscore (valid identifier).
     chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 

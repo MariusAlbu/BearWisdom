@@ -34,10 +34,17 @@ impl Ecosystem for DotnetStdlibEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
+        // PowerShell runs on .NET — every cmdlet is a .NET type and PS scripts
+        // routinely reference BCL types unqualified (`class MyError : Exception`,
+        // `[System.Collections.Hashtable]::new()`). Without dotnet-stdlib active,
+        // those refs land in unresolved_refs even though dotscope can index the
+        // exact assemblies they need. Treat .ps1/.psm1 presence as a trigger
+        // alongside the source-language CLR families.
         EcosystemActivation::Any(&[
             EcosystemActivation::LanguagePresent("csharp"),
             EcosystemActivation::LanguagePresent("fsharp"),
             EcosystemActivation::LanguagePresent("vbnet"),
+            EcosystemActivation::LanguagePresent("powershell"),
         ])
     }
 
@@ -62,8 +69,9 @@ impl Ecosystem for DotnetStdlibEcosystem {
         let mut out = Vec::new();
         for dll in dlls.iter().take(400) {
             let Some(stem) = dll.file_stem().and_then(|s| s.to_str()) else { continue };
-            if let Ok(pf) = super::nuget::parse_dotnet_dll_public(dll, stem, "csharp") {
-                out.push(pf);
+            match super::nuget::parse_dotnet_dll_public(dll, stem, "csharp") {
+                Ok(pf) => out.push(pf),
+                Err(e) => debug!("dotnet-stdlib: skip {}: {}", stem, e),
             }
         }
         if out.is_empty() { None } else { Some(out) }
@@ -123,7 +131,6 @@ fn probe_shared_framework_dir() -> Option<PathBuf> {
     let dotnet_root = probe_dotnet_root()?;
     let shared = dotnet_root.join("shared").join("Microsoft.NETCore.App");
     if !shared.is_dir() { return None; }
-    // Latest installed version — pick lexicographically largest.
     let entries = std::fs::read_dir(&shared).ok()?;
     let mut versions: Vec<PathBuf> = entries
         .flatten()
