@@ -242,28 +242,59 @@ fn extract_decl_type(
 ) {
     // The name sits on the `identifier` child of `declType`, before `=`.
     let name = find_identifier_child(node, src);
+    let mut emitted_primary = false;
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
             "declClass" => {
                 extract_class(child, src, symbols, refs, parent_index, name.clone());
+                emitted_primary = true;
             }
             "declIntf" => {
                 extract_intf(child, src, symbols, refs, parent_index, name.clone());
+                emitted_primary = true;
             }
             "type" => {
                 // The `type` child wraps the body expression (declEnum, typeref, etc.)
-                extract_decl_type_body(child, src, symbols, refs, parent_index, name.clone(), &node);
+                if extract_decl_type_body(
+                    child, src, symbols, refs, parent_index, name.clone(), &node,
+                ) {
+                    emitted_primary = true;
+                }
             }
             _ => {
                 dispatch(child, src, symbols, refs, parent_index);
             }
         }
     }
+
+    // Plain type aliases (`PFoo = ^TFoo`, `TMask = set of TByte`,
+    // `TIntArray = array of Integer`, `TByteHandler = procedure(b: Byte)`)
+    // didn't fall into declClass / declIntf / declEnum, so no symbol got
+    // emitted above. They're still named types — and the FFI binding
+    // pattern `P<X> = ^T<X>` is the dominant unresolved-ref source in
+    // Pascal projects with C-library bindings (GTK/GLib/OpenGL). Emit
+    // a TypeAlias symbol so the resolver can find them.
+    if !emitted_primary {
+        if let Some(n) = name {
+            symbols.push(make_symbol(
+                n.clone(),
+                n,
+                SymbolKind::TypeAlias,
+                &node,
+                Some(first_line_of(node, src)),
+                parent_index,
+            ));
+        }
+    }
 }
 
 /// Dispatch the body of a `type` wrapper node inside `declType`.
+///
+/// Returns `true` when this body was itself a primary type kind (today:
+/// `declEnum`) so the caller knows not to emit a fallback TypeAlias
+/// symbol on top of the enum.
 fn extract_decl_type_body(
     type_node: Node,
     src: &str,
@@ -272,7 +303,8 @@ fn extract_decl_type_body(
     parent_index: Option<usize>,
     name: Option<String>,
     decl_node: &Node,
-) {
+) -> bool {
+    let mut emitted_primary = false;
     let mut cursor = type_node.walk();
     for child in type_node.children(&mut cursor) {
         match child.kind() {
@@ -287,6 +319,7 @@ fn extract_decl_type_body(
                     Some(first_line_of(*decl_node, src)),
                     parent_index,
                 ));
+                emitted_primary = true;
                 // Recurse into enum for enum members if needed.
                 let mut cur2 = child.walk();
                 for ec in child.children(&mut cur2) {
@@ -298,6 +331,7 @@ fn extract_decl_type_body(
             }
         }
     }
+    emitted_primary
 }
 
 // ---------------------------------------------------------------------------

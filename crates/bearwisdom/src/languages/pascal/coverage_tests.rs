@@ -410,6 +410,69 @@ fn ref_decl_class_inherits_emits_edge() {
     );
 }
 
+/// `PFoo = ^TFoo` → emit a TypeAlias symbol so FFI binding pointer
+/// types resolve. This is the dominant pattern in Pascal C-library
+/// bindings (GTK/GLib/OpenGL) — without this, every `PGtkWidget`,
+/// `PGCancellable`, `PGLfloat` reference lands in unresolved_refs.
+#[test]
+fn symbol_type_alias_pointer() {
+    let src = "unit U;\ninterface\ntype\n  TGtkWidget = record end;\n  PGtkWidget = ^TGtkWidget;\nimplementation\nend.";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "PGtkWidget" && s.kind == SymbolKind::TypeAlias),
+        "expected TypeAlias 'PGtkWidget'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// `TFunc = function(x: Integer): Integer` → TypeAlias symbol.
+#[test]
+fn symbol_type_alias_function_signature() {
+    let src = "unit U;\ninterface\ntype\n  TIntFn = function(x: Integer): Integer;\nimplementation\nend.";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "TIntFn" && s.kind == SymbolKind::TypeAlias),
+        "expected TypeAlias 'TIntFn'; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Class declarations must NOT also emit a TypeAlias — only declClass.
+#[test]
+fn class_decl_does_not_double_emit_type_alias() {
+    let src = "unit U;\ninterface\ntype\n  TAnimal = class\n    procedure Speak;\n  end;\nimplementation\nprocedure TAnimal.Speak; begin end;\nend.";
+    let r = extract(src);
+    let kinds: Vec<SymbolKind> = r
+        .symbols
+        .iter()
+        .filter(|s| s.name == "TAnimal")
+        .map(|s| s.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![SymbolKind::Class],
+        "TAnimal should appear exactly once as Class, got {kinds:?}"
+    );
+}
+
+/// Enum declarations must NOT also emit a TypeAlias — only Enum.
+#[test]
+fn enum_decl_does_not_double_emit_type_alias() {
+    let src = "unit U;\ninterface\ntype\n  TColor = (Red, Green, Blue);\nimplementation\nend.";
+    let r = extract(src);
+    let kinds: Vec<SymbolKind> = r
+        .symbols
+        .iter()
+        .filter(|s| s.name == "TColor")
+        .map(|s| s.kind)
+        .collect();
+    assert_eq!(
+        kinds,
+        vec![SymbolKind::Enum],
+        "TColor should appear exactly once as Enum, got {kinds:?}"
+    );
+}
+
 /// Multiple modules in a single uses clause → one Imports ref per module
 #[test]
 fn ref_decl_uses_multiple_modules() {
