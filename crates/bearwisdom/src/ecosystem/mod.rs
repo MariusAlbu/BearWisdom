@@ -82,6 +82,7 @@ pub mod pypi;
 pub mod robot_builtin_synthetics;
 pub mod robot_seleniumlibrary_synthetics;
 pub mod robot_browser_synthetics;
+pub mod ember_handlebars_helpers;
 pub mod ruby_stdlib;
 pub mod rubygems;
 pub mod rust_stdlib;
@@ -143,6 +144,7 @@ pub use pypi::PypiEcosystem;
 pub use robot_builtin_synthetics::RobotBuiltinEcosystem;
 pub use robot_seleniumlibrary_synthetics::RobotSeleniumLibraryEcosystem;
 pub use robot_browser_synthetics::RobotBrowserEcosystem;
+pub use ember_handlebars_helpers::EmberHandlebarsHelpersEcosystem;
 pub use ruby_stdlib::RubyStdlibEcosystem;
 pub use rubygems::RubygemsEcosystem;
 pub use rust_stdlib::RustStdlibEcosystem;
@@ -635,6 +637,7 @@ pub fn default_locator(
         "robot-builtin" => Some(robot_builtin_synthetics::shared_locator()),
         "robot-seleniumlibrary" => Some(Arc::new(RobotSeleniumLibraryEcosystem)),
         "robot-browser" => Some(Arc::new(RobotBrowserEcosystem)),
+        "ember-handlebars-helpers" => Some(ember_handlebars_helpers::shared_locator()),
         _ => None,
     }
 }
@@ -711,6 +714,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(RobotBuiltinEcosystem));
         reg.register(Arc::new(RobotSeleniumLibraryEcosystem));
         reg.register(Arc::new(RobotBrowserEcosystem));
+        reg.register(Arc::new(EmberHandlebarsHelpersEcosystem));
         reg
     })
 }
