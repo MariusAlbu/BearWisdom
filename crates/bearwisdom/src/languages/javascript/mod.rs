@@ -35,8 +35,10 @@ impl LanguagePlugin for JavascriptPlugin {
     fn scope_kinds(&self) -> &[ScopeKind] { &[] }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
-        let _ = (file_path, lang_id);
-        extract::extract(source)
+        let _ = lang_id;
+        let mut result = extract::extract(source);
+        crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
+        result
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {

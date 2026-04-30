@@ -686,6 +686,88 @@ fn byte_to_line_col(source: &str, byte: usize) -> (u32, u32) {
     (line, col)
 }
 
+// ---------------------------------------------------------------------------
+// Ember helper-export detection
+//
+// Ember helpers live at `**/app/helpers/<name>.{js,ts,gjs,gts}` and are
+// invoked from Handlebars templates by the file's stem name (kebab → snake
+// because the Handlebars→JS wrapper rewrites hyphens to underscores). The
+// helper itself is typically a default export wrapping
+// `helper(function(...){})` — the function name inside doesn't match the
+// invocation name.
+//
+// Append a synthetic Function symbol named after the file stem (underscore
+// form) with `qualified_name = "__npm_globals__.<name>"` so the TS
+// resolver's bare-name fallback at engine.rs::resolve_common's
+// `__npm_globals__` lookup binds template invocations like `{{gh-pluralize
+// items}}` (rewritten to `gh_pluralge(items)`) to this file.
+//
+// Detection is intentionally narrow: requires both the path pattern and an
+// import from `@ember/component/helper`. Random JS files in directories
+// named `helpers/` don't match.
+// ---------------------------------------------------------------------------
+
+pub fn append_ember_helper_default_export(
+    file_path: &str,
+    source: &str,
+    result: &mut crate::types::ExtractionResult,
+) {
+    let Some(stem) = ember_helper_stem(file_path) else { return };
+    if !is_ember_helper_source(source) {
+        return;
+    }
+    let invocation_name = stem.replace('-', "_");
+    let qname = format!("__npm_globals__.{invocation_name}");
+    if result.symbols.iter().any(|s| s.qualified_name == qname) {
+        return;
+    }
+    result.symbols.push(crate::types::ExtractedSymbol {
+        name: invocation_name.clone(),
+        qualified_name: qname,
+        kind: crate::types::SymbolKind::Function,
+        visibility: Some(crate::types::Visibility::Public),
+        start_line: 0,
+        end_line: 0,
+        start_col: 0,
+        end_col: 0,
+        signature: Some(format!("/* Ember helper export of {stem} */")),
+        doc_comment: None,
+        scope_path: None,
+        parent_index: None,
+    });
+}
+
+/// Extract the helper name from `**/app/helpers/<name>.{js,ts,gjs,gts}` paths.
+/// Returns None for any path that doesn't match the Ember-helper convention.
+fn ember_helper_stem(file_path: &str) -> Option<&str> {
+    let norm = file_path.replace('\\', "/");
+    // Find the last `/app/helpers/` segment (some monorepos have multiple).
+    let helpers_idx = norm.rfind("/app/helpers/")?;
+    let after = &file_path[helpers_idx + "/app/helpers/".len()..];
+    let after = after.trim_start_matches('/');
+    // Single file under helpers/ — no nested subfolders. Nested helper files
+    // exist (`app/helpers/blog/post-card.js`) but the invocation name then
+    // includes the path with `/` → JS rewrite handles `/` → `.` so the call
+    // becomes `blog.post_card`. We skip nested helpers for now since their
+    // resolution path goes through dotted names not bare-name fallback.
+    if after.contains('/') {
+        return None;
+    }
+    let stem = after.strip_suffix(".js")
+        .or_else(|| after.strip_suffix(".ts"))
+        .or_else(|| after.strip_suffix(".gjs"))
+        .or_else(|| after.strip_suffix(".gts"))?;
+    if stem.is_empty() {
+        return None;
+    }
+    Some(stem)
+}
+
+fn is_ember_helper_source(source: &str) -> bool {
+    source.contains("@ember/component/helper")
+        || source.contains("@ember/component/template-only")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -878,5 +960,116 @@ mod tests {
 }"#;
         let refs = extract_script_refs(src);
         assert_eq!(refs.len(), 2);
+    }
+
+    // -----------------------------------------------------------------------
+    // Ember helper-export detection
+    // -----------------------------------------------------------------------
+
+    fn empty_result() -> crate::types::ExtractionResult {
+        crate::types::ExtractionResult {
+            symbols: Vec::new(),
+            refs: Vec::new(),
+            routes: Vec::new(),
+            db_sets: Vec::new(),
+            has_errors: false,
+            connection_points: Vec::new(),
+            demand_contributions: Vec::new(),
+            alias_targets: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn ember_helper_appends_npm_globals_symbol() {
+        let mut r = empty_result();
+        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export(
+            "ghost/admin/app/helpers/gh-pluralize.js",
+            src,
+            &mut r,
+        );
+        let sym = r
+            .symbols
+            .iter()
+            .find(|s| s.qualified_name == "__npm_globals__.gh_pluralize")
+            .expect("expected synthetic helper symbol");
+        assert_eq!(sym.name, "gh_pluralize");
+        assert_eq!(sym.kind, crate::types::SymbolKind::Function);
+    }
+
+    #[test]
+    fn ember_helper_skipped_when_no_ember_import() {
+        let mut r = empty_result();
+        let src = "// just a regular module\nexport function thing() { return 1; }";
+        append_ember_helper_default_export(
+            "myproject/app/helpers/random.js",
+            src,
+            &mut r,
+        );
+        assert!(
+            r.symbols.is_empty(),
+            "non-Ember files in helpers/ should not get the synthetic; got: {:?}",
+            r.symbols.iter().map(|s| &s.name).collect::<Vec<_>>()
+        );
+    }
+
+    #[test]
+    fn ember_helper_skipped_outside_app_helpers_dir() {
+        let mut r = empty_result();
+        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export(
+            "ghost/admin/app/lib/random.js",
+            src,
+            &mut r,
+        );
+        assert!(r.symbols.is_empty());
+    }
+
+    #[test]
+    fn ember_helper_skipped_for_nested_helper_paths() {
+        // `app/helpers/blog/post-card.js` — invocation would be `blog/post-card`
+        // (rewritten to `blog.post_card` by the Handlebars wrapper). That's a
+        // dotted lookup, not a bare-name fallback target — out of scope here.
+        let mut r = empty_result();
+        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export(
+            "ghost/admin/app/helpers/blog/post-card.js",
+            src,
+            &mut r,
+        );
+        assert!(r.symbols.is_empty());
+    }
+
+    #[test]
+    fn ember_helper_handles_typescript_extension() {
+        let mut r = empty_result();
+        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export(
+            "myapp/app/helpers/format-date.ts",
+            src,
+            &mut r,
+        );
+        assert!(r.symbols.iter().any(|s| s.name == "format_date"));
+    }
+
+    #[test]
+    fn ember_helper_idempotent_on_repeat_calls() {
+        let mut r = empty_result();
+        let src = "import {helper} from '@ember/component/helper';\nexport default helper(() => 'x');";
+        append_ember_helper_default_export(
+            "myapp/app/helpers/eq.js",
+            src,
+            &mut r,
+        );
+        append_ember_helper_default_export(
+            "myapp/app/helpers/eq.js",
+            src,
+            &mut r,
+        );
+        assert_eq!(
+            r.symbols.iter().filter(|s| s.qualified_name == "__npm_globals__.eq").count(),
+            1,
+            "duplicate detection should keep the symbol unique"
+        );
     }
 }

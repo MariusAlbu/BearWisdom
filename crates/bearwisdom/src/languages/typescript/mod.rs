@@ -85,7 +85,9 @@ impl LanguagePlugin for TypeScriptPlugin {
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let is_tsx = file_path.ends_with(".tsx") || lang_id == "tsx";
-        extract::extract(source, is_tsx)
+        let mut result = extract::extract(source, is_tsx);
+        crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
+        result
     }
 
     fn extract_connection_points(
