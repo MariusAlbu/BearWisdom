@@ -24,9 +24,7 @@ use tree_sitter::{Node, Parser};
 
 /// Extract all symbols and references from a Makefile.
 ///
-/// Requires the tree-sitter-make grammar to be available as `language`.
-/// Called by `MakePlugin::extract()` once the grammar is wired in.
-#[allow(dead_code)]
+/// Wired into `MakePlugin::extract()` via tree-sitter-make.
 pub fn extract(source: &str, language: tree_sitter::Language) -> crate::types::ExtractionResult {
     let mut parser = Parser::new();
     parser

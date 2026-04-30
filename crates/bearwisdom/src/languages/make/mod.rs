@@ -38,9 +38,15 @@ impl LanguagePlugin for MakePlugin {
     }
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
-        let _ = (file_path, lang_id);
-        let _ = source;
-        ExtractionResult::empty()
+        let _ = file_path;
+        // The 414-line tree-sitter-make extractor was sitting unused
+        // because this plugin returned `empty()`. Wire the grammar and
+        // delegate so rule targets, variable assignments, and include
+        // directives reach the indexer.
+        match self.grammar(lang_id) {
+            Some(language) => extract::extract(source, language),
+            None => ExtractionResult::empty(),
+        }
     }
 
     fn symbol_node_kinds(&self) -> &[&str] {
