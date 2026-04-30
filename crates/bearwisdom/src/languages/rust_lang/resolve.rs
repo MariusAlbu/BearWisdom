@@ -171,6 +171,30 @@ impl LanguageResolver for RustResolver {
             });
         }
 
+        // `Self::X` — TypeRef / Calls where the extractor captured the leaf
+        // name in `target` and the prefix in `module`. Treat as a member
+        // lookup against the enclosing struct/enum/trait. This rescues enum
+        // variant references like `Self::Named` / `Self::Tuple` inside `impl`
+        // blocks, which the chain walker can't see when the type-ref pass
+        // emits a chain-less ref.
+        if ref_ctx.extracted_ref.module.as_deref() == Some("Self") {
+            if let Some(enclosing) =
+                super::type_checker::find_enclosing_type(&ref_ctx.scope_chain, lookup)
+            {
+                let candidate = format!("{enclosing}.{target}");
+                if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "rust_self_scoped",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+        }
+
         // Generic type parameters: single uppercase letters in TypeRef position
         // (e.g., `L`, `M`, `F`, `W`) are generic params, never indexable symbols.
         if edge_kind == EdgeKind::TypeRef {

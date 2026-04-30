@@ -281,15 +281,22 @@ fn extract_pattern(
         // `Type::Variant` or `crate::Error`
         "scoped_identifier" => {
             let name = node_text(node, source);
-            // Take the full scoped name as the TypeRef target
-            refs.push(make_typeref(source_symbol_index, name, node.start_position().row as u32));
+            refs.push(make_scoped_typeref(
+                source_symbol_index,
+                name,
+                node.start_position().row as u32,
+            ));
         }
 
         // `Struct { field, .. }` — emit TypeRef for struct name, Variable for fields
         "struct_pattern" => {
             if let Some(type_node) = node.child_by_field_name("type") {
                 let type_name = node_text(&type_node, source);
-                refs.push(make_typeref(source_symbol_index, type_name, type_node.start_position().row as u32));
+                refs.push(make_scoped_typeref(
+                    source_symbol_index,
+                    type_name,
+                    type_node.start_position().row as u32,
+                ));
             }
             // Walk the field patterns for binding variables
             let mut cursor = node.walk();
@@ -317,7 +324,11 @@ fn extract_pattern(
         "tuple_struct_pattern" => {
             if let Some(type_node) = node.child_by_field_name("type") {
                 let type_name = node_text(&type_node, source);
-                refs.push(make_typeref(source_symbol_index, type_name, type_node.start_position().row as u32));
+                refs.push(make_scoped_typeref(
+                    source_symbol_index,
+                    type_name,
+                    type_node.start_position().row as u32,
+                ));
             }
             // Recurse into pattern arguments (the bindings inside the parens)
             let mut cursor = node.walk();
@@ -426,6 +437,32 @@ fn make_typeref(source_symbol_index: usize, name: String, line: u32) -> Extracte
         kind: EdgeKind::TypeRef,
         line,
         module: None,
+        namespace_segments: Vec::new(),
+        chain: None,
+        byte_offset: 0,
+    }
+}
+
+/// Emit a TypeRef from a possibly-scoped name. If `name` contains `::`, the
+/// rightmost segment becomes `target_name` and the remaining prefix lands in
+/// `module`. Crucial for `Self::Variant` patterns (`match self { Self::Foo
+/// => … }`) — without splitting, the resolver sees `Self::Foo` as a single
+/// opaque target and can't route to the enclosing type's `Foo` member. Also
+/// stops `prefix::Leaf` paths in patterns (`std::io::Error => …`) from
+/// orphaning the leaf reference.
+fn make_scoped_typeref(source_symbol_index: usize, full: String, line: u32) -> ExtractedRef {
+    let (module, target) = match full.rsplit_once("::") {
+        Some((prefix, leaf)) if !prefix.is_empty() && !leaf.is_empty() => {
+            (Some(prefix.to_string()), leaf.to_string())
+        }
+        _ => (None, full),
+    };
+    ExtractedRef {
+        source_symbol_index,
+        target_name: target,
+        kind: EdgeKind::TypeRef,
+        line,
+        module,
         namespace_segments: Vec::new(),
         chain: None,
         byte_offset: 0,

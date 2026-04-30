@@ -590,7 +590,12 @@ struct Point {
     #[test]
     fn scoped_type_identifier_in_patterns() {
         // Verify that scoped type identifiers like std::io::Result are extracted.
-        // This is a fix for the ~29% coverage gap for scoped_type_identifier.
+        // The extractor splits prefix::leaf so the leaf is searchable as a
+        // standalone symbol and the prefix lands in `module` for the resolver
+        // to use as a route hint (`std::io` → external std). Asserting on the
+        // split form is what protects the resolver contract — a regression to
+        // a single fused `std::io::Result` target_name would re-orphan all
+        // `Self::Variant` and `prefix::Leaf` refs.
         let src = r#"
 fn process() {
     let result: std::io::Result<Data> = Ok(Data {});
@@ -601,13 +606,17 @@ fn process() {
 }
 "#;
         let r = extract::extract(src);
-        let type_refs: Vec<&str> = r
+        let scoped: Vec<(&str, Option<&str>)> = r
             .refs
             .iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef && r.target_name.contains("::"))
-            .map(|r| r.target_name.as_str())
+            .filter(|rf| rf.kind == EdgeKind::TypeRef && rf.module.is_some())
+            .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
             .collect();
-        assert!(!type_refs.is_empty(), "Should extract scoped type identifiers");
+        assert!(
+            scoped.iter().any(|(t, m)| *t == "Result" && *m == Some("std::io")),
+            "expected scoped type ref split into target='Result' module='std::io', \
+             got refs with module set: {scoped:?}"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -824,6 +833,82 @@ fn process() {
                 .iter()
                 .filter(|rf| rf.source_symbol_index == x_idx)
                 .collect::<Vec<_>>()
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Self::Variant — call chain captures SelfRef as the root segment so the
+    // resolver chain walker can route to the enclosing impl/struct/enum/trait.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn self_scoped_call_emits_chain_with_selfref_root() {
+        let source = r#"enum Color { Red, Green }
+
+impl Color {
+    fn make() -> Self {
+        Self::Red
+    }
+    fn make_green() -> Self {
+        Self::make()
+    }
+}"#;
+        let r = extract::extract(source);
+        // Self::make() is the only call — must have a chain with SelfRef
+        // as the root segment so the resolver walks to `Color.make`.
+        let self_call = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "make");
+        let chain = self_call
+            .and_then(|rf| rf.chain.as_ref())
+            .expect("Self::make() must have a chain");
+        assert_eq!(chain.segments.len(), 2, "chain should be [Self, make]");
+        assert_eq!(
+            chain.segments[0].kind,
+            SegmentKind::SelfRef,
+            "first segment of Self::make() chain must be SelfRef, got {:?}",
+            chain.segments[0],
+        );
+        assert_eq!(chain.segments[0].name, "Self");
+        assert_eq!(chain.segments[1].name, "make");
+    }
+
+    // -----------------------------------------------------------------------
+    // Self::Variant in TypeRef position — extractor still emits target=leaf,
+    // module="Self"; the resolver translates module="Self" against the
+    // enclosing type. Test confirms the extractor captures the prefix so
+    // the resolver has something to route on.
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn self_scoped_typeref_captures_module_prefix() {
+        let source = r#"enum Tree { Leaf, Node(Box<Tree>) }
+
+impl Tree {
+    fn next(self) -> Self {
+        match self {
+            Self::Leaf => Self::Leaf,
+            Self::Node(_) => Self::Leaf,
+        }
+    }
+}"#;
+        let r = extract::extract(source);
+        // At least one TypeRef with target=Leaf and module=Some("Self") must exist.
+        let leaf_typeref = r
+            .refs
+            .iter()
+            .find(|rf| rf.kind == EdgeKind::TypeRef && rf.target_name == "Leaf");
+        assert!(
+            leaf_typeref.is_some(),
+            "expected TypeRef for 'Leaf' from Self::Leaf pattern"
+        );
+        assert_eq!(
+            leaf_typeref.unwrap().module.as_deref(),
+            Some("Self"),
+            "Self::Leaf TypeRef must capture module='Self' so the resolver \
+             can route via the enclosing type, got module={:?}",
+            leaf_typeref.unwrap().module,
         );
     }
 

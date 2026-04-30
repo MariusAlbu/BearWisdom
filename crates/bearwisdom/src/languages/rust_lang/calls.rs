@@ -520,18 +520,30 @@ pub(super) fn extract_calls_from_body_with_symbols(
 
             // `scoped_type_identifier` like `std::io::Result` in match arms or type contexts
             "scoped_type_identifier" => {
-                let name = node_text(&child, source);
-                if !name.is_empty() {
+                let full_name = node_text(&child, source);
+                if !full_name.is_empty() {
+                    // Split `prefix::leaf` so the resolver sees the prefix in
+                    // `module` and the leaf in `target_name`. Crucial for
+                    // `Self::Variant` patterns (`match self { Self::Foo => … }`)
+                    // — without splitting, the resolver sees a target of
+                    // `Self::Foo` and can't route to the enclosing type's
+                    // Foo member.
+                    let (module, target) = match full_name.rsplit_once("::") {
+                        Some((prefix, leaf)) if !prefix.is_empty() && !leaf.is_empty() => {
+                            (Some(prefix.to_string()), leaf.to_string())
+                        }
+                        _ => (None, full_name),
+                    };
                     refs.push(ExtractedRef {
                         source_symbol_index,
-                        target_name: name,
+                        target_name: target,
                         kind: EdgeKind::TypeRef,
                         line: child.start_position().row as u32,
-                        module: None,
+                        module,
                         chain: None,
                         byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                    });
                 }
             }
 
@@ -676,13 +688,22 @@ fn build_chain_inner(node: Node, source: &str, segments: &mut Vec<ChainSegment>)
                 });
             } else {
                 for (i, part) in parts.iter().enumerate() {
-                    let kind = if i == 0 {
+                    let trimmed = part.trim();
+                    // First segment "Self" is the receiver type — must be
+                    // tagged as SelfRef so the chain walker resolves it via
+                    // the enclosing impl/struct/enum/trait. Without this,
+                    // `Self::Variant` and `Self::method()` chains fall into
+                    // the Identifier branch, which tries to look up "Self"
+                    // as a regular type and always fails.
+                    let kind = if i == 0 && trimmed == "Self" {
+                        SegmentKind::SelfRef
+                    } else if i == 0 {
                         SegmentKind::Identifier
                     } else {
                         SegmentKind::Property
                     };
                     segments.push(ChainSegment {
-                        name: part.trim().to_string(),
+                        name: trimmed.to_string(),
                         node_kind: "scoped_identifier".to_string(),
                         kind,
                         declared_type: None,
