@@ -110,6 +110,26 @@ impl LanguageResolver for StarlarkResolver {
             // still route this ref to external (preserving round-1 behaviour).
         }
 
+        // Bazel synthetic dotted lookup: refs like `target.runfiles`,
+        // `runfiles.merge_all`, `args.add_joined`, `attr.label`, `config.exec`
+        // have synthetic symbols emitted under their exact qualified-name in
+        // ext:bazel-builtins:ctx.bzl. Try a direct by_qualified_name hit so
+        // these resolve to real edges instead of staying unresolved.
+        if target.contains('.') {
+            if let Some(sym) = lookup.by_qualified_name(target) {
+                if sym.file_path.starts_with("ext:bazel-builtins:")
+                    && predicates::kind_compatible(edge_kind, &sym.kind)
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: "starlark_bazel_synthetic",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+        }
+
         // Bazel framework parameter chains not resolved by the chain walker:
         // classify as external rather than leaving as unresolved.
         if predicates::is_bazel_framework_chain(target) {

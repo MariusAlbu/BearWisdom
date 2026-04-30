@@ -451,6 +451,85 @@ const REPOSITORY_CTX_MEMBERS: &[(&str, &str, &str)] = &[
     ("environ", "repository_ctx.environ", "repository_ctx.environ -> dict[string, string]"),
 ];
 
+/// Bazel Target struct members. Targets are passed to rule implementations
+/// via `ctx.attr.<name>` and accessed through `target.runfiles`,
+/// `target.files`, etc. Without the synthetic, every `target.runfiles` in a
+/// rule impl shows up as an unresolved Calls ref.
+const TARGET_MEMBERS: &[(&str, &str, &str)] = &[
+    ("label", "target.label", "target.label -> Label"),
+    ("files", "target.files", "target.files -> depset[File]"),
+    ("default_outputs", "target.default_outputs", "target.default_outputs -> list[File]"),
+    ("data_runfiles", "target.data_runfiles", "target.data_runfiles -> runfiles"),
+    ("default_runfiles", "target.default_runfiles", "target.default_runfiles -> runfiles"),
+    ("runfiles", "target.runfiles", "target.runfiles -> runfiles"),
+    ("attr", "target.attr", "target.attr -> struct"),
+    ("provider", "target.provider", "target.provider(provider_type) -> any"),
+    ("providers", "target.providers", "target.providers() -> list"),
+    ("files_to_run", "target.files_to_run", "target.files_to_run -> FilesToRun"),
+    ("output_groups", "target.output_groups", "target.output_groups -> struct"),
+    ("aspect_ids", "target.aspect_ids", "target.aspect_ids -> list[string]"),
+];
+
+/// Bazel runfiles type members — returned by ctx.runfiles()/target.runfiles
+/// and have `.merge(...)` / `.merge_all(...)` chaining methods.
+const RUNFILES_MEMBERS: &[(&str, &str, &str)] = &[
+    ("merge", "runfiles.merge", "runfiles.merge(other) -> runfiles"),
+    ("merge_all", "runfiles.merge_all", "runfiles.merge_all(others) -> runfiles"),
+    ("files", "runfiles.files", "runfiles.files -> depset[File]"),
+    ("symlinks", "runfiles.symlinks", "runfiles.symlinks -> depset"),
+    ("root_symlinks", "runfiles.root_symlinks", "runfiles.root_symlinks -> depset"),
+    ("empty_filenames", "runfiles.empty_filenames", "runfiles.empty_filenames -> depset[string]"),
+];
+
+/// Bazel ctx.actions.args() builder type members.
+const ARGS_MEMBERS: &[(&str, &str, &str)] = &[
+    ("add", "args.add", "args.add(arg_name_or_value, value=None, ...) -> Args"),
+    ("add_all", "args.add_all", "args.add_all(arg_name_or_values, values=None, ...) -> Args"),
+    ("add_joined", "args.add_joined", "args.add_joined(arg_name_or_values, values=None, join_with, ...) -> Args"),
+    ("set_param_file_format", "args.set_param_file_format", "args.set_param_file_format(format)"),
+    ("use_param_file", "args.use_param_file", "args.use_param_file(param_file_arg, use_always=False)"),
+];
+
+/// Plain `entries` / `arguments` aliases for the Args type. Bazel rule
+/// implementations commonly store the result of `ctx.actions.args()` in a
+/// local named `args`, `arguments`, or `entries`; the chain walker sees
+/// `entries.add_joined` and needs a synthetic at that exact qualified name.
+const ARGS_LOCAL_ALIASES: &[(&str, &[&str])] = &[
+    ("entries", &["add", "add_all", "add_joined", "set_param_file_format", "use_param_file"]),
+    ("arguments", &["add", "add_all", "add_joined", "set_param_file_format", "use_param_file"]),
+];
+
+/// Bazel `attr.*` and `config.*` factory functions used in rule attribute
+/// declarations. `attr.label_list(...)`, `config.exec(...)`, etc.
+const ATTR_FACTORIES: &[(&str, &str, &str)] = &[
+    ("label", "attr.label", "attr.label(...) -> attr"),
+    ("label_list", "attr.label_list", "attr.label_list(...) -> attr"),
+    ("label_keyed_string_dict", "attr.label_keyed_string_dict", "attr.label_keyed_string_dict(...) -> attr"),
+    ("string", "attr.string", "attr.string(...) -> attr"),
+    ("string_list", "attr.string_list", "attr.string_list(...) -> attr"),
+    ("string_dict", "attr.string_dict", "attr.string_dict(...) -> attr"),
+    ("string_list_dict", "attr.string_list_dict", "attr.string_list_dict(...) -> attr"),
+    ("int", "attr.int", "attr.int(...) -> attr"),
+    ("int_list", "attr.int_list", "attr.int_list(...) -> attr"),
+    ("bool", "attr.bool", "attr.bool(...) -> attr"),
+    ("output", "attr.output", "attr.output(...) -> attr"),
+    ("output_list", "attr.output_list", "attr.output_list(...) -> attr"),
+];
+
+const CONFIG_FACTORIES: &[(&str, &str, &str)] = &[
+    ("none", "config.none", "config.none() -> config"),
+    ("target", "config.target", "config.target() -> config"),
+    ("exec", "config.exec", "config.exec(exec_group=None) -> config"),
+    ("string", "config.string", "config.string(name, default) -> config"),
+    ("bool", "config.bool", "config.bool(name, default) -> config"),
+    ("int", "config.int", "config.int(name, default) -> config"),
+];
+
+/// `mrctx`/`mctx` is a common shortname for `module_ctx`. Mirror the
+/// repository_ctx members under each alias so chain walks like
+/// `mrctx.path` resolve to the synthetic.
+const MODULE_CTX_ALIASES: &[&str] = &["mctx", "mrctx", "module_ctx"];
+
 // ---------------------------------------------------------------------------
 // env / env_expect / subject types — analysistest / unittest assertion chains
 // (Round 3)
@@ -559,6 +638,44 @@ pub fn synth_ctx_api() -> ParsedFile {
         line += 1;
     }
     for (short, qname, sig) in REPOSITORY_CTX_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    // module_ctx aliases (`mctx`, `mrctx`, `module_ctx`) — same surface
+    // as repository_ctx for path/execute/etc.
+    for alias in MODULE_CTX_ALIASES {
+        for (short, qname, sig) in REPOSITORY_CTX_MEMBERS {
+            let aliased_qname = qname.replacen("repository_ctx.", &format!("{alias}."), 1);
+            symbols.push(make_symbol(short, &aliased_qname, sig, line));
+            line += 1;
+        }
+    }
+    for (short, qname, sig) in TARGET_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for (short, qname, sig) in RUNFILES_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for (short, qname, sig) in ARGS_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    // Args local aliases — `entries.add_joined`, `arguments.use_param_file`.
+    for (alias, methods) in ARGS_LOCAL_ALIASES {
+        for method in *methods {
+            let qname = format!("{alias}.{method}");
+            let sig = format!("{alias}.{method}(...) -> Args");
+            symbols.push(make_symbol(method, &qname, &sig, line));
+            line += 1;
+        }
+    }
+    for (short, qname, sig) in ATTR_FACTORIES {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for (short, qname, sig) in CONFIG_FACTORIES {
         symbols.push(make_symbol(short, qname, sig, line));
         line += 1;
     }
