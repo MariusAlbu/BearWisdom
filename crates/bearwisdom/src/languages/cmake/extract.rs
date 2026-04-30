@@ -90,8 +90,10 @@ fn extract_function_def(
     kind: SymbolKind,
 ) {
     // The opening command is `function_command` or `macro_command`.
-    // Its first argument is the function/macro name.
-    let name = match extract_def_name(node, src) {
+    // Its first argument is the function/macro name; subsequent args are
+    // parameter names that become local variables in the function body.
+    let opening = find_opening_command(node);
+    let name = match opening.as_ref().and_then(|c| first_argument_text(c, src)) {
         Some(n) => n,
         None => return,
     };
@@ -100,20 +102,35 @@ fn extract_function_def(
     let idx = symbols.len();
     symbols.push(make_symbol(name.clone(), name, kind, node, Some(sig), None));
 
+    // Capture parameters (args 1..N of function_command/macro_command) as Variable
+    // symbols. They are referenced inside the body via `${PARAM}`.
+    if let Some(cmd) = opening {
+        let args = collect_arguments(&cmd, src);
+        for param in args.into_iter().skip(1) {
+            if param.is_empty() || param.starts_with('$') {
+                continue;
+            }
+            let param_sig = format!("{}() parameter ${}", "fn", param);
+            symbols.push(make_symbol(
+                param.clone(),
+                param,
+                SymbolKind::Variable,
+                &cmd,
+                Some(param_sig),
+                Some(idx),
+            ));
+        }
+    }
+
     // Recurse into the function body for nested calls.
     visit_def_body(node, src, idx, refs);
 }
 
-/// Extract the function/macro name: the first argument of the opening command.
-fn extract_def_name(node: &Node, src: &str) -> Option<String> {
-    // Walk to find the opening command node (function_command / macro_command).
+fn find_opening_command<'a>(node: &Node<'a>) -> Option<Node<'a>> {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        match child.kind() {
-            "function_command" | "macro_command" => {
-                return first_argument_text(&child, src);
-            }
-            _ => {}
+        if matches!(child.kind(), "function_command" | "macro_command") {
+            return Some(child);
         }
     }
     None
@@ -214,8 +231,138 @@ fn extract_normal_command(
         "find_package" => extract_find_package_command(node, src, refs),
         "add_subdirectory" => extract_add_subdirectory_command(node, src, refs),
         "target_link_libraries" => extract_target_link_libraries(node, src, symbols, refs),
+        "string" => extract_string_output_var(node, src, symbols),
+        "get_filename_component" | "cmake_path" => {
+            extract_first_arg_output_var(node, src, symbols, &cmd_lower)
+        }
+        "math" => extract_math_output_var(node, src, symbols),
         _ => {}
     }
+}
+
+// ---------------------------------------------------------------------------
+// foreach(<loop_var> ...) — first arg is the loop variable
+// ---------------------------------------------------------------------------
+
+fn extract_foreach_loop_var(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let Some(name) = nth_argument(node, src, 0) else { return };
+    if name.is_empty() || name.starts_with('$') {
+        return;
+    }
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Variable,
+        node,
+        Some("foreach loop variable".to_string()),
+        None,
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// string(<MODE> ...) — output variable position depends on mode
+// ---------------------------------------------------------------------------
+
+fn extract_string_output_var(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let args = collect_arguments(node, src);
+    let Some(mode) = args.first().map(|s| s.to_ascii_uppercase()) else { return };
+    // For most string() modes, the output variable is either the second arg
+    // (TOLOWER, TOUPPER, LENGTH, STRIP, ...) or the last arg (SUBSTRING, REGEX MATCH, ...).
+    // Capture both candidate positions so we don't miss either pattern.
+    let candidates: Vec<&String> = match mode.as_str() {
+        // <out_var> in position 1
+        "SHA1" | "SHA224" | "SHA256" | "SHA384" | "SHA512" | "MD5" => {
+            args.get(1).into_iter().collect()
+        }
+        // input is arg 1, output is arg 2: string(MODE input output)
+        "TOLOWER" | "TOUPPER" | "LENGTH" | "STRIP" | "ASCII" | "HEX" | "TIMESTAMP" => {
+            args.get(2).into_iter().collect()
+        }
+        // input is arg 1, output is the last arg: string(MODE input ... output)
+        "SUBSTRING" | "FIND" | "REPLACE" | "REGEX" | "CONCAT" | "JOIN" | "REPEAT"
+        | "GENEX_STRIP" | "PREPEND" | "APPEND" => {
+            args.last().into_iter().collect()
+        }
+        _ => return,
+    };
+    for cand in candidates {
+        if cand.is_empty() || cand.starts_with('$') {
+            continue;
+        }
+        let sig = format!("string({}) → {}", mode, cand);
+        symbols.push(make_symbol(
+            cand.clone(),
+            cand.clone(),
+            SymbolKind::Variable,
+            node,
+            Some(sig),
+            None,
+        ));
+    }
+}
+
+// ---------------------------------------------------------------------------
+// get_filename_component(<out> ...) and cmake_path(<MODE> <out> ...) —
+// output variable in the first (or second, after MODE) argument position.
+// ---------------------------------------------------------------------------
+
+fn extract_first_arg_output_var(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    cmd: &str,
+) {
+    let args = collect_arguments(node, src);
+    // get_filename_component: arg 0 is output. cmake_path: arg 0 is MODE, arg 1 is output.
+    let out_idx = if cmd == "cmake_path" { 1 } else { 0 };
+    let Some(name) = args.get(out_idx) else { return };
+    if name.is_empty() || name.starts_with('$') {
+        return;
+    }
+    let sig = format!("{}(... → {})", cmd, name);
+    symbols.push(make_symbol(
+        name.clone(),
+        name.clone(),
+        SymbolKind::Variable,
+        node,
+        Some(sig),
+        None,
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// math(EXPR <out_var> "<expression>") — output variable is arg 1 (after EXPR)
+// ---------------------------------------------------------------------------
+
+fn extract_math_output_var(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let args = collect_arguments(node, src);
+    if args.first().map(|s| s.eq_ignore_ascii_case("EXPR")) != Some(true) {
+        return;
+    }
+    let Some(name) = args.get(1) else { return };
+    if name.is_empty() || name.starts_with('$') {
+        return;
+    }
+    symbols.push(make_symbol(
+        name.clone(),
+        name.clone(),
+        SymbolKind::Variable,
+        node,
+        Some(format!("math(EXPR {} ...)", name)),
+        None,
+    ));
 }
 
 // ---------------------------------------------------------------------------
@@ -645,6 +792,18 @@ fn collect_all_normal_commands(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // foreach_command lives inside a foreach_loop wrapper, not as a normal_command.
+    // Emit the loop variable here so `${LOOP_VAR}` references resolve.
+    if node.kind() == "foreach_command" {
+        extract_foreach_loop_var(&node, src, symbols);
+        // Continue walking into the body for nested commands.
+        let mut cursor = node.walk();
+        for child in node.children(&mut cursor) {
+            collect_all_normal_commands(child, src, existing_lines, symbols, refs);
+        }
+        return;
+    }
+
     if node.kind() == "normal_command" {
         let line = node.start_position().row as u32;
         if !existing_lines.contains(&line) {
@@ -655,6 +814,18 @@ fn collect_all_normal_commands(
             match cmd_lower.as_str() {
                 "set" | "option" => {
                     extract_set_command(&node, src, symbols);
+                }
+                "foreach" => {
+                    extract_foreach_loop_var(&node, src, symbols);
+                }
+                "string" => {
+                    extract_string_output_var(&node, src, symbols);
+                }
+                "get_filename_component" | "cmake_path" => {
+                    extract_first_arg_output_var(&node, src, symbols, &cmd_lower);
+                }
+                "math" => {
+                    extract_math_output_var(&node, src, symbols);
                 }
                 "list" => {
                     // list(APPEND|PREPEND|INSERT|REMOVE_DUPLICATES NAME ...) — index NAME

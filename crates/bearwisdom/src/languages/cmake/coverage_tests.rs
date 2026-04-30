@@ -287,3 +287,117 @@ fn cov_add_test_command_produces_function() {
     // At minimum it should not crash and should emit a symbol or ref.
     assert!(!r.has_errors, "add_test snippet should parse cleanly");
 }
+
+// ---------------------------------------------------------------------------
+// Function and macro parameters → Variable symbols
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_function_parameters_produce_variables() {
+    let src = "function(setup_project NAME VERSION)\n  message(${NAME} ${VERSION})\nendfunction()";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"NAME") && var_names.contains(&"VERSION"),
+        "function parameters NAME and VERSION should be Variable symbols; got: {var_names:?}",
+    );
+}
+
+#[test]
+fn cov_macro_parameters_produce_variables() {
+    let src = "macro(my_macro KEY VALUE)\n  set(MAP_${KEY} ${VALUE})\nendmacro()";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"KEY") && var_names.contains(&"VALUE"),
+        "macro parameters KEY and VALUE should be Variable symbols; got: {var_names:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// foreach loop variable → Variable symbol
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_foreach_loop_var_produces_variable() {
+    let src = "foreach(PACKAGE IN LISTS deps)\n  message(${PACKAGE})\nendforeach()";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "PACKAGE"),
+        "foreach loop var PACKAGE should be Variable symbol; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// string() output variables — TOLOWER/TOUPPER (arg 2), SHA1 (arg 1), SUBSTRING (last)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_string_tolower_output_var_produces_variable() {
+    let src = "string(TOLOWER ${NAME} lower_case_name)";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "lower_case_name"),
+        "string(TOLOWER) output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_string_sha1_output_var_produces_variable() {
+    let src = "string(SHA1 origin_hash \"some data\")";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "origin_hash"),
+        "string(SHA1) output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_string_substring_output_var_produces_variable() {
+    let src = "string(SUBSTRING \"${origin_hash}\" 0 8 short_hash)";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "short_hash"),
+        "string(SUBSTRING) output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// math(EXPR <out> ...) → Variable
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_math_expr_output_var_produces_variable() {
+    let src = "math(EXPR result \"1 + 2\")";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "result"),
+        "math(EXPR) output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// get_filename_component(<out> ...) → Variable
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_get_filename_component_output_var_produces_variable() {
+    let src = "get_filename_component(SCRIPT_DIR \"${CMAKE_CURRENT_LIST_FILE}\" DIRECTORY)";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "SCRIPT_DIR"),
+        "get_filename_component output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
