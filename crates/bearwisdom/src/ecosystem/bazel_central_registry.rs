@@ -449,6 +449,67 @@ const REPOSITORY_CTX_MEMBERS: &[(&str, &str, &str)] = &[
     ("attr", "repository_ctx.attr", "repository_ctx.attr -> struct"),
     ("os", "repository_ctx.os", "repository_ctx.os -> struct"),
     ("environ", "repository_ctx.environ", "repository_ctx.environ -> dict[string, string]"),
+    ("getenv", "repository_ctx.getenv", "repository_ctx.getenv(name, default=None) -> string"),
+    ("delete", "repository_ctx.delete", "repository_ctx.delete(path)"),
+    ("watch", "repository_ctx.watch", "repository_ctx.watch(path)"),
+    ("watch_tree", "repository_ctx.watch_tree", "repository_ctx.watch_tree(path)"),
+    ("flag", "repository_ctx.flag", "repository_ctx.flag(name) -> string"),
+];
+
+/// Provider type members surfaced by Bazel's built-in providers.
+const PROVIDER_MEMBERS: &[(&str, &str, &str)] = &[
+    // CcInfo (cc/cpp rules)
+    ("compilation_context", "cc_info.compilation_context", "cc_info.compilation_context -> CcCompilationContext"),
+    ("linking_context", "cc_info.linking_context", "cc_info.linking_context -> CcLinkingContext"),
+    // PyInfo (python rules)
+    ("transitive_sources", "py_info.transitive_sources", "py_info.transitive_sources -> depset[File]"),
+    ("uses_shared_libraries", "py_info.uses_shared_libraries", "py_info.uses_shared_libraries -> bool"),
+    ("imports", "py_info.imports", "py_info.imports -> depset[string]"),
+    ("has_py2_only_sources", "py_info.has_py2_only_sources", "py_info.has_py2_only_sources -> bool"),
+    ("has_py3_only_sources", "py_info.has_py3_only_sources", "py_info.has_py3_only_sources -> bool"),
+    // DefaultInfo
+    ("files", "default_info.files", "default_info.files -> depset[File]"),
+    ("files_to_run", "default_info.files_to_run", "default_info.files_to_run -> FilesToRun"),
+    ("data_runfiles", "default_info.data_runfiles", "default_info.data_runfiles -> runfiles"),
+    ("default_runfiles", "default_info.default_runfiles", "default_info.default_runfiles -> runfiles"),
+];
+
+/// Bazel async/eval result types (returned by repository_ctx.download, etc.)
+const RESULT_TYPE_MEMBERS: &[(&str, &str, &str)] = &[
+    // download() returns a token with .wait() / .cancel()
+    ("wait", "download.wait", "download.wait() -> string"),
+    ("cancel", "download.cancel", "download.cancel()"),
+    // execute() returns exec_result with .return_code / .stdout / .stderr
+    ("return_code", "exec_result.return_code", "exec_result.return_code -> int"),
+    ("stdout", "exec_result.stdout", "exec_result.stdout -> string"),
+    ("stderr", "exec_result.stderr", "exec_result.stderr -> string"),
+];
+
+/// rules_testing TestResult / DescribableValue
+const TEST_RESULT_MEMBERS: &[(&str, &str, &str)] = &[
+    ("describe_failure", "result.describe_failure", "result.describe_failure() -> string"),
+    ("describe", "result.describe", "result.describe() -> string"),
+];
+
+/// Top-level Bazel framework rule constructors not in BUILTIN_RULES yet.
+const TOP_LEVEL_BUILTIN_RULES: &[&str] = &[
+    "local_repository",
+    "new_local_repository",
+    "http_archive",
+    "http_file",
+    "http_jar",
+    "git_repository",
+    "new_git_repository",
+    "analysis_test_transition",
+    "AnalysisTestResultInfo",
+    "PyInfo",
+    "CcInfo",
+    "JavaInfo",
+    "InstrumentedFilesInfo",
+    "OutputGroupInfo",
+    "RunEnvironmentInfo",
+    "DefaultInfo",
+    "FilesToRunProvider",
 ];
 
 /// Bazel Target struct members. Targets are passed to rule implementations
@@ -677,6 +738,22 @@ pub fn synth_ctx_api() -> ParsedFile {
     }
     for (short, qname, sig) in CONFIG_FACTORIES {
         symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for (short, qname, sig) in PROVIDER_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for (short, qname, sig) in RESULT_TYPE_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for (short, qname, sig) in TEST_RESULT_MEMBERS {
+        symbols.push(make_symbol(short, qname, sig, line));
+        line += 1;
+    }
+    for name in TOP_LEVEL_BUILTIN_RULES {
+        symbols.push(make_symbol(name, name, &format!("/* Bazel built-in */ {name}(...)"), line));
         line += 1;
     }
 
