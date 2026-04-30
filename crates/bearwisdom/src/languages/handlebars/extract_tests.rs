@@ -20,3 +20,14 @@ fn if_block_becomes_symbol() {
     let r = extract(src, "header.hbs");
     assert!(r.symbols.iter().any(|s| s.name == "if"));
 }
+
+#[test]
+fn quoted_partial_include_strips_quotes() {
+    let src = "{{> \"post-card\"}}";
+    let r = extract(src, "feed.hbs");
+    assert!(
+        r.refs.iter().any(|r| r.target_name == "post-card"),
+        "quoted partial name should strip quotes; got: {:?}",
+        r.refs.iter().map(|r| r.target_name.as_str()).collect::<Vec<_>>()
+    );
+}

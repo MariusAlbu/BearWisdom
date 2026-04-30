@@ -69,8 +69,10 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                         });
                     }
                 } else if let Some(rest) = trimmed.strip_prefix('>') {
-                    // Partial include `{{> partial-name args}}`.
-                    let name = rest.trim().split_whitespace().next().unwrap_or("").to_string();
+                    // Partial include `{{> partial-name args}}` or
+                    // `{{> "partial-name"}}` (Mustache-style quoted form).
+                    let raw = rest.trim().split_whitespace().next().unwrap_or("");
+                    let name = raw.trim_matches('"').trim_matches('\'').to_string();
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index: host_index,
