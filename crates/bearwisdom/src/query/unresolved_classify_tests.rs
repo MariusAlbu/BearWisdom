@@ -350,6 +350,26 @@ fn report_groups_and_samples() {
 }
 
 #[test]
+fn report_excludes_markdown_doc_links() {
+    // Markdown link refs (kind=imports) are doc cross-references, not
+    // code resolution failures — they must not appear in the classifier
+    // total nor any bucket.
+    let db = Database::open_in_memory().unwrap();
+    let f_md = seed_file(&db, "README.md", "markdown", "internal");
+    let f_ts = seed_file(&db, "src/a.ts", "typescript", "internal");
+    let s_md = seed_symbol(&db, f_md, "README");
+    let s_ts = seed_symbol(&db, f_ts, "caller");
+
+    seed_unresolved(&db, s_md, "doc/Other", "imports", None, 1);
+    seed_unresolved(&db, s_ts, "Foo", "type_ref", None, 1);
+
+    let report = classify_unresolved(&db, 5).unwrap();
+    assert_eq!(report.total, 1);
+    assert!(report.by_language.get("markdown").is_none());
+    assert_eq!(report.by_language.get("typescript").copied(), Some(1));
+}
+
+#[test]
 fn report_excludes_external_origin_and_snippets() {
     let db = Database::open_in_memory().unwrap();
     let f_int = seed_file(&db, "src/a.ts", "typescript", "internal");

@@ -164,17 +164,21 @@ pub fn classify_unresolved(
         map
     };
 
-    // Internal unresolved rows (excluding from_snippet) joined with the
-    // source symbol/file metadata the heuristics need.
+    // Internal unresolved rows joined with source symbol/file metadata.
+    // Filter mirrors `resolution_breakdown` so the classifier total
+    // matches the metric total: snippet content excluded, doc cross-
+    // references (markdown/mdx kind=imports) excluded.
+    let scan_sql = format!(
+        "SELECT u.target_name, u.kind, u.module, u.source_line,
+                f.id, f.path, f.language
+         FROM unresolved_refs u
+         JOIN symbols s ON s.id = u.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE f.origin = 'internal' AND {filter}",
+        filter = crate::query::stats::CODE_REF_FILTER
+    );
     let mut stmt = conn
-        .prepare(
-            "SELECT u.target_name, u.kind, u.module, u.source_line,
-                    f.id, f.path, f.language
-             FROM unresolved_refs u
-             JOIN symbols s ON s.id = u.source_id
-             JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal' AND u.from_snippet = 0",
-        )
+        .prepare(&scan_sql)
         .context("classify_unresolved: prepare internal unresolved scan")?;
 
     // (language, kind, category) -> count

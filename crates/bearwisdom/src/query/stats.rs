@@ -12,6 +12,31 @@ use crate::query::QueryResult;
 use crate::types::IndexStats;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
+#[path = "stats_tests.rs"]
+mod tests;
+
+/// SQL WHERE-clause fragment that restricts `unresolved_refs` to *code*
+/// references — excludes refs the resolution metric must not count.
+///
+/// Callers MUST alias `unresolved_refs` as `u` and `files` as `f` for the
+/// fragment to bind. Composed via string concatenation; not parameterized
+/// because every clause is a literal predicate over schema-fixed values.
+///
+/// Two patterns are excluded:
+///
+/// 1. `u.from_snippet = 1` — refs from Markdown fences and doctests. The
+///    source text is sample code, not first-party project code.
+/// 2. `(markdown|mdx) kind=imports` — Markdown link refs of the form
+///    `[name](path/to/doc.md)`. The extractor emits these as Imports so
+///    cross-document drift can be detected when the link target IS
+///    indexed; when it isn't they fall to `unresolved_refs`. Document
+///    cross-references are not code-resolution failures and must not
+///    drag the rate down (Plan 01 — Resolution Gate).
+pub(crate) const CODE_REF_FILTER: &str =
+    "u.from_snippet = 0 \
+     AND NOT (f.language IN ('markdown','mdx') AND u.kind = 'imports')";
+
 /// Read index statistics from the database.
 ///
 /// This is the canonical way to get counts — consumers should not issue
@@ -19,6 +44,33 @@ use serde::{Deserialize, Serialize};
 pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
     let _timer = db.timer("index_stats");
     let conn = db.conn();
+    // The internal `unresolved_ref_count` mirrors the resolution metric
+    // and excludes doc cross-references via CODE_REF_FILTER. The external
+    // count is a noise-tracking signal; it stays on the simple snippet
+    // filter only.
+    let internal_unresolved_sql = format!(
+        "SELECT COUNT(*)
+         FROM unresolved_refs u
+         JOIN symbols s ON s.id = u.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE s.origin = 'internal' AND {CODE_REF_FILTER}"
+    );
+    let combined_sql = format!(
+        "SELECT
+           (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
+           (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
+           (SELECT COUNT(*) FROM edges),
+           ({internal_unresolved_sql}),
+           (SELECT COUNT(*)
+            FROM unresolved_refs ur
+            JOIN symbols s ON s.id = ur.source_id
+            WHERE ur.from_snippet = 0 AND s.origin = 'external'),
+           (SELECT COUNT(*) FROM external_refs),
+           (SELECT COUNT(*) FROM routes),
+           (SELECT COUNT(*) FROM db_mappings),
+           (SELECT COUNT(*) FROM flow_edges),
+           (SELECT COUNT(*) FROM packages)"
+    );
     let (
         file_count,
         symbol_count,
@@ -31,23 +83,7 @@ pub fn index_stats(db: &Database) -> QueryResult<IndexStats> {
         flow_edge_count,
         package_count,
     ): (u32, u32, u32, u32, u32, u32, u32, u32, u32, u32) = conn.query_row(
-        "SELECT
-           (SELECT COUNT(*) FROM files WHERE origin = 'internal'),
-           (SELECT COUNT(*) FROM symbols WHERE origin = 'internal'),
-           (SELECT COUNT(*) FROM edges),
-           (SELECT COUNT(*)
-            FROM unresolved_refs ur
-            JOIN symbols s ON s.id = ur.source_id
-            WHERE ur.from_snippet = 0 AND s.origin = 'internal'),
-           (SELECT COUNT(*)
-            FROM unresolved_refs ur
-            JOIN symbols s ON s.id = ur.source_id
-            WHERE ur.from_snippet = 0 AND s.origin = 'external'),
-           (SELECT COUNT(*) FROM external_refs),
-           (SELECT COUNT(*) FROM routes),
-           (SELECT COUNT(*) FROM db_mappings),
-           (SELECT COUNT(*) FROM flow_edges),
-           (SELECT COUNT(*) FROM packages)",
+        &combined_sql,
         [],
         |r| {
             Ok((
@@ -179,16 +215,15 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         )
         .unwrap_or(0);
 
+    let internal_unresolved_sql = format!(
+        "SELECT COUNT(*)
+         FROM unresolved_refs u
+         JOIN symbols s ON s.id = u.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE f.origin = 'internal' AND {CODE_REF_FILTER}"
+    );
     let internal_unresolved: u32 = conn
-        .query_row(
-            "SELECT COUNT(*)
-             FROM unresolved_refs u
-             JOIN symbols s ON s.id = u.source_id
-             JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal' AND u.from_snippet = 0",
-            [],
-            |r| r.get(0),
-        )
+        .query_row(&internal_unresolved_sql, [], |r| r.get(0))
         .unwrap_or(0);
 
     let mut languages: BTreeMap<String, u32> = BTreeMap::new();
@@ -210,15 +245,16 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
 
     let mut unresolved_by_lang_kind: BTreeMap<String, u32> = BTreeMap::new();
     {
-        let mut stmt = conn.prepare(
+        let by_lang_kind_sql = format!(
             "SELECT f.language, u.kind, COUNT(*)
              FROM unresolved_refs u
              JOIN symbols s ON s.id = u.source_id
              JOIN files   f ON f.id = s.file_id
-             WHERE f.origin = 'internal' AND u.from_snippet = 0
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
              GROUP BY f.language, u.kind
-             ORDER BY f.language, u.kind",
-        )?;
+             ORDER BY f.language, u.kind"
+        );
+        let mut stmt = conn.prepare(&by_lang_kind_sql)?;
         let rows = stmt.query_map([], |r| {
             Ok((
                 r.get::<_, String>(0)?,
