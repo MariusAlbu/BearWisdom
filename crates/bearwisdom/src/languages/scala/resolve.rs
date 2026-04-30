@@ -217,6 +217,28 @@ impl LanguageResolver for ScalaResolver {
             }
         }
 
+        // Step 6: Implicit imports — Scala compiles every file with the
+        // equivalent of `import java.lang._; import scala._; import
+        // scala.Predef._`. Bare references to `Throwable`, `Exception`,
+        // `Object`, `Class`, `Number`, `Integer`, etc. are valid Scala
+        // because java.lang is implicitly imported. Try the three implicit
+        // namespaces in compiler order; first-hit wins.
+        if !effective_target.contains('.') {
+            for prefix in &["java.lang", "scala", "scala.Predef"] {
+                let candidate = format!("{prefix}.{effective_target}");
+                if let Some(sym) = lookup.by_qualified_name(&candidate) {
+                    if predicates::kind_compatible(edge_kind, &sym.kind) {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "scala_implicit_import",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+        }
+
         None
     }
 
