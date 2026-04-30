@@ -395,6 +395,30 @@ pub(crate) fn normalize_virtual_rel(rel: &str) -> String {
 /// or fails to identify the package at all — leaving the chain walker
 /// unable to follow library types like `Observable.pipe()` or `HTMLElement.click()`.
 ///
+/// Reduce a possibly-deep npm specifier to just its package name. Handles
+/// scoped (`@scope/pkg/sub` → `@scope/pkg`), unscoped (`pkg/sub` → `pkg`),
+/// and already-bare (`pkg` → `pkg`) forms. Returns the input unchanged when
+/// the layout doesn't match either shape (callers re-validate).
+pub(crate) fn npm_package_name_from_spec(spec: &str) -> &str {
+    if let Some(rest) = spec.strip_prefix('@') {
+        // Scoped: keep the first two slash-separated segments (`@scope/name`).
+        let mut iter = rest.splitn(3, '/');
+        let scope = iter.next().unwrap_or("");
+        let name = iter.next().unwrap_or("");
+        if !scope.is_empty() && !name.is_empty() {
+            let end = 1 + scope.len() + 1 + name.len(); // '@' + scope + '/' + name
+            return &spec[..end];
+        }
+        spec
+    } else {
+        // Unscoped: keep the leading segment.
+        match spec.find('/') {
+            Some(slash) => &spec[..slash],
+            None => spec,
+        }
+    }
+}
+
 /// Used at every `ExternalDepRoot { module_path: … }` construction site to
 /// gate which paths get into the index in the first place.
 pub(crate) fn is_valid_npm_module_path(name: &str) -> bool {
@@ -540,35 +564,69 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     // step, demand-driven resolution never finds the interfaces that
     // define matcher chains.
     //
-    // Scoped to one hop and restricted to the BARE re-export specifiers
-    // read from entry files (not recursive walks) to keep the extra
-    // work O(declared_deps × avg_entry_file_size), not O(full dep
-    // tree). Entries for packages we already have are skipped.
-    let existing: std::collections::HashSet<String> =
-        roots.iter().map(|r| r.module_path.clone()).collect();
-    // Each transitive spec is paired with its origin dep's own local
-    // `node_modules/` — pnpm stores transitive packages there as siblings,
-    // not at the workspace's top-level node_modules. Without this, packages
-    // re-exported from a dep but not declared in the consumer's
-    // package.json (e.g. `@typescript-eslint/types` re-exported through
-    // `@typescript-eslint/utils`) stay invisible.
-    let mut transitive_specs: std::collections::HashSet<(String, PathBuf)> =
-        std::collections::HashSet::new();
-    for r in &roots {
-        let entry = match resolve_package_entry_path(r) {
-            Some(e) => e,
-            None => continue,
-        };
-        let local_nm = dep_local_node_modules(&r.root).unwrap_or_default();
-        for spec in collect_bare_reexports_recursive(&entry) {
-            if !existing.contains(&spec) && !builtins.contains(spec.as_str()) {
-                transitive_specs.insert((spec, local_nm.clone()));
+    // Iterate to a fixed point so multi-hop re-export chains are walked
+    // completely. Playwright is the canonical case: `@playwright/test/index.d.ts`
+    // re-exports `playwright/test`, which re-exports `./types/test`, which
+    // re-exports `playwright-core` — three packages, three hops. A single
+    // pass would stop at `playwright` and miss `playwright-core` (where
+    // `Page.getByRole`, `Locator.click` and the rest of the API live).
+    //
+    // Bounded by `MAX_TRANSITIVE_PASSES` so a pathological re-export graph
+    // can't loop indefinitely; each pass only walks the entries of newly-
+    // added roots, so the cost stays O(deps × avg_entry_size), not the
+    // full dependency tree per pass.
+    const MAX_TRANSITIVE_PASSES: u32 = 5;
+    let builtins_set: std::collections::HashSet<&str> = builtins.iter().copied().collect();
+    let mut next_pass_start: usize = 0;
+    for _pass in 0..MAX_TRANSITIVE_PASSES {
+        // Snapshot of the existing set at the START of this pass — used to
+        // skip specs we already have a root for.
+        let existing: std::collections::HashSet<String> =
+            roots.iter().map(|r| r.module_path.clone()).collect();
+        // Each transitive spec is paired with its origin dep's own local
+        // `node_modules/` — pnpm stores transitive packages there as siblings,
+        // not at the workspace's top-level node_modules. Without this, packages
+        // re-exported from a dep but not declared in the consumer's
+        // package.json (e.g. `@typescript-eslint/types` re-exported through
+        // `@typescript-eslint/utils`) stay invisible.
+        let mut transitive_specs: std::collections::HashSet<(String, PathBuf)> =
+            std::collections::HashSet::new();
+        // Only walk the roots added in the previous pass (or all roots on
+        // pass 0). On a fixed graph this converges in 1–4 passes.
+        let scan_range = next_pass_start..roots.len();
+        if scan_range.is_empty() { break }
+        for idx in scan_range.clone() {
+            let r = &roots[idx];
+            let entry = match resolve_package_entry_path(r) {
+                Some(e) => e,
+                None => continue,
+            };
+            let local_nm = dep_local_node_modules(&r.root).unwrap_or_default();
+            for spec in collect_bare_reexports_recursive(&entry) {
+                if !existing.contains(&spec) && !builtins_set.contains(spec.as_str()) {
+                    transitive_specs.insert((spec, local_nm.clone()));
+                }
             }
         }
-    }
+
+        if transitive_specs.is_empty() { break }
+        next_pass_start = roots.len();
 
     for (spec, parent_local_nm) in transitive_specs {
-        if !is_valid_npm_module_path(&spec) {
+        // Deep re-export specs like `export * from 'playwright/test'` point
+        // at a submodule of a transitive package — the package name is the
+        // prefix portion, the rest is an in-package path. Reduce the spec to
+        // its package portion: `playwright/test` → `playwright`,
+        // `@types/node/fs/promises` → `@types/node`, `@vitest/expect` →
+        // `@vitest/expect` (no change). Then walk that whole package; any
+        // re-export the user actually relies on is reachable from the
+        // package's regular entry points + the demand-driven BFS that picks
+        // up sibling files. Without this, every cross-package deep
+        // re-export (Playwright → playwright-core, Mongoose's submodule
+        // exports, RxJS's `rxjs/operators`) silently fails to walk the
+        // target package and the chain walker can't find the methods.
+        let package_spec = npm_package_name_from_spec(&spec);
+        if !is_valid_npm_module_path(package_spec) {
             debug!("npm: skipping invalid transitive spec `{spec}`");
             continue;
         }
@@ -581,11 +639,11 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             probe_roots.push(parent_local_nm.as_path());
         }
         for nm_root in probe_roots {
-            let candidate = nm_root.join(&spec);
+            let candidate = nm_root.join(package_spec);
             if !candidate.is_dir() { continue }
             if !seen.insert(candidate.clone()) { continue }
             roots.push(ExternalDepRoot {
-                module_path: spec.clone(),
+                module_path: package_spec.to_string(),
                 version: String::from("unknown"),
                 root: candidate,
                 ecosystem: LEGACY_ECOSYSTEM_TAG,
@@ -594,6 +652,7 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             });
             break; // one canonical install per spec is enough
         }
+    }
     }
 
     roots
@@ -789,50 +848,68 @@ fn discover_ts_externals_scoped(
     }
 
     // Transitive re-export expansion — mirror of the logic in
-    // `discover_ts_externals`. Scan each declared dep's type-entry `.d.ts`
-    // for `from '<bare-specifier>'` references and add those packages to
-    // the root set. Catches the vitest/@vitest-expect pattern where the
-    // internal scoped package isn't declared in the consumer's
-    // package.json but is re-exported from the dep's public entry.
-    let existing: std::collections::HashSet<String> =
-        roots.iter().map(|r| r.module_path.clone()).collect();
-    let mut transitive_specs: std::collections::HashSet<(String, PathBuf)> =
-        std::collections::HashSet::new();
-    for r in &roots {
-        let entry = match resolve_package_entry_path(r) {
-            Some(e) => e,
-            None => continue,
-        };
-        let local_nm = dep_local_node_modules(&r.root).unwrap_or_default();
-        for spec in collect_bare_reexports_recursive(&entry) {
-            if !existing.contains(&spec) && !builtins.contains(spec.as_str()) {
-                transitive_specs.insert((spec, local_nm.clone()));
+    // `discover_ts_externals`, but iterated to a fixed point so multi-hop
+    // re-export chains converge. The canonical case is Playwright:
+    // `@playwright/test/index.d.ts` → `playwright/test` → (via relative
+    // chain) `./types/test` → `playwright-core`. A single pass would stop
+    // at `playwright` and miss `playwright-core`, where `Page.getByRole`,
+    // `Locator.click` and the rest of the API surface lives.
+    const MAX_TRANSITIVE_PASSES: u32 = 5;
+    let builtins_set: std::collections::HashSet<&str> = builtins.iter().copied().collect();
+    let mut next_pass_start: usize = 0;
+    for _pass in 0..MAX_TRANSITIVE_PASSES {
+        let existing: std::collections::HashSet<String> =
+            roots.iter().map(|r| r.module_path.clone()).collect();
+        let mut transitive_specs: std::collections::HashSet<(String, PathBuf)> =
+            std::collections::HashSet::new();
+        let scan_range = next_pass_start..roots.len();
+        if scan_range.is_empty() { break }
+        for idx in scan_range {
+            let r = &roots[idx];
+            let entry = match resolve_package_entry_path(r) {
+                Some(e) => e,
+                None => continue,
+            };
+            let local_nm = dep_local_node_modules(&r.root).unwrap_or_default();
+            for spec in collect_bare_reexports_recursive(&entry) {
+                if !existing.contains(&spec) && !builtins_set.contains(spec.as_str()) {
+                    transitive_specs.insert((spec, local_nm.clone()));
+                }
             }
         }
-    }
-    for (spec, parent_local_nm) in transitive_specs {
-        if !is_valid_npm_module_path(&spec) {
-            debug!("npm: skipping invalid scoped transitive spec `{spec}`");
-            continue;
-        }
-        let mut probe_roots: Vec<&Path> =
-            node_modules_roots.iter().map(|p| p.as_path()).collect();
-        if !parent_local_nm.as_os_str().is_empty() {
-            probe_roots.push(parent_local_nm.as_path());
-        }
-        for nm_root in probe_roots {
-            let candidate = nm_root.join(&spec);
-            if !candidate.is_dir() { continue }
-            if !seen.insert(candidate.clone()) { continue }
-            roots.push(ExternalDepRoot {
-                module_path: spec.clone(),
-                version: String::from("unknown"),
-                root: candidate,
-                ecosystem: LEGACY_ECOSYSTEM_TAG,
-                package_id: None,
-                requested_imports: Vec::new(),
-            });
-            break;
+
+        if transitive_specs.is_empty() { break }
+        next_pass_start = roots.len();
+        for (spec, parent_local_nm) in transitive_specs {
+            // Reduce deep specs (`playwright/test`, `@types/node/fs`) to
+            // their package portion before validating + walking. The
+            // bare-spec extractor already does this for output, but
+            // intermediate re-exports passed in via the lockfile / npm
+            // packaging may contain raw deep specifiers — handle both.
+            let package_spec = npm_package_name_from_spec(&spec);
+            if !is_valid_npm_module_path(package_spec) {
+                debug!("npm: skipping invalid scoped transitive spec `{spec}`");
+                continue;
+            }
+            let mut probe_roots: Vec<&Path> =
+                node_modules_roots.iter().map(|p| p.as_path()).collect();
+            if !parent_local_nm.as_os_str().is_empty() {
+                probe_roots.push(parent_local_nm.as_path());
+            }
+            for nm_root in probe_roots {
+                let candidate = nm_root.join(package_spec);
+                if !candidate.is_dir() { continue }
+                if !seen.insert(candidate.clone()) { continue }
+                roots.push(ExternalDepRoot {
+                    module_path: package_spec.to_string(),
+                    version: String::from("unknown"),
+                    root: candidate,
+                    ecosystem: LEGACY_ECOSYSTEM_TAG,
+                    package_id: None,
+                    requested_imports: Vec::new(),
+                });
+                break;
+            }
         }
     }
 
