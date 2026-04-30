@@ -57,6 +57,7 @@ pub mod godot_api;
 pub mod groovy_stdlib;
 pub mod hex;
 pub mod jdk_src;
+pub mod jest_synthetics;
 pub mod kotlin_stdlib;
 pub mod luarocks;
 pub mod matlab_runtime;
@@ -120,6 +121,7 @@ pub use godot_api::GodotApiEcosystem;
 pub use groovy_stdlib::GroovyStdlibEcosystem;
 pub use hex::HexEcosystem;
 pub use jdk_src::JdkSrcEcosystem;
+pub use jest_synthetics::JestSyntheticsEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
 pub use matlab_runtime::MatlabRuntimeEcosystem;
@@ -614,6 +616,7 @@ pub fn default_locator(
         "erlang-otp" => Some(Arc::new(ErlangOtpEcosystem)),
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
         "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
+        "jest-synthetics" => Some(Arc::new(JestSyntheticsEcosystem)),
         "blazor-runtime" => Some(Arc::new(BlazorRuntimeEcosystem)),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
@@ -694,6 +697,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ErlangOtpEcosystem));
         reg.register(Arc::new(ElixirStdlibEcosystem));
         reg.register(Arc::new(SpringStubsEcosystem));
+        reg.register(Arc::new(JestSyntheticsEcosystem));
         reg.register(Arc::new(BlazorRuntimeEcosystem));
         reg.register(Arc::new(SwiftFoundationEcosystem));
         reg.register(Arc::new(SwiftPmDslStubsEcosystem));
