@@ -113,8 +113,18 @@ fn extract_class_name_stmt(
     let line = node.start_position().row as u32;
     let idx = symbols.len();
 
-    let extends = node.child_by_field_name("extends")
-        .map(|n| node_text(&n, src).to_string());
+    // The `extends` field on `class_name_statement` carries the entire
+    // `extends X` clause text, not just the bare type name. Strip the
+    // `extends` keyword before treating the value as an Inherits target,
+    // otherwise the literal `extends PandoraEntity` ends up in the index
+    // and never resolves.
+    let extends = node.child_by_field_name("extends").map(|n| {
+        let text = node_text(&n, src);
+        text.trim()
+            .trim_start_matches("extends")
+            .trim()
+            .to_string()
+    });
 
     let sig = match &extends {
         Some(base) => format!("class_name {} extends {}", name, base),
@@ -137,6 +147,9 @@ fn extract_class_name_stmt(
     });
 
     if let Some(base) = extends {
+        if base.is_empty() {
+            return;
+        }
         refs.push(ExtractedRef {
             source_symbol_index: idx,
             target_name: base,
@@ -160,8 +173,17 @@ fn extract_extends_stmt(
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Trim surrounding whitespace BEFORE stripping the keyword. The raw
+    // node text can carry leading indentation (`    extends RefCounted`)
+    // when an `extends_statement` appears inside an inner class, in which
+    // case `.trim_start_matches("extends")` won't match and the literal
+    // `extends X` text ends up as the inherits target.
     let text = node_text(node, src);
-    let base = text.trim_start_matches("extends").trim().to_string();
+    let base = text
+        .trim()
+        .trim_start_matches("extends")
+        .trim()
+        .to_string();
     if base.is_empty() {
         return;
     }
@@ -196,8 +218,13 @@ fn extract_inner_class(
     let line = node.start_position().row as u32;
     let idx = symbols.len();
 
-    let extends = node.child_by_field_name("extends")
-        .map(|n| node_text(&n, src).to_string());
+    let extends = node.child_by_field_name("extends").map(|n| {
+        let text = node_text(&n, src);
+        text.trim()
+            .trim_start_matches("extends")
+            .trim()
+            .to_string()
+    });
 
     symbols.push(ExtractedSymbol {
         name: name.clone(),
@@ -215,16 +242,18 @@ fn extract_inner_class(
     });
 
     if let Some(base) = extends {
-        refs.push(ExtractedRef {
-            source_symbol_index: idx,
-            target_name: base,
-            kind: EdgeKind::Inherits,
-            line,
-            module: None,
-            chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-});
+        if !base.is_empty() {
+            refs.push(ExtractedRef {
+                source_symbol_index: idx,
+                target_name: base,
+                kind: EdgeKind::Inherits,
+                line,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+                namespace_segments: Vec::new(),
+            });
+        }
     }
 
     // Walk class body
