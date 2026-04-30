@@ -401,3 +401,107 @@ fn cov_get_filename_component_output_var_produces_variable() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// find_program/find_library/find_path/find_file → Variable from first arg
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_find_program_output_var_produces_variable() {
+    let src = "find_program(CPPCHECK_BIN cppcheck)";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "CPPCHECK_BIN"),
+        "find_program output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_find_library_output_var_produces_variable() {
+    let src = "find_library(MATH_LIB m)";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "MATH_LIB"),
+        "find_library output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// file(<MODE> ...) — output variable position depends on mode
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_file_glob_output_var_produces_variable() {
+    let src = "file(GLOB ALL_SOURCE_FILES \"src/*.cpp\")";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "ALL_SOURCE_FILES"),
+        "file(GLOB ...) output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_file_read_output_var_produces_variable() {
+    let src = "file(READ \"version.txt\" VERSION_STRING)";
+    let r = extract::extract(src, lang());
+    assert!(
+        r.symbols.iter().any(|s| s.kind == SymbolKind::Variable && s.name == "VERSION_STRING"),
+        "file(READ ...) output should be Variable; got: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
+// cmake_parse_arguments → prefix + <prefix>_<keyword> Variables
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_cmake_parse_arguments_emits_prefix_variables() {
+    let src = "cmake_parse_arguments(MY_FN \"REQUIRED;OPTIONAL\" \"NAME;VERSION\" \"SOURCES\" ${ARGN})";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    for expected in ["MY_FN", "MY_FN_REQUIRED", "MY_FN_OPTIONAL", "MY_FN_NAME", "MY_FN_VERSION", "MY_FN_SOURCES"] {
+        assert!(
+            var_names.contains(&expected),
+            "cmake_parse_arguments should emit Variable {expected}; got: {var_names:?}",
+        );
+    }
+}
+
+#[test]
+fn cov_cmake_parse_arguments_parse_argv_form() {
+    let src = "cmake_parse_arguments(PARSE_ARGV 1 ARG \"\" \"SOURCE_DIR;BINARY_DIR\" \"\")";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"ARG_SOURCE_DIR") && var_names.contains(&"ARG_BINARY_DIR"),
+        "PARSE_ARGV form should emit ARG_SOURCE_DIR and ARG_BINARY_DIR; got: {var_names:?}",
+    );
+}
+
+// ---------------------------------------------------------------------------
+// execute_process(... OUTPUT_VARIABLE <out> ...) → Variable
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_execute_process_output_variables_produce_variables() {
+    let src = "execute_process(COMMAND git rev-parse HEAD OUTPUT_VARIABLE GIT_SHA RESULT_VARIABLE GIT_RES)";
+    let r = extract::extract(src, lang());
+    let var_names: Vec<&str> = r.symbols.iter()
+        .filter(|s| s.kind == SymbolKind::Variable)
+        .map(|s| s.name.as_str())
+        .collect();
+    assert!(
+        var_names.contains(&"GIT_SHA") && var_names.contains(&"GIT_RES"),
+        "execute_process should emit GIT_SHA and GIT_RES; got: {var_names:?}",
+    );
+}

@@ -236,6 +236,12 @@ fn extract_normal_command(
             extract_first_arg_output_var(node, src, symbols, &cmd_lower)
         }
         "math" => extract_math_output_var(node, src, symbols),
+        "find_program" | "find_library" | "find_path" | "find_file" => {
+            extract_first_arg_output_var(node, src, symbols, &cmd_lower)
+        }
+        "file" => extract_file_output_var(node, src, symbols),
+        "cmake_parse_arguments" => extract_cmake_parse_arguments(node, src, symbols),
+        "execute_process" => extract_execute_process_outputs(node, src, symbols),
         _ => {}
     }
 }
@@ -363,6 +369,151 @@ fn extract_math_output_var(
         Some(format!("math(EXPR {} ...)", name)),
         None,
     ));
+}
+
+// ---------------------------------------------------------------------------
+// file(<MODE> ...) — output variable position depends on mode.
+//   GLOB / GLOB_RECURSE: arg 1 (after MODE)
+//   READ <path> <out>: arg 2
+//   STRINGS <path> <out>: arg 2
+//   RELATIVE_PATH <out> <dir> <path>: arg 1
+//   TIMESTAMP <path> <out>: arg 2
+//   SIZE <path> <out>: arg 2
+//   MD5/SHA1/SHA256/SHA384/SHA512 <path> <out>: arg 2
+//   REAL_PATH <path> <out>: arg 2
+//   TO_CMAKE_PATH <path> <out>: arg 2
+//   TO_NATIVE_PATH <path> <out>: arg 2
+// ---------------------------------------------------------------------------
+
+fn extract_file_output_var(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let args = collect_arguments(node, src);
+    let Some(mode) = args.first().map(|s| s.to_ascii_uppercase()) else { return };
+    let out_idx = match mode.as_str() {
+        "GLOB" | "GLOB_RECURSE" | "RELATIVE_PATH" => 1,
+        "READ" | "STRINGS" | "TIMESTAMP" | "SIZE" | "MD5"
+        | "SHA1" | "SHA224" | "SHA256" | "SHA384" | "SHA512"
+        | "REAL_PATH" | "TO_CMAKE_PATH" | "TO_NATIVE_PATH" => 2,
+        _ => return,
+    };
+    let Some(name) = args.get(out_idx) else { return };
+    if name.is_empty() || name.starts_with('$') {
+        return;
+    }
+    symbols.push(make_symbol(
+        name.clone(),
+        name.clone(),
+        SymbolKind::Variable,
+        node,
+        Some(format!("file({} ... → {})", mode, name)),
+        None,
+    ));
+}
+
+// ---------------------------------------------------------------------------
+// cmake_parse_arguments(<prefix> <options> <one_value> <multi_value> ...) —
+// generates `<prefix>_<keyword>` variables for each option/oneval/multival
+// keyword. Two call forms:
+//   cmake_parse_arguments(<prefix> <options> <oneval> <multival> <args...>)
+//   cmake_parse_arguments(PARSE_ARGV <n> <prefix> <options> <oneval> <multival>)
+// Keyword strings are space- or semicolon-separated; the args themselves may
+// be variable refs (`${oneArgs}`) which we cannot resolve statically — those
+// cases are skipped.
+// ---------------------------------------------------------------------------
+
+fn extract_cmake_parse_arguments(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let args = collect_arguments(node, src);
+    let (prefix, opts_idx) = if args.first().map(|s| s.eq_ignore_ascii_case("PARSE_ARGV")) == Some(true) {
+        // PARSE_ARGV form: prefix is arg 2
+        (args.get(2).cloned(), 3)
+    } else {
+        // Plain form: prefix is arg 0
+        (args.first().cloned(), 1)
+    };
+    let Some(prefix) = prefix else { return };
+    if prefix.is_empty() || prefix.starts_with('$') {
+        return;
+    }
+    // Also emit the prefix itself as a Variable so `${PREFIX}` resolves —
+    // although typically callers reference `${PREFIX_<KW>}` directly.
+    symbols.push(make_symbol(
+        prefix.clone(),
+        prefix.clone(),
+        SymbolKind::Variable,
+        node,
+        Some(format!("cmake_parse_arguments prefix {}", prefix)),
+        None,
+    ));
+    // Parse options/oneval/multival keyword lists at indices opts_idx..opts_idx+3.
+    for offset in 0..3 {
+        let Some(kw_list) = args.get(opts_idx + offset) else { continue };
+        // Strip surrounding quotes — `argument` nodes wrapping a quoted_argument
+        // include the quote characters in their text.
+        let kw_list = kw_list.trim().trim_matches('"').trim_matches('\'');
+        if kw_list.is_empty() || kw_list.starts_with('$') {
+            continue;
+        }
+        for kw in kw_list.split(|c: char| c == ';' || c.is_whitespace()) {
+            let kw = kw.trim().trim_matches('"').trim_matches('\'');
+            if kw.is_empty() {
+                continue;
+            }
+            let var_name = format!("{}_{}", prefix, kw);
+            symbols.push(make_symbol(
+                var_name.clone(),
+                var_name.clone(),
+                SymbolKind::Variable,
+                node,
+                Some(format!("cmake_parse_arguments(... {} ...)", kw)),
+                None,
+            ));
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// execute_process(... [OUTPUT_VARIABLE <var>] [ERROR_VARIABLE <var>]
+//                     [RESULT_VARIABLE <var>] [RESULTS_VARIABLE <var>])
+// ---------------------------------------------------------------------------
+
+fn extract_execute_process_outputs(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let args = collect_arguments(node, src);
+    let mut i = 0;
+    while i < args.len() {
+        let kw = args[i].to_ascii_uppercase();
+        let is_output_kw = matches!(
+            kw.as_str(),
+            "OUTPUT_VARIABLE" | "ERROR_VARIABLE" | "RESULT_VARIABLE" | "RESULTS_VARIABLE"
+        );
+        if is_output_kw {
+            if let Some(name) = args.get(i + 1) {
+                if !name.is_empty() && !name.starts_with('$') {
+                    symbols.push(make_symbol(
+                        name.clone(),
+                        name.clone(),
+                        SymbolKind::Variable,
+                        node,
+                        Some(format!("execute_process({} {})", kw, name)),
+                        None,
+                    ));
+                }
+            }
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -826,6 +977,18 @@ fn collect_all_normal_commands(
                 }
                 "math" => {
                     extract_math_output_var(&node, src, symbols);
+                }
+                "find_program" | "find_library" | "find_path" | "find_file" => {
+                    extract_first_arg_output_var(&node, src, symbols, &cmd_lower);
+                }
+                "file" => {
+                    extract_file_output_var(&node, src, symbols);
+                }
+                "cmake_parse_arguments" => {
+                    extract_cmake_parse_arguments(&node, src, symbols);
+                }
+                "execute_process" => {
+                    extract_execute_process_outputs(&node, src, symbols);
                 }
                 "list" => {
                     // list(APPEND|PREPEND|INSERT|REMOVE_DUPLICATES NAME ...) — index NAME
