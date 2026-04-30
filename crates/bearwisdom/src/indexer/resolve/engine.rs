@@ -2360,11 +2360,21 @@ impl SymbolLookup for SymbolIndex {
     }
 
     fn has_in_namespace(&self, namespace: &str) -> bool {
+        // The "is this an internal namespace?" probe used by every language's
+        // `infer_external` chain to gate the structural fallback — see
+        // python/resolve.rs::module_is_external, java/resolve.rs, etc. External
+        // symbols must NOT poison this check: indexing `Lib/difflib.py`
+        // produces qnames under `difflib.*`, which would otherwise mark
+        // `import difflib` as "internal" and short-circuit the external
+        // classification, leaving every stdlib import the static stdlib list
+        // misses stuck in unresolved_refs. Restrict the namespace probe to
+        // symbols whose `file_path` does not start with the `ext:` virtual
+        // prefix — only project-internal symbols qualify a namespace as local.
         let prefix = format!("{namespace}.");
         self.by_qname
             .range(prefix.clone()..)
-            .next()
-            .is_some_and(|(k, _)| k.starts_with(&prefix))
+            .take_while(|(k, _)| k.starts_with(&prefix))
+            .any(|(_, info)| !info.file_path.starts_with("ext:"))
     }
 
     fn in_file(&self, file_path: &str) -> &[SymbolInfo] {
