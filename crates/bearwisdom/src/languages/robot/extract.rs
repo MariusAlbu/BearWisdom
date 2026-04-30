@@ -201,8 +201,15 @@ fn extract_keyword_invocation(
     if kw.starts_with('[') || kw.starts_with('#') || kw.is_empty() {
         return;
     }
-    // Skip Robot framework control structures
-    if matches!(kw, "FOR" | "END" | "IF" | "ELSE" | "ELSE IF" | "WHILE" | "TRY" | "EXCEPT" | "FINALLY" | "RETURN" | "BREAK" | "CONTINUE") {
+    // Skip Robot framework control structures and non-call markers:
+    //   `...`  — line continuation (appends args to previous line)
+    //   `\END` — escaped END terminator used in older FOR/IF fixtures
+    //   `VAR`  — Robot 6+ inline variable assignment, not a keyword call
+    if matches!(
+        kw,
+        "FOR" | "END" | "IF" | "ELSE" | "ELSE IF" | "WHILE" | "TRY" | "EXCEPT" | "FINALLY"
+            | "RETURN" | "BREAK" | "CONTINUE" | "..." | "\\END" | "VAR"
+    ) {
         return;
     }
     // Handle `${var} =    Keyword` assignment pattern

@@ -188,3 +188,44 @@ fn cov_multiple_keywords() {
     let kws: Vec<_> = r.symbols.iter().filter(|s| s.kind == SymbolKind::Function).collect();
     assert_eq!(kws.len(), 2, "expected 2 Function symbols; got: {:?}", kws);
 }
+
+// ---------------------------------------------------------------------------
+// Non-call markers — `...` continuation, `\END`, `VAR` inline assignment
+// ---------------------------------------------------------------------------
+
+#[test]
+fn cov_continuation_marker_does_not_produce_call() {
+    // `...` extends the previous line's argument list. It is not a keyword call.
+    let src = "*** Test Cases ***\nMulti Line\n    Log Many    one    two\n    ...    three    four\n";
+    let r = extract::extract(src);
+    assert!(
+        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "..."),
+        "`...` continuation marker must not produce a Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, rf.target_name.clone())).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_escaped_end_marker_does_not_produce_call() {
+    // `\END` is the escaped form of END used in older FOR loop fixtures.
+    let src = "*** Keywords ***\nLoop Things\n    FOR    ${i}    IN RANGE    3\n    \\END\n";
+    let r = extract::extract(src);
+    assert!(
+        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "\\END"),
+        "`\\END` escape must not produce a Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, rf.target_name.clone())).collect::<Vec<_>>()
+    );
+}
+
+#[test]
+fn cov_var_inline_assignment_does_not_produce_call() {
+    // Robot 6+ inline variable assignment syntax: `VAR    ${name}    value`.
+    // VAR is a control marker, not a keyword call.
+    let src = "*** Test Cases ***\nUse Var\n    VAR    ${greeting}    hello\n    Log    ${greeting}\n";
+    let r = extract::extract(src);
+    assert!(
+        !r.refs.iter().any(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "VAR"),
+        "`VAR` inline assignment must not produce a Calls ref; got: {:?}",
+        r.refs.iter().map(|rf| (rf.kind, rf.target_name.clone())).collect::<Vec<_>>()
+    );
+}
