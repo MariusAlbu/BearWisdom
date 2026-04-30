@@ -66,6 +66,10 @@ pub use query::cache::QueryCache;
 pub use query::workspace::{PackageDependency, PackageStats, WorkspaceGraphEdge, WorkspaceOverview};
 pub use query::workspace::{list_packages, package_dependencies, workspace_graph, workspace_overview};
 pub use query::diagnostics::{LowConfidenceBucket, LowConfidenceReport, low_confidence_edges};
+pub use query::unresolved_classify::{
+    classify_unresolved, ClassificationBucket, ClassificationReport, SampleEntry,
+    UnresolvedCategory,
+};
 pub use indexer::ref_cache::RefCache;
 
 pub use indexer::scip::{import_scip, ScipImportStats};

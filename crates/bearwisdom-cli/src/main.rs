@@ -520,6 +520,19 @@ enum Commands {
         #[arg(long, default_value_t = 1.0)]
         threshold: f64,
     },
+
+    /// Classify every internal unresolved reference by architectural
+    /// source (extractor bug, locals miss, missing synthetic, real
+    /// missing symbol, etc.) and return an ordered worklist with top-N
+    /// target-name examples per (language, category) group.
+    UnresolvedClassify {
+        /// Absolute path to the project root.
+        path: String,
+        /// Top-N target-name examples kept per (language, category).
+        /// Defaults to 10.
+        #[arg(long, default_value_t = 10)]
+        samples: usize,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -670,6 +683,9 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::WorkspaceGraph { path } => cmd_workspace_graph(&path),
         Commands::LowConfidenceEdges { path, threshold } => {
             cmd_low_confidence_edges(&path, threshold)
+        }
+        Commands::UnresolvedClassify { path, samples } => {
+            cmd_unresolved_classify(&path, samples)
         }
     }
 }
@@ -2024,6 +2040,14 @@ fn cmd_low_confidence_edges(project_path: &str, threshold: f64) -> Result<String
     let db = open_existing_db(project_path)?;
     let report = bearwisdom::low_confidence_edges(&db, threshold)
         .context("low_confidence_edges failed")?;
+    ok_json(report)
+}
+
+/// Architectural classification of unresolved references.
+fn cmd_unresolved_classify(project_path: &str, samples: usize) -> Result<String> {
+    let db = open_existing_db(project_path)?;
+    let report = bearwisdom::classify_unresolved(&db, samples)
+        .context("classify_unresolved failed")?;
     ok_json(report)
 }
 

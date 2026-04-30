@@ -23,6 +23,7 @@ pub mod subgraph;
 pub mod symbol_info;
 pub mod workspace;
 pub mod dead_code;
+pub mod unresolved_classify;
 
 // ---------------------------------------------------------------------------
 // Shared query options — slim by default, opt-in for verbose
