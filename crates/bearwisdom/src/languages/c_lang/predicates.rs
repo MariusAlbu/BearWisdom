@@ -899,28 +899,6 @@ pub(super) fn is_c_builtin(name: &str) -> bool {
             | "mbstate_t"
             | "wint_t"
             | "wchar_t"
-            // BSD-style POSIX integer typedefs from <sys/types.h>. Standardised
-            // by XSI but missing from the c99 typedef block above; nginx, BSD
-            // utilities, and historic Unix daemons declare every variable
-            // using these names. Without this entry, `u_char` alone produces
-            // ~6 K unresolved refs across the C corpus.
-            | "u_char"
-            | "u_short"
-            | "u_int"
-            | "u_long"
-            | "u_quad_t"
-            | "quad_t"
-            | "u_int8_t"
-            | "u_int16_t"
-            | "u_int32_t"
-            | "u_int64_t"
-            | "caddr_t"
-            | "daddr_t"
-            | "register_t"
-            | "segsz_t"
-            | "cpuset_t"
-            | "rlim_t"
-            | "wctype_t"
             // Windows API types
             | "HANDLE"
             | "HMODULE"
