@@ -241,6 +241,22 @@ fn extract_call(
                 return;
             }
 
+            // Skip method calls on literal values — string/list/dict literal
+            // method calls (`"\n".join(args)`, `[].append(x)`, `{}.items()`)
+            // bind to builtin types, never to user-defined symbols, so the
+            // ref produces nothing but unresolved noise.
+            if starts_with_literal(&name) {
+                return;
+            }
+
+            // Sub-call chains like `_normalize(path).split` or
+            // `gather_runfiles(...).merge` produce a callee text containing
+            // parens/brackets/newlines. The chain root isn't a single
+            // identifier so the ref can't bind to a user symbol — skip.
+            if name.contains('(') || name.contains('[') || name.contains('\n') {
+                return;
+            }
+
             // Build a MemberChain for dotted attribute access (`ctx.actions.run`).
             // target_name is kept as the full dotted string (e.g. "ctx.actions.run_shell")
             // so that the predicate-based external fallback still fires when the chain
@@ -362,16 +378,24 @@ fn extract_load_refs(
             byte_offset: 0,
                     namespace_segments: Vec::new(),
 });
-        // Remaining args are symbol names or alias=name pairs.
+        // Remaining args are symbol names or `alias = "sym"` pairs.
+        // For aliased loads use the alias (the name used inside this file)
+        // as target_name — the resolver needs to match local invocations
+        // like `_npm_local_package_store(...)` back to the import. The
+        // upstream/source name is preserved in the Imports ref's `module`
+        // field via the encoded module label.
         for arg in &children[1..] {
             let sym = match arg.kind() {
                 "string" => string_value(*arg, src),
-                "keyword_argument" => {
-                    // alias = "sym" — the value side
-                    arg.child_by_field_name("value")
-                        .map(|v| string_value(v, src))
-                        .unwrap_or_default()
-                }
+                "keyword_argument" => arg
+                    .child_by_field_name("name")
+                    .map(|n| text(n, src))
+                    .filter(|s| !s.is_empty())
+                    .unwrap_or_else(|| {
+                        arg.child_by_field_name("value")
+                            .map(|v| string_value(v, src))
+                            .unwrap_or_default()
+                    }),
                 _ => String::new(),
             };
             if !sym.is_empty() {
@@ -430,4 +454,12 @@ fn walk_children(
 
 fn text(node: Node, src: &[u8]) -> String {
     node.utf8_text(src).unwrap_or("").trim().to_string()
+}
+
+/// True when a callee chain text starts with a string/list/dict literal —
+/// e.g. `"\n".join(...)`, `[].append(x)`, `{}.items()`. Method calls on
+/// literals always bind to builtin types, never user symbols.
+fn starts_with_literal(name: &str) -> bool {
+    let first = name.chars().next();
+    matches!(first, Some('"') | Some('\'') | Some('[') | Some('{') | Some('('))
 }

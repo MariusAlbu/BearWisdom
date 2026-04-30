@@ -83,6 +83,14 @@ impl LanguageResolver for StarlarkResolver {
             return None;
         }
 
+        // Dotted call whose last segment is a Python/Starlark built-in
+        // type method (str/list/dict/depset). `output.append`, `filename
+        // .endswith`, `kwargs.pop` always bind to runtime types — return
+        // None so infer_external_namespace classifies them as external.
+        if target.contains('.') && predicates::is_builtin_method_tail(target) {
+            return None;
+        }
+
         // Chain-walker resolution: for dotted refs (ctx.actions.run, etc.) try
         // a direct qualified-name lookup against the synthetic ctx API symbols
         // before routing to external classification. This produces real edges
@@ -222,6 +230,12 @@ impl LanguageResolver for StarlarkResolver {
 
         if predicates::is_starlark_builtin(target) {
             return Some("bazel".to_string());
+        }
+
+        // Dotted method call whose tail is a Python/Starlark builtin —
+        // classify as runtime since it binds to an str/list/dict/etc. type.
+        if target.contains('.') && predicates::is_builtin_method_tail(target) {
+            return Some("starlark-runtime".to_string());
         }
 
         // load() from external repositories (@bazel_skylib, @rules_*) are external.

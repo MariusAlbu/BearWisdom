@@ -28,6 +28,17 @@ const BAZEL_FRAMEWORK_ROOTS: &[&str] = &[
     "module_ctx",
     "env",
     "directory",
+    // Common short-names used by rule_repository implementations
+    "rctx",
+    "mctx",
+    // unittest / analysistest framework parameters
+    "asserts",
+    "actions",
+    // Python convention parameter names that have no source-code
+    // declaration: every Starlark function with `**kwargs` / `*args`
+    // gets these as runtime-injected dict/tuple parameters.
+    "kwargs",
+    "attrs",
 ];
 
 /// Return true when `name` is a dotted ref whose leading segment is a known
@@ -39,6 +50,38 @@ const BAZEL_FRAMEWORK_ROOTS: &[&str] = &[
 pub(super) fn is_bazel_framework_chain(name: &str) -> bool {
     let root = name.split('.').next().unwrap_or(name);
     BAZEL_FRAMEWORK_ROOTS.contains(&root)
+}
+
+/// True when a dotted call's last segment is a Python/Starlark built-in
+/// type method (str/list/dict/set/depset). `auth_info.get`, `output.append`,
+/// `filename.endswith`, `kwargs.pop` all bind to runtime types, never to
+/// user-defined symbols.
+pub(super) fn is_builtin_method_tail(name: &str) -> bool {
+    let tail = name.rsplit('.').next().unwrap_or(name);
+    matches!(
+        tail,
+        // dict
+        "get" | "items" | "keys" | "values" | "pop" | "popitem" | "setdefault"
+        | "update" | "clear" | "copy" | "fromkeys"
+        // list
+        | "append" | "extend" | "insert" | "remove" | "index" | "count"
+        | "reverse" | "sort"
+        // str
+        | "split" | "rsplit" | "splitlines" | "join" | "format" | "format_map"
+        | "startswith" | "endswith" | "find" | "rfind" | "replace"
+        | "lower" | "upper" | "title" | "capitalize" | "swapcase"
+        | "lstrip" | "rstrip" | "strip" | "isdigit" | "isalpha" | "isalnum"
+        | "isspace" | "isupper" | "islower" | "isnumeric" | "isdecimal"
+        | "encode" | "decode" | "elems" | "codepoints"
+        | "removeprefix" | "removesuffix"
+        | "partition" | "rpartition"
+        // set / general
+        | "add" | "discard" | "intersection" | "union" | "difference"
+        // depset
+        | "to_list" | "to_set"
+        // common iterators
+        | "next"
+    )
 }
 
 /// Bazel native rules, Starlark built-in functions, and `native.*` helpers.
