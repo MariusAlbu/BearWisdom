@@ -6,6 +6,7 @@
 // resolver can resolve a reference, it falls back to the heuristic resolver.
 // =============================================================================
 
+use crate::indexer::module_resolution::ModuleResolver as _;
 use crate::indexer::project_context::ProjectContext;
 use crate::type_checker::type_env::TypeEnvironment;
 use crate::types::{
@@ -1279,12 +1280,27 @@ impl SymbolIndex {
         // Sharing one global map for relative paths causes the first
         // consumer to "win the slot" for `./utils` and silently breaks
         // resolution for every other file with a same-named neighbour.
+        //
+        // Performance: the hot path for TypeScript monorepos was an O(N × refs)
+        // linear scan inside `NodeModuleResolver::try_resolve` — each unique
+        // (source_file, relative_specifier) pair scanned all N file paths with
+        // 18 extension probes. On ts-nextjs (~83,000 files, ~100k+ unique pairs)
+        // this was ~150 billion comparisons (~22 minutes of wall-clock time).
+        //
+        // Fix: build a `FilePathIndex` once, pass it to `resolve_to_file_indexed`
+        // which uses O(1) hash lookups. The suffix map is keyed by every trailing
+        // segment sequence, so `"components/Button.tsx"` resolves in O(1)
+        // regardless of project size.
         let go_module_path = project_ctx
             .and_then(|ctx| ctx.manifest(crate::ecosystem::manifest::ManifestKind::GoMod))
             .and_then(|m| m.module_path.as_deref());
         let resolvers =
             crate::indexer::module_resolution::all_resolvers_with_go_module(go_module_path);
         let file_paths: Vec<&str> = parsed.iter().map(|pf| pf.path.as_str()).collect();
+        // Pre-build the O(1) path index. Construction is O(N × depth) where
+        // depth is the average segment count per path (4-8). Amortised over
+        // all subsequent lookups (potentially millions), this is near-free.
+        let file_path_index = crate::indexer::module_resolution::FilePathIndex::build(&file_paths);
         let mut module_to_file: FxHashMap<String, String> = FxHashMap::default();
         let mut module_to_file_per_source: FxHashMap<(String, String), String> =
             FxHashMap::default();
@@ -1313,7 +1329,7 @@ impl SymbolIndex {
                         continue;
                     }
                     if let Some(resolved) =
-                        resolver.resolve_to_file(module, &pf.path, &file_paths)
+                        resolver.resolve_to_file_indexed(module, &pf.path, &file_path_index)
                     {
                         module_to_file_per_source.insert(key, resolved);
                     }
@@ -1323,7 +1339,7 @@ impl SymbolIndex {
                     continue;
                 }
                 if let Some(resolved) =
-                    resolver.resolve_to_file(module, &pf.path, &file_paths)
+                    resolver.resolve_to_file_indexed(module, &pf.path, &file_path_index)
                 {
                     module_to_file.insert(module.clone(), resolved);
                 }
