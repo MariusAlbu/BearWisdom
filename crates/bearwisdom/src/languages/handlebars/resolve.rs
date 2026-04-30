@@ -108,9 +108,11 @@ impl LanguageResolver for HandlebarsResolver {
 /// Probes (in order):
 ///   - As-is, then with each Handlebars extension
 ///   - Mustache underscore-prefix variant: `_<name>.hbs` etc.
+///   - kebab-case variant of camelCase names — Ghost / many JS Handlebars
+///     setups normalize partial names between the two
 ///   - Searching upward up to 4 ancestor dirs for common partial folders
 fn path_candidates(source_dir: &Path, target: &str) -> Vec<PathBuf> {
-    let mut out: Vec<PathBuf> = Vec::with_capacity(48);
+    let mut out: Vec<PathBuf> = Vec::with_capacity(96);
     let extensions = ["hbs", "handlebars", "mustache", "html"];
 
     let push_with_extensions = |out: &mut Vec<PathBuf>, base: PathBuf| {
@@ -140,28 +142,59 @@ fn path_candidates(source_dir: &Path, target: &str) -> Vec<PathBuf> {
         }
     };
 
-    // 1. Direct: target relative to source dir.
-    let direct = lexical_normalize(&source_dir.join(target));
-    push_with_extensions(&mut out, direct);
+    // Build the set of name variants to probe. Always include the original;
+    // also include the kebab-cased version when the original looks camelCase.
+    let mut name_variants: Vec<String> = vec![target.to_string()];
+    if let Some(kebab) = camel_to_kebab(target) {
+        name_variants.push(kebab);
+    }
 
-    // 2. Climb up to 4 ancestors searching for common partial directories.
-    //    `{{> components/header-content}}` from `themes/casper/index.hbs`
-    //    finds `themes/casper/partials/components/header-content.hbs`.
     let partial_dirs = ["partials", "_partials", "_includes", "templates"];
-    let mut current = Some(source_dir);
-    let mut depth = 0;
-    while let Some(dir) = current {
-        for p in partial_dirs {
-            let candidate = lexical_normalize(&dir.join(p).join(target));
-            push_with_extensions(&mut out, candidate);
+    for variant in &name_variants {
+        // 1. Direct: variant relative to source dir.
+        let direct = lexical_normalize(&source_dir.join(variant));
+        push_with_extensions(&mut out, direct);
+
+        // 2. Climb up to 4 ancestors searching for common partial directories.
+        let mut current = Some(source_dir);
+        let mut depth = 0;
+        while let Some(dir) = current {
+            for p in partial_dirs {
+                let candidate = lexical_normalize(&dir.join(p).join(variant));
+                push_with_extensions(&mut out, candidate);
+            }
+            depth += 1;
+            if depth > 4 {
+                break;
+            }
+            current = dir.parent();
         }
-        depth += 1;
-        if depth > 4 {
-            break;
-        }
-        current = dir.parent();
     }
     out
+}
+
+/// Convert camelCase to kebab-case. Returns None when the input is already
+/// all-lowercase or has no internal uppercase letter (no conversion needed).
+fn camel_to_kebab(s: &str) -> Option<String> {
+    let has_upper = s.chars().any(|c| c.is_ascii_uppercase());
+    if !has_upper {
+        return None;
+    }
+    let mut out = String::with_capacity(s.len() + 4);
+    let mut prev_lower = false;
+    for ch in s.chars() {
+        if ch.is_ascii_uppercase() {
+            if prev_lower {
+                out.push('-');
+            }
+            out.push(ch.to_ascii_lowercase());
+            prev_lower = false;
+        } else {
+            out.push(ch);
+            prev_lower = ch.is_ascii_lowercase() || ch.is_ascii_digit();
+        }
+    }
+    Some(out)
 }
 
 fn lexical_normalize(path: &Path) -> PathBuf {

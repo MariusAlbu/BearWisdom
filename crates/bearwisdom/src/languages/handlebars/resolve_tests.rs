@@ -196,6 +196,34 @@ fn unmatched_partial_returns_none() {
 }
 
 #[test]
+fn camelcase_partial_resolves_to_kebab_case_file() {
+    // Ghost email templates: `{{> feedbackButton}}` references `feedback-button.hbs`.
+    let target = make_file(
+        "ghost/server/email-templates/partials/feedback-button.hbs",
+        vec![make_class_symbol("feedback-button")],
+        vec![],
+    );
+    let source = make_file(
+        "ghost/server/email-templates/template.hbs",
+        vec![make_class_symbol("template")],
+        vec![make_partial_ref("feedbackButton")],
+    );
+    let (index, _id_map) = build_env(&[&source, &target]);
+    let resolver = HandlebarsResolver;
+    let file_ctx = resolver.build_file_context(&source, None);
+    let ref_ctx = RefContext {
+        extracted_ref: &source.refs[0],
+        source_symbol: &source.symbols[0],
+        scope_chain: build_scope_chain(None),
+        file_package_id: None,
+    };
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("camelCase partial should resolve to kebab-case file");
+    assert_eq!(res.strategy, "handlebars_partial");
+}
+
+#[test]
 fn calls_kind_refs_are_not_resolved_by_partial_resolver() {
     // Helper-call refs (Calls kind) are emitted from the embedded JS path
     // and route through the TS resolver, not this one. Returning Some for

@@ -127,6 +127,23 @@ const EMBER_BUILTIN_HELPERS: &[&str] = &[
     // ember-power-select / common form helpers
     "power_select",
     "power_select_multiple",
+    "ember_power_select_is_selected",
+    "is_selected",
+    // ember-css-transitions
+    "css_transition",
+    "css_transitions",
+    // ember-cli-htmlbars / @ember/template
+    "html_safe",
+    "is_html_safe",
+    // ember-moment additional helpers
+    "moment_from_now",
+    "moment_to_now",
+    "moment_unix",
+    // ember-route-action-helper / route-actions
+    "route_action",
+    "toggle_action",
+    "pipe_action",
+    "queue_actions",
     // Routing
     "link_to",
     "transition_to",
@@ -136,6 +153,21 @@ const EMBER_BUILTIN_HELPERS: &[&str] = &[
     "log",
     "debugger",
     "page_title",
+    // node-plop / plop generator template helpers (case conversions)
+    "camelCase",
+    "snakeCase",
+    "dotCase",
+    "pathCase",
+    "lowerCase",
+    "upperCase",
+    "sentenceCase",
+    "constantCase",
+    "titleCase",
+    "dashCase",
+    "kabobCase",
+    "kebabCase",
+    "properCase",
+    "pascalCase",
 ];
 
 // ---------------------------------------------------------------------------
