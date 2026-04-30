@@ -79,6 +79,9 @@ pub mod pub_pkg;
 pub mod puppet_forge;
 pub mod puppet_stdlib;
 pub mod pypi;
+pub mod robot_builtin_synthetics;
+pub mod robot_seleniumlibrary_synthetics;
+pub mod robot_browser_synthetics;
 pub mod ruby_stdlib;
 pub mod rubygems;
 pub mod rust_stdlib;
@@ -137,6 +140,9 @@ pub use pub_pkg::PubEcosystem;
 pub use puppet_forge::PuppetForgeEcosystem;
 pub use puppet_stdlib::PuppetStdlibEcosystem;
 pub use pypi::PypiEcosystem;
+pub use robot_builtin_synthetics::RobotBuiltinEcosystem;
+pub use robot_seleniumlibrary_synthetics::RobotSeleniumLibraryEcosystem;
+pub use robot_browser_synthetics::RobotBrowserEcosystem;
 pub use ruby_stdlib::RubyStdlibEcosystem;
 pub use rubygems::RubygemsEcosystem;
 pub use rust_stdlib::RustStdlibEcosystem;
@@ -626,6 +632,9 @@ pub fn default_locator(
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
         "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
         "bash-completion-synthetics" => Some(Arc::new(BashCompletionSyntheticsEcosystem)),
+        "robot-builtin" => Some(robot_builtin_synthetics::shared_locator()),
+        "robot-seleniumlibrary" => Some(Arc::new(RobotSeleniumLibraryEcosystem)),
+        "robot-browser" => Some(Arc::new(RobotBrowserEcosystem)),
         _ => None,
     }
 }
@@ -699,6 +708,9 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg.register(Arc::new(ZigStdEcosystem));
         reg.register(Arc::new(SdlSyntheticsEcosystem));
         reg.register(Arc::new(BashCompletionSyntheticsEcosystem));
+        reg.register(Arc::new(RobotBuiltinEcosystem));
+        reg.register(Arc::new(RobotSeleniumLibraryEcosystem));
+        reg.register(Arc::new(RobotBrowserEcosystem));
         reg
     })
 }
