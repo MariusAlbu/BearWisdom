@@ -62,16 +62,76 @@ impl LanguageResolver for PuppetResolver {
             return None;
         }
 
+        // Bare-name lookup with synthetic-symbol preference. Puppet stdlib
+        // and core resource types are synthesised under `ext:puppet-stdlib:`
+        // and `ext:puppet-forge:` paths; binding to those gives a real
+        // resolved edge. Run BEFORE the forge-module shortcut so a bare
+        // name like `concat` (which is both a forge module *and* a stdlib
+        // function) binds to the function symbol instead of being misrouted
+        // to external classification with no symbol attached.
+        //
+        // Also case-insensitive: Puppet defined-type references capitalize
+        // (`Myfile[$x]`) while the `define myfile($p)` declaration is
+        // lowercase. Without folding, every TypeRef to a same-project
+        // defined type stays unresolved.
+        if !target.contains("::") {
+            let target_lower = target.to_ascii_lowercase();
+            let mut synthetic_match = None;
+            let mut internal_match = None;
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                if sym.file_path.starts_with("ext:") {
+                    synthetic_match = Some(sym);
+                    break;
+                } else if internal_match.is_none() {
+                    internal_match = Some(sym);
+                }
+            }
+            if synthetic_match.is_none() && internal_match.is_none() && **target != target_lower {
+                for sym in lookup.by_name(&target_lower) {
+                    if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                        continue;
+                    }
+                    if sym.file_path.starts_with("ext:") {
+                        synthetic_match = Some(sym);
+                        break;
+                    } else if internal_match.is_none() {
+                        internal_match = Some(sym);
+                    }
+                }
+            }
+            if let Some(sym) = synthetic_match.or(internal_match) {
+                let strategy = if sym.file_path.starts_with("ext:") {
+                    "puppet_synthetic_global"
+                } else {
+                    "puppet_internal_global"
+                };
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: if strategy == "puppet_synthetic_global" { 0.95 } else { 0.9 },
+                    strategy,
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
+        // Forge module references (qualified `<module>::<class>`) are
+        // external — skip further index lookup. Plain bare names already
+        // had their chance via the synthetic lookup above.
+        if target.contains("::") {
+            if let Some(prefix) = target.split("::").next() {
+                let bare = prefix.strip_prefix('$').unwrap_or(prefix);
+                if predicates::is_forge_module(bare) {
+                    return None;
+                }
+            }
+        }
+
         // Built-in Puppet resource types never live in the project index.
         if predicates::is_puppet_builtin(target) {
             return None;
-        }
-
-        // Forge module references are external — skip index lookup.
-        if let Some(prefix) = target.split("::").next() {
-            if predicates::is_forge_module(prefix) {
-                return None;
-            }
         }
 
         // For qualified names with `::`, the extractor stores the full name as
@@ -129,22 +189,59 @@ impl LanguageResolver for PuppetResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        // Forge module: first `::` segment is a known forge module prefix.
-        if let Some(prefix) = target.split("::").next() {
-            if predicates::is_forge_module(prefix) {
-                return Some(format!("puppet_forge::{prefix}"));
-            }
-        }
-
         // Puppet built-in global variables: `$facts`, `$trusted`, `$server_facts`,
         // etc. are always available without declaration.
         if is_puppet_global_var(target) {
             return Some("puppet-stdlib".to_string());
         }
 
+        // Any `<prefix>::<rest>` reference that reached infer_external_namespace
+        // (i.e. resolve already failed to find a project symbol for it) belongs
+        // to a module Puppet would have auto-loaded from the module path. Classify
+        // it as external under the prefix's namespace — the prefix is the module
+        // name in every real Puppet codebase. Forge prefixes get their own bucket;
+        // unknown prefixes share `puppet_forge::<prefix>` so cross-project
+        // dashboards can still group them.
+        if let Some(prefix) = target.split("::").next() {
+            // Strip a leading `$` for variable refs like `$mysql::server::opt` —
+            // the prefix is `mysql`, the rest is a class-scoped variable.
+            let bare_prefix = prefix.strip_prefix('$').unwrap_or(prefix);
+            if !bare_prefix.is_empty()
+                && bare_prefix.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+                && target.contains("::")
+            {
+                if predicates::is_forge_module(bare_prefix) {
+                    return Some(format!("puppet_forge::{bare_prefix}"));
+                }
+                return Some(format!("puppet_module::{bare_prefix}"));
+            }
+        }
+
         // Built-in resource types and functions.
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_puppet_builtin)
-            .map(|_| "puppet-stdlib".to_string())
+        if let Some(ns) = engine::infer_external_common(
+            file_ctx,
+            ref_ctx,
+            project_ctx,
+            predicates::is_puppet_builtin,
+        ) {
+            return Some(ns);
+        }
+
+        // Bare-name fall-through: Puppet auto-loads classes, defined types,
+        // and functions from the module path. A reference that reached this
+        // point exhausted resolve()'s same-file, synthetic, qualified, and
+        // global lookups — Puppet's loader would have searched the module
+        // path next, so classify as external rather than leave unresolved.
+        // Skip variables (start with `$`) since those genuinely indicate a
+        // missing local binding the maintainer should see.
+        if !target.is_empty()
+            && !target.starts_with('$')
+            && ref_ctx.extracted_ref.kind != EdgeKind::Imports
+            && target.chars().next().map(|c| c.is_ascii_alphabetic()).unwrap_or(false)
+        {
+            return Some("puppet_module::external".to_string());
+        }
+        None
     }
 }
 
@@ -171,6 +268,42 @@ fn is_puppet_global_var(name: &str) -> bool {
             | "caller_module_name"
             | "title"
             | "name"
+            // Top-level fact aliases that Puppet 4+ exposes alongside `$facts['<name>']`.
+            // Without them, every `$os.family` in modern manifests stays unresolved.
+            | "os"
+            | "kernel"
+            | "kernelrelease"
+            | "kernelversion"
+            | "operatingsystem"
+            | "operatingsystemrelease"
+            | "osfamily"
+            | "lsbdistid"
+            | "lsbdistdescription"
+            | "lsbdistrelease"
+            | "lsbdistcodename"
+            | "architecture"
+            | "hardwaremodel"
+            | "processor0"
+            | "processorcount"
+            | "memorysize"
+            | "memorytotal"
+            | "fqdn"
+            | "hostname"
+            | "domain"
+            | "ipaddress"
+            | "ipaddress6"
+            | "macaddress"
+            | "interfaces"
+            | "networking"
+            | "path"
+            | "pathseparator"
+            | "puppetversion"
+            | "rubyversion"
+            | "rubysitedir"
+            | "id"
+            | "uptime"
+            | "uptime_days"
+            | "timezone"
     )
 }
 

@@ -262,6 +262,11 @@ fn dispatch_node(
         "include_statement" => extract_include_or_require(node, src, refs, parent_index),
         "require_statement" => extract_include_or_require(node, src, refs, parent_index),
         "function_call" => extract_function_call(node, src, refs, parent_index),
+        // Top-level `$var = expr` outside any class/define/function scope —
+        // Puppet manifests like `init.pp` and test fixtures put assignments
+        // at file scope. Extract them as Variable symbols so subsequent
+        // `$var` references in the same file resolve.
+        "assignment" => extract_top_level_assignment(node, src, symbols, parent_index),
         _ => {
             // Recurse into block-like containers.
             let mut cursor = node.walk();
@@ -270,6 +275,30 @@ fn dispatch_node(
             }
         }
     }
+}
+
+fn extract_top_level_assignment(
+    node: &Node,
+    src: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+    parent_index: Option<usize>,
+) {
+    let Some(first) = node.child(0) else { return };
+    if first.kind() != "variable" {
+        return;
+    }
+    let name = node_text(first, src);
+    if name.is_empty() {
+        return;
+    }
+    symbols.push(make_symbol(
+        name.clone(),
+        name,
+        SymbolKind::Variable,
+        node,
+        Some("$<top-level> = ...".to_string()),
+        parent_index,
+    ));
 }
 
 // ---------------------------------------------------------------------------

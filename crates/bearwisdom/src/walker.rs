@@ -47,8 +47,61 @@ pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
 /// Returns `None` for paths we don't support so the caller can skip the file.
 /// Delegates to `bearwisdom-profile` for all detection logic, preserving
 /// the `Option<&'static str>` return type expected by callers.
+///
+/// Special case: `.pp` is a shared extension between Puppet manifests and
+/// Free Pascal source files. The profile matcher returns Puppet by default;
+/// we override to Pascal when the file head shows clear Pascal markers
+/// (`program`, `unit`, `library`, `{$mode`, etc.).
 pub fn detect_language(path: &Path) -> Option<&'static str> {
-    profile_detect_language(path).map(|desc| desc.id)
+    let lang = profile_detect_language(path).map(|desc| desc.id);
+    if lang == Some("puppet") && is_likely_pascal(path) {
+        return Some("pascal");
+    }
+    lang
+}
+
+/// Read the first 512 bytes of a `.pp` file and look for Pascal-source
+/// markers. Catches `program`, `unit`, `library`, `{$mode ...}`, and the
+/// `(* ... *)` block-comment header style; Puppet manifests use `class`,
+/// `define`, `node`, `include`, `$var = ...` instead.
+fn is_likely_pascal(path: &Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    use std::io::Read;
+    let mut head = [0u8; 512];
+    let n = match (&file).take(512).read(&mut head) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    let text = String::from_utf8_lossy(&head[..n]);
+    // Strip leading whitespace/comments aggressively.
+    let mut t = text.as_ref();
+    loop {
+        let trimmed = t.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("//") {
+            t = rest.split_once('\n').map(|(_, r)| r).unwrap_or("");
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("(*") {
+            t = rest.split_once("*)").map(|(_, r)| r).unwrap_or("");
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix('{') {
+            // Pascal `{...}` block comment — skip past matching `}`.
+            t = rest.split_once('}').map(|(_, r)| r).unwrap_or("");
+            continue;
+        }
+        break;
+    }
+    let head_lower = t.trim_start().to_ascii_lowercase();
+    head_lower.starts_with("program ")
+        || head_lower.starts_with("unit ")
+        || head_lower.starts_with("library ")
+        || head_lower.starts_with("uses ")
+        || head_lower.starts_with("interface\n")
+        || head_lower.starts_with("interface\r\n")
+        || head_lower.contains("{$mode ")
+        || head_lower.contains("{$mode}")
+        || head_lower.contains("{$mode:")
 }
 
 // ---------------------------------------------------------------------------
