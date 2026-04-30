@@ -269,13 +269,15 @@ fn resolve_same_file_underscore_space_equivalence() {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn library_import_keyword_not_resolved() {
+fn library_import_keyword_not_resolved_to_project_symbol() {
     // `SeleniumLibrary` is a Library import — `Open Browser` should not resolve
-    // to any project symbol even if a symbol named "Open Browser" exists.
+    // to a project-internal symbol even if one exists with the same name.
+    // In production, `Open Browser` resolves to the robot-seleniumlibrary synthetic.
+    // In this unit test, no synthetics are in the index, so we only check the
+    // non-resolution against the project-internal symbol.
     let resource = make_file(
         "lib/keywords.robot",
         "robot",
-        // Simulate a project file that accidentally has the same name.
         vec![make_sym("Open Browser", SymbolKind::Function)],
         vec![],
     );
@@ -288,9 +290,7 @@ fn library_import_keyword_not_resolved() {
             make_ref_plain(0, "Open Browser"),
         ],
     );
-    // For just the first ref (import), resolve returns None.
-    // For the second ref (call), it should NOT resolve to the project symbol.
-    let (index, _) = build_index(&[&resource, &caller]);
+    let (index, id_map) = build_index(&[&resource, &caller]);
     let resolver = RobotResolver;
     let file_ctx = resolver.build_file_context(&caller, None);
 
@@ -302,11 +302,14 @@ fn library_import_keyword_not_resolved() {
         scope_chain: vec![],
     file_package_id: None,
     };
-    // `Open Browser` is a known BuiltIn keyword — should return None from resolve.
+    // The qualified-library guard at step 1 fires (SeleniumLibrary is a library import)
+    // and returns None without reaching the project-symbol lookup.
     let res = resolver.resolve(&file_ctx, &ref_ctx, &index);
+    let project_sym_id = sym_id(&id_map, "lib/keywords.robot", "Open Browser");
+    let resolves_to_project = res.as_ref().map_or(false, |r| r.target_symbol_id == project_sym_id);
     assert!(
-        res.is_none(),
-        "BuiltIn `Open Browser` should not resolve to project symbol; got: {res:?}"
+        !resolves_to_project,
+        "Open Browser must not resolve to the project-internal symbol; got: {res:?}"
     );
 }
 
@@ -611,18 +614,25 @@ fn qualified_library_keyword_external_namespace() {
 }
 
 #[test]
-fn builtin_keyword_classified_external() {
-    // `Log` is a BuiltIn keyword — should be classified as external.
+fn builtin_keyword_resolves_to_none_without_synthetics() {
+    // In production, `Log` resolves to the robot-builtin synthetic symbol.
+    // In this unit test, the SymbolIndex has no synthetic files, so resolve
+    // returns None and infer_external_namespace also returns None (no
+    // is_robot_builtin shortcut any more — that was the predicate-stuffing
+    // smell being fixed). The correct external classification happens via the
+    // resolved synthetic symbol's `origin='external'` in the indexer.
     let file = make_file(
         "tests/log.robot",
         "robot",
         vec![make_sym("My Test", SymbolKind::Test)],
         vec![make_ref_plain(0, "Log")],
     );
-    let ns = infer_ns_first_ref(&file, &[&file]);
-    assert_eq!(
-        ns.as_deref(),
-        Some("robot"),
-        "BuiltIn keyword `Log` should be classified as robot external"
+    let res = resolve_first_ref(&file, &[&file]);
+    // Without synthetics in the test index, the resolver correctly returns None.
+    // infer_external_namespace also returns None — the external tag comes from
+    // the synthetic symbol's origin in production.
+    assert!(
+        res.is_none(),
+        "without synthetics in the test index, Log returns None from resolve"
     );
 }

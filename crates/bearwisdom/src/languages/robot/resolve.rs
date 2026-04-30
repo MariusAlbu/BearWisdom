@@ -242,43 +242,61 @@ impl LanguageResolver for RobotResolver {
             }
         }
 
-        // Robot BuiltIn / SeleniumLibrary keywords that were not shadowed by project code
-        // are external — return None here so infer_external_namespace classifies them.
-        if predicates::is_robot_builtin(target) {
-            return None;
-        }
-
         // Step 5: Global cross-file normalized lookup.
-        // Scan all files for a keyword whose normalized name matches.
-        // Only emit at slightly reduced confidence since it's not import-scoped.
-        let by_name = lookup.by_name(target);
-        for sym in by_name {
-            if sym.kind == SymbolKind::Function.as_str()
-                && predicates::normalize_robot_name(&sym.name) == normalized_target
-            {
+        // BuiltIn / stdlib / SeleniumLibrary / Browser keywords resolve here via
+        // synthetic symbols populated by the robot_*_synthetics ecosystems.
+        //
+        // Scoping rule: only bind to a project-internal symbol (non-ext: path) when
+        // the file has no library imports — i.e., the project is purely resource-based.
+        // When library imports are present, non-synthetic global matches are skipped to
+        // prevent coincidentally-named project keywords from capturing library keyword refs.
+        let has_library_imports = file_ctx.imports.iter().any(|imp| {
+            imp.module_path.as_deref().map_or(true, |p| {
+                !p.ends_with(".robot") && !p.ends_with(".resource")
+            })
+        });
+
+        // Two-pass global lookup: prefer synthetic symbols (ext: paths); fall back to
+        // internal symbols only when no library imports are active in the file.
+        let pick_from = |syms: &[SymbolInfo], confidence: f64, strategy: &'static str| -> Option<Resolution> {
+            let synth = syms.iter().find(|s| {
+                s.kind == SymbolKind::Function.as_str()
+                    && predicates::normalize_robot_name(&s.name) == normalized_target
+                    && s.file_path.starts_with("ext:")
+            });
+            if let Some(sym) = synth {
                 return Some(Resolution {
                     target_symbol_id: sym.id,
-                    confidence: 0.90,
-                    strategy: "robot_global_name",
+                    confidence,
+                    strategy,
                     resolved_yield_type: None,
                 });
             }
+            if !has_library_imports {
+                let internal = syms.iter().find(|s| {
+                    s.kind == SymbolKind::Function.as_str()
+                        && predicates::normalize_robot_name(&s.name) == normalized_target
+                });
+                if let Some(sym) = internal {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence,
+                        strategy,
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+            None
+        };
+
+        if let Some(res) = pick_from(lookup.by_name(target), 0.90_f64, "robot_global_name") {
+            return Some(res);
         }
         // Also try normalized form lookup — handles `click_element` matching `Click Element`.
         let normalized_snake = normalized_target.replace('_', " ");
         if normalized_snake != target.to_ascii_lowercase() {
-            let by_snake = lookup.by_name(&normalized_snake);
-            for sym in by_snake {
-                if sym.kind == SymbolKind::Function.as_str()
-                    && predicates::normalize_robot_name(&sym.name) == normalized_target
-                {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 0.85,
-                        strategy: "robot_global_normalized",
-                        resolved_yield_type: None,
-                    });
-                }
+            if let Some(res) = pick_from(lookup.by_name(&normalized_snake), 0.85_f64, "robot_global_normalized") {
+                return Some(res);
             }
         }
 
@@ -320,11 +338,6 @@ impl LanguageResolver for RobotResolver {
 
         // Variable references that weren't resolved are external (env vars, CLI vars, etc.).
         if is_variable_ref(target) {
-            return Some("robot".to_string());
-        }
-
-        // Known BuiltIn keywords.
-        if predicates::is_robot_builtin(target) {
             return Some("robot".to_string());
         }
 
