@@ -36,6 +36,14 @@ impl LanguagePlugin for JavascriptPlugin {
 
     fn extract(&self, source: &str, file_path: &str, lang_id: &str) -> ExtractionResult {
         let _ = lang_id;
+        // Vendored library bundles (jQuery, typeahead.js, generated theme
+        // builds, etc.) produce tens of thousands of unresolved refs that
+        // aren't first-party code. Mirrors the HTML auto-generated docs
+        // skip in `languages::html::extract`. See `looks_vendored_bundle`
+        // for the detection signals.
+        if extract::looks_vendored_bundle(source, file_path) {
+            return ExtractionResult::empty();
+        }
         let mut result = extract::extract(source);
         crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
         crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);

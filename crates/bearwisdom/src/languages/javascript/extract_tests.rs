@@ -890,3 +890,70 @@ Registry.prototype.count = 0;
             "expected no Registry.count (number literal is not a method)"
         );
     }
+
+    // ── looks_vendored_bundle predicate ──────────────────────────────────
+
+    #[test]
+    fn vendored_bundle_min_js_extension() {
+        let src = "function foo() { return 1; }";
+        assert!(extract::looks_vendored_bundle(src, "vendor/jquery.min.js"));
+        assert!(extract::looks_vendored_bundle(src, "Some/Path/lib.min.mjs"));
+        assert!(extract::looks_vendored_bundle(src, "x.min.cjs"));
+        assert!(extract::looks_vendored_bundle(src, "build/app.bundle.js"));
+        // case-insensitive: handles `.MIN.JS` from Windows-mounted repos
+        assert!(extract::looks_vendored_bundle(src, "VENDOR/JQUERY.MIN.JS"));
+    }
+
+    #[test]
+    fn vendored_bundle_bang_comment_header() {
+        // Standard `/*!` preserve-through-minification license header
+        // — used by jQuery, typeahead.js, lodash, RxJS, etc.
+        let jquery = "/*! jQuery v3.7.1 | (c) OpenJS Foundation */\nvar a=1;\n";
+        assert!(extract::looks_vendored_bundle(jquery, "src/myfile.js"));
+
+        let typeahead = "/*!\n * typeahead.js 1.3.3\n */\n\n(function(root, factory) {})";
+        assert!(extract::looks_vendored_bundle(typeahead, "src/myfile.js"));
+
+        // Whitespace before the marker is tolerated.
+        let leading_ws = "\n\n  /*! Library v1.0 */\nvar x=1;";
+        assert!(extract::looks_vendored_bundle(leading_ws, "src/myfile.js"));
+    }
+
+    #[test]
+    fn vendored_bundle_long_line_threshold() {
+        // 6 000-char single line — typical of collapsed-IIFE minified
+        // bundles without `/*!` headers (e.g. Webpack theme builds).
+        let long_line = "x".repeat(6_000);
+        let src = format!("function foo() {{ return 1; }}\n{long_line}\nmore();");
+        assert!(extract::looks_vendored_bundle(&src, "build/theme.js"));
+    }
+
+    #[test]
+    fn vendored_bundle_normal_code_passes() {
+        // Real first-party JS — moderate line lengths, no `/*!` header,
+        // ordinary file path. Must NOT be flagged.
+        let src = r#"
+import { describe, it, expect } from 'vitest';
+import { someHelper } from './helpers.js';
+
+describe('Suite', () => {
+    it('does the thing', async () => {
+        const result = await someHelper({ a: 1, b: 2, c: 3, d: 4 });
+        expect(result).toEqual({ ok: true, value: 'hello' });
+    });
+});
+"#;
+        assert!(!extract::looks_vendored_bundle(src, "test/suite.test.js"));
+        assert!(!extract::looks_vendored_bundle(src, "src/feature.js"));
+    }
+
+    #[test]
+    fn vendored_bundle_block_comment_not_bang_passes() {
+        // `/**` JSDoc / `/*` ordinary block comment must NOT trigger;
+        // only `/*!` is the vendored-library convention.
+        let jsdoc = "/**\n * Internal helper.\n */\nexport function helper() {}";
+        assert!(!extract::looks_vendored_bundle(jsdoc, "src/helper.js"));
+
+        let block = "/* Internal note */\nexport const X = 1;";
+        assert!(!extract::looks_vendored_bundle(block, "src/x.js"));
+    }

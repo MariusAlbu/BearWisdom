@@ -27,6 +27,47 @@ use tree_sitter::{Node, Parser};
 // Public entry point
 // ---------------------------------------------------------------------------
 
+/// Detect minified or vendored library bundles that contribute massive
+/// noise to the unresolved-refs metric without representing first-party
+/// code (jQuery, typeahead.js, lodash, RxJS, generated theme bundles…).
+///
+/// Three signals, any one of which is sufficient:
+///   1. Path ends in `.min.js` / `.min.mjs` / `.min.cjs` / `.bundle.js` —
+///      the universal naming convention for minified bundles.
+///   2. Source begins with a `/*!` preserve-comment header — the standard
+///      Terser/UglifyJS marker that vendored libraries use to keep their
+///      license through minification. Essentially never appears in
+///      first-party application code.
+///   3. The longest line in the first 16 KB exceeds 5 000 chars — catches
+///      collapsed-IIFE bundles that lack the path or comment markers
+///      (e.g. theme builds emitted by Webpack/Vite without the `/*!`
+///      banner). The threshold is ~5× the longest line found in real
+///      first-party test files, so false positives are vanishingly rare.
+pub(super) fn looks_vendored_bundle(source: &str, file_path: &str) -> bool {
+    let path_lower = file_path.to_ascii_lowercase();
+    if path_lower.ends_with(".min.js")
+        || path_lower.ends_with(".min.mjs")
+        || path_lower.ends_with(".min.cjs")
+        || path_lower.ends_with(".bundle.js")
+    {
+        return true;
+    }
+
+    if source.trim_start().starts_with("/*!") {
+        return true;
+    }
+
+    let head_end = source.len().min(16 * 1024);
+    // Walk back to a char boundary so we never slice through a multi-byte
+    // UTF-8 codepoint.
+    let mut end = head_end;
+    while end > 0 && !source.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &source[..end];
+    head.lines().any(|l| l.len() > 5000)
+}
+
 /// Extract symbols and references from JavaScript (or JSX) source code.
 pub fn extract(source: &str) -> super::ExtractionResult {
     let language: tree_sitter::Language = tree_sitter_javascript::LANGUAGE.into();
