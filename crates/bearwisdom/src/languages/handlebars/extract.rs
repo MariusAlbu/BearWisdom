@@ -73,7 +73,10 @@ pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
                     // `{{> "partial-name"}}` (Mustache-style quoted form).
                     let raw = rest.trim().split_whitespace().next().unwrap_or("");
                     let name = raw.trim_matches('"').trim_matches('\'').to_string();
-                    if !name.is_empty() {
+                    // `@partial-block` is the Handlebars built-in placeholder
+                    // for the block content of a partial-block — not a real
+                    // partial reference, no file to resolve.
+                    if !name.is_empty() && name != "@partial-block" {
                         refs.push(ExtractedRef {
                             source_symbol_index: host_index,
                             target_name: name,
