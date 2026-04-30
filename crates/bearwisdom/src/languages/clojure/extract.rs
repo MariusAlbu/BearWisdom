@@ -238,10 +238,13 @@ fn walk_node(
         // for body values like `db/tx0`), emit a ref for it here.
         let name = sym_lit_name(node, src);
         // Skip keywords (:foo), anonymous fn args (%, %1, %2, %&), gensyms,
-        // and names bound in the current scope.
+        // logic variables (?x, ?e — core.logic / core.match pattern vars
+        // bound by the macro, never function calls), and names bound in the
+        // current scope.
         if !name.is_empty()
             && !name.starts_with(':')
             && !name.starts_with('%')
+            && !name.starts_with('?')
             && !is_local(node, src, &name, locals)
         {
             let ns = sym_lit_ns(node, src);
