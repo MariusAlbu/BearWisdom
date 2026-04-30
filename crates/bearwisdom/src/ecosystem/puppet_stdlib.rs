@@ -554,8 +554,15 @@ mod tests {
     #[test]
     fn synthesise_covers_all_builtins() {
         let files = synthesise_stdlib();
-        // One file per built-in type + one per built-in function.
-        assert_eq!(files.len(), BUILTIN_TYPES.len() + BUILTIN_FUNCTIONS.len());
+        // One file per *distinct* built-in name. BUILTIN_TYPES and
+        // BUILTIN_FUNCTIONS overlap on names that are both core Puppet
+        // built-ins and re-exported by puppetlabs-stdlib (`dig`, `merge`,
+        // …), so the synthesise loop dedups them.
+        let mut distinct: std::collections::HashSet<&'static str> =
+            std::collections::HashSet::new();
+        distinct.extend(BUILTIN_TYPES.iter().copied());
+        distinct.extend(BUILTIN_FUNCTIONS.iter().copied());
+        assert_eq!(files.len(), distinct.len());
     }
 
     #[test]

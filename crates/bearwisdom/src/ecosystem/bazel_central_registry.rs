@@ -1077,7 +1077,29 @@ http_archive(
         let has_repo_os = pf.symbols.iter().any(|s| s.qualified_name == "repository_ctx.os");
         assert!(has_repo_os, "repository_ctx.os not in ctx API");
 
-        let expected_count = CTX_MEMBERS.len() + REPOSITORY_CTX_MEMBERS.len();
+        // synth_ctx_api emits CTX_MEMBERS, REPOSITORY_CTX_MEMBERS once,
+        // a copy per MODULE_CTX_ALIASES (mctx/mrctx/module_ctx), then
+        // TARGET/RUNFILES/ARGS members, ARGS_LOCAL_ALIASES expansions,
+        // ATTR/CONFIG factories, PROVIDER/RESULT/TEST_RESULT members,
+        // and TOP_LEVEL_BUILTIN_RULES. Recompute and assert once so the
+        // test catches accidental drops without needing manual updates.
+        let args_alias_total: usize = ARGS_LOCAL_ALIASES
+            .iter()
+            .map(|(_, methods)| methods.len())
+            .sum();
+        let expected_count = CTX_MEMBERS.len()
+            + REPOSITORY_CTX_MEMBERS.len()
+            + MODULE_CTX_ALIASES.len() * REPOSITORY_CTX_MEMBERS.len()
+            + TARGET_MEMBERS.len()
+            + RUNFILES_MEMBERS.len()
+            + ARGS_MEMBERS.len()
+            + args_alias_total
+            + ATTR_FACTORIES.len()
+            + CONFIG_FACTORIES.len()
+            + PROVIDER_MEMBERS.len()
+            + RESULT_TYPE_MEMBERS.len()
+            + TEST_RESULT_MEMBERS.len()
+            + TOP_LEVEL_BUILTIN_RULES.len();
         assert_eq!(
             pf.symbols.len(), expected_count,
             "ctx API symbol count mismatch: expected {expected_count}, got {}",
