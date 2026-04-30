@@ -50,6 +50,15 @@ impl LanguagePlugin for HtmlPlugin {
         _file_path: &str,
         _lang_id: &str,
     ) -> Vec<EmbeddedRegion> {
+        // Generated HTML docs (Robot Framework reports, JavaDoc, pydoc)
+        // bundle full minified jQuery into <script> tags. Skipping host
+        // extraction without skipping embedded regions would still let
+        // the JS extractor walk those bundles and emit ~150 K symbols
+        // per docs file. The `looks_generated_html` predicate is shared
+        // with `extract::extract` for symmetric behaviour.
+        if extract::looks_generated_html(source) {
+            return Vec::new();
+        }
         crate::languages::common::extract_html_script_style_regions(source)
     }
 

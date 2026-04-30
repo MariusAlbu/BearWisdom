@@ -14,6 +14,18 @@ use crate::types::{
 use tree_sitter::{Node, Parser};
 
 pub fn extract(source: &str, file_path: &str) -> ExtractionResult {
+    // Auto-generated HTML files (Robot Framework reports, JavaDoc,
+    // pydoc, etc.) embed thousands of script-block calls into legacy
+    // libraries (jQuery `merge`, `pushStack`, `trigger`) and contribute
+    // tens of thousands of irresolvable refs that aren't first-party
+    // code. Detect the `<meta name="Generator" content="…">` marker
+    // these tools emit and skip extraction entirely. The first-party
+    // file-stem symbol is also dropped because navigating to a
+    // generated artifact has no value.
+    if looks_generated_html(source) {
+        return ExtractionResult::empty();
+    }
+
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
 
     let file_name = file_stem(file_path);
@@ -189,35 +201,40 @@ fn file_stem(file_path: &str) -> String {
     stem.to_string()
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn file_host_symbol_named_after_stem() {
-        let r = extract("<html></html>", "docs/index.html");
-        assert_eq!(r.symbols[0].name, "index");
-        assert_eq!(r.symbols[0].kind, SymbolKind::Class);
+/// Detect HTML files emitted by documentation/report generators.
+///
+/// These files embed thousands of script-block calls into bundled
+/// legacy libraries (jQuery, etc.) that contribute massive noise to
+/// the unresolved-refs metric without representing first-party code.
+/// We scan only the first ~16 KB to keep the check cheap; generator
+/// `<meta>` tags always live in the document head.
+///
+/// Public to the html module so `embedded_regions()` can also bail
+/// before extracting `<script>`/`<style>` content from generated docs.
+pub(super) fn looks_generated_html(source: &str) -> bool {
+    let head = &source.as_bytes()[..source.len().min(16 * 1024)];
+    let head_str = match std::str::from_utf8(head) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    // Common form: `<meta ... name="Generator" content="...">` (HTML 4)
+    // or `<meta name="generator" content="...">` (HTML 5). Capitalization
+    // of `name`/`content` and quote style vary; do a small set of
+    // tolerant matches rather than parsing.
+    let lower = head_str.to_ascii_lowercase();
+    if !lower.contains("<meta") {
+        return false;
     }
-
-    #[test]
-    fn element_id_becomes_anchor_symbol() {
-        let src = r#"<html><body><section id="intro">Hi</section><div id="footer"></div></body></html>"#;
-        let r = extract(src, "page.html");
-        let ids: Vec<&str> = r
-            .symbols
-            .iter()
-            .skip(1)
-            .map(|s| s.name.as_str())
-            .collect();
-        assert!(ids.contains(&"intro"));
-        assert!(ids.contains(&"footer"));
-    }
-
-    #[test]
-    fn element_without_id_not_anchored() {
-        let src = "<html><div>text</div></html>";
-        let r = extract(src, "page.html");
-        assert_eq!(r.symbols.len(), 1);
-    }
+    // Collapse whitespace runs so attribute order doesn't matter.
+    let collapsed: String = lower
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
+    collapsed.contains("name=\"generator\"")
+        || collapsed.contains("name='generator'")
+        || collapsed.contains("name=generator")
 }
+
+#[cfg(test)]
+#[path = "extract_tests.rs"]
+mod tests;
