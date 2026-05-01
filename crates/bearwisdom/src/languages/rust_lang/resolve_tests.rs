@@ -1,3 +1,4 @@
+use super::predicates;
 use super::resolve::RustResolver;
 use crate::ecosystem::manifest::{ManifestData, ManifestKind};
 use crate::indexer::project_context::ProjectContext;
@@ -172,6 +173,43 @@ fn bare_crate_path_internal_not_attributed_external() {
 
     let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, Some(&ctx));
     assert!(ns.is_none(), "crate:: paths should not be classified external");
+}
+
+#[test]
+fn third_party_method_names_not_in_builtin_set() {
+    // Diesel ORM DSL methods, log/anyhow macros, wasm-bindgen / napi-rs
+    // ecosystem types must NOT short-circuit through `is_rust_builtin` —
+    // they collide with common project method/type names. External symbols
+    // are indexed via the cargo externals walker; the predicate is not
+    // the right place to recognize them.
+    let third_party = [
+        // Diesel
+        "select", "left_join", "inner_join", "load", "execute", "get_result",
+        "gt", "lt",
+        // log / tracing / anyhow macros
+        "log", "trace", "info", "error", "bail", "ensure",
+        // wasm-bindgen
+        "wasm_bindgen", "JsValue", "JsError",
+        // napi-rs
+        "JsObject", "JsNumber", "JsString", "JsBuffer",
+    ];
+    for name in third_party {
+        assert!(
+            !predicates::is_rust_builtin(name),
+            "{name:?} should not be classified as a rust builtin",
+        );
+    }
+}
+
+#[test]
+fn stdlib_macros_and_prelude_still_in_builtin_set() {
+    // Sanity: actual stdlib macros + prelude items still match.
+    for name in &["println", "vec", "panic", "Some", "None", "Ok", "Err"] {
+        assert!(
+            predicates::is_rust_builtin(name),
+            "{name:?} must remain a rust builtin",
+        );
+    }
 }
 
 #[test]
