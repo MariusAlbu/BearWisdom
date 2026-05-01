@@ -27,6 +27,15 @@ pub struct PackageStats {
     pub file_count: u32,
     pub symbol_count: u32,
     pub edge_count: u32,
+    /// Refs originating in this package that resolved with confidence ≥ 0.5.
+    /// This is the strong-resolution count; `edge_count` above includes all
+    /// edges (low-confidence + flow + LSP-imported).
+    pub resolved_refs: u32,
+    /// Refs originating in this package that fell into `unresolved_refs`.
+    pub unresolved_refs: u32,
+    /// Resolution rate: `resolved_refs / (resolved_refs + unresolved_refs)`,
+    /// `None` when the package emitted zero refs.
+    pub resolved_pct: Option<f32>,
 }
 
 /// Workspace-level overview: per-package breakdown plus cross-package coupling.
@@ -103,7 +112,18 @@ pub fn list_packages(db: &Database) -> QueryResult<Vec<PackageStats>> {
                      JOIN symbols s ON s.id = e.source_id
                      JOIN files   f ON f.id = s.file_id
                      WHERE f.package_id = p.id)
-                        AS edge_count
+                        AS edge_count,
+                    (SELECT COUNT(*) FROM edges e
+                     JOIN symbols s ON s.id = e.source_id
+                     JOIN files   f ON f.id = s.file_id
+                     WHERE f.package_id = p.id
+                       AND e.confidence >= 0.5)
+                        AS resolved_refs,
+                    (SELECT COUNT(*) FROM unresolved_refs u
+                     JOIN symbols s ON s.id = u.source_id
+                     JOIN files   f ON f.id = s.file_id
+                     WHERE f.package_id = p.id)
+                        AS unresolved_refs
              FROM packages p
              ORDER BY file_count DESC, p.name",
         )
@@ -111,13 +131,24 @@ pub fn list_packages(db: &Database) -> QueryResult<Vec<PackageStats>> {
 
     let rows = stmt
         .query_map([], |row| {
+            let resolved: u32 = row.get::<_, u32>(6).unwrap_or(0);
+            let unresolved: u32 = row.get::<_, u32>(7).unwrap_or(0);
+            let total = resolved + unresolved;
+            let resolved_pct = if total > 0 {
+                Some(resolved as f32 / total as f32)
+            } else {
+                None
+            };
             Ok(PackageStats {
-                name:         row.get(0)?,
-                path:         row.get(1)?,
-                kind:         row.get(2)?,
-                file_count:   row.get::<_, u32>(3).unwrap_or(0),
-                symbol_count: row.get::<_, u32>(4).unwrap_or(0),
-                edge_count:   row.get::<_, u32>(5).unwrap_or(0),
+                name:            row.get(0)?,
+                path:            row.get(1)?,
+                kind:            row.get(2)?,
+                file_count:      row.get::<_, u32>(3).unwrap_or(0),
+                symbol_count:    row.get::<_, u32>(4).unwrap_or(0),
+                edge_count:      row.get::<_, u32>(5).unwrap_or(0),
+                resolved_refs:   resolved,
+                unresolved_refs: unresolved,
+                resolved_pct,
             })
         })
         .context("Failed to execute list_packages query")?;

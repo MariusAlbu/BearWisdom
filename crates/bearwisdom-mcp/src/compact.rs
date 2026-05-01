@@ -583,10 +583,14 @@ pub fn packages(results: &[PackageStats]) -> String {
     out.push_str("#packages\n");
     for p in results {
         let kind = p.kind.as_deref().unwrap_or("-");
+        let resolution = match p.resolved_pct {
+            Some(pct) => format!("|resolved:{:.1}%({}/{})", pct * 100.0, p.resolved_refs, p.resolved_refs + p.unresolved_refs),
+            None => String::new(),
+        };
         let _ = writeln!(
             out,
-            "{}|{}|{}|{}files|{}sym|{}edges",
-            p.name, p.path, kind, p.file_count, p.symbol_count, p.edge_count
+            "{}|{}|{}|{}files|{}sym|{}edges{}",
+            p.name, p.path, kind, p.file_count, p.symbol_count, p.edge_count, resolution
         );
     }
     out
