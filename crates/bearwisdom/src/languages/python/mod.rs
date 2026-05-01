@@ -22,6 +22,10 @@ mod extract_tests;
 #[path = "coverage_tests.rs"]
 mod coverage_tests;
 
+#[cfg(test)]
+#[path = "predicates_tests.rs"]
+mod predicates_tests;
+
 use crate::ecosystem::manifest::ManifestKind;
 use crate::languages::LanguagePlugin;
 use crate::types::{EmbeddedRegion, ExtractionResult};

@@ -307,12 +307,5 @@ pub(super) fn is_python_builtin(name: &str) -> bool {
             | "assert_called_once"
             | "assert_called_with"
             | "assert_not_called"
-            // Django model convenience methods
-            | "refresh_from_db"
-            | "save"
-            | "delete"
-            | "get_absolute_url"
-            | "full_clean"
-            | "clean"
     )
 }
