@@ -188,6 +188,12 @@ pub fn symbol_info(db: &Database, query: &str, opts: &super::QueryOptions) -> Qu
         });
     }
 
+    // Optionally collapse `struct Foo` + `impl Foo` (and similar splits)
+    // into a single merged row per `qualified_name`.
+    if opts.merge_implementations && details.len() > 1 {
+        details = merge_by_qualified_name(details);
+    }
+
     // Store in cache.
     if let Some(ref cache) = db.query_cache {
         if let Ok(json) = serde_json::to_string(&details) {
@@ -220,6 +226,62 @@ pub fn symbol_info_json(
     let result = symbol_info(db, query, opts)?;
     serde_json::to_string(&result)
         .map_err(|e| super::QueryError::Internal(anyhow::anyhow!("serialization error: {e}")))
+}
+
+/// Group `details` by `qualified_name` and collapse each group into one row.
+///
+/// Picks the canonical "container" row (struct / class / trait / interface /
+/// enum) when present, sums edge counts across the group, unions children.
+/// Used by `symbol_info` to flatten `struct Foo` + multiple `impl Foo` blocks
+/// into a single result row.
+fn merge_by_qualified_name(details: Vec<SymbolDetail>) -> Vec<SymbolDetail> {
+    use std::collections::HashMap;
+
+    // Stable insertion order via Vec<(qname, group)> rather than HashMap iter.
+    let mut order: Vec<String> = Vec::new();
+    let mut groups: HashMap<String, Vec<SymbolDetail>> = HashMap::new();
+    for d in details {
+        if !groups.contains_key(&d.qualified_name) {
+            order.push(d.qualified_name.clone());
+        }
+        groups.entry(d.qualified_name.clone()).or_default().push(d);
+    }
+
+    let mut out = Vec::with_capacity(order.len());
+    for qname in order {
+        let mut group = groups.remove(&qname).unwrap();
+        if group.len() == 1 {
+            out.push(group.into_iter().next().unwrap());
+            continue;
+        }
+        // Pick canonical kind first; fall back to the earliest-line row.
+        group.sort_by_key(|d| (canonical_kind_priority(&d.kind), d.start_line));
+        let mut canonical = group.remove(0);
+        for other in group {
+            canonical.incoming_edge_count =
+                canonical.incoming_edge_count.saturating_add(other.incoming_edge_count);
+            canonical.outgoing_edge_count =
+                canonical.outgoing_edge_count.saturating_add(other.outgoing_edge_count);
+            canonical.children.extend(other.children);
+            // Doc / signature on a struct row is preferred; if the canonical
+            // didn't have them but a sibling did, fold them in.
+            if canonical.signature.is_none() && other.signature.is_some() {
+                canonical.signature = other.signature;
+            }
+            if canonical.doc_comment.is_none() && other.doc_comment.is_some() {
+                canonical.doc_comment = other.doc_comment;
+            }
+        }
+        out.push(canonical);
+    }
+    out
+}
+
+fn canonical_kind_priority(kind: &str) -> u8 {
+    match kind {
+        "class" | "struct" | "trait" | "interface" | "enum" | "type_alias" => 0,
+        _ => 1,
+    }
 }
 
 // ---------------------------------------------------------------------------

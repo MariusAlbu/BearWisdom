@@ -44,6 +44,13 @@ pub struct QueryOptions {
     pub include_children: bool,
     /// Truncate grep line content to this many bytes.  0 = unlimited.
     pub max_line_length: u32,
+    /// In `symbol_info`, collapse multiple rows that share a `qualified_name`
+    /// (e.g. a Rust `struct Foo` plus its `impl Foo` blocks) into a single
+    /// merged result. Edge counts are summed and children are unioned.
+    /// Defaults to `true` because the merged view matches what callers
+    /// usually want; set to `false` to preserve the historical multi-row
+    /// shape.
+    pub merge_implementations: bool,
 }
 
 impl Default for QueryOptions {
@@ -53,6 +60,7 @@ impl Default for QueryOptions {
             include_doc: false,
             include_children: false,
             max_line_length: 120,
+            merge_implementations: true,
         }
     }
 }
@@ -65,6 +73,7 @@ impl QueryOptions {
             include_doc: true,
             include_children: true,
             max_line_length: 0,
+            merge_implementations: true,
         }
     }
 }

@@ -93,3 +93,41 @@ fn symbol_info_returns_empty_for_unknown() {
     let result = symbol_info(&db, "NoSuchSymbol", &crate::query::QueryOptions::full()).unwrap();
     assert!(result.is_empty());
 }
+
+#[test]
+fn symbol_info_merges_struct_with_impl_blocks() {
+    // Simulates the Rust shape: `struct Foo` plus two `impl Foo {}` blocks
+    // that the extractor records as separate symbols sharing a qualified name.
+    let db = Database::open_in_memory().unwrap();
+    insert_symbol_full(&db, "a.rs", "Foo", "Foo", "struct", None, Some("struct Foo"), 1, 5);
+    insert_symbol_full(&db, "a.rs", "Foo", "Foo", "namespace", None, None, 10, 30);
+    insert_symbol_full(&db, "b.rs", "Foo", "Foo", "namespace", None, None, 1, 40);
+    insert_symbol_full(&db, "a.rs", "do_thing", "Foo.do_thing", "method", Some("Foo"), None, 15, 20);
+    insert_symbol_full(&db, "b.rs", "helper", "Foo.helper", "method", Some("Foo"), None, 5, 10);
+
+    let opts = crate::query::QueryOptions::full();
+    let info = symbol_info(&db, "Foo", &opts).unwrap();
+    assert_eq!(info.len(), 1, "merged result must be a single row, got {}", info.len());
+    let row = &info[0];
+    assert_eq!(row.kind, "struct", "canonical kind should be struct, got {}", row.kind);
+    assert_eq!(row.start_line, 1, "canonical row should be the struct line");
+    // Children unioned across all three rows: two methods, scope_path = "Foo".
+    let names: Vec<&str> = row.children.iter().map(|c| c.name.as_str()).collect();
+    assert!(names.contains(&"do_thing"));
+    assert!(names.contains(&"helper"));
+}
+
+#[test]
+fn symbol_info_split_mode_preserves_separate_rows() {
+    // Same fixture as above; with merge_implementations=false the multiple
+    // rows must come through as-is for callers that need each impl row.
+    let db = Database::open_in_memory().unwrap();
+    insert_symbol_full(&db, "a.rs", "Foo", "Foo", "struct", None, Some("struct Foo"), 1, 5);
+    insert_symbol_full(&db, "a.rs", "Foo", "Foo", "namespace", None, None, 10, 30);
+    insert_symbol_full(&db, "b.rs", "Foo", "Foo", "namespace", None, None, 1, 40);
+
+    let mut opts = crate::query::QueryOptions::full();
+    opts.merge_implementations = false;
+    let info = symbol_info(&db, "Foo", &opts).unwrap();
+    assert_eq!(info.len(), 3, "split mode should keep all three rows");
+}

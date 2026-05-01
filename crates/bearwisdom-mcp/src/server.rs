@@ -86,6 +86,11 @@ pub struct SymbolInfoParams {
     pub include_doc: Option<bool>,
     /// Include child symbols — methods of a class, etc. (default: false)
     pub include_children: Option<bool>,
+    /// Row consolidation. "merged" (default) collapses multiple rows that
+    /// share a qualified name (e.g. a Rust `struct Foo` plus its `impl Foo`
+    /// blocks) into one merged result. "split" keeps the historical multi-row
+    /// shape. Omit for the merged default.
+    pub mode: Option<String>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
 }
@@ -493,10 +498,12 @@ impl BearWisdomServer {
             if params.name.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
+            let merge = !matches!(params.mode.as_deref(), Some("split"));
             let opts = QueryOptions {
                 include_signature: params.include_signature.unwrap_or(false),
                 include_doc: params.include_doc.unwrap_or(false),
                 include_children: params.include_children.unwrap_or(false),
+                merge_implementations: merge,
                 ..QueryOptions::default()
             };
             if compact {
