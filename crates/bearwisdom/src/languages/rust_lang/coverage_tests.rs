@@ -355,6 +355,80 @@ fn coverage_macro_invocation_nested_in_body() {
     );
 }
 
+#[test]
+fn coverage_call_inside_assert_macro_emits_calls_edge() {
+    // The case that surfaced in the dogfooding session: a call inside
+    // `assert!(...)` (or any macro that takes an expression-like argument).
+    // Tree-sitter parses macro contents as a `token_tree`, opaque to the
+    // primary call_expression walker. The extractor re-parses the
+    // token-tree contents to surface nested calls.
+    let src = "fn t() { assert!(predicates::is_javascript_builtin(name)); }";
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"is_javascript_builtin"),
+        "expected Calls edge to is_javascript_builtin from inside assert!(...); got: {calls:?}",
+    );
+}
+
+#[test]
+fn coverage_call_inside_assert_eq_emits_both_args() {
+    // Multi-arg form: `assert_eq!(actual_call(), expected_call())` should
+    // produce edges for both inner calls.
+    let src = "fn t() { assert_eq!(compute_a(x), compute_b(y)); }";
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"compute_a"), "missing compute_a; got: {calls:?}");
+    assert!(calls.contains(&"compute_b"), "missing compute_b; got: {calls:?}");
+}
+
+#[test]
+fn coverage_macro_arg_scoped_path_call_records_module() {
+    // The call inside the macro is `foo::bar()` — the resolver needs the
+    // `foo` module hint to route the ref correctly. Verify the module
+    // segment lands on the ref.
+    let src = "fn t() { dbg!(my_mod::helper(value)); }";
+    let r = extract::extract(src);
+    let scoped_call = r
+        .refs
+        .iter()
+        .find(|r| r.kind == EdgeKind::Calls && r.target_name == "helper");
+    let Some(call) = scoped_call else {
+        panic!("expected Calls edge for `helper` from inside dbg!(...); refs: {:?}", r.refs);
+    };
+    assert_eq!(
+        call.module.as_deref(),
+        Some("my_mod"),
+        "expected module=my_mod, got {:?}",
+        call.module,
+    );
+}
+
+#[test]
+fn coverage_nested_calls_inside_macro_both_extracted() {
+    // Calls nested inside another call inside a macro: outer + inner both.
+    let src = "fn t() { assert!(outer(inner(x))); }";
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"outer"), "missing outer; got: {calls:?}");
+    assert!(calls.contains(&"inner"), "missing inner; got: {calls:?}");
+}
+
 // ---- struct_expression -----------------------------------------------------
 
 #[test]
