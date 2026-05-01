@@ -1717,6 +1717,25 @@ fn extract_types_from_conditions(v: &serde_json::Value) -> Option<String> {
 
 const REEXPORT_MAX_DEPTH: u32 = 3;
 
+/// Header-scan walker: yield ONLY the package's type-entry file and the
+/// in-package files reachable from it through relative re-exports. Used by
+/// `build_npm_symbol_index` to keep the symbol-index build cost bounded
+/// to per-dep entry traversal instead of the full source tree.
+///
+/// Returns empty when the package has no resolvable entry (rare — usually
+/// a side-effect-only package). The dep root still participates in the
+/// reachability loop via `resolve_import` and `resolve_symbol`, which
+/// fall back to scanning the tree on demand.
+fn walk_ts_dep_entry_only(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    let Some(entry) = resolve_package_entry_path(dep) else {
+        return Vec::new();
+    };
+    let mut out = Vec::new();
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    expand_reexports_into(dep, &entry, &mut out, &mut seen, 0);
+    out
+}
+
 fn expand_reexports_into(
     dep: &ExternalDepRoot,
     file: &Path,
@@ -1954,11 +1973,32 @@ pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, pack
 pub(crate) const NPM_GLOBALS_MODULE: &str = "__npm_globals__";
 
 pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLocationIndex {
-    // Gather every walked file + its owning package name so each parallel
-    // task is self-contained.
+    // Entry-only header scan: resolve each dep's type-entry file (via
+    // package.json `types`/`exports`/`main` ↔ `.d.ts` companion) and
+    // follow its relative re-exports up to REEXPORT_MAX_DEPTH. Files
+    // reachable only through deep import paths
+    // (e.g. `import x from 'rxjs/operators'`) stay OUT of the symbol
+    // index — `resolve_symbol`'s `find_files_declaring_type` fallback
+    // pulls them on-demand when the chain walker asks for a name that
+    // isn't indexed.
+    //
+    // Full-tree walks were the dominant cost of npm externals indexing:
+    // material-ui ships ~3 K declaration files, lodash/rxjs/three.js
+    // similar — almost all of them unreachable from the user's actual
+    // imports. KNOWN_GLOBAL_PACKAGES (test runners, @types with global
+    // declarations) bypass the entry restriction via the
+    // `demand_pre_pull` path which still walks them fully so ambient
+    // globals like `describe`/`it`/`expect` get indexed.
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
+    let always_full_walk: std::collections::HashSet<&'static str> =
+        KNOWN_GLOBAL_PACKAGES.iter().copied().collect();
     for dep in dep_roots {
-        for wf in walk_ts_external_root(dep) {
+        let walked = if always_full_walk.contains(dep.module_path.as_str()) {
+            walk_ts_external_root(dep)
+        } else {
+            walk_ts_dep_entry_only(dep)
+        };
+        for wf in walked {
             work.push((dep.module_path.clone(), wf));
         }
     }
@@ -3908,6 +3948,14 @@ declare global {
         let tmp = tempfile::TempDir::new().unwrap();
         let root = tmp.path().join("node_modules").join("synthetic-pkg");
         std::fs::create_dir_all(root.join("src")).unwrap();
+        // Real packages declare their entry in package.json — the entry-only
+        // walker resolves `types` → `src/index.d.ts`. Without this, the
+        // walker has no entry to start from.
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"synthetic-pkg","version":"1.0.0","types":"src/index.d.ts"}"#,
+        )
+        .unwrap();
         let index_dts = root.join("src").join("index.d.ts");
         std::fs::write(
             &index_dts,
@@ -3927,6 +3975,91 @@ declare global {
             Some(index_dts.as_path())
         );
         assert!(idx.locate("synthetic-pkg", "NotThere").is_none());
+    }
+
+    #[test]
+    fn build_index_returns_empty_when_package_has_no_entry() {
+        // Side-effect-only package: no package.json, no recognizable entry.
+        // Entry-only walker yields no files; the dep root still participates
+        // in resolve_symbol's on-demand pull when the chain walker asks.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("side-effect-only");
+        std::fs::create_dir_all(root.join("internal")).unwrap();
+        std::fs::write(
+            root.join("internal").join("hidden.d.ts"),
+            "export interface Hidden {}\n",
+        )
+        .unwrap();
+
+        let dep = mkdep(root, "side-effect-only");
+        let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+        assert!(
+            idx.locate("side-effect-only", "Hidden").is_none(),
+            "deep-only types stay out of entry-only index"
+        );
+    }
+
+    #[test]
+    fn build_index_follows_relative_reexports_from_entry() {
+        // Entry barrel re-exports from a sibling file. The walker should
+        // visit the barrel AND the sibling, registering each declared
+        // symbol against its definition file.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("barrel-pkg");
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"barrel-pkg","version":"1.0.0","types":"dist/index.d.ts"}"#,
+        )
+        .unwrap();
+        let entry = root.join("dist").join("index.d.ts");
+        std::fs::write(
+            &entry,
+            "export { Inner } from './inner';\n",
+        )
+        .unwrap();
+        let inner = root.join("dist").join("inner.d.ts");
+        std::fs::write(
+            &inner,
+            "export class Inner { method(): void {} }\n",
+        )
+        .unwrap();
+
+        let dep = mkdep(root, "barrel-pkg");
+        let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+        // Inner resolves through the re-export chain to its definition file.
+        assert_eq!(
+            idx.locate("barrel-pkg", "Inner"),
+            Some(inner.as_path()),
+            "Inner should map to its definition, not the barrel"
+        );
+    }
+
+    #[test]
+    fn build_index_full_walks_known_global_packages() {
+        // KNOWN_GLOBAL_PACKAGES (vitest, chai, ...) bypass the entry-only
+        // restriction so ambient `declare global { ... }` blocks anywhere
+        // in the package surface as indexed globals. Use `chai` as the
+        // representative because it's in KNOWN_GLOBAL_PACKAGES and the
+        // fixture file is small.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("node_modules").join("chai");
+        std::fs::create_dir_all(root.join("internal")).unwrap();
+        // No package.json `types` entry, no index.d.ts at root — only a
+        // deep file. Entry-only walker would skip it; the full walk keeps
+        // it indexable.
+        std::fs::write(
+            root.join("internal").join("expect.d.ts"),
+            "export function expect(value: unknown): unknown;\n",
+        )
+        .unwrap();
+
+        let dep = mkdep(root, "chai");
+        let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
+        assert!(
+            idx.locate("chai", "expect").is_some(),
+            "chai's `expect` must be indexed via the full-walk override"
+        );
     }
 
     #[test]
