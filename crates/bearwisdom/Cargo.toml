@@ -112,6 +112,8 @@ dotscope               = { workspace = true }
 # Erlang hex tarball extraction: outer POSIX tar + inner gzip + tar
 flate2                 = { workspace = true }
 tar                    = { workspace = true }
+# File-system watcher for the IndexService (auto-reindex on file change)
+notify                 = { workspace = true }
 
 # RSS / working-set sampling for per-phase memory instrumentation.
 # Windows-only: pulls GetProcessMemoryInfo via the Win32 PSAPI surface.

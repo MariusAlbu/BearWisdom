@@ -929,119 +929,57 @@ fn cmd_status(project_path: &str) -> Result<String> {
 // ---------------------------------------------------------------------------
 
 fn cmd_watch(project_path: &str, debounce_ms: u64) -> Result<String> {
-    use notify::{Config, RecommendedWatcher, RecursiveMode, Watcher, Event, EventKind};
-    use std::sync::mpsc;
-    use std::time::{Duration, Instant};
+    use std::time::Duration;
 
-    let root = PathBuf::from(project_path);
+    let root = PathBuf::from(project_path).canonicalize()
+        .unwrap_or_else(|_| PathBuf::from(project_path));
     let db_path = resolve_db_path(&root)?;
-    let mut db = Database::open(&db_path)
-        .with_context(|| format!("Failed to open database at {}", db_path.display()))?;
 
-    let debounce = Duration::from_millis(debounce_ms);
-    let (tx, rx) = mpsc::channel::<Event>();
+    let opts = bearwisdom::IndexServiceOptions {
+        pool_size: 1,
+        watch: true,
+        debounce: Duration::from_millis(debounce_ms),
+    };
+    let service = bearwisdom::IndexService::open(&db_path, &root, opts)
+        .with_context(|| format!("open index service at {}", root.display()))?;
 
-    let mut watcher = RecommendedWatcher::new(
-        move |res: notify::Result<Event>| {
-            if let Ok(event) = res {
-                let _ = tx.send(event);
-            }
-        },
-        Config::default(),
-    ).context("Failed to create file watcher")?;
+    eprintln!(
+        "Watching {} (debounce={}ms, Ctrl+C to stop)",
+        root.display(),
+        debounce_ms,
+    );
 
-    watcher
-        .watch(root.as_ref(), RecursiveMode::Recursive)
-        .with_context(|| format!("Failed to watch {}", root.display()))?;
-
-    eprintln!("Watching {} for changes (debounce={}ms, Ctrl+C to stop)", root.display(), debounce_ms);
-
-    // Gitignore-based filtering reuses the walker's language detection.
-    let source_extensions: std::collections::HashSet<&str> = [
-        "cs", "ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "rb", "php",
-        "kt", "swift", "scala", "dart", "ex", "exs", "c", "h", "cpp", "hpp",
-        "sh", "bash", "html", "css", "scss", "json", "yaml", "yml", "xml",
-        "sql", "toml", "md", "lua", "r", "hs", "proto",
-    ].into_iter().collect();
-
-    loop {
-        // Drain events with debounce.
-        let first = match rx.recv() {
-            Ok(e) => e,
-            Err(_) => break, // channel closed
-        };
-
-        let mut events = vec![first];
-        let deadline = Instant::now() + debounce;
-        while Instant::now() < deadline {
-            match rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
-                Ok(e) => events.push(e),
-                Err(mpsc::RecvTimeoutError::Timeout) => break,
-                Err(mpsc::RecvTimeoutError::Disconnected) => return Ok(String::new()),
-            }
+    // Bring the index up to current state on startup.
+    match service.reindex_now() {
+        Ok(bearwisdom::ReindexStats::Full(stats)) => {
+            let json = serde_json::json!({
+                "event": "initial_full_index",
+                "files": stats.file_count,
+                "symbols": stats.symbol_count,
+                "edges": stats.edge_count,
+                "duration_ms": stats.duration_ms,
+            });
+            println!("{json}");
         }
-
-        // Convert notify events to FileChangeEvents, deduplicating by path.
-        let mut seen = std::collections::HashSet::new();
-        let mut changes: Vec<bearwisdom::FileChangeEvent> = Vec::new();
-
-        for event in &events {
-            let change_kind = match event.kind {
-                EventKind::Create(_) => bearwisdom::ChangeKind::Created,
-                EventKind::Modify(_) => bearwisdom::ChangeKind::Modified,
-                EventKind::Remove(_) => bearwisdom::ChangeKind::Deleted,
-                _ => continue,
-            };
-
-            for path in &event.paths {
-                // Filter to source files only.
-                let ext = path.extension()
-                    .and_then(|e| e.to_str())
-                    .unwrap_or("");
-                if !source_extensions.contains(ext) {
-                    continue;
-                }
-
-                // Convert to relative path.
-                let rel = match path.strip_prefix(&root) {
-                    Ok(r) => r.to_string_lossy().replace('\\', "/"),
-                    Err(_) => continue,
-                };
-
-                if seen.insert(rel.clone()) {
-                    changes.push(bearwisdom::FileChangeEvent {
-                        relative_path: rel,
-                        change_kind,
-                    });
-                }
-            }
+        Ok(bearwisdom::ReindexStats::Incremental(inc)) => {
+            let json = serde_json::json!({
+                "event": "initial_incremental_reindex",
+                "files_added": inc.files_added,
+                "files_modified": inc.files_modified,
+                "files_deleted": inc.files_deleted,
+                "files_unchanged": inc.files_unchanged,
+                "duration_ms": inc.duration_ms,
+            });
+            println!("{json}");
         }
-
-        if changes.is_empty() {
-            continue;
-        }
-
-        eprintln!("Detected {} file change(s), re-indexing...", changes.len());
-        match bearwisdom::reindex_files(&mut db, &root, &changes, None) {
-            Ok(stats) => {
-                let json = serde_json::json!({
-                    "event": "reindex",
-                    "files_added": stats.files_added,
-                    "files_modified": stats.files_modified,
-                    "files_deleted": stats.files_deleted,
-                    "symbols_written": stats.symbols_written,
-                    "edges_written": stats.edges_written,
-                    "duration_ms": stats.duration_ms,
-                });
-                println!("{json}");
-            }
-            Err(e) => {
-                eprintln!("Re-index error: {e:#}");
-            }
-        }
+        Err(e) => eprintln!("Initial reindex error: {e:#}"),
     }
 
-    Ok(String::new())
+    // Block until Ctrl+C; the watcher inside `service` runs on a worker
+    // thread and keeps the index fresh on file changes.
+    loop {
+        std::thread::sleep(Duration::from_secs(60));
+    }
 }
 
 // ---------------------------------------------------------------------------

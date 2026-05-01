@@ -41,6 +41,7 @@ pub use db::metrics::{QueryMetrics, QueryStats};
 pub use db::audit::{AuditRecord, AuditSessionSummary, AuditStats};
 pub use indexer::full::{full_index, ProgressFn};
 pub use indexer::incremental::{incremental_index, git_reindex, reindex_files, ChangeKind, FileChangeEvent};
+pub use indexer::service::{IndexService, IndexServiceOptions, ReindexStats};
 pub use types::{EdgeKind, EdgeSource, IndexStats, PackageInfo, Symbol, SymbolKind};
 pub use indexer::post_index::embed_chunks;
 pub use query::stats::{

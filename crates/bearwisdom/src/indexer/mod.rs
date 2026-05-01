@@ -14,6 +14,10 @@ pub mod stage_discover;
 pub mod stage_link;
 pub mod incremental;
 pub mod module_resolution;
+pub mod service;
+#[cfg(test)]
+#[path = "service_tests.rs"]
+mod service_tests;
 pub mod post_index;
 pub mod keywords;
 pub mod query_builtins;

@@ -27,7 +27,6 @@ tracing-subscriber = { workspace = true }
 sha2               = { workspace = true }
 rusqlite           = { workspace = true }
 dirs               = { workspace = true }
-notify             = { workspace = true }
 
 # Peak working-set query for quality-check perf metrics.
 [target.'cfg(windows)'.dependencies]
