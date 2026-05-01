@@ -104,6 +104,17 @@ fn start(meta: &str) -> String {
     s
 }
 
+/// Append `|truncated:true` to a `count:N` style meta string when the
+/// result set was capped by the request limit. Returns the meta unchanged
+/// otherwise.
+fn meta_with_truncation(meta: String, results_len: usize, requested_limit: usize) -> String {
+    if requested_limit > 0 && results_len >= requested_limit {
+        format!("{meta}|truncated:true")
+    } else {
+        meta
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Helper: format a SymbolSummary line (used by multiple tools)
 // ---------------------------------------------------------------------------
@@ -181,7 +192,7 @@ pub fn architecture(overview: &ArchitectureOverview) -> String {
 }
 
 /// `bw_search`
-pub fn search(results: &[SearchResult]) -> String {
+pub fn search(results: &[SearchResult], requested_limit: usize) -> String {
     let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(2048);
 
@@ -191,7 +202,8 @@ pub fn search(results: &[SearchResult]) -> String {
         let _ = writeln!(body, "{}|{}|{}:{}|{:.2}", r.name, r.kind, fr, r.start_line, r.score);
     }
 
-    let mut out = start(&format!("count:{}", results.len()));
+    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
         out.push('\n');
@@ -201,7 +213,7 @@ pub fn search(results: &[SearchResult]) -> String {
 }
 
 /// `bw_grep`
-pub fn grep(results: &[GrepMatch]) -> String {
+pub fn grep(results: &[GrepMatch], requested_limit: usize) -> String {
     let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(4096);
 
@@ -211,7 +223,8 @@ pub fn grep(results: &[GrepMatch]) -> String {
         let _ = writeln!(body, "{}:{}|{}", fr, m.line_number, m.line_content);
     }
 
-    let mut out = start(&format!("count:{}", results.len()));
+    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
         out.push('\n');
@@ -265,7 +278,7 @@ pub fn symbol_info(results: &[SymbolDetail]) -> String {
 }
 
 /// `bw_find_references`
-pub fn references(results: &[ReferenceResult]) -> String {
+pub fn references(results: &[ReferenceResult], requested_limit: usize) -> String {
     let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(2048);
 
@@ -279,7 +292,8 @@ pub fn references(results: &[ReferenceResult]) -> String {
         );
     }
 
-    let mut out = start(&format!("count:{}", results.len()));
+    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
         out.push('\n');
@@ -289,7 +303,7 @@ pub fn references(results: &[ReferenceResult]) -> String {
 }
 
 /// `bw_call_hierarchy`
-pub fn call_hierarchy(results: &[CallHierarchyItem]) -> String {
+pub fn call_hierarchy(results: &[CallHierarchyItem], requested_limit: usize) -> String {
     let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(1024);
 
@@ -298,7 +312,8 @@ pub fn call_hierarchy(results: &[CallHierarchyItem]) -> String {
         let _ = writeln!(body, "{}", fmt_call_item(&mut f, c));
     }
 
-    let mut out = start(&format!("count:{}", results.len()));
+    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let mut out = start(&meta);
     f.write_files(&mut out);
     if !f.files.is_empty() {
         out.push('\n');

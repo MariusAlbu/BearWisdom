@@ -489,7 +489,7 @@ impl BearWisdomServer {
             };
             bearwisdom::query::search::search_symbols(db, &params.query, limit, &opts)
                 .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::search(&r)) } else { Self::to_json(&r) })
+                .and_then(|r| if compact { Ok(crate::compact::search(&r, limit)) } else { Self::to_json(&r) })
         })
     }
 
@@ -522,7 +522,8 @@ impl BearWisdomServer {
                     .map_err(|e| error_response("QUERY_ERROR", &format!("{e}")))?;
             let max_len = params.max_line_length.unwrap_or(120);
             bearwisdom::search::grep::truncate_matches(&mut results, max_len);
-            if compact { Ok(crate::compact::grep(&results)) } else { Self::to_json(&results) }
+            let limit = options.max_results;
+            if compact { Ok(crate::compact::grep(&results, limit)) } else { Self::to_json(&results) }
         })
     }
 
@@ -565,7 +566,7 @@ impl BearWisdomServer {
             let limit = params.limit.unwrap_or(50);
             if compact {
                 bearwisdom::query::references::find_references(db, &params.name, limit)
-                    .map(|r| crate::compact::references(&r))
+                    .map(|r| crate::compact::references(&r, limit))
                     .map_err(Self::query_err)
             } else {
                 bearwisdom::query::references::find_references_json(db, &params.name, limit)
@@ -593,7 +594,7 @@ impl BearWisdomServer {
             };
             query_result
                 .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::call_hierarchy(&r)) } else { Self::to_json(&r) })
+                .and_then(|r| if compact { Ok(crate::compact::call_hierarchy(&r, limit)) } else { Self::to_json(&r) })
         })
     }
 

@@ -28,7 +28,7 @@ fn make_grep_match(file: &str, line_number: u32, content: &str) -> GrepMatch {
 #[test]
 fn search_single_result_inlines_path_and_omits_files_section() {
     let results = vec![make_search_result("src/foo.rs", 42)];
-    let out = search(&results);
+    let out = search(&results, 50);
 
     assert!(out.contains("#format:compact-v1"));
     assert!(!out.contains("#files"), "single-result must not emit a #files registry, got:\n{out}");
@@ -42,7 +42,7 @@ fn search_multi_result_uses_files_registry() {
         make_search_result("src/a.rs", 1),
         make_search_result("src/b.rs", 2),
     ];
-    let out = search(&results);
+    let out = search(&results, 50);
 
     assert!(out.contains("#files"), "multi-result must keep the file registry, got:\n{out}");
     assert!(out.contains("F1:src/a.rs"));
@@ -80,8 +80,27 @@ fn with_freshness_header_handles_unknown_index_time() {
 #[test]
 fn grep_single_result_inlines_path() {
     let results = vec![make_grep_match("crates/foo/src/lib.rs", 10, "fn hello() {}")];
-    let out = grep(&results);
+    let out = grep(&results, 50);
 
     assert!(!out.contains("#files"), "single-result grep must skip #files, got:\n{out}");
     assert!(out.contains("crates/foo/src/lib.rs:10"));
+}
+
+#[test]
+fn search_capped_at_limit_sets_truncated_flag() {
+    // Caller asked for 3, got exactly 3 — could be more upstream → truncated.
+    let results = vec![
+        make_search_result("a.rs", 1),
+        make_search_result("b.rs", 2),
+        make_search_result("c.rs", 3),
+    ];
+    let out = search(&results, 3);
+    assert!(out.contains("truncated:true"), "expected truncation flag, got:\n{out}");
+}
+
+#[test]
+fn search_under_limit_omits_truncated_flag() {
+    let results = vec![make_search_result("a.rs", 1), make_search_result("b.rs", 2)];
+    let out = search(&results, 50);
+    assert!(!out.contains("truncated:true"), "should not flag truncation when under limit, got:\n{out}");
 }
