@@ -194,21 +194,5 @@ pub(super) fn is_javascript_builtin(name: &str) -> bool {
             | "repl"
             | "inspector"
             | "trace_events"
-            // ── Test globals (Jest / Mocha / Chai / Sinon) ───────────────────
-            | "describe"
-            | "it"
-            | "test"
-            | "expect"
-            | "beforeEach"
-            | "afterEach"
-            | "beforeAll"
-            | "afterAll"
-            | "before"
-            | "after"
-            | "jest"
-            | "vi"
-            | "mocha"
-            | "chai"
-            | "sinon"
     )
 }
