@@ -48,7 +48,7 @@ fn incremental_stats_json(inc: &bearwisdom::indexer::incremental::IncrementalSta
 pub struct SearchParams {
     /// Search keywords (symbol names, words from signatures or doc comments)
     pub query: String,
-    /// Maximum results (default: 10)
+    /// Maximum results (default: 50)
     pub limit: Option<usize>,
     /// Include function/method signatures in results (default: false)
     pub include_signature: Option<bool>,
@@ -68,7 +68,7 @@ pub struct GrepParams {
     pub whole_word: Option<bool>,
     /// Filter by language tag (e.g. "rust", "typescript")
     pub language: Option<String>,
-    /// Maximum results (default: 20)
+    /// Maximum results (default: 50)
     pub limit: Option<usize>,
     /// Truncate lines longer than this (default: 120, 0 = unlimited)
     pub max_line_length: Option<u32>,
@@ -99,7 +99,7 @@ pub struct SymbolInfoParams {
 pub struct FindReferencesParams {
     /// Symbol name to find references for
     pub name: String,
-    /// Maximum results (default: 20)
+    /// Maximum results (default: 50)
     pub limit: Option<usize>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
@@ -113,7 +113,7 @@ pub struct CallHierarchyParams {
     /// outgoing calls (default: "callers"). The `in`/`out` values are kept
     /// for backwards compatibility.
     pub direction: Option<String>,
-    /// Maximum results (default: 20)
+    /// Maximum results (default: 50)
     pub limit: Option<usize>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
@@ -436,7 +436,7 @@ impl ServerHandler for BearWisdomServer {
 
 #[tool_router]
 impl BearWisdomServer {
-    /// Search code symbols by keyword. Returns ~10 results with name, kind, file, line.
+    /// Search code symbols by keyword. Returns up to 50 results by default with name, kind, file, line.
     /// Pass include_signature: true for full signatures. Use bw_grep for raw text search.
     #[tool(name = "bw_search")]
     fn search(&self, Parameters(params): Parameters<SearchParams>) -> String {
@@ -445,7 +445,7 @@ impl BearWisdomServer {
             if params.query.trim().is_empty() {
                 return Self::invalid_input("Query cannot be empty");
             }
-            let limit = params.limit.unwrap_or(10);
+            let limit = params.limit.unwrap_or(50);
             let opts = QueryOptions {
                 include_signature: params.include_signature.unwrap_or(false),
                 ..QueryOptions::default()
@@ -456,7 +456,7 @@ impl BearWisdomServer {
         })
     }
 
-    /// Fast substring or regex search across source files. Returns ~20 matching lines.
+    /// Fast substring or regex search across source files. Returns up to 50 matching lines by default.
     /// Lines truncated to 120 chars by default (pass max_line_length: 0 for full lines).
     /// Use bw_search for semantic symbol lookup.
     #[tool(name = "bw_grep")]
@@ -476,7 +476,7 @@ impl BearWisdomServer {
                 regex: params.regex.unwrap_or(false),
                 case_sensitive: !params.case_insensitive.unwrap_or(false),
                 whole_word: params.whole_word.unwrap_or(false),
-                max_results: params.limit.unwrap_or(20),
+                max_results: params.limit.unwrap_or(50),
                 scope,
                 context_lines: 0,
             };
@@ -517,7 +517,7 @@ impl BearWisdomServer {
         })
     }
 
-    /// Find all references to a symbol. Returns ~20 results with file, line, edge kind.
+    /// Find all references to a symbol. Returns up to 50 results by default with file, line, edge kind.
     #[tool(name = "bw_find_references")]
     fn find_references(&self, Parameters(params): Parameters<FindReferencesParams>) -> String {
         let compact = Self::is_compact(&params.format);
@@ -525,7 +525,7 @@ impl BearWisdomServer {
             if params.name.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
-            let limit = params.limit.unwrap_or(20);
+            let limit = params.limit.unwrap_or(50);
             if compact {
                 bearwisdom::query::references::find_references(db, &params.name, limit)
                     .map(|r| crate::compact::references(&r))
@@ -538,7 +538,7 @@ impl BearWisdomServer {
     }
 
     /// Show call hierarchy: direction="callers" (alias "in") = who calls this;
-    /// direction="callees" (alias "out") = what does this call. ~20 results.
+    /// direction="callees" (alias "out") = what does this call. Up to 50 results by default.
     #[tool(name = "bw_call_hierarchy")]
     fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> String {
         let compact = Self::is_compact(&params.format);
@@ -546,7 +546,7 @@ impl BearWisdomServer {
             if params.name.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
-            let limit = params.limit.unwrap_or(20);
+            let limit = params.limit.unwrap_or(50);
             let query_result = match params.direction.as_deref() {
                 Some("out") | Some("callees") => {
                     bearwisdom::query::call_hierarchy::outgoing_calls(db, &params.name, limit)
