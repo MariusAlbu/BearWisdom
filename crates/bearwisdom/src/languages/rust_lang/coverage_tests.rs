@@ -479,6 +479,10 @@ fn coverage_type_arguments_in_param_emits_type_ref() {
 
 #[test]
 fn coverage_attribute_item_emits_type_ref() {
+    // Coverage check: the `attribute_item` node is walked and its inner
+    // derive trait names are emitted as TypeRefs. The bare attribute name
+    // (`derive`) is intentionally NOT emitted — see decorators.rs for
+    // rationale (no downstream consumer; cf. PR 103).
     let src = "#[derive(Debug, Clone)]\nstruct Config {}";
     let r = extract::extract(src);
     let type_refs: Vec<&str> = r
@@ -488,8 +492,12 @@ fn coverage_attribute_item_emits_type_ref() {
         .map(|r| r.target_name.as_str())
         .collect();
     assert!(
-        type_refs.contains(&"derive"),
-        "expected TypeRef to derive from attribute_item; refs: {type_refs:?}"
+        type_refs.contains(&"Debug") && type_refs.contains(&"Clone"),
+        "expected derive trait TypeRefs from attribute_item; refs: {type_refs:?}"
+    );
+    assert!(
+        !type_refs.contains(&"derive"),
+        "bare `derive` attribute name should not be emitted; refs: {type_refs:?}"
     );
 }
 

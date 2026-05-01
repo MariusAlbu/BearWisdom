@@ -50,19 +50,22 @@ pub(super) fn extract_decorators(
     collected.reverse();
 
     for attr_item in collected {
-        if let Some((name, first_arg)) = parse_attribute_item(&attr_item, source) {
-            refs.push(ExtractedRef {
-                source_symbol_index,
-                target_name: name.clone(),
-                kind: EdgeKind::TypeRef,
-                line: attr_item.start_position().row as u32,
-                module: first_arg,
-                chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-});
-
-            // For #[derive(...)], also extract each derived trait as a TypeRef
+        if let Some((name, _first_arg)) = parse_attribute_item(&attr_item, source) {
+            // The bare attribute name (`prost`, `serde`, `tokio`, `tracing`, ...)
+            // is decorator metadata, not a type or call reference. Emitting it as
+            // a TypeRef edge produces unresolved entries with no consumer:
+            //   * the resolver only reads EdgeKind::Imports for scope building
+            //     (see resolve.rs `build_file_context`),
+            //   * connectors source-scan the AST directly (`extract_rust_connection_points`),
+            //     they don't read TypeRef edges.
+            // The previous-shape entry pushed `target_name = name, module = first_arg`
+            // — `first_arg` was the first string literal in the attribute token tree
+            // (e.g. `"/api/users"` from `#[route("/api/users")]`). No code path
+            // consumed that pairing either; route connectors do their own source
+            // scan.
+            //
+            // For `#[derive(...)]` we still need the inner trait names — those ARE
+            // real type references that participate in inheritance/impl edges.
             if name == "derive" {
                 extract_derive_trait_refs(&attr_item, source, source_symbol_index, refs);
             }
@@ -141,33 +144,61 @@ fn extract_derive_trait_refs(
 
 /// Recursively extract trait names from a derive token_tree.
 ///
-/// For `(Debug, Clone, Serialize)`, emits TypeRef for each identifier.
+/// For `(Debug, Clone, Serialize)`, emits TypeRef for each trait. Handles
+/// qualified paths — `prost::Message`, `serde::Deserialize` — that the
+/// tree-sitter-rust grammar represents inside derive token_trees as a flat
+/// sequence (`identifier "prost"`, `"::"`, `identifier "Message"`) rather
+/// than wrapping them in a `scoped_identifier` node. We coalesce those
+/// into one ref carrying the full path, so the resolver gets the same
+/// shape it would for an explicit `scoped_identifier`.
 fn extract_trait_names_from_token_tree(
     tt: &Node,
     source: &str,
     source_symbol_index: usize,
     refs: &mut Vec<ExtractedRef>,
 ) {
+    // Materialize children so we can look ahead for the `::` continuation.
     let mut cursor = tt.walk();
-    for child in tt.children(&mut cursor) {
+    let children: Vec<Node> = tt.children(&mut cursor).collect();
+
+    let mut i = 0;
+    while i < children.len() {
+        let child = children[i];
         match child.kind() {
             "identifier" => {
-                let trait_name = node_text(&child, source);
-                if !trait_name.is_empty() && trait_name != "," {
-                    refs.push(ExtractedRef {
-                        source_symbol_index,
-                        target_name: trait_name,
-                        kind: EdgeKind::TypeRef,
-                        line: child.start_position().row as u32,
-                        module: None,
-                        chain: None,
-                        byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                let mut path = node_text(&child, source);
+                if path.is_empty() || path == "," {
+                    i += 1;
+                    continue;
                 }
+                let line = child.start_position().row as u32;
+
+                // Coalesce `ident (:: ident)*` produced as flat tokens.
+                let mut j = i + 1;
+                while j + 1 < children.len()
+                    && children[j].kind() == "::"
+                    && children[j + 1].kind() == "identifier"
+                {
+                    path.push_str("::");
+                    path.push_str(&node_text(&children[j + 1], source));
+                    j += 2;
+                }
+
+                refs.push(ExtractedRef {
+                    source_symbol_index,
+                    target_name: path,
+                    kind: EdgeKind::TypeRef,
+                    line,
+                    module: None,
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
+                i = j;
+                continue;
             }
             "scoped_identifier" => {
-                // e.g., `serde::Serialize` — extract the full path
+                // Pre-coalesced by the grammar — emit verbatim.
                 let full_name = node_text(&child, source);
                 if !full_name.is_empty() {
                     refs.push(ExtractedRef {
@@ -178,16 +209,17 @@ fn extract_trait_names_from_token_tree(
                         module: None,
                         chain: None,
                         byte_offset: 0,
-                                            namespace_segments: Vec::new(),
-});
+                        namespace_segments: Vec::new(),
+                    });
                 }
             }
             "token_tree" => {
-                // Nested parens; recurse
+                // Nested parens; recurse.
                 extract_trait_names_from_token_tree(&child, source, source_symbol_index, refs);
             }
             _ => {}
         }
+        i += 1;
     }
 }
 
@@ -378,55 +410,5 @@ fn extract_first_string_from_token_tree(tt: &Node, source: &str) -> Option<Strin
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::super::extract::extract;
-    use crate::types::EdgeKind;
-
-    fn decorator_refs(source: &str) -> Vec<(String, Option<String>)> {
-        extract(source)
-            .refs
-            .into_iter()
-            .filter(|r| r.kind == EdgeKind::TypeRef)
-            .map(|r| (r.target_name, r.module))
-            .collect()
-    }
-
-    #[test]
-    fn derive_attribute() {
-        let src = "#[derive(Debug, Clone)]\nstruct Point { x: i32, y: i32 }";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "derive"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn test_attribute_on_fn() {
-        let src = "#[test]\nfn it_works() {}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "test"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn attribute_with_string_arg() {
-        let src = r#"#[route("/api/users")]
-fn users() {}"#;
-        let dr = decorator_refs(src);
-        let found = dr.iter().find(|(n, _)| n == "route");
-        assert!(found.is_some(), "refs: {dr:?}");
-        assert_eq!(found.unwrap().1, Some("/api/users".to_string()));
-    }
-
-    #[test]
-    fn multiple_attributes() {
-        let src = "#[derive(Debug)]\n#[serde(rename_all = \"camelCase\")]\nstruct Cfg {}";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "derive"), "refs: {dr:?}");
-        assert!(dr.iter().any(|(n, _)| n == "serde"), "refs: {dr:?}");
-    }
-
-    #[test]
-    fn attribute_on_enum() {
-        let src = "#[derive(Debug, PartialEq)]\nenum Status { Active, Inactive }";
-        let dr = decorator_refs(src);
-        assert!(dr.iter().any(|(n, _)| n == "derive"), "refs: {dr:?}");
-    }
-}
+#[path = "decorators_tests.rs"]
+mod tests;
