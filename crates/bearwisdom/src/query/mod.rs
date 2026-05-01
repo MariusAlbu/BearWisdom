@@ -24,6 +24,10 @@ pub mod symbol_info;
 pub mod workspace;
 pub mod dead_code;
 pub mod unresolved_classify;
+pub mod pattern;
+#[cfg(test)]
+#[path = "pattern_tests.rs"]
+mod pattern_tests;
 
 // ---------------------------------------------------------------------------
 // Shared query options — slim by default, opt-in for verbose

@@ -11,7 +11,7 @@ use std::fmt::Write;
 
 use bearwisdom::{
     ArchitectureOverview, BlastRadiusResult, CallHierarchyItem, FileSymbol, InvestigateResult,
-    PackageStats, ResolutionBreakdown, SearchResult, SymbolDetail, SymbolSummary,
+    PackageStats, PatternMatch, ResolutionBreakdown, SearchResult, SymbolDetail, SymbolSummary,
     WorkspaceGraphEdge, WorkspaceOverview,
 };
 use bearwisdom::query::completion::CompletionItem;
@@ -681,6 +681,43 @@ pub fn workspace_graph(edges: &[WorkspaceGraphEdge]) -> String {
             e.source_package, e.target_package, code_parts, flow_parts, declared, e.total_edges
         );
     }
+    out
+}
+
+/// `bw_pattern` — tree-sitter AST query results.
+pub fn pattern(results: &[PatternMatch], requested_limit: usize) -> String {
+    let mut f = CompactFormatter::for_count(results.len());
+    let mut body = String::with_capacity(2048);
+
+    body.push_str("#matches\n");
+    for m in results {
+        let fr = f.fref(&m.file_path);
+        // Snippet may contain newlines — replace with spaces so it stays one row.
+        let snippet_one_line: String = m
+            .snippet
+            .replace('\n', " ")
+            .chars()
+            .take(120)
+            .collect();
+        let cap = if m.capture_name.is_empty() {
+            String::new()
+        } else {
+            format!("|@{}", m.capture_name)
+        };
+        let _ = writeln!(
+            body,
+            "{}|{}:{}-{}|{}{}|{}",
+            m.node_kind, fr, m.start_line, m.end_line, m.start_col, cap, snippet_one_line
+        );
+    }
+
+    let meta = meta_with_truncation(format!("count:{}", results.len()), results.len(), requested_limit);
+    let mut out = start(&meta);
+    f.write_files(&mut out);
+    if !f.files.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&body);
     out
 }
 

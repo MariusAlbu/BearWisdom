@@ -243,6 +243,20 @@ pub struct QualityCheckParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct PatternSearchParams {
+    /// Tree-sitter S-expression query, e.g. `(function_definition name: (identifier) @fn)`.
+    /// See https://tree-sitter.github.io/tree-sitter/using-parsers/queries/index.html.
+    pub query: String,
+    /// Language tag the query targets (e.g. "rust", "typescript", "python").
+    /// Must match a language with a registered grammar.
+    pub language: String,
+    /// Maximum matches to return (default: 50).
+    pub max_results: Option<u32>,
+    /// Output format: "json" (default) or "compact" (token-optimized text)
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CompleteAtParams {
     /// Relative file path
     pub file_path: String,
@@ -789,6 +803,29 @@ impl BearWisdomServer {
             bearwisdom::resolution_breakdown(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::quality_check(&r)) } else { Self::to_json(&r) })
+        })
+    }
+
+    /// Run a tree-sitter AST query across project source files of a
+    /// specified language. Use for shape-of-AST questions that text grep
+    /// can't answer cleanly — match-expression arity, attribute usage
+    /// patterns, function bodies matching a structural template, etc.
+    /// Pattern syntax: tree-sitter S-expression queries with `@captures`.
+    #[tool(name = "bw_pattern")]
+    fn pattern(&self, Parameters(params): Parameters<PatternSearchParams>) -> String {
+        let compact = Self::is_compact(&params.format);
+        let project_root = self.project_root.clone();
+        self.run_tool("bw_pattern", &params, |db| {
+            if params.query.trim().is_empty() {
+                return Self::invalid_input("query is required");
+            }
+            if params.language.trim().is_empty() {
+                return Self::invalid_input("language is required");
+            }
+            let max = params.max_results.unwrap_or(50);
+            bearwisdom::pattern_search(db, &project_root, &params.language, &params.query, max)
+                .map_err(Self::query_err)
+                .and_then(|r| if compact { Ok(crate::compact::pattern(&r, max as usize)) } else { Self::to_json(&r) })
         })
     }
 

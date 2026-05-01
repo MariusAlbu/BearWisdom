@@ -73,6 +73,7 @@ pub use query::diagnostics::{
     low_confidence_edges, workspace_diagnostics, FileDiagnosticSummary, LowConfidenceBucket,
     LowConfidenceReport, WorkspaceDiagnostics,
 };
+pub use query::pattern::{pattern_search, PatternMatch};
 pub use query::unresolved_classify::{
     classify_unresolved, ClassificationBucket, ClassificationReport, SampleEntry,
     UnresolvedCategory,
