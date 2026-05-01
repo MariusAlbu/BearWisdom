@@ -246,6 +246,29 @@ impl LanguageResolver for CLangResolver {
                     resolved_yield_type: None,
                 });
             }
+
+            // Name-only chain miss: every project resolution path failed
+            // and `lookup.by_name` had nothing live, but the symbol may
+            // live in a system header (libc / Win32 / POSIX) that
+            // demand-driven parsing hasn't pulled yet — `iswspace`,
+            // `printf`, `pthread_create`. Record a chain miss with
+            // empty `current_type` so `expand.rs::locate_via_symbol_index`
+            // probes the SymbolLocationIndex bare-name table populated
+            // by `posix_headers::scan_c_header`. If a hit exists, the
+            // header is pulled and re-resolution picks up the symbol via
+            // the bare-name fallback above. Mirrors the Rust resolver's
+            // PR 104 chain-miss recording.
+            let trivial = target.len() < 2
+                || target.chars().next().map_or(true, |c| c == '_')
+                || !target.chars().any(|c| c.is_alphabetic());
+            if !trivial {
+                lookup.record_chain_miss(
+                    crate::indexer::resolve::engine::ChainMiss {
+                        current_type: String::new(),
+                        target_name: target.clone(),
+                    },
+                );
+            }
         }
 
         None
