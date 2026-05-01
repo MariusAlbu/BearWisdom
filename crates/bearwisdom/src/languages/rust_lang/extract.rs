@@ -106,8 +106,43 @@ pub fn extract(source: &str) -> ExtractionResult {
         }
     }
 
+    // Fourth pass: drop refs whose `target_name` contains characters that
+    // can never be part of a Rust identifier or path. The chain extractor
+    // and call-expression fallback occasionally capture stray punctuation
+    // from malformed CST nodes — `(config.normalize_type)(arg)` lands as
+    // `normalize_type)`, `.collect::<Result<Vec<_>>>()` lands as
+    // `Result<Vec<_>>>`, multi-line snippets land with embedded newlines.
+    // None of these can ever resolve to a real symbol; keeping them just
+    // pollutes the unresolved-refs table.
+    refs.retain(|r| is_valid_rust_target_name(&r.target_name));
+
     let has_errors = tree.root_node().has_error();
     ExtractionResult::new(syms, refs, has_errors)
+}
+
+/// Whether `name` could be a Rust identifier or path. Allows alphanumerics,
+/// underscores, `::` separators, leading `!` (none — Rust forbids), trailing
+/// `!` (macro invocation in some emit paths), `*` (wildcards), `?` is NOT
+/// allowed — neither are angle brackets, parens, braces, brackets, quotes,
+/// commas, whitespace, semicolons, or backslashes. Returns true for the
+/// empty string so callers that explicitly accept empty targets aren't
+/// disturbed; the main extract path already filters empty.
+fn is_valid_rust_target_name(name: &str) -> bool {
+    if name.is_empty() {
+        return true;
+    }
+    for c in name.chars() {
+        match c {
+            '_' | ':' | '*' | '!' => continue,
+            ch if ch.is_ascii_alphanumeric() => continue,
+            // Emoji / non-ascii letters in identifiers are allowed in Rust;
+            // gate on the broader unicode XID rule to keep CJK identifier
+            // names out of the reject path.
+            ch if ch.is_alphanumeric() => continue,
+            _ => return false,
+        }
+    }
+    true
 }
 
 // ---------------------------------------------------------------------------
@@ -318,15 +353,24 @@ fn extract_from_node(
                 let source_idx = parent_index.unwrap_or(0);
                 // Emit Calls ref for the macro name itself.
                 if let Some(macro_node) = child.child_by_field_name("macro") {
-                    let name = helpers::node_text(&macro_node, source);
-                    let name = name.trim_end_matches('!');
-                    if !name.is_empty() {
+                    let raw = helpers::node_text(&macro_node, source);
+                    let raw = raw.trim_end_matches('!');
+                    // Split `prefix::name!` into module + name so the
+                    // resolver can route to the owning crate. Mirrors the
+                    // body walker's macro_invocation arm in calls.rs.
+                    let (module, target) = match raw.rsplit_once("::") {
+                        Some((prefix, leaf)) if !prefix.is_empty() && !leaf.is_empty() => {
+                            (Some(prefix.to_string()), leaf.to_string())
+                        }
+                        _ => (None, raw.to_string()),
+                    };
+                    if !target.is_empty() {
                         refs.push(crate::types::ExtractedRef {
                             source_symbol_index: source_idx,
-                            target_name: name.to_string(),
+                            target_name: target,
                             kind: crate::types::EdgeKind::Calls,
                             line: macro_node.start_position().row as u32,
-                            module: None,
+                            module,
                             chain: None,
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),

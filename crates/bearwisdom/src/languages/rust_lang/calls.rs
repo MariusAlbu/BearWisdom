@@ -284,20 +284,45 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
 
+            // Function-scoped `use` statements: `use std::sync::OnceLock;`
+            // declared inside a function body. The top-level extractor only
+            // handles `use_declaration` at module scope, but Rust permits
+            // `use` anywhere a statement is valid — and idiomatic code uses
+            // function-local imports for trait extension methods, lazy
+            // statics, and one-off helpers. Without this, any reference to
+            // an imported name inside the function body sees no import
+            // entry and falls through to unresolved.
+            "use_declaration" => {
+                extract_use_names(&child, source, refs, source_symbol_index);
+                // No further descent — `extract_use_names` handles the
+                // entire subtree.
+            }
+
             // `println!()`, `vec![]`, `format!()`, custom macros.
             // Can't expand them, but we emit a Calls edge for the macro name.
             "macro_invocation" => {
                 if let Some(macro_node) = child.child_by_field_name("macro") {
-                    let name = node_text(&macro_node, source);
+                    let raw = node_text(&macro_node, source);
                     // Strip trailing `!` if present (some grammars include it).
-                    let name = name.trim_end_matches('!').to_string();
-                    if !name.is_empty() {
+                    let raw = raw.trim_end_matches('!');
+                    // Split scoped macro paths so the resolver can route
+                    // `rusqlite::params!` to the `rusqlite` crate by module
+                    // instead of looking for a flat `rusqlite::params`
+                    // symbol that never exists. Mirrors `scoped_type_identifier`
+                    // handling — `prefix::leaf` → module=prefix, name=leaf.
+                    let (module, target) = match raw.rsplit_once("::") {
+                        Some((prefix, leaf)) if !prefix.is_empty() && !leaf.is_empty() => {
+                            (Some(prefix.to_string()), leaf.to_string())
+                        }
+                        _ => (None, raw.to_string()),
+                    };
+                    if !target.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index,
-                            target_name: name,
+                            target_name: target,
                             kind: EdgeKind::Calls,
                             line: macro_node.start_position().row as u32,
-                            module: None,
+                            module,
                             chain: None,
                             byte_offset: macro_node.start_byte() as u32,
                                                     namespace_segments: Vec::new(),
