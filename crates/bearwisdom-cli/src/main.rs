@@ -533,6 +533,17 @@ enum Commands {
         #[arg(long, default_value_t = 10)]
         samples: usize,
     },
+
+    /// Resolution-gate report: internal resolution rate, trust tier,
+    /// breakdown by language/kind/origin-language/strategy/package,
+    /// top-N unresolved targets, low-confidence-edge count. Combines
+    /// `resolution_breakdown` + dead-code `ResolutionHealth` into a
+    /// single canonical output for the gate plan
+    /// (`research/ArchitectureImprovements/Codex/01-resolution-gate-plan.md`).
+    ResolutionGate {
+        /// Absolute path to the project root.
+        path: String,
+    },
 }
 
 // ---------------------------------------------------------------------------
@@ -687,6 +698,7 @@ fn run(command: Commands, full: bool) -> Result<String> {
         Commands::UnresolvedClassify { path, samples } => {
             cmd_unresolved_classify(&path, samples)
         }
+        Commands::ResolutionGate { path } => cmd_resolution_gate(&path),
     }
 }
 
@@ -2049,6 +2061,29 @@ fn cmd_unresolved_classify(project_path: &str, samples: usize) -> Result<String>
     let report = bearwisdom::classify_unresolved(&db, samples)
         .context("classify_unresolved failed")?;
     ok_json(report)
+}
+
+/// Resolution-gate report. Wraps `resolution_breakdown` plus the dead-code
+/// `find_dead_code` health/trust-tier summary into a single canonical
+/// gate output. See `research/ArchitectureImprovements/Codex/01-resolution-gate-plan.md`.
+fn cmd_resolution_gate(project_path: &str) -> Result<String> {
+    use bearwisdom::query::dead_code::{DeadCodeOptions, find_dead_code};
+    let db = open_existing_db(project_path)?;
+    let breakdown = bearwisdom::resolution_breakdown(&db)
+        .context("resolution_breakdown failed")?;
+    // Dead-code report is the carrier for `ResolutionHealth.trust_tier` and
+    // is computed off the same `CODE_REF_FILTER`-aware metric as the
+    // breakdown, so the two sides agree on the rate.
+    let dead = find_dead_code(&db, &DeadCodeOptions {
+        max_results: 0,    // we want the health summary, not the candidate list
+        ..Default::default()
+    })
+    .context("find_dead_code failed")?;
+    let payload = serde_json::json!({
+        "breakdown": breakdown,
+        "health": dead.resolution_health,
+    });
+    ok_json(payload)
 }
 
 /// Serialize a value as `{"ok":true,"data":<value>}`.

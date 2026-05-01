@@ -132,6 +132,37 @@ pub struct EntryPoint {
     pub entry_kind: EntryPointKind,
 }
 
+/// Trust tier for a dead-code report. Wires the resolution-gate trust
+/// model from `research/ArchitectureImprovements/Codex/01-resolution-gate-plan.md`.
+///
+/// In `Unsafe`, high-confidence deletion recommendations are suppressed —
+/// candidate confidences are clamped so callers can't act on them as if
+/// they were ground truth.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustTier {
+    /// Internal resolution >= 99% AND low-confidence edges < 5% of resolved
+    /// edges. Dead-code candidates are actionable.
+    Trusted,
+    /// Internal resolution between 95% and 99%, or low-confidence edges
+    /// 5%-15%. Dead-code candidates need human review before deletion.
+    Review,
+    /// Internal resolution below 95%, or low-confidence edges > 15%.
+    /// Dead-code report is informational only; high-confidence
+    /// recommendations are suppressed.
+    Unsafe,
+}
+
+impl TrustTier {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            TrustTier::Trusted => "trusted",
+            TrustTier::Review => "review",
+            TrustTier::Unsafe => "unsafe",
+        }
+    }
+}
+
 /// Resolution health — tells the user how trustworthy the results are.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolutionHealth {
@@ -141,6 +172,12 @@ pub struct ResolutionHealth {
     pub resolved_refs: u64,
     /// Total unresolved refs remaining.
     pub unresolved_refs: u64,
+    /// Count of resolved edges with confidence below the heuristic
+    /// threshold (0.8 by default). Distinct from unresolved — these are
+    /// edges that resolved, but only via best-guess strategies.
+    pub low_confidence_edges: u64,
+    /// Trust tier used to gate dead-code recommendations.
+    pub trust_tier: TrustTier,
     /// Human-readable assessment.
     pub assessment: String,
 }
@@ -367,6 +404,18 @@ pub fn find_dead_code(
         for entry in low_conf {
             if !existing_ids.contains(&entry.symbol_id) {
                 candidates.push(entry);
+            }
+        }
+    }
+
+    // Resolution-gate trust tier: in `Unsafe`, suppress the high-confidence
+    // signal so callers can't act on the report as if it were ground truth.
+    // Cap every candidate at 0.5 — they're informational only at that
+    // resolution level. See research/.../01-resolution-gate-plan.md §5.
+    if resolution_health.trust_tier == TrustTier::Unsafe {
+        for c in &mut candidates {
+            if c.confidence > 0.5 {
+                c.confidence = 0.5;
             }
         }
     }
@@ -761,49 +810,102 @@ fn is_noise_symbol(name: &str, kind: &str) -> bool {
 }
 
 /// Compute overall resolution health for the project.
+///
+/// Uses the same metric the resolution-gate plan defines:
+/// `internal_edges / (internal_edges + internal_unresolved)` where both
+/// sides are restricted to first-party (`origin = 'internal'`) source.
+/// Doc-snippet refs are excluded via the same `CODE_REF_FILTER` the
+/// `resolution_breakdown` query uses, so the dead-code health number
+/// matches the gate metric exactly.
 fn compute_resolution_health(
     conn: &rusqlite::Connection,
 ) -> QueryResult<ResolutionHealth> {
-    let (resolved, external, unresolved): (u64, u64, u64) = conn
+    let internal_edges: u64 = conn
         .query_row(
-            "SELECT
-                (SELECT COUNT(*) FROM edges),
-                (SELECT COUNT(*) FROM external_refs),
-                (SELECT COUNT(*) FROM unresolved_refs)",
+            "SELECT COUNT(*) FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal'",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            |row| row.get(0),
         )
-        .unwrap_or((0, 0, 0));
+        .unwrap_or(0);
 
-    let total = resolved + external + unresolved;
+    let internal_unresolved_sql = format!(
+        "SELECT COUNT(*)
+         FROM unresolved_refs u
+         JOIN symbols s ON s.id = u.source_id
+         JOIN files   f ON f.id = s.file_id
+         WHERE f.origin = 'internal' AND {filter}",
+        filter = crate::query::stats::CODE_REF_FILTER
+    );
+    let internal_unresolved: u64 = conn
+        .query_row(&internal_unresolved_sql, [], |row| row.get(0))
+        .unwrap_or(0);
+
+    let low_conf_threshold = crate::query::diagnostics::LOW_CONFIDENCE_THRESHOLD;
+    let low_confidence_edges: u64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND e.confidence < ?1",
+            [low_conf_threshold],
+            |row| row.get(0),
+        )
+        .unwrap_or(0);
+
+    let total = internal_edges + internal_unresolved;
     let rate = if total > 0 {
-        ((resolved + external) as f64 / total as f64) * 100.0
+        (internal_edges as f64 / total as f64) * 100.0
     } else {
         100.0
     };
+    let rate = (rate * 10.0).round() / 10.0;
 
-    let assessment = if rate >= 95.0 {
-        "Excellent — results are highly trustworthy".to_string()
-    } else if rate >= 90.0 {
-        "Good — results are reliable, review flagged items".to_string()
-    } else if rate >= 80.0 {
-        format!(
-            "Fair — {:.0}% unresolved refs remain. Dead code candidates marked \
-             'potentially_referenced' should be verified manually",
-            100.0 - rate
-        )
+    // Low-confidence-edge ratio drives the trust-tier as a second axis
+    // beyond the headline rate. A project that resolved everything via
+    // heuristics still doesn't have ground-truth dead-code answers.
+    let low_conf_ratio = if internal_edges > 0 {
+        low_confidence_edges as f64 / internal_edges as f64
     } else {
-        format!(
-            "Low — {:.0}% of refs are unresolved. Dead code results have high \
-             false-positive risk. Improve resolution before acting on these results",
-            100.0 - rate
-        )
+        0.0
+    };
+
+    let trust_tier = if rate >= 99.0 && low_conf_ratio < 0.05 {
+        TrustTier::Trusted
+    } else if rate >= 95.0 && low_conf_ratio < 0.15 {
+        TrustTier::Review
+    } else {
+        TrustTier::Unsafe
+    };
+
+    let assessment = match trust_tier {
+        TrustTier::Trusted => format!(
+            "Trusted — {rate:.1}% internal resolution, {:.1}% low-confidence \
+             edges. Dead-code candidates are actionable.",
+            low_conf_ratio * 100.0
+        ),
+        TrustTier::Review => format!(
+            "Review — {rate:.1}% internal resolution, {:.1}% low-confidence \
+             edges. Dead-code candidates need human review before deletion.",
+            low_conf_ratio * 100.0
+        ),
+        TrustTier::Unsafe => format!(
+            "Unsafe — {rate:.1}% internal resolution, {:.1}% low-confidence \
+             edges. Dead-code report is informational only; high-confidence \
+             recommendations are suppressed.",
+            low_conf_ratio * 100.0
+        ),
     };
 
     Ok(ResolutionHealth {
-        resolution_rate: (rate * 10.0).round() / 10.0,
-        resolved_refs: resolved + external,
-        unresolved_refs: unresolved,
+        resolution_rate: rate,
+        resolved_refs: internal_edges,
+        unresolved_refs: internal_unresolved,
+        low_confidence_edges,
+        trust_tier,
         assessment,
     })
 }

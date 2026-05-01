@@ -483,12 +483,13 @@ pub fn dead_code(report: &DeadCodeReport) -> String {
     }
 
     let mut out = start(&format!(
-        "checked:{}|dead:{}|entry_excluded:{}|test_excluded:{}|resolution:{:.1}%",
+        "checked:{}|dead:{}|entry_excluded:{}|test_excluded:{}|resolution:{:.1}%|trust:{}",
         report.total_symbols_checked,
         report.dead_candidates.len(),
         report.entry_points_excluded,
         report.test_symbols_excluded,
-        report.resolution_health.resolution_rate
+        report.resolution_health.resolution_rate,
+        report.resolution_health.trust_tier.as_str(),
     ));
     f.write_files(&mut out);
     if !f.files.is_empty() {

@@ -170,13 +170,28 @@ pub fn flow_edge_breakdown(db: &Database) -> QueryResult<Vec<FlowEdgeBreakdown>>
     Ok(rows.filter_map(|r| r.ok()).collect())
 }
 
+/// One entry in the top-N unresolved-target worklist.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UnresolvedTarget {
+    pub target_name: String,
+    pub language: String,
+    pub kind: String,
+    pub count: u32,
+}
+
 /// Internal-only resolution breakdown for a single project.
 ///
-/// Consumers (quality-check baseline, MCP `bw_diagnostics`) use this as the
-/// authoritative picture of how well the indexer understood the project's
-/// own code. All counts are restricted to `files.origin = 'internal'` so
-/// external dependency noise (node_modules, site-packages) never inflates
-/// the resolution rate.
+/// Consumers (quality-check baseline, MCP `bw_diagnostics`, the resolution
+/// gate report) use this as the authoritative picture of how well the
+/// indexer understood the project's own code. All counts are restricted
+/// to `files.origin = 'internal'` so external dependency noise
+/// (node_modules, site-packages) never inflates the resolution rate.
+///
+/// The primary gate metric is `internal_resolution_rate`, defined per
+/// `research/ArchitectureImprovements/Codex/01-resolution-gate-plan.md`:
+///   internal_edges / (internal_edges + internal_unresolved) * 100
+/// `resolution_rate` is the same value retained as a back-compat alias
+/// for the older quality-check baselines.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResolutionBreakdown {
     /// Edges whose source symbol lives in a user file.
@@ -184,14 +199,42 @@ pub struct ResolutionBreakdown {
     /// `unresolved_refs` whose source symbol lives in a user file (and
     /// which didn't come from a doc/markdown snippet).
     pub internal_unresolved: u32,
-    /// Percent resolved, two decimals: internal_edges /
-    /// (internal_edges + internal_unresolved) * 100. 100.0 when both sides
-    /// are zero (an empty project has no resolution to measure).
+    /// Primary resolution gate metric, two decimals: internal_edges /
+    /// (internal_edges + internal_unresolved) * 100. 100.0 when both
+    /// sides are zero (empty project).
+    pub internal_resolution_rate: f64,
+    /// Back-compat alias for `internal_resolution_rate` — older callers
+    /// (quality-check baselines, MCP wrappers) read `resolution_rate`.
     pub resolution_rate: f64,
     /// Map keyed `"<language>.<kind>"` (e.g. `"typescript.calls"`) →
     /// number of unresolved refs in user code of that language and kind.
     /// Pinpoints which extractor / resolver is leaking.
     pub unresolved_by_lang_kind: BTreeMap<String, u32>,
+    /// Map keyed by source-symbol `origin_language` → unresolved count.
+    /// Distinguishes refs originating in embedded sub-language regions
+    /// (e.g. JS inside .vue/.svelte/.astro/.razor host files) from refs
+    /// in plain host files. NULL `origin_language` rows roll up under
+    /// the empty-string key.
+    pub unresolved_by_origin_language: BTreeMap<String, u32>,
+    /// Map keyed by `package_id` text repr → unresolved count. Empty
+    /// string for refs whose source file has no package_id. Used to slice
+    /// monorepos by workspace package.
+    pub unresolved_by_package: BTreeMap<String, u32>,
+    /// Map keyed by resolver `strategy` → resolved-edge count. Strategies
+    /// reveal which resolution path is doing the heavy lifting and which
+    /// have stagnated. NULL strategy rows roll up under empty-string.
+    pub resolved_by_strategy: BTreeMap<String, u32>,
+    /// Top-N unresolved (target_name, language, kind) tuples by count.
+    /// The ordered worklist the gate report drives engineering off of.
+    /// Capped at 25 entries.
+    pub top_unresolved_targets: Vec<UnresolvedTarget>,
+    /// Count of resolved edges with `confidence < low_confidence_threshold`.
+    /// Heuristic-resolved edges are quality debt — they're not unresolved
+    /// but they're not ground truth either.
+    pub low_confidence_edges: u32,
+    /// Threshold used for `low_confidence_edges`. Default 0.8 (matches
+    /// `query::diagnostics::LOW_CONFIDENCE_THRESHOLD`).
+    pub low_confidence_threshold: f64,
     /// Per-language file counts, user files only.
     pub languages: BTreeMap<String, u32>,
     /// Total persisted `code_chunks` rows — proxy for doc-drift coverage
@@ -268,6 +311,115 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
         }
     }
 
+    // Unresolved by source-symbol origin_language (embedded-region slice).
+    let mut unresolved_by_origin_language: BTreeMap<String, u32> = BTreeMap::new();
+    {
+        let by_origin_lang_sql = format!(
+            "SELECT COALESCE(s.origin_language, '') AS ol, COUNT(*)
+             FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
+             GROUP BY ol
+             ORDER BY ol"
+        );
+        let mut stmt = conn.prepare(&by_origin_lang_sql)?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
+        })?;
+        for row in rows {
+            let (ol, count) = row?;
+            unresolved_by_origin_language.insert(ol, count);
+        }
+    }
+
+    // Unresolved by package_id (monorepo slice).
+    let mut unresolved_by_package: BTreeMap<String, u32> = BTreeMap::new();
+    {
+        let by_package_sql = format!(
+            "SELECT COALESCE(CAST(f.package_id AS TEXT), '') AS pkg, COUNT(*)
+             FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
+             GROUP BY pkg
+             ORDER BY pkg"
+        );
+        let mut stmt = conn.prepare(&by_package_sql)?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
+        })?;
+        for row in rows {
+            let (pkg, count) = row?;
+            unresolved_by_package.insert(pkg, count);
+        }
+    }
+
+    // Resolved edges grouped by strategy (which resolution path is firing).
+    let mut resolved_by_strategy: BTreeMap<String, u32> = BTreeMap::new();
+    {
+        let mut stmt = conn.prepare(
+            "SELECT COALESCE(e.strategy, '') AS strat, COUNT(*)
+             FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal'
+             GROUP BY strat
+             ORDER BY strat",
+        )?;
+        let rows = stmt.query_map([], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?))
+        })?;
+        for row in rows {
+            let (strat, count) = row?;
+            resolved_by_strategy.insert(strat, count);
+        }
+    }
+
+    // Top-N unresolved targets across languages — the ordered worklist
+    // the resolution-gate report drives off of.
+    const TOP_N_UNRESOLVED: u32 = 25;
+    let mut top_unresolved_targets: Vec<UnresolvedTarget> = Vec::new();
+    {
+        let top_sql = format!(
+            "SELECT u.target_name, f.language, u.kind, COUNT(*) AS c
+             FROM unresolved_refs u
+             JOIN symbols s ON s.id = u.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND {CODE_REF_FILTER}
+             GROUP BY u.target_name, f.language, u.kind
+             ORDER BY c DESC, u.target_name ASC
+             LIMIT {TOP_N_UNRESOLVED}"
+        );
+        let mut stmt = conn.prepare(&top_sql)?;
+        let rows = stmt.query_map([], |r| {
+            Ok(UnresolvedTarget {
+                target_name: r.get(0)?,
+                language: r.get(1)?,
+                kind: r.get(2)?,
+                count: r.get(3)?,
+            })
+        })?;
+        for row in rows {
+            top_unresolved_targets.push(row?);
+        }
+    }
+
+    // Heuristic-resolved edges count (confidence below threshold). Tracks
+    // quality debt — these aren't unresolved, but they aren't ground truth.
+    let low_confidence_threshold: f64 = crate::query::diagnostics::LOW_CONFIDENCE_THRESHOLD;
+    let low_confidence_edges: u32 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal' AND e.confidence < ?1",
+            [low_confidence_threshold],
+            |r| r.get(0),
+        )
+        .unwrap_or(0);
+
     let code_chunks: u32 = conn
         .query_row("SELECT COUNT(*) FROM code_chunks", [], |r| r.get(0))
         .unwrap_or(0);
@@ -283,8 +435,15 @@ pub fn resolution_breakdown(db: &Database) -> QueryResult<ResolutionBreakdown> {
     Ok(ResolutionBreakdown {
         internal_edges,
         internal_unresolved,
+        internal_resolution_rate: resolution_rate,
         resolution_rate,
         unresolved_by_lang_kind,
+        unresolved_by_origin_language,
+        unresolved_by_package,
+        resolved_by_strategy,
+        top_unresolved_targets,
+        low_confidence_edges,
+        low_confidence_threshold,
         languages,
         code_chunks,
     })
