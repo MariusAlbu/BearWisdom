@@ -369,7 +369,23 @@ pub(super) fn extract_calls_from_body_with_symbols(
                     if let Some(sym) = super::symbols::extract_enum(
                         &child, source, None, "",
                     ) {
+                        let enum_idx = syms.len();
+                        let enum_name = sym.name.clone();
                         syms.push(sym);
+                        // Variants too — `enum ScopeKind { Package(i64),
+                        // DirPrefix(String), All }` declared inside a fn
+                        // body otherwise leaves `ScopeKind::DirPrefix(...)`
+                        // call sites unresolved.
+                        if let Some(body) = child.child_by_field_name("body") {
+                            super::symbols::extract_enum_variants(
+                                &body,
+                                source,
+                                Some(enum_idx),
+                                &enum_name,
+                                syms,
+                                refs,
+                            );
+                        }
                     }
                 }
             }

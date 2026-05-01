@@ -567,11 +567,19 @@ impl LanguageResolver for RustResolver {
         // template (PRs 31, 35-40, Lua, Go). Rust's `use` brings
         // names into scope and trait methods are callable by bare
         // name — both can leak past the deterministic path when
-        // type inference can't fully bind. Gated by `.rs` file
-        // extension and `kind_compatible`.
+        // type inference can't fully bind. Also fires for
+        // `Implements` edges produced by `impl Trait for Type` —
+        // those have no chain context and no module-field path
+        // when the extractor stored the qualifier elsewhere
+        // (`impl std::ops::Deref` produces target_name="Deref"
+        // because the resolver post-pass split the path). Gated
+        // by `.rs` file extension and `kind_compatible`.
         let target = &ref_ctx.extracted_ref.target_name;
         let edge_kind = ref_ctx.extracted_ref.kind;
-        if matches!(edge_kind, EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates)
+        if matches!(
+            edge_kind,
+            EdgeKind::Calls | EdgeKind::TypeRef | EdgeKind::Instantiates | EdgeKind::Implements
+        )
             && ref_ctx.extracted_ref.module.is_none()
             && !target.contains("::")
             && !target.contains('.')
