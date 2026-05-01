@@ -225,21 +225,5 @@ pub(super) fn is_java_builtin(name: &str) -> bool {
             | "flatMap"
             | "peek"
             | "toList"
-            // Common test/mock framework method names (JUnit, AssertJ, Mockito, MockMvc)
-            | "andExpect"
-            | "perform"
-            | "isEqualTo"
-            | "isNotNull"
-            | "willReturn"
-            | "given"
-            | "when"
-            | "then"
-            | "verify"
-            | "assertThat"
-            | "assertEquals"
-            | "assertTrue"
-            | "assertFalse"
-            | "assertNotNull"
-            | "assertThrows"
     )
 }
