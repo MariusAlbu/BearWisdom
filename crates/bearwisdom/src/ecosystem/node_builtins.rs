@@ -1,21 +1,19 @@
 // =============================================================================
-// ecosystem/node_builtins.rs — Node.js built-in module stubs (stdlib)
+// ecosystem/node_builtins.rs — Node.js built-in module stubs (fallback only)
 //
-// Provides synthetic symbols for Node's built-in modules (`fs`, `path`,
-// `http`, `os`, `util`, `crypto`, `stream`, `events`, `child_process`,
-// `url`, `querystring`, `buffer`, `process`, `timers`, `assert`, `console`).
+// Synthetic symbols for Node's built-in modules (`fs`, `path`, `http`, ...).
+// This is a fallback for JS/TS projects that have NOT installed `@types/node`
+// — the only situation where the synthetic surface adds anything the npm
+// ecosystem doesn't already cover.
 //
-// Purpose: when a JS/TS project does `require('fs')` or `import fs from
-// 'node:fs'` but has no `@types/node` installed, the reference would
-// otherwise be unresolved. This ecosystem intercepts bare module names and
-// `node:` prefixed names, emitting synthetic ParsedFile entries with the
-// module's top-level surface so the resolver finds a target.
+// When `@types/node` is present anywhere reachable from the project (the
+// project's own `node_modules/@types/node`, or a hoisted ancestor
+// `node_modules/@types/node`), the synthetic short-circuits to empty and
+// the npm ecosystem's real-source walk owns Node's API surface. Real source
+// always wins over the hand-maintained `MODULES` table below.
 //
-// Activation: any JS or TS file present in the project. Degrades
-// transparently if a richer `@types/node` package is already indexed via
-// the npm ecosystem — npm registers first, so its symbols win on lookup.
-//
-// See ts_lib_dom.rs and godot_api.rs for the peer pattern this follows.
+// Activation: any JS or TS file present, but locate_roots short-circuits
+// when `@types/node` is detected on disk.
 // =============================================================================
 
 use super::{
@@ -384,8 +382,10 @@ impl Ecosystem for NodeBuiltinsEcosystem {
         ])
     }
 
-    fn locate_roots(&self, _ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
-        // Single synthetic root — no disk probe needed.
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        if has_types_node(ctx.project_root) {
+            return Vec::new();
+        }
         vec![synthetic_dep_root()]
     }
 
@@ -404,112 +404,53 @@ impl Ecosystem for NodeBuiltinsEcosystem {
 impl ExternalSourceLocator for NodeBuiltinsEcosystem {
     fn ecosystem(&self) -> &'static str { LEGACY_ECOSYSTEM_TAG }
 
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+    fn locate_roots(&self, project_root: &Path) -> Vec<ExternalDepRoot> {
+        if has_types_node(project_root) {
+            return Vec::new();
+        }
         vec![synthetic_dep_root()]
     }
 
-    fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
+    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
+        if has_types_node(project_root) {
+            return None;
+        }
         Some(synthesize_all())
     }
 }
 
+/// Detect whether `@types/node` is present anywhere reachable from
+/// `project_root`. Checks the project's own `node_modules/@types/node`
+/// and walks up ancestor directories for hoisted-workspace layouts where
+/// the type package lives at the monorepo root.
+fn has_types_node(project_root: &Path) -> bool {
+    if project_root.join("node_modules/@types/node").is_dir() {
+        return true;
+    }
+    let mut cur = project_root.parent();
+    while let Some(dir) = cur {
+        if dir.join("node_modules/@types/node").is_dir() {
+            return true;
+        }
+        cur = dir.parent();
+    }
+    false
+}
+
 // =============================================================================
-// Tests
+// Tests live in node_builtins_tests.rs (per crate convention).
 // =============================================================================
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "node_builtins_tests.rs"]
+mod tests;
 
-    fn all_symbols() -> Vec<ExtractedSymbol> {
-        synthesize_all()
-            .into_iter()
-            .flat_map(|pf| pf.symbols)
-            .collect()
-    }
+#[cfg(test)]
+pub(super) fn _test_synthesize_all() -> Vec<ParsedFile> {
+    synthesize_all()
+}
 
-    #[test]
-    fn fs_read_file_present() {
-        let syms = all_symbols();
-        assert!(
-            syms.iter().any(|s| s.qualified_name == "fs.readFile"),
-            "expected fs.readFile in synthesized symbols"
-        );
-    }
-
-    #[test]
-    fn path_join_present() {
-        let syms = all_symbols();
-        assert!(
-            syms.iter().any(|s| s.qualified_name == "path.join"),
-            "expected path.join in synthesized symbols"
-        );
-    }
-
-    #[test]
-    fn node_prefix_alias_works() {
-        let syms = all_symbols();
-        // `node:fs` prefix emits `node:fs.readFile`
-        assert!(
-            syms.iter().any(|s| s.qualified_name == "node:fs.readFile"),
-            "expected node:fs.readFile alias in synthesized symbols"
-        );
-        // `node:path` prefix emits `node:path.join`
-        assert!(
-            syms.iter().any(|s| s.qualified_name == "node:path.join"),
-            "expected node:path.join alias in synthesized symbols"
-        );
-    }
-
-    #[test]
-    fn symbol_count_reasonable() {
-        // 17 modules × 2 prefixes; each has module-namespace + members.
-        // Minimum: 17 * 2 * 2 = 68. Generous floor.
-        let syms = all_symbols();
-        assert!(
-            syms.len() >= 68,
-            "expected >= 68 symbols, got {}",
-            syms.len()
-        );
-    }
-
-    #[test]
-    fn class_kinds_correct() {
-        let syms = all_symbols();
-        let event_emitter = syms
-            .iter()
-            .find(|s| s.qualified_name == "events.EventEmitter")
-            .expect("events.EventEmitter must exist");
-        assert_eq!(event_emitter.kind, SymbolKind::Class);
-
-        let url_class = syms
-            .iter()
-            .find(|s| s.qualified_name == "url.URL")
-            .expect("url.URL must exist");
-        assert_eq!(url_class.kind, SymbolKind::Class);
-    }
-
-    #[test]
-    fn all_modules_synthesized() {
-        let parsed = synthesize_all();
-        // 17 modules × 2 (bare + node: prefix) = 34
-        assert_eq!(
-            parsed.len(),
-            34,
-            "expected 34 ParsedFiles (17 modules × 2 prefixes), got {}",
-            parsed.len()
-        );
-    }
-
-    #[test]
-    fn virtual_paths_follow_convention() {
-        let parsed = synthesize_all();
-        for pf in &parsed {
-            assert!(
-                pf.path.starts_with("ext:node-builtins:"),
-                "virtual path must start with ext:node-builtins: — got {}",
-                pf.path
-            );
-        }
-    }
+#[cfg(test)]
+pub(super) fn _test_has_types_node(p: &Path) -> bool {
+    has_types_node(p)
 }
