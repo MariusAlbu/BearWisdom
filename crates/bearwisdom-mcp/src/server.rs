@@ -104,7 +104,9 @@ pub struct FindReferencesParams {
 pub struct CallHierarchyParams {
     /// Function or method name
     pub name: String,
-    /// Direction: "in" for callers, "out" for callees (default: "in")
+    /// Direction: "callers" / "in" for incoming calls, "callees" / "out" for
+    /// outgoing calls (default: "callers"). The `in`/`out` values are kept
+    /// for backwards compatibility.
     pub direction: Option<String>,
     /// Maximum results (default: 20)
     pub limit: Option<usize>,
@@ -412,7 +414,17 @@ impl ServerHandler for BearWisdomServer {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build()).with_instructions(
             "BearWisdom code intelligence: search symbols, grep source, inspect call hierarchies, \
              find references, analyze blast radius, and get architecture overviews for the indexed project. \
-             Use bw_investigate for a combined deep-dive into any symbol.",
+             Use bw_investigate for a combined deep-dive into any symbol.\n\n\
+             Compact format spec (when format=\"compact\"): \
+             First line is `#format:compact-v1`. Sections are separated by blank lines and named \
+             via `#meta`, `#files`, `#results`, `#matches`, `#refs`, `#symbols`, `#packages`, etc. \
+             The `#files` section is a path registry: `F1:<path>`, `F2:<path>`, ... — subsequent \
+             rows reference paths via `F1:<line>`, `F2:<line>`. Single-result responses inline the \
+             path directly and omit the `#files` registry. Symbol rows use \
+             `<name>|<kind>|F<n>:<line>` with optional trailing fields (`in:N` = incoming edges, \
+             `out:N` = outgoing edges, `private`/`public` = visibility, `0.95` = confidence score). \
+             The header `count:N` in `#meta` reports total match count; `truncated:true` indicates \
+             results were capped by the request limit.",
         )
     }
 }
@@ -518,7 +530,8 @@ impl BearWisdomServer {
         })
     }
 
-    /// Show call hierarchy: "in" = who calls this, "out" = what does this call. ~20 results.
+    /// Show call hierarchy: direction="callers" (alias "in") = who calls this;
+    /// direction="callees" (alias "out") = what does this call. ~20 results.
     #[tool(name = "bw_call_hierarchy")]
     fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> String {
         let compact = Self::is_compact(&params.format);
@@ -528,9 +541,10 @@ impl BearWisdomServer {
             }
             let limit = params.limit.unwrap_or(20);
             let query_result = match params.direction.as_deref() {
-                Some("out") => {
+                Some("out") | Some("callees") => {
                     bearwisdom::query::call_hierarchy::outgoing_calls(db, &params.name, limit)
                 }
+                // Default and explicit "in" / "callers" → incoming calls.
                 _ => bearwisdom::query::call_hierarchy::incoming_calls(db, &params.name, limit),
             };
             query_result

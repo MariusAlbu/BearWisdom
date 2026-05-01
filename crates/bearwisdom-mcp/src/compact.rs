@@ -27,6 +27,10 @@ use bearwisdom::types::ReferenceResult;
 struct CompactFormatter {
     files: Vec<String>,
     file_idx: HashMap<String, usize>,
+    /// When `true`, `fref` returns the path verbatim instead of an `Fn` key,
+    /// and `write_files` is a no-op. Used for single-result responses where
+    /// the F-table indirection costs more tokens than it saves.
+    inline_paths: bool,
 }
 
 impl CompactFormatter {
@@ -34,11 +38,32 @@ impl CompactFormatter {
         Self {
             files: Vec::new(),
             file_idx: HashMap::new(),
+            inline_paths: false,
         }
     }
 
-    /// Register a file path and return its compact ID (e.g. "F1").
+    /// Single-result mode: paths are inlined into result rows; the `#files`
+    /// registry is suppressed.
+    fn new_inline() -> Self {
+        Self {
+            files: Vec::new(),
+            file_idx: HashMap::new(),
+            inline_paths: true,
+        }
+    }
+
+    /// Construct a formatter sized for `n` expected results. Inline mode is
+    /// chosen automatically when `n == 1`.
+    fn for_count(n: usize) -> Self {
+        if n == 1 { Self::new_inline() } else { Self::new() }
+    }
+
+    /// Register a file path and return its compact ID (e.g. "F1") — or, in
+    /// inline mode, the path itself.
     fn fref(&mut self, path: &str) -> String {
+        if self.inline_paths {
+            return path.to_string();
+        }
         if let Some(&idx) = self.file_idx.get(path) {
             return format!("F{}", idx + 1);
         }
@@ -48,9 +73,9 @@ impl CompactFormatter {
         format!("F{}", idx + 1)
     }
 
-    /// Write the `#files` registry section into `out`.
+    /// Write the `#files` registry section into `out`. No-op in inline mode.
     fn write_files(&self, out: &mut String) {
-        if self.files.is_empty() {
+        if self.inline_paths || self.files.is_empty() {
             return;
         }
         out.push_str("#files\n");
@@ -156,7 +181,7 @@ pub fn architecture(overview: &ArchitectureOverview) -> String {
 
 /// `bw_search`
 pub fn search(results: &[SearchResult]) -> String {
-    let mut f = CompactFormatter::new();
+    let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(2048);
 
     body.push_str("#results\n");
@@ -176,7 +201,7 @@ pub fn search(results: &[SearchResult]) -> String {
 
 /// `bw_grep`
 pub fn grep(results: &[GrepMatch]) -> String {
-    let mut f = CompactFormatter::new();
+    let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(4096);
 
     body.push_str("#matches\n");
@@ -196,7 +221,7 @@ pub fn grep(results: &[GrepMatch]) -> String {
 
 /// `bw_symbol_info`
 pub fn symbol_info(results: &[SymbolDetail]) -> String {
-    let mut f = CompactFormatter::new();
+    let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(2048);
 
     body.push_str("#symbols\n");
@@ -240,7 +265,7 @@ pub fn symbol_info(results: &[SymbolDetail]) -> String {
 
 /// `bw_find_references`
 pub fn references(results: &[ReferenceResult]) -> String {
-    let mut f = CompactFormatter::new();
+    let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(2048);
 
     body.push_str("#refs\n");
@@ -264,7 +289,7 @@ pub fn references(results: &[ReferenceResult]) -> String {
 
 /// `bw_call_hierarchy`
 pub fn call_hierarchy(results: &[CallHierarchyItem]) -> String {
-    let mut f = CompactFormatter::new();
+    let mut f = CompactFormatter::for_count(results.len());
     let mut body = String::with_capacity(1024);
 
     body.push_str("#calls\n");
@@ -638,3 +663,7 @@ pub fn workspace_graph(edges: &[WorkspaceGraphEdge]) -> String {
     }
     out
 }
+
+#[cfg(test)]
+#[path = "compact_tests.rs"]
+mod tests;
