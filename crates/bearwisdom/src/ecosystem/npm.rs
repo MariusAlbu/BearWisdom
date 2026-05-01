@@ -208,21 +208,14 @@ fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::wal
         {
             continue;
         }
-        // Walk the package root; keep only the type-declaration files that
-        // are strong candidates for `declare global { ... }` content. This
-        // is cheap — each dep has a handful of .d.ts files, not thousands.
-        for wf in walk_ts_external_root(dep) {
-            let lower = wf.relative_path.to_lowercase();
-            let is_globals_file = lower.ends_with("/globals.d.ts")
-                || lower.ends_with("/global.d.ts")
-                || lower.ends_with("/index.d.ts")
-                || lower.ends_with("/jest.d.ts")
-                || lower.ends_with("/mocha.d.ts")
-                || lower.ends_with("/jasmine.d.ts");
-            if is_globals_file {
-                out.push(wf);
-            }
-        }
+        // Probe a handful of canonical filenames where ambient
+        // `declare global { ... }` blocks live, instead of walking the
+        // package tree. `@types/node` ships ~150 .d.ts files; the old
+        // walk-then-filter read every directory entry under each
+        // KNOWN_GLOBAL_PACKAGES dep just to retain a single index.d.ts.
+        // Direct path probing scales with the candidate-list size, not
+        // the package tree size.
+        out.extend(probe_global_decl_files(dep));
     }
 
     // SCSS pre-pull. Sass test frameworks (sass-true, true, sass-mq) and
@@ -231,14 +224,139 @@ fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::wal
     // resolution doesn't pull these — SCSS test runners inject the
     // assertion mixins (`assert-equal`, `assert-true`, `describe`, `it`)
     // as ambient globals at compile time, so user `.scss` source has no
-    // explicit `@import "sass-true"` for the npm walker to follow. Walk
-    // every dep's `.scss` content eagerly: cheap because most deps have
-    // zero `.scss` files (the walker bails before recursing into trees
-    // dominated by `.js`/`.d.ts`).
-    for dep in dep_roots {
-        out.extend(walk_scss_external_root(dep));
+    // explicit `@import "sass-true"` for the npm walker to follow.
+    //
+    // Gate on a representative dep root using a sibling project-source
+    // probe: walk up from one dep's parent looking for `.scss` files in
+    // the consuming workspace. When the project has no SCSS source, skip
+    // the per-dep walks entirely (saves wasted I/O on every TS-only
+    // checkout). When SCSS is present, walk every dep — most have zero
+    // `.scss` files and the walker bails fast.
+    if let Some(rep) = dep_roots.first() {
+        if project_uses_scss_via_dep_root(&rep.root) {
+            for dep in dep_roots {
+                out.extend(walk_scss_external_root(dep));
+            }
+        }
     }
     out
+}
+
+/// Try each canonical declaration-file path under `dep.root`. Return one
+/// `WalkedFile` per file actually present. Probes filenames known to host
+/// `declare global { ... }` blocks across `@types/jest`, `@types/mocha`,
+/// `@types/node`, `vitest`, `chai`, `sinon`, etc.
+fn probe_global_decl_files(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+    const CANDIDATE_REL_PATHS: &[&str] = &[
+        "globals.d.ts",
+        "global.d.ts",
+        "index.d.ts",
+        "jest.d.ts",
+        "mocha.d.ts",
+        "jasmine.d.ts",
+        "dist/globals.d.ts",
+        "dist/global.d.ts",
+        "dist/index.d.ts",
+        "dist/index.d.cts",
+        "dist/index.d.mts",
+        "lib/index.d.ts",
+        "lib/globals.d.ts",
+        "types/index.d.ts",
+        "types/globals.d.ts",
+    ];
+    let mut out = Vec::new();
+    for rel in CANDIDATE_REL_PATHS {
+        let path = dep.root.join(rel);
+        if !path.is_file() {
+            continue;
+        }
+        let virtual_path = format!("ext:ts:{}/{}", dep.module_path, rel);
+        out.push(WalkedFile {
+            relative_path: virtual_path,
+            absolute_path: path,
+            language: "typescript",
+        });
+    }
+    out
+}
+
+/// Cheap project-side probe: starting at `dep_root`'s grand-ancestor
+/// (typically the workspace root holding the consuming `package.json`),
+/// look for any `.scss` file in the project tree. Used to short-circuit
+/// the SCSS pre-pull on TS-only projects so we don't walk every dep's
+/// directory tree just to confirm it has no SCSS.
+fn project_uses_scss_via_dep_root(dep_root: &Path) -> bool {
+    // dep_root layout is typically:
+    //   <project>/node_modules/<pkg>/        (unscoped)
+    //   <project>/node_modules/@scope/<pkg>/ (scoped)
+    // pnpm: <store>/node_modules/<pkg>/, but the consuming project is
+    // reachable via the symlinked path's parent. canonicalise first to
+    // get the real on-disk path for store layouts.
+    let canonical = std::fs::canonicalize(dep_root).ok();
+    let root = canonical.as_deref().unwrap_or(dep_root);
+    // Walk up until we leave node_modules.
+    let mut cur = root.parent();
+    while let Some(p) = cur {
+        if p
+            .file_name()
+            .and_then(|n| n.to_str())
+            .map(|n| n != "node_modules" && !n.starts_with('@'))
+            .unwrap_or(true)
+        {
+            // p is the first ancestor outside node_modules; treat it as
+            // the consuming project root.
+            return scan_for_scss_bounded(p, 0);
+        }
+        cur = p.parent();
+    }
+    false
+}
+
+fn scan_for_scss_bounded(dir: &Path, depth: u32) -> bool {
+    if depth >= 6 {
+        return false;
+    }
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(
+                    name,
+                    "node_modules"
+                        | "target"
+                        | "build"
+                        | "out"
+                        | "dist"
+                        | ".next"
+                        | ".nuxt"
+                        | ".astro"
+                        | ".svelte-kit"
+                        | ".vite"
+                        | ".turbo"
+                        | ".cache"
+                        | "coverage"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
+            }
+            if scan_for_scss_bounded(&path, depth + 1) {
+                return true;
+            }
+        } else if ft.is_file() {
+            if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("scss"))
+                .unwrap_or(false)
+            {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 /// Walk a dep root and yield every indexable `.scss` file. Mirrors
@@ -3112,6 +3230,139 @@ mod tests {
         assert!(
             any_at_types_lodash,
             "@types/lodash must survive when lodash is imported: {ids:?}"
+        );
+    }
+
+    // ---- demand_pre_pull globals probe ------------------------------------
+
+    fn mkdep_simple(root: PathBuf, module: &str) -> ExternalDepRoot {
+        ExternalDepRoot {
+            module_path: module.to_string(),
+            version: "0.0.0".to_string(),
+            root,
+            ecosystem: LEGACY_ECOSYSTEM_TAG,
+            package_id: None,
+            requested_imports: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn probe_global_decl_files_returns_empty_when_no_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("node_modules").join("vitest");
+        std::fs::create_dir_all(&root).unwrap();
+        let dep = mkdep_simple(root, "vitest");
+        let probed = probe_global_decl_files(&dep);
+        assert!(probed.is_empty());
+    }
+
+    #[test]
+    fn probe_global_decl_files_finds_dist_globals_d_ts() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("node_modules").join("vitest");
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(
+            root.join("dist").join("globals.d.ts"),
+            "declare global { const test: () => void }\n",
+        )
+        .unwrap();
+        // A non-target deep file that should NOT be picked up by the probe.
+        std::fs::create_dir_all(root.join("dist").join("internal")).unwrap();
+        std::fs::write(
+            root.join("dist").join("internal").join("noise.d.ts"),
+            "export const noise = 1;\n",
+        )
+        .unwrap();
+
+        let dep = mkdep_simple(root, "vitest");
+        let probed = probe_global_decl_files(&dep);
+        let paths: Vec<&str> = probed.iter().map(|w| w.relative_path.as_str()).collect();
+
+        assert!(
+            paths.iter().any(|p| p.ends_with("dist/globals.d.ts")),
+            "expected dist/globals.d.ts in probed: {paths:?}"
+        );
+        assert!(
+            !paths.iter().any(|p| p.contains("internal/noise")),
+            "deep files must not be probed: {paths:?}"
+        );
+    }
+
+    #[test]
+    fn probe_global_decl_files_finds_jest_d_ts_at_root() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path().join("node_modules").join("@types").join("jest");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("index.d.ts"),
+            "declare global { const expect: any }\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("jest.d.ts"),
+            "declare global { const fail: any }\n",
+        )
+        .unwrap();
+
+        let dep = mkdep_simple(root, "@types/jest");
+        let probed = probe_global_decl_files(&dep);
+        let paths: Vec<&str> = probed.iter().map(|w| w.relative_path.as_str()).collect();
+
+        assert!(paths.iter().any(|p| p.ends_with("index.d.ts")), "{paths:?}");
+        assert!(paths.iter().any(|p| p.ends_with("jest.d.ts")), "{paths:?}");
+    }
+
+    #[test]
+    fn project_uses_scss_via_dep_root_true_when_scss_present() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let project_root = tmp.path();
+        std::fs::create_dir_all(project_root.join("src")).unwrap();
+        std::fs::write(project_root.join("src/styles.scss"), "$color: #fff;\n").unwrap();
+        let dep_root = project_root.join("node_modules").join("bootstrap");
+        std::fs::create_dir_all(&dep_root).unwrap();
+
+        assert!(project_uses_scss_via_dep_root(&dep_root));
+    }
+
+    #[test]
+    fn project_uses_scss_via_dep_root_false_when_no_scss() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let project_root = tmp.path();
+        std::fs::create_dir_all(project_root.join("src")).unwrap();
+        std::fs::write(project_root.join("src/index.ts"), "export const x = 1;\n").unwrap();
+        let dep_root = project_root.join("node_modules").join("react");
+        std::fs::create_dir_all(&dep_root).unwrap();
+
+        assert!(!project_uses_scss_via_dep_root(&dep_root));
+    }
+
+    #[test]
+    fn demand_pre_pull_test_globals_skips_scss_walk_on_ts_only_project() {
+        // A KNOWN_GLOBAL_PACKAGES dep with NO globals files and NO project-
+        // side .scss → returns empty. Confirms both fixes fire: no full
+        // tree walk for globals, no SCSS walk on a TS-only checkout.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let project_root = tmp.path();
+        std::fs::create_dir_all(project_root.join("src")).unwrap();
+        std::fs::write(project_root.join("src/index.ts"), "export const x = 1;\n").unwrap();
+
+        let vitest_root = project_root.join("node_modules").join("vitest");
+        std::fs::create_dir_all(&vitest_root).unwrap();
+        // Drop a noise file deep in the tree to confirm the OLD walk-then-
+        // filter would have visited (and discarded) it. The new probe must
+        // skip it without reading.
+        std::fs::create_dir_all(vitest_root.join("dist").join("noise_deep")).unwrap();
+        std::fs::write(
+            vitest_root.join("dist").join("noise_deep").join("noise.d.ts"),
+            "export const noise = 1;\n",
+        )
+        .unwrap();
+
+        let dep = mkdep_simple(vitest_root, "vitest");
+        let pulled = demand_pre_pull_test_globals(std::slice::from_ref(&dep));
+        assert!(
+            pulled.is_empty(),
+            "no globals.d.ts → no probe match; no .scss in project → no SCSS walk; {pulled:?}"
         );
     }
 
