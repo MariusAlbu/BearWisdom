@@ -31,7 +31,7 @@
 //   Ecto.Query               — from, where, select, join, preload, order_by, …
 //   Ecto.Repo                — all, one, get, insert, update, transaction, …
 //
-// Pattern: same as ecosystem/laravel_stubs.rs. Activation: Elixir language
+// Pattern: same as ecosystem/spring_stubs.rs. Activation: Elixir language
 // present.
 // =============================================================================
 

@@ -19,7 +19,7 @@
 // Synthesise the MockMvc API as plain Function symbols. Combined with the
 // Kotlin resolver's `by_name` fallback (step 7) the bare DSL calls resolve
 // to their full qualified path. Pattern matches phoenix_stubs /
-// laravel_stubs / swift_pm_dsl_stubs.
+// swift_pm_dsl_stubs.
 //
 // Activation: Kotlin OR Java language present.
 // =============================================================================

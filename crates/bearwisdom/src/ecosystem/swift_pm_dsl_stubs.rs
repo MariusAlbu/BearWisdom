@@ -20,7 +20,7 @@
 //
 // This synthesizes PackageDescription's top-level types + factory methods
 // so the Swift resolver's by_name lookup step resolves those bare refs.
-// Pattern matches laravel_stubs.rs / phoenix_stubs.rs.
+// Pattern matches phoenix_stubs.rs / spring_stubs.rs.
 //
 // Activation: Swift language present.
 // =============================================================================

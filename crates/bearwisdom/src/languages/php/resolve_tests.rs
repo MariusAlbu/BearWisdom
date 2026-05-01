@@ -502,9 +502,11 @@ fn test_inherited_method_via_this_resolves() {
 /// the Builder method on the parent Model stub.
 #[test]
 fn test_static_eloquent_call_via_type_access() {
-    // Model stub with whereIn (simulates laravel_stubs ModelForwarded)
+    // External Model class with whereIn — fixture for the chain walker's
+    // TypeAccess root + inheritance walk. Path string is just an identifier;
+    // the test doesn't depend on any specific ecosystem.
     let model_stub = make_file(
-        "ext:laravel-stubs:eloquent/ModelForwarded.php",
+        "ext:test-fixture:eloquent/ModelForwarded.php",
         vec![
             make_symbol("Model", "Model", SymbolKind::Class, Visibility::Public, None),
             make_symbol("whereIn", "Model.whereIn", SymbolKind::Method, Visibility::Public, Some("Model")),
@@ -596,7 +598,7 @@ fn test_static_eloquent_call_via_type_access() {
         res.target_symbol_id,
         *id_map
             .get(&(
-                "ext:laravel-stubs:eloquent/ModelForwarded.php".to_string(),
+                "ext:test-fixture:eloquent/ModelForwarded.php".to_string(),
                 "Model.whereIn".to_string()
             ))
             .unwrap(),

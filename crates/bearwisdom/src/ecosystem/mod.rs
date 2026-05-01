@@ -67,7 +67,6 @@ pub mod node_builtins;
 pub mod npm;
 pub mod nvim_runtime;
 pub mod nuget;
-pub mod laravel_stubs;
 pub mod opam;
 pub mod phoenix_stubs;
 pub mod php_stubs;
@@ -130,7 +129,6 @@ pub use node_builtins::NodeBuiltinsEcosystem;
 pub use npm::NpmEcosystem;
 pub use nvim_runtime::NvimRuntimeEcosystem;
 pub use nuget::NugetEcosystem;
-pub use laravel_stubs::LaravelStubsEcosystem;
 pub use phoenix_stubs::PhoenixStubsEcosystem;
 pub use opam::OpamEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
@@ -606,7 +604,6 @@ pub fn default_locator(
         "msvc-headers" => Some(Arc::new(MsvcHeadersEcosystem)),
         "dotnet-stdlib" => Some(Arc::new(DotnetStdlibEcosystem)),
         "php-stubs" => Some(Arc::new(PhpStubsEcosystem)),
-        "laravel-stubs" => Some(Arc::new(LaravelStubsEcosystem)),
         "phoenix-stubs" => Some(Arc::new(PhoenixStubsEcosystem)),
         "scala-stdlib" => Some(Arc::new(ScalaStdlibEcosystem)),
         "groovy-stdlib" => Some(Arc::new(GroovyStdlibEcosystem)),
@@ -716,7 +713,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(MsvcHeadersEcosystem);
         reg_eco!(DotnetStdlibEcosystem);
         reg_eco!(PhpStubsEcosystem);
-        reg_eco!(LaravelStubsEcosystem);
         reg_eco!(PhoenixStubsEcosystem);
         reg_eco!(ScalaStdlibEcosystem);
         reg_eco!(GroovyStdlibEcosystem);
