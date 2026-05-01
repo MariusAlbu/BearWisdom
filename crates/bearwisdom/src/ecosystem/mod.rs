@@ -645,76 +645,106 @@ pub fn default_locator(
 /// Default registry. Populated with every shipped ecosystem: the 18 package
 /// ecosystems migrated in Phase 2+3. Stdlib ecosystems (Phase 5) attach here
 /// as they land.
+///
+/// `BEARWISDOM_DISABLE_ECOSYSTEMS` (env var) takes a comma-separated list of
+/// ecosystem ids and skips their registration. Used for A/B testing whether
+/// a synthetic still adds resolution after the underlying real-source path
+/// has been fixed — index once with the synthetic, once without, compare
+/// quality. Intended for local experimentation, not production gating.
 pub fn default_registry() -> &'static EcosystemRegistry {
     use std::sync::OnceLock;
     static REG: OnceLock<EcosystemRegistry> = OnceLock::new();
     REG.get_or_init(|| {
+        let disabled: std::collections::HashSet<String> =
+            std::env::var("BEARWISDOM_DISABLE_ECOSYSTEMS")
+                .ok()
+                .map(|v| {
+                    v.split(',')
+                        .map(|s| s.trim().to_string())
+                        .filter(|s| !s.is_empty())
+                        .collect()
+                })
+                .unwrap_or_default();
+
         let mut reg = EcosystemRegistry::new();
-        reg.register(Arc::new(MavenEcosystem));
-        reg.register(Arc::new(NpmEcosystem));
-        reg.register(Arc::new(HexEcosystem));
-        reg.register(Arc::new(CargoEcosystem));
-        reg.register(Arc::new(PypiEcosystem));
-        reg.register(Arc::new(GoModEcosystem));
-        reg.register(Arc::new(SpmEcosystem));
-        reg.register(Arc::new(NugetEcosystem));
-        reg.register(Arc::new(PubEcosystem));
-        reg.register(Arc::new(RubygemsEcosystem));
-        reg.register(Arc::new(CranEcosystem));
-        reg.register(Arc::new(ComposerEcosystem));
-        reg.register(Arc::new(CabalEcosystem));
-        reg.register(Arc::new(NimbleEcosystem));
-        reg.register(Arc::new(CpanEcosystem));
-        reg.register(Arc::new(OpamEcosystem));
-        reg.register(Arc::new(LuarocksEcosystem));
-        reg.register(Arc::new(ZigPkgEcosystem));
-        reg.register(Arc::new(GodotApiEcosystem));
-        reg.register(Arc::new(PsGalleryEcosystem));
-        reg.register(Arc::new(TfRegistryEcosystem));
-        reg.register(Arc::new(BazelCentralRegistryEcosystem));
+
+        // Skip-aware register helper. Synthetics whose ids appear in the
+        // disable set are silently dropped.
+        macro_rules! reg_eco {
+            ($eco:expr) => {{
+                let arc = Arc::new($eco);
+                let eco_id = arc.id().as_str();
+                if !disabled.contains(eco_id) {
+                    reg.register(arc);
+                }
+            }};
+        }
+
+        reg_eco!(MavenEcosystem);
+        reg_eco!(NpmEcosystem);
+        reg_eco!(HexEcosystem);
+        reg_eco!(CargoEcosystem);
+        reg_eco!(PypiEcosystem);
+        reg_eco!(GoModEcosystem);
+        reg_eco!(SpmEcosystem);
+        reg_eco!(NugetEcosystem);
+        reg_eco!(PubEcosystem);
+        reg_eco!(RubygemsEcosystem);
+        reg_eco!(CranEcosystem);
+        reg_eco!(ComposerEcosystem);
+        reg_eco!(CabalEcosystem);
+        reg_eco!(NimbleEcosystem);
+        reg_eco!(CpanEcosystem);
+        reg_eco!(OpamEcosystem);
+        reg_eco!(LuarocksEcosystem);
+        reg_eco!(ZigPkgEcosystem);
+        reg_eco!(GodotApiEcosystem);
+        reg_eco!(PsGalleryEcosystem);
+        reg_eco!(TfRegistryEcosystem);
+        reg_eco!(BazelCentralRegistryEcosystem);
         // Stdlib ecosystems must register AFTER their base package ecosystem
         // (Maven) for TransitiveOn activation to resolve in a single pass.
-        reg.register(Arc::new(KotlinStdlibEcosystem));
-        reg.register(Arc::new(AndroidSdkEcosystem));
-        reg.register(Arc::new(RustStdlibEcosystem));
-        reg.register(Arc::new(GoStdlibEcosystem));
-        reg.register(Arc::new(CpythonStdlibEcosystem));
-        reg.register(Arc::new(JdkSrcEcosystem));
-        reg.register(Arc::new(TsLibDomEcosystem));
-        reg.register(Arc::new(RubyStdlibEcosystem));
-        reg.register(Arc::new(PosixHeadersEcosystem));
-        reg.register(Arc::new(MsvcHeadersEcosystem));
-        reg.register(Arc::new(DotnetStdlibEcosystem));
-        reg.register(Arc::new(PhpStubsEcosystem));
-        reg.register(Arc::new(LaravelStubsEcosystem));
-        reg.register(Arc::new(PhoenixStubsEcosystem));
-        reg.register(Arc::new(ScalaStdlibEcosystem));
-        reg.register(Arc::new(GroovyStdlibEcosystem));
-        reg.register(Arc::new(ClojureCoreEcosystem));
-        reg.register(Arc::new(ErlangOtpEcosystem));
-        reg.register(Arc::new(ElixirStdlibEcosystem));
-        reg.register(Arc::new(SpringStubsEcosystem));
-        reg.register(Arc::new(BlazorRuntimeEcosystem));
-        reg.register(Arc::new(SwiftFoundationEcosystem));
-        reg.register(Arc::new(SwiftPmDslStubsEcosystem));
-        reg.register(Arc::new(VbaTypelibsEcosystem));
-        reg.register(Arc::new(PuppetForgeEcosystem));
-        reg.register(Arc::new(PuppetStdlibEcosystem));
-        reg.register(Arc::new(DartSdkEcosystem));
-        reg.register(Arc::new(FlutterSdkEcosystem));
-        reg.register(Arc::new(PowerShellStdlibEcosystem));
-        reg.register(Arc::new(MatlabRuntimeEcosystem));
-        reg.register(Arc::new(MatlabStdlibEcosystem));
-        reg.register(Arc::new(NvimRuntimeEcosystem));
-        reg.register(Arc::new(GleamStdlibEcosystem));
-        reg.register(Arc::new(NodeBuiltinsEcosystem));
-        reg.register(Arc::new(ZigStdEcosystem));
-        reg.register(Arc::new(SdlSyntheticsEcosystem));
-        reg.register(Arc::new(BashCompletionSyntheticsEcosystem));
-        reg.register(Arc::new(RobotBuiltinEcosystem));
-        reg.register(Arc::new(RobotSeleniumLibraryEcosystem));
-        reg.register(Arc::new(RobotBrowserEcosystem));
-        reg.register(Arc::new(EmberHandlebarsHelpersEcosystem));
+        reg_eco!(KotlinStdlibEcosystem);
+        reg_eco!(AndroidSdkEcosystem);
+        reg_eco!(RustStdlibEcosystem);
+        reg_eco!(GoStdlibEcosystem);
+        reg_eco!(CpythonStdlibEcosystem);
+        reg_eco!(JdkSrcEcosystem);
+        reg_eco!(TsLibDomEcosystem);
+        reg_eco!(RubyStdlibEcosystem);
+        reg_eco!(PosixHeadersEcosystem);
+        reg_eco!(MsvcHeadersEcosystem);
+        reg_eco!(DotnetStdlibEcosystem);
+        reg_eco!(PhpStubsEcosystem);
+        reg_eco!(LaravelStubsEcosystem);
+        reg_eco!(PhoenixStubsEcosystem);
+        reg_eco!(ScalaStdlibEcosystem);
+        reg_eco!(GroovyStdlibEcosystem);
+        reg_eco!(ClojureCoreEcosystem);
+        reg_eco!(ErlangOtpEcosystem);
+        reg_eco!(ElixirStdlibEcosystem);
+        reg_eco!(SpringStubsEcosystem);
+        reg_eco!(BlazorRuntimeEcosystem);
+        reg_eco!(SwiftFoundationEcosystem);
+        reg_eco!(SwiftPmDslStubsEcosystem);
+        reg_eco!(VbaTypelibsEcosystem);
+        reg_eco!(PuppetForgeEcosystem);
+        reg_eco!(PuppetStdlibEcosystem);
+        reg_eco!(DartSdkEcosystem);
+        reg_eco!(FlutterSdkEcosystem);
+        reg_eco!(PowerShellStdlibEcosystem);
+        reg_eco!(MatlabRuntimeEcosystem);
+        reg_eco!(MatlabStdlibEcosystem);
+        reg_eco!(NvimRuntimeEcosystem);
+        reg_eco!(GleamStdlibEcosystem);
+        reg_eco!(NodeBuiltinsEcosystem);
+        reg_eco!(ZigStdEcosystem);
+        reg_eco!(SdlSyntheticsEcosystem);
+        reg_eco!(BashCompletionSyntheticsEcosystem);
+        reg_eco!(RobotBuiltinEcosystem);
+        reg_eco!(RobotSeleniumLibraryEcosystem);
+        reg_eco!(RobotBrowserEcosystem);
+        reg_eco!(EmberHandlebarsHelpersEcosystem);
         reg
     })
 }
