@@ -82,6 +82,35 @@ fn open_does_not_run_initial_reindex_implicitly() {
 }
 
 #[test]
+fn reindex_now_writes_last_indexed_at_meta() {
+    let dir = make_minimal_project();
+    let service = open_no_watch(dir.path());
+
+    // Before any reindex, the meta key should be absent.
+    {
+        let db = service.pool().get().unwrap();
+        assert!(bearwisdom::last_indexed_at_ms(&db).is_none());
+    }
+
+    let before = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+    service.reindex_now().expect("reindex");
+    let after = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap()
+        .as_millis() as i64;
+
+    let db = service.pool().get().unwrap();
+    let ts = bearwisdom::last_indexed_at_ms(&db).expect("meta key written");
+    assert!(
+        ts >= before && ts <= after,
+        "expected timestamp between {before} and {after}, got {ts}",
+    );
+}
+
+#[test]
 fn watcher_thread_starts_and_stops_cleanly() {
     let dir = make_minimal_project();
     let db_path = bearwisdom::resolve_db_path(dir.path()).unwrap();

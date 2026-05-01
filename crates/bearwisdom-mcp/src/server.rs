@@ -354,7 +354,9 @@ impl BearWisdomServer {
                 return e;
             }
         };
+        let last_indexed = bearwisdom::last_indexed_at_ms(&db);
         let result = f(&db).unwrap_or_else(|e| e);
+        let result = Self::with_freshness_header(result, last_indexed);
         self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
         result
     }
@@ -370,9 +372,38 @@ impl BearWisdomServer {
     {
         let t0 = std::time::Instant::now();
         let params_json = serde_json::to_string(params).unwrap_or_default();
+        // Best-effort freshness read; silently skip if pool unavailable.
+        let last_indexed = self.pool.get().ok().and_then(|db| bearwisdom::last_indexed_at_ms(&db));
         let result = f().unwrap_or_else(|e| e);
+        let result = Self::with_freshness_header(result, last_indexed);
         self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
         result
+    }
+
+    /// Inject an `#index` section after the compact format header so callers
+    /// can detect whether the underlying SQLite graph is in sync with the
+    /// working tree. JSON-shaped responses are returned unchanged.
+    pub(crate) fn with_freshness_header(response: String, last_indexed_ms: Option<i64>) -> String {
+        const HEADER: &str = "#format:compact-v1\n";
+        if !response.starts_with(HEADER) {
+            return response; // JSON or error path — leave untouched.
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or_default();
+        let block = match last_indexed_ms {
+            Some(ts) => {
+                let age = (now - ts).max(0);
+                format!("#index\nlast_indexed_at_ms:{ts}|age_ms:{age}\n\n")
+            }
+            None => "#index\nlast_indexed_at_ms:unknown\n\n".to_string(),
+        };
+        let mut out = String::with_capacity(response.len() + block.len());
+        out.push_str(HEADER);
+        out.push_str(&block);
+        out.push_str(&response[HEADER.len()..]);
+        out
     }
 
     /// Return an `Err(error_response)` for a missing/empty required input field.

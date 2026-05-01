@@ -18,18 +18,44 @@
 use std::path::{Path, PathBuf};
 use std::sync::mpsc;
 use std::thread;
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use anyhow::{Context, Result};
 use notify::{Config, Event, EventKind, RecommendedWatcher, RecursiveMode, Watcher};
 use rustc_hash::FxHashSet;
 use tracing::{debug, info, warn};
 
-use crate::db::DbPool;
+use crate::db::{Database, DbPool};
 use crate::indexer::changeset::{self, ChangeKind, FileChangeEvent};
 use crate::indexer::full::full_index;
 use crate::indexer::incremental::{git_reindex, incremental_index, reindex_files, IncrementalStats};
 use crate::types::IndexStats;
+
+/// `_bearwisdom_meta` key used to record the wall-clock time of the most
+/// recent index update (initial reindex, full, incremental, or watcher-
+/// driven file reindex). Stored as a unix-ms string. Consumers (MCP, Web)
+/// surface this so callers can detect freshness.
+pub const LAST_INDEXED_AT_MS_KEY: &str = "last_indexed_at_ms";
+
+fn now_ms() -> i64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as i64)
+        .unwrap_or_default()
+}
+
+fn touch_last_indexed_at(db: &Database) {
+    if let Err(e) = changeset::set_meta(db, LAST_INDEXED_AT_MS_KEY, &now_ms().to_string()) {
+        warn!("IndexService: failed to write {LAST_INDEXED_AT_MS_KEY}: {e:#}");
+    }
+}
+
+/// Read the most recent index update time from `_bearwisdom_meta`.
+/// Returned as unix milliseconds since the epoch, or `None` if the key
+/// is missing or unparseable.
+pub fn last_indexed_at_ms(db: &Database) -> Option<i64> {
+    changeset::get_meta(db, LAST_INDEXED_AT_MS_KEY).and_then(|s| s.parse().ok())
+}
 
 /// Source-file extensions watched and forwarded to the incremental indexer.
 /// Mirrors the supported language set; non-source files (e.g. binary assets,
@@ -134,19 +160,24 @@ impl IndexService {
             .map_err(|e| anyhow::anyhow!("pool acquire: {e}"))?;
 
         let prior_commit = changeset::get_meta(&db, "indexed_commit");
-        if prior_commit.is_some() {
+        let result = if prior_commit.is_some() {
             let inc = git_reindex(&mut db, &self.project_root, Some(&ref_cache))?;
-            return Ok(ReindexStats::Incremental(inc));
-        }
-        let file_count: i64 = db
-            .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
-            .unwrap_or(0);
-        if file_count > 0 {
-            let inc = incremental_index(&mut db, &self.project_root, Some(&ref_cache))?;
-            return Ok(ReindexStats::Incremental(inc));
-        }
-        let stats = full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))?;
-        Ok(ReindexStats::Full(stats))
+            ReindexStats::Incremental(inc)
+        } else {
+            let file_count: i64 = db
+                .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
+                .unwrap_or(0);
+            if file_count > 0 {
+                let inc = incremental_index(&mut db, &self.project_root, Some(&ref_cache))?;
+                ReindexStats::Incremental(inc)
+            } else {
+                let stats =
+                    full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))?;
+                ReindexStats::Full(stats)
+            }
+        };
+        touch_last_indexed_at(&db);
+        Ok(result)
     }
 }
 
@@ -278,13 +309,16 @@ fn run_watcher_loop(
             }
         };
         match reindex_files(&mut db, &project_root, &changes, Some(&ref_cache)) {
-            Ok(stats) => debug!(
-                "IndexService watcher: reindexed +{} ~{} -{} files in {}ms",
-                stats.files_added,
-                stats.files_modified,
-                stats.files_deleted,
-                stats.duration_ms,
-            ),
+            Ok(stats) => {
+                touch_last_indexed_at(&db);
+                debug!(
+                    "IndexService watcher: reindexed +{} ~{} -{} files in {}ms",
+                    stats.files_added,
+                    stats.files_modified,
+                    stats.files_deleted,
+                    stats.duration_ms,
+                );
+            }
             Err(e) => warn!("IndexService watcher: reindex error: {e:#}"),
         }
     }

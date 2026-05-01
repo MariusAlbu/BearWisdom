@@ -50,6 +50,34 @@ fn search_multi_result_uses_files_registry() {
 }
 
 #[test]
+fn with_freshness_header_injects_index_block_into_compact_response() {
+    let response = format!("#format:compact-v1\n#meta\ncount:0\n");
+    let out = crate::server::BearWisdomServer::with_freshness_header(
+        response,
+        Some(1_700_000_000_000),
+    );
+    assert!(out.starts_with("#format:compact-v1\n"));
+    assert!(out.contains("#index"));
+    assert!(out.contains("last_indexed_at_ms:1700000000000"));
+    assert!(out.contains("age_ms:"));
+    assert!(out.contains("#meta"));
+}
+
+#[test]
+fn with_freshness_header_skips_non_compact_responses() {
+    let response = r#"{"ok":true,"data":[]}"#.to_string();
+    let out = crate::server::BearWisdomServer::with_freshness_header(response, Some(123));
+    assert_eq!(out, r#"{"ok":true,"data":[]}"#);
+}
+
+#[test]
+fn with_freshness_header_handles_unknown_index_time() {
+    let response = format!("#format:compact-v1\n#meta\ncount:0\n");
+    let out = crate::server::BearWisdomServer::with_freshness_header(response, None);
+    assert!(out.contains("last_indexed_at_ms:unknown"));
+}
+
+#[test]
 fn grep_single_result_inlines_path() {
     let results = vec![make_grep_match("crates/foo/src/lib.rs", 10, "fn hello() {}")];
     let out = grep(&results);
