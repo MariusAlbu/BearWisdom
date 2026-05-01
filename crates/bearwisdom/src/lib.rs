@@ -69,7 +69,10 @@ pub use query::error::{QueryError, QueryResult};
 pub use query::cache::QueryCache;
 pub use query::workspace::{PackageDependency, PackageStats, WorkspaceGraphEdge, WorkspaceOverview};
 pub use query::workspace::{list_packages, package_dependencies, workspace_graph, workspace_overview};
-pub use query::diagnostics::{LowConfidenceBucket, LowConfidenceReport, low_confidence_edges};
+pub use query::diagnostics::{
+    low_confidence_edges, workspace_diagnostics, FileDiagnosticSummary, LowConfidenceBucket,
+    LowConfidenceReport, WorkspaceDiagnostics,
+};
 pub use query::unresolved_classify::{
     classify_unresolved, ClassificationBucket, ClassificationReport, SampleEntry,
     UnresolvedCategory,

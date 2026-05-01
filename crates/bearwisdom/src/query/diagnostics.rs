@@ -248,6 +248,149 @@ pub fn low_confidence_edges(
 }
 
 // ---------------------------------------------------------------------------
+// Workspace-wide diagnostics roll-up
+// ---------------------------------------------------------------------------
+
+/// One row in the workspace diagnostics ranking — a file with its unresolved
+/// and low-confidence counts.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FileDiagnosticSummary {
+    pub file_path: String,
+    pub language: String,
+    pub unresolved_count: u32,
+    pub low_confidence_count: u32,
+}
+
+/// Workspace-wide diagnostics report — ranks files by leakage so callers
+/// can ask "where is the worst leakage?" in one query.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WorkspaceDiagnostics {
+    pub threshold: f64,
+    pub total_unresolved: u64,
+    pub total_low_confidence: u64,
+    /// Files with the most unresolved refs, descending. Capped at `top_n`.
+    pub top_files_by_unresolved: Vec<FileDiagnosticSummary>,
+    /// Files with the most low-confidence edges, descending. Capped at `top_n`.
+    pub top_files_by_low_confidence: Vec<FileDiagnosticSummary>,
+}
+
+/// Aggregate diagnostics across the whole indexed workspace.
+///
+/// Returns the top N files ranked by unresolved-ref count and the top N
+/// files ranked by low-confidence-edge count. Both rankings are restricted
+/// to `files.origin = 'internal'` so external dependency noise doesn't
+/// dominate. `threshold` is applied to the low-confidence pass.
+pub fn workspace_diagnostics(
+    db: &Database,
+    top_n: u32,
+    threshold: f64,
+) -> QueryResult<WorkspaceDiagnostics> {
+    let _timer = db.timer("workspace_diagnostics");
+    let conn = db.conn();
+
+    let total_unresolved: u64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM unresolved_refs ur
+             JOIN symbols s ON s.id = ur.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE f.origin = 'internal'",
+            [],
+            |r| r.get::<_, i64>(0).map(|n| n as u64),
+        )
+        .context("workspace_diagnostics: total unresolved")?;
+
+    let total_low_confidence: u64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM edges e
+             JOIN symbols s ON s.id = e.source_id
+             JOIN files   f ON f.id = s.file_id
+             WHERE e.confidence < ?1
+               AND f.origin = 'internal'",
+            [threshold],
+            |r| r.get::<_, i64>(0).map(|n| n as u64),
+        )
+        .context("workspace_diagnostics: total low-confidence")?;
+
+    let top_files_by_unresolved: Vec<FileDiagnosticSummary> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT f.path,
+                        f.language,
+                        COUNT(ur.source_id) AS unresolved_count,
+                        (SELECT COUNT(*) FROM edges e2
+                         JOIN symbols s2 ON s2.id = e2.source_id
+                         WHERE s2.file_id = f.id
+                           AND e2.confidence < ?1) AS low_conf_count
+                 FROM unresolved_refs ur
+                 JOIN symbols s ON s.id = ur.source_id
+                 JOIN files   f ON f.id = s.file_id
+                 WHERE f.origin = 'internal'
+                 GROUP BY f.id, f.path, f.language
+                 ORDER BY unresolved_count DESC, f.path
+                 LIMIT ?2",
+            )
+            .context("workspace_diagnostics: prepare top-by-unresolved")?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![threshold, top_n as i64], |row| {
+                Ok(FileDiagnosticSummary {
+                    file_path: row.get(0)?,
+                    language: row.get(1)?,
+                    unresolved_count: row.get::<_, i64>(2)? as u32,
+                    low_confidence_count: row.get::<_, i64>(3)? as u32,
+                })
+            })
+            .context("workspace_diagnostics: execute top-by-unresolved")?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("workspace_diagnostics: collect top-by-unresolved")?
+    };
+
+    let top_files_by_low_confidence: Vec<FileDiagnosticSummary> = {
+        let mut stmt = conn
+            .prepare(
+                "SELECT f.path,
+                        f.language,
+                        (SELECT COUNT(*) FROM unresolved_refs ur2
+                         JOIN symbols s2 ON s2.id = ur2.source_id
+                         WHERE s2.file_id = f.id) AS unresolved_count,
+                        COUNT(e.source_id) AS low_conf_count
+                 FROM edges e
+                 JOIN symbols s ON s.id = e.source_id
+                 JOIN files   f ON f.id = s.file_id
+                 WHERE e.confidence < ?1
+                   AND f.origin = 'internal'
+                 GROUP BY f.id, f.path, f.language
+                 ORDER BY low_conf_count DESC, f.path
+                 LIMIT ?2",
+            )
+            .context("workspace_diagnostics: prepare top-by-low-confidence")?;
+
+        let rows = stmt
+            .query_map(rusqlite::params![threshold, top_n as i64], |row| {
+                Ok(FileDiagnosticSummary {
+                    file_path: row.get(0)?,
+                    language: row.get(1)?,
+                    unresolved_count: row.get::<_, i64>(2)? as u32,
+                    low_confidence_count: row.get::<_, i64>(3)? as u32,
+                })
+            })
+            .context("workspace_diagnostics: execute top-by-low-confidence")?;
+        rows.collect::<rusqlite::Result<Vec<_>>>()
+            .context("workspace_diagnostics: collect top-by-low-confidence")?
+    };
+
+    Ok(WorkspaceDiagnostics {
+        threshold,
+        total_unresolved,
+        total_low_confidence,
+        top_files_by_unresolved,
+        top_files_by_low_confidence,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 

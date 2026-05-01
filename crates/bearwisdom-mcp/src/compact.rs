@@ -17,7 +17,7 @@ use bearwisdom::{
 use bearwisdom::query::completion::CompletionItem;
 use bearwisdom::query::context::SmartContextResult;
 use bearwisdom::query::dead_code::{DeadCodeReport, EntryPointKind, EntryPointsReport};
-use bearwisdom::query::diagnostics::FileDiagnostics;
+use bearwisdom::query::diagnostics::{FileDiagnostics, WorkspaceDiagnostics};
 use bearwisdom::search::grep::GrepMatch;
 use bearwisdom::types::ReferenceResult;
 
@@ -681,6 +681,46 @@ pub fn workspace_graph(edges: &[WorkspaceGraphEdge]) -> String {
             e.source_package, e.target_package, code_parts, flow_parts, declared, e.total_edges
         );
     }
+    out
+}
+
+/// `bw_diagnostics` (workspace mode) — ranks files by leakage.
+pub fn workspace_diagnostics(rep: &WorkspaceDiagnostics) -> String {
+    let mut f = CompactFormatter::new();
+    let mut body = String::with_capacity(2048);
+
+    if !rep.top_files_by_unresolved.is_empty() {
+        body.push_str("#top_unresolved\n");
+        for r in &rep.top_files_by_unresolved {
+            let fr = f.fref(&r.file_path);
+            let _ = writeln!(
+                body,
+                "{}|{}|unresolved:{}|low_conf:{}",
+                fr, r.language, r.unresolved_count, r.low_confidence_count
+            );
+        }
+    }
+    if !rep.top_files_by_low_confidence.is_empty() {
+        body.push_str("\n#top_low_confidence\n");
+        for r in &rep.top_files_by_low_confidence {
+            let fr = f.fref(&r.file_path);
+            let _ = writeln!(
+                body,
+                "{}|{}|unresolved:{}|low_conf:{}",
+                fr, r.language, r.unresolved_count, r.low_confidence_count
+            );
+        }
+    }
+
+    let mut out = start(&format!(
+        "total_unresolved:{}|total_low_confidence:{}|threshold:{:.2}",
+        rep.total_unresolved, rep.total_low_confidence, rep.threshold
+    ));
+    f.write_files(&mut out);
+    if !f.files.is_empty() {
+        out.push('\n');
+    }
+    out.push_str(&body);
     out
 }
 

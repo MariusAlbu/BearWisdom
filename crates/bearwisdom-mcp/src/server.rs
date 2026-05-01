@@ -202,10 +202,16 @@ pub struct InvestigateParams {
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct DiagnosticsParams {
-    /// Relative file path to check for issues
-    pub file_path: String,
+    /// Relative file path to check for issues. Omit (or pass empty) to get
+    /// a workspace-wide ranking of files by unresolved + low-confidence
+    /// counts.
+    #[serde(default)]
+    pub file_path: Option<String>,
     /// Confidence threshold for flagging edges (default: 0.80, lower = more strict)
     pub confidence_threshold: Option<f64>,
+    /// In workspace mode, how many files to return in each ranking
+    /// (default: 20).
+    pub top_n: Option<u32>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
 }
@@ -707,20 +713,29 @@ impl BearWisdomServer {
         })
     }
 
-    /// Get diagnostics for a file: unresolved symbols + low-confidence edges.
+    /// Get diagnostics: unresolved symbols + low-confidence edges. Pass
+    /// `file_path` for a single-file report; omit it for a workspace-wide
+    /// ranking that surfaces the files with the worst leakage.
     #[tool(name = "bw_diagnostics")]
     fn diagnostics(&self, Parameters(params): Parameters<DiagnosticsParams>) -> String {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_diagnostics", &params, |db| {
-            if params.file_path.is_empty() {
-                return Self::invalid_input("file_path is required");
-            }
             let threshold = params.confidence_threshold.unwrap_or(
                 bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
             );
-            bearwisdom::query::diagnostics::get_diagnostics(db, &params.file_path, threshold)
-                .map_err(Self::query_err)
-                .and_then(|r| if compact { Ok(crate::compact::diagnostics(&r)) } else { Self::to_json(&r) })
+            let file_path = params.file_path.as_deref().unwrap_or("").trim();
+            if file_path.is_empty() {
+                // Workspace mode.
+                let top_n = params.top_n.unwrap_or(20);
+                bearwisdom::workspace_diagnostics(db, top_n, threshold)
+                    .map_err(Self::query_err)
+                    .and_then(|r| if compact { Ok(crate::compact::workspace_diagnostics(&r)) } else { Self::to_json(&r) })
+            } else {
+                // Per-file mode (legacy behavior).
+                bearwisdom::query::diagnostics::get_diagnostics(db, file_path, threshold)
+                    .map_err(Self::query_err)
+                    .and_then(|r| if compact { Ok(crate::compact::diagnostics(&r)) } else { Self::to_json(&r) })
+            }
         })
     }
 
