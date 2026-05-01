@@ -28,17 +28,8 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "document", "window", "console", "JSON",
     // Synthetic
     "_primitive",
-    // Play/Akka/http4s (ecosystem gems — not scala stdlib)
-    "Redirect", "Ok", "BadRequest", "NotFound", "InternalServerError",
-    "Action", "Results", "Request", "Response", "Cookie",
-    "Props", "ActorRef", "ActorSystem",
-    // Type classes from cats/zio (not scala stdlib)
-    "IO", "Task", "ZIO", "UIO", "URIO",
-    "Monad", "Functor", "Applicative", "Traverse",
-    "Show", "Eq", "Order", "Semigroup", "Monoid",
-    // assertEquals (JUnit/MUnit testing — not scala stdlib)
-    "assertEquals", "assertNotEquals", "assertTrue", "assertFalse",
-    "assertThrows", "assert",
+    // Predef.assert — Scala stdlib assertion macro
+    "assert",
     // Generic type parameters
     "T", "U", "K", "V", "E", "R", "S", "A", "B", "F",
     // From former builtin_type_names:
