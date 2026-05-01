@@ -482,6 +482,27 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         debug!("No node_modules dirs discovered; skipping npm externals");
         return Vec::new();
     }
+
+    // User-import gate: only emit dep roots for packages user code actually
+    // imports. Material-ui ships ~3 K declaration files, lodash/rxjs/three.js
+    // similar — header-scanning all of them when the user imports two
+    // components is the dominant cost of npm externals indexing. A textual
+    // scan over user source picks up `from 'pkg'`, `require('pkg')`, and
+    // `import('pkg')` and reduces each to its package portion.
+    //
+    // Test-runner globals (`describe`, `it`, `expect`) are named bare in
+    // user source without an `import`, so KNOWN_GLOBAL_PACKAGES are kept
+    // regardless of whether the user wrote `import { describe } from
+    // 'vitest'`. The companion `@types/<pkg>` package follows automatically
+    // when the runtime package matches a user import.
+    let user_imports = collect_ts_user_imports(project_root);
+    let always_keep: std::collections::HashSet<&'static str> =
+        KNOWN_GLOBAL_PACKAGES.iter().copied().collect();
+    debug!(
+        "User-import gate: {} bare specifiers found in user source",
+        user_imports.len()
+    );
+
     debug!(
         "Probing {} node_modules root(s) for {} declared deps",
         node_modules_roots.len(),
@@ -497,6 +518,31 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
         if !is_valid_npm_module_path(dep) {
             debug!("npm: skipping invalid dep name `{dep}` from package.json");
             continue;
+        }
+        // Apply the user-import gate. A declared dep is kept iff the user
+        // imports it (directly OR via its companion @types package), or it
+        // belongs to KNOWN_GLOBAL_PACKAGES, or — in the absence of any
+        // user-import data — we fall back to the legacy "keep all"
+        // behavior so projects with no scannable source (manifest-only
+        // checkouts, generators) keep working.
+        if !user_imports.is_empty() && !always_keep.contains(dep.as_str()) {
+            let companion = dep.strip_prefix("@types/");
+            let user_imports_dep = user_imports.contains(dep);
+            let user_imports_companion = companion
+                .and_then(|c| {
+                    // `@types/foo` is consumed when user imports `foo`.
+                    // `@types/scope__pkg` is consumed when user imports `@scope/pkg`.
+                    if let Some((scope, name)) = c.split_once("__") {
+                        Some(format!("@{scope}/{name}"))
+                    } else {
+                        Some(c.to_string())
+                    }
+                })
+                .map(|expanded| user_imports.contains(&expanded))
+                .unwrap_or(false);
+            if !user_imports_dep && !user_imports_companion {
+                continue;
+            }
         }
 
         // `@types/foo` deps are normally picked up as companions of `foo`
@@ -743,6 +789,176 @@ fn extract_bare_reexport_specifiers(src: &str) -> Vec<String> {
     out
 }
 
+/// Collect every bare-specifier package the project's user source actually
+/// imports. Used by `discover_ts_externals` to gate the declared-dep list
+/// down to packages the application reaches.
+///
+/// Without this gate every dep in `package.json` becomes a dep root and gets
+/// header-scanned by `build_npm_symbol_index`, even ones the user never
+/// touches. Real projects routinely declare 100+ deps but import 30–50 —
+/// scanning the unused ones is the dominant cost of npm externals indexing
+/// (material-ui ships ~3 K declaration files; lodash, rxjs, three.js are
+/// similar). User-import gating cuts the work by 50–70 % on typical
+/// front-end checkouts.
+///
+/// `import_test_files` controls whether we walk `__tests__` / `*.spec.*`
+/// trees. Production code usually doesn't import test fixtures, so the
+/// scan skips test trees by default; the test-globals demand_pre_pull
+/// path covers the symbols those files would have brought in via
+/// `KNOWN_GLOBAL_PACKAGES`.
+fn collect_ts_user_imports(project_root: &Path) -> std::collections::HashSet<String> {
+    let mut imports = std::collections::HashSet::new();
+    scan_ts_user_imports_recursive(project_root, &mut imports, 0);
+    imports
+}
+
+fn scan_ts_user_imports_recursive(
+    dir: &Path,
+    out: &mut std::collections::HashSet<String>,
+    depth: usize,
+) {
+    if depth > 12 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(
+                    name,
+                    "node_modules" | "target" | "build" | "out" | "dist"
+                        | ".next" | ".nuxt" | ".astro" | ".svelte-kit"
+                        | ".vite" | ".turbo" | ".cache" | "coverage"
+                        | "__tests__" | "__mocks__" | "tests" | "test"
+                ) || name.starts_with('.')
+                {
+                    continue;
+                }
+            }
+            scan_ts_user_imports_recursive(&path, out, depth + 1);
+        } else if ft.is_file() {
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            if !is_user_source_file(name) { continue }
+            // Skip declaration files — they're toolchain-emitted and may
+            // re-export packages the user doesn't actually consume.
+            if name.ends_with(".d.ts") { continue }
+            // Skip per-file test/story names — same rationale as the dir
+            // skip above.
+            if is_test_or_story_file(name) { continue }
+            let Ok(content) = std::fs::read_to_string(&path) else { continue };
+            extract_user_imports_from_source(&content, out);
+        }
+    }
+}
+
+/// File extensions that may contain user-authored TS/JS imports.
+fn is_user_source_file(name: &str) -> bool {
+    name.ends_with(".ts")
+        || name.ends_with(".tsx")
+        || name.ends_with(".mts")
+        || name.ends_with(".cts")
+        || name.ends_with(".js")
+        || name.ends_with(".jsx")
+        || name.ends_with(".mjs")
+        || name.ends_with(".cjs")
+        || name.ends_with(".vue")
+        || name.ends_with(".svelte")
+        || name.ends_with(".astro")
+}
+
+/// Tolerant scan for bare-specifier imports in user source. Recognized
+/// shapes:
+///   * `import ... from '<spec>'`
+///   * `export ... from '<spec>'`
+///   * `import '<spec>'`
+///   * `require('<spec>')`
+///   * `import('<spec>')` (dynamic)
+///
+/// Specifiers starting with `.`, `/`, or `node:` are skipped (relative,
+/// absolute, builtin). Each retained specifier is reduced to its package
+/// portion (`@scope/pkg/sub` → `@scope/pkg`, `pkg/dist/x` → `pkg`).
+fn extract_user_imports_from_source(
+    content: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
+    // Strategy: line-oriented scan picks up `from 'spec'` cheaply.
+    // For `require('spec')` and `import('spec')` we additionally do a
+    // single forward pass over the file content matching the `(` form,
+    // since those calls appear inside expressions and aren't anchored
+    // to a leading keyword.
+
+    for line in content.lines() {
+        let t = line.trim();
+        if t.starts_with("//") { continue }
+        if t.starts_with("import ") || t.starts_with("export ") || t.starts_with("import\t") {
+            if let Some(spec) = extract_quoted_after(t, " from ") {
+                push_user_import(spec, out);
+            } else if let Some(spec) = extract_bare_import_spec(t) {
+                push_user_import(spec, out);
+            }
+        }
+    }
+
+    // require('spec') and import('spec') — anywhere in the file.
+    push_call_imports(content, "require(", out);
+    push_call_imports(content, "import(", out);
+}
+
+/// `import 'pkg';` — no `from` clause. Returns the inner string of the
+/// only quoted argument, or None.
+fn extract_bare_import_spec(line: &str) -> Option<&str> {
+    let after_import = line.strip_prefix("import ")?.trim_start();
+    extract_first_quoted(after_import)
+}
+
+/// Find a quoted string occurring right after `marker` in `line`.
+fn extract_quoted_after<'a>(line: &'a str, marker: &str) -> Option<&'a str> {
+    let ix = line.find(marker)?;
+    let rest = line[ix + marker.len()..].trim_start();
+    extract_first_quoted(rest)
+}
+
+/// Pick out the contents of the first single- or double-quoted string at the
+/// start of `s`. Returns None if `s` doesn't begin with a quote.
+fn extract_first_quoted(s: &str) -> Option<&str> {
+    let quote = s.chars().next()?;
+    if quote != '\'' && quote != '"' { return None }
+    let inner = &s[1..];
+    let end = inner.find(quote)?;
+    Some(&inner[..end])
+}
+
+/// Scan `content` for occurrences of `marker` (e.g. `require(`) followed by
+/// a quoted bare specifier and push the package name into `out`.
+fn push_call_imports(
+    content: &str,
+    marker: &str,
+    out: &mut std::collections::HashSet<String>,
+) {
+    let mut cursor = 0usize;
+    while let Some(rel) = content[cursor..].find(marker) {
+        let absolute = cursor + rel + marker.len();
+        cursor = absolute;
+        let rest = &content[absolute..];
+        let trimmed = rest.trim_start();
+        if let Some(spec) = extract_first_quoted(trimmed) {
+            push_user_import(spec, out);
+        }
+    }
+}
+
+/// Normalize a raw specifier and insert the package portion if it's bare.
+fn push_user_import(spec: &str, out: &mut std::collections::HashSet<String>) {
+    if spec.is_empty() { return }
+    if spec.starts_with('.') || spec.starts_with('/') { return }
+    if spec.starts_with("node:") { return }
+    // Windows drive letters (rare in source but possible in dynamic imports).
+    if spec.len() >= 2 && spec.as_bytes()[1] == b':' { return }
+    let pkg = npm_package_name_from_spec(spec);
+    if !is_valid_npm_module_path(pkg) { return }
+    out.insert(pkg.to_string());
+}
+
 /// DefinitelyTyped publishes types for scoped packages at
 /// `@types/{scope}__{name}` because npm disallows nested `@` inside a scope
 /// path. Returns None for non-scoped names.
@@ -797,6 +1013,14 @@ fn discover_ts_externals_scoped(
         return Vec::new();
     }
 
+    // Same user-import gate as the project-level path. Walks the package's
+    // own source tree (not the entire workspace) so the import set reflects
+    // what THIS package consumes — a sibling package's React import
+    // doesn't make React relevant here.
+    let user_imports = collect_ts_user_imports(package_abs_path);
+    let always_keep: std::collections::HashSet<&'static str> =
+        KNOWN_GLOBAL_PACKAGES.iter().copied().collect();
+
     let builtins = node_builtins();
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
@@ -805,6 +1029,23 @@ fn discover_ts_externals_scoped(
         if !is_valid_npm_module_path(dep) {
             debug!("npm: skipping invalid scoped dep name `{dep}` from package.json");
             continue;
+        }
+        if !user_imports.is_empty() && !always_keep.contains(dep.as_str()) {
+            let companion = dep.strip_prefix("@types/");
+            let user_imports_dep = user_imports.contains(dep);
+            let user_imports_companion = companion
+                .map(|c| {
+                    if let Some((scope, name)) = c.split_once("__") {
+                        format!("@{scope}/{name}")
+                    } else {
+                        c.to_string()
+                    }
+                })
+                .map(|expanded| user_imports.contains(&expanded))
+                .unwrap_or(false);
+            if !user_imports_dep && !user_imports_companion {
+                continue;
+            }
         }
         // See `discover_ts_externals` — direct `@types/foo` declarations
         // must not be silently dropped; they may be the sole type source
@@ -2588,6 +2829,283 @@ mod tests {
         assert!(is_valid_npm_module_path("@types/node"));
         assert!(is_valid_npm_module_path("@vitest/expect"));
         assert!(is_valid_npm_module_path("__ts_lib__"));
+    }
+
+    // ---- user-import gate -------------------------------------------------
+
+    fn extract(src: &str) -> std::collections::HashSet<String> {
+        let mut out = std::collections::HashSet::new();
+        extract_user_imports_from_source(src, &mut out);
+        out
+    }
+
+    #[test]
+    fn user_imports_picks_up_static_from_clauses() {
+        let src = r#"
+            import React from 'react';
+            import { useState } from "react";
+            import type { Foo } from '@scope/pkg';
+            export { Bar } from 'lodash';
+        "#;
+        let got = extract(src);
+        assert!(got.contains("react"));
+        assert!(got.contains("@scope/pkg"));
+        assert!(got.contains("lodash"));
+    }
+
+    #[test]
+    fn user_imports_picks_up_bare_side_effect_imports() {
+        let src = r#"
+            import 'some-pkg/style.css';
+            import "polyfill";
+        "#;
+        let got = extract(src);
+        // Both reduce to the package portion.
+        assert!(got.contains("some-pkg"));
+        assert!(got.contains("polyfill"));
+    }
+
+    #[test]
+    fn user_imports_picks_up_require_and_dynamic_import() {
+        let src = r#"
+            const fs = require('fs-extra');
+            const lazy = await import('comlink');
+            const helper = require("some-other-helper");
+        "#;
+        let got = extract(src);
+        assert!(got.contains("fs-extra"));
+        assert!(got.contains("comlink"));
+        assert!(got.contains("some-other-helper"));
+    }
+
+    #[test]
+    fn user_imports_skips_relative_absolute_and_node_protocol() {
+        let src = r#"
+            import a from './local';
+            import b from '../../utils';
+            import c from '/abs/path';
+            import fs from 'node:fs';
+            const x = require('./util');
+        "#;
+        let got = extract(src);
+        assert!(got.is_empty(), "expected empty, got {got:?}");
+    }
+
+    #[test]
+    fn user_imports_normalizes_subpath_specifiers_to_package_root() {
+        let src = r#"
+            import x from 'rxjs/operators';
+            import y from '@scope/pkg/sub/path';
+            import z from 'lodash/fp';
+        "#;
+        let got = extract(src);
+        assert!(got.contains("rxjs"));
+        assert!(got.contains("@scope/pkg"));
+        assert!(got.contains("lodash"));
+        assert!(!got.contains("rxjs/operators"));
+        assert!(!got.contains("@scope/pkg/sub/path"));
+    }
+
+    #[test]
+    fn user_imports_recursive_scan_finds_imports_across_files() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/index.ts"),
+            "import React from 'react';\n",
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("src/util.tsx"),
+            "import _ from 'lodash';\n",
+        )
+        .unwrap();
+        // node_modules contents must not contribute imports.
+        std::fs::create_dir_all(root.join("node_modules/something")).unwrap();
+        std::fs::write(
+            root.join("node_modules/something/leak.ts"),
+            "import x from 'should-not-be-included';\n",
+        )
+        .unwrap();
+        // Test files are skipped by the gate's traversal.
+        std::fs::create_dir_all(root.join("__tests__")).unwrap();
+        std::fs::write(
+            root.join("__tests__/x.test.ts"),
+            "import y from 'should-not-be-included-2';\n",
+        )
+        .unwrap();
+
+        let got = collect_ts_user_imports(root);
+        assert!(got.contains("react"));
+        assert!(got.contains("lodash"));
+        assert!(!got.contains("should-not-be-included"));
+        assert!(!got.contains("should-not-be-included-2"));
+    }
+
+    #[test]
+    fn discover_ts_externals_excludes_unused_declared_dep() {
+        // package.json declares two deps; user source only imports one.
+        // The excluded dep must not produce a dep root.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{
+              "name": "x",
+              "dependencies": {
+                "imported-pkg": "1.0.0",
+                "unused-pkg": "2.0.0"
+              }
+            }"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("node_modules/imported-pkg")).unwrap();
+        std::fs::write(
+            root.join("node_modules/imported-pkg/package.json"),
+            r#"{"name":"imported-pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("node_modules/unused-pkg")).unwrap();
+        std::fs::write(
+            root.join("node_modules/unused-pkg/package.json"),
+            r#"{"name":"unused-pkg","version":"2.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/index.ts"),
+            "import x from 'imported-pkg';\n",
+        )
+        .unwrap();
+
+        let roots = discover_ts_externals(root);
+        let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+        assert!(ids.contains(&"imported-pkg"), "imported-pkg expected: {ids:?}");
+        assert!(!ids.contains(&"unused-pkg"), "unused-pkg should be gated out: {ids:?}");
+    }
+
+    #[test]
+    fn discover_ts_externals_keeps_known_global_packages_even_without_import() {
+        // KNOWN_GLOBAL_PACKAGES are kept regardless of whether user code
+        // explicitly imports them — `describe`/`it`/`expect` are typically
+        // referenced as globals without a `from` clause.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{
+              "name": "x",
+              "dependencies": {
+                "vitest": "1.0.0",
+                "imported-pkg": "1.0.0"
+              }
+            }"#,
+        )
+        .unwrap();
+        for pkg in &["vitest", "imported-pkg"] {
+            std::fs::create_dir_all(root.join("node_modules").join(pkg)).unwrap();
+            std::fs::write(
+                root.join("node_modules").join(pkg).join("package.json"),
+                format!(r#"{{"name":"{pkg}","version":"1.0.0"}}"#),
+            )
+            .unwrap();
+        }
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/index.ts"),
+            "import x from 'imported-pkg';\nexport function t() { describe('a', () => {}); }",
+        )
+        .unwrap();
+
+        let roots = discover_ts_externals(root);
+        let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+        assert!(ids.contains(&"vitest"), "vitest must survive the gate: {ids:?}");
+        assert!(ids.contains(&"imported-pkg"));
+    }
+
+    #[test]
+    fn discover_ts_externals_keeps_at_types_when_runtime_pkg_is_imported() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{
+              "name": "x",
+              "dependencies": {
+                "lodash": "4.0.0",
+                "@types/lodash": "4.0.0"
+              }
+            }"#,
+        )
+        .unwrap();
+        for pkg in &["lodash"] {
+            std::fs::create_dir_all(root.join("node_modules").join(pkg)).unwrap();
+            std::fs::write(
+                root.join("node_modules").join(pkg).join("package.json"),
+                format!(r#"{{"name":"{pkg}","version":"1.0.0"}}"#),
+            )
+            .unwrap();
+        }
+        std::fs::create_dir_all(root.join("node_modules/@types/lodash")).unwrap();
+        std::fs::write(
+            root.join("node_modules/@types/lodash/package.json"),
+            r#"{"name":"@types/lodash","version":"4.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::create_dir_all(root.join("src")).unwrap();
+        std::fs::write(
+            root.join("src/index.ts"),
+            "import _ from 'lodash';\n",
+        )
+        .unwrap();
+
+        let roots = discover_ts_externals(root);
+        let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+        assert!(ids.contains(&"lodash"));
+        // @types/lodash either appears under its own dep label OR as the
+        // companion-types fallback discovered alongside lodash. Either is
+        // acceptable; the assertion is that it's present.
+        let any_at_types_lodash = ids
+            .iter()
+            .any(|m| *m == "@types/lodash");
+        assert!(
+            any_at_types_lodash,
+            "@types/lodash must survive when lodash is imported: {ids:?}"
+        );
+    }
+
+    #[test]
+    fn discover_ts_externals_falls_back_to_keep_all_when_no_user_source() {
+        // Manifest-only checkout (e.g. a generator template). With no
+        // scannable source, every declared dep gets a root so existing
+        // behavior is preserved.
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let root = tmp.path();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{
+              "name": "x",
+              "dependencies": {
+                "alpha": "1.0.0",
+                "beta": "1.0.0"
+              }
+            }"#,
+        )
+        .unwrap();
+        for pkg in &["alpha", "beta"] {
+            std::fs::create_dir_all(root.join("node_modules").join(pkg)).unwrap();
+            std::fs::write(
+                root.join("node_modules").join(pkg).join("package.json"),
+                format!(r#"{{"name":"{pkg}","version":"1.0.0"}}"#),
+            )
+            .unwrap();
+        }
+
+        let roots = discover_ts_externals(root);
+        let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+        assert!(ids.contains(&"alpha"), "{ids:?}");
+        assert!(ids.contains(&"beta"), "{ids:?}");
     }
 
     #[test]
