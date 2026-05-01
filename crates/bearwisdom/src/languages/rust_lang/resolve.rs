@@ -824,6 +824,80 @@ fn infer_external_inner(
             }
         }
 
+    // Final externals-index fallback: if every project import / wildcard /
+    // chain check failed, try a by-name lookup. When `target_name` matches
+    // one or more symbols defined in external files (`ext:` path prefix),
+    // classify the ref as external. Covers common stdlib method calls
+    // (`trim_matches`, `to_string_lossy`, `to_path_buf`, `with_context`,
+    // `is_ascii_alphanumeric`) that aren't directly imported but are
+    // walked in via rust-stdlib / cargo deps.
+    //
+    // Conservative: only fires when EVERY matching symbol is external.
+    // If any match is project-internal, we let resolution fall through
+    // and either resolve to that internal symbol or land as unresolved
+    // — `trim_matches`-style names occasionally collide with user-defined
+    // helpers, and we don't want to misattribute a real bug to "external".
+    if let Some(lookup) = lookup {
+        let matches = lookup.by_name(target);
+        if !matches.is_empty() {
+            let all_external = matches
+                .iter()
+                .all(|s| s.file_path.starts_with("ext:"));
+            if all_external {
+                // Pick a representative crate from the first match's file path.
+                // `ext:rust:.../core/src/str/mod.rs` → `core`. Fall back to
+                // "std" if we can't parse it cleanly — the classification
+                // matters for grouping, not for chain walking.
+                let crate_name = matches
+                    .first()
+                    .and_then(|s| classify_external_path_as_crate(&s.file_path))
+                    .unwrap_or_else(|| "std".to_string());
+                return Some(crate_name);
+            }
+        }
+    }
+
+    None
+}
+
+/// Extract a representative crate name from an `ext:` virtual path. Used
+/// purely for classification; `"std"` is the fallback when the path shape
+/// doesn't match a known ecosystem layout.
+fn classify_external_path_as_crate(path: &str) -> Option<String> {
+    // Common shapes:
+    //   ext:rust:<sysroot>/lib/rustlib/src/rust/library/<crate>/...   → <crate>
+    //   ext:rust:<cargo-cache>/registry/src/<reg>/<crate>-<ver>/...    → <crate>
+    //   ext:rust:<other>                                              → "std" fallback
+    let stripped = path.strip_prefix("ext:rust:").unwrap_or(path);
+    // Find a `/library/` segment (rust-stdlib).
+    if let Some(rest) = stripped
+        .split_once("/library/")
+        .map(|(_, after)| after)
+    {
+        if let Some(crate_seg) = rest.split('/').next() {
+            if !crate_seg.is_empty() {
+                return Some(crate_seg.to_string());
+            }
+        }
+    }
+    // Find a `/registry/src/<reg>/<crate>-<ver>/` segment (cargo cache).
+    if let Some((_, after)) = stripped.split_once("/registry/src/") {
+        // Skip the registry name.
+        if let Some((_, after_reg)) = after.split_once('/') {
+            if let Some(crate_dir) = after_reg.split('/').next() {
+                // `<crate>-<ver>` → crate is everything before the last `-`.
+                if let Some(idx) = crate_dir.rfind('-') {
+                    let crate_name = &crate_dir[..idx];
+                    if !crate_name.is_empty() {
+                        return Some(crate_name.to_string());
+                    }
+                }
+                if !crate_dir.is_empty() {
+                    return Some(crate_dir.to_string());
+                }
+            }
+        }
+    }
     None
 }
 
