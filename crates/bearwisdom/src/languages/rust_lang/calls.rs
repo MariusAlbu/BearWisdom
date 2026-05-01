@@ -383,6 +383,42 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
 
+            // Function-scoped `fn helper(…) { … }` — a nested function
+            // declared inside another function body. Idiomatic in Rust
+            // for one-shot helpers that don't deserve module scope:
+            //   * `parse_dep` inside `parse_go_mod` (ecosystem/go_mod.rs)
+            //   * `emit_field_type_refs_inner` inside the dart symbols
+            //     extractor (languages/dart/symbols.rs)
+            //   * `keep_for_heuristic` inside an indexer/resolve helper
+            // Without an arm here, the body walker's default fall-through
+            // (line ~620) recurses into the nested fn with the OUTER
+            // function's `source_symbol_index`, which (a) misattributes
+            // every nested-body call to the outer fn and (b) leaves no
+            // symbol entry for the nested fn name itself, so every same-
+            // file call to it lands as unresolved. The fix: extract a
+            // proper symbol AND recurse into the nested body with the
+            // new symbol's index as the source. Type-refs / decorators /
+            // signature TypeRefs handled by the same helpers the
+            // module-scope extractor uses.
+            "function_item" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    if let Some(sym) = super::symbols::extract_function(
+                        &child, source, None, "",
+                    ) {
+                        let nested_idx = syms.len();
+                        syms.push(sym);
+                        super::symbols::extract_fn_signature_type_refs(
+                            &child, source, nested_idx, refs,
+                        );
+                        if let Some(body) = child.child_by_field_name("body") {
+                            extract_calls_from_body_with_symbols(
+                                &body, source, nested_idx, refs, Some(syms),
+                            );
+                        }
+                    }
+                }
+            }
+
             // `println!()`, `vec![]`, `format!()`, custom macros.
             // Can't expand them, but we emit a Calls edge for the macro name.
             "macro_invocation" => {
