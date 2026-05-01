@@ -94,11 +94,11 @@ pub(super) fn is_manifest_php_external(ctx: &ProjectContext, ns: &str) -> bool {
     false
 }
 
-/// PHP built-in functions, Laravel Collection methods, and Eloquent model methods.
-///
-/// Covers the PHP standard library functions (always available without `use`),
-/// plus the Laravel Collection fluent API and Eloquent ORM methods that appear
-/// heavily in PHP project code but are never in the project's own symbol index.
+/// PHP built-in functions and exception types always available without
+/// `use`. Laravel Collection / Eloquent ORM / Query Builder methods are
+/// gem-provided and indexed by `ecosystem/composer.rs` when the project's
+/// `composer.json` declares the corresponding packages — they don't belong
+/// in this predicate.
 pub(super) fn is_php_builtin(name: &str) -> bool {
     let root = name.split(['.', ':']).next().unwrap_or(name);
     matches!(
@@ -204,61 +204,5 @@ pub(super) fn is_php_builtin(name: &str) -> bool {
             | "LogicException"
             | "Throwable"
             | "Error"
-            // Laravel Collection fluent API methods
-            | "map"
-            | "filter"
-            | "where"
-            | "first"
-            | "last"
-            | "each"
-            | "pluck"
-            | "collect"
-            | "toArray"
-            | "toJson"
-            | "isEmpty"
-            | "isNotEmpty"
-            | "push"
-            | "sortBy"
-            | "groupBy"
-            | "flatten"
-            | "unique"
-            | "values"
-            | "keys"
-            | "merge"
-            | "reduce"
-            | "reject"
-            | "contains"
-            | "sum"
-            | "avg"
-            | "min"
-            | "max"
-            | "chunk"
-            | "take"
-            | "skip"
-            | "tap"
-            | "pipe"
-            // Eloquent ORM / Query Builder methods
-            | "findOrFail"
-            | "find"
-            | "create"
-            | "update"
-            | "delete"
-            | "save"
-            | "refresh"
-            | "orderBy"
-            | "limit"
-            | "offset"
-            | "paginate"
-            | "get"
-            | "all"
-            | "exists"
-            | "doesntExist"
-            | "with"
-            | "has"
-            | "whereHas"
-            | "belongsTo"
-            | "hasMany"
-            | "hasOne"
-            | "belongsToMany"
     )
 }
