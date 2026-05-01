@@ -728,6 +728,25 @@ fn infer_external_inner(
             return None;
         }
 
+        // Bare `::`-paths without a matching `use` import (e.g. inline
+        // `anyhow::anyhow!()` or `tracing::info!()`): consult Cargo.toml.
+        // The manifest is authoritative — replaces the hardcoded extern-crate
+        // list that previously lived in `predicates::is_rust_builtin` and
+        // misattributed every match to namespace `"std"`.
+        if target.contains("::") {
+            let first = target.split("::").next().unwrap_or("");
+            if !first.is_empty() && !matches!(first, "crate" | "self" | "super") {
+                if keywords::STDLIB_CRATES.contains(&first) {
+                    return Some("std".to_string());
+                }
+                if let Some(ctx) = project_ctx {
+                    if is_manifest_rust_crate(ctx, first) {
+                        return Some(first.to_string());
+                    }
+                }
+            }
+        }
+
         // Builtin calls / stdlib items — always external.
         if predicates::is_rust_builtin(target) {
             return Some("std".to_string());

@@ -143,58 +143,10 @@ pub(super) fn is_rust_builtin(name: &str) -> bool {
         }
     }
 
-    // Multi-segment paths whose first segment is a well-known external crate
-    // (e.g. `anyhow::anyhow`, `serde_json::json`, `log::info`) are external
-    // refs, not internal symbols.  We short-circuit them here so the resolver
-    // doesn't store them in `unresolved_refs`.  The `infer_external_namespace`
-    // path handles attribution independently.
-    if name.contains("::") {
-        let first = name.split("::").next().unwrap_or("");
-        if matches!(
-            first,
-            "anyhow"
-                | "serde_json"
-                | "serde"
-                | "tokio"
-                | "tracing"
-                | "log"
-                | "futures"
-                | "async_trait"
-                | "thiserror"
-                | "clap"
-                | "axum"
-                | "actix_web"
-                | "sqlx"
-                | "reqwest"
-                | "chrono"
-                | "uuid"
-                | "rand"
-                | "regex"
-                | "once_cell"
-                | "lazy_static"
-                | "bytes"
-                | "hyper"
-                | "tower"
-                | "tonic"
-                | "prost"
-                | "rayon"
-                | "crossbeam"
-                | "dashmap"
-                | "indexmap"
-                | "itertools"
-                | "num_traits"
-                | "bitflags"
-                | "strum"
-                | "derive_more"
-                | "env_logger"
-                | "color_eyre"
-                | "miette"
-                | "napi"
-                | "wasm_bindgen"
-        ) {
-            return true;
-        }
-    }
+    // Bare `crate::name` paths — extern-crate `::` paths are now classified
+    // through the Cargo manifest in `resolve::infer_external_inner`, not via
+    // a hardcoded crate list here. This predicate stays narrowly about
+    // language shape (generics / turbofish) and prelude/stdlib names.
 
     matches!(
         simple,
