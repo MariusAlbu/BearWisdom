@@ -342,6 +342,47 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 }
             }
 
+            // Function-scoped type definitions: `struct Foo { … }`,
+            // `enum Bar { … }`, `type Alias = …;` declared inside a
+            // function body. Same scoping family as PR 99/100 — the
+            // module-level extractor never sees these because they live
+            // beneath a `function_item`, so any subsequent reference
+            // (constructor calls, type annotations, pattern matches)
+            // misses the symbol and lands as unresolved. Real examples in
+            // this codebase: `CoordResult` in `ecosystem/nuget.rs::nuget_coord_artifacts`,
+            // `HandlerMatch` in `languages/csharp/connectors.rs`. Together
+            // these account for ~25 unresolved refs on the BW self-index.
+            // No body recursion needed — type definitions don't contain
+            // call sites the walker cares about (field/variant types are
+            // emitted via the symbols extractor).
+            "struct_item" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    if let Some(sym) = super::symbols::extract_struct(
+                        &child, source, None, "",
+                    ) {
+                        syms.push(sym);
+                    }
+                }
+            }
+            "enum_item" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    if let Some(sym) = super::symbols::extract_enum(
+                        &child, source, None, "",
+                    ) {
+                        syms.push(sym);
+                    }
+                }
+            }
+            "type_item" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    if let Some(sym) = super::symbols::extract_type_alias(
+                        &child, source, None, "",
+                    ) {
+                        syms.push(sym);
+                    }
+                }
+            }
+
             // `println!()`, `vec![]`, `format!()`, custom macros.
             // Can't expand them, but we emit a Calls edge for the macro name.
             "macro_invocation" => {
