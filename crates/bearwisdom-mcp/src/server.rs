@@ -231,6 +231,12 @@ pub struct EntryPointsParams {
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
+pub struct QualityCheckParams {
+    /// Output format: "json" (default) or "compact" (token-optimized text)
+    pub format: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct CompleteAtParams {
     /// Relative file path
     pub file_path: String,
@@ -720,6 +726,22 @@ impl BearWisdomServer {
             bearwisdom::query::dead_code::find_entry_points(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::entry_points(&r)) } else { Self::to_json(&r) })
+        })
+    }
+
+    /// Resolution-rate dashboard for the indexed project: headline rate,
+    /// per-language file counts, per-(language, kind) unresolved
+    /// breakdown, top unresolved targets, and resolved-by-strategy
+    /// counts. Mirrors `bw quality-check` (CLI) for an open index, no
+    /// baseline file required. Use this to find which extractor or
+    /// resolver is leaking unresolved refs.
+    #[tool(name = "bw_quality_check")]
+    fn quality_check(&self, Parameters(params): Parameters<QualityCheckParams>) -> String {
+        let compact = Self::is_compact(&params.format);
+        self.run_tool("bw_quality_check", &params, |db| {
+            bearwisdom::resolution_breakdown(db)
+                .map_err(Self::query_err)
+                .and_then(|r| if compact { Ok(crate::compact::quality_check(&r)) } else { Self::to_json(&r) })
         })
     }
 

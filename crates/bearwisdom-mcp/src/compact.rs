@@ -11,7 +11,8 @@ use std::fmt::Write;
 
 use bearwisdom::{
     ArchitectureOverview, BlastRadiusResult, CallHierarchyItem, FileSymbol, InvestigateResult,
-    PackageStats, SearchResult, SymbolDetail, SymbolSummary, WorkspaceGraphEdge, WorkspaceOverview,
+    PackageStats, ResolutionBreakdown, SearchResult, SymbolDetail, SymbolSummary,
+    WorkspaceGraphEdge, WorkspaceOverview,
 };
 use bearwisdom::query::completion::CompletionItem;
 use bearwisdom::query::context::SmartContextResult;
@@ -665,6 +666,67 @@ pub fn workspace_graph(edges: &[WorkspaceGraphEdge]) -> String {
             e.source_package, e.target_package, code_parts, flow_parts, declared, e.total_edges
         );
     }
+    out
+}
+
+/// `bw_quality_check` — resolution-rate dashboard for the indexed project.
+///
+/// Surface: headline rate, per-language file counts, per-(lang,kind)
+/// unresolved breakdown, top unresolved targets. Drives the "which
+/// extractor / resolver is leaking?" question without leaving MCP.
+pub fn quality_check(rb: &ResolutionBreakdown) -> String {
+    let mut body = String::with_capacity(2048);
+
+    if !rb.languages.is_empty() {
+        body.push_str("#languages\n");
+        for (lang, files) in &rb.languages {
+            let _ = writeln!(body, "{lang}|{files}files");
+        }
+    }
+    if !rb.unresolved_by_lang_kind.is_empty() {
+        body.push_str("\n#unresolved_by_lang_kind\n");
+        for (key, count) in &rb.unresolved_by_lang_kind {
+            let _ = writeln!(body, "{key}|{count}");
+        }
+    }
+    if !rb.unresolved_by_origin_language.is_empty() {
+        body.push_str("\n#unresolved_by_origin_lang\n");
+        for (lang, count) in &rb.unresolved_by_origin_language {
+            let key = if lang.is_empty() { "<host>" } else { lang.as_str() };
+            let _ = writeln!(body, "{key}|{count}");
+        }
+    }
+    if !rb.unresolved_by_package.is_empty() {
+        body.push_str("\n#unresolved_by_package\n");
+        for (pkg, count) in &rb.unresolved_by_package {
+            let key = if pkg.is_empty() { "<no_pkg>" } else { pkg.as_str() };
+            let _ = writeln!(body, "{key}|{count}");
+        }
+    }
+    if !rb.resolved_by_strategy.is_empty() {
+        body.push_str("\n#resolved_by_strategy\n");
+        for (strategy, count) in &rb.resolved_by_strategy {
+            let key = if strategy.is_empty() { "<unknown>" } else { strategy.as_str() };
+            let _ = writeln!(body, "{key}|{count}");
+        }
+    }
+    if !rb.top_unresolved_targets.is_empty() {
+        body.push_str("\n#top_unresolved\n");
+        for t in &rb.top_unresolved_targets {
+            let _ = writeln!(body, "{}|{}|{}|{}", t.target_name, t.language, t.kind, t.count);
+        }
+    }
+
+    let mut out = start(&format!(
+        "resolution_rate:{:.2}%|internal_edges:{}|internal_unresolved:{}|low_conf:{}|low_conf_threshold:{:.2}|code_chunks:{}",
+        rb.internal_resolution_rate,
+        rb.internal_edges,
+        rb.internal_unresolved,
+        rb.low_confidence_edges,
+        rb.low_confidence_threshold,
+        rb.code_chunks,
+    ));
+    out.push_str(&body);
     out
 }
 
