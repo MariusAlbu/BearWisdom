@@ -282,12 +282,17 @@ impl LanguageResolver for RustResolver {
             let candidate = format!("{scope}.{effective_target}");
             if let Some(sym) = lookup.by_qualified_name(&candidate) {
                 if self.is_visible(file_ctx, ref_ctx, sym)
-                    && predicates::kind_compatible(edge_kind, &sym.kind)
+                    && predicates::kind_compatible_with_signature(edge_kind, sym)
                 {
+                    let strategy = if sym.kind == "variable" {
+                        "rust_scope_chain_callable_var"
+                    } else {
+                        "rust_scope_chain"
+                    };
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
-                        strategy: "rust_scope_chain",
+                        strategy,
                         resolved_yield_type: None,
                     });
                 }

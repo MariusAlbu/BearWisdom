@@ -536,6 +536,95 @@ pub(super) fn extract_fn_signature_type_refs(
     }
 }
 
+/// Emit a `Variable` symbol for each function parameter whose type is
+/// callable — `impl Fn(...)`, `&dyn Fn(...)`, `Box<dyn Fn(...)>`, bare
+/// `fn(...)` function pointers. These parameters can be invoked from
+/// the function body (`cb(arg)`); without symbol entries the call site
+/// has nothing to resolve to.
+///
+/// Non-callable parameters are intentionally NOT emitted — adding every
+/// `&str` / `i32` / `&Database` parameter as a global Variable would
+/// triple the symbol table for no resolution benefit (parameter names
+/// like `db`, `name`, `path` collide with everything).
+///
+/// Each emitted Variable is parented to the function symbol with
+/// `qualified_name = "{fn_qname}.{param_name}"` so the resolver's
+/// scope-chain walk finds it via `format!("{scope}.{target}")` lookup.
+/// `signature` carries the full type text for downstream callable
+/// detection.
+pub(super) fn extract_callable_fn_params(
+    fn_node: &Node,
+    source: &str,
+    fn_sym_index: usize,
+    fn_qname: &str,
+    symbols: &mut Vec<ExtractedSymbol>,
+) {
+    let Some(params) = fn_node.child_by_field_name("parameters") else { return };
+    let mut cursor = params.walk();
+    for child in params.children(&mut cursor) {
+        if child.kind() != "parameter" { continue }
+        let Some(pat) = child.child_by_field_name("pattern") else { continue };
+        let Some(type_node) = child.child_by_field_name("type") else { continue };
+        let type_text = node_text(&type_node, source);
+        if !is_callable_rust_type(&type_text) { continue }
+        let name = node_text(&pat, source);
+        if name.is_empty() { continue }
+        let qualified_name = if fn_qname.is_empty() {
+            name.clone()
+        } else {
+            format!("{fn_qname}.{name}")
+        };
+        symbols.push(ExtractedSymbol {
+            name,
+            qualified_name,
+            kind: SymbolKind::Variable,
+            visibility: None,
+            start_line: pat.start_position().row as u32,
+            end_line: pat.end_position().row as u32,
+            start_col: pat.start_position().column as u32,
+            end_col: pat.end_position().column as u32,
+            signature: Some(type_text),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: Some(fn_sym_index),
+        });
+    }
+}
+
+/// Cheap text check for a Rust callable type. Conservative — recognizes
+/// only the common shapes the body actually invokes:
+///   * `impl Fn(...)`, `impl FnMut(...)`, `impl FnOnce(...)`
+///   * `dyn Fn(...)`, `dyn FnMut(...)`, `dyn FnOnce(...)`
+///   * raw `fn(...)` function pointers (with leading whitespace or `&`)
+/// Misses exotic shapes like `Box<dyn Fn(...) + Send>` only when wrapped
+/// in non-`dyn` containers; those are still detected because the inner
+/// `dyn Fn(` substring matches.
+pub(super) fn is_callable_rust_type(type_text: &str) -> bool {
+    type_text.contains("Fn(")
+        || type_text.contains("FnMut(")
+        || type_text.contains("FnOnce(")
+        || contains_fn_pointer(type_text)
+}
+
+fn contains_fn_pointer(type_text: &str) -> bool {
+    // `fn(` prefix in a type position — guard against matching the
+    // letter `n` inside another word by requiring a non-identifier
+    // char before `fn(` (start, whitespace, `&`, `*`, `<`).
+    let bytes = type_text.as_bytes();
+    let needle = b"fn(";
+    let mut i = 0;
+    while i + needle.len() <= bytes.len() {
+        if &bytes[i..i + needle.len()] == needle {
+            let prev = if i == 0 { b' ' } else { bytes[i - 1] };
+            if !(prev.is_ascii_alphanumeric() || prev == b'_') {
+                return true;
+            }
+        }
+        i += 1;
+    }
+    false
+}
+
 // ---------------------------------------------------------------------------
 // Generic type node → TypeRef walker
 // ---------------------------------------------------------------------------

@@ -215,6 +215,13 @@ pub struct SymbolInfo {
     /// Derived from `ParsedFile::package_id` at index build time,
     /// or from the `files.package_id` column when augmenting from DB.
     pub package_id: Option<i64>,
+    /// Symbol signature when available — function arrow type, parameter
+    /// type annotation, etc. Populated for symbols whose downstream
+    /// resolution depends on inspecting the type (e.g. callable variables
+    /// with `impl Fn(...)` signatures bound at function-parameter scope).
+    /// `None` for symbols where the signature is unhelpful or absent
+    /// (struct fields, enum variants, etc.).
+    pub signature: Option<String>,
 }
 
 // ---------------------------------------------------------------------------
@@ -767,6 +774,7 @@ impl SymbolIndex {
                     file_path: Arc::clone(&file_path),
                     scope_path: sym.scope_path.clone(),
                     package_id: pf.package_id,
+                    signature: sym.signature.clone(),
                 };
 
                 // Simple name index
@@ -1642,6 +1650,7 @@ impl SymbolIndex {
                     file_path: Arc::clone(&file_path),
                     scope_path: sym.scope_path.clone(),
                     package_id: pf.package_id,
+                    signature: sym.signature.clone(),
                 };
 
                 self.by_name.entry(sym.name.clone()).or_default().push(info.clone());
@@ -1916,7 +1925,7 @@ impl SymbolIndex {
 
         let mut stmt = match conn.prepare(
             "SELECT s.id, s.name, s.qualified_name, s.kind, f.path,
-                    s.scope_path, s.visibility, f.package_id
+                    s.scope_path, s.visibility, f.package_id, s.signature
              FROM symbols s
              JOIN files f ON f.id = s.file_id",
         ) {
@@ -1934,6 +1943,7 @@ impl SymbolIndex {
                 row.get::<_, Option<String>>(5)?,
                 row.get::<_, Option<String>>(6)?,
                 row.get::<_, Option<i64>>(7)?,
+                row.get::<_, Option<String>>(8)?,
             ))
         }) {
             Ok(r) => r,
@@ -1941,7 +1951,7 @@ impl SymbolIndex {
         };
 
         for row in rows {
-            let Ok((id, name, qname, kind, file_path, scope_path, visibility, package_id)) = row
+            let Ok((id, name, qname, kind, file_path, scope_path, visibility, package_id, signature)) = row
             else {
                 continue;
             };
@@ -1969,6 +1979,7 @@ impl SymbolIndex {
                 file_path: Arc::clone(&file_arc),
                 scope_path,
                 package_id,
+                signature,
             };
 
             self.by_name.entry(name.clone()).or_default().push(info.clone());
@@ -3454,6 +3465,7 @@ mod tests {
             file_path: Arc::from(""),
             scope_path: None,
             package_id: None,
+            signature: None,
         }
     }
 

@@ -1002,6 +1002,7 @@ fn test_is_visible_public_always() {
         file_path: Arc::from("other/b.go"),
         scope_path: Some("other".to_string()),
         package_id: None,
+        signature: None,
     };
 
     // Dummy ref_ctx (not used by is_visible for public symbols)
@@ -1045,6 +1046,7 @@ fn test_is_visible_private_same_dir() {
         file_path: Arc::from("pkg/b.go"), // same directory
         scope_path: Some("pkg".to_string()),
         package_id: None,
+        signature: None,
     };
 
     let sym_ref = ExtractedRef {
@@ -1087,6 +1089,7 @@ fn test_is_visible_private_different_dir() {
         file_path: Arc::from("pkg/b.go"), // different directory
         scope_path: Some("pkg".to_string()),
         package_id: None,
+        signature: None,
     };
 
     let sym_ref = ExtractedRef {

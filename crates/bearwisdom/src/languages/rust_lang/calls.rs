@@ -137,12 +137,19 @@ pub(super) fn extract_impl(
             "function_item" => {
                 if let Some(sym) = extract_method_from_fn(&child, source, None, &impl_prefix) {
                     let idx = symbols.len();
+                    let method_qname = sym.qualified_name.clone();
                     symbols.push(sym);
                     // Extract attributes on the method (e.g. #[test], #[tokio::test],
                     // #[instrument]) — these are `attribute_item` previous siblings.
                     super::decorators::extract_decorators(&child, source, idx, refs);
                     // Emit TypeRefs for parameter/return types in the signature.
                     super::symbols::extract_fn_signature_type_refs(&child, source, idx, refs);
+                    // Emit Variable symbols for callable-typed parameters.
+                    // Same rationale as in extract.rs's `function_item` arm —
+                    // see `extract_callable_fn_params` doc.
+                    super::symbols::extract_callable_fn_params(
+                        &child, source, idx, &method_qname, symbols,
+                    );
                     {
                         let mut wc = child.walk();
                         for gc in child.children(&mut wc) {

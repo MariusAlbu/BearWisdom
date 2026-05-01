@@ -166,10 +166,21 @@ fn extract_from_node(
                     symbols::extract_function(&child, source, parent_index, qualified_prefix)
                 {
                     let idx = symbols.len();
+                    let fn_qname = sym.qualified_name.clone();
                     symbols.push(sym);
                     decorators::extract_decorators(&child, source, idx, refs);
                     // Emit TypeRefs for parameter types and return type.
                     symbols::extract_fn_signature_type_refs(&child, source, idx, refs);
+                    // Emit Variable symbols for callable-typed parameters
+                    // (`impl Fn(...)`, `&dyn Fn(...)`, `fn(...)` etc.) so
+                    // calls in the body that look like `cb(arg)` can resolve
+                    // to the parameter via scope-chain lookup. Skip the
+                    // common case (non-callable parameters) — adding every
+                    // parameter as a Variable would explode the symbol
+                    // table without helping resolution.
+                    symbols::extract_callable_fn_params(
+                        &child, source, idx, &fn_qname, symbols,
+                    );
                     // where-clause and type-parameter bounds → TypeRef edges.
                     // Iterate children by kind rather than field_name to avoid
                     // grammar-version sensitivity.

@@ -79,6 +79,7 @@ impl SelectorMapLookup {
             file_path: Arc::from("src/app/user-card.component.ts"),
             scope_path: None,
             package_id: None,
+            signature: None,
         });
         self
     }

@@ -30,6 +30,27 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
+/// Variant of `kind_compatible` that consults the candidate symbol's
+/// signature to allow Calls→Variable when the variable is callable
+/// (an `impl Fn(...)` parameter, a closure-typed binding, or a `fn(...)`
+/// function pointer). Used by the resolver wherever a method/function
+/// call could legitimately bind to such a variable; the plain
+/// `kind_compatible` check still drives the general case.
+pub(super) fn kind_compatible_with_signature(
+    edge_kind: EdgeKind,
+    sym: &SymbolInfo,
+) -> bool {
+    if kind_compatible(edge_kind, &sym.kind) {
+        return true;
+    }
+    if edge_kind == EdgeKind::Calls && sym.kind == "variable" {
+        if let Some(sig) = sym.signature.as_deref() {
+            return super::symbols::is_callable_rust_type(sig);
+        }
+    }
+    false
+}
+
 /// Extract the module path from a parsed Rust file.
 /// The Rust extractor sets scope_path on top-level symbols to the module path,
 /// e.g., "crate::models" or "crate::api::handlers".
