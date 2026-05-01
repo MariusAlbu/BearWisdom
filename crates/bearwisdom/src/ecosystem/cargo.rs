@@ -588,19 +588,69 @@ const RS_MOD_MAX_DEPTH: u32 = 3;
 /// depth 3 so deeply nested crates still get their top surface without
 /// walking every internal module.
 fn resolve_crate_entry(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-    let src = dep.root.join("src");
-    let entry = if src.join("lib.rs").is_file() {
-        src.join("lib.rs")
-    } else if src.join("main.rs").is_file() {
-        src.join("main.rs")
-    } else {
+    // Crates with a non-standard layout (`tree-sitter`'s
+    // `binding_rust/lib.rs`, vendored embedded bindings, etc.) declare
+    // their entry via `[lib] path = "..."` in Cargo.toml. Honor that
+    // first; fall back to the conventional `src/lib.rs` / `src/main.rs`.
+    // Without this branch, ~6-10% of cargo deps in a typical workspace
+    // walk to zero files (every C-with-Rust-bindings crate, every crate
+    // that carves up its workspace into custom directories).
+    let entry = lib_entry_from_manifest(&dep.root)
+        .or_else(|| {
+            let src = dep.root.join("src");
+            let lib = src.join("lib.rs");
+            if lib.is_file() { Some(lib) }
+            else {
+                let main = src.join("main.rs");
+                if main.is_file() { Some(main) } else { None }
+            }
+        });
+    let Some(entry) = entry else { return Vec::new() };
+    if !entry.is_file() {
         return Vec::new();
-    };
+    }
 
     let mut out = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
     expand_rust_mods_into(dep, &dep.root, &entry, &mut out, &mut seen, 0);
     out
+}
+
+/// Read `[lib] path = "..."` from a crate's Cargo.toml, returning the
+/// resolved absolute path if the file exists. Cheap text scan — no toml
+/// parser dependency, no allocation beyond the read string. Tolerates
+/// the field appearing under either `[lib]` or `[package.metadata]`-style
+/// tables; we only look for the literal `[lib]` table since that's where
+/// crates publishing on crates.io put it.
+fn lib_entry_from_manifest(crate_root: &Path) -> Option<PathBuf> {
+    let manifest = crate_root.join("Cargo.toml");
+    let content = std::fs::read_to_string(&manifest).ok()?;
+    let mut in_lib = false;
+    for raw in content.lines() {
+        let line = raw.trim();
+        if line.starts_with('#') { continue }
+        if line.starts_with('[') && line.ends_with(']') {
+            // Match `[lib]` exactly — not `[lib.something]` and not
+            // `[[bin]]`. Anything else exits the [lib] table.
+            in_lib = line == "[lib]";
+            continue;
+        }
+        if !in_lib { continue }
+        let Some(stripped) = line.strip_prefix("path") else { continue };
+        let stripped = stripped.trim_start();
+        let Some(rest) = stripped.strip_prefix('=') else { continue };
+        let val = rest.trim();
+        // Strip surrounding quotes.
+        let Some(val) = val
+            .strip_prefix('"').and_then(|s| s.strip_suffix('"'))
+            .or_else(|| val.strip_prefix('\'').and_then(|s| s.strip_suffix('\'')))
+        else { continue };
+        let abs = crate_root.join(val);
+        if abs.is_file() {
+            return Some(abs);
+        }
+    }
+    None
 }
 
 fn expand_rust_mods_into(
@@ -699,9 +749,30 @@ fn resolve_rust_mod_path(from_file: &Path, child: &str) -> Option<PathBuf> {
 
 fn walk_cargo_root(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
     let mut out = Vec::new();
+    // Honor `[lib] path = "..."` first — `tree-sitter` and similar
+    // C-with-Rust-bindings crates put their entry under
+    // `binding_rust/lib.rs` (or similar), not `src/`. If we walk only
+    // `src/` for those, we get zero `.rs` files and the
+    // SymbolLocationIndex never sees their public surface.
+    let manifest_entry = lib_entry_from_manifest(&dep.root);
+    let mut roots: Vec<PathBuf> = Vec::new();
+    if let Some(entry) = manifest_entry.as_ref() {
+        if let Some(parent) = entry.parent() {
+            roots.push(parent.to_path_buf());
+        }
+    }
     let src = dep.root.join("src");
-    let walk_root = if src.is_dir() { src } else { dep.root.clone() };
-    walk_dir_bounded(&walk_root, &dep.root, dep, &mut out, 0);
+    if src.is_dir() && !roots.iter().any(|r| r == &src) {
+        roots.push(src);
+    }
+    if roots.is_empty() {
+        roots.push(dep.root.clone());
+    }
+    let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    for r in &roots {
+        if !seen.insert(r.clone()) { continue }
+        walk_dir_bounded(r, &dep.root, dep, &mut out, 0);
+    }
     out
 }
 
@@ -1167,6 +1238,31 @@ mod ok_end;
         let files = CargoEcosystem.resolve_import(&dep, "bin-only", &[]);
         assert_eq!(files.len(), 1);
         assert_eq!(files[0].absolute_path, src.join("main.rs"));
+    }
+
+    #[test]
+    fn resolve_crate_entry_honors_lib_path_in_manifest() {
+        // Tree-sitter and other C-with-Rust-bindings crates declare
+        // their entry via `[lib] path = "binding_rust/lib.rs"`. The
+        // walker must read that field; without it the crate's binding
+        // surface is invisible.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("tree-sitter-0.25.10");
+        let bindings = root.join("binding_rust");
+        std::fs::create_dir_all(&bindings).unwrap();
+        std::fs::write(
+            root.join("Cargo.toml"),
+            "[package]\nname = \"tree-sitter\"\n[lib]\nname = \"tree_sitter\"\npath = \"binding_rust/lib.rs\"\n",
+        ).unwrap();
+        std::fs::write(
+            bindings.join("lib.rs"),
+            "pub struct Node;\nimpl Node { pub fn prev_sibling(&self) -> Option<Node> { None } }\n",
+        ).unwrap();
+
+        let dep = mkdep(root.clone(), "tree-sitter", "0.25.10");
+        let files = CargoEcosystem.resolve_import(&dep, "tree-sitter", &[]);
+        assert_eq!(files.len(), 1, "got: {:?}", files);
+        assert_eq!(files[0].absolute_path, bindings.join("lib.rs"));
     }
 
     #[test]
