@@ -34,6 +34,21 @@ impl LanguagePlugin for CLangPlugin {
 
     fn extensions(&self) -> &[&str] { &[".c", ".h", ".cpp", ".cc", ".cxx", ".hpp", ".hh", ".hxx"] }
 
+    /// Route per extension so `.c`/`.h` use the C grammar and `.cpp` etc.
+    /// use the C++ grammar. Without this override the default impl returns
+    /// `id() = "c_lang"`, which the registry's `by_lang_id` table doesn't
+    /// know about — every `.c`/`.h`/`.cpp` file then routes to the generic
+    /// fallback plugin and emits zero symbols. Mirrors `TypeScriptPlugin`
+    /// which does the same `.ts`/`.tsx` split. (Same id-mismatch family
+    /// as the rust_lang fix in PR 104.)
+    fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
+        match ext.to_ascii_lowercase().as_str() {
+            ".c" | ".h" => Some("c"),
+            ".cpp" | ".cc" | ".cxx" | ".hpp" | ".hh" | ".hxx" => Some("cpp"),
+            _ => None,
+        }
+    }
+
     fn grammar(&self, lang_id: &str) -> Option<tree_sitter::Language> {
         match lang_id {
             "c" => Some(tree_sitter_c::LANGUAGE.into()),

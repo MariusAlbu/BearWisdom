@@ -58,7 +58,17 @@ pub trait LanguagePlugin: Send + Sync + 'static {
     /// registry falls back to the next plugin claiming the same extension.
     fn language_id_for_extension(&self, ext: &str) -> Option<&str> {
         if self.extensions().iter().any(|e| e.eq_ignore_ascii_case(ext)) {
-            Some(self.id())
+            // Default to the first declared `language_ids` entry — that's
+            // what the registry's `by_lang_id` is keyed on. Falling back to
+            // `self.id()` (as the previous default did) silently routed
+            // every file to the generic fallback whenever a plugin's
+            // directory name diverged from its language tag (PRs 104, 109
+            // chased these in rust_lang / bash / c_lang). Plugins with
+            // multiple language ids — TypeScript splits .ts vs .tsx, C
+            // splits .c vs .cpp — must override this method to pick per
+            // extension; the default is for single-id plugins where any
+            // member of the list is correct.
+            self.language_ids().first().copied().or_else(|| Some(self.id()))
         } else {
             None
         }

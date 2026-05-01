@@ -22,7 +22,15 @@ use crate::parser::scope_tree::ScopeKind;
 pub struct BashPlugin;
 
 impl LanguagePlugin for BashPlugin {
-    fn id(&self) -> &str { "bash" }
+    // The plugin's directory is `bash`, but the language tag the registry
+    // uses is `"shell"` so SCM grammar names and other downstream code stay
+    // language-neutral across `.sh`/`.bash`/`.zsh`. `id()` must agree with
+    // `language_ids()` so `language_by_extension()` (which falls back to
+    // `id()`) produces a tag the registry's `by_lang_id` actually maps —
+    // returning `"bash"` would route every shell file to the generic
+    // fallback plugin and emit zero symbols. Same shape as the rust_lang
+    // / c_lang fixes (PR 104, PR 109).
+    fn id(&self) -> &str { "shell" }
 
     fn language_ids(&self) -> &[&str] { &["shell"] }
 
