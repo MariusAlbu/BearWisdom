@@ -298,6 +298,50 @@ pub(super) fn extract_calls_from_body_with_symbols(
                 // entire subtree.
             }
 
+            // Function-scoped `macro_rules! foo { … }`. Same rationale as
+            // `use_declaration` above: top-level extract.rs handles the
+            // module-scope case, but local macros inside builders / closures
+            // (e.g. the `reg_eco!` helper in `default_registry()`) are
+            // declared inside `OnceLock::get_or_init(|| { … })`. Without
+            // an extraction arm here, the macro symbol never lands in the
+            // index and every same-file invocation lands as an unresolved
+            // call ref.
+            "macro_definition" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    if let Some(sym) = super::symbols::extract_macro_rules(
+                        &child, source, None, "",
+                    ) {
+                        syms.push(sym);
+                    }
+                }
+            }
+
+            // Function-scoped statics + consts: `static LOCATOR: OnceLock<…>
+            // = OnceLock::new();` and `const FOO: usize = 42;` declared
+            // inside a function body. The OnceLock-based shared_locator
+            // pattern across the ecosystem crate keeps such statics inside
+            // the helper function — same scoping issue as `use_declaration`
+            // and `macro_definition`. Without local extraction the
+            // subsequent `LOCATOR.get_or_init(…)` reference can't resolve.
+            "static_item" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    if let Some(sym) = super::symbols::extract_static(
+                        &child, source, None, "",
+                    ) {
+                        syms.push(sym);
+                    }
+                }
+            }
+            "const_item" => {
+                if let Some(syms) = symbols.as_deref_mut() {
+                    if let Some(sym) = super::symbols::extract_const(
+                        &child, source, None, "",
+                    ) {
+                        syms.push(sym);
+                    }
+                }
+            }
+
             // `println!()`, `vec![]`, `format!()`, custom macros.
             // Can't expand them, but we emit a Calls edge for the macro name.
             "macro_invocation" => {
