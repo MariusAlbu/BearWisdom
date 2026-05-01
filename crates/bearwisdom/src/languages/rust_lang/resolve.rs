@@ -592,6 +592,39 @@ impl LanguageResolver for RustResolver {
                     resolved_yield_type: None,
                 });
             }
+
+            // Name-only chain miss: every project resolution path failed,
+            // but the target might live in an external Rust file the
+            // demand-driven cargo walker hasn't parsed yet (only
+            // `scan_rust_header` ran on it). Record a chain miss with
+            // empty `current_type` so `expand.rs::locate_via_symbol_index`
+            // falls through to its phase-B bare-name probe against the
+            // SymbolLocationIndex. If a hit exists, the file is pulled,
+            // parsed, and a second resolve pass picks up the symbol via
+            // the same bare-name fallback above.
+            //
+            // Real motivator: `x.into_response()` against axum's
+            // `IntoResponse::into_response`. The axum file is walked
+            // (`mod`-tree expansion catches it) but never parsed, because
+            // the chain walker can't infer the `impl IntoResponse`
+            // receiver type and so emits no chain miss. With this
+            // recording, the bare name `into_response` is enough to
+            // locate the file.
+            //
+            // Bounded by the location index: only names that exist
+            // somewhere external trigger a file pull. Real typos and
+            // bare-noise refs cost a hash lookup and bail.
+            let trivial = target.len() < 2
+                || target.chars().next().map_or(true, |c| c == '_')
+                || !target.chars().any(|c| c.is_alphabetic());
+            if !trivial {
+                lookup.record_chain_miss(
+                    crate::indexer::resolve::engine::ChainMiss {
+                        current_type: String::new(),
+                        target_name: target.clone(),
+                    },
+                );
+            }
         }
 
         None

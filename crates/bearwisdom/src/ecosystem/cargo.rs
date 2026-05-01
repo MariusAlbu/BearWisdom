@@ -806,7 +806,6 @@ fn collect_rust_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>)
         | "struct_item"
         | "union_item"
         | "enum_item"
-        | "trait_item"
         | "type_item"
         | "const_item"
         | "static_item"
@@ -815,6 +814,48 @@ fn collect_rust_top_level_name(node: &Node, bytes: &[u8], out: &mut Vec<String>)
             if let Some(name_node) = node.child_by_field_name("name") {
                 if let Ok(name) = name_node.utf8_text(bytes) {
                     out.push(name.to_string());
+                }
+            }
+        }
+        "trait_item" => {
+            // Trait declaration: emit the trait name itself, then the bare
+            // names of every associated item (method, const, type) inside
+            // the trait body so chain-walker / by-name lookups can locate
+            // the file. Mirrors `impl_item` exactly except the receiver
+            // here is the trait, not a concrete type, so we also emit the
+            // qualified `Trait::method` form for type-scoped lookups.
+            //
+            // Real motivation: axum's `IntoResponse::into_response` lives
+            // here. Without this branch the trait file is walked but its
+            // method names never enter `SymbolLocationIndex`, so the
+            // `expand.rs` bare-name fallback can never locate the file
+            // for `x.into_response()` calls in user code.
+            let trait_name = node
+                .child_by_field_name("name")
+                .and_then(|n| n.utf8_text(bytes).ok().map(String::from));
+            if let Some(name) = trait_name.as_ref() {
+                out.push(name.clone());
+            }
+            if let Some(body) = node.child_by_field_name("body") {
+                let mut cursor = body.walk();
+                for inner in body.children(&mut cursor) {
+                    if matches!(
+                        inner.kind(),
+                        "function_item"
+                            | "function_signature_item"
+                            | "associated_type"
+                            | "const_item"
+                            | "type_item"
+                    ) {
+                        if let Some(name_node) = inner.child_by_field_name("name") {
+                            if let Ok(method) = name_node.utf8_text(bytes) {
+                                out.push(method.to_string());
+                                if let Some(t) = trait_name.as_ref() {
+                                    out.push(format!("{t}::{method}"));
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -1199,6 +1240,10 @@ impl Foo {
         assert!(names.contains(&"new".to_string()), "{names:?}");
         assert!(names.contains(&"Foo::new".to_string()), "{names:?}");
         assert!(names.contains(&"Foo::helper".to_string()), "{names:?}");
+        // Trait body methods — added so the SymbolLocationIndex can locate
+        // trait files by method name (motivator: axum's IntoResponse).
+        assert!(names.contains(&"call".to_string()), "{names:?}");
+        assert!(names.contains(&"Service::call".to_string()), "{names:?}");
     }
 
     #[test]

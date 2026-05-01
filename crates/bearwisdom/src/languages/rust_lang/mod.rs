@@ -32,7 +32,18 @@ pub use resolve::RustResolver;
 pub struct RustLangPlugin;
 
 impl LanguagePlugin for RustLangPlugin {
-    fn id(&self) -> &str { "rust_lang" }
+    // The module is `rust_lang` (the plain `rust` name would shadow the
+    // language tag downstream code uses); the plugin's public id and
+    // language_ids both return `"rust"` so the registry's `by_lang_id` and
+    // extension-routed `language_id_for_extension` paths agree. They were
+    // out of sync before — `id()` returned `"rust_lang"` while
+    // `language_ids()` returned `["rust"]`. The registry keys `by_lang_id`
+    // only by `language_ids`, but `language_by_extension` falls back to
+    // `id()`. So files routed through extension lookup landed with
+    // language `"rust_lang"`, then `registry.get("rust_lang")` missed and
+    // returned the generic fallback plugin — emitting zero Rust symbols
+    // for every cargo dep file demand-pulled by `expand.rs`.
+    fn id(&self) -> &str { "rust" }
 
     fn language_ids(&self) -> &[&str] { &["rust"] }
 
