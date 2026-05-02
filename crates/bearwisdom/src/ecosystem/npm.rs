@@ -204,6 +204,10 @@ pub(crate) const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
     // ES `import`, so the demand-driven path needs the explicit
     // pre-pull to surface the API.
     "@types/jquery",
+    // CodeMirror — same shape as jQuery in AMD-era apps that load it
+    // via RequireJS / `<script src>` and call `editor.getValue()`,
+    // `editor.setOption(...)`, `cm.isClean()` without an `import`.
+    "@types/codemirror",
 ];
 
 fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
