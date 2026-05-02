@@ -163,12 +163,12 @@
       "assertions": {
         "min_resolution_rate": 61
       },
-      "code_chunks": 9756,
+      "code_chunks": 9820,
       "files": 601,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 20986,
-      "internal_unresolved": 13292,
+      "internal_edges": 21105,
+      "internal_unresolved": 12547,
       "languages": {
         "clojure": 493,
         "dockerfile": 2,
@@ -189,28 +189,30 @@
         "index_duration_ms": 8693
       },
       "project": "clojure-babashka",
-      "resolution_rate": 61.22,
+      "resolution_rate": 62.72,
       "routes": 0,
-      "symbols": 6333,
+      "symbols": 6397,
       "unresolved_by_lang_kind": {
-        "clojure.calls": 13148,
-        "java.calls": 21,
-        "java.implements": 4,
-        "java.inherits": 1,
-        "java.type_ref": 117,
-        "shell.calls": 1
+        "clojure.Calls": 12210,
+        "java.Calls": 21,
+        "java.Implements": 4,
+        "java.Inherits": 1,
+        "java.Type_ref": 117,
+        "markdown.Calls": 173,
+        "markdown.Imports": 20,
+        "shell.Calls": 1
       }
     },
     {
       "assertions": {
         "min_resolution_rate": 61
       },
-      "code_chunks": 2468,
+      "code_chunks": 2558,
       "files": 100,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 7261,
-      "internal_unresolved": 4475,
+      "internal_edges": 7276,
+      "internal_unresolved": 2655,
       "languages": {
         "clojure": 70,
         "html": 2,
@@ -227,25 +229,27 @@
         "index_duration_ms": 3796
       },
       "project": "clojure-datascript",
-      "resolution_rate": 61.87,
+      "resolution_rate": 73.27,
       "routes": 0,
-      "symbols": 1488,
+      "symbols": 1524,
       "unresolved_by_lang_kind": {
-        "clojure.calls": 4463,
-        "javascript.calls": 8,
-        "shell.calls": 4
+        "clojure.Calls": 2633,
+        "javascript.Calls": 8,
+        "markdown.Calls": 9,
+        "markdown.Imports": 1,
+        "shell.Calls": 4
       }
     },
     {
       "assertions": {
         "min_resolution_rate": 85
       },
-      "code_chunks": 1209,
+      "code_chunks": 1211,
       "files": 92,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2734,
-      "internal_unresolved": 475,
+      "internal_edges": 2736,
+      "internal_unresolved": 472,
       "languages": {
         "clojure": 81,
         "css": 2,
@@ -260,11 +264,12 @@
         "index_duration_ms": 3417
       },
       "project": "clojure-ring",
-      "resolution_rate": 85.2,
+      "resolution_rate": 85.29,
       "routes": 0,
-      "symbols": 916,
+      "symbols": 918,
       "unresolved_by_lang_kind": {
-        "clojure.calls": 475
+        "clojure.Calls": 466,
+        "markdown.Calls": 6
       }
     },
     {

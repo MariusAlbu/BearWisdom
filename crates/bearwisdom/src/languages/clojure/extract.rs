@@ -245,8 +245,7 @@ fn walk_node(
         if !name.is_empty()
             && !name.starts_with(':')
             && !name.starts_with('%')
-            && !is_clojure_non_callable_token(&name)
-            && !name.starts_with('?')
+            && !is_clojure_skippable_symbol(&name)
             && !is_local(node, src, &name, locals)
         {
             let ns = sym_lit_ns(node, src);
@@ -271,7 +270,7 @@ fn walk_node(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
-            && !is_clojure_non_callable_token(&name)
+            && !is_clojure_skippable_symbol(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
@@ -312,6 +311,23 @@ fn walk_node(
 ///                  appearances slip through as call args.
 fn is_clojure_non_callable_token(name: &str) -> bool {
     matches!(name, "." | "=>" | "else" | "return" | "this" | "&")
+}
+
+/// Combined skip rule for sym_lit nodes that should NOT produce Calls refs.
+///
+/// Three categories:
+///  * **Non-callable tokens** — see `is_clojure_non_callable_token`.
+///  * **Logic vars** — `?x`, `?e`, `?node`. core.logic / core.match /
+///    datalog pattern vars bound by the macro. Never function calls.
+///  * **Syntax-quote gensyms** — `name#`. Inside a `defmacro`, ``foo#``
+///    expands to a unique `foo__123__auto__` symbol scoped to the
+///    macro expansion; it's a binding, never a callable.
+///
+/// Used at every sym_lit Calls-ref emission site.
+fn is_clojure_skippable_symbol(name: &str) -> bool {
+    is_clojure_non_callable_token(name)
+        || name.starts_with('?')
+        || name.ends_with('#')
 }
 
 /// Returns true if `name` is a local binding (unqualified symbol in the locals set).
@@ -375,7 +391,12 @@ fn process_list(
     // unless it resolves to a local binding (e.g. `(options :key val)` where
     // `options` is a parameter used as a lookup function).
     let head_is_local = head_ns.is_none() && locals.contains(&head);
-    if !head.starts_with(':') && !head.starts_with('"') && !head.starts_with('%') && !head_is_local {
+    if !head.starts_with(':')
+        && !head.starts_with('"')
+        && !head.starts_with('%')
+        && !is_clojure_skippable_symbol(&head)
+        && !head_is_local
+    {
         refs.push(ExtractedRef {
             source_symbol_index: parent_idx.unwrap_or(0),
             target_name: head.clone(),
@@ -464,12 +485,34 @@ fn process_list(
 });
             let idx = push_sym(
                 node,
-                name,
+                name.clone(),
                 SymbolKind::Struct,
                 Visibility::Public,
                 symbols,
                 parent_idx,
             );
+            // Auto-generated constructors. `defrecord X [a b]` produces both
+            // `(->X a b)` (positional) and `(map->X {:a 1 :b 2})` (map-keyword).
+            // `deftype X [a b]` only produces `(->X a b)`.
+            // Emit them as Function siblings of the Struct so calls resolve.
+            push_sym(
+                node,
+                format!("->{name}"),
+                SymbolKind::Function,
+                Visibility::Public,
+                symbols,
+                parent_idx,
+            );
+            if head == "defrecord" {
+                push_sym(
+                    node,
+                    format!("map->{name}"),
+                    SymbolKind::Function,
+                    Visibility::Public,
+                    symbols,
+                    parent_idx,
+                );
+            }
             // Collect field names from the fields vector (3rd child after head+name).
             let field_locals = collect_defn_params(node, src, locals);
             // Walk non-method children with field scope; walk method bodies with
@@ -653,8 +696,7 @@ fn walk_def_macro_body(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
-            && !is_clojure_non_callable_token(&name)
-                && !name.starts_with('?')
+            && !is_clojure_skippable_symbol(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
@@ -1073,7 +1115,7 @@ fn walk_call_args(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
-            && !is_clojure_non_callable_token(&name)
+            && !is_clojure_skippable_symbol(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);

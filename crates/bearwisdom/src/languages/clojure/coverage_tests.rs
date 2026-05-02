@@ -374,3 +374,69 @@ fn scope_qualified_refs_not_suppressed() {
         r.refs.iter().filter(|rf| rf.target_name == "join").collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// defrecord / deftype auto-generated constructors
+// ---------------------------------------------------------------------------
+
+/// `defrecord X [..]` auto-generates two constructor functions: `->X` and
+/// `map->X`. The extractor must surface both as Function symbols so calls
+/// like `(->RV 1 2)` and `(map->Account {:funds 0})` resolve.
+#[test]
+fn defrecord_emits_positional_and_map_constructors() {
+    let r = extract("(defrecord RV [x y])");
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"->RV"),
+        "expected positional constructor ->RV; got {:?}", names);
+    assert!(names.contains(&"map->RV"),
+        "expected map constructor map->RV; got {:?}", names);
+    let pos = r.symbols.iter().find(|s| s.name == "->RV").unwrap();
+    assert_eq!(pos.kind, SymbolKind::Function);
+    let map = r.symbols.iter().find(|s| s.name == "map->RV").unwrap();
+    assert_eq!(map.kind, SymbolKind::Function);
+}
+
+/// `deftype X [..]` auto-generates only the positional constructor `->X`.
+/// (Unlike `defrecord`, `deftype` does NOT produce a `map->X` factory.)
+#[test]
+fn deftype_emits_only_positional_constructor() {
+    let r = extract("(deftype SimpleMap [m])");
+    let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+    assert!(names.contains(&"->SimpleMap"),
+        "expected positional constructor ->SimpleMap; got {:?}", names);
+    assert!(!names.contains(&"map->SimpleMap"),
+        "deftype must not auto-generate map-> constructor; got {:?}", names);
+}
+
+// ---------------------------------------------------------------------------
+// Sym-emission filters: logic vars and gensyms must never appear as Calls
+// ---------------------------------------------------------------------------
+
+/// `?x`, `?e`, `?node` etc. are core.match / core.logic / datalog pattern
+/// vars bound by the surrounding macro. They must be filtered at every
+/// sym_lit emission site, not just walk_node.
+#[test]
+fn logic_vars_never_emit_calls_refs() {
+    let r = extract("(defn parse [tree] (match tree [?fname ?lname] ?fname))");
+    let leaked: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .filter(|n| n.starts_with('?'))
+        .collect();
+    assert!(leaked.is_empty(),
+        "logic vars leaked as Calls refs: {:?}", leaked);
+}
+
+/// `name#` is a syntax-quote auto-gensym — `(defmacro m [] `(let [e# 1] e#))`
+/// expands to a unique `e__123__auto__` binding. Never callable.
+#[test]
+fn gensym_suffix_never_emits_calls_refs() {
+    let r = extract("(defmacro try-or [body] `(try ~body (catch Exception e# (str e#))))");
+    let leaked: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .filter(|n| n.ends_with('#'))
+        .collect();
+    assert!(leaked.is_empty(),
+        "gensym-suffix names leaked as Calls refs: {:?}", leaked);
+}
