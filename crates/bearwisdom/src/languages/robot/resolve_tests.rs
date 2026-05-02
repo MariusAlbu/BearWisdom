@@ -636,3 +636,18 @@ fn builtin_keyword_resolves_to_none_without_synthetics() {
         "without synthetics in the test index, Log returns None from resolve"
     );
 }
+
+#[test]
+fn strip_bdd_prefix_handles_multibyte_names() {
+    use super::predicates::_test_strip_bdd_prefix;
+
+    // Pre-fix this would panic: "Straße" has 'ß' as a 2-byte UTF-8 char at
+    // bytes 4..6, so the old `lower[..5]` slice for the "When " prefix
+    // landed mid-character.
+    let name = "Straße";
+    assert_eq!(_test_strip_bdd_prefix(name), "Straße");
+
+    // Multibyte with a real BDD prefix: should still strip cleanly.
+    let with_when = "When Straße ist leer";
+    assert_eq!(_test_strip_bdd_prefix(with_when), "Straße ist leer");
+}

@@ -33,16 +33,23 @@ pub(super) fn strip_bdd_prefix(name: &str) -> &str {
     let lower = name.trim_start();
     let leading_ws_len = name.len() - lower.len();
     for prefix in PREFIXES {
-        // Case-insensitive prefix match.
-        if lower.len() >= prefix.len()
-            && lower[..prefix.len()].eq_ignore_ascii_case(prefix)
-        {
-            // Return the slice past the prefix, preserving any leading
-            // whitespace from the original input (rare but possible).
-            return &name[leading_ws_len + prefix.len()..];
+        // Case-insensitive prefix match. `get(..n)` is byte-safe: it returns
+        // None when `n` falls inside a multibyte UTF-8 character (e.g.
+        // `Straße` has 'ß' at bytes 4..6, so `lower[..5]` would panic).
+        if let Some(head) = lower.get(..prefix.len()) {
+            if head.eq_ignore_ascii_case(prefix) {
+                // Return the slice past the prefix, preserving any leading
+                // whitespace from the original input (rare but possible).
+                return &name[leading_ws_len + prefix.len()..];
+            }
         }
     }
     name
+}
+
+#[cfg(test)]
+pub(super) fn _test_strip_bdd_prefix(name: &str) -> &str {
+    strip_bdd_prefix(name)
 }
 
 /// Edge-kind / symbol-kind compatibility for Robot Framework.

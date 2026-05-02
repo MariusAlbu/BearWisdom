@@ -1921,12 +1921,12 @@
       "assertions": {
         "min_resolution_rate": 94
       },
-      "code_chunks": 58354,
-      "files": 494,
+      "code_chunks": 58467,
+      "files": 507,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 11916,
-      "internal_unresolved": 659,
+      "internal_edges": 12005,
+      "internal_unresolved": 639,
       "languages": {
         "css": 2,
         "html": 199,
@@ -1935,7 +1935,7 @@
         "markdown": 21,
         "proto": 1,
         "python": 96,
-        "robot": 112,
+        "robot": 125,
         "toml": 2,
         "typescript": 27,
         "xml": 2
@@ -1947,32 +1947,33 @@
         "index_duration_ms": 40776
       },
       "project": "robot-browser",
-      "resolution_rate": 94.76,
+      "resolution_rate": 94.95,
       "routes": 0,
-      "symbols": 8116,
+      "symbols": 8193,
       "unresolved_by_lang_kind": {
-        "python.calls": 18,
-        "python.type_ref": 38,
-        "robot.calls": 335,
-        "typescript.calls": 54,
-        "typescript.instantiates": 1,
-        "typescript.type_ref": 213
+        "markdown.Imports": 1,
+        "python.Calls": 18,
+        "python.Type_ref": 38,
+        "robot.Calls": 314,
+        "typescript.Calls": 54,
+        "typescript.Instantiates": 1,
+        "typescript.Type_ref": 213
       }
     },
     {
       "assertions": {
         "min_resolution_rate": 49
       },
-      "code_chunks": 488,
-      "files": 39,
+      "code_chunks": 566,
+      "files": 42,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 213,
-      "internal_unresolved": 214,
+      "internal_edges": 386,
+      "internal_unresolved": 114,
       "languages": {
         "markdown": 6,
         "python": 1,
-        "robot": 32
+        "robot": 35
       },
       "path": "F:/Work/Projects/TestProjects/robot-cookbook",
       "perf": {
@@ -1981,23 +1982,24 @@
         "index_duration_ms": 3304
       },
       "project": "robot-cookbook",
-      "resolution_rate": 49.88,
+      "resolution_rate": 77.2,
       "routes": 0,
-      "symbols": 271,
+      "symbols": 322,
       "unresolved_by_lang_kind": {
-        "robot.calls": 214
+        "markdown.Imports": 20,
+        "robot.Calls": 94
       }
     },
     {
       "assertions": {
         "min_resolution_rate": 78
       },
-      "code_chunks": 85799,
-      "files": 2186,
+      "code_chunks": 86015,
+      "files": 2213,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 52036,
-      "internal_unresolved": 14137,
+      "internal_edges": 52478,
+      "internal_unresolved": 13823,
       "languages": {
         "c": 1,
         "css": 14,
@@ -2006,7 +2008,7 @@
         "json": 23,
         "markdown": 1,
         "python": 738,
-        "robot": 1329,
+        "robot": 1356,
         "toml": 1,
         "typescript": 9,
         "xml": 23,
@@ -2019,18 +2021,18 @@
         "index_duration_ms": 25300
       },
       "project": "robot-framework",
-      "resolution_rate": 78.64,
+      "resolution_rate": 79.15,
       "routes": 0,
-      "symbols": 48549,
+      "symbols": 48646,
       "unresolved_by_lang_kind": {
-        "javascript.calls": 395,
-        "javascript.type_ref": 6,
-        "python.calls": 114,
-        "python.imports": 11,
-        "python.type_ref": 223,
-        "robot.calls": 13383,
-        "typescript.calls": 1,
-        "typescript.type_ref": 4
+        "javascript.Calls": 395,
+        "javascript.Type_ref": 6,
+        "python.Calls": 114,
+        "python.Imports": 11,
+        "python.Type_ref": 223,
+        "robot.Calls": 13069,
+        "typescript.Calls": 1,
+        "typescript.Type_ref": 4
       }
     },
     {
