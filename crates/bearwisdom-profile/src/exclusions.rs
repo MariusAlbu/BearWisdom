@@ -159,6 +159,58 @@ pub fn should_exclude_in_project(name: &str, exclude_dirs: &[&'static str]) -> b
     exclude_dirs.iter().any(|d| *d == name)
 }
 
+/// Directory names that are too ambiguous to exclude at any depth.
+/// `vendor`, `lib`, `libs` mean "package-manager output" only when they
+/// sit directly under the project root (Bundler's `vendor/`, Composer's
+/// `vendor/`, Go's `vendor/`). Nested copies often hold real source —
+/// e.g. Jekyll themes ship `_sass/<theme>/vendor/<lib>/` with mixin
+/// libraries (breakpoint, susy, bourbon) that the project's own
+/// `@import`s pull from.
+///
+/// `should_exclude_in_project_path` checks this set against the component
+/// position: only the FIRST path component (depth 1) gets the exclusion;
+/// nested copies pass through.
+pub static ROOT_ONLY_EXCLUDE_NAMES: &[&str] = &[
+    "vendor",
+    "lib",
+    "libs",
+];
+
+/// Path-aware variant of [`should_exclude_in_project`]. Returns true
+/// when ANY component of `rel_path` is excluded — but for names in
+/// [`ROOT_ONLY_EXCLUDE_NAMES`], only the first (depth-1) component
+/// triggers the exclusion. Nested directories with the same name are
+/// indexed.
+///
+/// `rel_path_components` is the sequence of path-component basenames
+/// from the project root, e.g. `["_sass", "minimal-mistakes", "vendor",
+/// "breakpoint"]`.
+pub fn should_exclude_in_project_path(
+    rel_path_components: &[&str],
+    exclude_dirs: &[&'static str],
+) -> bool {
+    for (i, comp) in rel_path_components.iter().enumerate() {
+        let is_root_level = i == 0;
+        if COMMON_EXCLUDE_DIRS.contains(comp) {
+            return true;
+        }
+        if exclude_dirs.contains(comp) {
+            // Loose name (`vendor`, `lib`, ...) — only exclude when it
+            // sits directly under the project root.
+            if ROOT_ONLY_EXCLUDE_NAMES.contains(comp) {
+                if is_root_level {
+                    return true;
+                }
+                continue;
+            }
+            // Strict name (`target`, `node_modules`, `__pycache__`, ...)
+            // — exclude at any depth.
+            return true;
+        }
+    }
+    false
+}
+
 /// Returns true if the file name ends with a skippable extension (e.g. `.min.js`).
 pub fn should_skip_file(name: &str) -> bool {
     SKIP_EXTENSIONS.iter().any(|ext| name.ends_with(ext))

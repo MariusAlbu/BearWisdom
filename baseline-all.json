@@ -613,9 +613,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/liquid-al-folio",
       "perf": {
-        "end_ws_mb": 105,
+        "end_ws_mb": 107,
         "files_per_sec": 9,
-        "index_duration_ms": 25626
+        "index_duration_ms": 25319
       },
       "project": "liquid-al-folio",
       "resolution_rate": 88.45,
@@ -659,9 +659,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/liquid-jekyll",
       "perf": {
-        "end_ws_mb": 106,
-        "files_per_sec": 47,
-        "index_duration_ms": 13568
+        "end_ws_mb": 110,
+        "files_per_sec": 49,
+        "index_duration_ms": 13099
       },
       "project": "liquid-jekyll",
       "resolution_rate": 99.91,
@@ -675,51 +675,132 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 56
+        "min_resolution_rate": 72
       },
-      "code_chunks": 10394,
-      "files": 446,
+      "code_chunks": 13432,
+      "files": 487,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 270,
-      "internal_unresolved": 206,
+      "internal_edges": 355,
+      "internal_unresolved": 132,
       "languages": {
         "html": 85,
-        "javascript": 12,
+        "javascript": 13,
         "json": 2,
         "markdown": 222,
         "ruby": 6,
-        "scss": 34,
+        "scss": 74,
         "xml": 3,
         "yaml": 82
       },
       "path": "F:/Work/Projects/TestProjects/liquid-minimal-mistakes",
       "perf": {
-        "end_ws_mb": 192,
-        "files_per_sec": 56,
-        "index_duration_ms": 7951
+        "end_ws_mb": 195,
+        "files_per_sec": 61,
+        "index_duration_ms": 8044
       },
       "project": "liquid-minimal-mistakes",
-      "resolution_rate": 56.72,
+      "resolution_rate": 72.9,
       "routes": 0,
-      "symbols": 6166,
+      "symbols": 6832,
       "unresolved_by_lang_kind": {
         "html.calls": 12,
-        "javascript.calls": 123,
-        "scss.calls": 71
+        "javascript.calls": 120
       }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 11959,
+      "files": 72,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1541,
+      "internal_unresolved": 9,
+      "languages": {
+        "lua": 65,
+        "markdown": 4,
+        "toml": 2,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/lua-lazy-nvim",
+      "perf": {
+        "end_ws_mb": 33,
+        "files_per_sec": 180,
+        "index_duration_ms": 400
+      },
       "project": "lua-lazy-nvim",
-      "path": "F:/Work/Projects/TestProjects/lua-lazy-nvim"
+      "resolution_rate": 99.42,
+      "routes": 0,
+      "symbols": 9682,
+      "unresolved_by_lang_kind": {
+        "lua.calls": 9
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 63
+      },
+      "code_chunks": 28391,
+      "files": 831,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1706,
+      "internal_unresolved": 976,
+      "languages": {
+        "c": 1,
+        "lua": 822,
+        "markdown": 6,
+        "nix": 1,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/lua-nvim-lspconfig",
+      "perf": {
+        "end_ws_mb": 53,
+        "files_per_sec": 345,
+        "index_duration_ms": 2406
+      },
       "project": "lua-nvim-lspconfig",
-      "path": "F:/Work/Projects/TestProjects/lua-nvim-lspconfig"
+      "resolution_rate": 63.61,
+      "routes": 0,
+      "symbols": 20950,
+      "unresolved_by_lang_kind": {
+        "c.type_ref": 2,
+        "lua.calls": 970,
+        "nix.calls": 4
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 62
+      },
+      "code_chunks": 14908,
+      "files": 80,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 2512,
+      "internal_unresolved": 1483,
+      "languages": {
+        "c": 1,
+        "lua": 75,
+        "markdown": 4
+      },
+      "path": "F:/Work/Projects/TestProjects/lua-telescope",
+      "perf": {
+        "end_ws_mb": 45,
+        "files_per_sec": 106,
+        "index_duration_ms": 756
+      },
       "project": "lua-telescope",
-      "path": "F:/Work/Projects/TestProjects/lua-telescope"
+      "resolution_rate": 62.88,
+      "routes": 0,
+      "symbols": 11205,
+      "unresolved_by_lang_kind": {
+        "c.type_ref": 2,
+        "lua.calls": 1479,
+        "lua.inherits": 2
+      }
     },
     {
       "project": "make-curl",

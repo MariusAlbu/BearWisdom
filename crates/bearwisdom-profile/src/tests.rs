@@ -332,6 +332,62 @@ mod project_exclusion_tests {
         assert!(should_exclude_in_project("node_modules", rust_excludes));
         assert!(should_exclude_in_project(".git", rust_excludes));
     }
+
+    #[test]
+    fn root_level_vendor_excluded_for_ruby() {
+        let ruby_excludes: &[&'static str] = &["vendor", ".bundle", "tmp", "log"];
+        assert!(crate::exclusions::should_exclude_in_project_path(
+            &["vendor"],
+            ruby_excludes
+        ));
+        assert!(crate::exclusions::should_exclude_in_project_path(
+            &["vendor", "bundle", "ruby"],
+            ruby_excludes
+        ));
+    }
+
+    #[test]
+    fn nested_vendor_not_excluded_for_ruby() {
+        // The Jekyll-theme shape: `_sass/<theme>/vendor/<lib>/...`.
+        // Nested `vendor/` is real source, must be walked.
+        let ruby_excludes: &[&'static str] = &["vendor", ".bundle", "tmp", "log"];
+        assert!(!crate::exclusions::should_exclude_in_project_path(
+            &["_sass", "minimal-mistakes", "vendor", "breakpoint"],
+            ruby_excludes
+        ));
+        assert!(!crate::exclusions::should_exclude_in_project_path(
+            &["assets", "lib", "util"],
+            ruby_excludes
+        ));
+    }
+
+    #[test]
+    fn nested_node_modules_still_excluded() {
+        // `node_modules` is a strict-name exclusion: nested copies under
+        // monorepo packages or tools/-style helper installs are also
+        // build output and should stay excluded at any depth.
+        let no_lang: &[&'static str] = &[];
+        assert!(crate::exclusions::should_exclude_in_project_path(
+            &["packages", "frontend", "node_modules", "react"],
+            no_lang
+        ));
+    }
+
+    #[test]
+    fn root_level_lib_excluded_when_loose_name_in_set() {
+        // If a language descriptor declared `lib` as build output (rare
+        // in current registry but possible), the root-only treatment
+        // applies.
+        let custom: &[&'static str] = &["lib"];
+        assert!(crate::exclusions::should_exclude_in_project_path(
+            &["lib"],
+            custom
+        ));
+        assert!(!crate::exclusions::should_exclude_in_project_path(
+            &["src", "lib", "helper"],
+            custom
+        ));
+    }
 }
 
 #[cfg(test)]

@@ -13,7 +13,7 @@
 
 use crate::detect::detect_language;
 use crate::exclusions::{
-    project_exclude_dirs, should_exclude_in_project, should_skip_file,
+    project_exclude_dirs, should_exclude_in_project_path, should_skip_file,
 };
 use crate::types::ScannedFile;
 use std::io::Read;
@@ -62,8 +62,21 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
     let project_excludes: Vec<&'static str> = project_exclude_dirs(root);
     let mut overrides = ignore::overrides::OverrideBuilder::new(root);
     for dir in &project_excludes {
-        // "!dir/" means "exclude this directory"
-        let _ = overrides.add(&format!("!{dir}/"));
+        // `!name/` matches at any depth; `!/name/` matches only the
+        // direct child of the project root. Root-anchored exclusion is
+        // safer for ambiguous names like `vendor`, `lib`, `libs` that
+        // overload between "package-manager output" (Bundler/Composer/
+        // Go's `<root>/vendor`) and "real source under the project's
+        // own directory tree" (`_sass/<theme>/vendor/breakpoint/`,
+        // `assets/lib/util.js`). Strict names (`target`, `node_modules`,
+        // `__pycache__`, ...) keep the at-any-depth pattern because
+        // they're never legitimate source.
+        let pattern = if crate::exclusions::ROOT_ONLY_EXCLUDE_NAMES.contains(dir) {
+            format!("!/{dir}/")
+        } else {
+            format!("!{dir}/")
+        };
+        let _ = overrides.add(&pattern);
     }
     let overrides = overrides.build().unwrap_or_else(|_| {
         ignore::overrides::OverrideBuilder::new(root).build().unwrap()
@@ -106,22 +119,37 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
         // project-scoped exclusion list even though the OverrideBuilder
         // rules should have caught most cases. Also checks for vendor
         // library directories (wwwroot/lib, public/vendor).
+        //
+        // Path-aware: `should_exclude_in_project_path` knows that
+        // `vendor`/`lib`/`libs` only mean package-manager output when
+        // they're at depth 1 (direct child of project root). Nested
+        // copies (`_sass/<theme>/vendor/breakpoint/`,
+        // `assets/lib/util.js`) pass through.
         let should_skip = {
             let rel = abs_path.strip_prefix(&root_normalized).unwrap_or(&abs_path);
-            let components: Vec<_> = rel.components().collect();
-            components.iter().any(|c| {
-                c.as_os_str()
-                    .to_str()
-                    .is_some_and(|n| should_exclude_in_project(n, &project_excludes))
-            }) || {
-                // Check for vendor lib dirs: parent in WEB_ROOT + child in VENDOR_CHILD
-                components.windows(2).any(|pair| {
-                    let parent = pair[0].as_os_str().to_str().unwrap_or("");
-                    let child = pair[1].as_os_str().to_str().unwrap_or("");
-                    super::exclusions::WEB_ROOT_DIRS.contains(&parent)
-                        && super::exclusions::VENDOR_CHILD_DIRS.contains(&child)
-                })
-            }
+            let comps: Vec<&str> = rel
+                .components()
+                .filter_map(|c| c.as_os_str().to_str())
+                .collect();
+            // Drop the file basename — we're only checking directory
+            // components for exclusion.
+            let dir_comps: Vec<&str> = if comps.len() > 1 {
+                comps[..comps.len() - 1].to_vec()
+            } else {
+                Vec::new()
+            };
+            should_exclude_in_project_path(&dir_comps, &project_excludes)
+                || {
+                    // Vendor lib dirs: parent in WEB_ROOT + child in
+                    // VENDOR_CHILD (`wwwroot/lib`, `public/vendor`).
+                    let pair_components: Vec<_> = rel.components().collect();
+                    pair_components.windows(2).any(|pair| {
+                        let parent = pair[0].as_os_str().to_str().unwrap_or("");
+                        let child = pair[1].as_os_str().to_str().unwrap_or("");
+                        super::exclusions::WEB_ROOT_DIRS.contains(&parent)
+                            && super::exclusions::VENDOR_CHILD_DIRS.contains(&child)
+                    })
+                }
         };
         if should_skip {
             continue;
