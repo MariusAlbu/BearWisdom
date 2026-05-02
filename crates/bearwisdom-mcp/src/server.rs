@@ -1,12 +1,14 @@
-use bearwisdom::db::DbPool;
 use bearwisdom::query::QueryOptions;
+use bearwisdom::IndexService;
 use rmcp::handler::server::{router::tool::ToolRouter, wrapper::Parameters};
 use rmcp::model::{ServerCapabilities, ServerInfo};
 use rmcp::{schemars, ServerHandler, tool, tool_handler, tool_router};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
+
+use crate::services::ServiceCache;
 
 /// Format a structured JSON error response for MCP tool calls.
 fn error_response(code: &str, message: &str) -> String {
@@ -54,6 +56,11 @@ pub struct SearchParams {
     pub include_signature: Option<bool>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -74,6 +81,11 @@ pub struct GrepParams {
     pub max_line_length: Option<u32>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -93,6 +105,11 @@ pub struct SymbolInfoParams {
     pub mode: Option<String>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -103,6 +120,11 @@ pub struct FindReferencesParams {
     pub limit: Option<usize>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -117,6 +139,11 @@ pub struct CallHierarchyParams {
     pub limit: Option<usize>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -127,6 +154,11 @@ pub struct FileSymbolsParams {
     pub mode: Option<String>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -140,6 +172,11 @@ pub struct BlastRadiusParams {
     pub max_results: Option<u32>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -152,18 +189,33 @@ pub struct SmartContextParams {
     pub depth: Option<u32>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct ArchitectureParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct PackagesParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -172,18 +224,33 @@ pub struct ReindexParams {
     pub force: Option<bool>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct WorkspaceOverviewParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct WorkspaceGraphParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -198,6 +265,11 @@ pub struct InvestigateParams {
     pub blast_depth: Option<u32>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -214,6 +286,11 @@ pub struct DiagnosticsParams {
     pub top_n: Option<u32>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -228,18 +305,33 @@ pub struct DeadCodeParams {
     pub max_results: Option<usize>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct EntryPointsParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
 pub struct QualityCheckParams {
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -254,6 +346,11 @@ pub struct PatternSearchParams {
     pub max_results: Option<u32>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Serialize, JsonSchema)]
@@ -270,6 +367,11 @@ pub struct CompleteAtParams {
     pub include_signature: Option<bool>,
     /// Output format: "json" (default) or "compact" (token-optimized text)
     pub format: Option<String>,
+    /// Absolute path to the project root. If omitted, the MCP's startup
+    /// `--project` is used. Pass an absolute path to query a different
+    /// project — the MCP keeps a small LRU cache of IndexService instances
+    /// so the watcher and pool are reused across calls.
+    pub project: Option<String>,
 }
 
 // =============================================================================
@@ -278,43 +380,59 @@ pub struct CompleteAtParams {
 
 #[derive(Clone)]
 pub struct BearWisdomServer {
-    pool: DbPool,
-    project_root: PathBuf,
+    /// Project the MCP was launched against (`--project`). Used as the
+    /// fallback when a tool param omits `project`.
+    default_project: PathBuf,
+    /// Per-project IndexService cache. Each entry owns its own pool and
+    /// file watcher; the cache evicts the LRU when it hits the cap so
+    /// long sessions don't accumulate unbounded watcher state.
+    services: Arc<ServiceCache>,
     session_id: Arc<str>,
     tool_router: ToolRouter<Self>,
 }
 
 impl BearWisdomServer {
-    pub fn new(pool: DbPool, project_root: PathBuf) -> Self {
+    pub fn new(default_project: PathBuf, services: Arc<ServiceCache>) -> Self {
         let session_id: Arc<str> = uuid::Uuid::new_v4().to_string().into();
         tracing::info!("MCP audit session: {session_id}");
         Self {
-            pool,
-            project_root,
+            default_project,
+            services,
             session_id,
             tool_router: Self::tool_router(),
         }
     }
 
-    /// Acquire a database connection from the pool, returning a structured error on failure.
-    fn get_db(&self) -> Result<bearwisdom::PoolGuard, String> {
-        self.pool
-            .get()
-            .map_err(|e| error_response("INTERNAL_ERROR", &format!("Pool error: {e}")))
+    /// Resolve a per-tool `project` parameter to an `IndexService`. `None` uses
+    /// the startup default. Returns a structured error response string on
+    /// failure (`PROJECT_NOT_FOUND` or `INTERNAL_ERROR`).
+    fn resolve_service(&self, project: Option<&str>) -> Result<Arc<IndexService>, String> {
+        let path: PathBuf = match project {
+            Some(p) if !p.trim().is_empty() => PathBuf::from(p),
+            _ => self.default_project.clone(),
+        };
+        self.services
+            .get_or_open(&path)
+            .map_err(|(code, msg)| error_response(&code, &msg))
     }
 
     /// Shared implementation for `bw_reindex`. Held out of the tool handler so
     /// the error type stays `Result<String, String>` without the audit/timing
     /// wrapper cluttering the hot path.
-    fn run_reindex(&self, force: bool) -> Result<String, String> {
-        let ref_cache = self.pool.ref_cache().clone();
-        let mut db = self.get_db()?;
+    fn run_reindex(&self, force: bool, project: Option<&str>) -> Result<String, String> {
+        let service = self.resolve_service(project)?;
+        let pool = service.pool();
+        let project_root = service.project_root();
+        let ref_cache = pool.ref_cache().clone();
+        let mut db = pool
+            .get()
+            .map_err(|e| error_response("INTERNAL_ERROR", &format!("Pool error: {e}")))?;
         let (mode, stats_json) = if force {
-            let stats = bearwisdom::full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))
+            let stats = bearwisdom::full_index(&mut db, project_root, None, None, Some(&ref_cache))
                 .map_err(|e| error_response("INTERNAL_ERROR", &format!("Full index failed: {e}")))?;
             ("full", full_stats_json(&stats))
         } else if bearwisdom::indexer::changeset::get_meta(&db, "indexed_commit").is_some() {
-            let inc = bearwisdom::git_reindex(&mut db, &self.project_root, Some(&ref_cache))
+            let inc = bearwisdom::git_reindex(&mut db, project_root, Some(&ref_cache))
                 .map_err(|e| error_response("INTERNAL_ERROR", &format!("Git-incremental reindex failed: {e}")))?;
             ("git-incremental", incremental_stats_json(&inc))
         } else {
@@ -322,11 +440,11 @@ impl BearWisdomServer {
                 .query_row("SELECT COUNT(*) FROM files", [], |r| r.get(0))
                 .unwrap_or(0);
             if file_count > 0 {
-                let inc = bearwisdom::incremental_index(&mut db, &self.project_root, Some(&ref_cache))
+                let inc = bearwisdom::incremental_index(&mut db, project_root, Some(&ref_cache))
                     .map_err(|e| error_response("INTERNAL_ERROR", &format!("Hash-incremental reindex failed: {e}")))?;
                 ("hash-incremental", incremental_stats_json(&inc))
             } else {
-                let stats = bearwisdom::full_index(&mut db, &self.project_root, None, None, Some(&ref_cache))
+                let stats = bearwisdom::full_index(&mut db, project_root, None, None, Some(&ref_cache))
                     .map_err(|e| error_response("INTERNAL_ERROR", &format!("Full index failed: {e}")))?;
                 ("full", full_stats_json(&stats))
             }
@@ -343,39 +461,55 @@ impl BearWisdomServer {
 
     /// Write one audit record.  Best-effort — a write failure must not propagate.
     fn audit_call(&self, tool: &str, params_json: &str, result: &str, duration_ms: u64) {
-        if let Ok(db) = self.pool.get() {
-            let token_estimate = (result.len() / 4) as i64;
-            let _ = db.write_audit_record(
-                &self.session_id,
-                tool,
-                params_json,
-                result,
-                duration_ms,
-                token_estimate,
-            );
+        // Audit records always go to the *default* project's DB so a single
+        // session's activity is queryable from one place, even when tool
+        // calls touched multiple projects. The tool name + params record
+        // the full context.
+        if let Ok(svc) = self.services.get_or_open(&self.default_project) {
+            if let Ok(db) = svc.pool().get() {
+                let token_estimate = (result.len() / 4) as i64;
+                let _ = db.write_audit_record(
+                    &self.session_id,
+                    tool,
+                    params_json,
+                    result,
+                    duration_ms,
+                    token_estimate,
+                );
+            }
         }
     }
 
     /// Shared dispatch helper for tools that acquire a db connection.
     ///
-    /// Handles timing, audit, and pool errors. The closure receives a `PoolGuard`
-    /// and returns `Ok(json_string)` on success or `Err(error_response_string)` on failure.
-    fn run_tool<P, F>(&self, tool_name: &str, params: &P, f: F) -> String
+    /// Resolves the project via `params.project` (or the default), acquires a
+    /// pool guard from the corresponding IndexService, and runs the closure.
+    /// The closure receives `(&PoolGuard, &Path)` so tools that need the
+    /// project root for FS operations don't have to plumb it themselves.
+    fn run_tool<P, F>(&self, tool_name: &str, params: &P, project: Option<&str>, f: F) -> String
     where
         P: Serialize,
-        F: FnOnce(&bearwisdom::PoolGuard) -> Result<String, String>,
+        F: FnOnce(&bearwisdom::PoolGuard, &Path) -> Result<String, String>,
     {
         let t0 = std::time::Instant::now();
         let params_json = serde_json::to_string(params).unwrap_or_default();
-        let db = match self.get_db() {
-            Ok(d) => d,
+        let service = match self.resolve_service(project) {
+            Ok(s) => s,
             Err(e) => {
                 self.audit_call(tool_name, &params_json, &e, t0.elapsed().as_millis() as u64);
                 return e;
             }
         };
+        let db = match service.pool().get() {
+            Ok(d) => d,
+            Err(e) => {
+                let msg = error_response("INTERNAL_ERROR", &format!("Pool error: {e}"));
+                self.audit_call(tool_name, &params_json, &msg, t0.elapsed().as_millis() as u64);
+                return msg;
+            }
+        };
         let last_indexed = bearwisdom::last_indexed_at_ms(&db);
-        let result = f(&db).unwrap_or_else(|e| e);
+        let result = f(&db, service.project_root()).unwrap_or_else(|e| e);
         let result = Self::with_freshness_header(result, last_indexed);
         self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
         result
@@ -383,18 +517,29 @@ impl BearWisdomServer {
 
     /// Shared dispatch helper for tools that do NOT need a db connection (e.g. bw_grep).
     ///
-    /// Handles timing and audit only. The closure returns `Ok(json_string)` or
-    /// `Err(error_response_string)`.
-    fn run_tool_no_db<P, F>(&self, tool_name: &str, params: &P, f: F) -> String
+    /// Resolves the project for the freshness header and to give the closure
+    /// access to the project root.
+    fn run_tool_no_db<P, F>(&self, tool_name: &str, params: &P, project: Option<&str>, f: F) -> String
     where
         P: Serialize,
-        F: FnOnce() -> Result<String, String>,
+        F: FnOnce(&Path) -> Result<String, String>,
     {
         let t0 = std::time::Instant::now();
         let params_json = serde_json::to_string(params).unwrap_or_default();
+        let service = match self.resolve_service(project) {
+            Ok(s) => s,
+            Err(e) => {
+                self.audit_call(tool_name, &params_json, &e, t0.elapsed().as_millis() as u64);
+                return e;
+            }
+        };
         // Best-effort freshness read; silently skip if pool unavailable.
-        let last_indexed = self.pool.get().ok().and_then(|db| bearwisdom::last_indexed_at_ms(&db));
-        let result = f().unwrap_or_else(|e| e);
+        let last_indexed = service
+            .pool()
+            .get()
+            .ok()
+            .and_then(|db| bearwisdom::last_indexed_at_ms(&db));
+        let result = f(service.project_root()).unwrap_or_else(|e| e);
         let result = Self::with_freshness_header(result, last_indexed);
         self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
         result
@@ -498,7 +643,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_search")]
     fn search(&self, Parameters(params): Parameters<SearchParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_search", &params, |db| {
+        self.run_tool("bw_search", &params, params.project.as_deref(), |db, _| {
             if params.query.trim().is_empty() {
                 return Self::invalid_input("Query cannot be empty");
             }
@@ -518,9 +663,8 @@ impl BearWisdomServer {
     /// Use bw_search for semantic symbol lookup.
     #[tool(name = "bw_grep")]
     fn grep(&self, Parameters(params): Parameters<GrepParams>) -> String {
-        let root = self.project_root.clone();
         let compact = Self::is_compact(&params.format);
-        self.run_tool_no_db("bw_grep", &params, || {
+        self.run_tool_no_db("bw_grep", &params, params.project.as_deref(), |root| {
             if params.pattern.is_empty() {
                 return Self::invalid_input("Pattern cannot be empty");
             }
@@ -538,7 +682,7 @@ impl BearWisdomServer {
                 context_lines: 0,
             };
             let mut results =
-                bearwisdom::search::grep::grep_search(&root, &params.pattern, &options, &cancelled)
+                bearwisdom::search::grep::grep_search(root, &params.pattern, &options, &cancelled)
                     .map_err(|e| error_response("QUERY_ERROR", &format!("{e}")))?;
             let max_len = params.max_line_length.unwrap_or(120);
             bearwisdom::search::grep::truncate_matches(&mut results, max_len);
@@ -552,7 +696,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_symbol_info")]
     fn symbol_info(&self, Parameters(params): Parameters<SymbolInfoParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_symbol_info", &params, |db| {
+        self.run_tool("bw_symbol_info", &params, params.project.as_deref(), |db, _| {
             if params.name.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
@@ -579,7 +723,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_find_references")]
     fn find_references(&self, Parameters(params): Parameters<FindReferencesParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_find_references", &params, |db| {
+        self.run_tool("bw_find_references", &params, params.project.as_deref(), |db, _| {
             if params.name.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
@@ -600,7 +744,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_call_hierarchy")]
     fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_call_hierarchy", &params, |db| {
+        self.run_tool("bw_call_hierarchy", &params, params.project.as_deref(), |db, _| {
             if params.name.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
@@ -622,7 +766,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_file_symbols")]
     fn file_symbols(&self, Parameters(params): Parameters<FileSymbolsParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_file_symbols", &params, |db| {
+        self.run_tool("bw_file_symbols", &params, params.project.as_deref(), |db, _| {
             if params.file_path.is_empty() {
                 return Self::invalid_input("file_path is required");
             }
@@ -639,7 +783,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_blast_radius")]
     fn blast_radius(&self, Parameters(params): Parameters<BlastRadiusParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_blast_radius", &params, |db| {
+        self.run_tool("bw_blast_radius", &params, params.project.as_deref(), |db, _| {
             if params.symbol.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }
@@ -667,7 +811,7 @@ impl BearWisdomServer {
         Parameters(params): Parameters<ArchitectureParams>,
     ) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_architecture_overview", &params, |db| {
+        self.run_tool("bw_architecture_overview", &params, params.project.as_deref(), |db, _| {
             bearwisdom::query::architecture::get_overview(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::architecture(&r)) } else { Self::to_json(&r) })
@@ -679,7 +823,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_packages")]
     fn packages(&self, Parameters(params): Parameters<PackagesParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_packages", &params, |db| {
+        self.run_tool("bw_packages", &params, params.project.as_deref(), |db, _| {
             bearwisdom::list_packages(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::packages(&r)) } else { Self::to_json(&r) })
@@ -693,7 +837,7 @@ impl BearWisdomServer {
     fn reindex(&self, Parameters(params): Parameters<ReindexParams>) -> String {
         let t0 = std::time::Instant::now();
         let params_json = serde_json::to_string(&params).unwrap_or_default();
-        let result = self.run_reindex(params.force.unwrap_or(false));
+        let result = self.run_reindex(params.force.unwrap_or(false), params.project.as_deref());
         let response = match result {
             Ok(msg) => msg,
             Err(e) => e,
@@ -707,7 +851,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_workspace_overview")]
     fn workspace_overview(&self, Parameters(params): Parameters<WorkspaceOverviewParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_workspace_overview", &params, |db| {
+        self.run_tool("bw_workspace_overview", &params, params.project.as_deref(), |db, _| {
             bearwisdom::workspace_overview(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::workspace(&r)) } else { Self::to_json(&r) })
@@ -720,7 +864,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_workspace_graph")]
     fn workspace_graph(&self, Parameters(params): Parameters<WorkspaceGraphParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_workspace_graph", &params, |db| {
+        self.run_tool("bw_workspace_graph", &params, params.project.as_deref(), |db, _| {
             bearwisdom::workspace_graph(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::workspace_graph(&r)) } else { Self::to_json(&r) })
@@ -733,7 +877,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_diagnostics")]
     fn diagnostics(&self, Parameters(params): Parameters<DiagnosticsParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_diagnostics", &params, |db| {
+        self.run_tool("bw_diagnostics", &params, params.project.as_deref(), |db, _| {
             let threshold = params.confidence_threshold.unwrap_or(
                 bearwisdom::query::diagnostics::LOW_CONFIDENCE_THRESHOLD,
             );
@@ -759,7 +903,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_dead_code")]
     fn dead_code(&self, Parameters(params): Parameters<DeadCodeParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_dead_code", &params, |db| {
+        self.run_tool("bw_dead_code", &params, params.project.as_deref(), |db, _| {
             let vis = match params.visibility.as_deref() {
                 Some("private") => bearwisdom::query::dead_code::VisibilityFilter::PrivateOnly,
                 Some("public") => bearwisdom::query::dead_code::VisibilityFilter::PublicOnly,
@@ -783,7 +927,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_entry_points")]
     fn entry_points(&self, Parameters(params): Parameters<EntryPointsParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_entry_points", &params, |db| {
+        self.run_tool("bw_entry_points", &params, params.project.as_deref(), |db, _| {
             bearwisdom::query::dead_code::find_entry_points(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::entry_points(&r)) } else { Self::to_json(&r) })
@@ -799,7 +943,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_quality_check")]
     fn quality_check(&self, Parameters(params): Parameters<QualityCheckParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_quality_check", &params, |db| {
+        self.run_tool("bw_quality_check", &params, params.project.as_deref(), |db, _| {
             bearwisdom::resolution_breakdown(db)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::quality_check(&r)) } else { Self::to_json(&r) })
@@ -814,8 +958,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_pattern")]
     fn pattern(&self, Parameters(params): Parameters<PatternSearchParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        let project_root = self.project_root.clone();
-        self.run_tool("bw_pattern", &params, |db| {
+        self.run_tool("bw_pattern", &params, params.project.as_deref(), |db, project_root| {
             if params.query.trim().is_empty() {
                 return Self::invalid_input("query is required");
             }
@@ -823,7 +966,7 @@ impl BearWisdomServer {
                 return Self::invalid_input("language is required");
             }
             let max = params.max_results.unwrap_or(50);
-            bearwisdom::pattern_search(db, &project_root, &params.language, &params.query, max)
+            bearwisdom::pattern_search(db, project_root, &params.language, &params.query, max)
                 .map_err(Self::query_err)
                 .and_then(|r| if compact { Ok(crate::compact::pattern(&r, max as usize)) } else { Self::to_json(&r) })
         })
@@ -833,7 +976,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_complete")]
     fn complete_at(&self, Parameters(params): Parameters<CompleteAtParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_complete", &params, |db| {
+        self.run_tool("bw_complete", &params, params.project.as_deref(), |db, _| {
             bearwisdom::query::completion::complete_at(
                 db,
                 &params.file_path,
@@ -852,7 +995,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_context")]
     fn smart_context(&self, Parameters(params): Parameters<SmartContextParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_context", &params, |db| {
+        self.run_tool("bw_context", &params, params.project.as_deref(), |db, _| {
             if params.task.trim().is_empty() {
                 return Self::invalid_input("Task description cannot be empty");
             }
@@ -869,7 +1012,7 @@ impl BearWisdomServer {
     #[tool(name = "bw_investigate")]
     fn investigate(&self, Parameters(params): Parameters<InvestigateParams>) -> String {
         let compact = Self::is_compact(&params.format);
-        self.run_tool("bw_investigate", &params, |db| {
+        self.run_tool("bw_investigate", &params, params.project.as_deref(), |db, _| {
             if params.symbol.is_empty() {
                 return Self::invalid_input("Symbol name cannot be empty");
             }

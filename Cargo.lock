@@ -361,6 +361,7 @@ dependencies = [
  "bearwisdom",
  "clap",
  "dirs",
+ "lru",
  "rayon",
  "rmcp",
  "rusqlite",

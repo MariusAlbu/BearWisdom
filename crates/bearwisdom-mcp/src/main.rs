@@ -3,6 +3,11 @@ extern crate sqlite_vec;
 mod compact;
 mod register;
 mod server;
+mod services;
+
+#[cfg(test)]
+#[path = "services_tests.rs"]
+mod services_tests;
 
 use anyhow::{Context, Result};
 use clap::Parser;
@@ -84,20 +89,22 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     info!("Starting BearWisdom for project: {}", project.display());
 
     // BW core owns indexing. The MCP server is just a query consumer:
-    // it opens an `IndexService`, hands the pool to the request handler,
-    // and lets the service's file watcher keep the index fresh.
+    // it opens an `IndexService` per project (lazily, via the cache), hands
+    // the pool to each request, and lets each service's file watcher keep
+    // the index fresh. The default project is opened eagerly so its
+    // watcher is up before any tool call.
     let db_path = resolve_db_path(&project)?;
-    let index_service = std::sync::Arc::new(
-        bearwisdom::IndexService::open(
-            &db_path,
-            &project,
-            bearwisdom::IndexServiceOptions::default(),
-        )
-        .with_context(|| format!("open index service for {}", project.display()))?,
+    let default_options = bearwisdom::IndexServiceOptions::default();
+    let default_service = std::sync::Arc::new(
+        bearwisdom::IndexService::open(&db_path, &project, default_options.clone())
+            .with_context(|| format!("open index service for {}", project.display()))?,
     );
 
+    let services = std::sync::Arc::new(services::ServiceCache::new(10, default_options));
+    services.insert(project.clone(), default_service.clone());
+
     // Start MCP server FIRST so we respond to `initialize` immediately.
-    let mcp_server = server::BearWisdomServer::new(index_service.pool().clone(), project.clone());
+    let mcp_server = server::BearWisdomServer::new(project.clone(), services.clone());
     eprintln!("MCP server ready — listening on stdio");
 
     let transport = rmcp::transport::io::stdio();
@@ -106,7 +113,7 @@ async fn run_server(project_arg: Option<PathBuf>) -> Result<()> {
     // Initial reindex runs on a background blocking task so it doesn't
     // delay tool calls. The watcher started in `IndexService::open` keeps
     // the DB fresh after this initial pass.
-    let bg_service = index_service.clone();
+    let bg_service = default_service.clone();
     let _bg_handle = tokio::task::spawn_blocking(move || match bg_service.reindex_now() {
         Ok(bearwisdom::ReindexStats::Full(stats)) => {
             eprintln!(
