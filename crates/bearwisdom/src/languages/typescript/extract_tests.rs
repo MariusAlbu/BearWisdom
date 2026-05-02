@@ -1245,3 +1245,76 @@ fn function_type_parameter_suppressed_inside_function_body_annotations() {
         "type-param `Target` in function signature leaked: {leaked:?}"
     );
 }
+
+// ---------------------------------------------------------------------------
+// Triple-slash directive following (`/// <reference path|types="..." />`)
+// ---------------------------------------------------------------------------
+
+#[test]
+fn triple_slash_path_emits_import_ref() {
+    let src = r#"
+/// <reference path="JQuery.d.ts" />
+/// <reference path="JQueryStatic.d.ts" />
+
+declare const $: JQueryStatic;
+"#;
+    let r = refs(src);
+    let imports: Vec<&str> = r
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(imports.contains(&"JQuery.d.ts"), "got: {imports:?}");
+    assert!(imports.contains(&"JQueryStatic.d.ts"), "got: {imports:?}");
+}
+
+#[test]
+fn triple_slash_types_rewrites_to_at_types_prefix() {
+    let src = r#"
+/// <reference types="sizzle" />
+declare global { }
+"#;
+    let r = refs(src);
+    let import = r
+        .iter()
+        .find(|r| r.kind == EdgeKind::Imports && r.target_name.contains("sizzle"))
+        .expect("triple-slash types directive should emit Imports ref");
+    assert_eq!(import.target_name, "@types/sizzle");
+}
+
+#[test]
+fn triple_slash_after_first_statement_is_ignored() {
+    // Per the TS spec, directives must precede all statements. Anything
+    // resembling `/// <reference ...>` inside JSDoc / function body
+    // must NOT be picked up.
+    let src = r#"
+declare const x: number;
+/// <reference path="late.d.ts" />
+"#;
+    let r = refs(src);
+    let late: Vec<_> = r
+        .iter()
+        .filter(|r| r.target_name == "late.d.ts")
+        .collect();
+    assert!(late.is_empty(), "late directive must be ignored: {late:?}");
+}
+
+#[test]
+fn triple_slash_skips_license_comment_block() {
+    // Real .d.ts files often have a long license header before the
+    // directive. The scan must skip past the comment block to find it.
+    let src = r#"
+// Type definitions for jQuery 3.5
+// Project: https://jquery.com/
+// Definitions by: ...
+// License: MIT
+/// <reference path="JQuery.d.ts" />
+"#;
+    let r = refs(src);
+    let imports: Vec<&str> = r
+        .iter()
+        .filter(|r| r.kind == EdgeKind::Imports)
+        .map(|r| r.target_name.as_str())
+        .collect();
+    assert!(imports.contains(&"JQuery.d.ts"));
+}

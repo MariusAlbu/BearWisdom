@@ -109,6 +109,16 @@ fn extract_inner(
     // and type refs to their source modules.
     let import_map = build_import_map(root, src_bytes);
 
+    // Triple-slash directives are .d.ts-specific imports of the form
+    // `/// <reference path="X" />` (relative-path file include) and
+    // `/// <reference types="pkg" />` (npm typings include). They're
+    // critical for @types packages whose `index.d.ts` is just a hub
+    // referencing siblings (`@types/jquery` → JQuery.d.ts +
+    // JQueryStatic.d.ts + factory.d.ts + misc.d.ts). The TS extractor
+    // pre-PR-149 ignored them entirely, so the API surface those
+    // siblings declare never got followed.
+    push_triple_slash_imports(source, &mut refs);
+
     extract_node(
         root,
         src_bytes,
@@ -1082,6 +1092,123 @@ fn extract_bare_reexports_via_imports(
 /// `ecosystem::imports::resolve_import_refs` pass, which canonicalizes
 /// every ref against this map before the file is handed to the resolver.
 ///
+/// Scan the head of a TypeScript source for triple-slash directives:
+///
+///   `/// <reference path="X" />`    — sibling-file include (relative)
+///   `/// <reference types="pkg" />` — npm typings include
+///
+/// Each match emits an `EdgeKind::Imports` ref with `module = Some(spec)`,
+/// which feeds into the standard import resolution path. Path-form refs
+/// resolve against the source file's directory; types-form refs resolve
+/// against `node_modules/@types/<spec>` (the npm walker's existing
+/// @types fallback handles them).
+///
+/// The scan stops at the first non-comment / non-blank line per the TS
+/// language spec — directives must precede all source.
+fn push_triple_slash_imports(source: &str, refs: &mut Vec<ExtractedRef>) {
+    for (line_no, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if trimmed.is_empty() {
+            continue;
+        }
+        // Per the TS spec, triple-slash directives must precede all
+        // statements; bail at the first non-comment line so we don't
+        // pick up `/// XXX` written inside a JSDoc block far below.
+        if !trimmed.starts_with("///") {
+            // Allow JSDoc-style block comments and regular `//` comments
+            // before the first directive — many .d.ts files have a
+            // license header.
+            if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.starts_with('*') {
+                continue;
+            }
+            break;
+        }
+        let body = trimmed.trim_start_matches('/').trim();
+        // Match `<reference path="X" />` and `<reference types="X" />`.
+        // The exact form is: `<reference KIND="VALUE" />` with optional
+        // additional attributes and varying whitespace.
+        let Some(rest) = body.strip_prefix("<reference") else { continue };
+        let rest = rest.trim_start();
+        for kind in &["path", "types"] {
+            let prefix = format!("{kind}=");
+            let Some(after) = rest.strip_prefix(&prefix) else {
+                // Try after a leading `lib=` or other attribute.
+                let probe = rest.find(&prefix);
+                if let Some(idx) = probe {
+                    if !is_attribute_boundary(rest.as_bytes(), idx) {
+                        continue;
+                    }
+                    if let Some(value) = read_quoted(&rest[idx + prefix.len()..]) {
+                        emit_triple_slash_ref(refs, kind, &value, line_no);
+                    }
+                }
+                continue;
+            };
+            if let Some(value) = read_quoted(after) {
+                emit_triple_slash_ref(refs, kind, &value, line_no);
+            }
+        }
+    }
+}
+
+fn read_quoted(s: &str) -> Option<String> {
+    let bytes = s.as_bytes();
+    if bytes.is_empty() {
+        return None;
+    }
+    let q = bytes[0];
+    if q != b'"' && q != b'\'' {
+        return None;
+    }
+    let mut i = 1;
+    while i < bytes.len() && bytes[i] != q {
+        if bytes[i] == b'\\' && i + 1 < bytes.len() {
+            i += 2;
+        } else {
+            i += 1;
+        }
+    }
+    if i >= bytes.len() {
+        return None;
+    }
+    Some(s[1..i].to_string())
+}
+
+/// Char before `idx` must be a word boundary (whitespace or `<`) so we
+/// don't match `pathy="X"` thinking it's `path="X"`.
+fn is_attribute_boundary(bytes: &[u8], idx: usize) -> bool {
+    if idx == 0 {
+        return true;
+    }
+    let prev = bytes[idx - 1];
+    prev == b' ' || prev == b'\t' || prev == b'<' || prev == b'\n'
+}
+
+fn emit_triple_slash_ref(refs: &mut Vec<ExtractedRef>, kind: &str, value: &str, line: usize) {
+    let value = value.trim();
+    if value.is_empty() {
+        return;
+    }
+    // For `types="pkg"`, rewrite to `@types/pkg/<entry>` so the npm
+    // walker matches against the actual package layout. For `path="X"`,
+    // pass the relative spec through and let the file-stem fallback in
+    // resolve_common locate it.
+    let module = match kind {
+        "types" => format!("@types/{value}"),
+        _ => value.to_string(),
+    };
+    refs.push(ExtractedRef {
+        source_symbol_index: 0,
+        target_name: module.clone(),
+        kind: EdgeKind::Imports,
+        line: line as u32,
+        module: Some(module),
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    });
+}
+
 /// Covers:
 ///   - `import Foo from 'pkg'`             → Default
 ///   - `import { X } from 'pkg'`           → Named { exported_name=X }
