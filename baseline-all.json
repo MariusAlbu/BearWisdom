@@ -181,7 +181,7 @@
       "files": 160,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1552,
+      "internal_edges": 1553,
       "internal_unresolved": 13,
       "languages": {
         "css": 6,
@@ -195,9 +195,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ejs-dummyjson",
       "perf": {
-        "end_ws_mb": 70,
-        "files_per_sec": 66,
-        "index_duration_ms": 2413
+        "end_ws_mb": 72,
+        "files_per_sec": 64,
+        "index_duration_ms": 2508
       },
       "project": "ejs-dummyjson",
       "resolution_rate": 99.17,
@@ -209,14 +209,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 84
+        "min_resolution_rate": 98
       },
       "code_chunks": 33754,
       "files": 513,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1698,
-      "internal_unresolved": 304,
+      "internal_edges": 2069,
+      "internal_unresolved": 31,
       "languages": {
         "css": 13,
         "dockerfile": 1,
@@ -231,17 +231,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/ejs-reference",
       "perf": {
-        "end_ws_mb": 110,
-        "files_per_sec": 81,
-        "index_duration_ms": 6323
+        "end_ws_mb": 115,
+        "files_per_sec": 80,
+        "index_duration_ms": 6383
       },
       "project": "ejs-reference",
-      "resolution_rate": 84.82,
+      "resolution_rate": 98.52,
       "routes": 0,
       "symbols": 18906,
       "unresolved_by_lang_kind": {
-        "ejs.calls": 268,
-        "javascript.calls": 36
+        "ejs.calls": 23,
+        "javascript.calls": 8
       }
     },
     {

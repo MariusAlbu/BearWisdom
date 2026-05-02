@@ -19,7 +19,8 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::indexer::project_context::ProjectContext;
 use crate::indexer::resolve::engine::{
-    FileContext, ImportEntry, LanguageResolver, RefContext, Resolution, SymbolLookup,
+    self as engine, FileContext, ImportEntry, LanguageResolver, RefContext, Resolution,
+    SymbolLookup,
 };
 use crate::types::{EdgeKind, ParsedFile};
 
@@ -60,32 +61,42 @@ impl LanguageResolver for EjsResolver {
         ref_ctx: &RefContext,
         lookup: &dyn SymbolLookup,
     ) -> Option<Resolution> {
-        if ref_ctx.extracted_ref.kind != EdgeKind::Imports {
-            return None;
-        }
         let target = ref_ctx.extracted_ref.target_name.trim();
         if target.is_empty() {
             return None;
         }
-        let source_dir = Path::new(&file_ctx.file_path).parent()?;
-        for candidate in path_candidates(source_dir, target) {
-            let path_str = candidate.to_string_lossy().replace('\\', "/");
-            let stem = candidate
-                .file_stem()
-                .and_then(|s| s.to_str())
-                .unwrap_or("");
-            for sym in lookup.in_file(&path_str) {
-                if sym.kind == "class" && sym.name == stem {
-                    return Some(Resolution {
-                        target_symbol_id: sym.id,
-                        confidence: 1.0,
-                        strategy: "ejs_partial",
-                        resolved_yield_type: None,
-                    });
+
+        // Imports → path-based partial resolution.
+        if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
+            let source_dir = Path::new(&file_ctx.file_path).parent()?;
+            for candidate in path_candidates(source_dir, target) {
+                let path_str = candidate.to_string_lossy().replace('\\', "/");
+                let stem = candidate
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .unwrap_or("");
+                for sym in lookup.in_file(&path_str) {
+                    if sym.kind == "class" && sym.name == stem {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 1.0,
+                            strategy: "ejs_partial",
+                            resolved_yield_type: None,
+                        });
+                    }
                 }
             }
+            return None;
         }
-        None
+
+        // Calls / TypeRefs from EJS-attributed refs → fall through to
+        // the shared resolver. In practice most calls inside `<% %>` /
+        // `<%= %>` blocks are emitted as embedded JavaScript and routed
+        // to the TypeScript resolver via the cross-language path, so the
+        // ts_npm_globals fallback against the hexo-runtime synthetic
+        // (qname `__npm_globals__.<helper>`) catches them. This branch
+        // exists for any calls the EJS extractor emits directly.
+        engine::resolve_common("ejs", file_ctx, ref_ctx, lookup, kind_compatible)
     }
 
     fn infer_external_namespace(
@@ -127,6 +138,21 @@ fn path_candidates(source_dir: &Path, target: &str) -> Vec<PathBuf> {
         out.push(base.join("index.ejs"));
     }
     out
+}
+
+/// EJS edge-kind compatibility — Calls / TypeRefs against Function /
+/// Class / Variable. Mirrors the JavaScript predicate used by the shared
+/// resolver since EJS calls are JS-shaped function invocations.
+fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
+    match edge_kind {
+        EdgeKind::Calls => matches!(sym_kind, "function" | "method" | "constructor" | "class"),
+        EdgeKind::TypeRef => matches!(
+            sym_kind,
+            "class" | "interface" | "enum" | "type_alias" | "function"
+        ),
+        EdgeKind::Instantiates => matches!(sym_kind, "class" | "function"),
+        _ => true,
+    }
 }
 
 /// Resolve `..` / `.` components in a path lexically (no I/O). Output
