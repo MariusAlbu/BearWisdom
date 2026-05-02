@@ -338,16 +338,17 @@ pub(crate) fn seed_demand_from_user_refs(
     symbol_index: &SymbolLocationIndex,
     registry: &LanguageRegistry,
 ) -> Vec<ParsedFile> {
-    // Run the BFS on an 8 MiB-stack worker, matching the budget rayon parse
-    // workers use. The main thread's Windows default of 1 MiB is too small
-    // for tree-sitter extractors walking deeply-nested external .d.ts files
-    // (ts-immich hits this on a transitive dependency of `@types/node`).
-    // Scoped thread so we can borrow `parsed`, `symbol_index`, and
-    // `registry` without cloning.
+    // Run the BFS on a 32 MiB-stack worker. Tree-sitter extractors walking
+    // deeply-nested external .d.ts files exhaust smaller budgets — 8 MiB
+    // covered ts-immich's @types/node transitive deps but blew on
+    // astro-awesome-privacy (web/node_modules has 9k+ .d.ts files including
+    // some very deep type chains). The seed thread is short-lived and
+    // single-purpose, so the budget is cheap. Scoped thread so we can
+    // borrow `parsed`, `symbol_index`, and `registry` without cloning.
     std::thread::scope(|s| {
         let handle = std::thread::Builder::new()
             .name("bw-demand-seed".to_string())
-            .stack_size(8 * 1024 * 1024)
+            .stack_size(32 * 1024 * 1024)
             .spawn_scoped(s, move || {
                 seed_demand_from_user_refs_inner(parsed, symbol_index, registry)
             })

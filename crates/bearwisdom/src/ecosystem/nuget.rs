@@ -294,6 +294,17 @@ pub fn parse_package_references(content: &str) -> Vec<String> {
     parse_package_references_full(content).into_iter().map(|c| c.name).collect()
 }
 
+/// Slice the leading bytes of `s` up to `max` bytes, walking back to a
+/// UTF-8 char boundary. Avoids panics on `.csproj` payloads with
+/// non-ASCII metadata (Chinese/Japanese package descriptions, etc.).
+fn clamp_to_char_boundary(s: &str, max: usize) -> &str {
+    let mut end = s.len().min(max);
+    while end > 0 && !s.is_char_boundary(end) {
+        end -= 1;
+    }
+    &s[..end]
+}
+
 pub fn parse_project_references(content: &str) -> Vec<String> {
     let tag = "ProjectReference";
     let mut out = Vec::new();
@@ -302,7 +313,7 @@ pub fn parse_project_references(content: &str) -> Vec<String> {
         let abs_pos = search_from + pos;
         search_from = abs_pos + tag.len();
         let rest = &content[search_from..];
-        let window = &rest[..rest.len().min(512)];
+        let window = clamp_to_char_boundary(rest, 512);
         let Some(inc_pos) = window.find("Include=\"") else { continue };
         let after_inc = &window[inc_pos + 9..];
         let Some(end) = after_inc.find('"') else { continue };
@@ -335,7 +346,7 @@ pub fn parse_package_references_full(content: &str) -> Vec<NuGetCoord> {
         let abs_pos = search_from + pos;
         search_from = abs_pos + tag.len();
         let rest = &content[search_from..];
-        let window = &rest[..rest.len().min(256)];
+        let window = clamp_to_char_boundary(rest, 256);
         let name = window.find("Include=\"").and_then(|inc_pos| {
             let after_inc = &window[inc_pos + 9..];
             after_inc.find('"').map(|end| after_inc[..end].to_string()).filter(|s| !s.is_empty())

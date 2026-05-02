@@ -575,10 +575,16 @@ fn has_constraint_clause_marker(node: Node, src: &str) -> bool {
         return true;
     }
     // AST-fallback: case-insensitive keyword scan over the literal text.
-    // Bounded to the leading 80 chars so we don't scan column comments or
-    // multi-kilobyte default expressions.
+    // Bounded to the leading 80 bytes so we don't scan column comments or
+    // multi-kilobyte default expressions. Walk back to a UTF-8 char boundary
+    // so non-ASCII content in column comments (e.g. CJK text in MySQL DDL)
+    // doesn't slice through a multi-byte char.
     let raw = node_text(node, src);
-    let head = &raw[..raw.len().min(80)];
+    let mut end = raw.len().min(80);
+    while end > 0 && !raw.is_char_boundary(end) {
+        end -= 1;
+    }
+    let head = &raw[..end];
     let upper = head.to_ascii_uppercase();
     upper.contains("CONSTRAINT ")
         || upper.contains("PRIMARY KEY")
