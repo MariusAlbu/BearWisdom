@@ -13,6 +13,10 @@
 pub mod extract;
 pub mod embedded;
 
+#[cfg(test)]
+#[path = "embedded_tests.rs"]
+mod embedded_tests;
+
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
