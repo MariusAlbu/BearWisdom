@@ -57,15 +57,38 @@ pub fn last_indexed_at_ms(db: &Database) -> Option<i64> {
     changeset::get_meta(db, LAST_INDEXED_AT_MS_KEY).and_then(|s| s.parse().ok())
 }
 
-/// Source-file extensions watched and forwarded to the incremental indexer.
-/// Mirrors the supported language set; non-source files (e.g. binary assets,
-/// build artifacts) are filtered out before triggering a reindex.
-const SOURCE_EXTENSIONS: &[&str] = &[
-    "cs", "ts", "tsx", "js", "jsx", "rs", "py", "go", "java", "rb", "php",
-    "kt", "swift", "scala", "dart", "ex", "exs", "c", "h", "cpp", "hpp",
-    "sh", "bash", "html", "css", "scss", "json", "yaml", "yml", "xml",
-    "sql", "toml", "md", "lua", "r", "hs", "proto",
-];
+/// Source-file extensions the watcher considers "code" — anything else
+/// (binary assets, build artifacts, lockfiles) is ignored before triggering
+/// a reindex.
+///
+/// Sourced from `bearwisdom-profile::LANGUAGES` (the same descriptor table
+/// the file walker uses) so the allowlist mirrors the set of files that
+/// would be picked up by a full walk. The previous hardcoded 36-entry
+/// list silently dropped change events for clojure, fortran, ada, robot,
+/// vue, svelte, ocaml, fsharp, vba, pug, ejs, the elixir template
+/// dialects, and ~50 other registered languages.
+///
+/// Profile descriptors store extensions with a leading dot (`".rs"`,
+/// `".d.ts"`); `Path::extension` returns the bare suffix (`"rs"`), so we
+/// strip the dot. Compound extensions collapse to their last segment
+/// (`.d.ts` → "ts", `.component.html` → "html") — that's correct here:
+/// the watcher only decides *whether* to reindex, the indexer's
+/// longest-suffix matcher picks the right plugin.
+#[cfg(test)]
+pub(crate) fn _test_registered_source_extensions() -> FxHashSet<String> {
+    registered_source_extensions()
+}
+
+fn registered_source_extensions() -> FxHashSet<String> {
+    bearwisdom_profile::LANGUAGES
+        .iter()
+        .flat_map(|lang| lang.file_extensions.iter())
+        .filter_map(|ext| {
+            let last = ext.rsplit('.').next()?;
+            if last.is_empty() { None } else { Some(last.to_ascii_lowercase()) }
+        })
+        .collect()
+}
 
 /// Configuration for `IndexService::open`.
 #[derive(Clone, Debug)]
@@ -248,7 +271,7 @@ fn run_watcher_loop(
     project_root: PathBuf,
     debounce: Duration,
 ) {
-    let source_exts: FxHashSet<&str> = SOURCE_EXTENSIONS.iter().copied().collect();
+    let source_exts: FxHashSet<String> = registered_source_extensions();
 
     loop {
         // Block on first event. Channel disconnected = service dropped.

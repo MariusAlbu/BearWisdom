@@ -125,3 +125,43 @@ fn watcher_thread_starts_and_stops_cleanly() {
     // returns within a reasonable window.
     drop(service);
 }
+
+/// The watcher's source-extension allowlist must be derived from the
+/// language registry, not a hand-maintained constant — otherwise edits to
+/// any language outside the legacy 36-entry list (clojure, fortran, ada,
+/// robot, vue, svelte, elixir templates, ocaml, fsharp, ...) silently
+/// don't trigger a reindex. Spot-check both the original ASCII set and a
+/// handful of formerly-missing extensions.
+#[test]
+fn registered_source_extensions_covers_full_plugin_set() {
+    use super::service::_test_registered_source_extensions;
+    let exts = _test_registered_source_extensions();
+
+    // Original allowlist members must still be present.
+    for old in &[
+        "rs", "ts", "tsx", "js", "py", "go", "java", "cs", "rb", "php",
+        "kt", "swift", "scala", "dart", "ex", "exs", "c", "h", "cpp",
+        "html", "css", "scss", "json", "yaml", "toml", "md", "lua", "hs",
+    ] {
+        assert!(exts.contains(*old), "missing legacy ext .{old}");
+    }
+
+    // Languages that were dark-zone before this change.
+    for newly_covered in &[
+        "clj", "cljs", "cljc",   // Clojure
+        "f90", "f95", "fypp",    // Fortran
+        "adb", "ads",            // Ada
+        "robot", "resource",     // Robot
+        "vue",                   // Vue
+        "svelte",                // Svelte
+        "ml", "mli",             // OCaml
+        "fs", "fsx",             // F#
+        "bas", "cls", "frm",     // VBA module / class / form
+        "pug", "ejs",            // template engines
+        "heex", "eex", "leex",   // Phoenix templates
+    ] {
+        assert!(exts.contains(*newly_covered),
+            "extension .{newly_covered} not in allowlist (registry didn't surface it?); \
+             got {} entries", exts.len());
+    }
+}
