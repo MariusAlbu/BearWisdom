@@ -260,3 +260,31 @@ fn ref_function_call_in_assignment() {
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// Symbol qualification by parent package
+// ---------------------------------------------------------------------------
+
+/// `procedure Debug` declared inside `package body Trace` must surface with
+/// qualified_name `Trace.Debug` so cross-file callers like `Trace.Debug(msg);`
+/// resolve via the engine's qualified-name lookup (Step 5 in resolve_common).
+#[test]
+fn subprogram_qualified_by_parent_package() {
+    let src = "package body Trace is\n  procedure Debug (M : String) is\n  begin\n    null;\n  end Debug;\nend Trace;";
+    let r = extract(src);
+    let debug = r.symbols.iter().find(|s| s.name == "Debug")
+        .expect("expected Debug procedure symbol");
+    assert_eq!(debug.qualified_name, "Trace.Debug",
+        "expected qualified_name 'Trace.Debug', got '{}'", debug.qualified_name);
+}
+
+/// Nested package bodies must compose qualified names: `Trace.IO.Format`.
+#[test]
+fn nested_package_qualification_chains() {
+    let src = "package body Trace is\n  package body IO is\n    procedure Format is\n    begin\n      null;\n    end Format;\n  end IO;\nend Trace;";
+    let r = extract(src);
+    let format = r.symbols.iter().find(|s| s.name == "Format")
+        .expect("expected Format procedure symbol");
+    assert_eq!(format.qualified_name, "Trace.IO.Format",
+        "expected qualified_name 'Trace.IO.Format', got '{}'", format.qualified_name);
+}

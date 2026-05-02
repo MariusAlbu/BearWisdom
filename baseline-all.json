@@ -9,8 +9,8 @@
       "files": 1555,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 6259,
-      "internal_unresolved": 5212,
+      "internal_edges": 7097,
+      "internal_unresolved": 4396,
       "languages": {
         "ada": 467,
         "c": 2,
@@ -31,27 +31,28 @@
         "index_duration_ms": 19804
       },
       "project": "ada-alire",
-      "resolution_rate": 54.56,
+      "resolution_rate": 61.75,
       "routes": 0,
       "symbols": 7056,
       "unresolved_by_lang_kind": {
-        "ada.calls": 5188,
-        "javascript.type_ref": 4,
-        "python.calls": 9,
-        "python.type_ref": 2,
-        "shell.calls": 9
+        "ada.Calls": 4367,
+        "javascript.Type_ref": 4,
+        "markdown.Calls": 5,
+        "python.Calls": 9,
+        "python.Type_ref": 2,
+        "shell.Calls": 9
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 90
+        "min_resolution_rate": 89
       },
       "code_chunks": 67125,
       "files": 1123,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 5349,
-      "internal_unresolved": 545,
+      "internal_edges": 5681,
+      "internal_unresolved": 643,
       "languages": {
         "ada": 1015,
         "make": 1,
@@ -66,12 +67,13 @@
         "index_duration_ms": 9467
       },
       "project": "ada-drivers",
-      "resolution_rate": 90.75,
+      "resolution_rate": 89.83,
       "routes": 0,
       "symbols": 16288,
       "unresolved_by_lang_kind": {
-        "ada.calls": 544,
-        "shell.calls": 1
+        "ada.Calls": 637,
+        "markdown.Imports": 5,
+        "shell.Calls": 1
       }
     },
     {
@@ -82,7 +84,7 @@
       "files": 42,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 135,
+      "internal_edges": 246,
       "internal_unresolved": 9,
       "languages": {
         "ada": 37,
@@ -96,11 +98,11 @@
         "index_duration_ms": 142
       },
       "project": "ada-septum",
-      "resolution_rate": 93.75,
+      "resolution_rate": 96.47,
       "routes": 0,
       "symbols": 413,
       "unresolved_by_lang_kind": {
-        "ada.calls": 9
+        "ada.Calls": 9
       }
     },
     {

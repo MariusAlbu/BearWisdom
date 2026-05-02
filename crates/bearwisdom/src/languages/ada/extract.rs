@@ -232,8 +232,19 @@ fn push_sym(
     parent_idx: Option<usize>,
 ) -> usize {
     let idx = symbols.len();
+    // Qualify by the parent symbol's qualified_name when one exists. Ada is
+    // package-scoped: `package Trace is procedure Debug ...` ⇒ Debug must
+    // be reachable via the qname `Trace.Debug` so cross-file callers like
+    // `Trace.Debug(msg)` resolve via the engine's qualified_name lookup
+    // (Step 5 in resolve_common).
+    let qualified_name = match parent_idx.and_then(|i| symbols.get(i)) {
+        Some(parent) if !parent.qualified_name.is_empty() => {
+            format!("{}.{}", parent.qualified_name, name)
+        }
+        _ => name.clone(),
+    };
     symbols.push(ExtractedSymbol {
-        qualified_name: name.clone(),
+        qualified_name,
         name,
         kind,
         visibility: Some(Visibility::Public),
