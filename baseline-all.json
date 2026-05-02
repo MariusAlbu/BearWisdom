@@ -161,14 +161,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 56
+        "min_resolution_rate": 61
       },
-      "code_chunks": 10000,
+      "code_chunks": 9756,
       "files": 601,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 20596,
-      "internal_unresolved": 15992,
+      "internal_edges": 20986,
+      "internal_unresolved": 13292,
       "languages": {
         "clojure": 493,
         "dockerfile": 2,
@@ -184,16 +184,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/clojure-babashka",
       "perf": {
-        "end_ws_mb": 72,
-        "files_per_sec": 62,
-        "index_duration_ms": 9649
+        "end_ws_mb": 76,
+        "files_per_sec": 69,
+        "index_duration_ms": 8693
       },
       "project": "clojure-babashka",
-      "resolution_rate": 56.29,
+      "resolution_rate": 61.22,
       "routes": 0,
-      "symbols": 3910,
+      "symbols": 6333,
       "unresolved_by_lang_kind": {
-        "clojure.calls": 15848,
+        "clojure.calls": 13148,
         "java.calls": 21,
         "java.implements": 4,
         "java.inherits": 1,
@@ -203,14 +203,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 58
+        "min_resolution_rate": 61
       },
-      "code_chunks": 2619,
+      "code_chunks": 2468,
       "files": 100,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 7033,
-      "internal_unresolved": 4999,
+      "internal_edges": 7261,
+      "internal_unresolved": 4475,
       "languages": {
         "clojure": 70,
         "html": 2,
@@ -224,28 +224,28 @@
       "perf": {
         "end_ws_mb": 73,
         "files_per_sec": 26,
-        "index_duration_ms": 3807
+        "index_duration_ms": 3796
       },
       "project": "clojure-datascript",
-      "resolution_rate": 58.45,
+      "resolution_rate": 61.87,
       "routes": 0,
-      "symbols": 1238,
+      "symbols": 1488,
       "unresolved_by_lang_kind": {
-        "clojure.calls": 4989,
-        "javascript.calls": 6,
+        "clojure.calls": 4463,
+        "javascript.calls": 8,
         "shell.calls": 4
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 80
+        "min_resolution_rate": 85
       },
-      "code_chunks": 1207,
+      "code_chunks": 1209,
       "files": 92,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2737,
-      "internal_unresolved": 678,
+      "internal_edges": 2734,
+      "internal_unresolved": 475,
       "languages": {
         "clojure": 81,
         "css": 2,
@@ -255,16 +255,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/clojure-ring",
       "perf": {
-        "end_ws_mb": 71,
-        "files_per_sec": 25,
-        "index_duration_ms": 3638
+        "end_ws_mb": 75,
+        "files_per_sec": 27,
+        "index_duration_ms": 3417
       },
       "project": "clojure-ring",
-      "resolution_rate": 80.15,
+      "resolution_rate": 85.2,
       "routes": 0,
-      "symbols": 680,
+      "symbols": 916,
       "unresolved_by_lang_kind": {
-        "clojure.calls": 678
+        "clojure.calls": 475
       }
     },
     {

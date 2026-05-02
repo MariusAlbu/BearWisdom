@@ -97,6 +97,7 @@ fn collect_binding_names(node: Node, src: &[u8], names: &mut HashSet<String>) {
                 && name != "&"
                 && !name.starts_with(':')
                 && !name.starts_with('%')
+            && !is_clojure_non_callable_token(&name)
                 && !name.starts_with('"')
             {
                 names.insert(name);
@@ -244,6 +245,7 @@ fn walk_node(
         if !name.is_empty()
             && !name.starts_with(':')
             && !name.starts_with('%')
+            && !is_clojure_non_callable_token(&name)
             && !name.starts_with('?')
             && !is_local(node, src, &name, locals)
         {
@@ -269,6 +271,7 @@ fn walk_node(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
+            && !is_clojure_non_callable_token(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
@@ -287,6 +290,28 @@ fn walk_node(
             walk_node(child, src, symbols, refs, parent_idx, locals);
         }
     }
+}
+
+/// Tokens that lex as `sym_lit` in tree-sitter but are syntactic
+/// operators / special forms / test-framework arrows, not callable
+/// predicates. Emitting them as Calls refs always lands them in
+/// `unresolved_refs` because there's no defining symbol anywhere.
+///
+/// Captured set comes from corpus analysis of clojure-babashka's
+/// `extractor_bug` bucket:
+///   * `.`        — Java interop dot (`.method obj`)
+///   * `=>`       — test arrow (midje, expectations)
+///   * `else`     — `cond`/`case` keyword fallback when written bare
+///                  rather than `:else`
+///   * `return`   — JS-leaked source string in test fixtures
+///   * `this`     — proxy/reify method receiver. Locals tracker
+///                  catches it inside the form, this guard catches
+///                  the residue when forms are nested oddly.
+///   * `&`        — rest-args separator in `[a b & rest]`. Should be
+///                  filtered by the param-vec walk but residual
+///                  appearances slip through as call args.
+fn is_clojure_non_callable_token(name: &str) -> bool {
+    matches!(name, "." | "=>" | "else" | "return" | "this" | "&")
 }
 
 /// Returns true if `name` is a local binding (unqualified symbol in the locals set).
@@ -534,9 +559,118 @@ fn process_list(
             let binding_locals = collect_binding_form_locals(node, src, locals);
             walk_list_children_raw(node, src, symbols, refs, parent_idx, &binding_locals, 1);
         }
+        _ if is_custom_def_macro(&head) => {
+            // Custom `def*` macro — `(defreq delete)`, `(defroute home [...])`,
+            // `(defcomponent MyComp ...)`, etc. The second sym_lit child is
+            // the symbol being DEFINED, not a call target. Push it as a
+            // symbol of the same project and skip the Calls-ref emission.
+            // Mirrors the explicit `defn` / `def` arms above for macros the
+            // extractor doesn't know by name.
+            let (name, _name_line) = list_second_name_with_line(node, src);
+            if !name.is_empty() {
+                let idx = push_sym(
+                    node,
+                    name.clone(),
+                    SymbolKind::Function,
+                    Visibility::Public,
+                    symbols,
+                    parent_idx,
+                );
+                // Walk remaining children but with locals extended to
+                // include the just-defined name (avoids self-ref noise
+                // when the body uses its own name) and skip the first
+                // sym_lit (the name itself).
+                let mut new_locals = locals.clone();
+                new_locals.insert(name);
+                walk_def_macro_body(node, src, symbols, refs, Some(idx), &new_locals);
+            } else {
+                walk_call_args(node, src, symbols, refs, parent_idx, locals);
+            }
+        }
         _ => {
             // Head ref already emitted above. Walk argument children.
             walk_call_args(node, src, symbols, refs, parent_idx, locals);
+        }
+    }
+}
+
+/// Heuristic: head looks like a custom `def*`-macro (`defreq`,
+/// `defroute`, `defcomponent`, `def-foo`, ...) — names starting with
+/// `def` followed by either an uppercase letter, `-`, or another
+/// lowercase letter. Excludes `def`, `defn`, `defn-`, `defmacro`,
+/// `defmulti`, `defmethod`, `defrecord`, `deftype`, `defprotocol`,
+/// `definterface`, `defonce` which are handled by their own match
+/// arms above.
+fn is_custom_def_macro(head: &str) -> bool {
+    if !head.starts_with("def") {
+        return false;
+    }
+    matches!(
+        head,
+        "def"
+        | "defn"
+        | "defn-"
+        | "defmacro"
+        | "defmulti"
+        | "defmethod"
+        | "defrecord"
+        | "deftype"
+        | "defprotocol"
+        | "definterface"
+        | "defonce"
+    ) == false
+        && head.len() > 3
+        && head
+            .chars()
+            .nth(3)
+            .map(|c| c.is_ascii_alphabetic() || c == '-')
+            .unwrap_or(false)
+}
+
+/// Walk a custom-def-macro body — like `walk_call_args` but skips the
+/// first sym_lit child too (it's the name being defined, already
+/// pushed as a symbol).
+fn walk_def_macro_body(
+    node: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_idx: Option<usize>,
+    locals: &HashSet<String>,
+) {
+    let mut cursor = node.walk();
+    let mut sym_seen = 0usize;
+    for child in node.children(&mut cursor) {
+        if child.kind() == "sym_lit" {
+            sym_seen += 1;
+            // Skip head (sym_seen == 1) and the name being defined
+            // (sym_seen == 2).
+            if sym_seen <= 2 {
+                continue;
+            }
+            // Subsequent sym_lit children — emit as Calls refs.
+            let name = sym_lit_name(child, src);
+            if !name.is_empty()
+                && !name.starts_with(':')
+                && !name.starts_with('%')
+            && !is_clojure_non_callable_token(&name)
+                && !name.starts_with('?')
+                && !is_local(child, src, &name, locals)
+            {
+                let ns = sym_lit_ns(child, src);
+                refs.push(ExtractedRef {
+                    source_symbol_index: parent_idx.unwrap_or(0),
+                    target_name: name,
+                    kind: EdgeKind::Calls,
+                    line: child.start_position().row as u32,
+                    module: ns,
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
+            }
+        } else {
+            walk_node(child, src, symbols, refs, parent_idx, locals);
         }
     }
 }
@@ -939,6 +1073,7 @@ fn walk_call_args(
             if !name.is_empty()
                 && !name.starts_with(':')
                 && !name.starts_with('%')
+            && !is_clojure_non_callable_token(&name)
                 && !is_local(child, src, &name, locals)
             {
                 let ns = sym_lit_ns(child, src);
