@@ -36,6 +36,7 @@ pub mod android_sdk;
 pub mod blazor_runtime;
 pub mod jinja_ansible_runtime;
 pub mod bicep_runtime;
+pub mod prolog_runtime;
 pub mod cabal;
 pub mod bazel_central_registry;
 pub mod bash_completion_synthetics;
@@ -102,6 +103,7 @@ pub use bazel_central_registry::BazelCentralRegistryEcosystem;
 pub use blazor_runtime::BlazorRuntimeEcosystem;
 pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use bicep_runtime::BicepRuntimeEcosystem;
+pub use prolog_runtime::PrologRuntimeEcosystem;
 pub use bash_completion_synthetics::BashCompletionSyntheticsEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use cabal::CabalEcosystem;
@@ -618,6 +620,7 @@ pub fn default_locator(
         "blazor-runtime" => Some(Arc::new(BlazorRuntimeEcosystem)),
         "jinja-ansible-runtime" => Some(jinja_ansible_runtime::shared_locator()),
         "bicep-runtime" => Some(bicep_runtime::shared_locator()),
+        "prolog-runtime" => Some(prolog_runtime::shared_locator()),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
@@ -729,6 +732,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(BlazorRuntimeEcosystem);
         reg_eco!(JinjaAnsibleRuntimeEcosystem);
         reg_eco!(BicepRuntimeEcosystem);
+        reg_eco!(PrologRuntimeEcosystem);
         reg_eco!(SwiftFoundationEcosystem);
         reg_eco!(SwiftPmDslStubsEcosystem);
         reg_eco!(VbaTypelibsEcosystem);

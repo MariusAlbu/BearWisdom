@@ -75,11 +75,6 @@ impl LanguageResolver for PrologResolver {
             return None;
         }
 
-        // Prolog standard builtins are never in the index.
-        if predicates::is_prolog_builtin(target) {
-            return None;
-        }
-
         // Strip module qualification: `lists:member` → `member`.
         // resolve_common operates on target_name directly; when the target
         // contains a module qualifier we must resolve the bare predicate name.
@@ -113,7 +108,35 @@ impl LanguageResolver for PrologResolver {
             return None;
         }
 
-        engine::resolve_common("prolog", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        if let Some(res) =
+            engine::resolve_common("prolog", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
+        {
+            return Some(res);
+        }
+
+        // Runtime fallback: stdlib predicates (`member`, `append`, `format`,
+        // ...) live under the SWI-Prolog `library/` and `boot/` trees that
+        // the prolog-runtime ecosystem walks. The shared `resolve_common`
+        // path needs an explicit `:- use_module(library(lists))` import to
+        // bind `member`, but real Prolog code commonly relies on autoloaded
+        // predicates that are in scope without an import. Accept the first
+        // by-name match whose file lives under one of the indexed runtime
+        // roots.
+        for sym in lookup.by_name(target) {
+            if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                continue;
+            }
+            if sym.file_path.starts_with("ext:") || is_prolog_runtime_path(&sym.file_path) {
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.85,
+                    strategy: "prolog_runtime_fallback",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
+        None
     }
 
     fn infer_external_namespace(
@@ -124,4 +147,14 @@ impl LanguageResolver for PrologResolver {
     ) -> Option<String> {
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_prolog_builtin)
     }
+}
+
+/// Heuristic: file paths under a SWI-Prolog source tree (e.g.
+/// `.../swipl-devel/library/lists.pl` or `.../swi-prolog/boot/init.pl`).
+/// Used to gate the runtime fallback so we don't accept arbitrary
+/// project-name collisions from elsewhere in the index.
+fn is_prolog_runtime_path(path: &str) -> bool {
+    let p = path.replace('\\', "/").to_ascii_lowercase();
+    (p.contains("/library/") || p.contains("/boot/"))
+        && (p.contains("swipl") || p.contains("swi-prolog") || p.contains("prolog"))
 }

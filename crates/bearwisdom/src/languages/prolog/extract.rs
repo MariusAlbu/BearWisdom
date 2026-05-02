@@ -117,13 +117,21 @@ fn process_clause(
 
     // Rule: Head :- Body
     // Fact: Head
+    //
+    // Symbol shape: name=bare functor (`member`), qualified_name=functor/arity
+    // (`member/2`). The bare name lets the shared resolver's
+    // `lookup.by_name(target)` match a call like `member(X, L)` against the
+    // definition without the call site needing to count arity. The fully
+    // qualified `functor/arity` form preserves Prolog's predicate identity
+    // for downstream tools that need it (e.g., bw_symbol_info disambiguating
+    // `member/2` from `member/3`).
     if let Some(neck_pos) = find_neck(clause) {
         let head = clause[..neck_pos].trim();
         let body = clause[neck_pos + 2..].trim(); // skip ":-"
         if let Some((functor, arity)) = extract_predicate(head) {
             let idx = symbols.len();
             symbols.push(make_symbol(
-                format!("{}/{}", functor, arity),
+                functor.clone(),
                 format!("{}/{}", functor, arity),
                 SymbolKind::Function,
                 line,
@@ -136,7 +144,7 @@ fn process_clause(
         // Fact (no :-)
         if let Some((functor, arity)) = extract_predicate(clause) {
             symbols.push(make_symbol(
-                format!("{}/{}", functor, arity),
+                functor.clone(),
                 format!("{}/{}", functor, arity),
                 SymbolKind::Function,
                 line,
@@ -241,13 +249,20 @@ fn extract_body_goals(
         if goal.is_empty() {
             continue;
         }
-        // Skip meta-goals and built-ins.
         let functor = goal.split('(').next().unwrap_or(goal).trim();
-        if functor.is_empty() || is_prolog_builtin(functor) {
+        if functor.is_empty() {
             continue;
         }
         // Skip variables (start with uppercase or _).
         if functor.starts_with(|c: char| c.is_uppercase() || c == '_') {
+            continue;
+        }
+        // Skip Prolog syntactic operators / control constructs that aren't
+        // user-callable predicates. Named stdlib predicates (`member`,
+        // `append`, `format`, `findall`, ...) DO get emitted — they resolve
+        // against symbols indexed by the prolog-runtime ecosystem when an
+        // SWI-Prolog source tree is reachable.
+        if is_prolog_operator(functor) {
             continue;
         }
         refs.push(ExtractedRef {
@@ -416,25 +431,26 @@ fn strip_block_comment_start(line: &str) -> (&str, bool) {
     (line, false)
 }
 
-fn is_prolog_builtin(functor: &str) -> bool {
+/// Prolog operators and control constructs that aren't callable predicates
+/// in the symbol-graph sense — they're built into the engine's evaluator and
+/// can never be redefined as a user/library predicate. Emitting them as
+/// Calls refs would always produce phantom unresolved targets.
+///
+/// Named stdlib predicates (`member`, `append`, `format`, `findall`,
+/// `assertz`, `nl`, `write`, `read`, ...) are NOT in this list — they resolve
+/// against symbols indexed by the prolog-runtime ecosystem.
+fn is_prolog_operator(functor: &str) -> bool {
     matches!(
         functor,
-        "true" | "fail" | "false" | "halt" | "nl" | "write" | "writeln" | "read"
-        | "assert" | "asserta" | "assertz" | "retract" | "abolish"
-        | "functor" | "arg" | "copy_term" | "call" | "once" | "ignore" | "forall"
-        | "findall" | "bagof" | "setof" | "aggregate_all"
-        | "is" | "=" | "\\=" | "==" | "\\==" | "<" | ">" | ">=" | "=<" | "=:=" | "=\\="
-        | "\\+" | "not" | "between" | "succ" | "plus"
-        | "atom" | "number" | "integer" | "float" | "string" | "compound" | "is_list"
-        | "atomic" | "callable" | "ground" | "var" | "nonvar"
-        | "atom_codes" | "atom_chars" | "atom_length" | "atom_concat"
-        | "number_codes" | "number_chars" | "char_code"
-        | "string_to_atom" | "term_to_atom" | "term_string"
-        | "length" | "append" | "member" | "memberchk" | "last" | "nth0" | "nth1"
-        | "msort" | "sort" | "permutation" | "flatten" | "numlist"
-        | "format" | "format_atom" | "atomic_list_concat" | "concat_atom"
-        | "succ_or_zero" | "max_list" | "min_list" | "sum_list"
-        | "catch" | "throw" | "!" | "->"
+        // Term equality / unification / arithmetic comparison
+        "=" | "\\=" | "==" | "\\==" | "@<" | "@>" | "@=<" | "@>=" |
+        "<" | ">" | ">=" | "=<" | "=:=" | "=\\=" |
+        // Arithmetic evaluation
+        "is" |
+        // Control constructs
+        "->" | ";" | "," | "!" | "\\+" |
+        // Engine-level constants
+        "true" | "false"
     )
 }
 
