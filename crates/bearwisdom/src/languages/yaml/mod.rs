@@ -13,7 +13,11 @@
 
 pub mod embedded;
 pub mod extract;
+pub mod resolve;
 
+use std::sync::Arc;
+
+use crate::indexer::resolve::engine::LanguageResolver;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
@@ -36,4 +40,7 @@ impl LanguagePlugin for YamlPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
+        Some(Arc::new(resolve::YamlResolver))
+    }
 }
