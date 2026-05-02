@@ -2312,7 +2312,7 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 113,
-      "internal_unresolved": 76,
+      "internal_unresolved": 36,
       "languages": {
         "html": 6,
         "markdown": 13,
@@ -2328,14 +2328,15 @@
         "index_duration_ms": 1546
       },
       "project": "vbnet-vbaweb",
-      "resolution_rate": 59.79,
+      "resolution_rate": 75.84,
       "routes": 0,
       "symbols": 982,
       "unresolved_by_lang_kind": {
-        "html.calls": 8,
-        "html.type_ref": 10,
-        "scss.inherits": 1,
-        "vba.calls": 57
+        "html.Calls": 8,
+        "html.Type_ref": 10,
+        "markdown.Instantiates": 1,
+        "scss.Inherits": 1,
+        "vba.Calls": 16
       }
     },
     {

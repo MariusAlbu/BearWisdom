@@ -120,3 +120,18 @@ fn path_like_first_token_is_dropped() {
         "path-like identifier must not become a call ref"
     );
 }
+
+#[test]
+fn quoted_first_token_is_dropped() {
+    // A first token starting with `"` is a string literal that bled into the
+    // first-token slot when the leading whitespace before the quote was
+    // stripped. Common in VBA code that writes HTTP headers:
+    //     "Set-Cookie", strValue
+    let src = "Sub Main()\n    \"Set-Cookie\", strValue\nEnd Sub\n";
+    let r = extract::extract(src);
+    assert!(
+        r.refs.iter().all(|rf| !rf.target_name.starts_with('"')),
+        "double-quoted token must not become a call ref; got {:?}",
+        r.refs.iter().map(|rf| &rf.target_name).collect::<Vec<_>>()
+    );
+}

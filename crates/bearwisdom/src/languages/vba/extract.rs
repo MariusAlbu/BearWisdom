@@ -293,6 +293,8 @@ fn parse_call_stmt(upper: &str, original: &str) -> Option<String> {
     // uppercase and aren't obviously assignments or control flow.
     let first_token = original.split_whitespace().next().unwrap_or("");
     if first_token.is_empty()
+        || first_token.starts_with('"')   // VBA string literal (`"Set-Cookie", val`)
+        || first_token.starts_with('\'')  // VBA comment / single-quoted string
         || first_token.contains('=')
         || first_token.contains('.')
         || first_token.contains('(')
