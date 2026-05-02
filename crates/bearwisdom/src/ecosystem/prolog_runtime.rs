@@ -66,7 +66,12 @@ impl Ecosystem for PrologRuntimeEcosystem {
         walk_prolog_tree(dep)
     }
 
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    // Eager walk: SWI-Prolog's library/ + boot/ together hold a few hundred
+    // .pl files (~3 MB). Walking eagerly keeps the build_symbol_index
+    // requirement out of scope. Demand-driven parsing was a copy-paste
+    // from the bicep_runtime template that doesn't fit the .pl walk
+    // shape.
+    fn uses_demand_driven_parse(&self) -> bool { false }
 }
 
 impl ExternalSourceLocator for PrologRuntimeEcosystem {

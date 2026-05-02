@@ -180,8 +180,11 @@ fn disambiguate_by_content(detected: &'static str, path: &std::path::Path) -> &'
 
 fn file_looks_like_prolog(path: &std::path::Path) -> bool {
     let Ok(file) = std::fs::File::open(path) else { return false };
-    let mut head = [0u8; 1024];
-    let n = match (&file).take(1024).read(&mut head) {
+    // 4 KiB head — large enough to clear typical multi-line license
+    // headers (SWI-Prolog's BSD-3 boilerplate is ~1.7 KiB) before the
+    // first `:- module(...)` directive.
+    let mut head = [0u8; 4096];
+    let n = match (&file).take(4096).read(&mut head) {
         Ok(n) => n,
         Err(_) => return false,
     };

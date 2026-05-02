@@ -272,7 +272,20 @@ pub(super) fn push_typedef(
                     has_specifier_body = true;
                 }
             }
-            "type_identifier" | "pointer_declarator" | "function_declarator" => {
+            // Declarator variants that introduce a new alias name. The
+            // canonical shape is `type_identifier`; `pointer_declarator`
+            // wraps `typedef X *Y` (the alias name `Y` is inside);
+            // `function_declarator` wraps `typedef X (*Fn)(Args)`.
+            // **`array_declarator`** wraps `typedef X Y[N]` — common for
+            // GMP-compatible types (`typedef bf_t mpz_t[1];`) and zlib
+            // typedefs that swipl bundles. **`parenthesized_declarator`**
+            // wraps GCC-attribute / `(*name)(...)` shapes that nest
+            // around the real declarator.
+            "type_identifier"
+            | "pointer_declarator"
+            | "function_declarator"
+            | "array_declarator"
+            | "parenthesized_declarator" => {
                 declarators.push(child);
             }
             _ => {}

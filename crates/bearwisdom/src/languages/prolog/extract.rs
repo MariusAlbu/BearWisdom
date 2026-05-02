@@ -207,6 +207,25 @@ fn process_directive(
         return;
     }
 
+    // op(Priority, Type, Name) — operator declaration. SWI/XSB use these
+    // for runtime predicates whose only on-disk presence is the operator
+    // declaration (e.g. `:- op(900, fy, tnot).` in `library/dialect/xsb/
+    // source.pl`). The actual implementation lives in the engine's C
+    // source, never as a `.pl` predicate clause. Emit a Function symbol
+    // for the declared name so calls resolve as runtime-stub matches.
+    if body.starts_with("op(") {
+        if let Some(op_name) = extract_op_name(&body[3..]) {
+            symbols.push(make_symbol(
+                op_name.clone(),
+                op_name,
+                SymbolKind::Function,
+                line,
+                Some(format!(":- {}", body)),
+            ));
+        }
+        return;
+    }
+
     // ensure_loaded(library(name)) / ensure_loaded(path)
     if body.starts_with("ensure_loaded(") {
         let inner = &body[14..].trim_end_matches(')');
@@ -374,6 +393,41 @@ fn count_top_level_args(args: &str) -> usize {
         }
     }
     count
+}
+
+/// Extract the operator name from a `:- op(Priority, Type, Name)` directive.
+/// `body` here is the text after the leading `op(`.
+///
+/// Three argument shapes:
+///   * Single name:   `900, fy, tnot)`
+///   * List of names: `700, xfx, [is, =:=, =\\=])`
+///   * Quoted name:   `1200, xfx, ':-')`
+///
+/// Returns just the first/main name when a list is given (subsequent
+/// names are operators we already recognise as `is_prolog_operator`).
+fn extract_op_name(rest: &str) -> Option<String> {
+    let parts: Vec<&str> = rest.splitn(3, ',').collect();
+    if parts.len() < 3 {
+        return None;
+    }
+    let third = parts[2].trim();
+    let third = third.trim_end_matches(')').trim();
+    // List form: `[a, b, c]` — take the first.
+    let raw = if let Some(stripped) = third.strip_prefix('[') {
+        stripped.split(',').next().unwrap_or(stripped).trim().trim_end_matches(']').trim()
+    } else {
+        third
+    };
+    let name = raw.trim_matches('\'').trim_matches('"').trim();
+    if name.is_empty() {
+        return None;
+    }
+    // Reject non-atom shapes (purely-symbol operators like `=`, `:-`,
+    // `\\+`) — those are covered by `is_prolog_operator` already.
+    if !name.chars().any(|c| c.is_ascii_alphabetic()) {
+        return None;
+    }
+    Some(name.to_string())
 }
 
 /// Extract the first argument of a functor: "Name, Exports)" → Some("Name")

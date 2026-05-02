@@ -664,36 +664,35 @@
       "assertions": {
         "min_resolution_rate": 97
       },
-      "code_chunks": 38682,
+      "code_chunks": 40482,
       "files": 309,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 33896,
-      "internal_unresolved": 1003,
+      "internal_edges": 35434,
+      "internal_unresolved": 1040,
       "languages": {
         "dockerfile": 1,
         "json": 11,
         "markdown": 14,
         "nix": 1,
-        "perl": 18,
-        "prolog": 154,
+        "prolog": 172,
         "rust": 77,
         "toml": 32,
         "xml": 1
       },
       "path": "F:/Work/Projects/TestProjects/prolog-scryer",
       "perf": {
-        "end_ws_mb": 112,
+        "end_ws_mb": 132,
         "files_per_sec": 7,
-        "index_duration_ms": 43576
+        "index_duration_ms": 44874
       },
       "project": "prolog-scryer",
-      "resolution_rate": 97.13,
+      "resolution_rate": 97.15,
       "routes": 0,
-      "symbols": 17268,
+      "symbols": 19633,
       "unresolved_by_lang_kind": {
-        "nix.calls": 11,
-        "prolog.calls": 643,
+        "nix.calls": 5,
+        "prolog.calls": 686,
         "rust.calls": 95,
         "rust.implements": 16,
         "rust.type_ref": 238
@@ -701,14 +700,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 92
+        "min_resolution_rate": 96
       },
-      "code_chunks": 102578,
+      "code_chunks": 123440,
       "files": 1268,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 90575,
-      "internal_unresolved": 7547,
+      "internal_edges": 109658,
+      "internal_unresolved": 4106,
       "languages": {
         "c": 283,
         "cmake": 58,
@@ -716,8 +715,8 @@
         "javascript": 1,
         "json": 2,
         "markdown": 30,
-        "perl": 441,
-        "prolog": 414,
+        "perl": 3,
+        "prolog": 852,
         "python": 1,
         "shell": 26,
         "vba": 1,
@@ -725,37 +724,37 @@
       },
       "path": "F:/Work/Projects/TestProjects/prolog-swipl",
       "perf": {
-        "end_ws_mb": 148,
-        "files_per_sec": 86,
-        "index_duration_ms": 14702
+        "end_ws_mb": 162,
+        "files_per_sec": 72,
+        "index_duration_ms": 17563
       },
       "project": "prolog-swipl",
-      "resolution_rate": 92.31,
+      "resolution_rate": 96.39,
       "routes": 0,
-      "symbols": 59365,
+      "symbols": 81886,
       "unresolved_by_lang_kind": {
-        "c.calls": 991,
+        "c.calls": 982,
         "c.imports": 13,
-        "c.type_ref": 2372,
+        "c.type_ref": 1329,
         "cmake.calls": 3,
         "cmake.type_ref": 141,
         "html.calls": 18,
         "javascript.calls": 231,
         "javascript.type_ref": 2,
-        "prolog.calls": 3737,
+        "prolog.calls": 1348,
         "shell.calls": 39
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 86
+        "min_resolution_rate": 78
       },
-      "code_chunks": 14289,
+      "code_chunks": 16987,
       "files": 281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2878,
-      "internal_unresolved": 460,
+      "internal_edges": 5731,
+      "internal_unresolved": 1583,
       "languages": {
         "c": 4,
         "css": 30,
@@ -763,28 +762,29 @@
         "javascript": 49,
         "json": 6,
         "markdown": 14,
-        "perl": 124,
-        "prolog": 29,
+        "perl": 1,
+        "prolog": 152,
         "shell": 1,
         "xml": 3
       },
       "path": "F:/Work/Projects/TestProjects/prolog-swish",
       "perf": {
-        "end_ws_mb": 62,
-        "files_per_sec": 116,
-        "index_duration_ms": 2419
+        "end_ws_mb": 264,
+        "files_per_sec": 81,
+        "index_duration_ms": 3486
       },
       "project": "prolog-swish",
-      "resolution_rate": 86.22,
+      "resolution_rate": 78.36,
       "routes": 0,
-      "symbols": 5908,
+      "symbols": 9801,
       "unresolved_by_lang_kind": {
-        "c.type_ref": 17,
+        "c.type_ref": 15,
         "html.calls": 1,
         "html.type_ref": 1,
-        "javascript.calls": 395,
+        "javascript.calls": 520,
+        "javascript.imports": 4,
         "javascript.type_ref": 14,
-        "prolog.calls": 32
+        "prolog.calls": 1028
       }
     },
     {
