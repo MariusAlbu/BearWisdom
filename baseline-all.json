@@ -1830,17 +1830,17 @@
       "assertions": {
         "min_resolution_rate": 57
       },
-      "code_chunks": 667,
-      "files": 35,
+      "code_chunks": 1069,
+      "files": 36,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 233,
-      "internal_unresolved": 171,
+      "internal_edges": 341,
+      "internal_unresolved": 0,
       "languages": {
         "css": 3,
         "html": 7,
         "javascript": 8,
-        "json": 4,
+        "json": 5,
         "markdown": 4,
         "pug": 8,
         "scss": 1
@@ -1852,12 +1852,10 @@
         "index_duration_ms": 1583
       },
       "project": "pug-bootstrap-switch",
-      "resolution_rate": 57.67,
+      "resolution_rate": 100.0,
       "routes": 0,
       "symbols": 267,
-      "unresolved_by_lang_kind": {
-        "javascript.calls": 171
-      }
+      "unresolved_by_lang_kind": {}
     },
     {
       "project": "puppet-apache",
