@@ -242,6 +242,99 @@ mod exclusions_tests {
 }
 
 #[cfg(test)]
+mod project_exclusion_tests {
+    use crate::exclusions::{
+        project_active_languages, project_exclude_dirs, should_exclude_in_project,
+    };
+    use std::fs;
+    use tempfile::tempdir;
+
+    #[test]
+    fn rust_only_project_excludes_target_but_not_build() {
+        // Mirrors the scryer-prolog layout: Cargo.toml at root, build/ holds
+        // Rust build-script source. Java's `build` exclusion must NOT bleed
+        // in.
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "[package]\nname = \"x\"\n").unwrap();
+        fs::create_dir_all(dir.path().join("src")).unwrap();
+        fs::write(dir.path().join("src/lib.rs"), "").unwrap();
+
+        let active = project_active_languages(dir.path());
+        assert!(active.contains(&"rust"), "got: {active:?}");
+
+        let excludes = project_exclude_dirs(dir.path());
+        assert!(excludes.contains(&"target"), "Rust target/ should be excluded");
+        assert!(!excludes.contains(&"build"), "Rust-only project must NOT exclude build/");
+        assert!(excludes.contains(&"node_modules"), "common dirs always excluded");
+    }
+
+    #[test]
+    fn java_project_keeps_build_exclusion() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("pom.xml"), "<project/>").unwrap();
+        fs::create_dir_all(dir.path().join("src/main/java")).unwrap();
+
+        let active = project_active_languages(dir.path());
+        assert!(active.contains(&"java"));
+
+        let excludes = project_exclude_dirs(dir.path());
+        assert!(excludes.contains(&"build"));
+        assert!(excludes.contains(&"target"));
+        assert!(excludes.contains(&".gradle"));
+    }
+
+    #[test]
+    fn polyglot_rust_java_includes_both_exclusions() {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+        fs::write(dir.path().join("pom.xml"), "<project/>").unwrap();
+
+        let excludes = project_exclude_dirs(dir.path());
+        assert!(excludes.contains(&"target"));
+        assert!(excludes.contains(&"build"));
+    }
+
+    #[test]
+    fn monorepo_subdir_marker_activates_language() {
+        let dir = tempdir().unwrap();
+        let frontend = dir.path().join("frontend");
+        fs::create_dir_all(&frontend).unwrap();
+        fs::write(frontend.join("package.json"), "{}").unwrap();
+        let backend = dir.path().join("backend");
+        fs::create_dir_all(&backend).unwrap();
+        fs::write(backend.join("Cargo.toml"), "[package]\nname=\"x\"\n").unwrap();
+
+        let active = project_active_languages(dir.path());
+        assert!(active.contains(&"rust"), "got: {active:?}");
+        // package.json activates JS/TS — exact id depends on registry order
+        // (typescript or javascript). Either is fine for this assertion.
+        assert!(
+            active.contains(&"typescript") || active.contains(&"javascript"),
+            "got: {active:?}"
+        );
+    }
+
+    #[test]
+    fn empty_project_falls_back_to_canonical() {
+        let dir = tempdir().unwrap();
+        let excludes = project_exclude_dirs(dir.path());
+        // No marker → fall back to global union, which includes `build`.
+        assert!(excludes.contains(&"build"));
+        assert!(excludes.contains(&"node_modules"));
+    }
+
+    #[test]
+    fn should_exclude_in_project_respects_passed_set() {
+        let rust_excludes = &["target"];
+        assert!(should_exclude_in_project("target", rust_excludes));
+        assert!(!should_exclude_in_project("build", rust_excludes));
+        // Common dirs always excluded regardless of the passed set.
+        assert!(should_exclude_in_project("node_modules", rust_excludes));
+        assert!(should_exclude_in_project(".git", rust_excludes));
+    }
+}
+
+#[cfg(test)]
 mod registry_tests {
     use crate::registry::{find_language, find_language_by_extension, LANGUAGES};
 

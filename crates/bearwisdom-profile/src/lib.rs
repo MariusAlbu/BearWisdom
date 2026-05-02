@@ -30,7 +30,10 @@ mod tests;
 // ---------------------------------------------------------------------------
 
 pub use detect::detect_language;
-pub use exclusions::{canonical_exclude_dirs, should_exclude, build_walker, COMMON_EXCLUDE_DIRS};
+pub use exclusions::{
+    build_walker, canonical_exclude_dirs, project_active_languages, project_exclude_dirs,
+    should_exclude, should_exclude_in_project, COMMON_EXCLUDE_DIRS,
+};
 pub use registry::{find_language, find_language_by_extension, LANGUAGES};
 pub use scanner::{scan, scan_with_manifest, ScanResult};
 pub use types::{

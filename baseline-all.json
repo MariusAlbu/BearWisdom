@@ -662,39 +662,39 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 92
+        "min_resolution_rate": 94
       },
-      "code_chunks": 34577,
-      "files": 305,
+      "code_chunks": 35899,
+      "files": 309,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 29162,
-      "internal_unresolved": 2447,
+      "internal_edges": 30170,
+      "internal_unresolved": 1834,
       "languages": {
         "dockerfile": 1,
         "json": 11,
         "markdown": 14,
         "nix": 1,
         "perl": 172,
-        "rust": 73,
+        "rust": 77,
         "toml": 32,
         "xml": 1
       },
       "path": "F:/Work/Projects/TestProjects/prolog-scryer",
       "perf": {
-        "end_ws_mb": 100,
+        "end_ws_mb": 104,
         "files_per_sec": 13,
-        "index_duration_ms": 23187
+        "index_duration_ms": 23578
       },
       "project": "prolog-scryer",
-      "resolution_rate": 92.26,
+      "resolution_rate": 94.27,
       "routes": 0,
-      "symbols": 13771,
+      "symbols": 14419,
       "unresolved_by_lang_kind": {
         "nix.calls": 11,
-        "rust.calls": 196,
+        "rust.calls": 184,
         "rust.implements": 16,
-        "rust.type_ref": 2224
+        "rust.type_ref": 1623
       }
     },
     {

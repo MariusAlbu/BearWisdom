@@ -12,7 +12,9 @@
 // =============================================================================
 
 use crate::detect::detect_language;
-use crate::exclusions::{canonical_exclude_dirs, should_exclude, should_skip_file};
+use crate::exclusions::{
+    project_exclude_dirs, should_exclude_in_project, should_skip_file,
+};
 use crate::types::ScannedFile;
 use ignore::WalkBuilder;
 use std::path::Path;
@@ -47,11 +49,18 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
         std::path::PathBuf::from(stripped)
     };
 
-    // Build override rules to exclude canonical dirs at the walker level.
+    // Build override rules to exclude project-scoped dirs at the walker
+    // level. The exclusion set is the union of `COMMON_EXCLUDE_DIRS` and the
+    // `exclude_dirs` of every language detected at `root` — NOT the global
+    // union of every registered language. The global union excludes `build/`
+    // (Java/Kotlin/Dart/C/C++) which incorrectly hides Cargo build-script
+    // source in pure Rust projects (scryer-prolog, prost-build downstreams).
+    //
     // This prevents the walker from entering these directories at all, which
     // is critical for performance (venv/ can have 10,000+ files).
+    let project_excludes: Vec<&'static str> = project_exclude_dirs(root);
     let mut overrides = ignore::overrides::OverrideBuilder::new(root);
-    for dir in canonical_exclude_dirs() {
+    for dir in &project_excludes {
         // "!dir/" means "exclude this directory"
         let _ = overrides.add(&format!("!{dir}/"));
     }
@@ -92,16 +101,17 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
             std::path::PathBuf::from(stripped)
         };
 
-        // Belt-and-suspenders: check path components against should_exclude
-        // even though the OverrideBuilder rules should have caught most cases.
-        // Also checks for vendor library directories (wwwroot/lib, public/vendor).
+        // Belt-and-suspenders: check path components against the
+        // project-scoped exclusion list even though the OverrideBuilder
+        // rules should have caught most cases. Also checks for vendor
+        // library directories (wwwroot/lib, public/vendor).
         let should_skip = {
             let rel = abs_path.strip_prefix(&root_normalized).unwrap_or(&abs_path);
             let components: Vec<_> = rel.components().collect();
             components.iter().any(|c| {
                 c.as_os_str()
                     .to_str()
-                    .is_some_and(should_exclude)
+                    .is_some_and(|n| should_exclude_in_project(n, &project_excludes))
             }) || {
                 // Check for vendor lib dirs: parent in WEB_ROOT + child in VENDOR_CHILD
                 components.windows(2).any(|pair| {
