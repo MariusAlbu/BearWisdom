@@ -249,6 +249,23 @@ fn extract_body_goals(
         if goal.is_empty() {
             continue;
         }
+        // Reject goals whose top-level shape is an operator-style
+        // construct, not a `functor(args)` predicate call:
+        //
+        //   `[list] = _182`        — list-literal unification
+        //   `_X = foo`             — variable unification
+        //   `X is Expr`            — arithmetic eval
+        //   `X > Y`                — arithmetic comparison
+        //   `Tag:pred(args)`       — module-qualified (handled below)
+        //
+        // The bare-atom and `functor(args)` cases survive: their LHS
+        // is a valid predicate name token. XSB-flavour test files in
+        // `tests/xsb/` previously emitted thousands of phantom Calls
+        // refs with target_name like `[atom] = _95` that always
+        // landed in unresolved_refs.
+        if !looks_like_predicate_invocation(goal) {
+            continue;
+        }
         let functor = goal.split('(').next().unwrap_or(goal).trim();
         if functor.is_empty() {
             continue;
@@ -429,6 +446,45 @@ fn strip_block_comment_start(line: &str) -> (&str, bool) {
         }
     }
     (line, false)
+}
+
+/// Returns true if `goal` looks like a callable predicate invocation —
+/// either a bare atom (`fail`, `member`) or a functor application
+/// (`member(X, L)`, `Mod:pred(args)`). Rejects unification / comparison
+/// / arithmetic-eval shapes whose top-level operator is `=`, `is`, `<`,
+/// `>`, etc., and rejects list-literal LHS forms `[atom] = _X`.
+///
+/// The check walks the head of the goal until the first character that
+/// is neither part of an atom (lowercase / digit / `_` / `'`) nor a
+/// module-qualifier `:`. If that character is `(`, the goal is a
+/// functor application — accept. If the character is anything else
+/// (`=`, ` `, `<`, `[`, ...) we'd be classifying an operator
+/// expression as a call — reject.
+fn looks_like_predicate_invocation(goal: &str) -> bool {
+    let bytes = goal.as_bytes();
+    if bytes.is_empty() {
+        return false;
+    }
+    // Reject leading bracketed forms: `[list] = ...`, `[_133] = _157`.
+    if bytes[0] == b'[' || bytes[0] == b'(' || bytes[0] == b'{' {
+        return false;
+    }
+    // Bare quoted atom — accept; the extractor handles `'name with spaces'`.
+    if bytes[0] == b'\'' {
+        return true;
+    }
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let c = bytes[i];
+        if c.is_ascii_alphanumeric() || c == b'_' || c == b':' {
+            i += 1;
+            continue;
+        }
+        // First non-atom character.
+        return c == b'(' || (c == b' ' && i == bytes.len() - 1);
+    }
+    // Reached end — the goal is a bare atom.
+    true
 }
 
 /// Prolog operators and control constructs that aren't callable predicates

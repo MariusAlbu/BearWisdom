@@ -145,11 +145,60 @@ fn detect_new_languages() {
     // Astro
     assert_eq!(detect_language(Path::new("index.astro")), Some("astro"));
     // Perl — both .pl and .pm are detected. Perl appears before Prolog in the
-    // registry so .pl is claimed by Perl; Prolog uses .pro / .P instead.
+    // registry so .pl is claimed by Perl by default; content-based override
+    // promotes Prolog when the file head shows clear Prolog markers
+    // (`:- module(...)`, etc.) — see `detect_pl_content_promotes_prolog`.
     assert_eq!(detect_language(Path::new("lib.pm")), Some("perl"));
     assert_eq!(detect_language(Path::new("script.pl")), Some("perl"));
     // MATLAB profile now claims .m; this is an intentional trade-off over ObjC ambiguity
     assert_eq!(detect_language(Path::new("main.m")), Some("matlab"));
+}
+
+#[test]
+fn detect_pl_content_promotes_prolog() {
+    let dir = TempDir::new().unwrap();
+    let pl = dir.path().join("lists.pl");
+    fs::write(
+        &pl,
+        ":- module(lists, [member/2, append/3]).\n\nmember(X, [X | _]).\nmember(X, [_ | T]) :- member(X, T).\n",
+    )
+    .unwrap();
+    assert_eq!(detect_language(&pl), Some("prolog"));
+}
+
+#[test]
+fn detect_pl_content_keeps_perl_for_perl_script() {
+    let dir = TempDir::new().unwrap();
+    let pl = dir.path().join("script.pl");
+    fs::write(&pl, "#!/usr/bin/perl\nuse strict;\nuse warnings;\nmy $name = 'world';\nprint \"hello $name\\n\";\n").unwrap();
+    assert_eq!(detect_language(&pl), Some("perl"));
+}
+
+#[test]
+fn detect_pl_content_promotes_xsb_dialect() {
+    // SWI-Prolog's library/dialect/xsb/source.pl uses module + table.
+    let dir = TempDir::new().unwrap();
+    let pl = dir.path().join("source.pl");
+    fs::write(
+        &pl,
+        ":- module(source, [tnot/1, get_residual/2]).\n:- table tnot/1.\n",
+    )
+    .unwrap();
+    assert_eq!(detect_language(&pl), Some("prolog"));
+}
+
+#[test]
+fn detect_pl_clause_only_promotes_prolog() {
+    // No directive; just clause heads with `:-` body. Common in older
+    // .P / .pl files.
+    let dir = TempDir::new().unwrap();
+    let pl = dir.path().join("rules.pl");
+    fs::write(
+        &pl,
+        "% rules file\nparent(tom, bob).\nparent(tom, liz).\n\ngrandparent(X, Z) :- parent(X, Y), parent(Y, Z).\n",
+    )
+    .unwrap();
+    assert_eq!(detect_language(&pl), Some("prolog"));
 }
 
 #[test]

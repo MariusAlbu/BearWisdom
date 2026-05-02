@@ -143,3 +143,46 @@ fn cov_multi_goal_body_produces_multiple_calls() {
         r.refs.iter().map(|rf| (rf.kind, &rf.target_name)).collect::<Vec<_>>()
     );
 }
+
+/// Regression: list-literal unification goals (`[list] = _182`,
+/// `[_147] = _184`) must not be mis-extracted as Calls refs. These
+/// shapes appear thousands of times across SWI-Prolog's tests/xsb/
+/// XSB-compatibility tests and used to emit phantom unresolved
+/// targets like `[atom] = _95`.
+#[test]
+fn cov_list_unification_does_not_emit_call() {
+    let src = "gencut__1(_174,_176,_178,_180) :- [list] = _182, [_147] = _184, normalize_result([_182, _184], [_174, _176]).\n";
+    let r = extract::extract(src);
+    let targets: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        targets.iter().all(|t| !t.starts_with('[')),
+        "list-literal LHS must not be emitted as a Calls target; got: {:?}",
+        targets
+    );
+    // The genuine call (normalize_result) should still come through.
+    assert!(
+        targets.iter().any(|t| *t == "normalize_result"),
+        "expected normalize_result Calls ref; got: {:?}",
+        targets
+    );
+}
+
+/// Regression: variable / arithmetic / comparison-operator goals never
+/// become Calls refs (their LHS is a variable or operator expression,
+/// not a callable predicate name).
+#[test]
+fn cov_operator_goals_skipped() {
+    let src = "p(X, Y, Z) :- X is Y + Z, Y > 0, _Tmp = X.\n";
+    let r = extract::extract(src);
+    let calls: Vec<_> = r.refs.iter().filter(|rf| rf.kind == EdgeKind::Calls).collect();
+    assert!(
+        calls.is_empty(),
+        "operator-style goals should produce zero Calls refs; got: {:?}",
+        calls.iter().map(|c| &c.target_name).collect::<Vec<_>>()
+    );
+}

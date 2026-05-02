@@ -16,6 +16,7 @@ use crate::exclusions::{
     project_exclude_dirs, should_exclude_in_project, should_skip_file,
 };
 use crate::types::ScannedFile;
+use std::io::Read;
 use ignore::WalkBuilder;
 use std::path::Path;
 
@@ -136,7 +137,7 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
 
         // Detect language — skip files with no recognised extension.
         let language_id = match detect_language(&abs_path) {
-            Some(desc) => desc.id,
+            Some(desc) => disambiguate_by_content(desc.id, &abs_path),
             None => continue,
         };
 
@@ -157,6 +158,102 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
     // Deterministic order across OSes.
     files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
     files
+}
+
+/// Content-based disambiguation for extensions claimed by multiple
+/// languages. Today this resolves `.pl` (Perl wins by registry order)
+/// to Prolog when the file head shows Prolog markers
+/// (`:- module(...)`, `:- use_module(...)`, `:- discontiguous`, ...,
+/// or rule-shaped clauses). Perl scripts (`#!/usr/bin/perl`,
+/// `use strict;`, `package Foo;`, `sub name { ... }`) keep their
+/// Perl classification.
+///
+/// Called from `walk_files` after extension-based detection. Reads at
+/// most 1 KiB from disk; cheap enough to fire on every walked file
+/// without measurably slowing the walk on real-world projects.
+fn disambiguate_by_content(detected: &'static str, path: &std::path::Path) -> &'static str {
+    if detected == "perl" && file_looks_like_prolog(path) {
+        return "prolog";
+    }
+    detected
+}
+
+fn file_looks_like_prolog(path: &std::path::Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    let mut head = [0u8; 1024];
+    let n = match (&file).take(1024).read(&mut head) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    let text = String::from_utf8_lossy(&head[..n]);
+
+    // Strong Perl indicator — bail out fast.
+    if text.starts_with("#!")
+        && text[..text.find('\n').unwrap_or(text.len())].contains("perl")
+    {
+        return false;
+    }
+    if text.contains("\nuse strict;")
+        || text.contains("\nuse warnings;")
+        || text.starts_with("use strict;")
+        || text.starts_with("use warnings;")
+        || text.contains("\npackage ")
+    {
+        return false;
+    }
+
+    let prolog_markers = [
+        ":- module(",
+        ":- use_module(",
+        ":- ensure_loaded(",
+        ":- discontiguous",
+        ":- dynamic",
+        ":- multifile",
+        ":- table ",
+        ":- table\t",
+        ":- set_prolog_flag",
+        ":- op(",
+        "/** <module>",
+    ];
+    if prolog_markers.iter().any(|m| text.contains(m)) {
+        return true;
+    }
+
+    // No directives — score lines for Prolog vs Perl shape.
+    let mut prolog_score = 0u32;
+    let mut perl_score = 0u32;
+    for line in text.lines().take(60) {
+        let t = line.trim_start();
+        if t.starts_with('%') || t.is_empty() || t.starts_with("/*") || t.starts_with('*') {
+            continue;
+        }
+        if t.starts_with("sub ")
+            || t.starts_with("my ")
+            || t.starts_with("our ")
+            || t.starts_with("local ")
+            || t.starts_with("print ")
+            || t.starts_with("if (")
+            || t.starts_with("foreach ")
+            || t.starts_with("while (")
+            || t.starts_with("require ")
+        {
+            perl_score += 1;
+            continue;
+        }
+        if t.contains(":-") || t.contains("?-") {
+            prolog_score += 2;
+            continue;
+        }
+        let trimmed_end = t.trim_end();
+        if trimmed_end.ends_with('.')
+            && !trimmed_end.ends_with(';')
+            && trimmed_end.contains('(')
+            && trimmed_end.contains(')')
+        {
+            prolog_score += 1;
+        }
+    }
+    prolog_score >= 2 && prolog_score > perl_score
 }
 
 // ---------------------------------------------------------------------------

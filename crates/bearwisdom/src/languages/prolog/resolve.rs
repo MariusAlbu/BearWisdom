@@ -114,26 +114,52 @@ impl LanguageResolver for PrologResolver {
             return Some(res);
         }
 
-        // Runtime fallback: stdlib predicates (`member`, `append`, `format`,
-        // ...) live under the SWI-Prolog `library/` and `boot/` trees that
-        // the prolog-runtime ecosystem walks. The shared `resolve_common`
-        // path needs an explicit `:- use_module(library(lists))` import to
-        // bind `member`, but real Prolog code commonly relies on autoloaded
-        // predicates that are in scope without an import. Accept the first
-        // by-name match whose file lives under one of the indexed runtime
-        // roots.
+        // Final fallbacks. Walk every by-name candidate once, classifying:
+        //
+        //   1. **Runtime fallback** — stdlib predicates (`member`,
+        //      `append`, `format`, `findall`, ...) live under the
+        //      SWI-Prolog `library/` and `boot/` trees that the
+        //      prolog-runtime ecosystem walks. Real Prolog code commonly
+        //      relies on autoloaded predicates that are in scope without
+        //      an explicit `:- use_module`.
+        //   2. **Project-internal by-name** — Prolog's loose-file model
+        //      means projects routinely call across `.P` / `.pl` files
+        //      with no `use_module` declarations (XSB test suites are
+        //      the canonical case: `cs_r.P` calls `normalize_result/2`
+        //      defined in `can_mono.P` without any import). Accept the
+        //      first project-internal match whose kind is compatible.
+        //
+        // Runtime hits take precedence (higher confidence) when both
+        // exist for the same name.
+        let mut runtime_hit: Option<&engine::SymbolInfo> = None;
+        let mut internal_hit: Option<&engine::SymbolInfo> = None;
         for sym in lookup.by_name(target) {
             if !predicates::kind_compatible(edge_kind, &sym.kind) {
                 continue;
             }
             if sym.file_path.starts_with("ext:") || is_prolog_runtime_path(&sym.file_path) {
-                return Some(Resolution {
-                    target_symbol_id: sym.id,
-                    confidence: 0.85,
-                    strategy: "prolog_runtime_fallback",
-                    resolved_yield_type: None,
-                });
+                if runtime_hit.is_none() {
+                    runtime_hit = Some(sym);
+                }
+            } else if internal_hit.is_none() {
+                internal_hit = Some(sym);
             }
+        }
+        if let Some(sym) = runtime_hit {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.85,
+                strategy: "prolog_runtime_fallback",
+                resolved_yield_type: None,
+            });
+        }
+        if let Some(sym) = internal_hit {
+            return Some(Resolution {
+                target_symbol_id: sym.id,
+                confidence: 0.80,
+                strategy: "prolog_project_by_name",
+                resolved_yield_type: None,
+            });
         }
 
         None
