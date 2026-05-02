@@ -1,15 +1,40 @@
-//! Jinja2 (`.jinja`, `.j2`) plugin.
+//! Jinja2 (`.jinja`, `.jinja2`, `.j2`) language plugin.
 //!
-//! Syntax is nearly identical to Nunjucks — the Nunjucks plugin's
-//! extract + embedded modules already handle `{{ expr }}`, `{% tag %}`,
-//! `{% extends %}`, `{% include %}`. We wrap that logic here with a
-//! distinct plugin id so `.j2` files are detected as Jinja.
+//! Native extractor — does NOT delegate to the Nunjucks plugin or embed
+//! `{{ ... }}` payloads as JavaScript. The legacy "Jinja-as-JS" embedding
+//! produced phantom Calls refs for every Jinja filter (`indent`,
+//! `to_nice_yaml`, `regex_replace`, `lookup`, ...) because pipe-filter
+//! syntax doesn't survive a JS literal embed and the JS extractor sees the
+//! filter names as function calls.
+//!
+//! Foundation phase (PR-1):
+//!   * Native scanner emits identifier-chain TypeRefs from `{{ x.y.z }}`
+//!     payloads; symbol-introducing directives (`{% block %}`,
+//!     `{% extends %}`, `{% include %}`, `{% import %}`, `{% from %}`).
+//!   * `embedded_regions` returns empty — no JS routing.
+//!
+//! Follow-up phases (separate sessions):
+//!   * Filter-call refs against a synthetic Jinja2 stdlib module.
+//!   * Function-call recognition (`lookup(...)`, `range(...)`).
+//!   * Ansible-specific globals scanned out of the host inventory.
+//!   * `{% set %}` symbol declarations + `{% for %}` scope variables.
 
-pub struct JinjaPlugin;
+pub mod expr;
+pub mod extract;
+pub mod resolve;
 
+#[cfg(test)]
+#[path = "extract_tests.rs"]
+mod extract_tests;
+
+use std::sync::Arc;
+
+use crate::indexer::resolve::engine::LanguageResolver;
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
 use crate::types::{EmbeddedRegion, ExtractionResult};
+
+pub struct JinjaPlugin;
 
 impl LanguagePlugin for JinjaPlugin {
     fn id(&self) -> &str { "jinja" }
@@ -18,12 +43,15 @@ impl LanguagePlugin for JinjaPlugin {
     fn grammar(&self, _l: &str) -> Option<tree_sitter::Language> { None }
     fn scope_kinds(&self) -> &[ScopeKind] { &[] }
     fn extract(&self, s: &str, p: &str, _l: &str) -> ExtractionResult {
-        // Reuse Nunjucks' extractor — same directive vocabulary.
-        crate::languages::nunjucks::extract::extract(s, p)
+        extract::extract(s, p)
     }
-    fn embedded_regions(&self, s: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {
-        crate::languages::nunjucks::embedded::detect_regions(s)
+    fn embedded_regions(&self, _s: &str, _p: &str, _l: &str) -> Vec<EmbeddedRegion> {
+        // No JS routing — see module docs for rationale.
+        Vec::new()
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn resolver(&self) -> Option<Arc<dyn LanguageResolver>> {
+        Some(Arc::new(resolve::JinjaResolver))
+    }
 }

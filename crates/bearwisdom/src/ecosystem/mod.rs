@@ -34,6 +34,7 @@ pub use symbol_index::SymbolLocationIndex;
 
 pub mod android_sdk;
 pub mod blazor_runtime;
+pub mod jinja_ansible_runtime;
 pub mod cabal;
 pub mod bazel_central_registry;
 pub mod bash_completion_synthetics;
@@ -98,6 +99,7 @@ pub mod zig_std;
 pub use android_sdk::AndroidSdkEcosystem;
 pub use bazel_central_registry::BazelCentralRegistryEcosystem;
 pub use blazor_runtime::BlazorRuntimeEcosystem;
+pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use bash_completion_synthetics::BashCompletionSyntheticsEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use cabal::CabalEcosystem;
@@ -612,6 +614,7 @@ pub fn default_locator(
         "elixir-stdlib" => Some(Arc::new(ElixirStdlibEcosystem)),
         "spring-stubs" => Some(Arc::new(SpringStubsEcosystem)),
         "blazor-runtime" => Some(Arc::new(BlazorRuntimeEcosystem)),
+        "jinja-ansible-runtime" => Some(jinja_ansible_runtime::shared_locator()),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
@@ -721,6 +724,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(ElixirStdlibEcosystem);
         reg_eco!(SpringStubsEcosystem);
         reg_eco!(BlazorRuntimeEcosystem);
+        reg_eco!(JinjaAnsibleRuntimeEcosystem);
         reg_eco!(SwiftFoundationEcosystem);
         reg_eco!(SwiftPmDslStubsEcosystem);
         reg_eco!(VbaTypelibsEcosystem);
