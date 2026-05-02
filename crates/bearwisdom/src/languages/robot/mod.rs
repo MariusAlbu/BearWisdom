@@ -29,7 +29,7 @@ impl LanguagePlugin for RobotPlugin {
 
     fn language_ids(&self) -> &[&str] { &["robot"] }
 
-    fn extensions(&self) -> &[&str] { &[".robot"] }
+    fn extensions(&self) -> &[&str] { &[".robot", ".resource"] }
 
     fn grammar(&self, _lang_id: &str) -> Option<tree_sitter::Language> {
         None
