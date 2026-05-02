@@ -197,6 +197,13 @@ const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
     "@types/chai",
     "@types/sinon",
     "@types/node",
+    // jQuery exposes `$` / `jQuery` / `JQuery` / `JQueryStatic` as
+    // ambient globals via `declare const $: JQueryStatic;`. AMD /
+    // RequireJS-era projects (SWISH, AngularJS-1 themes) call jQuery
+    // methods (`$.each`, `.hasClass`, `.addClass`, ...) without an
+    // ES `import`, so the demand-driven path needs the explicit
+    // pre-pull to surface the API.
+    "@types/jquery",
 ];
 
 fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
@@ -263,6 +270,15 @@ fn probe_global_decl_files(dep: &ExternalDepRoot) -> Vec<WalkedFile> {
         "lib/globals.d.ts",
         "types/index.d.ts",
         "types/globals.d.ts",
+        // @types/jquery splits across `JQuery.d.ts`, `JQueryStatic.d.ts`,
+        // `factory.d.ts`, etc. — index.d.ts is just a triple-slash hub
+        // and we don't follow those refs. Probe the canonical filenames
+        // directly so the actual API surface lands in the index.
+        "JQuery.d.ts",
+        "JQueryStatic.d.ts",
+        "factory.d.ts",
+        "factory-slim.d.ts",
+        "misc.d.ts",
     ];
     let mut out = Vec::new();
     for rel in CANDIDATE_REL_PATHS {

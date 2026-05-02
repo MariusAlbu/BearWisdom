@@ -754,7 +754,7 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 5731,
-      "internal_unresolved": 1583,
+      "internal_unresolved": 1584,
       "languages": {
         "c": 4,
         "css": 30,
@@ -769,12 +769,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/prolog-swish",
       "perf": {
-        "end_ws_mb": 265,
-        "files_per_sec": 82,
-        "index_duration_ms": 3437
+        "end_ws_mb": 75,
+        "files_per_sec": 79,
+        "index_duration_ms": 3548
       },
       "project": "prolog-swish",
-      "resolution_rate": 78.36,
+      "resolution_rate": 78.35,
       "routes": 0,
       "symbols": 9801,
       "unresolved_by_lang_kind": {
@@ -784,7 +784,7 @@
         "javascript.calls": 520,
         "javascript.imports": 4,
         "javascript.type_ref": 14,
-        "prolog.calls": 1028
+        "prolog.calls": 1029
       }
     },
     {
