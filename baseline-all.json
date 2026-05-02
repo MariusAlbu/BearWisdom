@@ -1,0 +1,1139 @@
+{
+  "captured_at": "2026-05-01T23:32:34Z",
+  "projects": [
+    {
+      "project": "ada-alire",
+      "path": "F:/Work/Projects/TestProjects/ada-alire"
+    },
+    {
+      "project": "ada-drivers",
+      "path": "F:/Work/Projects/TestProjects/ada-drivers"
+    },
+    {
+      "project": "ada-septum",
+      "path": "F:/Work/Projects/TestProjects/ada-septum"
+    },
+    {
+      "project": "angular-coreui",
+      "path": "F:/Work/Projects/TestProjects/angular-coreui"
+    },
+    {
+      "project": "angular-formly",
+      "path": "F:/Work/Projects/TestProjects/angular-formly"
+    },
+    {
+      "project": "angular-ngx-admin",
+      "path": "F:/Work/Projects/TestProjects/angular-ngx-admin"
+    },
+    {
+      "project": "astro-awesome-privacy",
+      "path": "F:/Work/Projects/TestProjects/astro-awesome-privacy"
+    },
+    {
+      "project": "astro-paper",
+      "path": "F:/Work/Projects/TestProjects/astro-paper"
+    },
+    {
+      "project": "astro-starlight",
+      "path": "F:/Work/Projects/TestProjects/astro-starlight"
+    },
+    {
+      "project": "bash-bashtop",
+      "path": "F:/Work/Projects/TestProjects/bash-bashtop"
+    },
+    {
+      "project": "bash-ohmybash",
+      "path": "F:/Work/Projects/TestProjects/bash-ohmybash"
+    },
+    {
+      "project": "bicep-aks-baseline",
+      "path": "F:/Work/Projects/TestProjects/bicep-aks-baseline"
+    },
+    {
+      "project": "bicep-azure-bicep",
+      "path": "F:/Work/Projects/TestProjects/bicep-azure-bicep"
+    },
+    {
+      "project": "bicep-azure-quickstart-templates",
+      "path": "F:/Work/Projects/TestProjects/bicep-azure-quickstart-templates"
+    },
+    {
+      "project": "c-jq",
+      "path": "F:/Work/Projects/TestProjects/c-jq"
+    },
+    {
+      "project": "c-redis",
+      "path": "F:/Work/Projects/TestProjects/c-redis"
+    },
+    {
+      "project": "c-tig",
+      "path": "F:/Work/Projects/TestProjects/c-tig"
+    },
+    {
+      "project": "clojure-babashka",
+      "path": "F:/Work/Projects/TestProjects/clojure-babashka"
+    },
+    {
+      "project": "clojure-datascript",
+      "path": "F:/Work/Projects/TestProjects/clojure-datascript"
+    },
+    {
+      "project": "clojure-ring",
+      "path": "F:/Work/Projects/TestProjects/clojure-ring"
+    },
+    {
+      "project": "cmake-cpm",
+      "path": "F:/Work/Projects/TestProjects/cmake-cpm"
+    },
+    {
+      "project": "cmake-examples",
+      "path": "F:/Work/Projects/TestProjects/cmake-examples"
+    },
+    {
+      "project": "cmake-ttroy50",
+      "path": "F:/Work/Projects/TestProjects/cmake-ttroy50"
+    },
+    {
+      "project": "cobol-course",
+      "path": "F:/Work/Projects/TestProjects/cobol-course"
+    },
+    {
+      "project": "cobol-gnucobol",
+      "path": "F:/Work/Projects/TestProjects/cobol-gnucobol"
+    },
+    {
+      "project": "cobol-openmf",
+      "path": "F:/Work/Projects/TestProjects/cobol-openmf"
+    },
+    {
+      "project": "cpp-clay",
+      "path": "F:/Work/Projects/TestProjects/cpp-clay"
+    },
+    {
+      "project": "cpp-keepassxc",
+      "path": "F:/Work/Projects/TestProjects/cpp-keepassxc"
+    },
+    {
+      "project": "cpp-libhv",
+      "path": "F:/Work/Projects/TestProjects/cpp-libhv"
+    },
+    {
+      "project": "dart-appflowy",
+      "path": "F:/Work/Projects/TestProjects/dart-appflowy"
+    },
+    {
+      "project": "dart-frog",
+      "path": "F:/Work/Projects/TestProjects/dart-frog"
+    },
+    {
+      "project": "dart-serverpod",
+      "path": "F:/Work/Projects/TestProjects/dart-serverpod"
+    },
+    {
+      "project": "dockerfile-jessfraz",
+      "path": "F:/Work/Projects/TestProjects/dockerfile-jessfraz"
+    },
+    {
+      "project": "dockerfile-nodebestpractices",
+      "path": "F:/Work/Projects/TestProjects/dockerfile-nodebestpractices"
+    },
+    {
+      "project": "dockerfile-official",
+      "path": "F:/Work/Projects/TestProjects/dockerfile-official"
+    },
+    {
+      "project": "dotnet-abp",
+      "path": "F:/Work/Projects/TestProjects/dotnet-abp"
+    },
+    {
+      "project": "dotnet-aspnetcore",
+      "path": "F:/Work/Projects/TestProjects/dotnet-aspnetcore"
+    },
+    {
+      "project": "dotnet-CleanArchitecture",
+      "path": "F:/Work/Projects/TestProjects/dotnet-CleanArchitecture"
+    },
+    {
+      "project": "dotnet-EquinoxProject",
+      "path": "F:/Work/Projects/TestProjects/dotnet-EquinoxProject"
+    },
+    {
+      "project": "dotnet-fluentui-blazor",
+      "path": "F:/Work/Projects/TestProjects/dotnet-fluentui-blazor"
+    },
+    {
+      "project": "dotnet-spectre-console",
+      "path": "F:/Work/Projects/TestProjects/dotnet-spectre-console"
+    },
+    {
+      "project": "dotnet-squidex",
+      "path": "F:/Work/Projects/TestProjects/dotnet-squidex"
+    },
+    {
+      "project": "dotnet-starter-kit",
+      "path": "F:/Work/Projects/TestProjects/dotnet-starter-kit"
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 4489,
+      "files": 160,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1552,
+      "internal_unresolved": 13,
+      "languages": {
+        "css": 6,
+        "dockerfile": 1,
+        "ejs": 19,
+        "javascript": 79,
+        "json": 16,
+        "markdown": 3,
+        "scss": 6,
+        "xml": 30
+      },
+      "path": "F:/Work/Projects/TestProjects/ejs-dummyjson",
+      "perf": {
+        "end_ws_mb": 70,
+        "files_per_sec": 66,
+        "index_duration_ms": 2413
+      },
+      "project": "ejs-dummyjson",
+      "resolution_rate": 99.17,
+      "routes": 0,
+      "symbols": 1628,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 13
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 84
+      },
+      "code_chunks": 33754,
+      "files": 513,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1698,
+      "internal_unresolved": 304,
+      "languages": {
+        "css": 13,
+        "dockerfile": 1,
+        "ejs": 41,
+        "html": 5,
+        "javascript": 18,
+        "json": 3,
+        "markdown": 221,
+        "nginx": 1,
+        "xml": 206,
+        "yaml": 4
+      },
+      "path": "F:/Work/Projects/TestProjects/ejs-reference",
+      "perf": {
+        "end_ws_mb": 110,
+        "files_per_sec": 81,
+        "index_duration_ms": 6323
+      },
+      "project": "ejs-reference",
+      "resolution_rate": 84.82,
+      "routes": 0,
+      "symbols": 18906,
+      "unresolved_by_lang_kind": {
+        "ejs.calls": 268,
+        "javascript.calls": 36
+      }
+    },
+    {
+      "project": "elixir-changelog",
+      "path": "F:/Work/Projects/TestProjects/elixir-changelog"
+    },
+    {
+      "project": "elixir-credo",
+      "path": "F:/Work/Projects/TestProjects/elixir-credo"
+    },
+    {
+      "project": "elixir-plausible",
+      "path": "F:/Work/Projects/TestProjects/elixir-plausible"
+    },
+    {
+      "project": "erlang-cowboy",
+      "path": "F:/Work/Projects/TestProjects/erlang-cowboy"
+    },
+    {
+      "project": "erlang-emqx",
+      "path": "F:/Work/Projects/TestProjects/erlang-emqx"
+    },
+    {
+      "project": "erlang-rabbitmq",
+      "path": "F:/Work/Projects/TestProjects/erlang-rabbitmq"
+    },
+    {
+      "project": "eShop",
+      "path": "F:/Work/Projects/TestProjects/eShop"
+    },
+    {
+      "project": "fortran-fpm",
+      "path": "F:/Work/Projects/TestProjects/fortran-fpm"
+    },
+    {
+      "project": "fortran-json",
+      "path": "F:/Work/Projects/TestProjects/fortran-json"
+    },
+    {
+      "project": "fortran-stdlib",
+      "path": "F:/Work/Projects/TestProjects/fortran-stdlib"
+    },
+    {
+      "project": "freemarker-mozilla-send",
+      "path": "F:/Work/Projects/TestProjects/freemarker-mozilla-send"
+    },
+    {
+      "project": "fsharp-fstoolkit",
+      "path": "F:/Work/Projects/TestProjects/fsharp-fstoolkit"
+    },
+    {
+      "project": "fsharp-giraffe",
+      "path": "F:/Work/Projects/TestProjects/fsharp-giraffe"
+    },
+    {
+      "project": "fsharp-miniscaffold",
+      "path": "F:/Work/Projects/TestProjects/fsharp-miniscaffold"
+    },
+    {
+      "project": "full-stack-fastapi-template",
+      "path": "F:/Work/Projects/TestProjects/full-stack-fastapi-template"
+    },
+    {
+      "project": "gdscript-beehave",
+      "path": "F:/Work/Projects/TestProjects/gdscript-beehave"
+    },
+    {
+      "project": "gdscript-learn",
+      "path": "F:/Work/Projects/TestProjects/gdscript-learn"
+    },
+    {
+      "project": "gdscript-pandora",
+      "path": "F:/Work/Projects/TestProjects/gdscript-pandora"
+    },
+    {
+      "project": "gleam-compiler",
+      "path": "F:/Work/Projects/TestProjects/gleam-compiler"
+    },
+    {
+      "project": "gleam-lustre",
+      "path": "F:/Work/Projects/TestProjects/gleam-lustre"
+    },
+    {
+      "project": "gleam-wisp",
+      "path": "F:/Work/Projects/TestProjects/gleam-wisp"
+    },
+    {
+      "project": "go-bubbletea",
+      "path": "F:/Work/Projects/TestProjects/go-bubbletea"
+    },
+    {
+      "project": "go-echo",
+      "path": "F:/Work/Projects/TestProjects/go-echo"
+    },
+    {
+      "project": "go-echo-fresh",
+      "path": "F:/Work/Projects/TestProjects/go-echo-fresh"
+    },
+    {
+      "project": "go-fiber",
+      "path": "F:/Work/Projects/TestProjects/go-fiber"
+    },
+    {
+      "project": "go-gitea",
+      "path": "F:/Work/Projects/TestProjects/go-gitea"
+    },
+    {
+      "project": "go-pocketbase",
+      "path": "F:/Work/Projects/TestProjects/go-pocketbase"
+    },
+    {
+      "project": "goxygen",
+      "path": "F:/Work/Projects/TestProjects/goxygen"
+    },
+    {
+      "project": "grandnode",
+      "path": "F:/Work/Projects/TestProjects/grandnode"
+    },
+    {
+      "project": "graphql-juniper",
+      "path": "F:/Work/Projects/TestProjects/graphql-juniper"
+    },
+    {
+      "project": "graphql-spec",
+      "path": "F:/Work/Projects/TestProjects/graphql-spec"
+    },
+    {
+      "project": "groovy-codenarc",
+      "path": "F:/Work/Projects/TestProjects/groovy-codenarc"
+    },
+    {
+      "project": "groovy-gradle-plugin",
+      "path": "F:/Work/Projects/TestProjects/groovy-gradle-plugin"
+    },
+    {
+      "project": "groovy-nextflow",
+      "path": "F:/Work/Projects/TestProjects/groovy-nextflow"
+    },
+    {
+      "project": "groovy-spock",
+      "path": "F:/Work/Projects/TestProjects/groovy-spock"
+    },
+    {
+      "project": "gsp-grails-core",
+      "path": "F:/Work/Projects/TestProjects/gsp-grails-core"
+    },
+    {
+      "project": "gsp-openboxes",
+      "path": "F:/Work/Projects/TestProjects/gsp-openboxes"
+    },
+    {
+      "project": "haml-keep-a-changelog",
+      "path": "F:/Work/Projects/TestProjects/haml-keep-a-changelog"
+    },
+    {
+      "project": "handlebars-javascript-ghost",
+      "path": "F:/Work/Projects/TestProjects/handlebars-javascript-ghost"
+    },
+    {
+      "project": "haskell-hadolint",
+      "path": "F:/Work/Projects/TestProjects/haskell-hadolint"
+    },
+    {
+      "project": "haskell-pandoc",
+      "path": "F:/Work/Projects/TestProjects/haskell-pandoc"
+    },
+    {
+      "project": "haskell-postgrest",
+      "path": "F:/Work/Projects/TestProjects/haskell-postgrest"
+    },
+    {
+      "project": "hcl-aws-vpc",
+      "path": "F:/Work/Projects/TestProjects/hcl-aws-vpc"
+    },
+    {
+      "project": "java-apple-notes-liberator",
+      "path": "F:/Work/Projects/TestProjects/java-apple-notes-liberator"
+    },
+    {
+      "project": "java-petclinic-reactjs",
+      "path": "F:/Work/Projects/TestProjects/java-petclinic-reactjs"
+    },
+    {
+      "project": "java-petclinic-rest",
+      "path": "F:/Work/Projects/TestProjects/java-petclinic-rest"
+    },
+    {
+      "project": "java-recaf",
+      "path": "F:/Work/Projects/TestProjects/java-recaf"
+    },
+    {
+      "project": "java-spring-boot-admin",
+      "path": "F:/Work/Projects/TestProjects/java-spring-boot-admin"
+    },
+    {
+      "project": "java-spring-petclinic",
+      "path": "F:/Work/Projects/TestProjects/java-spring-petclinic"
+    },
+    {
+      "project": "javascript-ghost",
+      "path": "F:/Work/Projects/TestProjects/javascript-ghost"
+    },
+    {
+      "project": "javascript-preact",
+      "path": "F:/Work/Projects/TestProjects/javascript-preact"
+    },
+    {
+      "project": "jinja-kubespray",
+      "path": "F:/Work/Projects/TestProjects/jinja-kubespray"
+    },
+    {
+      "project": "jinja-matrix-ansible",
+      "path": "F:/Work/Projects/TestProjects/jinja-matrix-ansible"
+    },
+    {
+      "project": "jupyter-ml-for-beginners",
+      "path": "F:/Work/Projects/TestProjects/jupyter-ml-for-beginners"
+    },
+    {
+      "project": "jupyter-python-100-days",
+      "path": "F:/Work/Projects/TestProjects/jupyter-python-100-days"
+    },
+    {
+      "project": "kotlin-android-showcase",
+      "path": "F:/Work/Projects/TestProjects/kotlin-android-showcase"
+    },
+    {
+      "project": "kotlin-detekt",
+      "path": "F:/Work/Projects/TestProjects/kotlin-detekt"
+    },
+    {
+      "project": "kotlin-komga",
+      "path": "F:/Work/Projects/TestProjects/kotlin-komga"
+    },
+    {
+      "project": "kotlin-ktor",
+      "path": "F:/Work/Projects/TestProjects/kotlin-ktor"
+    },
+    {
+      "project": "kotlin-notykt",
+      "path": "F:/Work/Projects/TestProjects/kotlin-notykt"
+    },
+    {
+      "project": "kotlin-okhttp",
+      "path": "F:/Work/Projects/TestProjects/kotlin-okhttp"
+    },
+    {
+      "project": "liquid-al-folio",
+      "path": "F:/Work/Projects/TestProjects/liquid-al-folio"
+    },
+    {
+      "project": "liquid-jekyll",
+      "path": "F:/Work/Projects/TestProjects/liquid-jekyll"
+    },
+    {
+      "project": "liquid-minimal-mistakes",
+      "path": "F:/Work/Projects/TestProjects/liquid-minimal-mistakes"
+    },
+    {
+      "project": "lua-lazy-nvim",
+      "path": "F:/Work/Projects/TestProjects/lua-lazy-nvim"
+    },
+    {
+      "project": "lua-nvim-lspconfig",
+      "path": "F:/Work/Projects/TestProjects/lua-nvim-lspconfig"
+    },
+    {
+      "project": "lua-telescope",
+      "path": "F:/Work/Projects/TestProjects/lua-telescope"
+    },
+    {
+      "project": "make-curl",
+      "path": "F:/Work/Projects/TestProjects/make-curl"
+    },
+    {
+      "project": "make-tmux",
+      "path": "F:/Work/Projects/TestProjects/make-tmux"
+    },
+    {
+      "project": "matlab-exportfig",
+      "path": "F:/Work/Projects/TestProjects/matlab-exportfig"
+    },
+    {
+      "project": "matlab-platemo",
+      "path": "F:/Work/Projects/TestProjects/matlab-platemo"
+    },
+    {
+      "project": "matlab-prmlt",
+      "path": "F:/Work/Projects/TestProjects/matlab-prmlt"
+    },
+    {
+      "project": "nginx-nginx",
+      "path": "F:/Work/Projects/TestProjects/nginx-nginx"
+    },
+    {
+      "project": "nim-nimble",
+      "path": "F:/Work/Projects/TestProjects/nim-nimble"
+    },
+    {
+      "project": "nim-nimbus",
+      "path": "F:/Work/Projects/TestProjects/nim-nimbus"
+    },
+    {
+      "project": "nim-nitter",
+      "path": "F:/Work/Projects/TestProjects/nim-nitter"
+    },
+    {
+      "project": "nix-disko",
+      "path": "F:/Work/Projects/TestProjects/nix-disko"
+    },
+    {
+      "project": "nix-dream2nix",
+      "path": "F:/Work/Projects/TestProjects/nix-dream2nix"
+    },
+    {
+      "project": "nix-home-manager",
+      "path": "F:/Work/Projects/TestProjects/nix-home-manager"
+    },
+    {
+      "project": "nix-home-manager-fresh",
+      "path": "F:/Work/Projects/TestProjects/nix-home-manager-fresh"
+    },
+    {
+      "project": "nunjucks-a11yproject",
+      "path": "F:/Work/Projects/TestProjects/nunjucks-a11yproject"
+    },
+    {
+      "project": "nunjucks-frontend-interview-questions",
+      "path": "F:/Work/Projects/TestProjects/nunjucks-frontend-interview-questions"
+    },
+    {
+      "project": "ocaml-comby",
+      "path": "F:/Work/Projects/TestProjects/ocaml-comby"
+    },
+    {
+      "project": "ocaml-dune-fresh",
+      "path": "F:/Work/Projects/TestProjects/ocaml-dune-fresh"
+    },
+    {
+      "project": "ocaml-irmin",
+      "path": "F:/Work/Projects/TestProjects/ocaml-irmin"
+    },
+    {
+      "project": "ocaml-mirage",
+      "path": "F:/Work/Projects/TestProjects/ocaml-mirage"
+    },
+    {
+      "project": "odin-compiler",
+      "path": "F:/Work/Projects/TestProjects/odin-compiler"
+    },
+    {
+      "project": "odin-ols",
+      "path": "F:/Work/Projects/TestProjects/odin-ols"
+    },
+    {
+      "project": "odin-raylib-template",
+      "path": "F:/Work/Projects/TestProjects/odin-raylib-template"
+    },
+    {
+      "project": "pascal-castle-fresh",
+      "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh"
+    },
+    {
+      "project": "pascal-doublecmd",
+      "path": "F:/Work/Projects/TestProjects/pascal-doublecmd"
+    },
+    {
+      "project": "pascal-heidisql",
+      "path": "F:/Work/Projects/TestProjects/pascal-heidisql"
+    },
+    {
+      "project": "perl-dancer2",
+      "path": "F:/Work/Projects/TestProjects/perl-dancer2"
+    },
+    {
+      "project": "perl-metacpan",
+      "path": "F:/Work/Projects/TestProjects/perl-metacpan"
+    },
+    {
+      "project": "perl-mojo",
+      "path": "F:/Work/Projects/TestProjects/perl-mojo"
+    },
+    {
+      "project": "php-filament-fresh",
+      "path": "F:/Work/Projects/TestProjects/php-filament-fresh"
+    },
+    {
+      "project": "php-laravel",
+      "path": "F:/Work/Projects/TestProjects/php-laravel"
+    },
+    {
+      "project": "php-livewire",
+      "path": "F:/Work/Projects/TestProjects/php-livewire"
+    },
+    {
+      "project": "php-monica",
+      "path": "F:/Work/Projects/TestProjects/php-monica"
+    },
+    {
+      "project": "powershell-scriptanalyzer",
+      "path": "F:/Work/Projects/TestProjects/powershell-scriptanalyzer"
+    },
+    {
+      "project": "powershell-sqlserverdsc",
+      "path": "F:/Work/Projects/TestProjects/powershell-sqlserverdsc"
+    },
+    {
+      "project": "powershell-winutil",
+      "path": "F:/Work/Projects/TestProjects/powershell-winutil"
+    },
+    {
+      "project": "prisma-calcom",
+      "path": "F:/Work/Projects/TestProjects/prisma-calcom"
+    },
+    {
+      "project": "prisma-prisma",
+      "path": "F:/Work/Projects/TestProjects/prisma-prisma"
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 92
+      },
+      "code_chunks": 34577,
+      "files": 305,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 29162,
+      "internal_unresolved": 2447,
+      "languages": {
+        "dockerfile": 1,
+        "json": 11,
+        "markdown": 14,
+        "nix": 1,
+        "perl": 172,
+        "rust": 73,
+        "toml": 32,
+        "xml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/prolog-scryer",
+      "perf": {
+        "end_ws_mb": 100,
+        "files_per_sec": 13,
+        "index_duration_ms": 23187
+      },
+      "project": "prolog-scryer",
+      "resolution_rate": 92.26,
+      "routes": 0,
+      "symbols": 13771,
+      "unresolved_by_lang_kind": {
+        "nix.calls": 11,
+        "rust.calls": 196,
+        "rust.implements": 16,
+        "rust.type_ref": 2224
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 88
+      },
+      "code_chunks": 100932,
+      "files": 1268,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 88499,
+      "internal_unresolved": 11149,
+      "languages": {
+        "c": 283,
+        "cmake": 58,
+        "html": 10,
+        "javascript": 1,
+        "json": 2,
+        "markdown": 30,
+        "perl": 481,
+        "prolog": 374,
+        "python": 1,
+        "shell": 26,
+        "vba": 1,
+        "xml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/prolog-swipl",
+      "perf": {
+        "end_ws_mb": 147,
+        "files_per_sec": 82,
+        "index_duration_ms": 15404
+      },
+      "project": "prolog-swipl",
+      "resolution_rate": 88.81,
+      "routes": 0,
+      "symbols": 57603,
+      "unresolved_by_lang_kind": {
+        "c.calls": 991,
+        "c.imports": 13,
+        "c.type_ref": 2376,
+        "cmake.calls": 3,
+        "cmake.type_ref": 141,
+        "html.calls": 18,
+        "javascript.calls": 231,
+        "javascript.type_ref": 2,
+        "prolog.calls": 7335,
+        "shell.calls": 39
+      }
+    },
+    {
+      "assertions": {
+        "min_resolution_rate": 77
+      },
+      "code_chunks": 11314,
+      "files": 280,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 2311,
+      "internal_unresolved": 673,
+      "languages": {
+        "c": 4,
+        "css": 30,
+        "html": 21,
+        "javascript": 49,
+        "json": 5,
+        "markdown": 14,
+        "perl": 153,
+        "shell": 1,
+        "xml": 3
+      },
+      "path": "F:/Work/Projects/TestProjects/prolog-swish",
+      "perf": {
+        "end_ws_mb": 205,
+        "files_per_sec": 104,
+        "index_duration_ms": 2694
+      },
+      "project": "prolog-swish",
+      "resolution_rate": 77.45,
+      "routes": 0,
+      "symbols": 2834,
+      "unresolved_by_lang_kind": {
+        "c.type_ref": 18,
+        "html.calls": 1,
+        "html.type_ref": 1,
+        "javascript.calls": 639,
+        "javascript.type_ref": 14
+      }
+    },
+    {
+      "project": "proto-onlineboutique",
+      "path": "F:/Work/Projects/TestProjects/proto-onlineboutique"
+    },
+    {
+      "project": "proto-otel",
+      "path": "F:/Work/Projects/TestProjects/proto-otel"
+    },
+    {
+      "project": "proto-protovalidate",
+      "path": "F:/Work/Projects/TestProjects/proto-protovalidate"
+    },
+    {
+      "project": "pug-blockchain-demo",
+      "path": "F:/Work/Projects/TestProjects/pug-blockchain-demo"
+    },
+    {
+      "project": "pug-bootstrap-switch",
+      "path": "F:/Work/Projects/TestProjects/pug-bootstrap-switch"
+    },
+    {
+      "project": "puppet-apache",
+      "path": "F:/Work/Projects/TestProjects/puppet-apache"
+    },
+    {
+      "project": "puppet-core",
+      "path": "F:/Work/Projects/TestProjects/puppet-core"
+    },
+    {
+      "project": "puppet-mysql",
+      "path": "F:/Work/Projects/TestProjects/puppet-mysql"
+    },
+    {
+      "project": "python-black",
+      "path": "F:/Work/Projects/TestProjects/python-black"
+    },
+    {
+      "project": "python-cookiecutter-django",
+      "path": "F:/Work/Projects/TestProjects/python-cookiecutter-django"
+    },
+    {
+      "project": "python-drf",
+      "path": "F:/Work/Projects/TestProjects/python-drf"
+    },
+    {
+      "project": "python-paperless-ngx",
+      "path": "F:/Work/Projects/TestProjects/python-paperless-ngx"
+    },
+    {
+      "project": "python-posthog",
+      "path": "F:/Work/Projects/TestProjects/python-posthog"
+    },
+    {
+      "project": "r-dplyr",
+      "path": "F:/Work/Projects/TestProjects/r-dplyr"
+    },
+    {
+      "project": "r-ggplot2",
+      "path": "F:/Work/Projects/TestProjects/r-ggplot2"
+    },
+    {
+      "project": "r-shiny",
+      "path": "F:/Work/Projects/TestProjects/r-shiny"
+    },
+    {
+      "project": "react-tanstack-query",
+      "path": "F:/Work/Projects/TestProjects/react-tanstack-query"
+    },
+    {
+      "project": "realworld",
+      "path": "F:/Work/Projects/TestProjects/realworld"
+    },
+    {
+      "project": "rmarkdown-rmarkdown",
+      "path": "F:/Work/Projects/TestProjects/rmarkdown-rmarkdown"
+    },
+    {
+      "project": "rmarkdown-shiny",
+      "path": "F:/Work/Projects/TestProjects/rmarkdown-shiny"
+    },
+    {
+      "project": "robot-browser",
+      "path": "F:/Work/Projects/TestProjects/robot-browser"
+    },
+    {
+      "project": "robot-cookbook",
+      "path": "F:/Work/Projects/TestProjects/robot-cookbook"
+    },
+    {
+      "project": "robot-framework",
+      "path": "F:/Work/Projects/TestProjects/robot-framework"
+    },
+    {
+      "project": "ruby-chatwoot",
+      "path": "F:/Work/Projects/TestProjects/ruby-chatwoot"
+    },
+    {
+      "project": "ruby-devise",
+      "path": "F:/Work/Projects/TestProjects/ruby-devise"
+    },
+    {
+      "project": "ruby-discourse",
+      "path": "F:/Work/Projects/TestProjects/ruby-discourse"
+    },
+    {
+      "project": "ruby-huginn",
+      "path": "F:/Work/Projects/TestProjects/ruby-huginn"
+    },
+    {
+      "project": "ruby-rspec-core",
+      "path": "F:/Work/Projects/TestProjects/ruby-rspec-core"
+    },
+    {
+      "project": "ruby-sidekiq",
+      "path": "F:/Work/Projects/TestProjects/ruby-sidekiq"
+    },
+    {
+      "project": "rust-ast-grep",
+      "path": "F:/Work/Projects/TestProjects/rust-ast-grep"
+    },
+    {
+      "project": "rust-lemmy",
+      "path": "F:/Work/Projects/TestProjects/rust-lemmy"
+    },
+    {
+      "project": "rust-loco",
+      "path": "F:/Work/Projects/TestProjects/rust-loco"
+    },
+    {
+      "project": "rust-tantivy",
+      "path": "F:/Work/Projects/TestProjects/rust-tantivy"
+    },
+    {
+      "project": "scala-finatra",
+      "path": "F:/Work/Projects/TestProjects/scala-finatra"
+    },
+    {
+      "project": "scala-gatling",
+      "path": "F:/Work/Projects/TestProjects/scala-gatling"
+    },
+    {
+      "project": "scala-lila",
+      "path": "F:/Work/Projects/TestProjects/scala-lila"
+    },
+    {
+      "project": "scala-trading",
+      "path": "F:/Work/Projects/TestProjects/scala-trading"
+    },
+    {
+      "project": "scss-bootstrap",
+      "path": "F:/Work/Projects/TestProjects/scss-bootstrap"
+    },
+    {
+      "project": "scss-nescss",
+      "path": "F:/Work/Projects/TestProjects/scss-nescss"
+    },
+    {
+      "project": "scss-sass",
+      "path": "F:/Work/Projects/TestProjects/scss-sass"
+    },
+    {
+      "project": "shakespeare-monaba",
+      "path": "F:/Work/Projects/TestProjects/shakespeare-monaba"
+    },
+    {
+      "project": "SimplCommerce",
+      "path": "F:/Work/Projects/TestProjects/SimplCommerce"
+    },
+    {
+      "project": "slim-iina-website",
+      "path": "F:/Work/Projects/TestProjects/slim-iina-website"
+    },
+    {
+      "project": "Smartstore",
+      "path": "F:/Work/Projects/TestProjects/Smartstore"
+    },
+    {
+      "project": "smarty-smarty",
+      "path": "F:/Work/Projects/TestProjects/smarty-smarty"
+    },
+    {
+      "project": "sql-bitwarden",
+      "path": "F:/Work/Projects/TestProjects/sql-bitwarden"
+    },
+    {
+      "project": "sql-flyway",
+      "path": "F:/Work/Projects/TestProjects/sql-flyway"
+    },
+    {
+      "project": "sql-pgmq",
+      "path": "F:/Work/Projects/TestProjects/sql-pgmq"
+    },
+    {
+      "project": "starlark-bazel-skylib",
+      "path": "F:/Work/Projects/TestProjects/starlark-bazel-skylib"
+    },
+    {
+      "project": "starlark-rules-js",
+      "path": "F:/Work/Projects/TestProjects/starlark-rules-js"
+    },
+    {
+      "project": "starlark-rules-python",
+      "path": "F:/Work/Projects/TestProjects/starlark-rules-python"
+    },
+    {
+      "project": "svelte-daisyui",
+      "path": "F:/Work/Projects/TestProjects/svelte-daisyui"
+    },
+    {
+      "project": "svelte-realworld",
+      "path": "F:/Work/Projects/TestProjects/svelte-realworld"
+    },
+    {
+      "project": "svelte-shadcn",
+      "path": "F:/Work/Projects/TestProjects/svelte-shadcn"
+    },
+    {
+      "project": "swift-alamofire",
+      "path": "F:/Work/Projects/TestProjects/swift-alamofire"
+    },
+    {
+      "project": "swift-icecubes",
+      "path": "F:/Work/Projects/TestProjects/swift-icecubes"
+    },
+    {
+      "project": "swift-package-index",
+      "path": "F:/Work/Projects/TestProjects/swift-package-index"
+    },
+    {
+      "project": "templ-templui",
+      "path": "F:/Work/Projects/TestProjects/templ-templui"
+    },
+    {
+      "project": "terraform-aws-eks",
+      "path": "F:/Work/Projects/TestProjects/terraform-aws-eks"
+    },
+    {
+      "project": "thymeleaf-myblog",
+      "path": "F:/Work/Projects/TestProjects/thymeleaf-myblog"
+    },
+    {
+      "project": "thymeleaf-spring-boot-examples",
+      "path": "F:/Work/Projects/TestProjects/thymeleaf-spring-boot-examples"
+    },
+    {
+      "project": "ts-ever-demand",
+      "path": "F:/Work/Projects/TestProjects/ts-ever-demand"
+    },
+    {
+      "project": "ts-immich",
+      "path": "F:/Work/Projects/TestProjects/ts-immich"
+    },
+    {
+      "project": "ts-inbox-zero",
+      "path": "F:/Work/Projects/TestProjects/ts-inbox-zero"
+    },
+    {
+      "project": "ts-kaneo",
+      "path": "F:/Work/Projects/TestProjects/ts-kaneo"
+    },
+    {
+      "project": "ts-nestjs-realworld",
+      "path": "F:/Work/Projects/TestProjects/ts-nestjs-realworld"
+    },
+    {
+      "project": "ts-nextjs",
+      "path": "F:/Work/Projects/TestProjects/ts-nextjs"
+    },
+    {
+      "project": "ts-rallly",
+      "path": "F:/Work/Projects/TestProjects/ts-rallly"
+    },
+    {
+      "project": "ts-trpc",
+      "path": "F:/Work/Projects/TestProjects/ts-trpc"
+    },
+    {
+      "project": "twig-pelias",
+      "path": "F:/Work/Projects/TestProjects/twig-pelias"
+    },
+    {
+      "project": "twig-symfony-web-profiler",
+      "path": "F:/Work/Projects/TestProjects/twig-symfony-web-profiler"
+    },
+    {
+      "project": "vba-rubberduck",
+      "path": "F:/Work/Projects/TestProjects/vba-rubberduck"
+    },
+    {
+      "project": "vba-stdvba",
+      "path": "F:/Work/Projects/TestProjects/vba-stdvba"
+    },
+    {
+      "project": "vbnet-compactgui",
+      "path": "F:/Work/Projects/TestProjects/vbnet-compactgui"
+    },
+    {
+      "project": "vbnet-ilspy",
+      "path": "F:/Work/Projects/TestProjects/vbnet-ilspy"
+    },
+    {
+      "project": "vbnet-vbaweb",
+      "path": "F:/Work/Projects/TestProjects/vbnet-vbaweb"
+    },
+    {
+      "project": "velocity-apache-struts",
+      "path": "F:/Work/Projects/TestProjects/velocity-apache-struts"
+    },
+    {
+      "project": "vue-element-admin",
+      "path": "F:/Work/Projects/TestProjects/vue-element-admin"
+    },
+    {
+      "project": "vue-elk",
+      "path": "F:/Work/Projects/TestProjects/vue-elk"
+    },
+    {
+      "project": "vue-hoppscotch",
+      "path": "F:/Work/Projects/TestProjects/vue-hoppscotch"
+    },
+    {
+      "project": "vue-naive-admin",
+      "path": "F:/Work/Projects/TestProjects/vue-naive-admin"
+    },
+    {
+      "project": "vue-vben-admin",
+      "path": "F:/Work/Projects/TestProjects/vue-vben-admin"
+    },
+    {
+      "project": "vue-vuestic-admin",
+      "path": "F:/Work/Projects/TestProjects/vue-vuestic-admin"
+    },
+    {
+      "project": "zig-clap",
+      "path": "F:/Work/Projects/TestProjects/zig-clap"
+    },
+    {
+      "project": "zig-compiler-fresh",
+      "path": "F:/Work/Projects/TestProjects/zig-compiler-fresh"
+    },
+    {
+      "project": "zig-ly",
+      "path": "F:/Work/Projects/TestProjects/zig-ly"
+    },
+    {
+      "project": "zig-river",
+      "path": "F:/Work/Projects/TestProjects/zig-river"
+    },
+    {
+      "project": "zig-tigerbeetle",
+      "path": "F:/Work/Projects/TestProjects/zig-tigerbeetle"
+    }
+  ]
+}
