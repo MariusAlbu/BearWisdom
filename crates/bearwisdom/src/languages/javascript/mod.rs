@@ -51,6 +51,8 @@ impl LanguagePlugin for JavascriptPlugin {
         let mut result = extract::extract(source);
         crate::languages::common::append_ember_helper_default_export(file_path, source, &mut result);
         crate::languages::common::append_handlebars_register_helper_globals(source, &mut result);
+        crate::languages::common::append_amd_define_imports(source, &mut result);
+        crate::languages::common::append_jquery_fn_plugin_globals(source, &mut result);
         result
     }
 

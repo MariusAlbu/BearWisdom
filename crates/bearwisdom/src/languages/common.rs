@@ -812,6 +812,435 @@ fn is_ghost_style_theme_helper(source: &str) -> bool {
 }
 
 // ---------------------------------------------------------------------------
+// AMD `define([deps], function(params) { ... })` — RequireJS modules
+//
+// The classic AMD pattern (RequireJS, used by SWISH, AngularJS-1
+// projects, jQuery plugin authors, etc.) is conceptually identical to
+// ES module imports but wraps everything in a single `define()` call:
+//
+//   define([ "jquery", "./config", "preferences" ],
+//          function($, config, preferences) {
+//              // body uses $, config, preferences as locals
+//          });
+//
+// Each dep string in the array maps positionally to a function param.
+// Without recognising this shape, every reference to `$.each`,
+// `config.foo`, or `preferences.bar` inside the callback lands in
+// unresolved_refs because the params aren't declared anywhere the
+// resolver thinks of as an import.
+//
+// `append_amd_define_imports` scans the source for the literal
+// `define([...] , function(...) { ... })` shape and emits one
+// `EdgeKind::Imports` ref per (dep, param) pair, with
+// `target_name = param`, `module = Some(dep)`. The shared
+// `resolve_common` path then handles them like any other named
+// import.
+// ---------------------------------------------------------------------------
+
+pub fn append_amd_define_imports(
+    source: &str,
+    result: &mut crate::types::ExtractionResult,
+) {
+    let pairs = scan_amd_define_pairs(source);
+    if pairs.is_empty() {
+        return;
+    }
+    for (dep, param, line) in pairs {
+        // Skip dummy AMD names (`require`, `exports`, `module`) — these
+        // are AMD bookkeeping, not real deps.
+        if matches!(dep.as_str(), "require" | "exports" | "module") {
+            continue;
+        }
+        result.refs.push(crate::types::ExtractedRef {
+            source_symbol_index: 0,
+            target_name: param,
+            kind: crate::types::EdgeKind::Imports,
+            line,
+            module: Some(dep),
+            chain: None,
+            byte_offset: 0,
+            namespace_segments: Vec::new(),
+        });
+    }
+}
+
+/// Returns a `(dep, param, line)` triple for every dep position in every
+/// `define([...], function(...) {...})` block in `source`. Tolerant to
+/// whitespace, line breaks, single/double-quoted dep strings, and
+/// `define("name", [...], function(...){...})` (named modules — the
+/// leading string is ignored).
+pub(crate) fn scan_amd_define_pairs(source: &str) -> Vec<(String, String, u32)> {
+    let bytes = source.as_bytes();
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let Some(rel) = source[i..].find("define(") else { break };
+        let start = i + rel;
+        // Identifier-boundary check.
+        if start > 0 {
+            let prev = bytes[start - 1];
+            if prev.is_ascii_alphanumeric() || prev == b'_' || prev == b'$' {
+                i = start + 7;
+                continue;
+            }
+        }
+        let after_open = start + 7; // past `define(`
+        let mut j = skip_ws(bytes, after_open);
+        // Optional leading string (named module).
+        if j < bytes.len() && (bytes[j] == b'\'' || bytes[j] == b'"') {
+            let q = bytes[j];
+            j += 1;
+            while j < bytes.len() && bytes[j] != q {
+                if bytes[j] == b'\\' && j + 1 < bytes.len() {
+                    j += 2;
+                } else {
+                    j += 1;
+                }
+            }
+            if j < bytes.len() {
+                j += 1;
+            }
+            j = skip_ws(bytes, j);
+            if j < bytes.len() && bytes[j] == b',' {
+                j += 1;
+                j = skip_ws(bytes, j);
+            }
+        }
+        if j >= bytes.len() || bytes[j] != b'[' {
+            i = after_open;
+            continue;
+        }
+        // Parse the dep array.
+        j += 1;
+        let mut deps: Vec<(String, u32)> = Vec::new();
+        loop {
+            j = skip_ws(bytes, j);
+            if j >= bytes.len() {
+                break;
+            }
+            if bytes[j] == b']' {
+                j += 1;
+                break;
+            }
+            if bytes[j] == b',' {
+                j += 1;
+                continue;
+            }
+            if bytes[j] == b'\'' || bytes[j] == b'"' {
+                let q = bytes[j];
+                let dep_start = j + 1;
+                let mut k = dep_start;
+                while k < bytes.len() && bytes[k] != q {
+                    if bytes[k] == b'\\' && k + 1 < bytes.len() {
+                        k += 2;
+                    } else {
+                        k += 1;
+                    }
+                }
+                if k > bytes.len() {
+                    break;
+                }
+                let dep = source[dep_start..k].to_string();
+                let line = line_at(bytes, dep_start);
+                deps.push((dep, line));
+                j = k + 1;
+            } else {
+                // Unrecognised token (variable ref, etc.) — bail.
+                return out;
+            }
+        }
+        j = skip_ws(bytes, j);
+        if j >= bytes.len() || bytes[j] != b',' {
+            i = after_open;
+            continue;
+        }
+        j += 1;
+        j = skip_ws(bytes, j);
+        // Expect `function(` (allow `function name(` and arrow-style
+        // `(a, b) =>` too).
+        let params = parse_callback_params(bytes, &mut j);
+        let Some(params) = params else {
+            i = after_open;
+            continue;
+        };
+        for (idx, (dep, line)) in deps.iter().enumerate() {
+            let Some(param) = params.get(idx) else { break };
+            if param.is_empty() {
+                continue;
+            }
+            out.push((dep.clone(), param.clone(), *line));
+        }
+        i = j;
+    }
+    out
+}
+
+fn skip_ws(bytes: &[u8], mut i: usize) -> usize {
+    while i < bytes.len() {
+        match bytes[i] {
+            b' ' | b'\t' | b'\n' | b'\r' => i += 1,
+            // Line comment.
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'/' => {
+                while i < bytes.len() && bytes[i] != b'\n' {
+                    i += 1;
+                }
+            }
+            // Block comment.
+            b'/' if i + 1 < bytes.len() && bytes[i + 1] == b'*' => {
+                i += 2;
+                while i + 1 < bytes.len() && !(bytes[i] == b'*' && bytes[i + 1] == b'/') {
+                    i += 1;
+                }
+                i += 2;
+            }
+            _ => return i,
+        }
+    }
+    i
+}
+
+/// Parse a `function(p1, p2)` or `(p1, p2) =>` parameter list starting
+/// at `*pos`. On success, advances `*pos` past the `(` ... `)` and
+/// returns the param names (stripped). Returns None for shapes the
+/// scanner doesn't recognise.
+fn parse_callback_params(bytes: &[u8], pos: &mut usize) -> Option<Vec<String>> {
+    let mut j = *pos;
+    j = skip_ws(bytes, j);
+    // `function`-form: `function( ... )`, `function name( ... )`.
+    if j + 8 <= bytes.len() && &bytes[j..j + 8] == b"function" {
+        let after = j + 8;
+        let next = bytes.get(after).copied().unwrap_or(0);
+        if !next.is_ascii_alphanumeric() && next != b'_' {
+            j = after;
+            j = skip_ws(bytes, j);
+            // Optional named function: `function name(`.
+            if j < bytes.len() && (bytes[j].is_ascii_alphabetic() || bytes[j] == b'_') {
+                while j < bytes.len()
+                    && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_')
+                {
+                    j += 1;
+                }
+                j = skip_ws(bytes, j);
+            }
+            if j < bytes.len() && bytes[j] == b'(' {
+                let params = read_paren_params(bytes, j)?;
+                let new_j = find_matching_paren(bytes, j)?;
+                *pos = new_j + 1;
+                return Some(params);
+            }
+        }
+    }
+    // Arrow-style: `(p1, p2) =>` or single `p =>`.
+    if j < bytes.len() && bytes[j] == b'(' {
+        let params = read_paren_params(bytes, j)?;
+        let new_j = find_matching_paren(bytes, j)?;
+        *pos = new_j + 1;
+        return Some(params);
+    }
+    None
+}
+
+fn read_paren_params(bytes: &[u8], open: usize) -> Option<Vec<String>> {
+    let close = find_matching_paren(bytes, open)?;
+    let inner = std::str::from_utf8(&bytes[open + 1..close]).ok()?;
+    Some(
+        inner
+            .split(',')
+            .map(|s| {
+                let t = s.trim();
+                // Strip default-arg / type-annotations: keep the head
+                // identifier only.
+                let mut k = 0;
+                let bytes = t.as_bytes();
+                while k < bytes.len() && (bytes[k].is_ascii_alphanumeric() || bytes[k] == b'_' || bytes[k] == b'$') {
+                    k += 1;
+                }
+                String::from_utf8_lossy(&bytes[..k]).to_string()
+            })
+            .collect(),
+    )
+}
+
+fn find_matching_paren(bytes: &[u8], open: usize) -> Option<usize> {
+    let mut depth = 0i32;
+    let mut i = open;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'(' => depth += 1,
+            b')' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    None
+}
+
+fn line_at(bytes: &[u8], pos: usize) -> u32 {
+    let mut line = 0u32;
+    for &b in &bytes[..pos.min(bytes.len())] {
+        if b == b'\n' {
+            line += 1;
+        }
+    }
+    line
+}
+
+// ---------------------------------------------------------------------------
+// jQuery plugin registration: `$.fn.NAME = function(...) { ... }`
+//
+// Older AMD / RequireJS-era JS projects (SWISH, AngularJS-1 themes, many
+// jQuery-plugin authors) register methods on `$.fn` — these become
+// chainable methods on every jQuery selector (`$(elem).NAME(...)`). The
+// JS extractor sees the call as a Calls ref to `NAME` (the chain root
+// `$(elem)` is opaque) but `NAME` doesn't exist as a top-level symbol
+// anywhere — it lives as a property on the jQuery prototype.
+//
+// Discovery: scan source for the literal `$.fn.NAME = function`,
+// `jQuery.fn.NAME = function`, or `$.fn['NAME'] = function` patterns.
+// Each match emits a synthetic Function symbol with
+// `qualified_name = "__npm_globals__.NAME"` so the TS resolver's bare-
+// name fallback finds it. Mirrors the Handlebars/Ember helper pattern.
+//
+// Only scans project source; jQuery's CORE methods (`each`, `hasClass`,
+// `addClass`, ...) need jQuery's own source on disk to be indexed.
+// ---------------------------------------------------------------------------
+
+pub fn append_jquery_fn_plugin_globals(
+    source: &str,
+    result: &mut crate::types::ExtractionResult,
+) {
+    for name in scan_jquery_fn_plugin_names(source) {
+        let qname = format!("__npm_globals__.{name}");
+        if result.symbols.iter().any(|s| s.qualified_name == qname) {
+            continue;
+        }
+        result.symbols.push(crate::types::ExtractedSymbol {
+            name: name.clone(),
+            qualified_name: qname,
+            kind: crate::types::SymbolKind::Function,
+            visibility: Some(crate::types::Visibility::Public),
+            start_line: 0,
+            end_line: 0,
+            start_col: 0,
+            end_col: 0,
+            signature: Some(format!("/* $.fn.{name} jQuery plugin */")),
+            doc_comment: None,
+            scope_path: None,
+            parent_index: None,
+        });
+    }
+}
+
+pub(crate) fn scan_jquery_fn_plugin_names(source: &str) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    // Match `$.fn` or `jQuery.fn` followed by either `.NAME` or `['NAME']`.
+    let needles = ["$.fn", "jQuery.fn"];
+    let bytes = source.as_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        let mut matched_len: Option<usize> = None;
+        for needle in needles {
+            let nb = needle.as_bytes();
+            if i + nb.len() <= bytes.len() && &bytes[i..i + nb.len()] == nb {
+                // Suffix must be `.` or `[` to be the property-access form
+                // we care about. Otherwise this is `$.fn` standalone or
+                // `jQuery.fn` followed by something else.
+                let suffix = bytes.get(i + nb.len()).copied().unwrap_or(0);
+                if suffix == b'.' || suffix == b'[' {
+                    matched_len = Some(nb.len() + 1); // include the `.` or `[`
+                    break;
+                }
+            }
+        }
+        if let Some(needle_len) = matched_len {
+            // Identifier-boundary check: prev char must NOT be alphanum/_.
+            if i > 0 {
+                let prev = bytes[i - 1];
+                if prev.is_ascii_alphanumeric() || prev == b'_' || prev == b'$' {
+                    i += needle_len;
+                    continue;
+                }
+            }
+            // bytes[i + needle_len - 1] is either `.` or `[`.
+            let suffix = bytes[i + needle_len - 1];
+            let after = i + needle_len;
+            let (name, mut k) = if suffix == b'[' {
+                // `$.fn[ 'name' ]` — skip whitespace, expect quote.
+                let mut j = after;
+                while j < bytes.len() && (bytes[j] == b' ' || bytes[j] == b'\t') {
+                    j += 1;
+                }
+                if j >= bytes.len() || (bytes[j] != b'\'' && bytes[j] != b'"') {
+                    i = after;
+                    continue;
+                }
+                let q = bytes[j];
+                let start = j + 1;
+                let mut e = start;
+                while e < bytes.len() && bytes[e] != q {
+                    if bytes[e] == b'\\' && e + 1 < bytes.len() {
+                        e += 2;
+                    } else {
+                        e += 1;
+                    }
+                }
+                let n = std::str::from_utf8(&bytes[start..e]).ok();
+                (n.map(str::to_string), e + 1)
+            } else {
+                // `$.fn.NAME` — bare identifier.
+                let start = after;
+                let mut e = start;
+                while e < bytes.len()
+                    && (bytes[e].is_ascii_alphanumeric() || bytes[e] == b'_' || bytes[e] == b'$')
+                {
+                    e += 1;
+                }
+                let n = std::str::from_utf8(&bytes[start..e]).ok();
+                (n.map(str::to_string), e)
+            };
+            // Now expect `=` (allow whitespace and trailing `]` from bracket form).
+            while k < bytes.len() && (bytes[k] == b' ' || bytes[k] == b'\t' || bytes[k] == b']') {
+                k += 1;
+            }
+            if k >= bytes.len() || bytes[k] != b'=' {
+                i = after;
+                continue;
+            }
+            // Confirm RHS looks like a function (function/arrow/method).
+            let mut m = k + 1;
+            while m < bytes.len() && (bytes[m] == b' ' || bytes[m] == b'\t' || bytes[m] == b'\n') {
+                m += 1;
+            }
+            let rhs_is_function = m + 8 <= bytes.len() && &bytes[m..m + 8] == b"function"
+                || m < bytes.len() && bytes[m] == b'('
+                || m + 5 <= bytes.len() && &bytes[m..m + 5] == b"async";
+            if !rhs_is_function {
+                i = after;
+                continue;
+            }
+            if let Some(n) = name {
+                let trimmed = n.trim();
+                if !trimmed.is_empty()
+                    && trimmed.chars().all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '-')
+                    && !out.iter().any(|x| x == trimmed)
+                {
+                    out.push(trimmed.to_string());
+                }
+            }
+            i = m;
+            continue;
+        }
+        i += 1;
+    }
+    out
+}
+
+// ---------------------------------------------------------------------------
 // Handlebars.RegisterHelper("name", ...) — runtime registration scan
 //
 // Some hosts (Bitwarden's C# Handlebars.Net, JS server-side templating)
@@ -1349,5 +1778,118 @@ mod tests {
         let src = "Handlebars.RegisterHelper(myHelperName, fn);";
         append_handlebars_register_helper_globals(src, &mut r);
         assert!(r.symbols.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // AMD `define([deps], function(params) {...})` scan
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn amd_define_emits_imports_per_dep() {
+        let src = "define([ \"jquery\", \"./config\", \"preferences\" ],\n        function($, config, preferences) { return $.fn; });";
+        let pairs = scan_amd_define_pairs(src);
+        let by_dep: std::collections::HashMap<&str, &str> =
+            pairs.iter().map(|(d, p, _)| (d.as_str(), p.as_str())).collect();
+        assert_eq!(by_dep.get("jquery"), Some(&"$"));
+        assert_eq!(by_dep.get("./config"), Some(&"config"));
+        assert_eq!(by_dep.get("preferences"), Some(&"preferences"));
+    }
+
+    #[test]
+    fn amd_define_handles_named_module_form() {
+        // `define("modname", [...], function(...) {...})` — leading
+        // string is the module name, ignored.
+        let src = "define(\"my/mod\", [\"jquery\"], function($) {});";
+        let pairs = scan_amd_define_pairs(src);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].0, "jquery");
+        assert_eq!(pairs[0].1, "$");
+    }
+
+    #[test]
+    fn amd_define_arrow_callback_works() {
+        let src = "define([\"jquery\"], ($) => $.fn);";
+        let pairs = scan_amd_define_pairs(src);
+        assert_eq!(pairs.len(), 1);
+        assert_eq!(pairs[0].1, "$");
+    }
+
+    #[test]
+    fn amd_define_multiline_dep_array() {
+        let src = "define([\n  \"a\",\n  \"b\",\n  \"c\"\n], function(a, b, c) {});";
+        let pairs = scan_amd_define_pairs(src);
+        assert_eq!(pairs.len(), 3);
+        assert_eq!(pairs[0].0, "a");
+        assert_eq!(pairs[2].1, "c");
+    }
+
+    #[test]
+    fn append_amd_define_imports_skips_amd_bookkeeping() {
+        let mut r = empty_result();
+        // `require`, `exports`, `module` are AMD bookkeeping pseudo-deps.
+        let src = "define([\"require\", \"exports\", \"./real\"], function(req, exp, real) {});";
+        append_amd_define_imports(src, &mut r);
+        let names: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|x| matches!(x.kind, crate::types::EdgeKind::Imports))
+            .map(|x| x.target_name.as_str())
+            .collect();
+        assert_eq!(names, vec!["real"]);
+    }
+
+    #[test]
+    fn amd_define_xhelper_define_no_match() {
+        // `xdefine([...])` must not match `define([...])`.
+        let src = "xdefine([\"jquery\"], function($){});";
+        let pairs = scan_amd_define_pairs(src);
+        assert!(pairs.is_empty());
+    }
+
+    // -----------------------------------------------------------------------
+    // `$.fn.NAME = function(...)` jQuery plugin registration scan
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn jquery_fn_plugin_emits_npm_globals() {
+        let mut r = empty_result();
+        let src = "$.fn.prologEditor = function(method) { return this; };";
+        append_jquery_fn_plugin_globals(src, &mut r);
+        assert!(r.symbols.iter().any(|s|
+            s.name == "prologEditor" && s.qualified_name == "__npm_globals__.prologEditor"
+        ));
+    }
+
+    #[test]
+    fn jquery_fn_plugin_handles_full_jquery_prefix() {
+        let mut r = empty_result();
+        let src = "jQuery.fn.tooltip = function(opts) {};";
+        append_jquery_fn_plugin_globals(src, &mut r);
+        assert!(r.symbols.iter().any(|s| s.name == "tooltip"));
+    }
+
+    #[test]
+    fn jquery_fn_plugin_handles_bracketed_form() {
+        let mut r = empty_result();
+        let src = "$.fn['nbCell'] = function(method) {};";
+        append_jquery_fn_plugin_globals(src, &mut r);
+        assert!(r.symbols.iter().any(|s| s.name == "nbCell"));
+    }
+
+    #[test]
+    fn jquery_fn_plugin_skips_non_function_rhs() {
+        let mut r = empty_result();
+        // Plain value assignment, not a callable plugin.
+        let src = "$.fn.version = '1.0';";
+        append_jquery_fn_plugin_globals(src, &mut r);
+        assert!(r.symbols.is_empty());
+    }
+
+    #[test]
+    fn jquery_fn_plugin_dedupes_same_name() {
+        let mut r = empty_result();
+        let src = "$.fn.foo = function() {};\n$.fn.foo = function() {};";
+        append_jquery_fn_plugin_globals(src, &mut r);
+        assert_eq!(r.symbols.iter().filter(|s| s.name == "foo").count(), 1);
     }
 }

@@ -748,20 +748,20 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 77
+        "min_resolution_rate": 86
       },
-      "code_chunks": 14284,
-      "files": 280,
+      "code_chunks": 14289,
+      "files": 281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2372,
-      "internal_unresolved": 704,
+      "internal_edges": 2878,
+      "internal_unresolved": 460,
       "languages": {
         "c": 4,
         "css": 30,
         "html": 21,
         "javascript": 49,
-        "json": 5,
+        "json": 6,
         "markdown": 14,
         "perl": 124,
         "prolog": 29,
@@ -770,19 +770,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/prolog-swish",
       "perf": {
-        "end_ws_mb": 213,
-        "files_per_sec": 105,
-        "index_duration_ms": 2661
+        "end_ws_mb": 62,
+        "files_per_sec": 116,
+        "index_duration_ms": 2419
       },
       "project": "prolog-swish",
-      "resolution_rate": 77.11,
+      "resolution_rate": 86.22,
       "routes": 0,
-      "symbols": 5881,
+      "symbols": 5908,
       "unresolved_by_lang_kind": {
         "c.type_ref": 17,
         "html.calls": 1,
         "html.type_ref": 1,
-        "javascript.calls": 639,
+        "javascript.calls": 395,
         "javascript.type_ref": 14,
         "prolog.calls": 32
       }
