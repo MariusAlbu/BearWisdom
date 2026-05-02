@@ -738,15 +738,37 @@ fn lookup_demand_for_walked<'a>(
     None
 }
 
-/// R6: detect external files whose declarations are ambient globals (visible
-/// project-wide without an import). Matches the file-path shapes emitted by
-/// the `ts-lib-dom` ecosystem: the synthetic `__ts_lib__` module that wraps
-/// `typescript/lib/lib.*.d.ts`, plus `@types/node/**/*.d.ts`.
+/// R6: detect external files whose declarations are ambient globals
+/// (visible project-wide without an import). The demand filter MUST NOT
+/// run on these — top-level interfaces / classes / functions need to
+/// keep all their members reachable, even when the user source never
+/// names the parent type directly (the chain walker lands on members
+/// via `$.each`, `Buffer.from`, etc.).
+///
+/// Matches:
+///   * The `ts-lib-dom` synthetic `__ts_lib__` module wrapping
+///     `typescript/lib/lib.*.d.ts`.
+///   * Every package in `npm::KNOWN_GLOBAL_PACKAGES` — `@types/node`,
+///     `@types/jquery`, `@types/jest`, `vitest`, `chai`, etc. The
+///     ecosystem already pre-pulls a candidate file set for these via
+///     `demand_pre_pull_test_globals`, but until this match was added
+///     `lookup_demand_for_walked` then dropped most of the symbols out
+///     of those parses (e.g. JQuery.d.ts at 394 KB emitted zero
+///     symbols because the user source called `$.each()` without ever
+///     naming `JQuery` or `JQueryStatic`).
 fn is_ambient_global_external(relative_path: &str) -> bool {
     let normalized = relative_path.replace('\\', "/");
-    normalized.starts_with(&format!(
+    if normalized.starts_with(&format!(
         "ext:ts:{}/",
         crate::ecosystem::ts_lib_dom::TS_LIB_SYNTHETIC_MODULE
-    ))
-        || normalized.contains("/@types/node/")
+    )) {
+        return true;
+    }
+    let Some(pkg) = crate::ecosystem::externals::ts_package_from_virtual_path(&normalized)
+    else {
+        return false;
+    };
+    crate::ecosystem::npm::KNOWN_GLOBAL_PACKAGES
+        .iter()
+        .any(|p| *p == pkg)
 }

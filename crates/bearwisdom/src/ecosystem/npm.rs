@@ -173,7 +173,7 @@ impl Ecosystem for NpmEcosystem {
 /// whose `.d.ts` declares globals gets them indexed regardless of whether
 /// it's listed here. Listing just ensures the file is walked even when no
 /// user ref would otherwise demand it.
-const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
+pub(crate) const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
     // Test runners with implicit globals.
     "vitest",
     "@vitest/browser",

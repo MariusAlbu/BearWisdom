@@ -181,7 +181,7 @@
       "files": 160,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1553,
+      "internal_edges": 1552,
       "internal_unresolved": 13,
       "languages": {
         "css": 6,
@@ -195,9 +195,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ejs-dummyjson",
       "perf": {
-        "end_ws_mb": 72,
-        "files_per_sec": 64,
-        "index_duration_ms": 2508
+        "end_ws_mb": 78,
+        "files_per_sec": 63,
+        "index_duration_ms": 2543
       },
       "project": "ejs-dummyjson",
       "resolution_rate": 99.17,
@@ -231,9 +231,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/ejs-reference",
       "perf": {
-        "end_ws_mb": 115,
-        "files_per_sec": 80,
-        "index_duration_ms": 6383
+        "end_ws_mb": 113,
+        "files_per_sec": 84,
+        "index_duration_ms": 6080
       },
       "project": "ejs-reference",
       "resolution_rate": 98.52,
@@ -668,8 +668,8 @@
       "files": 309,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 34791,
-      "internal_unresolved": 955,
+      "internal_edges": 35434,
+      "internal_unresolved": 1040,
       "languages": {
         "dockerfile": 1,
         "json": 11,
@@ -682,20 +682,20 @@
       },
       "path": "F:/Work/Projects/TestProjects/prolog-scryer",
       "perf": {
-        "end_ws_mb": 136,
-        "files_per_sec": 6,
-        "index_duration_ms": 48155
+        "end_ws_mb": 163,
+        "files_per_sec": 7,
+        "index_duration_ms": 42863
       },
       "project": "prolog-scryer",
-      "resolution_rate": 97.33,
+      "resolution_rate": 97.15,
       "routes": 0,
       "symbols": 19633,
       "unresolved_by_lang_kind": {
         "nix.calls": 5,
         "prolog.calls": 686,
-        "rust.calls": 20,
+        "rust.calls": 95,
         "rust.implements": 16,
-        "rust.type_ref": 228
+        "rust.type_ref": 238
       }
     },
     {
@@ -724,9 +724,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/prolog-swipl",
       "perf": {
-        "end_ws_mb": 169,
-        "files_per_sec": 69,
-        "index_duration_ms": 18369
+        "end_ws_mb": 188,
+        "files_per_sec": 71,
+        "index_duration_ms": 17776
       },
       "project": "prolog-swipl",
       "resolution_rate": 96.39,
@@ -747,14 +747,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 78
+        "min_resolution_rate": 82
       },
       "code_chunks": 16987,
       "files": 281,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 5731,
-      "internal_unresolved": 1584,
+      "internal_edges": 5912,
+      "internal_unresolved": 1241,
       "languages": {
         "c": 4,
         "css": 30,
@@ -769,19 +769,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/prolog-swish",
       "perf": {
-        "end_ws_mb": 75,
-        "files_per_sec": 79,
-        "index_duration_ms": 3548
+        "end_ws_mb": 138,
+        "files_per_sec": 77,
+        "index_duration_ms": 3650
       },
       "project": "prolog-swish",
-      "resolution_rate": 78.35,
+      "resolution_rate": 82.65,
       "routes": 0,
       "symbols": 9801,
       "unresolved_by_lang_kind": {
         "c.type_ref": 15,
         "html.calls": 1,
         "html.type_ref": 1,
-        "javascript.calls": 520,
+        "javascript.calls": 177,
         "javascript.imports": 4,
         "javascript.type_ref": 14,
         "prolog.calls": 1029
