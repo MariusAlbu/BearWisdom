@@ -129,16 +129,18 @@ fn extract_resource_declaration(
 
     // Emit a TypeRef for the ARM resource type string (e.g. 'Microsoft.Web/sites@2022-03-01').
     if let Some(type_str) = res_type {
-        refs.push(ExtractedRef {
-            source_symbol_index: idx,
-            target_name: type_str,
-            kind: EdgeKind::TypeRef,
-            line: node.start_position().row as u32,
-            module: None,
-            chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
+        if is_valid_resource_type_string(&type_str) {
+            refs.push(ExtractedRef {
+                source_symbol_index: idx,
+                target_name: type_str,
+                kind: EdgeKind::TypeRef,
+                line: node.start_position().row as u32,
+                module: None,
+                chain: None,
+                byte_offset: 0,
+                                    namespace_segments: Vec::new(),
 });
+        }
     }
 
     // Collect call_expression refs inside the body (decorators, function calls).
@@ -429,7 +431,7 @@ fn extract_calls_in_subtree(
     if node.kind() == "call_expression" {
         if let Some(func) = node.child_by_field_name("function") {
             let name = node_text(func, src);
-            if !name.is_empty() {
+            if is_valid_call_target(&name) {
                 refs.push(ExtractedRef {
                     source_symbol_index: source_idx,
                     target_name: name,
@@ -447,7 +449,7 @@ fn extract_calls_in_subtree(
             for child in node.children(&mut cursor) {
                 if child.kind() == "identifier" {
                     let name = node_text(child, src);
-                    if !name.is_empty() {
+                    if is_valid_call_target(&name) {
                         refs.push(ExtractedRef {
                             source_symbol_index: source_idx,
                             target_name: name,
@@ -618,7 +620,7 @@ fn collect_all_call_expressions(
             }
             name
         };
-        if !name.is_empty() {
+        if is_valid_call_target(&name) {
             refs.push(ExtractedRef {
                 source_symbol_index: 0,
                 target_name: name,
@@ -637,6 +639,65 @@ fn collect_all_call_expressions(
     for child in node.children(&mut cursor) {
         collect_all_call_expressions(child, src, refs);
     }
+}
+
+/// Validate that a call/typeref target_name is a Bicep identifier path.
+/// Filters out tree-sitter-bicep artifacts produced from malformed sources
+/// (parser-error fixtures): `for (x,y)`, `...`, `var bad = (null)!`, raw
+/// AST-dump comments, union-literal members like `red`/`blue`/`true`/`false`,
+/// numeric literals, and so on.
+///
+/// Accepts: `name`, `ns.name`, `a.b.c`. Rejects empty, anything containing
+/// whitespace/punctuation/operators, and Bicep keyword literals.
+fn is_valid_call_target(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    // Bicep literal keywords aren't callable. Without filtering, the
+    // tree-sitter `call_expression` fallback path emits `true`/`false`/
+    // `null` from union-literal type bodies (`'red' | 'green' | 'blue'`).
+    if matches!(
+        name,
+        "true" | "false" | "null" | "for" | "if" | "in" | "with" | "..."
+    ) {
+        return false;
+    }
+    let mut chars = name.chars();
+    let first = match chars.next() {
+        Some(c) => c,
+        None => return false,
+    };
+    // First char of a valid identifier path: letter or underscore.
+    if !(first.is_ascii_alphabetic() || first == '_') {
+        return false;
+    }
+    name.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.')
+}
+
+/// Validate that a TypeRef target_name is a plausible resource-type string.
+/// Bicep resource type strings have the shape `<head>/<typename>[@<api>]`
+/// — never bare keywords or operator artifacts. Rejects spread `...`,
+/// numeric literals, etc. that the parser sometimes emits when a malformed
+/// resource declaration captures a non-string-literal as `find_string_literal`'s
+/// fallback target.
+fn is_valid_resource_type_string(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    if matches!(name, "..." | "true" | "false" | "null") {
+        return false;
+    }
+    // Resource type strings always contain `/`. Bare-name child-resource
+    // shorthand (`subnets`, `subnets@2020-01-01`) is also valid and
+    // classified by the resolver via `is_child_resource_shorthand`.
+    let stripped = name.trim_matches('\'');
+    stripped.contains('/')
+        || stripped
+            .chars()
+            .next()
+            .map(|c| c.is_ascii_alphabetic())
+            .unwrap_or(false)
 }
 
 fn node_text(node: Node, src: &str) -> String {
