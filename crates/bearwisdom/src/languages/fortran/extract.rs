@@ -22,6 +22,23 @@ use crate::types::{
 };
 use tree_sitter::{Node, Parser};
 
+/// Returns true when `name` looks like a real Fortran callable identifier
+/// (subroutine, function, intrinsic). Filters out garbage tokens that
+/// tree-sitter recovers into a callee position when the source contains
+/// `.fypp` interpolation macros (`stdlib${ii}$_sgemv`) — the parser then
+/// classifies the *first quoted argument* (`'TRANSPOSE'`, `'NO TRANSPOSE'`)
+/// as the call target and produces a Calls ref to a string literal.
+#[inline]
+fn is_fortran_callable_text(name: &str) -> bool {
+    if name.is_empty() {
+        return false;
+    }
+    let first = name.as_bytes()[0];
+    // String literals (single-quoted Fortran character constants and
+    // double-quoted variants) and numeric literals are never callables.
+    !matches!(first, b'\'' | b'"') && !first.is_ascii_digit()
+}
+
 pub fn extract(source: &str) -> ExtractionResult {
     let mut parser = Parser::new();
     if parser
@@ -156,7 +173,7 @@ fn walk_node(
             let sym_idx = parent_idx.unwrap_or(0);
             if let Some(sub_node) = node.child_by_field_name("subroutine") {
                 let name = text(sub_node, src);
-                if !name.is_empty() {
+                if is_fortran_callable_text(&name) {
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
                         target_name: name,
@@ -179,8 +196,7 @@ fn walk_node(
                 match callee.kind() {
                     "identifier" => {
                         let name = text(callee, src);
-                        // Skip string literals misidentified as callees (e.g. "$fpm").
-                        if !name.is_empty() && !name.starts_with('"') && !name.starts_with('\'') {
+                        if is_fortran_callable_text(&name) {
                             refs.push(ExtractedRef {
                                 source_symbol_index: sym_idx,
                                 target_name: name,
@@ -204,7 +220,7 @@ fn walk_node(
                             let method_text = callee.named_child(count - 1)
                                 .map(|n| text(n, src))
                                 .unwrap_or_default();
-                            if !method_text.is_empty() {
+                            if is_fortran_callable_text(&method_text) {
                                 refs.push(ExtractedRef {
                                     source_symbol_index: sym_idx,
                                     target_name: method_text,
@@ -221,7 +237,7 @@ fn walk_node(
                             let name = callee.named_child(0)
                                 .map(|n| text(n, src))
                                 .unwrap_or_default();
-                            if !name.is_empty() {
+                            if is_fortran_callable_text(&name) {
                                 refs.push(ExtractedRef {
                                     source_symbol_index: sym_idx,
                                     target_name: name,

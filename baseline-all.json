@@ -763,7 +763,7 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 33310,
-      "internal_unresolved": 14148,
+      "internal_unresolved": 11766,
       "languages": {
         "c": 9,
         "cmake": 93,
@@ -780,15 +780,17 @@
         "index_duration_ms": 21359
       },
       "project": "fortran-stdlib",
-      "resolution_rate": 70.19,
+      "resolution_rate": 73.9,
       "routes": 0,
       "symbols": 17017,
       "unresolved_by_lang_kind": {
-        "c.calls": 320,
-        "c.type_ref": 28,
-        "cmake.type_ref": 118,
-        "cpp.imports": 1,
-        "fortran.calls": 13681
+        "c.Calls": 320,
+        "c.Type_ref": 28,
+        "cmake.Type_ref": 118,
+        "cpp.Imports": 1,
+        "fortran.Calls": 11272,
+        "markdown.Calls": 22,
+        "markdown.Imports": 5
       }
     },
     {

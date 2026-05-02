@@ -250,3 +250,32 @@ fn symbol_derived_type_with_extends() {
         r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
     );
 }
+
+// ---------------------------------------------------------------------------
+// .fypp recovery: string literals must never become Calls refs
+// ---------------------------------------------------------------------------
+
+/// `.fypp` files contain `${ii}$` interpolation that tree-sitter-fortran
+/// doesn't understand; the parser recovers by treating the first quoted
+/// argument of a `call` as the callee. Without the string-literal guard
+/// in `is_fortran_callable_text` we'd emit `'TRANSPOSE'`, `'NO TRANSPOSE'`,
+/// `'U'`, `'N'` etc. as Calls refs that can never resolve.
+///
+/// Reproduces the corpus pattern from
+/// `src/lapack/stdlib_lapack_householder_reflectors.fypp`.
+#[test]
+fn fypp_string_literal_never_becomes_call_ref() {
+    let src = "subroutine foo()\n  call dgemv('TRANSPOSE', n, m, c, x, y)\nend subroutine";
+    let r = extract(src);
+    let leaked: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .filter(|n| n.starts_with('\'') || n.starts_with('"'))
+        .collect();
+    assert!(leaked.is_empty(),
+        "string literals leaked as Calls refs: {:?}", leaked);
+    // `dgemv` itself should still be captured.
+    assert!(r.refs.iter().any(|rf| rf.target_name == "dgemv" && rf.kind == EdgeKind::Calls),
+        "expected Calls ref to dgemv; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
+}
