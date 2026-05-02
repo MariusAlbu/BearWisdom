@@ -273,16 +273,113 @@
       "path": "F:/Work/Projects/TestProjects/eShop"
     },
     {
+      "assertions": {
+        "min_resolution_rate": 97
+      },
+      "code_chunks": 14369,
+      "files": 340,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1716,
+      "internal_unresolved": 52,
+      "languages": {
+        "c": 20,
+        "cpp": 2,
+        "fortran": 209,
+        "markdown": 26,
+        "shell": 6,
+        "toml": 77
+      },
+      "path": "F:/Work/Projects/TestProjects/fortran-fpm",
+      "perf": {
+        "end_ws_mb": 50,
+        "files_per_sec": 283,
+        "index_duration_ms": 1201
+      },
       "project": "fortran-fpm",
-      "path": "F:/Work/Projects/TestProjects/fortran-fpm"
+      "resolution_rate": 97.06,
+      "routes": 0,
+      "symbols": 1698,
+      "unresolved_by_lang_kind": {
+        "c.calls": 21,
+        "c.type_ref": 15,
+        "cpp.calls": 8,
+        "cpp.imports": 1,
+        "fortran.calls": 7
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 95
+      },
+      "code_chunks": 4310,
+      "files": 48,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 190,
+      "internal_unresolved": 9,
+      "languages": {
+        "cmake": 6,
+        "fortran": 2,
+        "json": 19,
+        "markdown": 15,
+        "perl": 1,
+        "shell": 1,
+        "toml": 1,
+        "xml": 2,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/fortran-json",
+      "perf": {
+        "end_ws_mb": 54,
+        "files_per_sec": 26,
+        "index_duration_ms": 1812
+      },
       "project": "fortran-json",
-      "path": "F:/Work/Projects/TestProjects/fortran-json"
+      "resolution_rate": 95.48,
+      "routes": 0,
+      "symbols": 501,
+      "unresolved_by_lang_kind": {
+        "cmake.type_ref": 3,
+        "shell.calls": 6
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 70
+      },
+      "code_chunks": 57688,
+      "files": 782,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 33310,
+      "internal_unresolved": 14148,
+      "languages": {
+        "c": 9,
+        "cmake": 93,
+        "cpp": 3,
+        "fortran": 619,
+        "markdown": 56,
+        "python": 1,
+        "toml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/fortran-stdlib",
+      "perf": {
+        "end_ws_mb": 86,
+        "files_per_sec": 37,
+        "index_duration_ms": 21359
+      },
       "project": "fortran-stdlib",
-      "path": "F:/Work/Projects/TestProjects/fortran-stdlib"
+      "resolution_rate": 70.19,
+      "routes": 0,
+      "symbols": 17017,
+      "unresolved_by_lang_kind": {
+        "c.calls": 320,
+        "c.type_ref": 28,
+        "cmake.type_ref": 118,
+        "cpp.imports": 1,
+        "fortran.calls": 13681
+      }
     },
     {
       "project": "freemarker-mozilla-send",
@@ -489,16 +586,128 @@
       "path": "F:/Work/Projects/TestProjects/kotlin-okhttp"
     },
     {
+      "assertions": {
+        "min_resolution_rate": 88
+      },
+      "code_chunks": 16787,
+      "files": 235,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 4028,
+      "internal_unresolved": 526,
+      "languages": {
+        "css": 6,
+        "dockerfile": 1,
+        "html": 4,
+        "javascript": 38,
+        "json": 4,
+        "jupyter": 1,
+        "liquid": 50,
+        "markdown": 71,
+        "python": 1,
+        "ruby": 8,
+        "scss": 36,
+        "shell": 1,
+        "xml": 2,
+        "yaml": 12
+      },
+      "path": "F:/Work/Projects/TestProjects/liquid-al-folio",
+      "perf": {
+        "end_ws_mb": 105,
+        "files_per_sec": 9,
+        "index_duration_ms": 25626
+      },
       "project": "liquid-al-folio",
-      "path": "F:/Work/Projects/TestProjects/liquid-al-folio"
+      "resolution_rate": 88.45,
+      "routes": 0,
+      "symbols": 6862,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 498,
+        "javascript.imports": 4,
+        "javascript.type_ref": 10,
+        "liquid.calls": 3,
+        "python.type_ref": 1,
+        "scss.calls": 4,
+        "scss.inherits": 5,
+        "shell.calls": 1
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 99
+      },
+      "code_chunks": 16603,
+      "files": 638,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 10536,
+      "internal_unresolved": 10,
+      "languages": {
+        "css": 1,
+        "erb": 13,
+        "html": 83,
+        "javascript": 3,
+        "json": 3,
+        "markdown": 309,
+        "php": 1,
+        "rmarkdown": 1,
+        "ruby": 172,
+        "scss": 18,
+        "toml": 1,
+        "xml": 3,
+        "yaml": 30
+      },
+      "path": "F:/Work/Projects/TestProjects/liquid-jekyll",
+      "perf": {
+        "end_ws_mb": 106,
+        "files_per_sec": 47,
+        "index_duration_ms": 13568
+      },
       "project": "liquid-jekyll",
-      "path": "F:/Work/Projects/TestProjects/liquid-jekyll"
+      "resolution_rate": 99.91,
+      "routes": 0,
+      "symbols": 7358,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 8,
+        "javascript.imports": 1,
+        "ruby.imports": 1
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 56
+      },
+      "code_chunks": 10394,
+      "files": 446,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 270,
+      "internal_unresolved": 206,
+      "languages": {
+        "html": 85,
+        "javascript": 12,
+        "json": 2,
+        "markdown": 222,
+        "ruby": 6,
+        "scss": 34,
+        "xml": 3,
+        "yaml": 82
+      },
+      "path": "F:/Work/Projects/TestProjects/liquid-minimal-mistakes",
+      "perf": {
+        "end_ws_mb": 192,
+        "files_per_sec": 56,
+        "index_duration_ms": 7951
+      },
       "project": "liquid-minimal-mistakes",
-      "path": "F:/Work/Projects/TestProjects/liquid-minimal-mistakes"
+      "resolution_rate": 56.72,
+      "routes": 0,
+      "symbols": 6166,
+      "unresolved_by_lang_kind": {
+        "html.calls": 12,
+        "javascript.calls": 123,
+        "scss.calls": 71
+      }
     },
     {
       "project": "lua-lazy-nvim",
@@ -799,12 +1008,74 @@
       "path": "F:/Work/Projects/TestProjects/proto-protovalidate"
     },
     {
+      "assertions": {
+        "min_resolution_rate": 62
+      },
+      "code_chunks": 462,
+      "files": 42,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 216,
+      "internal_unresolved": 132,
+      "languages": {
+        "css": 3,
+        "dockerfile": 1,
+        "javascript": 5,
+        "json": 17,
+        "markdown": 2,
+        "pug": 12,
+        "xml": 1,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/pug-blockchain-demo",
+      "perf": {
+        "end_ws_mb": 59,
+        "files_per_sec": 27,
+        "index_duration_ms": 1556
+      },
       "project": "pug-blockchain-demo",
-      "path": "F:/Work/Projects/TestProjects/pug-blockchain-demo"
+      "resolution_rate": 62.07,
+      "routes": 0,
+      "symbols": 244,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 24,
+        "pug.calls": 94,
+        "pug.imports": 4,
+        "pug.type_ref": 10
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 57
+      },
+      "code_chunks": 667,
+      "files": 35,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 233,
+      "internal_unresolved": 171,
+      "languages": {
+        "css": 3,
+        "html": 7,
+        "javascript": 8,
+        "json": 4,
+        "markdown": 4,
+        "pug": 8,
+        "scss": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/pug-bootstrap-switch",
+      "perf": {
+        "end_ws_mb": 63,
+        "files_per_sec": 22,
+        "index_duration_ms": 1583
+      },
       "project": "pug-bootstrap-switch",
-      "path": "F:/Work/Projects/TestProjects/pug-bootstrap-switch"
+      "resolution_rate": 57.67,
+      "routes": 0,
+      "symbols": 267,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 171
+      }
     },
     {
       "project": "puppet-apache",
