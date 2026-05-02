@@ -675,14 +675,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 72
+        "min_resolution_rate": 94
       },
       "code_chunks": 13432,
       "files": 487,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 355,
-      "internal_unresolved": 132,
+      "internal_edges": 455,
+      "internal_unresolved": 26,
       "languages": {
         "html": 85,
         "javascript": 13,
@@ -695,17 +695,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/liquid-minimal-mistakes",
       "perf": {
-        "end_ws_mb": 195,
-        "files_per_sec": 61,
-        "index_duration_ms": 8044
+        "end_ws_mb": 76,
+        "files_per_sec": 58,
+        "index_duration_ms": 8357
       },
       "project": "liquid-minimal-mistakes",
-      "resolution_rate": 72.9,
+      "resolution_rate": 94.59,
       "routes": 0,
       "symbols": 6832,
       "unresolved_by_lang_kind": {
-        "html.calls": 12,
-        "javascript.calls": 120
+        "html.calls": 8,
+        "javascript.calls": 18
       }
     },
     {

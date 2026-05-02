@@ -208,6 +208,10 @@ pub(crate) const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
     // via RequireJS / `<script src>` and call `editor.getValue()`,
     // `editor.setOption(...)`, `cm.isClean()` without an `import`.
     "@types/codemirror",
+    // Lunr.js — search library used by Jekyll/Hugo themes (Minimal
+    // Mistakes, Just the Docs). `lunr.Builder`, `lunr.Token`,
+    // `lunr.QueryParseError`, etc. are called without ES imports.
+    "@types/lunr",
 ];
 
 fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
