@@ -38,6 +38,7 @@ pub mod jinja_ansible_runtime;
 pub mod bicep_runtime;
 pub mod prolog_runtime;
 pub mod hexo_runtime;
+pub mod cargo_build_scripts;
 pub mod cabal;
 pub mod bazel_central_registry;
 pub mod bash_completion_synthetics;
@@ -106,6 +107,7 @@ pub use jinja_ansible_runtime::JinjaAnsibleRuntimeEcosystem;
 pub use bicep_runtime::BicepRuntimeEcosystem;
 pub use prolog_runtime::PrologRuntimeEcosystem;
 pub use hexo_runtime::HexoRuntimeEcosystem;
+pub use cargo_build_scripts::CargoBuildScriptsEcosystem;
 pub use bash_completion_synthetics::BashCompletionSyntheticsEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use cabal::CabalEcosystem;
@@ -624,6 +626,7 @@ pub fn default_locator(
         "bicep-runtime" => Some(bicep_runtime::shared_locator()),
         "prolog-runtime" => Some(prolog_runtime::shared_locator()),
         "hexo-runtime" => Some(hexo_runtime::shared_locator()),
+        "cargo-build-scripts" => Some(cargo_build_scripts::shared_locator()),
         "swift-foundation" => Some(Arc::new(SwiftFoundationEcosystem)),
         "swift-pm-dsl-stubs" => Some(Arc::new(SwiftPmDslStubsEcosystem)),
         "vba-typelibs" => Some(Arc::new(VbaTypelibsEcosystem)),
@@ -737,6 +740,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(BicepRuntimeEcosystem);
         reg_eco!(PrologRuntimeEcosystem);
         reg_eco!(HexoRuntimeEcosystem);
+        reg_eco!(CargoBuildScriptsEcosystem);
         reg_eco!(SwiftFoundationEcosystem);
         reg_eco!(SwiftPmDslStubsEcosystem);
         reg_eco!(VbaTypelibsEcosystem);
