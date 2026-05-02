@@ -268,16 +268,121 @@
       }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 80
+      },
+      "code_chunks": 2687,
+      "files": 104,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 1409,
+      "internal_unresolved": 332,
+      "languages": {
+        "c": 1,
+        "cmake": 53,
+        "cpp": 25,
+        "markdown": 9,
+        "python": 1,
+        "ruby": 14,
+        "yaml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/cmake-cpm",
+      "perf": {
+        "end_ws_mb": 63,
+        "files_per_sec": 17,
+        "index_duration_ms": 6145
+      },
       "project": "cmake-cpm",
-      "path": "F:/Work/Projects/TestProjects/cmake-cpm"
+      "resolution_rate": 80.93,
+      "routes": 0,
+      "symbols": 1917,
+      "unresolved_by_lang_kind": {
+        "cmake.calls": 26,
+        "cmake.type_ref": 121,
+        "cpp.calls": 77,
+        "cpp.imports": 6,
+        "cpp.type_ref": 43,
+        "python.calls": 1,
+        "ruby.calls": 33,
+        "ruby.instantiates": 4,
+        "ruby.type_ref": 21
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 81
+      },
+      "code_chunks": 8948,
+      "files": 125,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 204,
+      "internal_unresolved": 46,
+      "languages": {
+        "c": 13,
+        "cmake": 45,
+        "cpp": 46,
+        "markdown": 1,
+        "proto": 1,
+        "python": 1,
+        "shell": 18
+      },
+      "path": "F:/Work/Projects/TestProjects/cmake-examples",
+      "perf": {
+        "end_ws_mb": 67,
+        "files_per_sec": 30,
+        "index_duration_ms": 4140
+      },
       "project": "cmake-examples",
-      "path": "F:/Work/Projects/TestProjects/cmake-examples"
+      "resolution_rate": 81.6,
+      "routes": 0,
+      "symbols": 717,
+      "unresolved_by_lang_kind": {
+        "cmake.calls": 7,
+        "cmake.type_ref": 14,
+        "cpp.calls": 12,
+        "cpp.imports": 1,
+        "cpp.type_ref": 10,
+        "shell.calls": 2
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 81
+      },
+      "code_chunks": 8948,
+      "files": 125,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 204,
+      "internal_unresolved": 46,
+      "languages": {
+        "c": 13,
+        "cmake": 45,
+        "cpp": 46,
+        "markdown": 1,
+        "proto": 1,
+        "python": 1,
+        "shell": 18
+      },
+      "path": "F:/Work/Projects/TestProjects/cmake-ttroy50",
+      "perf": {
+        "end_ws_mb": 71,
+        "files_per_sec": 30,
+        "index_duration_ms": 4166
+      },
       "project": "cmake-ttroy50",
-      "path": "F:/Work/Projects/TestProjects/cmake-ttroy50"
+      "resolution_rate": 81.6,
+      "routes": 0,
+      "symbols": 717,
+      "unresolved_by_lang_kind": {
+        "cmake.calls": 7,
+        "cmake.type_ref": 14,
+        "cpp.calls": 12,
+        "cpp.imports": 1,
+        "cpp.type_ref": 10,
+        "shell.calls": 2
+      }
     },
     {
       "project": "cobol-course",
@@ -431,16 +536,130 @@
       }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 91
+      },
+      "code_chunks": 29569,
+      "files": 1224,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 31774,
+      "internal_unresolved": 2827,
+      "languages": {
+        "css": 6,
+        "eex": 257,
+        "elixir": 591,
+        "go": 12,
+        "handlebars": 9,
+        "heex": 71,
+        "javascript": 56,
+        "json": 8,
+        "markdown": 8,
+        "scss": 90,
+        "toml": 3,
+        "xml": 113
+      },
+      "path": "F:/Work/Projects/TestProjects/elixir-changelog",
+      "perf": {
+        "end_ws_mb": 165,
+        "files_per_sec": 45,
+        "index_duration_ms": 26923
+      },
       "project": "elixir-changelog",
-      "path": "F:/Work/Projects/TestProjects/elixir-changelog"
+      "resolution_rate": 91.83,
+      "routes": 0,
+      "symbols": 8713,
+      "unresolved_by_lang_kind": {
+        "eex.type_ref": 4,
+        "elixir.calls": 1239,
+        "elixir.imports": 6,
+        "elixir.type_ref": 1172,
+        "go.calls": 6,
+        "javascript.calls": 397,
+        "scss.calls": 3
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 92
+      },
+      "code_chunks": 17132,
+      "files": 490,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 14589,
+      "internal_unresolved": 1135,
+      "languages": {
+        "elixir": 459,
+        "markdown": 24,
+        "shell": 7
+      },
+      "path": "F:/Work/Projects/TestProjects/elixir-credo",
+      "perf": {
+        "end_ws_mb": 122,
+        "files_per_sec": 67,
+        "index_duration_ms": 7361
+      },
       "project": "elixir-credo",
-      "path": "F:/Work/Projects/TestProjects/elixir-credo"
+      "resolution_rate": 92.78,
+      "routes": 0,
+      "symbols": 5457,
+      "unresolved_by_lang_kind": {
+        "elixir.calls": 377,
+        "elixir.type_ref": 758
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 87
+      },
+      "code_chunks": 67397,
+      "files": 1738,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 101844,
+      "internal_unresolved": 14746,
+      "languages": {
+        "c": 1,
+        "css": 6,
+        "dockerfile": 1,
+        "eex": 50,
+        "elixir": 1159,
+        "hcl": 1,
+        "heex": 121,
+        "html": 22,
+        "javascript": 105,
+        "json": 46,
+        "markdown": 17,
+        "php": 1,
+        "shell": 9,
+        "sql": 2,
+        "typescript": 142,
+        "xml": 24,
+        "yaml": 31
+      },
+      "path": "F:/Work/Projects/TestProjects/elixir-plausible",
+      "perf": {
+        "end_ws_mb": 160,
+        "files_per_sec": 45,
+        "index_duration_ms": 38266
+      },
       "project": "elixir-plausible",
-      "path": "F:/Work/Projects/TestProjects/elixir-plausible"
+      "resolution_rate": 87.35,
+      "routes": 0,
+      "symbols": 16845,
+      "unresolved_by_lang_kind": {
+        "c.type_ref": 14,
+        "elixir.calls": 3735,
+        "elixir.imports": 3,
+        "elixir.type_ref": 10125,
+        "heex.calls": 96,
+        "javascript.calls": 21,
+        "shell.calls": 1,
+        "sql.type_ref": 76,
+        "typescript.calls": 584,
+        "typescript.type_ref": 91
+      }
     },
     {
       "project": "erlang-cowboy",
@@ -572,16 +791,99 @@
       "path": "F:/Work/Projects/TestProjects/freemarker-mozilla-send"
     },
     {
+      "assertions": {
+        "min_resolution_rate": 89
+      },
+      "code_chunks": 29475,
+      "files": 547,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 2951,
+      "internal_unresolved": 331,
+      "languages": {
+        "fsharp": 161,
+        "html": 11,
+        "json": 4,
+        "markdown": 370,
+        "shell": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/fsharp-fstoolkit",
+      "perf": {
+        "end_ws_mb": 153,
+        "files_per_sec": 40,
+        "index_duration_ms": 13518
+      },
       "project": "fsharp-fstoolkit",
-      "path": "F:/Work/Projects/TestProjects/fsharp-fstoolkit"
+      "resolution_rate": 89.91,
+      "routes": 0,
+      "symbols": 11583,
+      "unresolved_by_lang_kind": {
+        "fsharp.calls": 327,
+        "fsharp.inherits": 4
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 95
+      },
+      "code_chunks": 7568,
+      "files": 61,
+      "flow_edge_types": {
+        "di_binding": 1
+      },
+      "flow_edges": 1,
+      "internal_edges": 517,
+      "internal_unresolved": 25,
+      "languages": {
+        "fsharp": 48,
+        "html": 1,
+        "json": 1,
+        "markdown": 11
+      },
+      "path": "F:/Work/Projects/TestProjects/fsharp-giraffe",
+      "perf": {
+        "end_ws_mb": 155,
+        "files_per_sec": 6,
+        "index_duration_ms": 11011
+      },
       "project": "fsharp-giraffe",
-      "path": "F:/Work/Projects/TestProjects/fsharp-giraffe"
+      "resolution_rate": 95.39,
+      "routes": 0,
+      "symbols": 3217,
+      "unresolved_by_lang_kind": {
+        "fsharp.calls": 25
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 100
+      },
+      "code_chunks": 2909,
+      "files": 75,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 188,
+      "internal_unresolved": 0,
+      "languages": {
+        "css": 10,
+        "fsharp": 23,
+        "html": 6,
+        "javascript": 2,
+        "json": 6,
+        "markdown": 25,
+        "shell": 3
+      },
+      "path": "F:/Work/Projects/TestProjects/fsharp-miniscaffold",
+      "perf": {
+        "end_ws_mb": 159,
+        "files_per_sec": 6,
+        "index_duration_ms": 11653
+      },
       "project": "fsharp-miniscaffold",
-      "path": "F:/Work/Projects/TestProjects/fsharp-miniscaffold"
+      "resolution_rate": 100.0,
+      "routes": 0,
+      "symbols": 1176,
+      "unresolved_by_lang_kind": {}
     },
     {
       "project": "full-stack-fastapi-template",
@@ -1117,20 +1419,156 @@
       "path": "F:/Work/Projects/TestProjects/nunjucks-frontend-interview-questions"
     },
     {
+      "assertions": {
+        "min_resolution_rate": 86
+      },
+      "code_chunks": 10092,
+      "files": 255,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 3353,
+      "internal_unresolved": 533,
+      "languages": {
+        "c": 12,
+        "dockerfile": 6,
+        "go": 6,
+        "json": 8,
+        "markdown": 27,
+        "ocaml": 180,
+        "shell": 9,
+        "toml": 7
+      },
+      "path": "F:/Work/Projects/TestProjects/ocaml-comby",
+      "perf": {
+        "end_ws_mb": 353,
+        "files_per_sec": 54,
+        "index_duration_ms": 4738
+      },
       "project": "ocaml-comby",
-      "path": "F:/Work/Projects/TestProjects/ocaml-comby"
+      "resolution_rate": 86.28,
+      "routes": 0,
+      "symbols": 6578,
+      "unresolved_by_lang_kind": {
+        "c.calls": 252,
+        "c.type_ref": 168,
+        "go.calls": 2,
+        "ocaml.calls": 110,
+        "shell.calls": 1
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 91
+      },
+      "code_chunks": 100545,
+      "files": 2948,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 57013,
+      "internal_unresolved": 5464,
+      "languages": {
+        "c": 60,
+        "cpp": 10,
+        "css": 3,
+        "html": 4,
+        "javascript": 10,
+        "markdown": 114,
+        "nix": 4,
+        "ocaml": 2691,
+        "puppet": 1,
+        "python": 4,
+        "shell": 45,
+        "yaml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/ocaml-dune-fresh",
+      "perf": {
+        "end_ws_mb": 208,
+        "files_per_sec": 9,
+        "index_duration_ms": 331502
+      },
       "project": "ocaml-dune-fresh",
-      "path": "F:/Work/Projects/TestProjects/ocaml-dune-fresh"
+      "resolution_rate": 91.25,
+      "routes": 0,
+      "symbols": 62560,
+      "unresolved_by_lang_kind": {
+        "c.calls": 853,
+        "c.type_ref": 217,
+        "cpp.calls": 3,
+        "cpp.type_ref": 2,
+        "nix.calls": 94,
+        "nix.imports": 13,
+        "ocaml.calls": 4261,
+        "python.calls": 1,
+        "shell.calls": 20
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 84
+      },
+      "code_chunks": 36823,
+      "files": 564,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 14797,
+      "internal_unresolved": 2802,
+      "languages": {
+        "c": 4,
+        "html": 1,
+        "markdown": 17,
+        "ocaml": 539,
+        "xml": 1,
+        "yaml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/ocaml-irmin",
+      "perf": {
+        "end_ws_mb": 212,
+        "files_per_sec": 173,
+        "index_duration_ms": 3260
+      },
       "project": "ocaml-irmin",
-      "path": "F:/Work/Projects/TestProjects/ocaml-irmin"
+      "resolution_rate": 84.08,
+      "routes": 0,
+      "symbols": 22009,
+      "unresolved_by_lang_kind": {
+        "c.calls": 228,
+        "c.type_ref": 93,
+        "html.calls": 14,
+        "html.type_ref": 5,
+        "ocaml.calls": 2462
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 88
+      },
+      "code_chunks": 5755,
+      "files": 168,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 2454,
+      "internal_unresolved": 307,
+      "languages": {
+        "c": 1,
+        "markdown": 4,
+        "ocaml": 161,
+        "shell": 1,
+        "xml": 1
+      },
+      "path": "F:/Work/Projects/TestProjects/ocaml-mirage",
+      "perf": {
+        "end_ws_mb": 139,
+        "files_per_sec": 155,
+        "index_duration_ms": 1082
+      },
       "project": "ocaml-mirage",
-      "path": "F:/Work/Projects/TestProjects/ocaml-mirage"
+      "resolution_rate": 88.88,
+      "routes": 0,
+      "symbols": 3915,
+      "unresolved_by_lang_kind": {
+        "ocaml.calls": 304,
+        "shell.calls": 3
+      }
     },
     {
       "project": "odin-compiler",
@@ -1789,16 +2227,109 @@
       "path": "F:/Work/Projects/TestProjects/vba-stdvba"
     },
     {
+      "assertions": {
+        "min_resolution_rate": 97
+      },
+      "code_chunks": 3146,
+      "files": 87,
+      "flow_edge_types": {
+        "di_binding": 7
+      },
+      "flow_edges": 7,
+      "internal_edges": 455,
+      "internal_unresolved": 13,
+      "languages": {
+        "csharp": 20,
+        "markdown": 2,
+        "vbnet": 63,
+        "xml": 2
+      },
+      "path": "F:/Work/Projects/TestProjects/vbnet-compactgui",
+      "perf": {
+        "end_ws_mb": 174,
+        "files_per_sec": 10,
+        "index_duration_ms": 8307
+      },
       "project": "vbnet-compactgui",
-      "path": "F:/Work/Projects/TestProjects/vbnet-compactgui"
+      "resolution_rate": 97.22,
+      "routes": 0,
+      "symbols": 1465,
+      "unresolved_by_lang_kind": {
+        "vbnet.imports": 13
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 100
+      },
+      "code_chunks": 121485,
+      "files": 1513,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 90500,
+      "internal_unresolved": 2,
+      "languages": {
+        "csharp": 1365,
+        "css": 1,
+        "dockerfile": 1,
+        "fsharp": 2,
+        "html": 2,
+        "javascript": 2,
+        "json": 13,
+        "jupyter": 1,
+        "markdown": 17,
+        "powershell": 10,
+        "vbnet": 11,
+        "xml": 88
+      },
+      "path": "F:/Work/Projects/TestProjects/vbnet-ilspy",
+      "perf": {
+        "end_ws_mb": 282,
+        "files_per_sec": 31,
+        "index_duration_ms": 48444
+      },
       "project": "vbnet-ilspy",
-      "path": "F:/Work/Projects/TestProjects/vbnet-ilspy"
+      "resolution_rate": 100.0,
+      "routes": 0,
+      "symbols": 55741,
+      "unresolved_by_lang_kind": {
+        "javascript.calls": 2
+      }
     },
     {
+      "assertions": {
+        "min_resolution_rate": 59
+      },
+      "code_chunks": 2701,
+      "files": 83,
+      "flow_edge_types": {},
+      "flow_edges": 0,
+      "internal_edges": 113,
+      "internal_unresolved": 76,
+      "languages": {
+        "html": 6,
+        "markdown": 13,
+        "ruby": 1,
+        "scss": 12,
+        "vba": 44,
+        "yaml": 7
+      },
+      "path": "F:/Work/Projects/TestProjects/vbnet-vbaweb",
+      "perf": {
+        "end_ws_mb": 169,
+        "files_per_sec": 54,
+        "index_duration_ms": 1546
+      },
       "project": "vbnet-vbaweb",
-      "path": "F:/Work/Projects/TestProjects/vbnet-vbaweb"
+      "resolution_rate": 59.79,
+      "routes": 0,
+      "symbols": 982,
+      "unresolved_by_lang_kind": {
+        "html.calls": 8,
+        "html.type_ref": 10,
+        "scss.inherits": 1,
+        "vba.calls": 57
+      }
     },
     {
       "project": "velocity-apache-struts",
