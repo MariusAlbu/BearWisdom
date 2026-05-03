@@ -295,10 +295,17 @@ impl LanguageResolver for RobotResolver {
                 continue;
             }
             for sym in lookup.in_file(path) {
-                if (sym.kind == SymbolKind::Function.as_str()
-                    || sym.kind == SymbolKind::Method.as_str())
-                    && sym.name == normalized_target
-                {
+                // Robot library exposure: ANY callable in the .py file is
+                // potentially a robot keyword, regardless of how the
+                // Python extractor classified it. The Python plugin tags
+                // methods named `test_*` as `Test` (pytest convention),
+                // but inside a TestCheckerLibrary-style helper module
+                // they're actually keyword implementations.
+                let is_callable = matches!(
+                    sym.kind.as_str(),
+                    "function" | "method" | "test"
+                );
+                if is_callable && sym.name == normalized_target {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
