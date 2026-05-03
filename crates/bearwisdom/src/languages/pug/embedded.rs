@@ -175,12 +175,24 @@ fn find_inline_equals_expr(trimmed: &str) -> Option<&str> {
     }
 }
 
+// View-runtime locals every Pug embedded region inherits from the host
+// rendering layer. Express + the `i18n` npm package patches `res.locals`
+// with `__`, `__n`, `__l`, `__mf`, `__h` before the template is rendered,
+// so Pug expressions like `#{__('Welcome')}` reference helpers that are
+// in scope at render time but never appear as importable identifiers in
+// the project. Declaring stub bindings inside the wrapper function gives
+// the JS resolver a same-scope local to bind the call to, suppressing
+// the unresolved-Calls noise without hand-maintaining a builtin list.
+const VIEW_RUNTIME_LOCALS: &str =
+    "var __ = (s) => s; var __n = (s,p,n) => s; var __l = (s) => [s]; \
+     var __mf = (s,v) => s; var __h = (s) => s;";
+
 fn make_js(expr: &str, line_no: u32, col: u32, idx: u32, wrap_return: bool) -> EmbeddedRegion {
     let code = expr.trim();
     let text = if wrap_return {
-        format!("function __PugExpr{idx}() {{ return ({code}); }}\n")
+        format!("function __PugExpr{idx}() {{ {VIEW_RUNTIME_LOCALS} return ({code}); }}\n")
     } else {
-        format!("function __PugCode{idx}() {{ {code} }}\n")
+        format!("function __PugCode{idx}() {{ {VIEW_RUNTIME_LOCALS} {code} }}\n")
     };
     EmbeddedRegion {
         language_id: "javascript".to_string(),
@@ -224,7 +236,7 @@ fn collect_hash_interpolations(
                         regions.push(EmbeddedRegion {
                             language_id: "javascript".to_string(),
                             text: format!(
-                                "function __PugInterp{idx}() {{ return ({trimmed}); }}\n",
+                                "function __PugInterp{idx}() {{ {VIEW_RUNTIME_LOCALS} return ({trimmed}); }}\n",
                                 idx = *idx
                             ),
                             line_offset: line_no,
@@ -245,39 +257,5 @@ fn collect_hash_interpolations(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dash_code_line_becomes_js_region() {
-        let src = "- const x = getUser()\nh1= x.name\n";
-        let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("getUser")));
-    }
-
-    #[test]
-    fn eq_expression_becomes_js_region() {
-        let src = "h1= userName\n";
-        let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("userName")));
-    }
-
-    #[test]
-    fn hash_interpolation_becomes_js_region() {
-        let src = "p Hello #{userName}!\n";
-        let regions = detect_regions(src);
-        assert!(regions.iter().any(|r| r.text.contains("userName")));
-    }
-
-    #[test]
-    fn script_block_captures_body() {
-        let src = "script.\n  console.log(hello)\n  const x = 1\np text\n";
-        let regions = detect_regions(src);
-        let script = regions
-            .iter()
-            .find(|r| r.origin == EmbeddedOrigin::ScriptBlock)
-            .unwrap();
-        assert!(script.text.contains("console.log"));
-        assert!(script.text.contains("const x"));
-    }
-}
+#[path = "embedded_tests.rs"]
+mod tests;
