@@ -44,6 +44,15 @@ pub struct RobotPythonLibrary {
 /// tests that don't pull in helper resources.
 pub type RobotLibraryMap = HashMap<String, Vec<RobotPythonLibrary>>;
 
+/// Project-wide map: basename of a `.robot`/`.resource` file → its
+/// project-relative full path. The Robot extractor stores the bare
+/// filename from `Resource    atest_resource.robot`; without this map
+/// the resolver can't call `lookup.in_file(...)` because indexed files
+/// use full paths (`atest/resources/atest_resource.robot`).
+///
+/// Built once per index pass in `build_robot_resource_basename_map`.
+pub type RobotResourceBasenameMap = HashMap<String, String>;
+
 /// Library names that Robot Framework imports implicitly into every
 /// suite/resource, with no explicit `Library  <name>` declaration.
 ///
@@ -190,6 +199,45 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
         }
     }
     result
+}
+
+/// Walk parsed files and build a `basename → full_path` map for every
+/// indexed `.robot`/`.resource` file. Used by `RobotResolver` to rewrite
+/// `Resource    atest_resource.robot` (basename) into
+/// `atest/resources/atest_resource.robot` (full path) before calling
+/// `lookup.in_file(...)`.
+///
+/// When two project files share a basename, the lexicographically-first
+/// one wins so the choice is stable across runs. (Real-world projects
+/// almost never have basename collisions for resource files; if they do,
+/// the right answer needs a same-importer-dir tie-break which the
+/// build-time map can't provide.)
+pub fn build_robot_resource_basename_map(parsed: &[ParsedFile]) -> RobotResourceBasenameMap {
+    let mut map: RobotResourceBasenameMap = HashMap::new();
+    for pf in parsed {
+        if pf.path.starts_with("ext:") {
+            continue;
+        }
+        if !pf.path.ends_with(".robot") && !pf.path.ends_with(".resource") {
+            continue;
+        }
+        let Some(basename) = std::path::Path::new(&pf.path)
+            .file_name()
+            .and_then(|n| n.to_str())
+        else {
+            continue;
+        };
+        match map.get(basename) {
+            None => {
+                map.insert(basename.to_string(), pf.path.clone());
+            }
+            Some(existing) if pf.path < *existing => {
+                map.insert(basename.to_string(), pf.path.clone());
+            }
+            _ => {}
+        }
+    }
+    map
 }
 
 /// Resolve a `Library  <name>` entry to a project `.py` file path.

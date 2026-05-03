@@ -1,4 +1,6 @@
-use super::library_map::{build_robot_library_map, RobotPythonLibrary};
+use super::library_map::{
+    build_robot_library_map, build_robot_resource_basename_map, RobotPythonLibrary,
+};
 use crate::types::{
     EdgeKind, ExtractedRef, FlowMeta, ParsedFile,
 };
@@ -205,6 +207,37 @@ fn no_builtin_py_means_no_auto_import() {
         map.get("tests/no_imports.robot").is_none(),
         "no .py files in project ⇒ no library entry at all"
     );
+}
+
+#[test]
+fn basename_map_resolves_resource_imports_to_full_paths() {
+    let parsed = vec![
+        pf("atest/resources/atest_resource.robot", Vec::new()),
+        pf("atest/robot/output/foo.robot", Vec::new()),
+    ];
+    let map = build_robot_resource_basename_map(&parsed);
+    assert_eq!(
+        map.get("atest_resource.robot"),
+        Some(&"atest/resources/atest_resource.robot".to_string()),
+    );
+    assert_eq!(
+        map.get("foo.robot"),
+        Some(&"atest/robot/output/foo.robot".to_string()),
+    );
+}
+
+#[test]
+fn basename_map_breaks_ties_lexicographically() {
+    // Two project files with the same basename — pick the earlier path
+    // (deterministic tie-break) when build_file_context can't supply
+    // an importer-dir hint.
+    let parsed = vec![
+        pf("vendor/helpers.robot", Vec::new()),
+        pf("atest/resources/helpers.robot", Vec::new()),
+    ];
+    let map = build_robot_resource_basename_map(&parsed);
+    assert_eq!(map.get("helpers.robot"), Some(&"atest/resources/helpers.robot".to_string()),
+        "lex-first wins; got {map:?}");
 }
 
 #[test]

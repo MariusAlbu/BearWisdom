@@ -19,7 +19,7 @@ use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManife
 use crate::ecosystem::{
     self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
 };
-use crate::languages::robot::library_map::RobotLibraryMap;
+use crate::languages::robot::library_map::{RobotLibraryMap, RobotResourceBasenameMap};
 use crate::languages::vue::global_registry::VueGlobalRegistry;
 use crate::types::PackageInfo;
 
@@ -155,6 +155,14 @@ pub struct ProjectContext {
     /// `Default` leaves this empty; the full indexer populates it after
     /// parsing via `languages::robot::library_map::build_robot_library_map`.
     pub robot_library_map: RobotLibraryMap,
+
+    /// Robot Framework: project-wide map from `.robot`/`.resource`
+    /// basename to its indexed full path. The extractor can only see the
+    /// bare filename in `Resource    atest_resource.robot`; the resolver
+    /// uses this map to translate to the indexed path before calling
+    /// `lookup.in_file(...)`. Without it, every cross-file Resource
+    /// import silently misses Step 4.
+    pub robot_resource_basenames: RobotResourceBasenameMap,
 }
 
 // ---------------------------------------------------------------------------
@@ -184,6 +192,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         language_presence: HashSet::new(),
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
+        robot_resource_basenames: RobotResourceBasenameMap::default(),
     }
 }
 
@@ -280,6 +289,7 @@ pub fn build_project_context_with_packages(
         language_presence: HashSet::new(),
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
+        robot_resource_basenames: RobotResourceBasenameMap::default(),
     }
 }
 

@@ -117,15 +117,27 @@ impl LanguageResolver for RobotResolver {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
-            let path = r.module.as_deref().unwrap_or(&r.target_name);
-            // Resource / Variables imports are file-based — follow them for wildcard lookup.
-            // Library imports are external packages — mark is_wildcard=false so resolve_common
-            // step 2 doesn't incorrectly try to find library keywords in project files.
+            let raw_path = r.module.as_deref().unwrap_or(&r.target_name);
             let is_file_import =
-                path.ends_with(".robot") || path.ends_with(".resource");
+                raw_path.ends_with(".robot") || raw_path.ends_with(".resource");
+
+            // Rewrite resource basenames to indexed full paths so Step 4's
+            // `lookup.in_file()` can find the symbols. Without this the
+            // extractor's bare `atest_resource.robot` never matches the
+            // indexed `atest/resources/atest_resource.robot` path and
+            // every cross-file resource keyword call falls through to
+            // Step 5 (which often loses to ambiguity).
+            let resolved_path = if is_file_import {
+                project_ctx
+                    .and_then(|ctx| ctx.robot_resource_basenames.get(raw_path).cloned())
+                    .unwrap_or_else(|| raw_path.to_string())
+            } else {
+                raw_path.to_string()
+            };
+
             imports.push(ImportEntry {
                 imported_name: r.target_name.clone(),
-                module_path: r.module.clone().or_else(|| Some(r.target_name.clone())),
+                module_path: Some(resolved_path),
                 alias: None,
                 is_wildcard: is_file_import,
             });

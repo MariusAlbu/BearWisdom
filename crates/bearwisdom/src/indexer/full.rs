@@ -484,6 +484,12 @@ pub fn full_index(
             );
         }
         project_ctx.robot_library_map = robot_map;
+
+        // Resource basename → full-path map. Pairs with the library_map so
+        // RobotResolver can translate `Resource    atest_resource.robot`
+        // (basename) into a path that `lookup.in_file()` can use.
+        project_ctx.robot_resource_basenames =
+            crate::languages::robot::library_map::build_robot_resource_basename_map(&parsed);
     }
     mem_probe::probe("04_project_ctx_built");
 

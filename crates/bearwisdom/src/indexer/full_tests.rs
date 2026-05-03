@@ -94,6 +94,7 @@ namespace App {
             language_presence: Default::default(),
             vue_global_registry: Default::default(),
             robot_library_map: Default::default(),
+            robot_resource_basenames: Default::default(),
         };
         let rows = collect_package_dep_rows(&ctx);
         assert_eq!(rows.len(), 3, "expected 3 dep rows, got {rows:?}");
