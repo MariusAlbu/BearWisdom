@@ -10,6 +10,12 @@ use std::sync::Arc;
 
 use crate::services::ServiceCache;
 
+/// Throttle for the opportunistic stale-sweep called from every tool
+/// entry. 60s lets the file-watcher catch up on its own under burst
+/// loads while ensuring any miss surfaces within ~2 minutes of the
+/// next tool call. See `IndexService::try_spawn_sweep`.
+const STALE_SWEEP_THROTTLE_MS: i64 = 60_000;
+
 /// Format a structured JSON error response for MCP tool calls.
 fn error_response(code: &str, message: &str) -> String {
     serde_json::json!({
@@ -500,6 +506,10 @@ impl BearWisdomServer {
                 return e;
             }
         };
+        // Safety net for missed file-watcher events: opportunistically kick
+        // off a catch-up reindex on a background thread (throttled, never
+        // blocks this call). See `IndexService::try_spawn_sweep`.
+        let _ = service.try_spawn_sweep(STALE_SWEEP_THROTTLE_MS);
         let db = match service.pool().get() {
             Ok(d) => d,
             Err(e) => {
@@ -533,6 +543,7 @@ impl BearWisdomServer {
                 return e;
             }
         };
+        let _ = service.try_spawn_sweep(STALE_SWEEP_THROTTLE_MS);
         // Best-effort freshness read; silently skip if pool unavailable.
         let last_indexed = service
             .pool()

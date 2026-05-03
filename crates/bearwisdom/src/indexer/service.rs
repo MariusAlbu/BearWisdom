@@ -16,7 +16,8 @@
 // =============================================================================
 
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
+use std::sync::atomic::{AtomicI64, Ordering};
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
@@ -123,6 +124,14 @@ pub struct IndexService {
     project_root: PathBuf,
     /// Watcher handle. Drop stops the watcher and joins the worker thread.
     _watcher: Option<WatcherHandle>,
+    /// Wall-clock unix-ms of the last completed opportunistic sweep.
+    /// `0` until the first sweep finishes. Read/written by
+    /// `try_spawn_sweep`; the watcher path doesn't touch it.
+    last_sweep_at_ms: AtomicI64,
+    /// `1` while a sweep thread is running, `0` otherwise. Used as a
+    /// CAS-acquired flag so multiple tool calls in the same throttle
+    /// window don't stack reindex threads on top of each other.
+    sweep_in_flight: AtomicI64,
 }
 
 /// Outcome of a `reindex_now` call. Carries the strategy chosen and the
@@ -156,7 +165,76 @@ impl IndexService {
             pool,
             project_root,
             _watcher: watcher,
+            last_sweep_at_ms: AtomicI64::new(0),
+            sweep_in_flight: AtomicI64::new(0),
         })
+    }
+
+    /// Best-effort opportunistic catch-up reindex. Spawns a thread that
+    /// calls `reindex_now` if and only if **both**:
+    ///   * the last completed sweep was more than `throttle_ms` ago, AND
+    ///   * no other sweep is currently in flight.
+    ///
+    /// Returns `true` if a sweep was launched, `false` otherwise.
+    /// The current call **never blocks** on the sweep — the next tool
+    /// invocation sees the fresh state.
+    ///
+    /// Called from the MCP query path on every tool entry as a safety
+    /// net for missed file-watcher events (network drives, OS handle
+    /// caps, the watcher being paused). When the watcher is healthy and
+    /// nothing changed, `reindex_now` is cheap (a single git diff vs
+    /// the indexed commit).
+    ///
+    /// Requires `Arc<Self>` because the spawned thread needs to clone
+    /// the service into its closure.
+    pub fn try_spawn_sweep(self: &Arc<Self>, throttle_ms: i64) -> bool {
+        let now = now_ms();
+        let last = self.last_sweep_at_ms.load(Ordering::Relaxed);
+        if now.saturating_sub(last) < throttle_ms {
+            return false;
+        }
+        if self
+            .sweep_in_flight
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Relaxed)
+            .is_err()
+        {
+            return false;
+        }
+        let me = Arc::clone(self);
+        let spawned = thread::Builder::new()
+            .name("bw-stale-sweep".into())
+            .spawn(move || {
+                match me.reindex_now() {
+                    Ok(ReindexStats::Full(s)) => debug!(
+                        "stale-sweep: full reindex finished in {}ms ({} files, {} symbols)",
+                        s.duration_ms, s.file_count, s.symbol_count
+                    ),
+                    Ok(ReindexStats::Incremental(s)) => {
+                        if s.files_added + s.files_modified + s.files_deleted > 0 {
+                            info!(
+                                "stale-sweep: caught watcher miss — +{} ~{} -{} files reindexed in {}ms",
+                                s.files_added, s.files_modified, s.files_deleted, s.duration_ms
+                            );
+                        } else {
+                            debug!(
+                                "stale-sweep: nothing changed (incremental in {}ms)",
+                                s.duration_ms
+                            );
+                        }
+                    }
+                    Err(e) => warn!("stale-sweep: reindex_now error: {e:#}"),
+                }
+                me.last_sweep_at_ms.store(now_ms(), Ordering::Relaxed);
+                me.sweep_in_flight.store(0, Ordering::Relaxed);
+            })
+            .is_ok();
+        if !spawned {
+            // Spawn failed — release the in-flight flag so we'll try again
+            // on the next call instead of latching the gate forever.
+            self.sweep_in_flight.store(0, Ordering::Relaxed);
+            return false;
+        }
+        true
     }
 
     /// Pool of SQLite connections shared with query consumers.

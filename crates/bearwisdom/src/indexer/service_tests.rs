@@ -126,6 +126,42 @@ fn watcher_thread_starts_and_stops_cleanly() {
     drop(service);
 }
 
+/// `try_spawn_sweep` honours both the throttle window and the in-flight
+/// gate so multiple back-to-back tool calls never stack background reindex
+/// threads on top of each other.
+#[test]
+fn try_spawn_sweep_respects_throttle_and_in_flight_flag() {
+    use std::sync::Arc;
+    let dir = make_minimal_project();
+    let svc = Arc::new(open_no_watch(dir.path()));
+    // Run an initial reindex so the next sweep takes the (cheap)
+    // git-incremental path instead of the (slow) full path.
+    svc.reindex_now().expect("seed index");
+
+    // First call with a long throttle should launch (last_sweep_at_ms is 0,
+    // anything beats `now - 0 < throttle` only if throttle covers the wall
+    // clock — `i64::MAX` here just guarantees the first one fires).
+    assert!(svc.try_spawn_sweep(0), "first sweep must launch");
+
+    // Immediate follow-up: the in-flight flag is set OR the throttle is
+    // honoured. Either way, no second thread should be spawned.
+    assert!(!svc.try_spawn_sweep(60_000),
+        "second sweep within throttle must be a no-op");
+
+    // Wait for the spawned thread to release the in-flight flag.
+    for _ in 0..50 {
+        if svc
+            .try_spawn_sweep(0) // bypass throttle but keep in-flight check
+        {
+            // Successfully launched again — that means the previous one
+            // completed and released the gate. Done.
+            return;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    panic!("sweep thread did not release in-flight flag within 2.5s");
+}
+
 /// The watcher's source-extension allowlist must be derived from the
 /// language registry, not a hand-maintained constant — otherwise edits to
 /// any language outside the legacy 36-entry list (clojure, fortran, ada,
