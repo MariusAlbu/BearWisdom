@@ -170,7 +170,16 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
         }
         let mut all: Vec<RobotPythonLibrary> = auto_libs.clone();
         for lib in direct_libs.get(pf.path.as_str()).into_iter().flatten() {
-            if !all.iter().any(|l| l.py_file_path == lib.py_file_path) {
+            // Dedup by `(library_name, py_file_path)` pair. Robot libraries
+            // can share a `.py` file under different names — `Library
+            // libraryscope.Global` and `Library libraryscope.Suite` both
+            // resolve to libraryscope.py via the dotted-fallback. Earlier
+            // dedup-by-path lost every entry past the first, so qualified
+            // calls like `libraryscope.Suite.Should Be Registered` had no
+            // matching import to anchor `is_library_import` against.
+            if !all.iter().any(|l| {
+                l.library_name == lib.library_name && l.py_file_path == lib.py_file_path
+            }) {
                 all.push(lib.clone());
             }
         }
@@ -185,7 +194,12 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
             }
             if let Some(libs) = direct_libs.get(res.as_str()) {
                 for lib in libs {
-                    if !all.iter().any(|l| l.py_file_path == lib.py_file_path) {
+                    // Dedup by `(library_name, py_file_path)`; multiple
+                    // dotted Library imports map to the same `.py` file.
+                    if !all.iter().any(|l| {
+                        l.library_name == lib.library_name
+                            && l.py_file_path == lib.py_file_path
+                    }) {
                         all.push(lib.clone());
                     }
                 }
