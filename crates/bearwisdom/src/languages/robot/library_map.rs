@@ -252,16 +252,35 @@ fn resolve_library_to_py(
     importer_path: &str,
     py_paths: &[&str],
 ) -> Option<String> {
-    let target: String = if library_name.ends_with(".py") {
+    if library_name.ends_with(".py") {
         // Already a full basename — use it directly. Stripping the `.py`
         // first would reduce `KeywordDecorator.py` to `py` (the literal
         // last `.`-segment) and search for `py.py`, which never exists.
-        library_name.to_string()
-    } else {
-        let stem = library_name.rsplit('.').next().unwrap_or(library_name);
-        format!("{stem}.py")
-    };
-    pick_best_match(&target, importer_path, py_paths)
+        return pick_best_match(library_name, importer_path, py_paths);
+    }
+    // Two interpretations of `pkg.subpkg.MyLib` — try them in order:
+    //   1. Last segment IS the module: `MyLib.py`. Common for
+    //      `package_name.module_basename`.
+    //   2. First segment IS the module, later segments are dotted attr
+    //      access into the module's contents: `Library  libraryscope.Global`
+    //      means import module `libraryscope`, then keywords come from
+    //      class `Global` inside it. The .py file is `libraryscope.py`.
+    // We accept either match — Robot itself accepts whichever Python
+    // interprets first, and our library_map only needs to find the file
+    // so the resolver can flag the call as a known external library.
+    let last_seg = library_name.rsplit('.').next().unwrap_or(library_name);
+    let last_target = format!("{last_seg}.py");
+    if let Some(p) = pick_best_match(&last_target, importer_path, py_paths) {
+        return Some(p);
+    }
+    let first_seg = library_name.split('.').next().unwrap_or(library_name);
+    if first_seg != last_seg {
+        let first_target = format!("{first_seg}.py");
+        if let Some(p) = pick_best_match(&first_target, importer_path, py_paths) {
+            return Some(p);
+        }
+    }
+    None
 }
 
 /// Resolve a Resource basename (`atest_resource.robot`) to its full

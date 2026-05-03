@@ -160,11 +160,25 @@ fn scan_class_body(
     // can iterate them. Includes both bare and decorated definitions.
     let method_names = collect_class_method_names(&body, src);
 
+    // Hybrid-library shape: classes that define `get_keyword_names` and
+    // expose keywords through a side dict like
+    // `keywords = {"Args Should Have Been": [...], ...}`. The dict's
+    // attribute name varies (`keywords`, `KEYWORDS`, `_keywords`,
+    // `_kw_table`, ...), so when the class has `get_keyword_names`, treat
+    // any class-level string-keyed dict literal as a keyword source. The
+    // false-positive risk is contained to dynamic-library classes —
+    // ordinary Python classes don't hit this branch.
+    let has_get_keyword_names = method_names.iter().any(|m| m == "get_keyword_names");
+
     let mut cursor = body.walk();
     for stmt in body.children(&mut cursor) {
         match stmt.kind() {
             "expression_statement" => {
-                scan_top_level_assignment(&stmt, src, class_name, out);
+                if has_get_keyword_names {
+                    scan_class_dict_assignment(&stmt, src, class_name, out);
+                } else {
+                    scan_top_level_assignment(&stmt, src, class_name, out);
+                }
             }
             "function_definition" => {
                 scan_get_keyword_names_fn(&stmt, src, class_name, &method_names, out);
@@ -181,6 +195,27 @@ fn scan_class_body(
             _ => {}
         }
     }
+}
+
+/// Permissive variant of `scan_top_level_assignment` for use inside a
+/// class that defines `get_keyword_names`. Accepts any identifier on
+/// the left side as long as the right is a string-keyed dict literal.
+fn scan_class_dict_assignment(
+    stmt: &Node,
+    src: &[u8],
+    class_name: Option<&str>,
+    out: &mut Vec<RobotDynamicKeyword>,
+) {
+    let Some(asn) = first_child_of_kind(stmt, "assignment") else { return };
+    let Some(left) = asn.child_by_field_name("left") else { return };
+    if left.kind() != "identifier" {
+        return;
+    }
+    let Some(right) = asn.child_by_field_name("right") else { return };
+    if right.kind() != "dictionary" {
+        return;
+    }
+    collect_dict_string_keys(&right, src, class_name, out);
 }
 
 fn collect_class_method_names(body: &Node, src: &[u8]) -> Vec<String> {

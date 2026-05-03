@@ -207,6 +207,46 @@ class DynamicLib:
 }
 
 #[test]
+fn class_attribute_dict_with_lowercase_name_is_recognized() {
+    // Faithful copy of robot-framework's
+    // atest/testdata/keywords/named_only_args/DynamicKwOnlyArgs.py — the
+    // dict is named `keywords` (lowercase) and lives inside the class.
+    let src = r#"
+class DynamicKwOnlyArgs:
+    keywords = {
+        "Args Should Have Been": ["*args", "**kwargs"],
+        "Kw Only Arg": ["*", "kwo"],
+    }
+
+    def get_keyword_names(self):
+        return list(self.keywords)
+
+    def run_keyword(self, name, args, kwargs):
+        pass
+"#;
+    let map = run(&[("kw.py", src)]);
+    let kws = map.get("kw.py").expect("kw.py present");
+    let names: Vec<&str> = kws.iter().map(|k| k.normalized_name.as_str()).collect();
+    assert!(names.contains(&"argsshouldhavebeen"), "names={names:?}");
+    assert!(names.contains(&"kwonlyarg"), "names={names:?}");
+}
+
+#[test]
+fn class_dict_recognition_is_gated_by_get_keyword_names() {
+    // Without `get_keyword_names`, ordinary string-keyed class-level
+    // dicts must NOT be treated as dynamic keywords — otherwise every
+    // Python class with a config dict pollutes the map.
+    let src = r#"
+class NotARobotLibrary:
+    config = {"ignore_me": 1, "and_me": 2}
+    def regular_method(self):
+        return self.config
+"#;
+    let map = run(&[("plain.py", src)]);
+    assert!(map.is_empty(), "got {map:?}");
+}
+
+#[test]
 fn handles_real_keywords_dict_with_complex_values() {
     // Faithful copy of robot-framework's
     // atest/testdata/keywords/named_args/DynamicWithoutKwargs.py — the
