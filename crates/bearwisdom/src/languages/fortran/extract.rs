@@ -134,6 +134,32 @@ fn walk_node(
                 walk_children(node, src, symbols, refs, parent_idx);
             }
         }
+        "interface" => {
+            // Named generic interface: `interface moment ... end interface`.
+            // Acts as a function alias / overload set — callers reference
+            // `moment` and Fortran dispatches at runtime to one of the
+            // type-specific procedures inside the block. Emit the generic
+            // name so cross-file callers can resolve to it.
+            //
+            // Anonymous `interface ... end interface` blocks (without a
+            // name) declare external procedure prototypes — their inner
+            // function/subroutine statements are walked by the normal
+            // recursion. Skip the symbol push for those.
+            if let Some(name) = find_interface_name(node, src) {
+                if !name.is_empty() {
+                    let idx = push_sym(
+                        node,
+                        name,
+                        SymbolKind::Function,
+                        symbols,
+                        parent_idx,
+                    );
+                    walk_children(node, src, symbols, refs, Some(idx));
+                    return;
+                }
+            }
+            walk_children(node, src, symbols, refs, parent_idx);
+        }
         "variable_declaration" => {
             // Emit Variable symbols only at module/program/submodule scope
             // (parent_idx points to a Namespace/Function entry point).
@@ -332,6 +358,41 @@ fn find_program_name(node: Node, src: &[u8]) -> Option<String> {
                     }
                 }
             }
+        }
+    }
+    None
+}
+
+/// Interface block name: `interface NAME ... end interface NAME`.
+///
+/// tree-sitter-fortran wraps the whole construct in an `interface` node.
+/// The optional name lives on an `interface_statement` child whose
+/// `name` field (or first `name`/`identifier` named child) carries the
+/// generic. Anonymous `interface` (procedure-prototype declaration form)
+/// has no name child — the caller skips the symbol push and walks the
+/// inner function/subroutine declarations as normal.
+fn find_interface_name(node: Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() == "interface_statement" {
+            // Try the `name` field first (newer grammar versions).
+            if let Some(name_node) = child.child_by_field_name("name") {
+                let n = text(name_node, src);
+                if !n.is_empty() {
+                    return Some(n);
+                }
+            }
+            // Fallback: first `name` or `identifier` named child.
+            let mut c2 = child.walk();
+            for gc in child.children(&mut c2) {
+                if matches!(gc.kind(), "name" | "identifier") {
+                    let n = text(gc, src);
+                    if !n.is_empty() {
+                        return Some(n);
+                    }
+                }
+            }
+            return None;
         }
     }
     None

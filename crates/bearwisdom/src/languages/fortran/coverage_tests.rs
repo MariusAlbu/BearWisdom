@@ -252,6 +252,54 @@ fn symbol_derived_type_with_extends() {
 }
 
 // ---------------------------------------------------------------------------
+// Generic interface blocks — emit the public name as a Function symbol
+// ---------------------------------------------------------------------------
+
+/// `interface moment ... end interface moment` declares `moment` as a
+/// generic procedure name that Fortran dispatches at runtime to one of
+/// the type-specific procedures inside. Cross-file callers reference
+/// the generic name; the resolver needs an indexed Function symbol to
+/// match against.
+///
+/// Real-world driver: stdlib_stats's `interface moment`/`mean`/`var`/
+/// `cov`/`corr` blocks are how the library exposes its public API.
+#[test]
+fn named_generic_interface_emits_function_symbol() {
+    let src = "module mymod\n  implicit none\n  interface moment\n    module function moment_real(x) result(r)\n      real :: x, r\n    end function moment_real\n  end interface moment\nend module mymod\n";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "moment" && s.kind == SymbolKind::Function),
+        "expected Function `moment` from interface block; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    // The inner module function is still extracted via normal recursion.
+    assert!(
+        r.symbols.iter().any(|s| s.name == "moment_real" && s.kind == SymbolKind::Function),
+        "inner type-specific procedure must also be present; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+/// Anonymous `interface ... end interface` (procedure-prototype form) has
+/// no name — the inner function/subroutine statements should still be
+/// walked but no synthetic interface symbol is emitted.
+#[test]
+fn anonymous_interface_does_not_emit_unnamed_symbol() {
+    let src = "module mymod\n  interface\n    function ext_proc(x) result(r)\n      integer :: x, r\n    end function ext_proc\n  end interface\nend module mymod\n";
+    let r = extract(src);
+    assert!(
+        r.symbols.iter().any(|s| s.name == "ext_proc"),
+        "inner prototype function must be extracted; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+    assert!(
+        !r.symbols.iter().any(|s| s.name.is_empty()),
+        "no empty-name symbol may be emitted from anonymous interface; got {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
+    );
+}
+
+// ---------------------------------------------------------------------------
 // .fypp recovery: string literals must never become Calls refs
 // ---------------------------------------------------------------------------
 
