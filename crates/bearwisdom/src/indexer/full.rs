@@ -500,10 +500,13 @@ pub fn full_index(
             }
         }
         let library_paths_vec: Vec<&str> = library_paths.iter().copied().collect();
+        // Library paths in `parsed` are relative to the project root; the
+        // disk reader must rejoin with `project_root` because the indexer's
+        // cwd isn't guaranteed to match (CLI may be invoked from anywhere).
         let dyn_kw_map =
             crate::languages::robot::dynamic_keywords::build_robot_dynamic_keyword_map(
                 &library_paths_vec,
-                |path| std::fs::read_to_string(path).ok(),
+                |path| std::fs::read_to_string(project_root.join(path)).ok(),
             );
         if !dyn_kw_map.is_empty() {
             info!(

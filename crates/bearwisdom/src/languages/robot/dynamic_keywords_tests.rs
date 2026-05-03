@@ -203,6 +203,47 @@ class DynamicLib:
 }
 
 #[test]
+fn handles_real_keywords_dict_with_complex_values() {
+    // Faithful copy of robot-framework's
+    // atest/testdata/keywords/named_args/DynamicWithoutKwargs.py — the
+    // dict has tuple values, escapes, and a unicode key.
+    let src = r#"from helper import pretty
+
+KEYWORDS = {
+    "One Arg": ["arg"],
+    "Two Args": ["first", "second"],
+    "Four Args": ["a=1", ("b", "2"), ("c", 3), ("d", 4)],
+    "Defaults w/ Specials": ["a=${notvar}", "b=\n", "c=\\n", "d=\\"],
+    "Args & Varargs": ["a", "b=default", "*varargs"],
+    "Nön-ÄSCII names": ["nönäscii", "官话"],
+}
+
+
+class DynamicWithoutKwargs:
+
+    def __init__(self, **extra):
+        self.keywords = dict(KEYWORDS, **extra)
+
+    def get_keyword_names(self):
+        return self.keywords.keys()
+"#;
+    let map = run(&[("real.py", src)]);
+    let kws = map.get("real.py").expect("real.py present");
+    let names: Vec<&str> = kws.iter().map(|k| k.normalized_name.as_str()).collect();
+    for expected in [
+        "one_arg",
+        "two_args",
+        "four_args",
+        "args_&_varargs",
+    ] {
+        assert!(
+            names.contains(&expected),
+            "expected '{expected}' in {names:?}"
+        );
+    }
+}
+
+#[test]
 fn dir_other_object_is_ignored() {
     // `dir(other_obj)` (not `dir(self)`) doesn't enumerate the class —
     // we'd have no idea what methods to emit. Bail rather than guess.
