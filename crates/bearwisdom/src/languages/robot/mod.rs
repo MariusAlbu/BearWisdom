@@ -7,6 +7,7 @@
 pub mod keywords;
 pub mod extract;
 pub mod library_map;
+pub mod dynamic_keywords;
 pub mod resolve;
 mod predicates;
 pub(crate) mod type_checker;

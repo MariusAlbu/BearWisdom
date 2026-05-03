@@ -157,6 +157,13 @@ impl LanguageResolver for RobotResolver {
         // resolve step uses these to walk Python methods imported via a
         // `Library` directive (possibly several Resource hops away). See
         // `library_map::build_robot_library_map`.
+        //
+        // Each Library import additionally contributes one
+        // `is_wildcard=false` ImportEntry per dynamic keyword exposed by
+        // its `.py` file (KEYWORDS dict keys / get_keyword_names list
+        // items). The resolver's Step 4.6 walks these to reach keywords
+        // that have no `def name():` declaration in source. See
+        // `dynamic_keywords::build_robot_dynamic_keyword_map`.
         if let Some(ctx) = project_ctx {
             if let Some(libs) = ctx.robot_library_map.get(&file.path) {
                 for lib in libs {
@@ -166,6 +173,20 @@ impl LanguageResolver for RobotResolver {
                         alias: None,
                         is_wildcard: true,
                     });
+
+                    if let Some(dyn_kws) = ctx
+                        .robot_dynamic_keywords
+                        .get(&lib.py_file_path)
+                    {
+                        for kw in dyn_kws {
+                            imports.push(ImportEntry {
+                                imported_name: kw.normalized_name.clone(),
+                                module_path: Some(lib.py_file_path.clone()),
+                                alias: kw.class_name.clone(),
+                                is_wildcard: false,
+                            });
+                        }
+                    }
                 }
             }
         }
@@ -291,7 +312,10 @@ impl LanguageResolver for RobotResolver {
             let Some(path) = &import.module_path else {
                 continue;
             };
-            if !path.ends_with(".py") {
+            // Only the wildcard Library entry triggers the file-wide method
+            // scan; the per-keyword non-wildcard entries plumbed for
+            // Step 4.6 would re-walk the same file once per keyword.
+            if !path.ends_with(".py") || !import.is_wildcard {
                 continue;
             }
             for sym in lookup.in_file(path) {
@@ -316,6 +340,53 @@ impl LanguageResolver for RobotResolver {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
                         strategy: "robot_python_library",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+        }
+
+        // Step 4.6: Robot dynamic libraries — `KEYWORDS = {...}` dicts and
+        // `get_keyword_names` list-literal returns expose keyword names
+        // that aren't Python identifiers, so Step 4.5's `def name():`
+        // scan can't see them. The pre-pass populates non-wildcard `.py`
+        // ImportEntries where `imported_name` is the normalised keyword
+        // and `alias` is the owning class (or `None` for module-level
+        // KEYWORDS). Resolution targets the matching class symbol so
+        // the edge points at a real definition site even though dynamic
+        // dispatch happens at runtime.
+        for import in &file_ctx.imports {
+            let Some(path) = &import.module_path else { continue };
+            if !path.ends_with(".py") || import.is_wildcard {
+                continue;
+            }
+            if import.imported_name != normalized_target {
+                continue;
+            }
+            let target_class = import.alias.as_deref();
+            // Prefer the explicitly-named owning class.
+            if let Some(class_name) = target_class {
+                for sym in lookup.in_file(path) {
+                    if sym.kind == SymbolKind::Class.as_str() && sym.name == class_name {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.85,
+                            strategy: "robot_dynamic_library",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+            // Fallback: pick the first class symbol in the file. Module-
+            // level `KEYWORDS = {...}` has no owning class to anchor the
+            // resolution; the file's primary class is the closest legal
+            // target.
+            for sym in lookup.in_file(path) {
+                if sym.kind == SymbolKind::Class.as_str() {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.75,
+                        strategy: "robot_dynamic_library_fallback",
                         resolved_yield_type: None,
                     });
                 }

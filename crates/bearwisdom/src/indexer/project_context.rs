@@ -19,6 +19,7 @@ use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManife
 use crate::ecosystem::{
     self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
 };
+use crate::languages::robot::dynamic_keywords::RobotDynamicKeywordMap;
 use crate::languages::robot::library_map::{RobotLibraryMap, RobotResourceBasenameMap};
 use crate::languages::vue::global_registry::VueGlobalRegistry;
 use crate::types::PackageInfo;
@@ -163,6 +164,17 @@ pub struct ProjectContext {
     /// `lookup.in_file(...)`. Without it, every cross-file Resource
     /// import silently misses Step 4.
     pub robot_resource_basenames: RobotResourceBasenameMap,
+
+    /// Robot Framework: per-Python-library dynamic keywords. Each
+    /// `.py` file referenced as a Robot Library is scanned for
+    /// `KEYWORDS = {...}` dicts and `get_keyword_names` list-literal
+    /// returns. Keys are project-relative `.py` paths; values are the
+    /// normalised keyword names exposed by that file plus their owning
+    /// class (or `None` for a module-level KEYWORDS dict). The
+    /// `RobotResolver::build_file_context` step plumbs these into the
+    /// per-file import list so resolution can reach keywords that have
+    /// no `def name():` declaration.
+    pub robot_dynamic_keywords: RobotDynamicKeywordMap,
 }
 
 // ---------------------------------------------------------------------------
@@ -193,6 +205,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
         robot_resource_basenames: RobotResourceBasenameMap::default(),
+        robot_dynamic_keywords: RobotDynamicKeywordMap::default(),
     }
 }
 
@@ -290,6 +303,7 @@ pub fn build_project_context_with_packages(
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
         robot_resource_basenames: RobotResourceBasenameMap::default(),
+        robot_dynamic_keywords: RobotDynamicKeywordMap::default(),
     }
 }
 

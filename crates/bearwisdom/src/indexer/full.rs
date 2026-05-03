@@ -483,7 +483,37 @@ pub fn full_index(
                 robot_map.len()
             );
         }
+
+        // Robot dynamic libraries: scan every `.py` file referenced as a
+        // Library for `KEYWORDS = {...}` dicts and `get_keyword_names`
+        // list-literal returns. Without this, calls to keywords whose
+        // names don't exist as Python `def`s evaporate as unresolved.
+        // Reads each library's source from disk via
+        // `std::fs::read_to_string` — typical Robot library files are
+        // small (<500 lines) and the unique-path set is bounded by the
+        // project's Library-import surface, so the cost is negligible.
+        let mut library_paths: std::collections::HashSet<&str> =
+            std::collections::HashSet::new();
+        for libs in robot_map.values() {
+            for lib in libs {
+                library_paths.insert(lib.py_file_path.as_str());
+            }
+        }
+        let library_paths_vec: Vec<&str> = library_paths.iter().copied().collect();
+        let dyn_kw_map =
+            crate::languages::robot::dynamic_keywords::build_robot_dynamic_keyword_map(
+                &library_paths_vec,
+                |path| std::fs::read_to_string(path).ok(),
+            );
+        if !dyn_kw_map.is_empty() {
+            info!(
+                "Robot dynamic keywords: {} library files expose dynamic keywords",
+                dyn_kw_map.len()
+            );
+        }
+
         project_ctx.robot_library_map = robot_map;
+        project_ctx.robot_dynamic_keywords = dyn_kw_map;
 
         // Resource basename → full-path map. Pairs with the library_map so
         // RobotResolver can translate `Resource    atest_resource.robot`

@@ -637,6 +637,174 @@ fn builtin_keyword_resolves_to_none_without_synthetics() {
     );
 }
 
+// ---------------------------------------------------------------------------
+// 6. Robot dynamic libraries — KEYWORDS dict + get_keyword_names list
+// ---------------------------------------------------------------------------
+
+fn make_project_ctx_with_dynamic_libs(
+    robot_path: &str,
+    py_path: &str,
+    library_name: &str,
+    keywords: Vec<super::dynamic_keywords::RobotDynamicKeyword>,
+) -> ProjectContext {
+    let mut ctx = ProjectContext::default();
+    ctx.robot_library_map.insert(
+        robot_path.to_string(),
+        vec![super::library_map::RobotPythonLibrary {
+            library_name: library_name.to_string(),
+            py_file_path: py_path.to_string(),
+        }],
+    );
+    ctx.robot_dynamic_keywords
+        .insert(py_path.to_string(), keywords);
+    ctx
+}
+
+#[test]
+fn dynamic_keyword_resolves_to_owning_class() {
+    // `Async Keyword` is exposed by class AsyncDynamicLibrary's
+    // `get_keyword_names` list. The resolver should find the class symbol
+    // in async.py via the dynamic-keyword ImportEntry and target its id.
+    let robot_file = make_file(
+        "tests/async_test.robot",
+        "robot",
+        vec![make_sym("My Test", SymbolKind::Test)],
+        vec![
+            make_import(0, "AsyncDynamicLibrary"),
+            make_ref_plain(0, "Async Keyword"),
+        ],
+    );
+    let py_file = make_file(
+        "lib/async.py",
+        "python",
+        vec![make_sym("AsyncDynamicLibrary", SymbolKind::Class)],
+        vec![],
+    );
+    let ctx = make_project_ctx_with_dynamic_libs(
+        "tests/async_test.robot",
+        "lib/async.py",
+        "AsyncDynamicLibrary",
+        vec![super::dynamic_keywords::RobotDynamicKeyword {
+            normalized_name: "async_keyword".to_string(),
+            class_name: Some("AsyncDynamicLibrary".to_string()),
+        }],
+    );
+    let (index, id_map) = build_index(&[&robot_file, &py_file]);
+    let resolver = RobotResolver;
+    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let r = &robot_file.refs[1];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &robot_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("dynamic keyword should resolve to AsyncDynamicLibrary class");
+    assert_eq!(res.strategy, "robot_dynamic_library");
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "lib/async.py", "AsyncDynamicLibrary")
+    );
+}
+
+#[test]
+fn module_level_keywords_dict_falls_back_to_first_class() {
+    // `One Arg` is a module-level KEYWORDS dict key with no owning class.
+    // The resolver picks the file's first class symbol as the closest
+    // legal target (the dispatch class that uses `dict(KEYWORDS, ...)`).
+    let robot_file = make_file(
+        "tests/dyn_test.robot",
+        "robot",
+        vec![make_sym("My Test", SymbolKind::Test)],
+        vec![
+            make_import(0, "DynamicWithoutKwargs"),
+            make_ref_plain(0, "One Arg"),
+        ],
+    );
+    let py_file = make_file(
+        "lib/dyn.py",
+        "python",
+        vec![make_sym("DynamicWithoutKwargs", SymbolKind::Class)],
+        vec![],
+    );
+    let ctx = make_project_ctx_with_dynamic_libs(
+        "tests/dyn_test.robot",
+        "lib/dyn.py",
+        "DynamicWithoutKwargs",
+        vec![super::dynamic_keywords::RobotDynamicKeyword {
+            normalized_name: "one_arg".to_string(),
+            class_name: None, // module-level KEYWORDS dict
+        }],
+    );
+    let (index, id_map) = build_index(&[&robot_file, &py_file]);
+    let resolver = RobotResolver;
+    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let r = &robot_file.refs[1];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &robot_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("module-level dynamic keyword should fall back to first class");
+    assert_eq!(res.strategy, "robot_dynamic_library_fallback");
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "lib/dyn.py", "DynamicWithoutKwargs")
+    );
+}
+
+#[test]
+fn dynamic_keyword_normalization_matches_call_site() {
+    // The call site uses Robot's title-case + spaces form ("Get Keyword
+    // That Passes"), while the dynamic_keywords map stores the normalised
+    // snake form ("get_keyword_that_passes"). The resolver normalises the
+    // call before comparing — so the title-case form should still hit
+    // the entry.
+    let robot_file = make_file(
+        "tests/get.robot",
+        "robot",
+        vec![make_sym("My Test", SymbolKind::Test)],
+        vec![
+            make_import(0, "GetKeywordNamesLibrary"),
+            make_ref_plain(0, "Get Keyword That Passes"),
+        ],
+    );
+    let py_file = make_file(
+        "lib/g.py",
+        "python",
+        vec![make_sym("GetKeywordNamesLibrary", SymbolKind::Class)],
+        vec![],
+    );
+    let ctx = make_project_ctx_with_dynamic_libs(
+        "tests/get.robot",
+        "lib/g.py",
+        "GetKeywordNamesLibrary",
+        vec![super::dynamic_keywords::RobotDynamicKeyword {
+            normalized_name: "get_keyword_that_passes".to_string(),
+            class_name: Some("GetKeywordNamesLibrary".to_string()),
+        }],
+    );
+    let (index, _) = build_index(&[&robot_file, &py_file]);
+    let resolver = RobotResolver;
+    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let r = &robot_file.refs[1];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &robot_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("normalised keyword should match call-site spaces form");
+    assert_eq!(res.strategy, "robot_dynamic_library");
+}
+
 #[test]
 fn strip_bdd_prefix_handles_multibyte_names() {
     use super::predicates::_test_strip_bdd_prefix;
