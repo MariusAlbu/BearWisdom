@@ -241,8 +241,10 @@ pub fn build_robot_resource_basename_map(parsed: &[ParsedFile]) -> RobotResource
 }
 
 /// Resolve a `Library  <name>` entry to a project `.py` file path.
-/// Supports the two forms Robot accepts:
+/// Supports the three forms Robot accepts:
 ///   * `Library  TestCheckerLibrary`        — bare module name
+///   * `Library  KeywordDecorator.py`       — explicit .py file; the
+///     name IS already the basename, just match it as-is
 ///   * `Library  pkg.subpkg.MyLib`          — dotted module path; the
 ///     leaf segment is the .py basename
 fn resolve_library_to_py(
@@ -250,8 +252,15 @@ fn resolve_library_to_py(
     importer_path: &str,
     py_paths: &[&str],
 ) -> Option<String> {
-    let stem = library_name.rsplit('.').next().unwrap_or(library_name);
-    let target = format!("{stem}.py");
+    let target: String = if library_name.ends_with(".py") {
+        // Already a full basename — use it directly. Stripping the `.py`
+        // first would reduce `KeywordDecorator.py` to `py` (the literal
+        // last `.`-segment) and search for `py.py`, which never exists.
+        library_name.to_string()
+    } else {
+        let stem = library_name.rsplit('.').next().unwrap_or(library_name);
+        format!("{stem}.py")
+    };
     pick_best_match(&target, importer_path, py_paths)
 }
 

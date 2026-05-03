@@ -72,6 +72,28 @@ fn direct_library_resolves_to_project_py_file() {
 }
 
 #[test]
+fn library_with_explicit_py_extension_resolves_directly() {
+    // `Library  KeywordDecorator.py` is a legal Robot import form. The
+    // name IS already the file basename and must be matched as-is.
+    // Stripping a leading `.`-segment would reduce it to `py` and
+    // search for `py.py`, which never exists.
+    let parsed = vec![
+        pf("atest/testdata/keywords/KeywordDecorator.py", Vec::new()),
+        pf(
+            "atest/testdata/keywords/foo.robot",
+            vec![import_ref("KeywordDecorator.py")],
+        ),
+    ];
+    let map = build_robot_library_map(&parsed);
+    let entry = map
+        .get("atest/testdata/keywords/foo.robot")
+        .expect("must resolve explicit .py library");
+    assert!(entry.iter().any(|l|
+        l.py_file_path == "atest/testdata/keywords/KeywordDecorator.py"
+    ), "got {entry:?}");
+}
+
+#[test]
 fn dotted_library_name_resolves_via_last_segment() {
     let parsed = vec![
         pf(
