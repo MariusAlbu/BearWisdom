@@ -305,7 +305,13 @@ impl LanguageResolver for RobotResolver {
                     sym.kind.as_str(),
                     "function" | "method" | "test"
                 );
-                if is_callable && sym.name == normalized_target {
+                // Robot strips a trailing underscore from the Python
+                // identifier when computing the keyword name — Python
+                // convention for avoiding stdlib clashes (`datetime_`,
+                // `class_`, `import_`). So `Library  Foo` ⇒ Foo's
+                // `def datetime_(...)` is the `DateTime` keyword.
+                let py_name_clean = sym.name.strip_suffix('_').unwrap_or(&sym.name);
+                if is_callable && py_name_clean == normalized_target {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
