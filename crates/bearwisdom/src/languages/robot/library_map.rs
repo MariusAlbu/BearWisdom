@@ -44,14 +44,23 @@ pub struct RobotPythonLibrary {
 /// tests that don't pull in helper resources.
 pub type RobotLibraryMap = HashMap<String, Vec<RobotPythonLibrary>>;
 
-/// Project-wide map: basename of a `.robot`/`.resource` file → its
-/// project-relative full path. The Robot extractor stores the bare
-/// filename from `Resource    atest_resource.robot`; without this map
-/// the resolver can't call `lookup.in_file(...)` because indexed files
-/// use full paths (`atest/resources/atest_resource.robot`).
+/// Project-wide map: basename of a `.robot`/`.resource` file → list
+/// of project-relative full paths sharing that basename. The Robot
+/// extractor stores the bare filename from
+/// `Resource    atest_resource.robot`; without this map the resolver
+/// can't call `lookup.in_file(...)` because indexed files use full
+/// paths (`atest/resources/atest_resource.robot`).
+///
+/// A `Vec` rather than a single `String` because basename collisions
+/// are common in test corpora (e.g. robot-framework has two
+/// `telnet_resource.robot` files — one in `atest/robot/.../telnet/`
+/// and one in `atest/testdata/.../telnet/`). The resolver resolves
+/// the ambiguity at the call site by picking the candidate in the
+/// importer's directory, falling back to the lexicographically-first
+/// when no same-dir match exists.
 ///
 /// Built once per index pass in `build_robot_resource_basename_map`.
-pub type RobotResourceBasenameMap = HashMap<String, String>;
+pub type RobotResourceBasenameMap = HashMap<String, Vec<String>>;
 
 /// Library names that Robot Framework imports implicitly into every
 /// suite/resource, with no explicit `Library  <name>` declaration.
@@ -241,17 +250,42 @@ pub fn build_robot_resource_basename_map(parsed: &[ParsedFile]) -> RobotResource
         else {
             continue;
         };
-        match map.get(basename) {
-            None => {
-                map.insert(basename.to_string(), pf.path.clone());
-            }
-            Some(existing) if pf.path < *existing => {
-                map.insert(basename.to_string(), pf.path.clone());
-            }
-            _ => {}
-        }
+        map.entry(basename.to_string())
+            .or_default()
+            .push(pf.path.clone());
+    }
+    // Sort each candidate list lexicographically so the fallback
+    // pick is deterministic across runs.
+    for paths in map.values_mut() {
+        paths.sort();
     }
     map
+}
+
+/// Pick the resource path with the closest directory affinity to the
+/// importer. Same-directory wins; otherwise the lexicographically-first
+/// candidate (already sorted) — keeps the choice stable across runs.
+pub fn pick_resource_for_importer<'a>(
+    candidates: &'a [String],
+    importer_path: &str,
+) -> Option<&'a str> {
+    if candidates.is_empty() {
+        return None;
+    }
+    let importer_dir = std::path::Path::new(importer_path)
+        .parent()
+        .map(|p| p.to_string_lossy().replace('\\', "/"));
+    if let Some(dir) = importer_dir.as_deref() {
+        if let Some(same_dir) = candidates.iter().find(|p| {
+            std::path::Path::new(p)
+                .parent()
+                .map(|d| d.to_string_lossy().replace('\\', "/") == dir)
+                .unwrap_or(false)
+        }) {
+            return Some(same_dir.as_str());
+        }
+    }
+    candidates.first().map(String::as_str)
 }
 
 /// Resolve a `Library  <name>` entry to a project `.py` file path.

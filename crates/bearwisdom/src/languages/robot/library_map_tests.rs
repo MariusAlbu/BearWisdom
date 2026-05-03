@@ -272,27 +272,62 @@ fn basename_map_resolves_resource_imports_to_full_paths() {
     ];
     let map = build_robot_resource_basename_map(&parsed);
     assert_eq!(
-        map.get("atest_resource.robot"),
-        Some(&"atest/resources/atest_resource.robot".to_string()),
+        map.get("atest_resource.robot")
+            .map(|v| v.as_slice()),
+        Some(&["atest/resources/atest_resource.robot".to_string()][..]),
     );
     assert_eq!(
-        map.get("foo.robot"),
-        Some(&"atest/robot/output/foo.robot".to_string()),
+        map.get("foo.robot").map(|v| v.as_slice()),
+        Some(&["atest/robot/output/foo.robot".to_string()][..]),
     );
 }
 
 #[test]
-fn basename_map_breaks_ties_lexicographically() {
-    // Two project files with the same basename — pick the earlier path
-    // (deterministic tie-break) when build_file_context can't supply
-    // an importer-dir hint.
+fn basename_map_collects_all_candidates_sorted_lexicographically() {
+    // Two project files with the same basename — both candidates kept
+    // so the resolver can prefer the importer-dir match. Lex-sorted
+    // for determinism (stable across runs).
     let parsed = vec![
         pf("vendor/helpers.robot", Vec::new()),
         pf("atest/resources/helpers.robot", Vec::new()),
     ];
     let map = build_robot_resource_basename_map(&parsed);
-    assert_eq!(map.get("helpers.robot"), Some(&"atest/resources/helpers.robot".to_string()),
-        "lex-first wins; got {map:?}");
+    assert_eq!(
+        map.get("helpers.robot").map(|v| v.as_slice()),
+        Some(&[
+            "atest/resources/helpers.robot".to_string(),
+            "vendor/helpers.robot".to_string(),
+        ][..]),
+        "got {map:?}",
+    );
+}
+
+#[test]
+fn pick_resource_prefers_same_directory_when_basenames_collide() {
+    use super::library_map::pick_resource_for_importer;
+    let candidates = vec![
+        "atest/robot/standard_libraries/telnet/telnet_resource.robot".to_string(),
+        "atest/testdata/standard_libraries/telnet/telnet_resource.robot".to_string(),
+    ];
+    let importer = "atest/testdata/standard_libraries/telnet/configuration.robot";
+    assert_eq!(
+        pick_resource_for_importer(&candidates, importer),
+        Some("atest/testdata/standard_libraries/telnet/telnet_resource.robot"),
+    );
+}
+
+#[test]
+fn pick_resource_falls_back_to_first_when_no_same_dir_match() {
+    use super::library_map::pick_resource_for_importer;
+    let candidates = vec![
+        "atest/resources/helpers.robot".to_string(),
+        "vendor/helpers.robot".to_string(),
+    ];
+    let importer = "tests/some_test.robot";
+    assert_eq!(
+        pick_resource_for_importer(&candidates, importer),
+        Some("atest/resources/helpers.robot"),
+    );
 }
 
 #[test]

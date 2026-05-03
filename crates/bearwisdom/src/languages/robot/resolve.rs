@@ -232,7 +232,16 @@ impl LanguageResolver for RobotResolver {
                     .and_then(|n| n.to_str())
                     .unwrap_or(raw_path);
                 project_ctx
-                    .and_then(|ctx| ctx.robot_resource_basenames.get(lookup_key).cloned())
+                    .and_then(|ctx| {
+                        ctx.robot_resource_basenames
+                            .get(lookup_key)
+                            .and_then(|paths| {
+                                super::library_map::pick_resource_for_importer(
+                                    paths, &file.path,
+                                )
+                                .map(String::from)
+                            })
+                    })
                     .unwrap_or_else(|| raw_path.to_string())
             } else {
                 raw_path.to_string()
