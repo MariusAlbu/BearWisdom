@@ -127,9 +127,18 @@ impl LanguageResolver for RobotResolver {
             // indexed `atest/resources/atest_resource.robot` path and
             // every cross-file resource keyword call falls through to
             // Step 5 (which often loses to ambiguity).
+            //
+            // The extractor preserves the literal user-written path —
+            // could be a basename (`atest_resource.robot`), a relative
+            // path (`../runner/cli_resource.robot`), or `${CURDIR}/foo`.
+            // The basename map keys on the file-name suffix only.
             let resolved_path = if is_file_import {
+                let lookup_key = std::path::Path::new(raw_path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or(raw_path);
                 project_ctx
-                    .and_then(|ctx| ctx.robot_resource_basenames.get(raw_path).cloned())
+                    .and_then(|ctx| ctx.robot_resource_basenames.get(lookup_key).cloned())
                     .unwrap_or_else(|| raw_path.to_string())
             } else {
                 raw_path.to_string()

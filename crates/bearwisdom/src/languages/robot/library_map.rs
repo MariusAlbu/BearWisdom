@@ -277,6 +277,10 @@ fn resolve_basename(
 /// Pick the candidate file whose basename matches `target_basename`.
 /// Prefers a candidate in the same directory as the importer, otherwise
 /// returns the lexicographically-first match for deterministic output.
+///
+/// `target_basename` may be a bare basename (`atest_resource.robot`),
+/// a relative path (`../runner/cli_resource.robot`), or an absolute
+/// path — only the file-name suffix is used for matching.
 fn pick_best_match(
     target_basename: &str,
     importer_path: &str,
@@ -285,6 +289,14 @@ fn pick_best_match(
     let importer_dir = Path::new(importer_path).parent().map(|p| {
         p.to_string_lossy().replace('\\', "/")
     });
+    // Normalise the target down to just the file-name suffix. The
+    // extractor preserves whatever the user wrote (`../runner/x.robot`),
+    // but candidates are full project paths whose basenames never carry
+    // leading `../` segments.
+    let target_name = Path::new(target_basename)
+        .file_name()
+        .and_then(|n| n.to_str())
+        .unwrap_or(target_basename);
     let mut matches: Vec<&str> = candidates
         .iter()
         .copied()
@@ -292,7 +304,7 @@ fn pick_best_match(
             Path::new(p)
                 .file_name()
                 .and_then(|n| n.to_str())
-                .map(|n| n.eq_ignore_ascii_case(target_basename))
+                .map(|n| n.eq_ignore_ascii_case(target_name))
                 .unwrap_or(false)
         })
         .collect();

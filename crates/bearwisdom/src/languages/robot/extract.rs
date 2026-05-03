@@ -333,10 +333,27 @@ fn extract_keyword_invocation(
     ) {
         return;
     }
-    // Handle `${var} =    Keyword` assignment pattern
-    let keyword_name = if kw.contains('{') {
-        // `${var} =` or `${var}=` assignment — keyword is the second cell
-        cells.get(1).map(|s| s.trim()).unwrap_or("")
+    // Handle assignment patterns. Robot allows multi-variable returns:
+    //   ${var} =                  Keyword    args
+    //   ${name}    ${item} =      Keyword    args
+    //   ${a}    @{rest} =         Keyword    args
+    //
+    // The trailing `=` (with or without surrounding whitespace) marks the
+    // last receive variable; the next cell is the actual keyword. The old
+    // `cells.get(1)` shortcut grabbed the second receive var (`${item} =`)
+    // and emitted IT as a Calls ref — bogus.
+    let kw_starts_with_var =
+        kw.starts_with('$') || kw.starts_with('@') || kw.starts_with('&');
+    let keyword_name = if kw_starts_with_var {
+        match cells.iter().position(|c| c.trim().ends_with('=')) {
+            Some(idx) => cells.get(idx + 1).map(|s| s.trim()).unwrap_or(""),
+            None => "", // bare `${var}` row with no `=` is not a call
+        }
+    } else if kw.contains('{') {
+        // Embedded-argument call shape: `Some ${var} keyword    args`. Keep
+        // the whole first cell as the target name — the resolver handles
+        // embedded-argument keyword matching elsewhere.
+        kw
     } else {
         kw
     };

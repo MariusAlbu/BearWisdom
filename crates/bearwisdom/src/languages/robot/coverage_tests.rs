@@ -389,6 +389,54 @@ fn per_test_template_none_overrides_suite_template() {
 }
 
 #[test]
+fn multi_variable_assignment_picks_correct_keyword() {
+    // Multi-receive-var pattern from
+    // `atest/testdata/keywords/embedded_arguments.robot`:
+    //   ${name}    ${item} =    My Keyword    arg1
+    // Old code emitted `${item} =` as the Calls target. Correct
+    // behaviour: skip all leading receive vars, pick the cell after the
+    // one ending in `=` as the keyword.
+    let src = concat!(
+        "*** Test Cases ***\n",
+        "Multi Var Assign\n",
+        "    ${name}    ${item} =    My Keyword    arg1\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"My Keyword"),
+        "real keyword `My Keyword` must be the target; got: {calls:?}");
+    assert!(!calls.iter().any(|c| c.contains("${")),
+        "no receive-var cell may leak as a Calls target; got: {calls:?}");
+}
+
+#[test]
+fn single_variable_assignment_still_picks_keyword() {
+    // Single-var assignment: `${var} =    Keyword args` — preserves the
+    // pre-existing behaviour that targets `Keyword` as the Calls ref.
+    let src = concat!(
+        "*** Test Cases ***\n",
+        "Single Var\n",
+        "    ${var} =    Get Value    arg\n",
+        "    ${noeq}     Set Value    arg\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"Get Value"),
+        "single-var `${{var}} =` assignment must produce `Get Value`; got: {calls:?}");
+    // `${noeq}    Set Value` (no `=`) is not a real assignment — it's
+    // either a template arg row (already filtered) or malformed. Don't
+    // emit either cell.
+    assert!(!calls.contains(&"Set Value"),
+        "non-assignment `${{var}}    Set Value` should not produce a call; got: {calls:?}");
+}
+
+#[test]
 fn other_settings_do_not_emit_calls() {
     // [Tags], [Documentation], [Arguments], [Return], [Timeout] all carry
     // data — must NOT become Calls refs.

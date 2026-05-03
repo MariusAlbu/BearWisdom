@@ -165,6 +165,39 @@ fn resource_cycle_does_not_loop_forever() {
 }
 
 #[test]
+fn relative_resource_path_resolves_to_indexed_basename() {
+    // Robot lets you write `Resource    ../runner/cli_resource.robot`
+    // — the extractor stores the literal user-written path. The
+    // basename matcher must strip the leading `../<dir>/` segments
+    // before lookup, otherwise the chain breaks every time a project
+    // organises resources by feature folder.
+    let parsed = vec![
+        pf("atest/robot/cli/runner/cli_resource.robot", Vec::new()),
+        pf(
+            "atest/robot/cli/rebot/rebot_cli_resource.robot",
+            vec![import_ref("../runner/cli_resource.robot")],
+        ),
+        pf("py/Lib.py", Vec::new()),
+        pf(
+            "atest/robot/cli/runner/cli_resource.robot",
+            // already declared above; deduped by HashMap insertion in
+            // the basename builder. Re-declaring here just to attach
+            // its own Library import for the transitive walk below.
+            vec![import_ref("Lib")],
+        ),
+    ];
+    // Re-build with the intended structure (the duplicate above is a
+    // type-system convenience; the second insert wins, carrying the
+    // Library import).
+    let map = build_robot_library_map(&parsed);
+    let entry = map
+        .get("atest/robot/cli/rebot/rebot_cli_resource.robot")
+        .expect("relative path import must resolve transitively");
+    assert!(entry.iter().any(|l| l.py_file_path == "py/Lib.py"),
+        "transitive Library through `../runner/...` import; got {entry:?}");
+}
+
+#[test]
 fn library_in_same_dir_wins_over_distant_match() {
     let parsed = vec![
         pf("vendor/TestCheckerLibrary.py", Vec::new()),
