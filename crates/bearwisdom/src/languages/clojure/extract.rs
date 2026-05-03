@@ -229,6 +229,19 @@ fn walk_node(
     parent_idx: Option<usize>,
     locals: &HashSet<String>,
 ) {
+    // Quoted forms — `'foo`, `'(a b c)` — are data, not calls. Their
+    // sym_lit children are values to be looked up at runtime by the
+    // surrounding code (`(get m 'key)`), never callables. Emitting
+    // them as Calls refs always lands them in unresolved_refs and
+    // pollutes the dependency graph with phantom edges.
+    //
+    // Syntax-quote (` ` `) is more nuanced — `~expr` and `~@expr`
+    // splice out into live code — so we don't blanket-skip those
+    // here. The simple `'foo` quote is the common case driving the
+    // `-invoke` / `->X` noise inside deftype method bodies.
+    if node.kind() == "quoting_lit" {
+        return;
+    }
     if node.kind() == "list_lit" {
         // process_list handles both symbol extraction and child recursion for list_lits.
         process_list(node, src, symbols, refs, parent_idx, locals);
@@ -870,12 +883,7 @@ fn walk_reify_body(
             }
             continue;
         }
-        if child.kind() == "list_lit" {
-            // Method form: (MethodName [params] body...)
-            walk_method_body(child, src, symbols, refs, parent_idx, locals);
-        } else {
-            walk_node(child, src, symbols, refs, parent_idx, locals);
-        }
+        descend_method_or_protocol(child, src, symbols, refs, parent_idx, locals);
     }
 }
 
@@ -940,11 +948,38 @@ fn walk_with_method_bodies(
             past_fields = true;
             continue;
         }
-        if child.kind() == "list_lit" {
-            // Protocol method implementation: (MethodName [this ...] body...)
-            walk_method_body(child, src, symbols, refs, parent_idx, field_locals);
-        } else {
-            walk_node(child, src, symbols, refs, parent_idx, field_locals);
+        descend_method_or_protocol(
+            child, src, symbols, refs, parent_idx, field_locals,
+        );
+    }
+}
+
+/// Recursively walk a deftype/defrecord/reify/extend body child, treating
+/// any `list_lit` as a protocol method body and recursing into reader
+/// conditionals so nested method shapes get the per-method local scope.
+/// Without this, `#?@(:cljs [IFn (-invoke [this a b] ...) ...])` leaks
+/// the method head as an unresolved Calls ref and the param vec's `a` /
+/// `b` get emitted as cross-namespace value lookups.
+fn descend_method_or_protocol(
+    child: Node,
+    src: &[u8],
+    symbols: &mut Vec<ExtractedSymbol>,
+    refs: &mut Vec<ExtractedRef>,
+    parent_idx: Option<usize>,
+    locals: &HashSet<String>,
+) {
+    match child.kind() {
+        "list_lit" => {
+            walk_method_body(child, src, symbols, refs, parent_idx, locals);
+        }
+        "vec_lit" | "read_cond_lit" | "splicing_read_cond_lit" => {
+            let mut cursor = child.walk();
+            for sub in child.children(&mut cursor) {
+                descend_method_or_protocol(sub, src, symbols, refs, parent_idx, locals);
+            }
+        }
+        _ => {
+            walk_node(child, src, symbols, refs, parent_idx, locals);
         }
     }
 }
