@@ -52,6 +52,11 @@ pub(super) fn _test_strip_bdd_prefix(name: &str) -> &str {
     strip_bdd_prefix(name)
 }
 
+#[cfg(test)]
+pub(super) fn _test_normalize_robot_name(name: &str) -> String {
+    normalize_robot_name(name)
+}
+
 /// Edge-kind / symbol-kind compatibility for Robot Framework.
 #[allow(dead_code)]
 pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {

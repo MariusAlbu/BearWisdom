@@ -687,6 +687,7 @@ fn dynamic_keyword_resolves_to_owning_class() {
         vec![super::dynamic_keywords::RobotDynamicKeyword {
             normalized_name: "async_keyword".to_string(),
             class_name: Some("AsyncDynamicLibrary".to_string()),
+            method_name: None,
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
@@ -736,6 +737,7 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
         vec![super::dynamic_keywords::RobotDynamicKeyword {
             normalized_name: "one_arg".to_string(),
             class_name: None, // module-level KEYWORDS dict
+            method_name: None,
         }],
     );
     let (index, id_map) = build_index(&[&robot_file, &py_file]);
@@ -755,6 +757,61 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
     assert_eq!(
         res.target_symbol_id,
         sym_id(&id_map, "lib/dyn.py", "DynamicWithoutKwargs")
+    );
+}
+
+#[test]
+fn keyword_decorator_alias_resolves_to_specific_method() {
+    // `@keyword("Custom Name")` ⇒ Robot looks up "Custom Name" but the
+    // resolution target is the actual Python method `add_copies_to_cart`,
+    // not just the enclosing class.
+    let robot_file = make_file(
+        "tests/cart.robot",
+        "robot",
+        vec![make_sym("My Test", SymbolKind::Test)],
+        vec![
+            make_import(0, "Lib"),
+            make_ref_plain(0, "Add ${count} copies of ${item} to cart"),
+        ],
+    );
+    let class_sym = make_sym("Lib", SymbolKind::Class);
+    let mut method_sym = make_sym("add_copies_to_cart", SymbolKind::Function);
+    method_sym.scope_path = Some("Lib".to_string());
+    let py_file = make_file(
+        "lib/cart_lib.py",
+        "python",
+        vec![class_sym, method_sym],
+        vec![],
+    );
+    let ctx = make_project_ctx_with_dynamic_libs(
+        "tests/cart.robot",
+        "lib/cart_lib.py",
+        "Lib",
+        vec![super::dynamic_keywords::RobotDynamicKeyword {
+            normalized_name: super::predicates::_test_normalize_robot_name(
+                "Add ${count} copies of ${item} to cart",
+            ),
+            class_name: Some("Lib".to_string()),
+            method_name: Some("add_copies_to_cart".to_string()),
+        }],
+    );
+    let (index, id_map) = build_index(&[&robot_file, &py_file]);
+    let resolver = RobotResolver;
+    let file_ctx = resolver.build_file_context(&robot_file, Some(&ctx));
+    let r = &robot_file.refs[1];
+    let ref_ctx = RefContext {
+        extracted_ref: r,
+        source_symbol: &robot_file.symbols[0],
+        scope_chain: vec![],
+        file_package_id: None,
+    };
+    let res = resolver
+        .resolve(&file_ctx, &ref_ctx, &index)
+        .expect("decorator alias should resolve to its method");
+    assert_eq!(res.strategy, "robot_dynamic_library_method");
+    assert_eq!(
+        res.target_symbol_id,
+        sym_id(&id_map, "lib/cart_lib.py", "add_copies_to_cart")
     );
 }
 
@@ -787,6 +844,7 @@ fn dynamic_keyword_normalization_matches_call_site() {
         vec![super::dynamic_keywords::RobotDynamicKeyword {
             normalized_name: "get_keyword_that_passes".to_string(),
             class_name: Some("GetKeywordNamesLibrary".to_string()),
+            method_name: None,
         }],
     );
     let (index, _) = build_index(&[&robot_file, &py_file]);

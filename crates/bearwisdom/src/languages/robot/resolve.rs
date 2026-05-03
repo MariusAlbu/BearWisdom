@@ -35,6 +35,32 @@ use crate::indexer::resolve::engine::{
 use crate::indexer::project_context::ProjectContext;
 use crate::types::{EdgeKind, ParsedFile, SymbolKind};
 
+// Marker that splits class and method inside the dynamic-keyword
+// ImportEntry's `alias` field. `::` doesn't appear in Python identifiers,
+// so it's a safe in-band encoding that avoids extending ImportEntry with
+// a new field for a single-language need.
+const DYN_ALIAS_SEP: &str = "::";
+
+fn encode_dynamic_alias(class: &Option<String>, method: &Option<String>) -> Option<String> {
+    match (class, method) {
+        (None, None) => None,
+        (Some(c), None) => Some(c.clone()),
+        (Some(c), Some(m)) => Some(format!("{c}{DYN_ALIAS_SEP}{m}")),
+        (None, Some(m)) => Some(format!("{DYN_ALIAS_SEP}{m}")),
+    }
+}
+
+fn decode_dynamic_class_name(alias: Option<&str>) -> Option<&str> {
+    let s = alias?;
+    let cls = s.split(DYN_ALIAS_SEP).next().unwrap_or(s);
+    if cls.is_empty() { None } else { Some(cls) }
+}
+
+fn decode_dynamic_method_name(import: &ImportEntry) -> Option<&str> {
+    let s = import.alias.as_deref()?;
+    s.split_once(DYN_ALIAS_SEP).map(|(_, m)| m).filter(|m| !m.is_empty())
+}
+
 pub struct RobotResolver;
 
 // ---------------------------------------------------------------------------
@@ -182,7 +208,7 @@ impl LanguageResolver for RobotResolver {
                             imports.push(ImportEntry {
                                 imported_name: kw.normalized_name.clone(),
                                 module_path: Some(lib.py_file_path.clone()),
-                                alias: kw.class_name.clone(),
+                                alias: encode_dynamic_alias(&kw.class_name, &kw.method_name),
                                 is_wildcard: false,
                             });
                         }
@@ -346,15 +372,23 @@ impl LanguageResolver for RobotResolver {
             }
         }
 
-        // Step 4.6: Robot dynamic libraries — `KEYWORDS = {...}` dicts and
-        // `get_keyword_names` list-literal returns expose keyword names
-        // that aren't Python identifiers, so Step 4.5's `def name():`
-        // scan can't see them. The pre-pass populates non-wildcard `.py`
-        // ImportEntries where `imported_name` is the normalised keyword
-        // and `alias` is the owning class (or `None` for module-level
-        // KEYWORDS). Resolution targets the matching class symbol so
-        // the edge points at a real definition site even though dynamic
-        // dispatch happens at runtime.
+        // Step 4.6: Robot dynamic libraries. Four shapes converge here:
+        //   * `KEYWORDS = {...}` dicts and `get_keyword_names` list-literal
+        //     returns — keyword names with no specific Python def. The
+        //     pre-pass leaves `method_path` empty in the import so the
+        //     class symbol becomes the resolution target.
+        //   * `@keyword("Custom Name")` decorators and bare `@keyword` —
+        //     keyword names that DO map to a specific Python method. The
+        //     pre-pass packs the method name into `chain_str` (re-using
+        //     ImportEntry's existing fields rather than adding a new one);
+        //     the resolver targets that method symbol when present.
+        //   * `dir(self)` prefix expansion — same shape as the decorator
+        //     case: each matching method is registered with `chain_str`
+        //     pointing at the method name.
+        // The non-wildcard `.py` imports plumbed by `build_file_context`
+        // are the marker — `imported_name` carries the normalised keyword,
+        // `alias` carries the owning class, and the method-name field is
+        // encoded in the import below (see populate_dynamic_keyword_imports).
         for import in &file_ctx.imports {
             let Some(path) = &import.module_path else { continue };
             if !path.ends_with(".py") || import.is_wildcard {
@@ -363,8 +397,31 @@ impl LanguageResolver for RobotResolver {
             if import.imported_name != normalized_target {
                 continue;
             }
-            let target_class = import.alias.as_deref();
-            // Prefer the explicitly-named owning class.
+            let target_class = decode_dynamic_class_name(import.alias.as_deref());
+            // `<class>::<method>` encoding from build_file_context. The
+            // method is `Some` for `@keyword` decorators and `dir(self)`
+            // prefix expansions, `None` for KEYWORDS-dict /
+            // get_keyword_names list-literal shapes that route through
+            // `run_keyword` at runtime.
+            let target_method = decode_dynamic_method_name(import);
+
+            // Preferred: the specific Python method when known.
+            if let Some(method_name) = target_method {
+                for sym in lookup.in_file(path) {
+                    if sym.name == method_name
+                        && matches!(sym.kind.as_str(), "function" | "method" | "test")
+                    {
+                        return Some(Resolution {
+                            target_symbol_id: sym.id,
+                            confidence: 0.95,
+                            strategy: "robot_dynamic_library_method",
+                            resolved_yield_type: None,
+                        });
+                    }
+                }
+            }
+
+            // Next best: the explicitly-named owning class.
             if let Some(class_name) = target_class {
                 for sym in lookup.in_file(path) {
                     if sym.kind == SymbolKind::Class.as_str() && sym.name == class_name {
@@ -377,6 +434,7 @@ impl LanguageResolver for RobotResolver {
                     }
                 }
             }
+
             // Fallback: pick the first class symbol in the file. Module-
             // level `KEYWORDS = {...}` has no owning class to anchor the
             // resolution; the file's primary class is the closest legal
