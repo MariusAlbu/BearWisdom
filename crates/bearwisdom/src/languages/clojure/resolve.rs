@@ -135,6 +135,64 @@ impl LanguageResolver for ClojureResolver {
             }
         }
 
+        // Per-`:refer` named imports: `(:require [matcher-combinators.test
+        // :refer [match?]])` lets `(match? a b)` reach the resolver as
+        // target=`match?` with no module info. The extractor's
+        // `collect_refer_names` emits one Imports ref per refer item
+        // with `target_name = item` and `module = ns`; build_file_context
+        // packs that into an ImportEntry with `alias = Some(item)`,
+        // `imported_name = ns`. Match `target` against the alias and
+        // classify external under the namespace.
+        if let Some(import) = file_ctx.imports.iter().find(|i| {
+            i.alias.as_deref() == Some(target.as_str())
+                && i.module_path.is_some()
+        }) {
+            if let Some(ns) = import.module_path.as_deref() {
+                return Some(ns.to_string());
+            }
+        }
+
         engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_clojure_builtin)
+    }
+
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
+            return Some(ns);
+        }
+
+        // Side-effect-only `(:require [matcher-combinators.test])` (no `:as`,
+        // no `:refer`) is loaded so its `defmethod clojure.test/assert-expr
+        // 'match? ...` registrations turn `match?`, `setval`, `transform`,
+        // `throw+` etc. into syntactic forms recognised at runtime — none
+        // of which are resolvable through the symbol table.
+        //
+        // Gating this on `lookup.by_name(target).is_empty()` keeps the
+        // heuristic from preempting the engine's name+kind cross-file
+        // resolution: only refs that absolutely no project symbol matches
+        // get reclassified, and they only land here AFTER `resolve()` has
+        // already failed and `infer_external_common` has had its chance.
+        let target = &ref_ctx.extracted_ref.target_name;
+        if target.is_empty() || target.contains('/') || target.starts_with(':') {
+            return None;
+        }
+        if !lookup.by_name(target).is_empty() {
+            return None;
+        }
+        let wildcard_ns = file_ctx.imports.iter().find(|i| {
+            i.is_wildcard
+                && i.module_path
+                    .as_deref()
+                    .map(|p| p.contains('.'))
+                    .unwrap_or(false)
+        })?;
+        let ns = wildcard_ns.module_path.as_deref()?;
+        let root = ns.split('.').next().unwrap_or(ns);
+        Some(root.to_string())
     }
 }

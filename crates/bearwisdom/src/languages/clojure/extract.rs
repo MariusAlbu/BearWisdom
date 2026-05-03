@@ -587,10 +587,24 @@ fn process_list(
                 walk_list_children(node, src, symbols, refs, Some(idx), locals);
             }
         }
-        // Binding forms — collect locals from binding vector before walking body
+        // Binding forms whose first vec_lit holds `[name expr name expr ...]`
+        // pairs (let-style). `if-let` / `when-let` / `if-some` /
+        // `when-some` / `when-first` / `dotimes` use a single
+        // `[name expr]` pair, which the let-style collector handles
+        // correctly because position 0 is still the binding name.
         "let" | "let*" | "loop" | "binding" | "with-redefs" | "with-bindings"
-        | "with-local-vars" => {
+        | "with-local-vars" | "if-let" | "when-let" | "if-some"
+        | "when-some" | "when-first" | "dotimes" => {
             let binding_locals = collect_binding_form_locals(node, src, locals);
+            walk_list_children_raw(node, src, symbols, refs, parent_idx, &binding_locals, 1);
+        }
+        // `are` from clojure.test — `(are [a b c] expr & values)`. Every
+        // name in the first vec is a binding; values that follow are
+        // literal data, not bindings. Reuses fn-style first-vec param
+        // collection so all positions are taken as locals (let-style
+        // pair logic would only catch the even-indexed positions).
+        "are" => {
+            let binding_locals = collect_fn_params(node, src, locals);
             walk_list_children_raw(node, src, symbols, refs, parent_idx, &binding_locals, 1);
         }
         "letfn" => {
@@ -1237,7 +1251,7 @@ fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx
                     if !name.is_empty() {
                         refs.push(ExtractedRef {
                             source_symbol_index: sym_idx,
-                            target_name: name,
+                            target_name: name.clone(),
                             kind: EdgeKind::Imports,
                             line: inner_child.start_position().row as u32,
                             module: None,
@@ -1245,9 +1259,70 @@ fn extract_ns_refs(node: Node, src: &[u8], refs: &mut Vec<ExtractedRef>, sym_idx
                             byte_offset: 0,
                                                     namespace_segments: Vec::new(),
 });
+                        // Per-name `:refer [n1 n2]` imports — emit each
+                        // referred symbol as its own Imports ref so the
+                        // resolver can match unqualified call sites
+                        // (`(match? a b)`) back to their source namespace
+                        // without static analysis of what's `:refer :all`'d.
+                        // Module on these refs IS the source namespace,
+                        // which infer_external_namespace then surfaces.
+                        if inner_child.kind() == "vec_lit" {
+                            collect_refer_names(
+                                inner_child,
+                                src,
+                                &name,
+                                sym_idx,
+                                refs,
+                            );
+                        }
                     }
                 }
             }
+        }
+    }
+}
+
+/// Inside a `[ns :refer [n1 n2 ...]]` vec, find the `:refer` keyword
+/// followed by a `vec_lit` and emit each contained sym_lit as an Imports
+/// ref keyed to `ns`. `:refer :all` leaves the refer-vec unset and is a
+/// wildcard — handled by the existing namespace-level Imports ref.
+fn collect_refer_names(
+    vec_node: Node,
+    src: &[u8],
+    ns_name: &str,
+    sym_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let mut cursor = vec_node.walk();
+    let mut see_refer = false;
+    for child in vec_node.children(&mut cursor) {
+        if child.kind() == "kwd_lit" {
+            let kw = child.utf8_text(src).unwrap_or("");
+            see_refer = kw == ":refer";
+            continue;
+        }
+        if see_refer && child.kind() == "vec_lit" {
+            let mut inner = child.walk();
+            for sym in child.children(&mut inner) {
+                if sym.kind() != "sym_lit" {
+                    continue;
+                }
+                let name = sym_lit_name(sym, src);
+                if name.is_empty() {
+                    continue;
+                }
+                refs.push(ExtractedRef {
+                    source_symbol_index: sym_idx,
+                    target_name: name,
+                    kind: EdgeKind::Imports,
+                    line: sym.start_position().row as u32,
+                    module: Some(ns_name.to_string()),
+                    chain: None,
+                    byte_offset: 0,
+                    namespace_segments: Vec::new(),
+                });
+            }
+            return;
         }
     }
 }
