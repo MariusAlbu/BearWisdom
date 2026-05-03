@@ -468,6 +468,23 @@ pub fn full_index(
         }
         project_ctx.vue_global_registry = vue_registry;
     }
+
+    // --- Step 4b.2: Robot Framework Library binding map ---
+    // Only run when the project contains .robot/.resource files. Walks
+    // each robot file's Resource imports transitively, resolves every
+    // `Library  <name>` to a project-internal `.py` file, and stores the
+    // result on ProjectContext for the RobotResolver to consume.
+    if project_ctx.language_presence.contains("robot") {
+        let robot_map =
+            crate::languages::robot::library_map::build_robot_library_map(&parsed);
+        if !robot_map.is_empty() {
+            info!(
+                "Robot library map: {} files with transitive Python library bindings",
+                robot_map.len()
+            );
+        }
+        project_ctx.robot_library_map = robot_map;
+    }
     mem_probe::probe("04_project_ctx_built");
 
     // --- Step 4c: Write per-package dependency graph (M3) ---

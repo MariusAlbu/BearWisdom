@@ -1925,8 +1925,8 @@
       "files": 507,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 12005,
-      "internal_unresolved": 639,
+      "internal_edges": 12010,
+      "internal_unresolved": 648,
       "languages": {
         "css": 2,
         "html": 199,
@@ -1947,7 +1947,7 @@
         "index_duration_ms": 40776
       },
       "project": "robot-browser",
-      "resolution_rate": 94.95,
+      "resolution_rate": 94.88,
       "routes": 0,
       "symbols": 8193,
       "unresolved_by_lang_kind": {
@@ -1957,7 +1957,7 @@
         "robot.Calls": 314,
         "typescript.Calls": 54,
         "typescript.Instantiates": 1,
-        "typescript.Type_ref": 213
+        "typescript.Type_ref": 222
       }
     },
     {
@@ -1998,8 +1998,8 @@
       "files": 2213,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 52478,
-      "internal_unresolved": 13823,
+      "internal_edges": 60236,
+      "internal_unresolved": 6070,
       "languages": {
         "c": 1,
         "css": 14,
@@ -2021,7 +2021,7 @@
         "index_duration_ms": 25300
       },
       "project": "robot-framework",
-      "resolution_rate": 79.15,
+      "resolution_rate": 90.85,
       "routes": 0,
       "symbols": 48646,
       "unresolved_by_lang_kind": {
@@ -2030,7 +2030,7 @@
         "python.Calls": 114,
         "python.Imports": 11,
         "python.Type_ref": 223,
-        "robot.Calls": 13069,
+        "robot.Calls": 5316,
         "typescript.Calls": 1,
         "typescript.Type_ref": 4
       }

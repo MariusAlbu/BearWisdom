@@ -6,6 +6,7 @@
 
 pub mod keywords;
 pub mod extract;
+pub mod library_map;
 pub mod resolve;
 mod predicates;
 pub(crate) mod type_checker;
@@ -17,6 +18,10 @@ mod coverage_tests;
 #[cfg(test)]
 #[path = "resolve_tests.rs"]
 mod resolve_tests;
+
+#[cfg(test)]
+#[path = "library_map_tests.rs"]
+mod library_map_tests;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;

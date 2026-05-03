@@ -109,7 +109,7 @@ impl LanguageResolver for RobotResolver {
     fn build_file_context(
         &self,
         file: &ParsedFile,
-        _project_ctx: Option<&ProjectContext>,
+        project_ctx: Option<&ProjectContext>,
     ) -> FileContext {
         let mut imports = Vec::new();
 
@@ -129,6 +129,24 @@ impl LanguageResolver for RobotResolver {
                 alias: None,
                 is_wildcard: is_file_import,
             });
+        }
+
+        // Inject transitive Python Library bindings as additional imports
+        // tagged with `is_wildcard=true` and a `.py` module path. The
+        // resolve step uses these to walk Python methods imported via a
+        // `Library` directive (possibly several Resource hops away). See
+        // `library_map::build_robot_library_map`.
+        if let Some(ctx) = project_ctx {
+            if let Some(libs) = ctx.robot_library_map.get(&file.path) {
+                for lib in libs {
+                    imports.push(ImportEntry {
+                        imported_name: lib.library_name.clone(),
+                        module_path: Some(lib.py_file_path.clone()),
+                        alias: None,
+                        is_wildcard: true,
+                    });
+                }
+            }
         }
 
         FileContext {
@@ -236,6 +254,34 @@ impl LanguageResolver for RobotResolver {
                         target_symbol_id: sym.id,
                         confidence: 1.0,
                         strategy: "robot_resource_import",
+                        resolved_yield_type: None,
+                    });
+                }
+            }
+        }
+
+        // Step 4.5: Python Library imports — robot keyword maps to a method
+        // in the imported `.py` file. Robot keyword names normalise to the
+        // Python `snake_case` identifier (`Check Test Case` →
+        // `check_test_case`). The library list comes from the project-wide
+        // `robot_library_map` populated in the indexer pre-pass and surfaced
+        // here as ImportEntry rows whose module_path ends in `.py`.
+        for import in &file_ctx.imports {
+            let Some(path) = &import.module_path else {
+                continue;
+            };
+            if !path.ends_with(".py") {
+                continue;
+            }
+            for sym in lookup.in_file(path) {
+                if (sym.kind == SymbolKind::Function.as_str()
+                    || sym.kind == SymbolKind::Method.as_str())
+                    && sym.name == normalized_target
+                {
+                    return Some(Resolution {
+                        target_symbol_id: sym.id,
+                        confidence: 0.95,
+                        strategy: "robot_python_library",
                         resolved_yield_type: None,
                     });
                 }

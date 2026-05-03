@@ -19,6 +19,7 @@ use crate::ecosystem::manifest::{self, ManifestData, ManifestKind, PackageManife
 use crate::ecosystem::{
     self, EcosystemActivation, EcosystemId, EcosystemRegistry, Platform,
 };
+use crate::languages::robot::library_map::RobotLibraryMap;
 use crate::languages::vue::global_registry::VueGlobalRegistry;
 use crate::types::PackageInfo;
 
@@ -143,6 +144,17 @@ pub struct ProjectContext {
     /// `Default` leaves this empty; the full indexer populates it by calling
     /// `languages::vue::global_registry::scan_global_registrations`.
     pub vue_global_registry: VueGlobalRegistry,
+
+    /// Robot Framework: per-file flattened Library imports keyed by
+    /// `.robot`/`.resource` file path. Built by walking each file's
+    /// Resource imports transitively and resolving every `Library  <name>`
+    /// to a project-internal `.py` file. Used by `RobotResolver` to
+    /// resolve cross-language keyword calls (e.g. `Check Test Case` →
+    /// `check_test_case` in `TestCheckerLibrary.py`).
+    ///
+    /// `Default` leaves this empty; the full indexer populates it after
+    /// parsing via `languages::robot::library_map::build_robot_library_map`.
+    pub robot_library_map: RobotLibraryMap,
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +183,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         active_ecosystems: Vec::new(),
         language_presence: HashSet::new(),
         vue_global_registry: VueGlobalRegistry::default(),
+        robot_library_map: RobotLibraryMap::default(),
     }
 }
 
@@ -266,6 +279,7 @@ pub fn build_project_context_with_packages(
         active_ecosystems: Vec::new(),
         language_presence: HashSet::new(),
         vue_global_registry: VueGlobalRegistry::default(),
+        robot_library_map: RobotLibraryMap::default(),
     }
 }
 
