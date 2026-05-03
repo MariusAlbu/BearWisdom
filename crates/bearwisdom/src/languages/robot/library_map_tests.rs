@@ -159,6 +159,55 @@ fn library_in_same_dir_wins_over_distant_match() {
 }
 
 #[test]
+fn builtin_py_auto_imports_into_every_robot_file() {
+    // Project vendors the framework's BuiltIn.py at the canonical path.
+    // Every robot file should get an implicit binding even when it
+    // declares no Library imports.
+    let parsed = vec![
+        pf("src/robot/libraries/BuiltIn.py", Vec::new()),
+        pf("tests/no_imports.robot", Vec::new()),
+        pf(
+            "tests/with_resource.robot",
+            vec![import_ref("helpers.robot")],
+        ),
+        pf("tests/helpers.robot", Vec::new()),
+    ];
+    let map = build_robot_library_map(&parsed);
+
+    let bare = map
+        .get("tests/no_imports.robot")
+        .expect("BuiltIn must auto-inject even with no explicit imports");
+    assert!(
+        bare.iter().any(|l|
+            l.library_name == "BuiltIn"
+                && l.py_file_path == "src/robot/libraries/BuiltIn.py"
+        ),
+        "expected BuiltIn auto-import; got {bare:?}"
+    );
+
+    // The helper resource also gets BuiltIn (for keywords IT defines).
+    let helpers = map
+        .get("tests/helpers.robot")
+        .expect("BuiltIn auto-injects into resource files too");
+    assert!(helpers.iter().any(|l| l.library_name == "BuiltIn"));
+}
+
+#[test]
+fn no_builtin_py_means_no_auto_import() {
+    // Application project that uses Robot at runtime but doesn't vendor
+    // the framework. There's no BuiltIn.py in the project tree, so the
+    // resolver shouldn't pretend there is one.
+    let parsed = vec![
+        pf("tests/no_imports.robot", Vec::new()),
+    ];
+    let map = build_robot_library_map(&parsed);
+    assert!(
+        map.get("tests/no_imports.robot").is_none(),
+        "no .py files in project ⇒ no library entry at all"
+    );
+}
+
+#[test]
 fn external_files_are_excluded_from_inputs() {
     // ext: paths represent externals (node_modules, .m2, etc.). The
     // resolver shouldn't treat them as project files.

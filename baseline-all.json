@@ -1998,8 +1998,8 @@
       "files": 2213,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 60236,
-      "internal_unresolved": 6070,
+      "internal_edges": 61230,
+      "internal_unresolved": 5076,
       "languages": {
         "c": 1,
         "css": 14,
@@ -2021,7 +2021,7 @@
         "index_duration_ms": 25300
       },
       "project": "robot-framework",
-      "resolution_rate": 90.85,
+      "resolution_rate": 92.34,
       "routes": 0,
       "symbols": 48646,
       "unresolved_by_lang_kind": {
@@ -2030,7 +2030,7 @@
         "python.Calls": 114,
         "python.Imports": 11,
         "python.Type_ref": 223,
-        "robot.Calls": 5316,
+        "robot.Calls": 4322,
         "typescript.Calls": 1,
         "typescript.Type_ref": 4
       }

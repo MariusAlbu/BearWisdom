@@ -44,6 +44,16 @@ pub struct RobotPythonLibrary {
 /// tests that don't pull in helper resources.
 pub type RobotLibraryMap = HashMap<String, Vec<RobotPythonLibrary>>;
 
+/// Library names that Robot Framework imports implicitly into every
+/// suite/resource, with no explicit `Library  <name>` declaration.
+///
+/// Per the Robot Framework spec the only implicit library is `BuiltIn`
+/// (`Should Be Equal`, `No Operation`, `Set Variable`, `Length Should
+/// Be`, ~150 other keywords). The list is pluralised as a convenience
+/// in case future spec additions land — adding here is a one-line
+/// change and the lookup is O(1) per file at index time.
+const AUTO_IMPORTED_LIBRARIES: &[&str] = &["BuiltIn"];
+
 /// Walk parsed files, resolve Robot import chains, and return a map
 /// keyed by `.robot`/`.resource` file path.
 ///
@@ -73,6 +83,35 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
                 && (pf.path.ends_with(".robot") || pf.path.ends_with(".resource"))
         })
         .map(|pf| pf.path.as_str())
+        .collect();
+
+    // Robot Framework auto-imports `BuiltIn` for every test/resource file
+    // — no `Library  BuiltIn` declaration is required. The keywords it
+    // exposes (`Should Be Equal`, `No Operation`, `Set Variable`, ...)
+    // would otherwise leak unresolved in any project that vendors the
+    // framework's Python source. Find a project-internal `BuiltIn.py`
+    // (typically `src/robot/libraries/BuiltIn.py`) and treat it as an
+    // implicit library on every robot/resource file.
+    //
+    // Only auto-injected when the project actually contains a BuiltIn.py;
+    // application projects that just use Robot at runtime (where BuiltIn
+    // lives in site-packages, not the source tree) are unaffected.
+    let auto_libs: Vec<RobotPythonLibrary> = AUTO_IMPORTED_LIBRARIES
+        .iter()
+        .filter_map(|name| {
+            let target = format!("{name}.py");
+            let py = py_paths.iter().copied().find(|p| {
+                std::path::Path::new(p)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .map(|n| n == target)
+                    .unwrap_or(false)
+            })?;
+            Some(RobotPythonLibrary {
+                library_name: (*name).to_string(),
+                py_file_path: py.to_string(),
+            })
+        })
         .collect();
 
     // Direct imports per robot/resource file (no transitivity yet).
@@ -109,7 +148,9 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
     }
 
     // Transitive closure: for each file, BFS through its Resource imports
-    // and accumulate libraries from every visited resource.
+    // and accumulate libraries from every visited resource. Auto-imported
+    // libraries (BuiltIn, ...) are seeded first so they're available on
+    // every file regardless of explicit imports.
     let mut result: RobotLibraryMap = HashMap::new();
     for pf in parsed {
         if pf.path.starts_with("ext:") {
@@ -118,10 +159,12 @@ pub fn build_robot_library_map(parsed: &[ParsedFile]) -> RobotLibraryMap {
         if !pf.path.ends_with(".robot") && !pf.path.ends_with(".resource") {
             continue;
         }
-        let mut all: Vec<RobotPythonLibrary> = direct_libs
-            .get(pf.path.as_str())
-            .cloned()
-            .unwrap_or_default();
+        let mut all: Vec<RobotPythonLibrary> = auto_libs.clone();
+        for lib in direct_libs.get(pf.path.as_str()).into_iter().flatten() {
+            if !all.iter().any(|l| l.py_file_path == lib.py_file_path) {
+                all.push(lib.clone());
+            }
+        }
         let mut visited: HashSet<String> = HashSet::new();
         let mut stack: Vec<String> = direct_resources
             .get(pf.path.as_str())
