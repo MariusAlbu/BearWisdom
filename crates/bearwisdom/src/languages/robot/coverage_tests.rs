@@ -326,6 +326,69 @@ fn setup_setting_emits_keyword_call_from_second_cell() {
 }
 
 #[test]
+fn suite_test_template_suppresses_body_rows_in_every_test() {
+    // `Test Template    <Keyword>` in *** Settings *** applies to every
+    // test in the file. Each test's body rows are arg data for the
+    // template, not keyword calls — even the very first row of the
+    // first test (no per-test [Template] needed).
+    //
+    // Reproduces the corpus pattern from
+    // `atest/testdata/variables/yaml_variable_file.robot`.
+    let src = concat!(
+        "*** Settings ***\n",
+        "Test Template    Should Be Equal\n",
+        "*** Test Cases ***\n",
+        "Valid YAML file\n",
+        "    ${STRING}     Hello, YAML!\n",
+        "    ${INTEGER}    ${42}\n",
+        "Dictionary is dot-accessible\n",
+        "    ${DICT.a}     1\n",
+        "    ${DICT.b}     ${2}\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    for leaked in ["Hello, YAML!", "${42}", "1", "${2}"] {
+        assert!(
+            !calls.contains(&leaked),
+            "suite-template arg {leaked:?} leaked as Calls ref; got: {calls:?}"
+        );
+    }
+}
+
+#[test]
+fn per_test_template_none_overrides_suite_template() {
+    // A specific test can opt out of the suite-level template via
+    // `[Template]    NONE` — its body lines go back to being normal
+    // keyword invocations.
+    let src = concat!(
+        "*** Settings ***\n",
+        "Test Template    Should Be Equal\n",
+        "*** Test Cases ***\n",
+        "Templated\n",
+        "    a    b\n",
+        "Plain\n",
+        "    [Template]    NONE\n",
+        "    Log    Hello\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"Log"),
+        "[Template] NONE must override suite template; got: {calls:?}"
+    );
+    assert!(
+        !calls.contains(&"a"),
+        "templated test rows must not produce Calls refs; got: {calls:?}"
+    );
+}
+
+#[test]
 fn other_settings_do_not_emit_calls() {
     // [Tags], [Documentation], [Arguments], [Return], [Timeout] all carry
     // data — must NOT become Calls refs.

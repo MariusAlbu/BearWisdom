@@ -38,10 +38,15 @@ pub fn extract(source: &str) -> ExtractionResult {
     let lines: Vec<&str> = source.lines().collect();
     let mut section = Section::None;
     let mut current_item: Option<usize> = None; // index into symbols of current kw/tc
+    // Suite-level `Test Template    <Keyword>` from `*** Settings ***`.
+    // Applies to EVERY test in the file; per-test `[Template]` can
+    // override (including `[Template]    NONE` to disable for one test).
+    let mut suite_template_active: bool = false;
     // Tracks `[Template]    <Keyword>` for the active test or keyword. When
     // set, every subsequent body row is positional ARG data for the
     // template, not a keyword invocation — the first cell must NOT be
-    // emitted as a Calls ref. Reset on each new test/keyword header.
+    // emitted as a Calls ref. Reset on each new test/keyword header to
+    // the suite-level default.
     let mut template_active: bool = false;
 
     let mut i = 0;
@@ -66,6 +71,13 @@ pub fn extract(source: &str) -> ExtractionResult {
         match section {
             Section::Settings => {
                 extract_settings_line(trimmed, i as u32, &symbols, &mut refs);
+                // Detect suite-level `Test Template    <Keyword>` so the
+                // per-test default is "template active" unless a test
+                // explicitly resets via `[Template]    NONE`.
+                if let Some(rest) = strip_setting_keyword(trimmed, "Test Template") {
+                    suite_template_active =
+                        !rest.is_empty() && !rest.eq_ignore_ascii_case("NONE");
+                }
             }
             Section::Variables => {
                 if let Some(var_name) = extract_variable_name(trimmed) {
@@ -83,7 +95,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         name.clone(), name, SymbolKind::Test, i as u32, None,
                     ));
                     current_item = Some(symbols.len() - 1);
-                    template_active = false;
+                    template_active = suite_template_active;
                 } else if let Some(idx) = current_item {
                     handle_body_line(
                         trimmed,
@@ -101,7 +113,7 @@ pub fn extract(source: &str) -> ExtractionResult {
                         name.clone(), name, SymbolKind::Function, i as u32, None,
                     ));
                     current_item = Some(symbols.len() - 1);
-                    template_active = false;
+                    template_active = suite_template_active;
                 } else if let Some(idx) = current_item {
                     handle_body_line(
                         trimmed,
@@ -369,6 +381,24 @@ fn extract_keyword_invocation(
 // ---------------------------------------------------------------------------
 
 /// Split a Robot Framework line into cells (separated by 2+ spaces or tab).
+/// If `line` begins with the case-sensitive setting `keyword` followed by
+/// at least two spaces (Robot's cell separator), return the remainder.
+/// Otherwise return `None`. Used to detect suite-level settings like
+/// `Test Template    Should Be Equal` from `*** Settings ***`.
+fn strip_setting_keyword<'a>(line: &'a str, keyword: &str) -> Option<&'a str> {
+    if !line.starts_with(keyword) {
+        return None;
+    }
+    let after = &line[keyword.len()..];
+    // Must be followed by at least one whitespace character — guards
+    // against false positives like `Test TemplateAlias` matching
+    // `Test Template`.
+    if !after.starts_with(' ') && !after.starts_with('\t') {
+        return None;
+    }
+    Some(after.trim())
+}
+
 fn split_cells(line: &str) -> Vec<&str> {
     // Split on `  ` (2+ spaces) or `\t`
     let mut cells = Vec::new();
