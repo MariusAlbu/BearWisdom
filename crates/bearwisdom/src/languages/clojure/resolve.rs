@@ -181,7 +181,19 @@ impl LanguageResolver for ClojureResolver {
         if target.is_empty() || target.contains('/') || target.starts_with(':') {
             return None;
         }
-        if !lookup.by_name(target).is_empty() {
+        // Skip the heuristic only when an INTERNAL (project) symbol with
+        // this name exists — external matches (`ext:idx:...` paths from
+        // PIL, java.base, etc.) shouldn't block reclassification because
+        // they're nothing to do with the clojure call site. Without this
+        // filter, names like `transform` (also defined in PIL.Image.py
+        // as an external) stay unresolved even when the calling clojure
+        // file plainly imports specter, which is where they actually
+        // come from.
+        let has_internal_match = lookup
+            .by_name(target)
+            .iter()
+            .any(|s| !s.file_path.starts_with("ext:"));
+        if has_internal_match {
             return None;
         }
         let wildcard_ns = file_ctx.imports.iter().find(|i| {
