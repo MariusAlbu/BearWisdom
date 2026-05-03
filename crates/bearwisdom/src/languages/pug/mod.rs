@@ -11,6 +11,7 @@
 
 pub mod extract;
 pub mod embedded;
+pub mod resolve;
 
 use crate::languages::LanguagePlugin;
 use crate::parser::scope_tree::ScopeKind;
@@ -32,4 +33,7 @@ impl LanguagePlugin for PugPlugin {
     }
     fn symbol_node_kinds(&self) -> &[&str] { &[] }
     fn ref_node_kinds(&self) -> &[&str] { &[] }
+    fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
+        Some(std::sync::Arc::new(resolve::PugResolver))
+    }
 }

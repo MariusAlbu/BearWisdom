@@ -101,6 +101,74 @@ fn qualified_library_prefix(target: &str) -> Option<&str> {
     Some(prefix)
 }
 
+/// Resolve the effective library prefix for a qualified call, accounting
+/// for dotted library names that the extractor split at the first dot.
+///
+/// `Library  libraryscope.Global` lets calls use
+/// `libraryscope.Global.Should Be Registered`. The extractor records
+/// `module = "libraryscope"` and `target = "Global.Should Be Registered"`.
+/// The naive `module` lookup misses because the imported name is
+/// `libraryscope.Global`, not `libraryscope`. Walk the leading
+/// dotted segments of `target` and check each composite
+/// `<module>.<seg1>.<seg2>...` against the file's imports.
+///
+/// Returns `(library_name, remaining_target_keyword)` when a longer
+/// match is found. When the bare `module` already matches, returns
+/// `Some((module, target_unchanged))`. None when nothing matches.
+fn resolve_qualified_library<'a>(
+    file_ctx: &FileContext,
+    module: Option<&'a str>,
+    target: &'a str,
+) -> Option<(String, &'a str)> {
+    // First try the bare module — covers single-segment library names.
+    if let Some(m) = module {
+        if !m.ends_with(".robot") && !m.ends_with(".resource") {
+            if is_library_import(file_ctx, m) || predicates::is_robot_builtin_library(m) {
+                return Some((m.to_string(), target));
+            }
+        }
+    }
+    // Walk leading dotted segments of `target`. Each composite
+    // `<module>.<seg1>...` is a candidate library prefix, with the
+    // remaining suffix being the keyword name.
+    if let Some(m) = module {
+        if !m.ends_with(".robot") && !m.ends_with(".resource") {
+            let mut composite = m.to_string();
+            let mut consumed: usize = 0;
+            for (idx, ch) in target.char_indices() {
+                if ch == '.' {
+                    let seg = &target[consumed..idx];
+                    if seg.is_empty() || seg.contains(' ') || seg.contains('{') {
+                        break;
+                    }
+                    composite.push('.');
+                    composite.push_str(seg);
+                    consumed = idx + 1;
+                    if is_library_import(file_ctx, &composite)
+                        || predicates::is_robot_builtin_library(&composite)
+                    {
+                        return Some((composite, &target[consumed..]));
+                    }
+                } else if ch == ' ' || ch == '{' {
+                    // Past the prefix — keyword name begins here.
+                    break;
+                }
+            }
+        }
+    }
+    // Module is None — try `target`'s own first dotted segment (legacy
+    // single-prefix form).
+    if module.is_none() {
+        if let Some(prefix) = qualified_library_prefix(target) {
+            if is_library_import(file_ctx, prefix) || predicates::is_robot_builtin_library(prefix) {
+                let suffix = &target[prefix.len() + 1..];
+                return Some((prefix.to_string(), suffix));
+            }
+        }
+    }
+    None
+}
+
 /// Check if `library_name` is imported as a Library (not a Resource) in this file.
 fn is_library_import(file_ctx: &FileContext, library_name: &str) -> bool {
     let norm_lib = predicates::normalize_robot_name(library_name);
@@ -240,19 +308,20 @@ impl LanguageResolver for RobotResolver {
         }
 
         // Step 1: Qualified `Library.Keyword` calls are external — never resolve against
-        // the project index. Two forms:
+        // the project index. Three forms:
         //   a) `module` field set by extractor: `SeleniumLibrary` + target `Click Element`
         //   b) Legacy dotted target (no module split): `SeleniumLibrary.Click Element`
-        let library_module: Option<&str> = ref_ctx
-            .extracted_ref
-            .module
-            .as_deref()
-            .filter(|m| !m.ends_with(".robot") && !m.ends_with(".resource"))
-            .or_else(|| qualified_library_prefix(target));
-        if let Some(lib) = library_module {
-            if is_library_import(file_ctx, lib) || predicates::is_robot_builtin_library(lib) {
-                return None;
-            }
+        //   c) Multi-segment library name: `Library  libraryscope.Global` + call
+        //      `libraryscope.Global.Should Be Registered` (extractor stored
+        //      module=`libraryscope`, target=`Global.Should Be Registered`).
+        if resolve_qualified_library(
+            file_ctx,
+            ref_ctx.extracted_ref.module.as_deref(),
+            target,
+        )
+        .is_some()
+        {
+            return None;
         }
 
         // Step 2: Variable references — `${VAR}`, `@{LIST}`, `&{DICT}`.
@@ -355,13 +424,17 @@ impl LanguageResolver for RobotResolver {
                     sym.kind.as_str(),
                     "function" | "method" | "test"
                 );
-                // Robot strips a trailing underscore from the Python
-                // identifier when computing the keyword name — Python
-                // convention for avoiding stdlib clashes (`datetime_`,
-                // `class_`, `import_`). So `Library  Foo` ⇒ Foo's
-                // `def datetime_(...)` is the `DateTime` keyword.
-                let py_name_clean = sym.name.strip_suffix('_').unwrap_or(&sym.name);
-                if is_callable && py_name_clean == normalized_target {
+                // Run the Python identifier through the same Robot
+                // normaliser as the call target. Robot strips spaces
+                // AND underscores AND lowercases, so `def
+                // check_test_case` matches calls written as
+                // `Check Test Case`, `check_test_case`, or the
+                // tolerated-but-irregular `Check testcase`. The trailing-
+                // underscore convention (`def class_`, `def import_`)
+                // gets folded in automatically because the trailing
+                // `_` disappears in the strip pass.
+                let py_normalized = predicates::normalize_robot_name(&sym.name);
+                if is_callable && py_normalized == normalized_target {
                     return Some(Resolution {
                         target_symbol_id: sym.id,
                         confidence: 0.95,
@@ -532,17 +605,15 @@ impl LanguageResolver for RobotResolver {
         }
 
         // Qualified `Library.Keyword` call: namespace is the library name.
-        // Check both the module field (set by extractor) and legacy dotted target.
-        let library_module: Option<&str> = ref_ctx
-            .extracted_ref
-            .module
-            .as_deref()
-            .filter(|m| !m.ends_with(".robot") && !m.ends_with(".resource"))
-            .or_else(|| qualified_library_prefix(target));
-        if let Some(lib) = library_module {
-            if is_library_import(file_ctx, lib) || predicates::is_robot_builtin_library(lib) {
-                return Some(lib.to_string());
-            }
+        // Reuses the same multi-segment resolution as Step 1 of `resolve()`
+        // so dotted libraries like `libraryscope.Global` are classified
+        // external instead of leaking as unresolved.
+        if let Some((lib, _)) = resolve_qualified_library(
+            file_ctx,
+            ref_ctx.extracted_ref.module.as_deref(),
+            target,
+        ) {
+            return Some(lib);
         }
 
         // Variable references that weren't resolved are external (env vars, CLI vars, etc.).

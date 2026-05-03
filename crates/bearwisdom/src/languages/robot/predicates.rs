@@ -11,11 +11,17 @@ use crate::types::EdgeKind;
 /// runtime decorators that are part of the call site syntax, not part
 /// of the keyword's identity (`When I park` calls the keyword `I park`).
 pub(super) fn normalize_robot_name(name: &str) -> String {
+    // Robot Framework strips both spaces and underscores when comparing
+    // keyword names — `Check Test Case`, `check_test_case`, and even the
+    // (technically wrong but Robot-tolerated) `Check testcase` all match
+    // the same keyword. Mirror that behaviour rather than the previous
+    // "spaces become underscores" pass, which under-collapsed the
+    // testcase-vs-test_case form and lost ~37 robot-framework refs.
     let stripped = strip_bdd_prefix(name);
     stripped
-        .to_ascii_lowercase()
         .chars()
-        .map(|c| if c == ' ' || c == '_' { '_' } else { c })
+        .filter(|c| *c != ' ' && *c != '_')
+        .map(|c| c.to_ascii_lowercase())
         .collect()
 }
 

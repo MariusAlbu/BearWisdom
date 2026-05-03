@@ -685,7 +685,7 @@ fn dynamic_keyword_resolves_to_owning_class() {
         "lib/async.py",
         "AsyncDynamicLibrary",
         vec![super::dynamic_keywords::RobotDynamicKeyword {
-            normalized_name: "async_keyword".to_string(),
+            normalized_name: "asynckeyword".to_string(),
             class_name: Some("AsyncDynamicLibrary".to_string()),
             method_name: None,
         }],
@@ -735,7 +735,7 @@ fn module_level_keywords_dict_falls_back_to_first_class() {
         "lib/dyn.py",
         "DynamicWithoutKwargs",
         vec![super::dynamic_keywords::RobotDynamicKeyword {
-            normalized_name: "one_arg".to_string(),
+            normalized_name: "onearg".to_string(),
             class_name: None, // module-level KEYWORDS dict
             method_name: None,
         }],
@@ -842,7 +842,7 @@ fn dynamic_keyword_normalization_matches_call_site() {
         "lib/g.py",
         "GetKeywordNamesLibrary",
         vec![super::dynamic_keywords::RobotDynamicKeyword {
-            normalized_name: "get_keyword_that_passes".to_string(),
+            normalized_name: "getkeywordthatpasses".to_string(),
             class_name: Some("GetKeywordNamesLibrary".to_string()),
             method_name: None,
         }],

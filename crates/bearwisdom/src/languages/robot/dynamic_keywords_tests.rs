@@ -26,8 +26,8 @@ class DynamicWithoutKwargs:
     let map = run(&[("dyn.py", src)]);
     let kws = map.get("dyn.py").expect("dyn.py present");
     let names: Vec<&str> = kws.iter().map(|k| k.normalized_name.as_str()).collect();
-    assert!(names.contains(&"one_arg"), "names={names:?}");
-    assert!(names.contains(&"two_args"), "names={names:?}");
+    assert!(names.contains(&"onearg"), "names={names:?}");
+    assert!(names.contains(&"twoargs"), "names={names:?}");
     // Module-level dict has no class scope.
     assert!(kws.iter().all(|k| k.class_name.is_none()));
 }
@@ -43,11 +43,11 @@ class AsyncDynamicLibrary:
     let kws = map.get("async.py").expect("async.py present");
     assert!(kws
         .iter()
-        .any(|k| k.normalized_name == "async_keyword"
+        .any(|k| k.normalized_name == "asynckeyword"
             && k.class_name.as_deref() == Some("AsyncDynamicLibrary")));
     assert!(kws
         .iter()
-        .any(|k| k.normalized_name == "other_keyword"
+        .any(|k| k.normalized_name == "otherkeyword"
             && k.class_name.as_deref() == Some("AsyncDynamicLibrary")));
 }
 
@@ -62,7 +62,7 @@ class Inner:
     let map = run(&[("nested.py", src)]);
     let kws = map.get("nested.py").expect("nested.py present");
     assert_eq!(kws.len(), 1);
-    assert_eq!(kws[0].normalized_name, "hello_world");
+    assert_eq!(kws[0].normalized_name, "helloworld");
     assert_eq!(kws[0].class_name.as_deref(), Some("Inner"));
 }
 
@@ -95,8 +95,12 @@ KEYWORDS = {
     // chars pass through unchanged (so `Ä` stays uppercase). Robot's own
     // normalize_robot_name behaves the same way, so the resolver's call-
     // site form matches.
+    // Spaces and underscores both strip out; non-ASCII chars pass through.
+    // ASCII-only lowercasing means `Ä` keeps its case — Robot's own
+    // normalize_robot_name behaves the same way, so the resolver matches
+    // call sites consistently.
     assert!(
-        names.iter().any(|n| *n == "nön-Äscii_names"),
+        names.iter().any(|n| *n == "nön-Äsciinames"),
         "names={names:?}"
     );
     assert!(names.iter().any(|n| n == &"官话"));
@@ -121,7 +125,7 @@ class Box:
     let kws = map.get("dup.py").expect("dup.py present");
     let count = kws
         .iter()
-        .filter(|k| k.normalized_name == "same_name")
+        .filter(|k| k.normalized_name == "samename")
         .count();
     assert_eq!(count, 1, "expected one entry, got {kws:?}");
 }
@@ -163,7 +167,7 @@ class Lib:
         .iter()
         .find(|k| k.method_name.as_deref() == Some("keyword_name_should_not_change"))
         .expect("bare @keyword still registers the method");
-    assert_eq!(kw.normalized_name, "keyword_name_should_not_change");
+    assert_eq!(kw.normalized_name, "keywordnameshouldnotchange");
 }
 
 #[test]
@@ -231,10 +235,10 @@ class DynamicWithoutKwargs:
     let kws = map.get("real.py").expect("real.py present");
     let names: Vec<&str> = kws.iter().map(|k| k.normalized_name.as_str()).collect();
     for expected in [
-        "one_arg",
-        "two_args",
-        "four_args",
-        "args_&_varargs",
+        "onearg",
+        "twoargs",
+        "fourargs",
+        "args&varargs",
     ] {
         assert!(
             names.contains(&expected),
