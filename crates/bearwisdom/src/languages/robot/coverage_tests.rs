@@ -24,6 +24,12 @@ fn cov_test_case_definition_produces_test() {
         "test case should produce Test symbol; got: {:?}",
         r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>()
     );
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"Log"),
+        "Log call expected in this baseline; got {calls:?}");
 }
 
 #[test]
@@ -228,4 +234,116 @@ fn cov_var_inline_assignment_does_not_produce_call() {
         "`VAR` inline assignment must not produce a Calls ref; got: {:?}",
         r.refs.iter().map(|rf| (rf.kind, rf.target_name.clone())).collect::<Vec<_>>()
     );
+}
+
+// ---------------------------------------------------------------------------
+// [Template] suppression — body rows under a template are arg data, not calls
+// ---------------------------------------------------------------------------
+
+#[test]
+fn template_suppresses_body_rows_as_keyword_calls() {
+    // From `atest/testdata/standard_libraries/string/get_matching_lines.robot`.
+    // `[Template]` makes every subsequent body row positional ARGS to
+    // `Test Get Lines Containing String`, NOT keyword calls. The first
+    // cell of each row (`${EMPTY}`, `whatever`, `1`, `Hello, world!`) is
+    // data — must not produce Calls refs.
+    let src = concat!(
+        "*** Test Cases ***\n",
+        "Get Lines When Empty\n",
+        "    [Template]    Test Get Lines Containing String\n",
+        "    ${EMPTY}    whatever    ${EMPTY}\n",
+        "    ${INPUT}    1           1\n",
+        "    Hello, world!    Hello    Hello\n",
+    );
+    let r = extract::extract(src);
+
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    // sanity: the test case symbol exists
+    assert!(r.symbols.iter().any(|s| s.name == "Get Lines When Empty"),
+        "test case symbol must be extracted; got symbols: {:?}",
+        r.symbols.iter().map(|s| (&s.name, s.kind)).collect::<Vec<_>>());
+
+    // None of the data values must appear as call targets.
+    for leaked in ["whatever", "1", "Hello, world!"] {
+        assert!(
+            !calls.contains(&leaked),
+            "template arg {leaked:?} leaked as Calls ref; got: {calls:?}"
+        );
+    }
+}
+
+#[test]
+fn template_can_be_disabled_within_a_test() {
+    // `[Template]    NONE` (case-insensitive) explicitly disables a
+    // section-level template for one test, and rows go back to being
+    // keyword invocations.
+    let src = concat!(
+        "*** Test Cases ***\n",
+        "No Template\n",
+        "    [Template]    NONE\n",
+        "    Log    Hello\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        calls.contains(&"Log"),
+        "with template disabled, body lines must still produce Calls refs; got: {calls:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// [Setup] / [Teardown] — second cell IS a real keyword call
+// ---------------------------------------------------------------------------
+
+#[test]
+fn setup_setting_emits_keyword_call_from_second_cell() {
+    let src = concat!(
+        "*** Test Cases ***\n",
+        "With Setup\n",
+        "    [Setup]       Initialize System\n",
+        "    Log    body\n",
+        "    [Teardown]    Cleanup Resources\n",
+    );
+    let r = extract::extract(src);
+    let calls: Vec<&str> = r
+        .refs
+        .iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(calls.contains(&"Initialize System"),
+        "[Setup] keyword must emit a Calls ref; got: {calls:?}");
+    assert!(calls.contains(&"Cleanup Resources"),
+        "[Teardown] keyword must emit a Calls ref; got: {calls:?}");
+}
+
+#[test]
+fn other_settings_do_not_emit_calls() {
+    // [Tags], [Documentation], [Arguments], [Return], [Timeout] all carry
+    // data — must NOT become Calls refs.
+    let src = concat!(
+        "*** Test Cases ***\n",
+        "With Settings\n",
+        "    [Tags]            smoke    regression\n",
+        "    [Documentation]   does a thing\n",
+        "    [Timeout]         5 seconds\n",
+        "    Log    body\n",
+    );
+    let r = extract::extract(src);
+    let bad: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .filter(|n| matches!(*n,
+            "smoke" | "regression" | "does a thing" | "5 seconds"))
+        .collect();
+    assert!(bad.is_empty(),
+        "non-call setting values must not produce Calls refs; got: {bad:?}");
 }

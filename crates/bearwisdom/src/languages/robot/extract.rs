@@ -38,6 +38,11 @@ pub fn extract(source: &str) -> ExtractionResult {
     let lines: Vec<&str> = source.lines().collect();
     let mut section = Section::None;
     let mut current_item: Option<usize> = None; // index into symbols of current kw/tc
+    // Tracks `[Template]    <Keyword>` for the active test or keyword. When
+    // set, every subsequent body row is positional ARG data for the
+    // template, not a keyword invocation — the first cell must NOT be
+    // emitted as a Calls ref. Reset on each new test/keyword header.
+    let mut template_active: bool = false;
 
     let mut i = 0;
     while i < lines.len() {
@@ -48,6 +53,7 @@ pub fn extract(source: &str) -> ExtractionResult {
         if trimmed.starts_with("***") && trimmed.ends_with("***") {
             section = detect_section(trimmed);
             current_item = None;
+            template_active = false;
             i += 1;
             continue;
         }
@@ -77,9 +83,15 @@ pub fn extract(source: &str) -> ExtractionResult {
                         name.clone(), name, SymbolKind::Test, i as u32, None,
                     ));
                     current_item = Some(symbols.len() - 1);
+                    template_active = false;
                 } else if let Some(idx) = current_item {
-                    // Body line — keyword invocation
-                    extract_keyword_invocation(trimmed, i as u32, idx, &mut refs);
+                    handle_body_line(
+                        trimmed,
+                        i as u32,
+                        idx,
+                        &mut refs,
+                        &mut template_active,
+                    );
                 }
             }
             Section::Keywords => {
@@ -89,11 +101,15 @@ pub fn extract(source: &str) -> ExtractionResult {
                         name.clone(), name, SymbolKind::Function, i as u32, None,
                     ));
                     current_item = Some(symbols.len() - 1);
+                    template_active = false;
                 } else if let Some(idx) = current_item {
-                    // Body line — keyword invocation (or [Setting])
-                    if !trimmed.starts_with('[') {
-                        extract_keyword_invocation(trimmed, i as u32, idx, &mut refs);
-                    }
+                    handle_body_line(
+                        trimmed,
+                        i as u32,
+                        idx,
+                        &mut refs,
+                        &mut template_active,
+                    );
                 }
             }
             Section::None => {}
@@ -179,6 +195,99 @@ fn extract_variable_name(trimmed: &str) -> Option<String> {
         return None;
     }
     Some(name.to_string())
+}
+
+// ---------------------------------------------------------------------------
+// Body lines inside Test Cases / Keywords sections.
+//
+// Two intertwined concerns the previous code missed:
+//
+//   1. `[Template]    <Keyword>` — once set on a test (or keyword), every
+//      subsequent body row is a row of POSITIONAL ARGUMENTS to the
+//      template. The first cell is data, NOT a keyword call. Without
+//      tracking template state we leak hundreds of false-positive Calls
+//      refs to literal arg values like `1`, `abcdefg`, `Hello, world!`.
+//
+//   2. `[Setup]    <Keyword>` and `[Teardown]    <Keyword>` — the second
+//      cell IS a real keyword call. Other `[Setting]` lines (`[Tags]`,
+//      `[Documentation]`, `[Arguments]`, `[Return]`, `[Timeout]`) carry
+//      data only and must not produce Calls refs.
+// ---------------------------------------------------------------------------
+
+fn handle_body_line(
+    trimmed: &str,
+    lineno: u32,
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+    template_active: &mut bool,
+) {
+    if trimmed.starts_with('[') {
+        // Bracketed setting line. Parse it once and route by kind.
+        let cells = split_cells(trimmed);
+        let setting = cells.first().map(|s| s.trim()).unwrap_or("");
+        match setting {
+            "[Template]" => {
+                // Any non-empty 2nd cell turns the template on. An empty
+                // (or `NONE`) value disables templating for this test.
+                let arg = cells.get(1).map(|s| s.trim()).unwrap_or("");
+                *template_active = !arg.is_empty() && !arg.eq_ignore_ascii_case("NONE");
+            }
+            "[Setup]" | "[Teardown]" => {
+                if let Some(kw) = cells.get(1).map(|s| s.trim()) {
+                    if !kw.is_empty() && !kw.eq_ignore_ascii_case("NONE") {
+                        emit_keyword_call(kw, lineno, source_idx, refs);
+                    }
+                }
+            }
+            _ => {
+                // [Tags], [Documentation], [Arguments], [Return],
+                // [Timeout], etc. — data only.
+            }
+        }
+        return;
+    }
+    if *template_active {
+        // Template active — body line is data, not a call.
+        return;
+    }
+    extract_keyword_invocation(trimmed, lineno, source_idx, refs);
+}
+
+/// Emit a single Calls ref for `keyword_name`, applying the same
+/// `Library.Keyword` splitting that `extract_keyword_invocation` uses.
+/// Shared between the implicit-Setup/Teardown path and the regular
+/// body-line path.
+fn emit_keyword_call(
+    keyword_name: &str,
+    lineno: u32,
+    source_idx: usize,
+    refs: &mut Vec<ExtractedRef>,
+) {
+    let (module, target_name) = if let Some(dot) = keyword_name.find('.') {
+        let prefix = &keyword_name[..dot];
+        let suffix = keyword_name[dot + 1..].trim();
+        if !prefix.is_empty()
+            && !prefix.contains(' ')
+            && !prefix.contains('{')
+            && !suffix.is_empty()
+        {
+            (Some(prefix.to_string()), suffix.to_string())
+        } else {
+            (None, keyword_name.to_string())
+        }
+    } else {
+        (None, keyword_name.to_string())
+    };
+    refs.push(ExtractedRef {
+        source_symbol_index: source_idx,
+        target_name,
+        kind: EdgeKind::Calls,
+        line: lineno,
+        module,
+        chain: None,
+        byte_offset: 0,
+        namespace_segments: Vec::new(),
+    });
 }
 
 // ---------------------------------------------------------------------------
