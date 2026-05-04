@@ -33,9 +33,9 @@ use super::{
     SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{
-    collect_pom_files_bounded, extract_java_sources_jar, gradle_caches_root, is_cache_stale,
-    maven_local_repo, resolve_gradle_sources_jar, resolve_maven_artifact_dir, ExternalDepRoot,
-    ExternalSourceLocator, MAX_WALK_DEPTH,
+    collect_pom_files_bounded, coursier_cache_root, extract_java_sources_jar, gradle_caches_root,
+    is_cache_stale, maven_local_repo, resolve_coursier_sources_jar, resolve_gradle_sources_jar,
+    resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
 };
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
 use crate::ecosystem::manifest::{
@@ -176,17 +176,19 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     let m2 = maven_local_repo();
     let gradle_cache = gradle_caches_root();
-    if m2.is_none() && gradle_cache.is_none() {
-        debug!("No Maven or Gradle cache discovered; skipping JVM externals");
+    let coursier_cache = coursier_cache_root();
+    if m2.is_none() && gradle_cache.is_none() && coursier_cache.is_none() {
+        debug!("No Maven, Gradle, or Coursier cache discovered; skipping JVM externals");
         return Vec::new();
     }
 
     // Pick a shared bearwisdom-sources-cache anchor. Prefer ~/.m2/.. so
     // existing extracted caches are reused; fall back to ~/.gradle/.. for
-    // pure-Gradle dev machines.
+    // pure-Gradle dev machines, then Coursier for SBT-only setups.
     let cache_anchor = m2
         .as_deref()
         .or(gradle_cache.as_deref())
+        .or(coursier_cache.as_deref())
         .map(|p| p.parent().unwrap_or(p).to_path_buf())
         .expect("at least one cache root");
     let cache_base = cache_anchor.join("bearwisdom-sources-cache");
@@ -217,6 +219,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
         resolve_and_push_jvm(
             m2.as_deref(),
             gradle_cache.as_deref(),
+            coursier_cache.as_deref(),
             &cache_base,
             coord,
             &user_imports,
@@ -232,6 +235,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
         resolve_and_push_jvm(
             m2.as_deref(),
             gradle_cache.as_deref(),
+            coursier_cache.as_deref(),
             &cache_base,
             coord,
             &user_imports,
@@ -278,6 +282,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
         resolve_and_push_jvm(
             m2.as_deref(),
             gradle_cache.as_deref(),
+            coursier_cache.as_deref(),
             &cache_base,
             &coord,
             &user_imports,
@@ -286,7 +291,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
         );
     }
 
-    debug!("Maven: {} total external dep roots", roots.len());
+    debug!("JVM ecosystem: {} total external dep roots", roots.len());
     roots
 }
 
@@ -312,11 +317,13 @@ fn collect_gradle_coords(project_root: &Path) -> Vec<MavenCoord> {
 }
 
 /// Try ~/.m2 first (preferred — single jar per artifact dir), fall back to
-/// ~/.gradle/caches (hash-bucketed layout). The first cache that yields a
-/// `<artifact>-<version>-sources.jar` wins; both missing → silent skip.
+/// ~/.gradle/caches (hash-bucketed layout), then to Coursier's cache (used
+/// by SBT's `updateClassifiers`). The first cache that yields a
+/// `<artifact>-<version>-sources.jar` wins; all missing → silent skip.
 fn resolve_and_push_jvm(
     m2: Option<&Path>,
     gradle_cache: Option<&Path>,
+    coursier_cache: Option<&Path>,
     cache_base: &Path,
     coord: &MavenCoord,
     user_imports: &[String],
@@ -343,10 +350,17 @@ fn resolve_and_push_jvm(
             }
         }
     }
+    if resolved.is_none() {
+        if let Some(cache) = coursier_cache {
+            if let Some((version, sources_jar)) = resolve_coursier_sources_jar(cache, coord) {
+                resolved = Some((version, sources_jar));
+            }
+        }
+    }
 
     let Some((version, sources_jar)) = resolved else {
         debug!(
-            "JVM sources jar missing for {}:{} (checked Maven + Gradle caches) — skipping",
+            "JVM sources jar missing for {}:{} (checked Maven + Gradle + Coursier) — skipping",
             coord.group_id, coord.artifact_id
         );
         return;

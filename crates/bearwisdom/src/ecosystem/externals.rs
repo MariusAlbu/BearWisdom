@@ -334,6 +334,153 @@ pub(crate) fn resolve_gradle_sources_jar(
     None
 }
 
+/// Locate the Coursier cache root. SBT-driven Scala projects (and any
+/// Coursier-based JVM tool) populate this when the user runs
+/// `sbt updateClassifiers` or `cs fetch --classifier sources`. Layout
+/// under the cache is `<host>/<repo-path>/<group-as-path>/<artifact>/<version>/`
+/// — i.e. the same Maven layout as `~/.m2/repository`, just rooted under
+/// `<cache>/v1/https/<repo-host>/<repo-base>/`.
+///
+/// On Windows the cache lives at `%LOCALAPPDATA%/Coursier/Cache/v1`.
+/// On macOS it's `~/Library/Caches/Coursier/v1`.
+/// On Linux it's `~/.cache/coursier/v1` or `$XDG_CACHE_HOME/coursier/v1`.
+pub fn coursier_cache_root() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_COURSIER_CACHE") {
+        let p = PathBuf::from(explicit);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    if let Some(dir) = std::env::var_os("COURSIER_CACHE") {
+        let p = PathBuf::from(dir);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+
+    let candidates: Vec<PathBuf> = if cfg!(target_os = "windows") {
+        let mut v = Vec::new();
+        if let Some(local) = std::env::var_os("LOCALAPPDATA") {
+            v.push(PathBuf::from(local).join("Coursier").join("Cache").join("v1"));
+        }
+        if let Some(home) = std::env::var_os("USERPROFILE").or_else(|| std::env::var_os("HOME")) {
+            v.push(
+                PathBuf::from(home)
+                    .join("AppData")
+                    .join("Local")
+                    .join("Coursier")
+                    .join("Cache")
+                    .join("v1"),
+            );
+        }
+        v
+    } else if cfg!(target_os = "macos") {
+        let home = std::env::var_os("HOME")?;
+        vec![PathBuf::from(home)
+            .join("Library")
+            .join("Caches")
+            .join("Coursier")
+            .join("v1")]
+    } else {
+        let home = std::env::var_os("HOME")?;
+        let mut v = Vec::new();
+        if let Some(xdg) = std::env::var_os("XDG_CACHE_HOME") {
+            v.push(PathBuf::from(xdg).join("coursier").join("v1"));
+        }
+        v.push(PathBuf::from(home).join(".cache").join("coursier").join("v1"));
+        v
+    };
+    candidates.into_iter().find(|p| p.is_dir())
+}
+
+/// Resolve a `MavenCoord` against the Coursier cache. Walks the
+/// `https/<host>/maven2/...` subtree (or any other repo root present)
+/// looking for `<group-path>/<artifact>/<version>/<artifact>-<version>-sources.jar`.
+/// Multiple repo hosts (Maven Central, Sonatype, custom) get probed in
+/// directory iteration order; the first hit wins.
+pub(crate) fn resolve_coursier_sources_jar(
+    cache_root: &Path,
+    coord: &crate::ecosystem::manifest::maven::MavenCoord,
+) -> Option<(String, PathBuf)> {
+    // Cache layout: <cache>/<scheme>/<host>/<repo-base>/<group-as-path>/<artifact>/<version>/
+    // e.g.            v1/https/repo1.maven.org/maven2/co/fs2/fs2-core_3/3.12.0/
+    // We don't enumerate scheme/host directories — Coursier nests them
+    // multiple levels deep and the exact intermediary depends on the
+    // repository. Recursive search bounded to a small depth, scoped to
+    // directories named after the artifact's first group segment, is
+    // both correct and cheap.
+    let group_first = coord.group_id.split('.').next()?;
+    let target_name = match &coord.version {
+        Some(v) => format!("{}-{}-sources.jar", coord.artifact_id, v),
+        None => String::new(),
+    };
+
+    fn search(
+        dir: &Path,
+        coord: &crate::ecosystem::manifest::maven::MavenCoord,
+        group_first: &str,
+        target_name: &str,
+        depth: u32,
+    ) -> Option<(String, PathBuf)> {
+        if depth > 8 {
+            return None;
+        }
+        let entries = std::fs::read_dir(dir).ok()?;
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let Some(name) = path.file_name().and_then(|n| n.to_str()) else { continue };
+            // Direct hit: we found the artifact's group-first directory.
+            // Walk to <group-rest>/<artifact>/<version>/<artifact>-<version>-sources.jar.
+            if name == group_first {
+                let mut group_path = path.clone();
+                let segments: Vec<&str> = coord.group_id.split('.').skip(1).collect();
+                for seg in segments {
+                    group_path.push(seg);
+                }
+                group_path.push(&coord.artifact_id);
+                if !group_path.is_dir() {
+                    continue;
+                }
+                let version = if let Some(v) = &coord.version {
+                    v.clone()
+                } else {
+                    let mut versions: Vec<String> = std::fs::read_dir(&group_path)
+                        .ok()?
+                        .flatten()
+                        .filter_map(|e| {
+                            if e.file_type().ok()?.is_dir() {
+                                e.file_name().into_string().ok()
+                            } else {
+                                None
+                            }
+                        })
+                        .collect();
+                    versions.sort();
+                    versions.into_iter().next_back()?
+                };
+                let jar = group_path.join(&version).join(format!(
+                    "{}-{}-sources.jar",
+                    coord.artifact_id, version
+                ));
+                if jar.is_file() {
+                    return Some((version, jar));
+                }
+                continue;
+            }
+            // Otherwise descend through schema/host/repo-base wrappers.
+            if let Some(hit) = search(&path, coord, group_first, target_name, depth + 1) {
+                return Some(hit);
+            }
+        }
+        None
+    }
+
+    search(cache_root, coord, group_first, &target_name, 0)
+}
+
 /// Mini walker that finds every `pom.xml` under a project root up to a
 /// bounded depth. Mirrors the helper in `manifest/maven.rs` because that
 /// one is private to the module.
