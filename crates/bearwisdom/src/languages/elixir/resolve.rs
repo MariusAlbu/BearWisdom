@@ -427,6 +427,55 @@ impl LanguageResolver for ElixirResolver {
             }
         }
 
+        // Bare-import wildcard fallback. `import Bamboo.Test` brings every
+        // public function from Bamboo.Test into scope — `assert_email_delivered_with`,
+        // `assert_no_emails_delivered`, etc. — without those names appearing
+        // anywhere in the user's source. The extractor emits one Imports ref
+        // per directive but doesn't distinguish `import` from `alias`/`use`,
+        // so the resolver can't tell directly.
+        //
+        // Heuristic: when the bare unresolved Calls target has a function-name
+        // shape (lowercase first letter, not a module name) AND the file has
+        // an Imports ref where `imported_name == last_segment(module_path)`
+        // (no `as:` rename — characteristic of `import X.Y` more than
+        // `alias X.Y, as: Z`) AND that module is in the project's Mix deps,
+        // attribute the bare call to that external dep.
+        //
+        // Pure `alias X.Y` without `as:` would also match, but in idiomatic
+        // Elixir code aliasing an external module is done specifically to
+        // call it as `Y.foo()` (which would emit a qualified ref, not a
+        // bare one) — so the false-positive rate is low.
+        if ref_ctx.extracted_ref.kind == EdgeKind::Calls
+            && ref_ctx.extracted_ref.module.is_none()
+            && !target.contains('.')
+            && target
+                .chars()
+                .next()
+                .map(|c| c.is_lowercase() || c == '_')
+                .unwrap_or(false)
+        {
+            if let Some(ctx) = project_ctx {
+                if let Some(manifest) =
+                    ctx.manifests_for(ref_ctx.file_package_id).get(&ManifestKind::Mix)
+                {
+                    for import in &file_ctx.imports {
+                        let Some(module_path) = import.module_path.as_deref() else { continue };
+                        let last_segment = module_path.split('.').last().unwrap_or(module_path);
+                        // Skip alias-with-as: imported_name differs from
+                        // last_segment when `as: X` was used, signalling an
+                        // alias not a wildcard import.
+                        if import.imported_name != last_segment {
+                            continue;
+                        }
+                        let root = module_path.split('.').next().unwrap_or(module_path);
+                        if is_mix_dep_match(root, &manifest.dependencies) {
+                            return Some(root.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
         None
     }
 }
