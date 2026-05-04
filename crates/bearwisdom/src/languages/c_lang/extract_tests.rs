@@ -721,6 +721,43 @@ typedef TcpClientEventLoopTmpl<SocketChannel> TcpClient;
     }
 
     #[test]
+    fn compiler_intrinsics_do_not_emit_calls() {
+        // __builtin_*, __clang_*, __sync_*, __atomic_* are compiler-magic
+        // — never defined in any source file. zig-compiler-fresh's vendored
+        // LLVM source has 55K unresolved Calls dominated by these alone.
+        // Filter at extract time so unresolved_refs stays honest.
+        let src = r#"
+int x = __builtin_bit_cast(int, 1.0f);
+void *p = __builtin_alloca(64);
+int y = __clang_arm_builtin_alias();
+int z = __sync_fetch_and_add(&counter, 1);
+int w = __atomic_load_n(&counter, __ATOMIC_SEQ_CST);
+int normal = real_function(arg);
+"#;
+        let r = extract::extract(src, "c");
+        let calls: Vec<&str> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        for forbidden in [
+            "__builtin_bit_cast",
+            "__builtin_alloca",
+            "__clang_arm_builtin_alias",
+            "__sync_fetch_and_add",
+            "__atomic_load_n",
+        ] {
+            assert!(
+                !calls.contains(&forbidden),
+                "compiler intrinsic `{forbidden}` must NOT emit Calls; got {calls:?}"
+            );
+        }
+        assert!(
+            calls.contains(&"real_function"),
+            "real call `real_function(arg)` SHOULD emit Calls; got {calls:?}"
+        );
+    }
+
+    #[test]
     fn defined_in_preproc_if_does_not_emit_call() {
         // `defined(MACRO)` is a C preprocessor operator inside `#if`/`#elif`
         // directives, not a function call. tree-sitter-c parses it as a
