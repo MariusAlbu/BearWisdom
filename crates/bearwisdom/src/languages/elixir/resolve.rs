@@ -307,9 +307,19 @@ impl LanguageResolver for ElixirResolver {
         //   2. ConnCase injection: handled by `is_phoenix_test_case_wrapper` below.
         //   3. Web wrapper injection: `use MyAppWeb, :controller` or `:view`
         //      — the web module's quote block injects the alias invisibly.
+        //   4. Project-internal macro injection: `use MyApp.SomeResource` whose
+        //      `defmacro __using__` quote block contains
+        //      `alias PlausibleWeb.Router.Helpers, as: Routes`. The aliased
+        //      `Routes` only takes effect in the using file, but its source
+        //      `quote do` is invisible to BearWisdom.
         //
         // For case 1 we check for Router.Helpers in imports. For case 3 we
         // detect `use <AppWeb>, :<controller|view|...>` and apply externalization.
+        // For case 4 we fall back to manifest evidence: if Phoenix is a declared
+        // Mix dep AND the file has any `use ProjectInternal.Module` directive,
+        // externalize. `Routes` is a universal Phoenix convention; an unresolved
+        // single-segment `Routes` in a Phoenix project is essentially never a
+        // user-defined non-Phoenix symbol.
         if target == "Routes" {
             for import in &file_ctx.imports {
                 let mp = import.module_path.as_deref().unwrap_or("");
@@ -322,6 +332,28 @@ impl LanguageResolver for ElixirResolver {
                 if predicates::is_internal_web_module(mp) {
                     return Some("Phoenix".to_string());
                 }
+            }
+            // Case 4: manifest-evidence fallback. Activate only when the
+            // project's mix.exs lists phoenix as a dependency AND the file
+            // does at least one `use SomeProjectInternal.Module` (which is
+            // the macro-injection vehicle). Files that don't `use` anything
+            // can't have invisible aliases.
+            let phoenix_in_mix = project_ctx
+                .and_then(|ctx| {
+                    ctx.manifests_for(ref_ctx.file_package_id)
+                        .get(&ManifestKind::Mix)
+                        .map(|m| is_mix_dep_match("phoenix", &m.dependencies))
+                })
+                .unwrap_or(false);
+            let has_internal_use = file_ctx.imports.iter().any(|imp| {
+                imp.module_path
+                    .as_deref()
+                    .map(|m| !m.is_empty()
+                        && m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false))
+                    .unwrap_or(false)
+            });
+            if phoenix_in_mix && has_internal_use {
+                return Some("Phoenix".to_string());
             }
         }
 
