@@ -719,3 +719,33 @@ typedef TcpClientEventLoopTmpl<SocketChannel> TcpClient;
                 .collect::<Vec<_>>()
         );
     }
+
+    #[test]
+    fn defined_in_preproc_if_does_not_emit_call() {
+        // `defined(MACRO)` is a C preprocessor operator inside `#if`/`#elif`
+        // directives, not a function call. tree-sitter-c parses it as a
+        // call_expression, but it never resolves to a symbol — so it must
+        // not appear in unresolved_refs.
+        let src = r#"
+#if defined(USE_OPENSSL) || !defined(WIN32)
+int x = 1;
+#endif
+
+int real_call(void) {
+    return helper();
+}
+"#;
+        let r = extract::extract(src, "c");
+        let calls: Vec<&str> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(
+            !calls.contains(&"defined"),
+            "`defined` is a preprocessor operator, must not emit Calls; got {calls:?}"
+        );
+        assert!(
+            calls.contains(&"helper"),
+            "real call `helper()` SHOULD emit Calls; got {calls:?}"
+        );
+    }

@@ -28,7 +28,11 @@ pub(super) fn extract_calls_from_body(
                         .map(|s| s.name.clone())
                         .unwrap_or_else(|| call_target_name(&fn_node, src));
                     crate::languages::emit_chain_type_ref(&chain, source_symbol_index, &fn_node, refs);
-                    if !target_name.is_empty() {
+                    // `defined(MACRO)` inside `#if`/`#elif` directives parses
+                    // as call_expression in tree-sitter-c. It's a C preprocessor
+                    // operator, not a function call, and never resolves to a
+                    // symbol. Skip emission to keep unresolved_refs clean.
+                    if !target_name.is_empty() && target_name != "defined" {
                         refs.push(ExtractedRef {
                             source_symbol_index,
                             target_name,
