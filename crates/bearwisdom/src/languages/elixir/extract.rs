@@ -794,19 +794,31 @@ fn extract_calls_recursive(
                             .unwrap_or_else(|| callee.clone());
                         let simple = qualified.rsplit('.').next().unwrap_or(&qualified).to_string();
                         let module = qualified.rfind('.').map(|i| qualified[..i].to_string());
-                        refs.push(ExtractedRef {
-                            source_symbol_index,
-                            target_name: simple,
-                            kind: EdgeKind::Calls,
-                            line: child.start_position().row as u32,
-                            module,
-                            chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
+                        // Lowercase dot-call receivers (`session.acquisition_channel`,
+                        // `email.html_body`) are struct/map field access, not function
+                        // calls. tree-sitter-elixir parses the form as `call` even
+                        // without parens, but no real function lookup applies. Skip
+                        // emission to keep the unresolved table clean.
+                        let receiver_is_module = match &module {
+                            Some(m) => m.chars().next().map(|c| c.is_uppercase()).unwrap_or(false)
+                                || m.contains('.'),
+                            None => true, // bare call — keep
+                        };
+                        if receiver_is_module {
+                            refs.push(ExtractedRef {
+                                source_symbol_index,
+                                target_name: simple,
+                                kind: EdgeKind::Calls,
+                                line: child.start_position().row as u32,
+                                module,
+                                chain: None,
+                                byte_offset: 0,
+                                                        namespace_segments: Vec::new(),
 });
-                        // For dot calls like `Enum.map(...)`, also emit a TypeRef for
-                        // the module part (the `alias` node before the dot).
-                        extract_dot_call_module_ref(&child, src, source_symbol_index, refs);
+                            // For dot calls like `Enum.map(...)`, also emit a TypeRef
+                            // for the module part (the `alias` node before the dot).
+                            extract_dot_call_module_ref(&child, src, source_symbol_index, refs);
+                        }
                     }
                 }
                 extract_calls_recursive(&child, src, source_symbol_index, refs);
@@ -876,6 +888,11 @@ fn extract_calls_recursive(
 ///
 /// The tree-sitter-elixir `call` node for `Enum.map(...)` has a `dot` child
 /// whose first named child is the module (`alias` or `identifier`).
+///
+/// Only emits when the receiver looks like a module — uppercase first char or
+/// dotted path. Lowercase receivers (`conn.cookies`, `assigns.user`) are
+/// struct/map values, not modules; emitting them as TypeRef floods the
+/// unresolved table with ~8000 lowercase locals on a Phoenix codebase.
 fn extract_dot_call_module_ref(
     call_node: &Node,
     src: &str,
@@ -892,6 +909,10 @@ fn extract_dot_call_module_ref(
                     "alias" | "identifier" => {
                         let name = node_text(dc_child, src);
                         if !name.is_empty() {
+                            let first_char = name.chars().next().unwrap_or('_');
+                            if !(first_char.is_uppercase() || name.contains('.')) {
+                                return;
+                            }
                             let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
                             refs.push(ExtractedRef {
                                 source_symbol_index,

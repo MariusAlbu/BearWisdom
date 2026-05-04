@@ -199,3 +199,79 @@ end
         assert!(calls.contains(&"persist"), "expected 'persist' call: {calls:?}");
     }
 
+    #[test]
+    fn dot_call_receiver_lowercase_is_not_typeref() {
+        // `conn.something()` and `assigns.user` are struct/map field accesses,
+        // not module references. Receiver must NOT emit a TypeRef.
+        // Uppercase receiver (`Enum.map`) is a real module ref and SHOULD emit.
+        let src = r#"
+defmodule MyApp.Web do
+  def show(conn, _params) do
+    conn = fetch_session(conn)
+    user = conn.assigns.current_user
+    Enum.map([1, 2, 3], fn x -> x + 1 end)
+  end
+end
+"#;
+        let r = extract::extract(src);
+        let typerefs: Vec<&str> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(
+            !typerefs.contains(&"conn"),
+            "lowercase 'conn' (parameter) must NOT emit TypeRef; got {typerefs:?}"
+        );
+        assert!(
+            !typerefs.contains(&"assigns"),
+            "lowercase 'assigns' must NOT emit TypeRef; got {typerefs:?}"
+        );
+        assert!(
+            typerefs.contains(&"Enum"),
+            "uppercase module 'Enum' SHOULD emit TypeRef; got {typerefs:?}"
+        );
+    }
+
+    #[test]
+    fn dot_call_receiver_lowercase_is_not_call() {
+        // `session.acquisition_channel` is field access, not a function call.
+        // tree-sitter-elixir parses it as a `call` node anyway; the extractor
+        // must NOT emit a Calls edge with `module=session` because `session`
+        // isn't a module — it's a local variable.
+        // Real module calls like `Enum.map(...)` and bare calls like `foo()`
+        // SHOULD still emit.
+        let src = r#"
+defmodule MyApp.Test do
+  def check(session, email) do
+    assert session.acquisition_channel == "Cross-network"
+    email.html_body
+    Enum.map([1, 2], fn x -> x end)
+    helper()
+  end
+
+  defp helper, do: :ok
+end
+"#;
+        let r = extract::extract(src);
+        let calls: Vec<(&str, Option<&str>)> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
+            .collect();
+        assert!(
+            !calls.iter().any(|(t, m)| *t == "acquisition_channel" && *m == Some("session")),
+            "lowercase 'session.acquisition_channel' must NOT emit Calls; got {calls:?}"
+        );
+        assert!(
+            !calls.iter().any(|(t, m)| *t == "html_body" && *m == Some("email")),
+            "lowercase 'email.html_body' must NOT emit Calls; got {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|(t, m)| *t == "map" && *m == Some("Enum")),
+            "uppercase 'Enum.map' SHOULD emit Calls; got {calls:?}"
+        );
+        assert!(
+            calls.iter().any(|(t, m)| *t == "helper" && m.is_none()),
+            "bare call 'helper()' SHOULD emit Calls with no module; got {calls:?}"
+        );
+    }
+
