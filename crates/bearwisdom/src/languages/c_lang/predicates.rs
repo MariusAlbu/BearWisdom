@@ -94,6 +94,19 @@ pub(super) fn is_template_param(name: &str) -> bool {
     if name.ends_with("Type") && name.len() > 4 {
         return true;
     }
+    // Leading-underscore + uppercase is the C++ standard library implementation
+    // convention for template parameter names — `_Range`, `_Pred`, `_Proj`,
+    // `_T1`, `_Up`, `_ExecutionPolicy`, `_ForwardIterator`, etc. The C++
+    // standard reserves the `_<uppercase>` namespace for implementations,
+    // so user code can't legitimately use these as type names. libc++ headers
+    // are full of these as type-parameter declarations; emitting them as
+    // TypeRefs inflates unresolved counts (5K+ on zig-compiler-fresh's
+    // vendored libc++).
+    if let Some(rest) = name.strip_prefix('_') {
+        if rest.chars().next().map(|c| c.is_uppercase()).unwrap_or(false) {
+            return true;
+        }
+    }
     // Common multi-character template param names.
     matches!(
         name,
