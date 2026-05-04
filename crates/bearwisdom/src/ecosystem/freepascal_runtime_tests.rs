@@ -145,6 +145,24 @@ fn walk_emits_virtual_path_with_pascal_prefix() {
 }
 
 #[test]
+#[ignore] // requires real Lazarus install at scoop default path
+fn live_discovery_finds_scoop_install() {
+    // Defensive: only assert when we know the scoop path is present on
+    // the dev machine. This is the on-this-machine smoke check.
+    let scoop = std::env::var_os("USERPROFILE")
+        .map(|h| std::path::PathBuf::from(h).join("scoop/apps/lazarus/current"));
+    if scoop.as_ref().is_none_or(|p| !p.is_dir()) {
+        return;
+    }
+    std::env::remove_var("BEARWISDOM_LAZARUS_DIR");
+    std::env::remove_var("LAZARUS_DIR");
+    let roots = discover_freepascal_roots();
+    assert!(!roots.is_empty(), "expected Lazarus install to yield roots");
+    let names: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
+    assert!(names.contains(&"lcl"), "{names:?}");
+}
+
+#[test]
 fn ecosystem_identity_and_languages() {
     let e = FreePascalRuntimeEcosystem;
     assert_eq!(e.id(), ID);

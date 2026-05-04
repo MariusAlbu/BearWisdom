@@ -56,9 +56,10 @@ impl Ecosystem for FreePascalRuntimeEcosystem {
         walk_pascal_root(dep)
     }
 
-    fn supports_reachability(&self) -> bool { true }
-
-    fn uses_demand_driven_parse(&self) -> bool { true }
+    // Eager walk — FPC stdlib is small enough and demand-driven would
+    // require a build_symbol_index impl that pre-parses every .pas/.pp
+    // file to populate name → file map, which is essentially the same
+    // cost as parsing them up front.
 }
 
 impl ExternalSourceLocator for FreePascalRuntimeEcosystem {
