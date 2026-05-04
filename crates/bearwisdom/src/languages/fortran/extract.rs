@@ -20,6 +20,7 @@
 use crate::types::{
     EdgeKind, ExtractedRef, ExtractedSymbol, ExtractionResult, SymbolKind, Visibility,
 };
+use std::collections::HashSet;
 use tree_sitter::{Node, Parser};
 
 /// Returns true when `name` looks like a real Fortran callable identifier
@@ -57,9 +58,53 @@ pub fn extract(source: &str) -> ExtractionResult {
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
 
-    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None);
+    let mut locals: Vec<HashSet<String>> = Vec::new();
+    walk_node(tree.root_node(), src, &mut symbols, &mut refs, None, &mut locals);
 
     ExtractionResult::new(symbols, refs, tree.root_node().has_error())
+}
+
+/// Collect names declared by `variable_declaration` nodes inside the body
+/// of a subroutine/function/program. Fortran array indexing (`mm(i, j)`)
+/// uses identical syntax to function calls, so without this set the
+/// extractor emits a false-positive `Calls` ref for every local-array
+/// access — millions on numerical-library codebases.
+fn collect_local_decls(node: Node, src: &[u8], out: &mut HashSet<String>) {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        match child.kind() {
+            "variable_declaration" => {
+                let mut vc = child.walk();
+                for d in child.children(&mut vc) {
+                    let name = match d.kind() {
+                        "identifier" => text(d, src),
+                        "init_declarator" => d.child_by_field_name("left")
+                            .map(|n| text(n, src))
+                            .unwrap_or_default(),
+                        "sized_declarator" => d.named_child(0)
+                            .map(|n| text(n, src))
+                            .unwrap_or_default(),
+                        _ => continue,
+                    };
+                    if !name.is_empty() {
+                        out.insert(name);
+                    }
+                }
+            }
+            // Don't recurse into nested function/subroutine — those have
+            // their own scope and will get their own locals set when walked.
+            "subroutine" | "function" | "program" | "module" | "submodule" => continue,
+            _ => collect_local_decls(child, src, out),
+        }
+    }
+}
+
+/// Returns true if `name` is declared as a local variable in any open
+/// scope on the stack. Inner scopes shadow outer per Fortran semantics,
+/// but for filter purposes "any scope contains" is equivalent — a local
+/// at any level disqualifies a Calls emission.
+fn is_local(name: &str, locals: &[HashSet<String>]) -> bool {
+    locals.iter().any(|s| s.contains(name))
 }
 
 fn walk_node(
@@ -68,47 +113,60 @@ fn walk_node(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    locals: &mut Vec<HashSet<String>>,
 ) {
     match node.kind() {
         "subroutine" => {
             let name = find_child_name(node, src, "subroutine_statement");
             let name = name.unwrap_or_default();
+            let mut scope_locals = HashSet::new();
+            collect_local_decls(node, src, &mut scope_locals);
+            locals.push(scope_locals);
             if !name.is_empty() {
                 let idx = push_sym(node, name, SymbolKind::Function, symbols, parent_idx);
-                walk_children(node, src, symbols, refs, Some(idx));
+                walk_children(node, src, symbols, refs, Some(idx), locals);
             } else {
-                walk_children(node, src, symbols, refs, parent_idx);
+                walk_children(node, src, symbols, refs, parent_idx, locals);
             }
+            locals.pop();
         }
         "function" => {
             let name = find_child_name(node, src, "function_statement");
             let name = name.unwrap_or_default();
+            let mut scope_locals = HashSet::new();
+            collect_local_decls(node, src, &mut scope_locals);
+            locals.push(scope_locals);
             if !name.is_empty() {
                 let idx = push_sym(node, name, SymbolKind::Function, symbols, parent_idx);
-                walk_children(node, src, symbols, refs, Some(idx));
+                walk_children(node, src, symbols, refs, Some(idx), locals);
             } else {
-                walk_children(node, src, symbols, refs, parent_idx);
+                walk_children(node, src, symbols, refs, parent_idx, locals);
             }
+            locals.pop();
         }
         "program" => {
             // PROGRAM name ... END PROGRAM name — main entry point → Function
             let name = find_program_name(node, src);
             let name = name.unwrap_or_default();
+            let mut scope_locals = HashSet::new();
+            collect_local_decls(node, src, &mut scope_locals);
+            locals.push(scope_locals);
             if !name.is_empty() {
                 let idx = push_sym(node, name, SymbolKind::Function, symbols, parent_idx);
-                walk_children(node, src, symbols, refs, Some(idx));
+                walk_children(node, src, symbols, refs, Some(idx), locals);
             } else {
-                walk_children(node, src, symbols, refs, parent_idx);
+                walk_children(node, src, symbols, refs, parent_idx, locals);
             }
+            locals.pop();
         }
         "module" => {
             let name = find_module_name(node, src);
             let name = name.unwrap_or_default();
             if !name.is_empty() {
                 let idx = push_sym(node, name, SymbolKind::Namespace, symbols, parent_idx);
-                walk_children(node, src, symbols, refs, Some(idx));
+                walk_children(node, src, symbols, refs, Some(idx), locals);
             } else {
-                walk_children(node, src, symbols, refs, parent_idx);
+                walk_children(node, src, symbols, refs, parent_idx, locals);
             }
         }
         "submodule" => {
@@ -117,9 +175,9 @@ fn walk_node(
             let name = name.unwrap_or_default();
             if !name.is_empty() {
                 let idx = push_sym(node, name, SymbolKind::Namespace, symbols, parent_idx);
-                walk_children(node, src, symbols, refs, Some(idx));
+                walk_children(node, src, symbols, refs, Some(idx), locals);
             } else {
-                walk_children(node, src, symbols, refs, parent_idx);
+                walk_children(node, src, symbols, refs, parent_idx, locals);
             }
         }
         "derived_type_definition" => {
@@ -129,9 +187,9 @@ fn walk_node(
                 let idx = push_sym(node, name, SymbolKind::Struct, symbols, parent_idx);
                 // Emit Inherits edge for EXTENDS(base_type) if present
                 extract_extends(node, src, idx, refs);
-                walk_children(node, src, symbols, refs, Some(idx));
+                walk_children(node, src, symbols, refs, Some(idx), locals);
             } else {
-                walk_children(node, src, symbols, refs, parent_idx);
+                walk_children(node, src, symbols, refs, parent_idx, locals);
             }
         }
         "interface" => {
@@ -154,11 +212,11 @@ fn walk_node(
                         symbols,
                         parent_idx,
                     );
-                    walk_children(node, src, symbols, refs, Some(idx));
+                    walk_children(node, src, symbols, refs, Some(idx), locals);
                     return;
                 }
             }
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, locals);
         }
         "variable_declaration" => {
             // Emit Variable symbols only at module/program/submodule scope
@@ -199,7 +257,7 @@ fn walk_node(
             let sym_idx = parent_idx.unwrap_or(0);
             if let Some(sub_node) = node.child_by_field_name("subroutine") {
                 let name = text(sub_node, src);
-                if is_fortran_callable_text(&name) {
+                if is_fortran_callable_text(&name) && !is_local(&name, locals) {
                     refs.push(ExtractedRef {
                         source_symbol_index: sym_idx,
                         target_name: name,
@@ -212,17 +270,21 @@ fn walk_node(
 });
                 }
             }
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, locals);
         }
         "call_expression" => {
             let sym_idx = parent_idx.unwrap_or(0);
             // call_expression = _expression REPEAT1(argument_list)
             // The grammar has no named field; the callee is the first child.
+            // Fortran array indexing (`mm(i, j)`) parses as a call_expression
+            // with an identifier callee — indistinguishable from a real
+            // function call by syntax alone. Skip emission when the callee
+            // matches a known local-variable declaration.
             if let Some(callee) = node.child(0) {
                 match callee.kind() {
                     "identifier" => {
                         let name = text(callee, src);
-                        if is_fortran_callable_text(&name) {
+                        if is_fortran_callable_text(&name) && !is_local(&name, locals) {
                             refs.push(ExtractedRef {
                                 source_symbol_index: sym_idx,
                                 target_name: name,
@@ -263,7 +325,7 @@ fn walk_node(
                             let name = callee.named_child(0)
                                 .map(|n| text(n, src))
                                 .unwrap_or_default();
-                            if is_fortran_callable_text(&name) {
+                            if is_fortran_callable_text(&name) && !is_local(&name, locals) {
                                 refs.push(ExtractedRef {
                                     source_symbol_index: sym_idx,
                                     target_name: name,
@@ -280,10 +342,10 @@ fn walk_node(
                     _ => {}
                 }
             }
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, locals);
         }
         _ => {
-            walk_children(node, src, symbols, refs, parent_idx);
+            walk_children(node, src, symbols, refs, parent_idx, locals);
         }
     }
 }
@@ -536,10 +598,11 @@ fn walk_children(
     symbols: &mut Vec<ExtractedSymbol>,
     refs: &mut Vec<ExtractedRef>,
     parent_idx: Option<usize>,
+    locals: &mut Vec<HashSet<String>>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        walk_node(child, src, symbols, refs, parent_idx);
+        walk_node(child, src, symbols, refs, parent_idx, locals);
     }
 }
 

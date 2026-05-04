@@ -300,6 +300,46 @@ fn anonymous_interface_does_not_emit_unnamed_symbol() {
 }
 
 // ---------------------------------------------------------------------------
+// Local-array indexing must not emit Calls refs
+// ---------------------------------------------------------------------------
+
+/// Fortran array indexing uses identical syntax to function calls
+/// (`mm(i, j)`). When `mm` is a locally-declared array inside a
+/// subroutine/function, the extractor must NOT emit a Calls ref for
+/// the indexing — those are false-positive references that inflate
+/// unresolved_refs by tens of thousands on numerical-library
+/// codebases (10,539 unresolved fortran.calls in fortran-stdlib pre-fix,
+/// dominated by short locals like `mm`, `dl`, `du`, `dy`, `mm`).
+#[test]
+fn local_array_indexing_does_not_emit_call() {
+    let src = "\
+subroutine compute(n)
+  integer :: n
+  integer :: mm(10, 4)
+  integer :: i
+  i = 1
+  print *, mm(1, 1)
+  print *, mm(i, 2)
+  call dgemv(mm, n)
+end subroutine
+";
+    let r = extract(src);
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
+    assert!(
+        !calls.contains(&"mm"),
+        "local array `mm(i, j)` must NOT emit Calls; got {calls:?}"
+    );
+    // Real call to `dgemv` must still emit.
+    assert!(
+        calls.contains(&"dgemv"),
+        "real call `dgemv(mm, n)` SHOULD emit Calls; got {calls:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
 // .fypp recovery: string literals must never become Calls refs
 // ---------------------------------------------------------------------------
 
