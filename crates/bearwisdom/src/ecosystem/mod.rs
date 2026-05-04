@@ -144,7 +144,7 @@ pub use nuget::NugetEcosystem;
 pub use phoenix_stubs::PhoenixStubsEcosystem;
 pub use opam::OpamEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
-pub use posix_headers::{MsvcHeadersEcosystem, PosixHeadersEcosystem};
+pub use posix_headers::{MsvcHeadersEcosystem, PosixHeadersEcosystem, VcpkgHeadersEcosystem};
 pub use powershell_stdlib::PowerShellStdlibEcosystem;
 pub use psgallery::PsGalleryEcosystem;
 pub use pub_pkg::PubEcosystem;
@@ -614,6 +614,7 @@ pub fn default_locator(
         "ruby-stdlib" => Some(Arc::new(RubyStdlibEcosystem)),
         "posix-headers" => Some(Arc::new(PosixHeadersEcosystem)),
         "msvc-headers" => Some(Arc::new(MsvcHeadersEcosystem)),
+        "vcpkg-headers" => Some(Arc::new(VcpkgHeadersEcosystem)),
         "dotnet-stdlib" => Some(Arc::new(DotnetStdlibEcosystem)),
         "php-stubs" => Some(Arc::new(PhpStubsEcosystem)),
         "phoenix-stubs" => Some(Arc::new(PhoenixStubsEcosystem)),
@@ -729,6 +730,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(RubyStdlibEcosystem);
         reg_eco!(PosixHeadersEcosystem);
         reg_eco!(MsvcHeadersEcosystem);
+        reg_eco!(VcpkgHeadersEcosystem);
         reg_eco!(DotnetStdlibEcosystem);
         reg_eco!(PhpStubsEcosystem);
         reg_eco!(PhoenixStubsEcosystem);

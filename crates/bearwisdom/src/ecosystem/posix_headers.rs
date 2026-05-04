@@ -288,6 +288,158 @@ pub fn msvc_shared_locator() -> Arc<dyn ExternalSourceLocator> {
 }
 
 // ---------------------------------------------------------------------------
+// VcpkgHeadersEcosystem
+// ---------------------------------------------------------------------------
+//
+// vcpkg is Microsoft's C/C++ package manager. When installed, it lays out
+// every package's public headers under
+// `<vcpkg_root>/installed/<triplet>/include/`, with the same `#include`
+// path conventions a project would use (`<openssl/bio.h>`, `<libssh2.h>`,
+// etc.). Each triplet (`x64-windows`, `x64-linux`, `arm64-osx`, ...) gets
+// its own installed/ subtree with full headers for every installed pkg.
+//
+// We mirror the MSVC pattern: discover the triplet `include/` dir, register
+// each header at its `#include`-visible relative path, and let the demand-
+// driven loop pull whatever the project's own source actually `#include`s.
+
+pub const VCPKG_ID: EcosystemId = EcosystemId::new("vcpkg-headers");
+const VCPKG_TAG: &str = "vcpkg-headers";
+
+pub struct VcpkgHeadersEcosystem;
+
+impl Ecosystem for VcpkgHeadersEcosystem {
+    fn id(&self) -> EcosystemId { VCPKG_ID }
+    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
+    fn languages(&self) -> &'static [&'static str] { &["c", "cpp"] }
+
+    fn activation(&self) -> EcosystemActivation {
+        EcosystemActivation::Any(&[
+            EcosystemActivation::LanguagePresent("c"),
+            EcosystemActivation::LanguagePresent("cpp"),
+        ])
+    }
+
+    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        discover_vcpkg_include()
+    }
+
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
+
+    fn supports_reachability(&self) -> bool { true }
+    fn uses_demand_driven_parse(&self) -> bool { true }
+
+    fn build_symbol_index(
+        &self,
+        dep_roots: &[ExternalDepRoot],
+    ) -> SymbolLocationIndex {
+        build_c_header_index(dep_roots)
+    }
+
+    fn resolve_import(
+        &self,
+        dep: &ExternalDepRoot,
+        header: &str,
+        _symbols: &[&str],
+    ) -> Vec<WalkedFile> {
+        resolve_header(dep, header).into_iter().collect()
+    }
+
+    fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
+        resolve_header(dep, fqn).into_iter().collect()
+    }
+}
+
+impl ExternalSourceLocator for VcpkgHeadersEcosystem {
+    fn ecosystem(&self) -> &'static str { VCPKG_TAG }
+    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
+        discover_vcpkg_include()
+    }
+    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
+        Vec::new()
+    }
+}
+
+/// Locate vcpkg's per-triplet `include/` dirs. Discovery order:
+///   1. `BEARWISDOM_VCPKG_INCLUDE` env override (single dir).
+///   2. `VCPKG_ROOT` env var.
+///   3. Common install paths: `F:/Work/Projects/vcpkg`, `C:/vcpkg`,
+///      `~/vcpkg`, `/usr/local/share/vcpkg`.
+///
+/// vcpkg keeps a per-triplet directory under `installed/`. We emit one
+/// `ExternalDepRoot` per discovered triplet's `include/` so the relative
+/// path key in the symbol index matches a project's `#include` syntax.
+fn discover_vcpkg_include() -> Vec<ExternalDepRoot> {
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_VCPKG_INCLUDE") {
+        let p = PathBuf::from(explicit);
+        if p.is_dir() {
+            return vec![make_root(&p, VCPKG_TAG)];
+        }
+    }
+
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(root) = std::env::var_os("VCPKG_ROOT") {
+        candidates.push(PathBuf::from(root));
+    }
+    // Common install spots (cheap to stat; only existing ones turn into roots).
+    let defaults: &[&str] = if cfg!(target_os = "windows") {
+        &[
+            "F:/Work/Projects/vcpkg",
+            "C:/vcpkg",
+            "C:/dev/vcpkg",
+            "C:/tools/vcpkg",
+        ]
+    } else {
+        &[
+            "/usr/local/share/vcpkg",
+            "/opt/vcpkg",
+        ]
+    };
+    for d in defaults {
+        candidates.push(PathBuf::from(d));
+    }
+    if let Some(home) = std::env::var_os("USERPROFILE")
+        .or_else(|| std::env::var_os("HOME"))
+    {
+        candidates.push(PathBuf::from(home).join("vcpkg"));
+    }
+
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for cand in candidates {
+        if !cand.is_dir() {
+            continue;
+        }
+        let installed = cand.join("installed");
+        let Ok(entries) = std::fs::read_dir(&installed) else { continue };
+        for e in entries.flatten() {
+            let triplet_dir = e.path();
+            let include = triplet_dir.join("include");
+            if !include.is_dir() {
+                continue;
+            }
+            // Dedup across candidates that point at the same physical dir.
+            let canonical = include.canonicalize().unwrap_or_else(|_| include.clone());
+            if !seen.insert(canonical.clone()) {
+                continue;
+            }
+            out.push(make_root(&include, VCPKG_TAG));
+        }
+    }
+    if out.is_empty() {
+        debug!("vcpkg-headers: no installed triplets discovered");
+    }
+    out
+}
+
+pub fn vcpkg_shared_locator() -> Arc<dyn ExternalSourceLocator> {
+    use std::sync::OnceLock;
+    static LOCATOR: OnceLock<Arc<VcpkgHeadersEcosystem>> = OnceLock::new();
+    LOCATOR.get_or_init(|| Arc::new(VcpkgHeadersEcosystem)).clone()
+}
+
+// ---------------------------------------------------------------------------
 // Shared helpers
 // ---------------------------------------------------------------------------
 
@@ -382,6 +534,17 @@ fn collect_headers_rec(
         // every `#include` form the right relative key without needing
         // a basename fallback.
         idx.insert(rel_str.clone(), rel_str.clone(), path.clone());
+        // The C extractor's push_include emits Imports refs as
+        //   target_name = basename, module = full path (e.g.
+        //   `<openssl/bio.h>` → target=`bio.h`, module=`openssl/bio.h`).
+        // The demand-loop's lookup is `locate(module, target_name)` which
+        // looks up the key `(module, basename)`. Without a shadow registered
+        // at that key the lookup misses and the file is never pulled.
+        if let Some((dir, basename)) = rel_str.rsplit_once('/') {
+            // Skip when basename == rel_str (no slash); we already have that.
+            let _ = dir;
+            idx.insert(rel_str.clone(), basename.to_string(), path.clone());
+        }
         // Windows filesystem is case-insensitive but the SymbolLocationIndex
         // is a case-sensitive HashMap. On Windows, a project's
         // `#include <winsock2.h>` (lowercase) won't match the SDK's
@@ -391,7 +554,11 @@ fn collect_headers_rec(
         {
             let lower = rel_str.to_ascii_lowercase();
             if lower != rel_str {
-                idx.insert(lower.clone(), lower, path.clone());
+                idx.insert(lower.clone(), lower.clone(), path.clone());
+                let base = lower.rsplit_once('/').map(|(_, b)| b.to_string());
+                if let Some(b) = base {
+                    idx.insert(lower, b, path.clone());
+                }
             }
         }
     }
@@ -498,6 +665,39 @@ mod tests {
         assert!(idx.locate("Windows.Foundation.h", "Windows.Foundation.h").is_some());
         // Reached via the version root (relative = `winrt/Windows.Foundation.h`).
         assert!(idx.locate("winrt/Windows.Foundation.h", "winrt/Windows.Foundation.h").is_some());
+    }
+
+    #[test]
+    fn vcpkg_discovers_triplet_include_dirs() {
+        // Lay out a fake vcpkg root with two triplets; only one with include/.
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write(&root.join("installed/x64-windows/include/openssl/bio.h"), "/* fake */\n");
+        write(&root.join("installed/x64-linux/include/zlib.h"), "/* fake */\n");
+        write(&root.join("installed/x86-windows/no-include-here.txt"), "ignored\n");
+
+        std::env::set_var("VCPKG_ROOT", root);
+        let dep_roots = discover_vcpkg_include();
+        std::env::remove_var("VCPKG_ROOT");
+
+        // Find the two triplet roots (x64-windows + x64-linux); x86-windows
+        // is skipped because it has no include/.
+        let triplet_dirs: Vec<String> = dep_roots
+            .iter()
+            .map(|r| r.root.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert!(
+            triplet_dirs.iter().any(|p| p.ends_with("x64-windows/include")),
+            "x64-windows/include not discovered; got {triplet_dirs:?}"
+        );
+        assert!(
+            triplet_dirs.iter().any(|p| p.ends_with("x64-linux/include")),
+            "x64-linux/include not discovered; got {triplet_dirs:?}"
+        );
+        assert!(
+            !triplet_dirs.iter().any(|p| p.contains("x86-windows")),
+            "x86-windows must be skipped (no include/); got {triplet_dirs:?}"
+        );
     }
 
     #[test]
