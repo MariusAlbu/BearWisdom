@@ -33,11 +33,16 @@ use super::{
     SymbolLocationIndex,
 };
 use crate::ecosystem::externals::{
-    collect_pom_files_bounded, extract_java_sources_jar, is_cache_stale, maven_local_repo,
-    resolve_maven_artifact_dir, ExternalDepRoot, ExternalSourceLocator, MAX_WALK_DEPTH,
+    collect_pom_files_bounded, extract_java_sources_jar, gradle_caches_root, is_cache_stale,
+    maven_local_repo, resolve_gradle_sources_jar, resolve_maven_artifact_dir, ExternalDepRoot,
+    ExternalSourceLocator, MAX_WALK_DEPTH,
 };
 use crate::ecosystem::manifest::maven::{parse_pom_xml_coords, MavenCoord};
-use crate::ecosystem::manifest::{clojure as clojure_manifest, sbt as sbt_manifest};
+use crate::ecosystem::manifest::{
+    clojure as clojure_manifest,
+    gradle as gradle_manifest,
+    sbt as sbt_manifest,
+};
 use crate::walker::WalkedFile;
 
 pub const ID: EcosystemId = EcosystemId::new("maven");
@@ -169,11 +174,22 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
 // ---------------------------------------------------------------------------
 
 fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
-    let Some(repo) = maven_local_repo() else {
-        debug!("No Maven local repository discovered; skipping Maven externals");
+    let m2 = maven_local_repo();
+    let gradle_cache = gradle_caches_root();
+    if m2.is_none() && gradle_cache.is_none() {
+        debug!("No Maven or Gradle cache discovered; skipping JVM externals");
         return Vec::new();
-    };
-    let cache_base = repo.parent().unwrap_or(&repo).join("bearwisdom-sources-cache");
+    }
+
+    // Pick a shared bearwisdom-sources-cache anchor. Prefer ~/.m2/.. so
+    // existing extracted caches are reused; fall back to ~/.gradle/.. for
+    // pure-Gradle dev machines.
+    let cache_anchor = m2
+        .as_deref()
+        .or(gradle_cache.as_deref())
+        .map(|p| p.parent().unwrap_or(p).to_path_buf())
+        .expect("at least one cache root");
+    let cache_base = cache_anchor.join("bearwisdom-sources-cache");
     let _ = std::fs::create_dir_all(&cache_base);
 
     // R3 narrowing: collect every JVM `import` statement the user writes.
@@ -198,26 +214,51 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
     debug!("Maven: {} pom.xml coords across {} files", pom_coords.len(), pom_paths.len());
     for coord in &pom_coords {
-        resolve_and_push(&repo, &cache_base, coord, &user_imports, &mut roots, &mut seen);
+        resolve_and_push_jvm(
+            m2.as_deref(),
+            gradle_cache.as_deref(),
+            &cache_base,
+            coord,
+            &user_imports,
+            &mut roots,
+            &mut seen,
+        );
+    }
+
+    // --- Gradle build.gradle[.kts] + version-catalog coords -------------
+    let gradle_coords = collect_gradle_coords(project_root);
+    debug!("Gradle: {} coords from build.gradle + libs.versions.toml", gradle_coords.len());
+    for coord in &gradle_coords {
+        resolve_and_push_jvm(
+            m2.as_deref(),
+            gradle_cache.as_deref(),
+            &cache_base,
+            coord,
+            &user_imports,
+            &mut roots,
+            &mut seen,
+        );
     }
 
     // --- Scala sbt coords ----------------------------------------------
-    for artifact in collect_sbt_artifacts(project_root) {
-        if let Some((group, art, version, cache_dir)) =
-            find_scala_source_jar(&repo, &artifact, &cache_base)
-        {
-            if seen.insert(cache_dir.clone()) {
-                roots.push(ExternalDepRoot {
-                    module_path: format!("{group}:{art}"),
-                    version,
-                    root: cache_dir,
-                    ecosystem: ID.as_str(),
-                    package_id: None,
-                    requested_imports: user_imports.clone(),
-                });
+    if let Some(repo) = m2.as_deref() {
+        for artifact in collect_sbt_artifacts(project_root) {
+            if let Some((group, art, version, cache_dir)) =
+                find_scala_source_jar(repo, &artifact, &cache_base)
+            {
+                if seen.insert(cache_dir.clone()) {
+                    roots.push(ExternalDepRoot {
+                        module_path: format!("{group}:{art}"),
+                        version,
+                        root: cache_dir,
+                        ecosystem: ID.as_str(),
+                        package_id: None,
+                        requested_imports: user_imports.clone(),
+                    });
+                }
+            } else {
+                debug!(artifact = %artifact, "Maven (sbt): sources jar not found in ~/.m2");
             }
-        } else {
-            debug!(artifact = %artifact, "Maven (sbt): sources jar not found in ~/.m2");
         }
     }
 
@@ -234,33 +275,82 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
             artifact_id: artifact_id.to_string(),
             version: None,
         };
-        resolve_and_push(&repo, &cache_base, &coord, &user_imports, &mut roots, &mut seen);
+        resolve_and_push_jvm(
+            m2.as_deref(),
+            gradle_cache.as_deref(),
+            &cache_base,
+            &coord,
+            &user_imports,
+            &mut roots,
+            &mut seen,
+        );
     }
 
     debug!("Maven: {} total external dep roots", roots.len());
     roots
 }
 
-fn resolve_and_push(
-    repo: &Path,
+/// Parse every build.gradle[.kts] in the project and resolve catalog
+/// references against any `gradle/*.versions.toml` files. Returns full
+/// `MavenCoord`s — coords that omit `version` (rare in Gradle) get the
+/// version-dir scan fallback the same way pom coords do.
+fn collect_gradle_coords(project_root: &Path) -> Vec<MavenCoord> {
+    let mut catalogs: std::collections::HashMap<String, gradle_manifest::GradleCatalog> =
+        std::collections::HashMap::new();
+    for (name, path) in gradle_manifest::collect_version_catalogs(project_root) {
+        if let Ok(content) = std::fs::read_to_string(&path) {
+            catalogs.insert(name, gradle_manifest::parse_version_catalog(&content));
+        }
+    }
+
+    let mut out = Vec::new();
+    for build_file in gradle_manifest::collect_gradle_build_files(project_root) {
+        let Ok(content) = std::fs::read_to_string(&build_file) else { continue };
+        out.extend(gradle_manifest::parse_gradle_coords(&content, &catalogs));
+    }
+    out
+}
+
+/// Try ~/.m2 first (preferred — single jar per artifact dir), fall back to
+/// ~/.gradle/caches (hash-bucketed layout). The first cache that yields a
+/// `<artifact>-<version>-sources.jar` wins; both missing → silent skip.
+fn resolve_and_push_jvm(
+    m2: Option<&Path>,
+    gradle_cache: Option<&Path>,
     cache_base: &Path,
     coord: &MavenCoord,
     user_imports: &[String],
     roots: &mut Vec<ExternalDepRoot>,
     seen: &mut std::collections::HashSet<PathBuf>,
 ) {
-    let Some((version, artifact_dir)) = resolve_maven_artifact_dir(repo, coord) else { return };
-    let sources_jar = artifact_dir.join(format!(
-        "{}-{}-sources.jar",
-        coord.artifact_id, version
-    ));
-    if !sources_jar.is_file() {
+    let mut resolved: Option<(String, PathBuf)> = None;
+
+    if let Some(repo) = m2 {
+        if let Some((version, artifact_dir)) = resolve_maven_artifact_dir(repo, coord) {
+            let sources_jar = artifact_dir.join(format!(
+                "{}-{}-sources.jar",
+                coord.artifact_id, version
+            ));
+            if sources_jar.is_file() {
+                resolved = Some((version, sources_jar));
+            }
+        }
+    }
+    if resolved.is_none() {
+        if let Some(cache) = gradle_cache {
+            if let Some((version, sources_jar)) = resolve_gradle_sources_jar(cache, coord) {
+                resolved = Some((version, sources_jar));
+            }
+        }
+    }
+
+    let Some((version, sources_jar)) = resolved else {
         debug!(
-            "Maven sources jar missing for {}:{}:{} — skipping",
-            coord.group_id, coord.artifact_id, version
+            "JVM sources jar missing for {}:{} (checked Maven + Gradle caches) — skipping",
+            coord.group_id, coord.artifact_id
         );
         return;
-    }
+    };
 
     let cache_dir = cache_base
         .join(coord.group_id.replace('.', "_"))

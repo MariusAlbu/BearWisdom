@@ -255,6 +255,85 @@ pub(crate) fn resolve_maven_artifact_dir(
     }
 }
 
+/// Locate `~/.gradle/caches/modules-2/files-2.1` — the Gradle dependency
+/// cache. Layout: `<root>/<group>/<artifact>/<version>/<hash>/<file>` where
+/// each `<hash>` directory holds exactly one artifact (the sha1 of the file).
+/// Sources jars live alongside binary jars but are only downloaded when an
+/// IDE or `--write-locks` request triggers them — this is a dev-machine
+/// prerequisite, not BW's concern.
+pub fn gradle_caches_root() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("BEARWISDOM_GRADLE_CACHE") {
+        let p = PathBuf::from(explicit);
+        if p.is_dir() {
+            return Some(p);
+        }
+    }
+    let home = std::env::var_os("HOME").or_else(|| std::env::var_os("USERPROFILE"))?;
+    let candidate = PathBuf::from(home)
+        .join(".gradle")
+        .join("caches")
+        .join("modules-2")
+        .join("files-2.1");
+    if candidate.is_dir() {
+        Some(candidate)
+    } else {
+        None
+    }
+}
+
+/// Resolve a `MavenCoord` against the Gradle cache layout. Walks each
+/// `<hash>` subdirectory under the version dir and returns the first
+/// `<artifact>-<version>-sources.jar` that exists. When `coord.version`
+/// is None, falls back to the lexicographically-largest version directory
+/// just like `resolve_maven_artifact_dir`.
+///
+/// Returns `(resolved_version, sources_jar_path)` on success.
+pub(crate) fn resolve_gradle_sources_jar(
+    cache_root: &Path,
+    coord: &crate::ecosystem::manifest::maven::MavenCoord,
+) -> Option<(String, PathBuf)> {
+    let group_dir = cache_root.join(&coord.group_id);
+    let artifact_dir = group_dir.join(&coord.artifact_id);
+    if !artifact_dir.is_dir() {
+        return None;
+    }
+
+    let version = if let Some(v) = &coord.version {
+        v.clone()
+    } else {
+        let mut versions: Vec<String> = std::fs::read_dir(&artifact_dir)
+            .ok()?
+            .flatten()
+            .filter_map(|e| {
+                if e.file_type().ok()?.is_dir() {
+                    e.file_name().into_string().ok()
+                } else {
+                    None
+                }
+            })
+            .collect();
+        versions.sort();
+        versions.into_iter().next_back()?
+    };
+
+    let version_dir = artifact_dir.join(&version);
+    if !version_dir.is_dir() {
+        return None;
+    }
+    let target_name = format!("{}-{}-sources.jar", coord.artifact_id, version);
+    for entry in std::fs::read_dir(&version_dir).ok()?.flatten() {
+        let p = entry.path();
+        if !p.is_dir() {
+            continue;
+        }
+        let candidate = p.join(&target_name);
+        if candidate.is_file() {
+            return Some((version, candidate));
+        }
+    }
+    None
+}
+
 /// Mini walker that finds every `pom.xml` under a project root up to a
 /// bounded depth. Mirrors the helper in `manifest/maven.rs` because that
 /// one is private to the module.
@@ -344,10 +423,16 @@ pub(crate) fn extract_java_sources_jar(jar_path: &Path, dest: &Path) -> std::io:
         // variants contain .java stubs for Java interop classes.
         // Scala Maven artifacts (-sources.jar) contain .scala source files alongside
         // any .java interop shims — we need both to index external Scala libraries.
+        // JVM-language sources jars ship a mix of files. We extract every
+        // language extension we have a parser for; the walker downstream
+        // dispatches to the right extractor by suffix.
         if !name.ends_with(".java")
             && !name.ends_with(".clj")
             && !name.ends_with(".cljc")
             && !name.ends_with(".scala")
+            && !name.ends_with(".kt")
+            && !name.ends_with(".kts")
+            && !name.ends_with(".groovy")
         {
             continue;
         }
@@ -373,3 +458,7 @@ pub(crate) fn find_first_subdir(dir: &Path) -> Option<PathBuf> {
 
 /// Maximum directory traversal depth for all ecosystem walkers.
 pub(crate) const MAX_WALK_DEPTH: u32 = 20;
+
+#[cfg(test)]
+#[path = "externals_tests.rs"]
+mod tests;
