@@ -1,5 +1,6 @@
 {
   "captured_at": "2026-05-01T23:32:34Z",
+  "recapture_partial_at": "2026-05-03T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -163,58 +164,67 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 61
+        "min_resolution_rate": 98
       },
-      "code_chunks": 9820,
-      "files": 601,
+      "code_chunks": 16281,
+      "files": 853,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 21105,
-      "internal_unresolved": 12547,
+      "internal_edges": 37321,
+      "internal_unresolved": 544,
       "languages": {
-        "clojure": 493,
+        "c": 1,
+        "clojure": 678,
+        "cpp": 1,
         "dockerfile": 2,
-        "html": 51,
-        "java": 6,
-        "json": 5,
-        "markdown": 31,
-        "shell": 1,
+        "go": 1,
+        "html": 52,
+        "java": 8,
+        "json": 6,
+        "markdown": 79,
+        "powershell": 2,
+        "python": 1,
+        "rust": 2,
+        "shell": 2,
         "sql": 1,
-        "toml": 1,
-        "xml": 7,
-        "yaml": 3
+        "toml": 2,
+        "xml": 10,
+        "yaml": 5
       },
       "path": "F:/Work/Projects/TestProjects/clojure-babashka",
       "perf": {
-        "end_ws_mb": 76,
-        "files_per_sec": 69,
-        "index_duration_ms": 8693
+        "end_ws_mb": 167,
+        "files_per_sec": 12,
+        "index_duration_ms": 73129
       },
       "project": "clojure-babashka",
-      "resolution_rate": 62.72,
+      "resolution_rate": 98.56,
       "routes": 0,
-      "symbols": 6397,
+      "symbols": 10343,
       "unresolved_by_lang_kind": {
-        "clojure.Calls": 12210,
-        "java.Calls": 21,
-        "java.Implements": 4,
-        "java.Inherits": 1,
-        "java.Type_ref": 117,
-        "markdown.Calls": 173,
-        "markdown.Imports": 20,
-        "shell.Calls": 1
+        "c.calls": 3,
+        "c.type_ref": 4,
+        "clojure.calls": 500,
+        "cpp.calls": 3,
+        "cpp.type_ref": 4,
+        "go.calls": 10,
+        "go.type_ref": 2,
+        "java.type_ref": 7,
+        "rust.calls": 4,
+        "rust.type_ref": 6,
+        "shell.calls": 1
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 61
+        "min_resolution_rate": 98
       },
       "code_chunks": 2558,
       "files": 100,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 7276,
-      "internal_unresolved": 2655,
+      "internal_edges": 6948,
+      "internal_unresolved": 91,
       "languages": {
         "clojure": 70,
         "html": 2,
@@ -226,32 +236,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/clojure-datascript",
       "perf": {
-        "end_ws_mb": 73,
-        "files_per_sec": 26,
-        "index_duration_ms": 3796
+        "end_ws_mb": 250,
+        "files_per_sec": 27,
+        "index_duration_ms": 3656
       },
       "project": "clojure-datascript",
-      "resolution_rate": 73.27,
+      "resolution_rate": 98.71,
       "routes": 0,
       "symbols": 1524,
       "unresolved_by_lang_kind": {
-        "clojure.Calls": 2633,
-        "javascript.Calls": 8,
-        "markdown.Calls": 9,
-        "markdown.Imports": 1,
-        "shell.Calls": 4
+        "clojure.calls": 79,
+        "javascript.calls": 8,
+        "shell.calls": 4
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 85
+        "min_resolution_rate": 98
       },
       "code_chunks": 1211,
       "files": 92,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 2736,
-      "internal_unresolved": 472,
+      "internal_edges": 2645,
+      "internal_unresolved": 32,
       "languages": {
         "clojure": 81,
         "css": 2,
@@ -261,17 +269,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/clojure-ring",
       "perf": {
-        "end_ws_mb": 75,
-        "files_per_sec": 27,
-        "index_duration_ms": 3417
+        "end_ws_mb": 105,
+        "files_per_sec": 25,
+        "index_duration_ms": 3704
       },
       "project": "clojure-ring",
-      "resolution_rate": 85.29,
+      "resolution_rate": 98.8,
       "routes": 0,
       "symbols": 918,
       "unresolved_by_lang_kind": {
-        "clojure.Calls": 466,
-        "markdown.Calls": 6
+        "clojure.calls": 32
       }
     },
     {
@@ -1791,14 +1798,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 62
+        "min_resolution_rate": 88
       },
-      "code_chunks": 462,
+      "code_chunks": 852,
       "files": 42,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 216,
-      "internal_unresolved": 132,
+      "internal_edges": 267,
+      "internal_unresolved": 34,
       "languages": {
         "css": 3,
         "dockerfile": 1,
@@ -1811,18 +1818,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/pug-blockchain-demo",
       "perf": {
-        "end_ws_mb": 59,
-        "files_per_sec": 27,
-        "index_duration_ms": 1556
+        "end_ws_mb": 210,
+        "files_per_sec": 25,
+        "index_duration_ms": 1648
       },
       "project": "pug-blockchain-demo",
-      "resolution_rate": 62.07,
+      "resolution_rate": 88.7,
       "routes": 0,
-      "symbols": 244,
+      "symbols": 634,
       "unresolved_by_lang_kind": {
         "javascript.calls": 24,
-        "pug.calls": 94,
-        "pug.imports": 4,
         "pug.type_ref": 10
       }
     },
@@ -1992,14 +1997,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 78
+        "min_resolution_rate": 97
       },
       "code_chunks": 86015,
       "files": 2213,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 60549,
-      "internal_unresolved": 1739,
+      "internal_edges": 60782,
+      "internal_unresolved": 1459,
       "languages": {
         "c": 1,
         "css": 14,
@@ -2016,23 +2021,23 @@
       },
       "path": "F:/Work/Projects/TestProjects/robot-framework",
       "perf": {
-        "end_ws_mb": 130,
-        "files_per_sec": 86,
-        "index_duration_ms": 25300
+        "end_ws_mb": 158,
+        "files_per_sec": 96,
+        "index_duration_ms": 23008
       },
       "project": "robot-framework",
-      "resolution_rate": 97.21,
+      "resolution_rate": 97.66,
       "routes": 0,
       "symbols": 48646,
       "unresolved_by_lang_kind": {
-        "javascript.Calls": 395,
-        "javascript.Type_ref": 6,
-        "python.Calls": 114,
-        "python.Imports": 11,
-        "python.Type_ref": 223,
-        "robot.Calls": 985,
-        "typescript.Calls": 1,
-        "typescript.Type_ref": 4
+        "javascript.calls": 395,
+        "javascript.type_ref": 6,
+        "python.calls": 114,
+        "python.imports": 11,
+        "python.type_ref": 223,
+        "robot.calls": 705,
+        "typescript.calls": 1,
+        "typescript.type_ref": 4
       }
     },
     {
