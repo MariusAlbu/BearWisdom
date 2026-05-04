@@ -245,24 +245,39 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
     }
 
     // --- Scala sbt coords ----------------------------------------------
-    if let Some(repo) = m2.as_deref() {
-        for artifact in collect_sbt_artifacts(project_root) {
-            if let Some((group, art, version, cache_dir)) =
-                find_scala_source_jar(repo, &artifact, &cache_base)
-            {
-                if seen.insert(cache_dir.clone()) {
-                    roots.push(ExternalDepRoot {
-                        module_path: format!("{group}:{art}"),
-                        version,
-                        root: cache_dir,
-                        ecosystem: ID.as_str(),
-                        package_id: None,
-                        requested_imports: user_imports.clone(),
-                    });
-                }
-            } else {
-                debug!(artifact = %artifact, "Maven (sbt): sources jar not found in ~/.m2");
+    // sbt's `%%` operator appends the active Scala version suffix to the
+    // artifact name (`cats-core` → `cats-core_3` for Scala 3,
+    // `cats-core_2.13` for 2.13). Without evaluating the build we can't
+    // know which one the user is on, so probe each suffix in turn against
+    // every cache. First hit wins.
+    let scala_suffixes = ["_3", "_2.13", "_2.12", ""];
+    for (group, artifact_base) in collect_sbt_coord_pairs(project_root) {
+        let mut hit = false;
+        for suffix in &scala_suffixes {
+            let artifact_id = format!("{artifact_base}{suffix}");
+            let coord = MavenCoord {
+                group_id: group.clone(),
+                artifact_id,
+                version: None,
+            };
+            let before = roots.len();
+            resolve_and_push_jvm(
+                m2.as_deref(),
+                gradle_cache.as_deref(),
+                coursier_cache.as_deref(),
+                &cache_base,
+                &coord,
+                &user_imports,
+                &mut roots,
+                &mut seen,
+            );
+            if roots.len() > before {
+                hit = true;
+                break;
             }
+        }
+        if !hit {
+            debug!(group = %group, artifact = %artifact_base, "sbt: sources jar not found in any cache");
         }
     }
 
@@ -407,6 +422,55 @@ fn collect_sbt_artifacts(project_root: &Path) -> Vec<String> {
         }
     }
     all
+}
+
+/// Walk every sbt manifest in the project (root build.sbt + project/*.sbt
+/// + project/Dependencies.scala) and return `(group, artifact)` pairs.
+/// Sub-projects in monorepos often have their own build.sbt under
+/// `<project>/<module>/build.sbt`; collect those too.
+fn collect_sbt_coord_pairs(project_root: &Path) -> Vec<(String, String)> {
+    let mut out: Vec<(String, String)> = Vec::new();
+    let mut seen: std::collections::HashSet<(String, String)> =
+        std::collections::HashSet::new();
+
+    let mut sbt_files = Vec::new();
+    collect_sbt_files(project_root, &mut sbt_files, 0);
+
+    for path in sbt_files {
+        let Ok(content) = std::fs::read_to_string(&path) else { continue };
+        for pair in sbt_manifest::parse_sbt_coord_pairs(&content) {
+            if seen.insert(pair.clone()) {
+                out.push(pair);
+            }
+        }
+    }
+    out
+}
+
+fn collect_sbt_files(dir: &Path, out: &mut Vec<PathBuf>, depth: usize) {
+    if depth > 6 { return }
+    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(
+                    name,
+                    ".git" | "target" | "build" | "node_modules"
+                        | ".gradle" | ".idea" | ".bsp"
+                ) || name.starts_with('.') {
+                    continue;
+                }
+            }
+            collect_sbt_files(&path, out, depth + 1);
+        } else if path.is_file() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if name.ends_with(".sbt") || name == "Dependencies.scala" {
+                    out.push(path);
+                }
+            }
+        }
+    }
 }
 
 fn find_scala_source_jar(

@@ -2057,8 +2057,8 @@
       "files": 2672,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 75703,
-      "internal_unresolved": 13120,
+      "internal_edges": 76181,
+      "internal_unresolved": 13102,
       "languages": {
         "c": 4,
         "csharp": 13,
@@ -2087,12 +2087,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/erlang-rabbitmq",
       "perf": {
-        "end_ws_mb": 276,
-        "files_per_sec": 46,
-        "index_duration_ms": 58374
+        "end_ws_mb": 269,
+        "files_per_sec": 27,
+        "index_duration_ms": 98382
       },
       "project": "erlang-rabbitmq",
-      "resolution_rate": 85.23,
+      "resolution_rate": 85.33,
       "routes": 39,
       "symbols": 56460,
       "unresolved_by_lang_kind": {
@@ -2106,14 +2106,14 @@
         "erlang.instantiates": 5154,
         "fsharp.imports": 1,
         "html.calls": 48,
-        "java.calls": 259,
+        "java.calls": 244,
         "java.instantiates": 5,
-        "java.type_ref": 34,
+        "java.type_ref": 33,
         "javascript.calls": 773,
         "javascript.type_ref": 11,
         "kotlin.calls": 1,
         "make.calls": 42,
-        "python.calls": 39,
+        "python.calls": 37,
         "python.type_ref": 1,
         "shell.calls": 14
       }
@@ -3925,7 +3925,7 @@
       "files": 194,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1858,
+      "internal_edges": 1888,
       "internal_unresolved": 237,
       "languages": {
         "json": 3,
@@ -3938,12 +3938,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-android-showcase",
       "perf": {
-        "end_ws_mb": 419,
-        "files_per_sec": 39,
-        "index_duration_ms": 5001
+        "end_ws_mb": 134,
+        "files_per_sec": 11,
+        "index_duration_ms": 17593
       },
       "project": "kotlin-android-showcase",
-      "resolution_rate": 88.69,
+      "resolution_rate": 88.85,
       "routes": 0,
       "symbols": 841,
       "unresolved_by_lang_kind": {
@@ -3954,14 +3954,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 84
+        "min_resolution_rate": 87
       },
       "code_chunks": 91856,
       "files": 1737,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 33419,
-      "internal_unresolved": 6070,
+      "internal_edges": 34692,
+      "internal_unresolved": 4929,
       "languages": {
         "css": 8,
         "groovy": 2,
@@ -3979,32 +3979,32 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-detekt",
       "perf": {
-        "end_ws_mb": 337,
-        "files_per_sec": 72,
-        "index_duration_ms": 24262
+        "end_ws_mb": 208,
+        "files_per_sec": 26,
+        "index_duration_ms": 66561
       },
       "project": "kotlin-detekt",
-      "resolution_rate": 84.63,
+      "resolution_rate": 87.56,
       "routes": 0,
       "symbols": 51340,
       "unresolved_by_lang_kind": {
         "java.type_ref": 1,
-        "kotlin.calls": 5695,
+        "kotlin.calls": 4575,
         "kotlin.inherits": 6,
-        "kotlin.type_ref": 341,
+        "kotlin.type_ref": 320,
         "mdx.calls": 27
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 89
+        "min_resolution_rate": 90
       },
       "code_chunks": 36059,
       "files": 957,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 44546,
-      "internal_unresolved": 5115,
+      "internal_edges": 45055,
+      "internal_unresolved": 4957,
       "languages": {
         "css": 2,
         "gotemplate": 1,
@@ -4025,18 +4025,18 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-komga",
       "perf": {
-        "end_ws_mb": 303,
-        "files_per_sec": 41,
-        "index_duration_ms": 23290
+        "end_ws_mb": 176,
+        "files_per_sec": 11,
+        "index_duration_ms": 90612
       },
       "project": "kotlin-komga",
-      "resolution_rate": 89.7,
+      "resolution_rate": 90.09,
       "routes": 0,
       "symbols": 17424,
       "unresolved_by_lang_kind": {
-        "kotlin.calls": 1275,
+        "kotlin.calls": 1128,
         "kotlin.inherits": 1,
-        "kotlin.type_ref": 458,
+        "kotlin.type_ref": 447,
         "sql.type_ref": 46,
         "typescript.calls": 10,
         "typescript.instantiates": 26,
@@ -4048,14 +4048,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 95
       },
       "code_chunks": 81085,
       "files": 2456,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 121991,
-      "internal_unresolved": 6827,
+      "internal_edges": 123334,
+      "internal_unresolved": 6150,
       "languages": {
         "c": 12,
         "cmake": 6,
@@ -4075,35 +4075,35 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-ktor",
       "perf": {
-        "end_ws_mb": 394,
-        "files_per_sec": 26,
-        "index_duration_ms": 94434
+        "end_ws_mb": 279,
+        "files_per_sec": 12,
+        "index_duration_ms": 205033
       },
       "project": "kotlin-ktor",
-      "resolution_rate": 94.7,
+      "resolution_rate": 95.25,
       "routes": 0,
       "symbols": 43179,
       "unresolved_by_lang_kind": {
         "c.calls": 3,
         "c.type_ref": 4,
         "cmake.type_ref": 21,
-        "kotlin.calls": 2722,
+        "kotlin.calls": 2250,
         "kotlin.implements": 31,
         "kotlin.inherits": 125,
-        "kotlin.type_ref": 3909,
+        "kotlin.type_ref": 3704,
         "rust.calls": 12
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 93
+        "min_resolution_rate": 94
       },
       "code_chunks": 4437,
       "files": 331,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 4407,
-      "internal_unresolved": 302,
+      "internal_edges": 4577,
+      "internal_unresolved": 265,
       "languages": {
         "dockerfile": 1,
         "html": 2,
@@ -4117,31 +4117,31 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-notykt",
       "perf": {
-        "end_ws_mb": 529,
-        "files_per_sec": 32,
-        "index_duration_ms": 10498
+        "end_ws_mb": 419,
+        "files_per_sec": 3,
+        "index_duration_ms": 129369
       },
       "project": "kotlin-notykt",
-      "resolution_rate": 93.59,
+      "resolution_rate": 94.53,
       "routes": 0,
       "symbols": 2130,
       "unresolved_by_lang_kind": {
         "html.calls": 1,
-        "kotlin.calls": 198,
+        "kotlin.calls": 165,
         "kotlin.inherits": 2,
-        "kotlin.type_ref": 101
+        "kotlin.type_ref": 97
       }
     },
     {
       "assertions": {
-        "min_resolution_rate": 97
+        "min_resolution_rate": 98
       },
       "code_chunks": 40594,
       "files": 722,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 55644,
-      "internal_unresolved": 1307,
+      "internal_edges": 56446,
+      "internal_unresolved": 795,
       "languages": {
         "css": 1,
         "java": 71,
@@ -4156,21 +4156,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/kotlin-okhttp",
       "perf": {
-        "end_ws_mb": 322,
-        "files_per_sec": 28,
-        "index_duration_ms": 25456
+        "end_ws_mb": 212,
+        "files_per_sec": 5,
+        "index_duration_ms": 154663
       },
       "project": "kotlin-okhttp",
-      "resolution_rate": 97.71,
+      "resolution_rate": 98.61,
       "routes": 0,
       "symbols": 19234,
       "unresolved_by_lang_kind": {
         "java.calls": 1,
         "java.type_ref": 2,
-        "kotlin.calls": 811,
+        "kotlin.calls": 369,
         "kotlin.implements": 1,
         "kotlin.inherits": 8,
-        "kotlin.type_ref": 484
+        "kotlin.type_ref": 414
       }
     },
     {
@@ -5220,14 +5220,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 83
+        "min_resolution_rate": 85
       },
       "code_chunks": 365092,
       "files": 2834,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 176081,
-      "internal_unresolved": 34054,
+      "internal_edges": 183342,
+      "internal_unresolved": 30202,
       "languages": {
         "c": 223,
         "cmake": 20,
@@ -5255,30 +5255,30 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-castle-fresh",
       "perf": {
-        "end_ws_mb": 399,
-        "files_per_sec": 24,
-        "index_duration_ms": 120354
+        "end_ws_mb": 328,
+        "files_per_sec": 14,
+        "index_duration_ms": 208445
       },
       "project": "pascal-castle-fresh",
-      "resolution_rate": 83.79,
+      "resolution_rate": 85.86,
       "routes": 0,
       "symbols": 182775,
       "unresolved_by_lang_kind": {
-        "c.calls": 481,
+        "c.calls": 328,
         "c.imports": 25,
-        "c.type_ref": 2761,
+        "c.type_ref": 2623,
         "cmake.type_ref": 92,
-        "cpp.calls": 2841,
+        "cpp.calls": 2616,
         "cpp.imports": 59,
         "cpp.inherits": 6,
         "cpp.instantiates": 16,
-        "cpp.type_ref": 3224,
+        "cpp.type_ref": 2960,
         "java.calls": 15,
         "java.implements": 1,
         "java.type_ref": 18,
         "matlab.calls": 94,
-        "pascal.calls": 24138,
-        "pascal.inherits": 247,
+        "pascal.calls": 21125,
+        "pascal.inherits": 188,
         "php.calls": 1,
         "scss.calls": 1,
         "shell.calls": 34
@@ -5292,7 +5292,7 @@
       "files": 989,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 41863,
+      "internal_edges": 57260,
       "internal_unresolved": 176,
       "languages": {
         "c": 8,
@@ -5310,12 +5310,12 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-doublecmd",
       "perf": {
-        "end_ws_mb": 367,
-        "files_per_sec": 40,
-        "index_duration_ms": 24755
+        "end_ws_mb": 311,
+        "files_per_sec": 11,
+        "index_duration_ms": 90125
       },
       "project": "pascal-doublecmd",
-      "resolution_rate": 99.58,
+      "resolution_rate": 99.69,
       "routes": 0,
       "symbols": 94766,
       "unresolved_by_lang_kind": {
@@ -5334,8 +5334,8 @@
       "files": 177,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 9572,
-      "internal_unresolved": 66,
+      "internal_edges": 18439,
+      "internal_unresolved": 58,
       "languages": {
         "html": 1,
         "json": 4,
@@ -5346,17 +5346,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/pascal-heidisql",
       "perf": {
-        "end_ws_mb": 295,
-        "files_per_sec": 60,
-        "index_duration_ms": 2963
+        "end_ws_mb": 319,
+        "files_per_sec": 3,
+        "index_duration_ms": 60486
       },
       "project": "pascal-heidisql",
-      "resolution_rate": 99.32,
+      "resolution_rate": 99.69,
       "routes": 0,
       "symbols": 28694,
       "unresolved_by_lang_kind": {
         "pascal.calls": 2,
-        "php.calls": 63,
+        "php.calls": 55,
         "php.instantiates": 1
       }
     },
@@ -7136,8 +7136,8 @@
       "files": 1056,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 34557,
-      "internal_unresolved": 19835,
+      "internal_edges": 34948,
+      "internal_unresolved": 19694,
       "languages": {
         "css": 1,
         "handlebars": 9,
@@ -7154,17 +7154,17 @@
       },
       "path": "F:/Work/Projects/TestProjects/scala-finatra",
       "perf": {
-        "end_ws_mb": 317,
+        "end_ws_mb": 249,
         "files_per_sec": 5,
-        "index_duration_ms": 227111
+        "index_duration_ms": 226500
       },
       "project": "scala-finatra",
-      "resolution_rate": 63.53,
+      "resolution_rate": 63.96,
       "routes": 0,
       "symbols": 10246,
       "unresolved_by_lang_kind": {
         "html.calls": 2,
-        "java.calls": 196,
+        "java.calls": 55,
         "java.implements": 3,
         "java.type_ref": 35,
         "python.calls": 4,
@@ -7184,8 +7184,8 @@
       "files": 1015,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 59249,
-      "internal_unresolved": 7852,
+      "internal_edges": 60337,
+      "internal_unresolved": 7847,
       "languages": {
         "css": 2,
         "html": 6,
@@ -7199,19 +7199,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/scala-gatling",
       "perf": {
-        "end_ws_mb": 331,
-        "files_per_sec": 6,
-        "index_duration_ms": 172979
+        "end_ws_mb": 260,
+        "files_per_sec": 7,
+        "index_duration_ms": 146794
       },
       "project": "scala-gatling",
-      "resolution_rate": 88.3,
+      "resolution_rate": 88.49,
       "routes": 0,
       "symbols": 17405,
       "unresolved_by_lang_kind": {
         "html.calls": 3,
         "java.calls": 6,
         "java.instantiates": 4,
-        "java.type_ref": 257,
+        "java.type_ref": 252,
         "javascript.calls": 11,
         "scala.calls": 3501,
         "scala.implements": 36,
@@ -7226,14 +7226,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 56
+        "min_resolution_rate": 59
       },
       "code_chunks": 4262,
       "files": 184,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 5571,
-      "internal_unresolved": 4287,
+      "internal_edges": 6224,
+      "internal_unresolved": 4241,
       "languages": {
         "dockerfile": 1,
         "html": 2,
@@ -7247,21 +7247,21 @@
       },
       "path": "F:/Work/Projects/TestProjects/scala-trading",
       "perf": {
-        "end_ws_mb": 479,
-        "files_per_sec": 1,
-        "index_duration_ms": 128611
+        "end_ws_mb": 214,
+        "files_per_sec": 3,
+        "index_duration_ms": 58189
       },
       "project": "scala-trading",
-      "resolution_rate": 56.51,
+      "resolution_rate": 59.47,
       "routes": 0,
       "symbols": 3093,
       "unresolved_by_lang_kind": {
         "nix.calls": 16,
-        "scala.calls": 2339,
+        "scala.calls": 2336,
         "scala.implements": 1,
         "scala.imports": 25,
         "scala.inherits": 20,
-        "scala.type_ref": 1886
+        "scala.type_ref": 1843
       }
     },
     {

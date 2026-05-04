@@ -62,6 +62,28 @@ pub fn parse_sbt_deps(content: &str) -> Vec<String> {
     deps
 }
 
+/// Parse every `"group" %% "artifact"` pair from an sbt manifest. Returns
+/// `(group_id, artifact_id)` so callers can construct full `MavenCoord`s
+/// — sbt versions often reference Scala-side `val` definitions
+/// (`V.cats`, `Versions.akka`) which we can't evaluate, so the version is
+/// left for the resolver's directory-scan fallback.
+pub fn parse_sbt_coord_pairs(content: &str) -> Vec<(String, String)> {
+    let mut out = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if trimmed.starts_with("//") { continue; }
+        for (artifact, group) in extract_sbt_coords(trimmed) {
+            if artifact.is_empty() || group.is_empty() { continue; }
+            let key = (group.clone(), artifact.clone());
+            if seen.insert(key.clone()) {
+                out.push(key);
+            }
+        }
+    }
+    out
+}
+
 /// Extract (artifact_id, group_id) pairs from a line of sbt DSL.
 fn extract_sbt_coords(line: &str) -> Vec<(String, String)> {
     let mut results = Vec::new();
