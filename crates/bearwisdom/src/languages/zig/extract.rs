@@ -446,43 +446,21 @@ fn extract_enum_body(
     }
 }
 
-/// Scan a single source line for `@builtin(` patterns and emit Calls refs.
-/// Used for top-level declaration lines where the RHS contains builtin calls
-/// (e.g. `const X = @This()`, `const X = @cImport({...})`).
-/// Skips `@import` which is already handled as an Imports ref.
+/// Used to be `extract_builtin_calls_from_line` — emitted Calls refs for
+/// top-level `@builtin(` patterns. Removed: Zig builtins (`@This`,
+/// `@cImport`, `@Vector`, `@branchHint`, ...) are compile-time intrinsics
+/// implemented by the compiler. They have no source-level definition and
+/// can never resolve to a symbol. Skipping emission keeps unresolved_refs
+/// honest. `@import` is still extracted separately as an Imports ref by
+/// the variable-declaration handler.
+#[inline]
 fn extract_builtin_calls_from_line(
-    line: &str,
-    source_symbol_index: usize,
-    line_num: u32,
-    refs: &mut Vec<ExtractedRef>,
+    _line: &str,
+    _source_symbol_index: usize,
+    _line_num: u32,
+    _refs: &mut Vec<ExtractedRef>,
 ) {
-    let bytes = line.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'@' && i + 1 < bytes.len() && is_ident_start(bytes[i + 1]) {
-            let start = i + 1;
-            i = start;
-            while i < bytes.len() && is_ident_char(bytes[i]) {
-                i += 1;
-            }
-            let ident = &line[start..i];
-            // Skip @import (already handled) and emit refs for all other builtins
-            if i < bytes.len() && bytes[i] == b'(' && ident != "import" {
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: format!("@{ident}"),
-                    kind: EdgeKind::Calls,
-                    line: line_num,
-                    module: None,
-                    chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-});
-            }
-        } else {
-            i += 1;
-        }
-    }
+    // intentionally empty — see doc comment.
 }
 
 // ---------------------------------------------------------------------------
@@ -619,26 +597,26 @@ fn extract_call_identifiers(
     let bytes = line.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
-        // Builtin function call: `@identifier(`
+        // Builtin function call: `@identifier(`. Zig reserves the `@` prefix
+        // for compile-time builtins — `@This`, `@branchHint`, `@unionInit`,
+        // `@byteSwap`, `@FieldType`, etc. These never have source-level
+        // function definitions; they're implemented by the compiler. User
+        // code can't define identifiers starting with `@`, so the pattern
+        // is unambiguous.
+        //
+        // Skip emission so unresolved_refs stays honest. The previous
+        // approach emitted them and relied on `predicates::is_zig_builtin`
+        // to externalize, but the hardcoded list missed every Zig version
+        // bump (zig-compiler-fresh: 1,450 unresolved `@*` calls).
         if bytes[i] == b'@' && i + 1 < bytes.len() && is_ident_start(bytes[i + 1]) {
             let start = i + 1; // skip the `@`
             i = start;
             while i < bytes.len() && is_ident_char(bytes[i]) {
                 i += 1;
             }
-            let ident = &line[start..i];
-            // Skip @import — already emitted as Imports ref in parse_var_declaration
-            if i < bytes.len() && bytes[i] == b'(' && ident != "import" {
-                refs.push(ExtractedRef {
-                    source_symbol_index,
-                    target_name: format!("@{ident}"),
-                    kind: EdgeKind::Calls,
-                    line: line_num,
-                    module: None,
-                    chain: None,
-                    byte_offset: 0,
-                                    namespace_segments: Vec::new(),
-});
+            // Skip the call's `(` to keep the scanner moving forward.
+            if i < bytes.len() && bytes[i] == b'(' {
+                i += 1;
             }
             continue;
         }

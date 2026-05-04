@@ -108,25 +108,40 @@ fn cov_import_produces_imports_ref() {
     );
 }
 
-/// Builtin function calls inside function bodies produce Calls refs.
+/// Builtin function calls (`@*`) are compile-time intrinsics that have no
+/// source-level definition — `@intCast`, `@This`, `@branchHint`, etc. — so
+/// the extractor must NOT emit them as Calls refs. Zig reserves `@` prefix
+/// for the compiler, so the pattern is unambiguous. Real function calls
+/// inside the same body still emit normally.
 #[test]
-fn cov_builtin_call_in_body_produces_ref() {
-    let r = extract::extract("pub fn foo() void {\n    const x: i32 = @intCast(42);\n}");
+fn cov_builtin_calls_do_not_emit() {
+    let r = extract::extract("pub fn foo() void {\n    const x: i32 = @intCast(42);\n    helper();\n}\nfn helper() void {}");
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "@intCast"),
-        "@intCast in body should produce a Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        !calls.iter().any(|n| n.starts_with('@')),
+        "no `@*` builtin should emit Calls; got {calls:?}"
+    );
+    assert!(
+        calls.contains(&"helper"),
+        "real call `helper()` SHOULD emit Calls; got {calls:?}"
     );
 }
 
-/// Top-level `@This()` produces a Calls ref.
+/// Top-level `@This()` is a compiler builtin — must not emit Calls.
+/// `@import("...")` is special-cased to emit Imports separately.
 #[test]
-fn cov_this_at_toplevel_produces_ref() {
+fn cov_this_at_toplevel_does_not_emit_call() {
     let r = extract::extract("const Self = @This();");
+    let calls: Vec<&str> = r.refs.iter()
+        .filter(|rf| rf.kind == EdgeKind::Calls)
+        .map(|rf| rf.target_name.as_str())
+        .collect();
     assert!(
-        r.refs.iter().any(|rf| rf.target_name == "@This"),
-        "@This at top level should produce a Calls ref; got: {:?}",
-        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>()
+        !calls.iter().any(|n| *n == "@This"),
+        "@This() must not emit Calls; got {calls:?}"
     );
 }
 
