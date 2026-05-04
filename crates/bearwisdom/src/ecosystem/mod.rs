@@ -63,6 +63,7 @@ pub mod godot_api;
 pub mod groovy_stdlib;
 pub mod hex;
 pub mod jdk_src;
+pub mod freepascal_runtime;
 pub mod kotlin_stdlib;
 pub mod luarocks;
 pub mod matlab_runtime;
@@ -131,6 +132,7 @@ pub use godot_api::GodotApiEcosystem;
 pub use groovy_stdlib::GroovyStdlibEcosystem;
 pub use hex::HexEcosystem;
 pub use jdk_src::JdkSrcEcosystem;
+pub use freepascal_runtime::FreePascalRuntimeEcosystem;
 pub use kotlin_stdlib::KotlinStdlibEcosystem;
 pub use luarocks::LuarocksEcosystem;
 pub use matlab_runtime::MatlabRuntimeEcosystem;
@@ -605,6 +607,7 @@ pub fn default_locator(
         "zig-pkg" => Some(Arc::new(ZigPkgEcosystem)),
         "godot-api" => Some(Arc::new(GodotApiEcosystem)),
         "android-sdk" => Some(Arc::new(AndroidSdkEcosystem)),
+        "freepascal-runtime" => Some(Arc::new(FreePascalRuntimeEcosystem)),
         "kotlin-stdlib" => Some(Arc::new(KotlinStdlibEcosystem)),
         "rust-stdlib" => Some(Arc::new(RustStdlibEcosystem)),
         "go-stdlib" => Some(Arc::new(GoStdlibEcosystem)),
@@ -721,6 +724,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         // Stdlib ecosystems must register AFTER their base package ecosystem
         // (Maven) for TransitiveOn activation to resolve in a single pass.
         reg_eco!(KotlinStdlibEcosystem);
+        reg_eco!(FreePascalRuntimeEcosystem);
         reg_eco!(AndroidSdkEcosystem);
         reg_eco!(RustStdlibEcosystem);
         reg_eco!(GoStdlibEcosystem);
