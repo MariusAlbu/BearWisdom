@@ -479,6 +479,32 @@ fn seed_demand_from_user_refs_inner(
             &mut queue,
         );
 
+        // Transitive include walk for C/C++ external headers. `<openssl/ssl.h>`
+        // includes `<openssl/x509_crt.h>` internally; without following the
+        // chain, types defined in transitively-included headers stay
+        // unresolved even though the user's project triggered the original
+        // pull. Bounded by MAX_PULLS_PER_SEED so a runaway never escapes.
+        if matches!(pf.language.as_str(), "c" | "cpp") {
+            for r in &pf.refs {
+                if r.kind != EdgeKind::Imports {
+                    continue;
+                }
+                let Some(module) = r.module.as_deref() else { continue };
+                if r.target_name.is_empty() {
+                    continue;
+                }
+                wanted_names.insert(r.target_name.clone());
+                enqueue_named_target(
+                    symbol_index,
+                    &r.target_name,
+                    Some(module),
+                    None,
+                    &mut seen_paths,
+                    &mut queue,
+                );
+            }
+        }
+
         all_parsed.push(pf);
     }
 
