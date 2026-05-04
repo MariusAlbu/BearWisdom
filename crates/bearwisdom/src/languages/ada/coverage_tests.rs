@@ -278,6 +278,59 @@ fn subprogram_qualified_by_parent_package() {
         "expected qualified_name 'Trace.Debug', got '{}'", debug.qualified_name);
 }
 
+/// `package X renames Y;` must emit an Imports ref with the alias name as
+/// target_name and the target package as module. Without this, every
+/// reference to `X.something` (where Y is external) stays unresolved —
+/// e.g. Alire's `package Trace renames Simple_Logging;` leaves ~600
+/// `Trace.Debug`/`Trace.Info`/etc. unresolved.
+#[test]
+fn package_rename_emits_imports_ref() {
+    let src = "package body Foo is\n  package Trace renames Simple_Logging;\nend Foo;\n";
+    let r = extract(src);
+    let ren = r.refs.iter()
+        .find(|rf| rf.target_name == "Trace" && rf.kind == EdgeKind::Imports);
+    assert!(ren.is_some(),
+        "expected Imports ref target_name=Trace; got {:?}",
+        r.refs.iter().map(|rf| (&rf.target_name, rf.kind)).collect::<Vec<_>>());
+    assert_eq!(ren.unwrap().module.as_deref(), Some("Simple_Logging"));
+}
+
+/// `package Pkg renames Ada.Text_IO;` — dotted target via selected_component.
+#[test]
+fn package_rename_dotted_target() {
+    let src = "package body Foo is\n  package Console renames Ada.Text_IO;\nend Foo;\n";
+    let r = extract(src);
+    let ren = r.refs.iter()
+        .find(|rf| rf.target_name == "Console" && rf.kind == EdgeKind::Imports);
+    assert!(ren.is_some(), "expected Imports ref target_name=Console");
+    assert_eq!(ren.unwrap().module.as_deref(), Some("Ada.Text_IO"));
+}
+
+/// Diagnostic: dump tree-sitter-ada AST for `package X renames Y;` to find
+/// the node kind we need to handle.
+#[test]
+#[ignore]
+fn diag_package_rename_ast_dump() {
+    use tree_sitter::Parser;
+    let src = "package body Foo is\n  package Trace renames Simple_Logging;\nend Foo;\n";
+    let mut parser = Parser::new();
+    parser.set_language(&tree_sitter_ada::LANGUAGE.into()).unwrap();
+    let tree = parser.parse(src, None).unwrap();
+    fn walk(n: tree_sitter::Node, src: &str, depth: usize) {
+        let text = if n.start_byte() < src.len() && n.end_byte() <= src.len() {
+            &src[n.start_byte()..n.end_byte().min(n.start_byte() + 80)]
+        } else { "" };
+        eprintln!("{}{} [{}..{}] {:?}",
+            "  ".repeat(depth), n.kind(), n.start_byte(), n.end_byte(),
+            text.replace('\n', "\\n"));
+        let mut c = n.walk();
+        for child in n.children(&mut c) {
+            walk(child, src, depth + 1);
+        }
+    }
+    walk(tree.root_node(), src, 0);
+}
+
 /// Nested package bodies must compose qualified names: `Trace.IO.Format`.
 #[test]
 fn nested_package_qualification_chains() {

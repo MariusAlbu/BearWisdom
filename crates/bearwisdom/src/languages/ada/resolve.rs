@@ -41,11 +41,19 @@ impl LanguageResolver for AdaResolver {
             if r.kind != EdgeKind::Imports {
                 continue;
             }
-            // Both `with` and `use` clauses produce Imports edges.
-            // `use` clauses bring names into direct scope (wildcard semantics).
+            // Both `with` and `use` clauses produce Imports edges. The
+            // package_renaming_declaration handler in the extractor sets
+            // `module` to the renamed-target package (e.g. for
+            // `package Trace renames Simple_Logging;` the ref carries
+            // target_name="Trace" and module=Some("Simple_Logging"));
+            // when present, that's the actual module to look up.
+            let module_path = r
+                .module
+                .clone()
+                .unwrap_or_else(|| r.target_name.clone());
             imports.push(ImportEntry {
                 imported_name: r.target_name.clone(),
-                module_path: Some(r.target_name.clone()),
+                module_path: Some(module_path),
                 alias: None,
                 is_wildcard: true, // Ada `use` makes all names visible
             });

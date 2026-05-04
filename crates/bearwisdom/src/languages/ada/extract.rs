@@ -81,6 +81,53 @@ fn walk_node(
             let idx = extract_type_decl(node, src, symbols, parent_idx);
             walk_children(node, src, symbols, refs, idx.or(parent_idx));
         }
+        "package_renaming_declaration" => {
+            // `package Trace renames Simple_Logging;` brings Simple_Logging
+            // into scope as `Trace`. Without this, every `Trace.<x>` call
+            // references an undefined symbol (Simple_Logging is typically
+            // an external Ada library — Alire's lib uses `Trace renames
+            // Simple_Logging` for ~600 unresolveds in alire).
+            //
+            // tree-sitter-ada emits the rename as:
+            //   package identifier "<alias>" renames <identifier|selected_component> ;
+            let sym_idx = parent_idx.unwrap_or(0);
+            let mut cursor = node.walk();
+            let mut alias_name: Option<String> = None;
+            let mut target_module: Option<String> = None;
+            let mut seen_renames = false;
+            for child in node.children(&mut cursor) {
+                match child.kind() {
+                    "renames" => seen_renames = true,
+                    "identifier" => {
+                        if !seen_renames {
+                            alias_name = Some(text(child, src));
+                        } else {
+                            target_module = Some(text(child, src));
+                        }
+                    }
+                    "selected_component" => {
+                        if seen_renames {
+                            target_module = Some(text(child, src));
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            if let (Some(alias), Some(target)) = (alias_name, target_module) {
+                if !alias.is_empty() && !target.is_empty() {
+                    refs.push(ExtractedRef {
+                        source_symbol_index: sym_idx,
+                        target_name: alias,
+                        kind: EdgeKind::Imports,
+                        line: node.start_position().row as u32,
+                        module: Some(target),
+                        chain: None,
+                        byte_offset: 0,
+                                            namespace_segments: Vec::new(),
+});
+                }
+            }
+        }
         "with_clause" => {
             let sym_idx = parent_idx.unwrap_or(0);
             // Children include `identifier` (simple) and `selected_component`
