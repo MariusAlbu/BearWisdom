@@ -382,6 +382,18 @@ fn collect_headers_rec(
         // every `#include` form the right relative key without needing
         // a basename fallback.
         idx.insert(rel_str.clone(), rel_str.clone(), path.clone());
+        // Windows filesystem is case-insensitive but the SymbolLocationIndex
+        // is a case-sensitive HashMap. On Windows, a project's
+        // `#include <winsock2.h>` (lowercase) won't match the SDK's
+        // on-disk `WinSock2.h` without a lowercase shadow key.
+        // Insert it so demand-driven walks still pull the file.
+        #[cfg(target_os = "windows")]
+        {
+            let lower = rel_str.to_ascii_lowercase();
+            if lower != rel_str {
+                idx.insert(lower.clone(), lower, path.clone());
+            }
+        }
     }
 }
 
@@ -486,6 +498,28 @@ mod tests {
         assert!(idx.locate("Windows.Foundation.h", "Windows.Foundation.h").is_some());
         // Reached via the version root (relative = `winrt/Windows.Foundation.h`).
         assert!(idx.locate("winrt/Windows.Foundation.h", "winrt/Windows.Foundation.h").is_some());
+    }
+
+    #[test]
+    #[cfg(target_os = "windows")]
+    fn windows_header_index_registers_lowercase_shadow_key() {
+        // Windows SDK has mixed-case header names like `WinSock2.h` but
+        // user code always writes `#include <winsock2.h>`. The HashMap
+        // backing SymbolLocationIndex is case-sensitive, so we need a
+        // lowercase shadow key. Without it, demand-driven walking misses
+        // these headers entirely.
+        let tmp = TempDir::new().unwrap();
+        write(&tmp.path().join("WinSock2.h"), "/* mixed-case sdk header */\n");
+        let dep = make_root(tmp.path(), "test");
+        let idx = build_c_header_index(&[dep]);
+        // Original case still resolves.
+        assert!(idx.locate("WinSock2.h", "WinSock2.h").is_some());
+        // Lowercase form (what `#include <winsock2.h>` generates) also
+        // resolves to the same file.
+        assert!(
+            idx.locate("winsock2.h", "winsock2.h").is_some(),
+            "lowercase shadow key required for case-insensitive Windows lookup"
+        );
     }
 
     #[test]
