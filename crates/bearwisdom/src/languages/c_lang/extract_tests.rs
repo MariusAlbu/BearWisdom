@@ -749,3 +749,123 @@ int real_call(void) {
             "real call `helper()` SHOULD emit Calls; got {calls:?}"
         );
     }
+
+    #[test]
+    fn salvage_recovers_defines_after_parse_error() {
+        // Real-world trigger from curl_setup.h: `typedef enum { ... } bool;`
+        // pushes tree-sitter-c into recovery mode, after which subsequent
+        // #define lines emit as ERROR/text content. The salvage pass must
+        // recover them by raw-text scanning.
+        //
+        // Without the fallback: tree-sitter would extract `curlx_safefree`
+        // (before the disruption) but miss `curlx_strdup`/`curlx_free`
+        // (after). The fallback recovers them.
+        let src = r#"
+#define curlx_safefree(ptr) do { free(ptr); (ptr) = NULL; } while(0)
+
+#ifndef HAVE_BOOL_T
+  typedef enum {
+    bool_false = 0,
+    bool_true  = 1
+  } bool;
+#endif
+
+#ifdef CURL_MEMDEBUG
+#define curlx_strdup(ptr) curl_dbg_strdup(ptr, __LINE__, __FILE__)
+#define curlx_calloc(nbelem, size) \
+  curl_dbg_calloc(nbelem, size, __LINE__, __FILE__)
+#define curlx_free(ptr) curl_dbg_free(ptr, __LINE__, __FILE__)
+#else
+#ifdef BUILDING_LIBCURL
+#define curlx_strdup Curl_cstrdup
+#define curlx_free   Curl_cfree
+#else
+#define curlx_strdup CURLX_STRDUP_LOW
+#define curlx_free   free
+#endif
+#endif
+"#;
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        for required in ["curlx_safefree", "curlx_strdup", "curlx_calloc", "curlx_free"] {
+            assert!(
+                names.contains(&required),
+                "salvage failed to recover #define {required} after parse-error trigger; got: {names:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn salvage_does_not_duplicate_existing_symbols() {
+        // When tree-sitter extracts the #define cleanly, the fallback
+        // must dedup and not emit a duplicate.
+        let src = r#"
+#define ONE 1
+#define TWO 2
+"#;
+        let r = extract::extract(src, "c");
+        let one_count = r.symbols.iter().filter(|s| s.name == "ONE").count();
+        let two_count = r.symbols.iter().filter(|s| s.name == "TWO").count();
+        assert_eq!(one_count, 1, "#define ONE emitted {one_count} times (expected 1)");
+        assert_eq!(two_count, 1, "#define TWO emitted {two_count} times (expected 1)");
+    }
+
+    #[test]
+    fn salvage_does_not_match_defined_pseudo_call() {
+        // `#if defined(FOO)` is the preprocessor `defined()` operator,
+        // not a #define statement. The salvage scanner must not extract
+        // `defined` or its argument as a symbol.
+        let src = r#"
+#if defined(FOO) || !defined(BAR)
+int x = 1;
+#endif
+"#;
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            !names.contains(&"defined"),
+            "salvage must not emit `defined` as a symbol; got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn nested_ifdef_preproc_def_is_extracted() {
+        // curl_setup.h has 2-deep nested #ifdef branches with #define inside:
+        //
+        //   #ifdef CURL_MEMDEBUG
+        //   ...
+        //   #else
+        //     #ifdef BUILDING_LIBCURL
+        //     #define curlx_free Curl_cfree
+        //     #else
+        //     #define curlx_free free
+        //     #endif
+        //   #endif
+        //
+        // Every branch's preproc_def must be extracted as a Variable symbol.
+        let src = r#"
+#ifdef OUTER
+#ifdef INNER_A
+#define MACRO_THEN_INNER_A a_impl
+#else
+#define MACRO_INNER_A_ELSE b_impl
+#endif
+#else
+#define MACRO_OUTER_ELSE c_impl
+#endif
+"#;
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"MACRO_THEN_INNER_A"),
+            "nested ifdef THEN/THEN branch missing; got: {names:?}"
+        );
+        assert!(
+            names.contains(&"MACRO_INNER_A_ELSE"),
+            "nested ifdef THEN/ELSE branch missing; got: {names:?}"
+        );
+        assert!(
+            names.contains(&"MACRO_OUTER_ELSE"),
+            "nested ifdef ELSE branch missing — this is the curl_setup.h case; got: {names:?}"
+        );
+    }
