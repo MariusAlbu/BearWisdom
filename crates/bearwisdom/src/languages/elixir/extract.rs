@@ -526,6 +526,68 @@ fn extract_implementation(
 // Directives: alias / import / use / require
 // ---------------------------------------------------------------------------
 
+/// Find an `as: <Alias>` keyword pair inside a directive's arguments and
+/// return the alias name. Returns `None` when the directive has no `as:`.
+///
+/// tree-sitter-elixir parses `alias Foo.Bar, as: Baz` as:
+///   call
+///     identifier "alias"
+///     arguments
+///       alias "Foo.Bar"
+///       keywords
+///         pair
+///           keyword ":as"
+///           alias "Baz"
+fn extract_directive_as_alias(node: &Node, src: &str) -> Option<String> {
+    let mut cursor = node.walk();
+    for child in node.children(&mut cursor) {
+        if child.kind() != "arguments" {
+            continue;
+        }
+        let mut ac = child.walk();
+        for arg in child.children(&mut ac) {
+            if arg.kind() != "keywords" {
+                continue;
+            }
+            let mut kc = arg.walk();
+            for pair in arg.children(&mut kc) {
+                if pair.kind() != "pair" {
+                    continue;
+                }
+                // pair has children: key (keyword/identifier), value (alias/identifier).
+                // Find a "as" key, then return the value's text.
+                let mut pc = pair.walk();
+                let pair_children: Vec<Node> = pair.children(&mut pc).collect();
+                let key_text = pair_children
+                    .iter()
+                    .find(|c| matches!(c.kind(), "keyword" | "identifier"))
+                    .map(|c| node_text(*c, src))
+                    .unwrap_or_default();
+                // tree-sitter-elixir surfaces the key as `as: ` (with trailing
+                // colon-space token) or `:as` depending on form. Strip both
+                // colons and surrounding whitespace before comparing.
+                let key_norm = key_text
+                    .trim()
+                    .trim_end_matches(':')
+                    .trim_start_matches(':')
+                    .trim();
+                if key_norm != "as" {
+                    continue;
+                }
+                let value = pair_children
+                    .iter()
+                    .find(|c| matches!(c.kind(), "alias" | "identifier"))
+                    .map(|c| node_text(*c, src))
+                    .filter(|s| !s.is_empty());
+                if let Some(v) = value {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    None
+}
+
 fn extract_directive(
     node: &Node,
     src: &str,
@@ -538,6 +600,12 @@ fn extract_directive(
     // Walk arguments to collect ALL alias/identifier children — handles both
     // single: `alias MyApp.User` and multi: `alias MyApp.{User, Post}`.
     let mut emitted = false;
+    // Pre-scan arguments for `as: <alias>` keyword. When present, the emitted
+    // Imports ref's target_name uses the alias instead of the module's last
+    // segment. Without this, `alias Foo.Bar, as: Baz` extracts as
+    // `imported_name = "Bar"`, and the resolver's alias-lookup loop never
+    // matches the user's reference to `Baz`.
+    let as_alias = extract_directive_as_alias(node, src);
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         match child.kind() {
@@ -549,7 +617,8 @@ fn extract_directive(
                             let name = node_text(arg, src);
                             if !name.is_empty() {
                                 let module = if name.contains('.') { Some(name.clone()) } else { None };
-                                let simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                                let default_simple = name.rsplit('.').next().unwrap_or(&name).to_string();
+                                let simple = as_alias.clone().unwrap_or(default_simple);
                                 refs.push(ExtractedRef {
                                     source_symbol_index: current_symbol_count,
                                     target_name: simple,

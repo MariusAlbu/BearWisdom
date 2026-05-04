@@ -233,6 +233,75 @@ end
     }
 
     #[test]
+    #[ignore]
+    fn diag_alias_with_as_ast_dump() {
+        use tree_sitter::Parser;
+        let src = "defmodule X do\n  alias PlausibleWeb.Api.Helpers, as: H\nend\n";
+        let mut parser = Parser::new();
+        parser.set_language(&tree_sitter_elixir::LANGUAGE.into()).unwrap();
+        let tree = parser.parse(src, None).unwrap();
+        fn walk(node: tree_sitter::Node, src: &str, depth: usize) {
+            let text = if node.start_byte() < src.len() && node.end_byte() <= src.len() {
+                &src[node.start_byte()..node.end_byte().min(node.start_byte() + 60)]
+            } else { "" };
+            eprintln!("{}{} [{}..{}] {:?}",
+                "  ".repeat(depth), node.kind(), node.start_byte(), node.end_byte(),
+                text.replace('\n', "\\n"));
+            let mut c = node.walk();
+            for child in node.children(&mut c) {
+                walk(child, src, depth + 1);
+            }
+        }
+        walk(tree.root_node(), src, 0);
+    }
+
+    #[test]
+    fn alias_with_as_uses_alias_as_imported_name() {
+        // `alias PlausibleWeb.Api.Helpers, as: H` must emit an Imports ref
+        // with target_name = "H" (the alias), not "Helpers" (the last
+        // segment of the module). Without this, the resolver's alias
+        // lookup loop never matches a user reference to `H`.
+        let src = r#"
+defmodule MyApp.Controller do
+  alias PlausibleWeb.Api.Helpers, as: H
+
+  def show(conn) do
+    H.bad_request(conn, "missing")
+  end
+end
+"#;
+        let r = extract::extract(src);
+        let imports: Vec<(&str, Option<&str>)> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::Imports)
+            .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
+            .collect();
+        assert!(
+            imports.iter().any(|(t, m)| *t == "H" && *m == Some("PlausibleWeb.Api.Helpers")),
+            "expected Imports(target=H, module=PlausibleWeb.Api.Helpers); got {imports:?}"
+        );
+    }
+
+    #[test]
+    fn alias_without_as_keeps_module_last_segment() {
+        // Plain `alias MyApp.Foo` (no `as:`) keeps the default behavior:
+        // imported_name = "Foo".
+        let src = r#"
+defmodule MyApp.Bar do
+  alias MyApp.Foo
+end
+"#;
+        let r = extract::extract(src);
+        let imports: Vec<(&str, Option<&str>)> = r.refs.iter()
+            .filter(|rf| rf.kind == EdgeKind::Imports)
+            .map(|rf| (rf.target_name.as_str(), rf.module.as_deref()))
+            .collect();
+        assert!(
+            imports.iter().any(|(t, m)| *t == "Foo" && *m == Some("MyApp.Foo")),
+            "expected Imports(target=Foo, module=MyApp.Foo); got {imports:?}"
+        );
+    }
+
+    #[test]
     fn dot_call_receiver_lowercase_is_not_call() {
         // `session.acquisition_channel` is field access, not a function call.
         // tree-sitter-elixir parses it as a `call` node anyway; the extractor
