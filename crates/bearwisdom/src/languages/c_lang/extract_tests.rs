@@ -906,3 +906,90 @@ int x = 1;
             "nested ifdef ELSE branch missing — this is the curl_setup.h case; got: {names:?}"
         );
     }
+
+    // -------------------------------------------------------------------------
+    // C++ template-call name capture (PR 210 of N — category 5 fix)
+    //
+    // Before this fix, `std::make_shared<T>()` and `obj->getContext<T>()` leaked
+    // the literal source text — including angle brackets and the type name —
+    // into `target_name`, producing entries like `make_shared<HttpRequest>` in
+    // `unresolved_refs` that could never resolve. The fix drills through
+    // `template_function` / `template_method` nodes to the inner identifier
+    // and captures the template type-args separately.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn cpp_qualified_template_call_uses_inner_name() {
+        let src = r#"
+struct HttpRequest {};
+namespace std { template<class T, class... A> int make_shared(A...); }
+void f() {
+    auto p = std::make_shared<HttpRequest>();
+}
+"#;
+        let r = extract::extract(src, "cpp");
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(
+            calls.iter().any(|c| *c == "make_shared"),
+            "expected bare 'make_shared' as call target; got {calls:?}"
+        );
+        assert!(
+            !calls.iter().any(|c| c.contains('<')),
+            "no call target may contain '<' from template syntax; got {calls:?}"
+        );
+    }
+
+    #[test]
+    fn cpp_template_method_call_uses_inner_name() {
+        let src = r#"
+struct HttpClientContext {};
+struct Conn {
+    template<class T> int getContext();
+};
+void f(Conn* c) {
+    c->getContext<HttpClientContext>();
+}
+"#;
+        let r = extract::extract(src, "cpp");
+        let calls: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(
+            calls.iter().any(|c| *c == "getContext"),
+            "expected bare 'getContext' as call target; got {calls:?}"
+        );
+        assert!(
+            !calls.iter().any(|c| c.contains('<')),
+            "no call target may contain '<' from template syntax; got {calls:?}"
+        );
+    }
+
+    #[test]
+    fn cpp_template_call_captures_type_args_in_chain() {
+        let src = r#"
+struct HttpRequest {};
+namespace std { template<class T, class... A> int make_shared(A...); }
+void f() { auto p = std::make_shared<HttpRequest>(); }
+"#;
+        let r = extract::extract(src, "cpp");
+        let chain_args: Vec<Vec<String>> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::Calls && rf.target_name == "make_shared")
+            .filter_map(|rf| rf.chain.as_ref())
+            .filter_map(|c| c.segments.last())
+            .map(|seg| seg.type_args.clone())
+            .collect();
+        assert!(
+            chain_args.iter().any(|args| args.iter().any(|a| a == "HttpRequest")),
+            "expected 'HttpRequest' captured as type_arg on the make_shared chain segment; got {chain_args:?}"
+        );
+    }

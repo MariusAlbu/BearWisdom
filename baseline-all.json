@@ -1,6 +1,6 @@
 {
   "captured_at": "2026-05-04T00:00:00Z",
-  "recapture_partial_at": "2026-05-04T13:29:50Z",
+  "recapture_partial_at": "2026-05-05T09:13:00Z",
   "projects": [
     {
       "assertions": {
@@ -586,8 +586,8 @@
       "files": 889,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 74084,
-      "internal_unresolved": 8332,
+      "internal_edges": 74082,
+      "internal_unresolved": 8270,
       "languages": {
         "c": 276,
         "cmake": 2,
@@ -613,7 +613,7 @@
         "index_duration_ms": 29489
       },
       "project": "c-redis",
-      "resolution_rate": 89.89,
+      "resolution_rate": 89.96,
       "routes": 0,
       "symbols": 40115,
       "unresolved_by_lang_kind": {
@@ -1036,8 +1036,8 @@
       "files": 1131,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 72832,
-      "internal_unresolved": 36741,
+      "internal_edges": 76504,
+      "internal_unresolved": 37820,
       "languages": {
         "c": 408,
         "cmake": 42,
@@ -1060,7 +1060,7 @@
         "index_duration_ms": 39911
       },
       "project": "cpp-keepassxc",
-      "resolution_rate": 66.47,
+      "resolution_rate": 66.92,
       "routes": 0,
       "symbols": 28796,
       "unresolved_by_lang_kind": {
@@ -1082,14 +1082,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 94
+        "min_resolution_rate": 95
       },
       "code_chunks": 31245,
       "files": 348,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 19354,
-      "internal_unresolved": 1141,
+      "internal_edges": 19423,
+      "internal_unresolved": 991,
       "languages": {
         "c": 207,
         "cmake": 8,
@@ -1108,7 +1108,7 @@
         "index_duration_ms": 20609
       },
       "project": "cpp-libhv",
-      "resolution_rate": 94.43,
+      "resolution_rate": 95.15,
       "routes": 0,
       "symbols": 14815,
       "unresolved_by_lang_kind": {
@@ -9174,14 +9174,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 91
+        "min_resolution_rate": 95
       },
       "code_chunks": 2165612,
       "files": 17099,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1905257,
-      "internal_unresolved": 171310,
+      "internal_edges": 1843976,
+      "internal_unresolved": 78225,
       "languages": {
         "c": 13801,
         "cmake": 5,
@@ -9204,7 +9204,7 @@
         "index_duration_ms": 699444
       },
       "project": "zig-compiler-fresh",
-      "resolution_rate": 91.75,
+      "resolution_rate": 95.93,
       "routes": 0,
       "symbols": 1711862,
       "unresolved_by_lang_kind": {

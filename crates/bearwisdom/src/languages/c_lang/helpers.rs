@@ -166,16 +166,21 @@ pub(super) fn extract_declarator_name(node: &Node, src: &[u8]) -> (Option<String
 pub(super) fn call_target_name(node: &Node, src: &[u8]) -> String {
     match node.kind() {
         "identifier" | "field_identifier" => node_text(*node, src),
-        "field_expression" => {
-            node.child_by_field_name("field")
-                .map(|f| node_text(f, src))
-                .unwrap_or_default()
-        }
-        "qualified_identifier" => {
-            node.child_by_field_name("name")
-                .map(|n| node_text(n, src))
-                .unwrap_or_default()
-        }
+        // `make_shared<EventLoop>` parses as template_function with `name`
+        // and `arguments` fields. Take the inner identifier; the template
+        // type-args are emitted separately by the type-ref sweep.
+        "template_function" | "template_method" => node
+            .child_by_field_name("name")
+            .map(|n| call_target_name(&n, src))
+            .unwrap_or_default(),
+        "field_expression" => node
+            .child_by_field_name("field")
+            .map(|f| call_target_name(&f, src))
+            .unwrap_or_default(),
+        "qualified_identifier" => node
+            .child_by_field_name("name")
+            .map(|n| call_target_name(&n, src))
+            .unwrap_or_default(),
         _ => String::new(),
     }
 }

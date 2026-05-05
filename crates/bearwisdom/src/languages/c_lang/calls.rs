@@ -2,10 +2,48 @@
 // c_lang/calls.rs  —  Call extraction and member chain builder for C/C++
 // =============================================================================
 
-use super::helpers::{call_target_name, node_text};
+use super::helpers::{call_target_name, first_type_identifier, node_text};
 use super::symbols::emit_typerefs_for_type_descriptor;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
+
+/// Collect the textual names of each entry in a `template_argument_list`.
+///
+/// For `Foo<Bar, std::string, int*>` returns `["Bar", "string", "int"]`.
+/// Used by chain segments so the resolver can see template type-args
+/// without having to re-parse the source. Best-effort — entries that
+/// are non-type expressions (sizes, traits) are skipped silently.
+pub(super) fn template_arg_names(args: Node, src: &[u8]) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cursor = args.walk();
+    for child in args.children(&mut cursor) {
+        let name = match child.kind() {
+            "type_descriptor" => first_type_identifier(&child, src),
+            "type_identifier" | "primitive_type" => Some(node_text(child, src)),
+            "qualified_identifier" => child
+                .child_by_field_name("name")
+                .map(|n| node_text(n, src)),
+            _ => None,
+        };
+        if let Some(n) = name.filter(|n| !n.is_empty()) {
+            out.push(n);
+        }
+    }
+    out
+}
+
+/// Drill through `template_function` / `template_method` to the inner name node,
+/// returning `(name_node, optional template_argument_list)`.
+fn unwrap_template<'a>(node: Node<'a>) -> (Node<'a>, Option<Node<'a>>) {
+    match node.kind() {
+        "template_function" | "template_method" => {
+            let name = node.child_by_field_name("name").unwrap_or(node);
+            let args = node.child_by_field_name("arguments");
+            (name, args)
+        }
+        _ => (node, None),
+    }
+}
 
 /// Compiler-intrinsic call names that have no source-level definition.
 ///
@@ -357,7 +395,14 @@ pub(super) fn build_chain(node: Node, src: &[u8]) -> Option<MemberChain> {
 
 fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -> Option<()> {
     match node.kind() {
-        "identifier" | "field_identifier" | "type_identifier" => {
+        // `namespace_identifier` is the scope half of `std::foo`. Without it,
+        // build_chain_inner returns None for any qualified call and the chain
+        // never gets built — so `std::make_shared<T>()` would lose both its
+        // namespace context and its template type-args.
+        "identifier"
+        | "field_identifier"
+        | "type_identifier"
+        | "namespace_identifier" => {
             segments.push(ChainSegment {
                 name: node_text(node, src),
                 node_kind: node.kind().to_string(),
@@ -381,16 +426,42 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
             Some(())
         }
 
+        // Bare template specialisation like `make_shared<T>(...)`. Without
+        // this arm, build_chain_inner would fall through to `_ => None`,
+        // call_target_name would also return "" for this node kind, and the
+        // call would silently disappear from `unresolved_refs` — except in
+        // the qualified case where node_text leaked the full literal text
+        // `make_shared<HttpRequest>` into the target_name.
+        "template_function" | "template_method" => {
+            let (name_node, args) = unwrap_template(node);
+            let type_args = args
+                .map(|a| template_arg_names(a, src))
+                .unwrap_or_default();
+            segments.push(ChainSegment {
+                name: node_text(name_node, src),
+                node_kind: name_node.kind().to_string(),
+                kind: SegmentKind::Identifier,
+                declared_type: None,
+                type_args,
+                optional_chaining: false,
+            });
+            Some(())
+        }
+
         "field_expression" => {
             let argument = node.child_by_field_name("argument")?;
             let field = node.child_by_field_name("field")?;
             build_chain_inner(argument, src, segments)?;
+            let (field_name, args) = unwrap_template(field);
+            let type_args = args
+                .map(|a| template_arg_names(a, src))
+                .unwrap_or_default();
             segments.push(ChainSegment {
-                name: node_text(field, src),
-                node_kind: field.kind().to_string(),
+                name: node_text(field_name, src),
+                node_kind: field_name.kind().to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
-                type_args: vec![],
+                type_args,
                 optional_chaining: false,
             });
             Some(())
@@ -402,12 +473,16 @@ fn build_chain_inner(node: Node, src: &[u8], segments: &mut Vec<ChainSegment>) -
             if let Some(scope_node) = scope {
                 build_chain_inner(scope_node, src, segments)?;
             }
+            let (inner_name, args) = unwrap_template(name_node);
+            let type_args = args
+                .map(|a| template_arg_names(a, src))
+                .unwrap_or_default();
             segments.push(ChainSegment {
-                name: node_text(name_node, src),
-                node_kind: name_node.kind().to_string(),
+                name: node_text(inner_name, src),
+                node_kind: inner_name.kind().to_string(),
                 kind: SegmentKind::Property,
                 declared_type: None,
-                type_args: vec![],
+                type_args,
                 optional_chaining: false,
             });
             Some(())
