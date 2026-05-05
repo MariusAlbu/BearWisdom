@@ -4,13 +4,13 @@
 // Reads `compile_commands.json` from the project (CMake / Bear /
 // intercept-build all produce this format) and surfaces every `-I<path>`
 // and `-isystem <path>` argument as an external dep root. The header
-// indexer is the same one used by PosixHeadersEcosystem / MsvcHeadersEcosystem
+// indexer is the same one used by PosixHeadersEcosystem / MsvcSdkEcosystem
 // / VcpkgHeadersEcosystem — demand-driven, parse only what the project
 // actually `#include`s.
 //
 // Why this exists
 // ---------------
-// Per-SDK walkers (qt-runtime, msvc-headers, vcpkg-headers, …) work but
+// Per-SDK walkers (qt-runtime, msvc-sdk, vcpkg-headers, …) work but
 // they multiply for every new C/C++ library/SDK the user encounters
 // (Boost, CUDA, ROS, Intel MKL, internal corporate SDKs). For any project
 // that's been built once, `compile_commands.json` lists the EXACT set of

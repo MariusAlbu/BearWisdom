@@ -78,6 +78,7 @@ pub mod phoenix_stubs;
 pub mod php_stubs;
 pub mod compile_commands;
 pub mod ecmascript_imports;
+pub mod msvc_sdk;
 pub mod posix_headers;
 pub mod qt_runtime;
 pub mod powershell_cmdlet_types;
@@ -144,7 +145,8 @@ pub use phoenix_stubs::PhoenixStubsEcosystem;
 pub use opam::OpamEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
 pub use compile_commands::CompileCommandsEcosystem;
-pub use posix_headers::{MsvcHeadersEcosystem, PosixHeadersEcosystem, VcpkgHeadersEcosystem};
+pub use msvc_sdk::MsvcSdkEcosystem;
+pub use posix_headers::{PosixHeadersEcosystem, VcpkgHeadersEcosystem};
 pub use qt_runtime::QtRuntimeEcosystem;
 pub use powershell_stdlib::PowerShellStdlibEcosystem;
 pub use psgallery::PsGalleryEcosystem;
@@ -268,7 +270,7 @@ pub enum EcosystemActivation {
     },
 
     /// Active unconditionally on a given platform. Used by
-    /// `posix-headers` (unix) and `msvc-headers` (Windows).
+    /// `posix-headers` (unix) and `msvc-sdk` (Windows, gated further).
     AlwaysOnPlatform(Platform),
 
     /// Active only when another ecosystem is active. Used by
@@ -611,7 +613,7 @@ pub fn default_locator(
         "ts-lib-dom" => Some(Arc::new(TsLibDomEcosystem)),
         "ruby-stdlib" => Some(Arc::new(RubyStdlibEcosystem)),
         "posix-headers" => Some(Arc::new(PosixHeadersEcosystem)),
-        "msvc-headers" => Some(Arc::new(MsvcHeadersEcosystem)),
+        "msvc-sdk" => Some(Arc::new(MsvcSdkEcosystem)),
         "qt-runtime" => Some(Arc::new(QtRuntimeEcosystem)),
         "compile-commands" => Some(Arc::new(CompileCommandsEcosystem)),
         "vcpkg-headers" => Some(Arc::new(VcpkgHeadersEcosystem)),
@@ -725,7 +727,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(TsLibDomEcosystem);
         reg_eco!(RubyStdlibEcosystem);
         reg_eco!(PosixHeadersEcosystem);
-        reg_eco!(MsvcHeadersEcosystem);
+        reg_eco!(MsvcSdkEcosystem);
         reg_eco!(QtRuntimeEcosystem);
         reg_eco!(CompileCommandsEcosystem);
         reg_eco!(VcpkgHeadersEcosystem);

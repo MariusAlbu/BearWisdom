@@ -156,149 +156,9 @@ pub fn posix_shared_locator() -> Arc<dyn ExternalSourceLocator> {
     LOCATOR.get_or_init(|| Arc::new(PosixHeadersEcosystem)).clone()
 }
 
-// ---------------------------------------------------------------------------
-// MsvcHeadersEcosystem
-// ---------------------------------------------------------------------------
-
-pub const MSVC_ID: EcosystemId = EcosystemId::new("msvc-headers");
-const MSVC_TAG: &str = "msvc-headers";
-
-pub struct MsvcHeadersEcosystem;
-
-impl Ecosystem for MsvcHeadersEcosystem {
-    fn id(&self) -> EcosystemId { MSVC_ID }
-    fn kind(&self) -> EcosystemKind { EcosystemKind::Stdlib }
-    fn languages(&self) -> &'static [&'static str] { &["c", "cpp"] }
-
-    fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::All(&[
-            EcosystemActivation::AlwaysOnPlatform(Platform::Windows),
-            EcosystemActivation::Any(&[
-                EcosystemActivation::LanguagePresent("c"),
-                EcosystemActivation::LanguagePresent("cpp"),
-            ]),
-        ])
-    }
-
-    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
-        // Precedence: see PosixHeadersEcosystem::locate_roots — when
-        // compile_commands.json is present we trust its -I paths over
-        // the heuristic Windows SDK probe.
-        if super::compile_commands::project_has_compile_commands_json(ctx.project_root) {
-            return Vec::new();
-        }
-        discover_msvc_include()
-    }
-
-    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        Vec::new()
-    }
-
-    fn supports_reachability(&self) -> bool { true }
-    fn uses_demand_driven_parse(&self) -> bool { true }
-
-    fn build_symbol_index(
-        &self,
-        dep_roots: &[ExternalDepRoot],
-    ) -> SymbolLocationIndex {
-        build_c_header_index(dep_roots)
-    }
-
-    fn resolve_import(
-        &self,
-        dep: &ExternalDepRoot,
-        header: &str,
-        _symbols: &[&str],
-    ) -> Vec<WalkedFile> {
-        resolve_header(dep, header).into_iter().collect()
-    }
-
-    fn resolve_symbol(&self, dep: &ExternalDepRoot, fqn: &str) -> Vec<WalkedFile> {
-        resolve_header(dep, fqn).into_iter().collect()
-    }
-}
-
-impl ExternalSourceLocator for MsvcHeadersEcosystem {
-    fn ecosystem(&self) -> &'static str { MSVC_TAG }
-    fn locate_roots(&self, _project_root: &Path) -> Vec<ExternalDepRoot> {
-        discover_msvc_include()
-    }
-    fn walk_root(&self, _dep: &ExternalDepRoot) -> Vec<WalkedFile> {
-        Vec::new()
-    }
-}
-
-/// Enumerate candidate MSVC Include roots. Each sub-dir of
-/// `WindowsSdkDir/Include/<version>/` (ucrt, um, shared, winrt, cppwinrt)
-/// becomes its own `ExternalDepRoot` so the `#include`-visible path is the
-/// header's path relative to that sub-dir — matching what a user's
-/// `#include <stdio.h>` statement names. The `cppwinrt/` and `winrt/` dirs
-/// are included for completeness; demand-driven parsing won't pay for
-/// them unless the project's own source actually references them.
-fn discover_msvc_include() -> Vec<ExternalDepRoot> {
-    if !cfg!(target_os = "windows") { return Vec::new() }
-
-    // Explicit override wins over autodetect.  Treated as one search-path
-    // root (flat layout) because test environments usually point it at a
-    // single prepared dir.
-    if let Some(explicit) = std::env::var_os("BEARWISDOM_MSVC_INCLUDE") {
-        let p = PathBuf::from(explicit);
-        if p.is_dir() {
-            return vec![make_root(&p, MSVC_TAG)];
-        }
-    }
-
-    let mut include_roots: Vec<PathBuf> = Vec::new();
-    if let Some(vc) = std::env::var_os("VCINSTALLDIR") {
-        let p = PathBuf::from(vc).join("include");
-        if p.is_dir() {
-            include_roots.push(p);
-        }
-    }
-    if let Some(wdk) = std::env::var_os("WindowsSdkDir") {
-        let p = PathBuf::from(wdk).join("Include");
-        if p.is_dir() {
-            include_roots.extend(newest_sdk_versions(&p));
-        }
-    }
-
-    if include_roots.is_empty() {
-        debug!("msvc-headers: no VCINSTALLDIR / WindowsSdkDir / override probed");
-        return Vec::new();
-    }
-
-    let mut out = Vec::new();
-    for include in &include_roots {
-        // Windows SDK versioned roots have subdirs ucrt/um/shared/winrt/cppwinrt.
-        // Each is a search path in its own right (compiler arguments pass them
-        // all with /I). Emit each as a separate dep root so relative paths in
-        // the symbol index match `#include <...>` syntax.
-        let structured_children: Vec<&str> = ["ucrt", "um", "shared", "winrt", "cppwinrt"]
-            .iter()
-            .copied()
-            .filter(|sub| include.join(sub).is_dir())
-            .collect();
-        if structured_children.is_empty() {
-            // VCINSTALLDIR/include is flat (C++ stdlib: cstdio, iostream, ...).
-            out.push(make_root(include, MSVC_TAG));
-            continue;
-        }
-        for sub in structured_children {
-            out.push(make_root(&include.join(sub), MSVC_TAG));
-        }
-        // The version root itself contains `winrt/Foo.h` under its root, and
-        // compilers walk through when resolving `#include <winrt/Foo.h>`.
-        // Emit the version root so relative paths like `winrt/Foo.h` resolve.
-        out.push(make_root(include, MSVC_TAG));
-    }
-    out
-}
-
-pub fn msvc_shared_locator() -> Arc<dyn ExternalSourceLocator> {
-    use std::sync::OnceLock;
-    static LOCATOR: OnceLock<Arc<MsvcHeadersEcosystem>> = OnceLock::new();
-    LOCATOR.get_or_init(|| Arc::new(MsvcHeadersEcosystem)).clone()
-}
+// MSVC / Windows SDK headers live in `ecosystem/msvc_sdk.rs`. The shared
+// helpers below (`make_root`, `newest_sdk_versions`, `build_c_header_index`,
+// `resolve_header`) are pub(super) so msvc_sdk can reuse them.
 
 // ---------------------------------------------------------------------------
 // VcpkgHeadersEcosystem
@@ -477,7 +337,7 @@ pub(super) fn make_root(dir: &Path, tag: &'static str) -> ExternalDepRoot {
 /// each with its own `ucrt/`, `um/`, etc. tree. Walking every installed
 /// version would multiply the symbol-index size with no benefit — the
 /// newest is the one the compiler picks unless the user asks otherwise.
-fn newest_sdk_versions(include: &Path) -> Vec<PathBuf> {
+pub(super) fn newest_sdk_versions(include: &Path) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(include) else { return Vec::new() };
     let mut versions: Vec<PathBuf> = entries
         .flatten()
@@ -800,22 +660,9 @@ mod tests {
     }
 
     #[test]
-    fn msvc_ecosystem_declares_demand_driven() {
-        assert!(MsvcHeadersEcosystem.uses_demand_driven_parse());
-        assert!(MsvcHeadersEcosystem.supports_reachability());
-    }
-
-    #[test]
     fn posix_ecosystem_declares_demand_driven() {
         assert!(PosixHeadersEcosystem.uses_demand_driven_parse());
         assert!(PosixHeadersEcosystem.supports_reachability());
-    }
-
-    #[test]
-    fn msvc_walk_root_is_empty_under_demand_driven() {
-        let tmp = TempDir::new().unwrap();
-        let dep = make_root(tmp.path(), MSVC_TAG);
-        assert!(Ecosystem::walk_root(&MsvcHeadersEcosystem, &dep).is_empty());
     }
 
     #[test]
