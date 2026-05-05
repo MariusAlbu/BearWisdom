@@ -1032,14 +1032,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 66
+        "min_resolution_rate": 82
       },
       "code_chunks": 58957,
       "files": 1131,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 76530,
-      "internal_unresolved": 37813,
+      "internal_edges": 91831,
+      "internal_unresolved": 19107,
       "languages": {
         "c": 20,
         "cmake": 42,
@@ -1057,25 +1057,25 @@
       },
       "path": "F:/Work/Projects/TestProjects/cpp-keepassxc",
       "perf": {
-        "end_ws_mb": 232,
-        "files_per_sec": 25,
-        "index_duration_ms": 44488
+        "end_ws_mb": 215,
+        "files_per_sec": 19,
+        "index_duration_ms": 58070
       },
       "project": "cpp-keepassxc",
-      "resolution_rate": 66.93,
+      "resolution_rate": 82.78,
       "routes": 0,
       "symbols": 28839,
       "unresolved_by_lang_kind": {
-        "c.calls": 82,
+        "c.calls": 81,
         "c.imports": 1,
         "c.type_ref": 96,
         "cmake.calls": 22,
         "cmake.type_ref": 77,
-        "cpp.calls": 21493,
+        "cpp.calls": 14231,
         "cpp.imports": 93,
-        "cpp.inherits": 92,
+        "cpp.inherits": 12,
         "cpp.instantiates": 240,
-        "cpp.type_ref": 15594,
+        "cpp.type_ref": 4231,
         "python.calls": 20,
         "python.type_ref": 1,
         "shell.calls": 2
