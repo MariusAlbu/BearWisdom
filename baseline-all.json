@@ -1,6 +1,6 @@
 {
   "captured_at": "2026-05-04T00:00:00Z",
-  "recapture_partial_at": "2026-05-05T09:42:00Z",
+  "recapture_partial_at": "2026-05-05T10:02:00Z",
   "projects": [
     {
       "assertions": {
@@ -1018,7 +1018,7 @@
       "project": "cpp-clay",
       "resolution_rate": 79.51,
       "routes": 0,
-      "symbols": 4693,
+      "symbols": 4695,
       "unresolved_by_lang_kind": {
         "c.calls": 1345,
         "c.type_ref": 248,
@@ -1036,8 +1036,8 @@
       "files": 1131,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 76504,
-      "internal_unresolved": 37820,
+      "internal_edges": 76517,
+      "internal_unresolved": 37817,
       "languages": {
         "c": 408,
         "cmake": 42,
@@ -1110,7 +1110,7 @@
       "project": "cpp-libhv",
       "resolution_rate": 95.15,
       "routes": 0,
-      "symbols": 14815,
+      "symbols": 14816,
       "unresolved_by_lang_kind": {
         "c.calls": 436,
         "c.imports": 6,
@@ -9174,14 +9174,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 95
+        "min_resolution_rate": 96
       },
       "code_chunks": 2165612,
       "files": 17099,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1843976,
-      "internal_unresolved": 78225,
+      "internal_edges": 1848045,
+      "internal_unresolved": 73359,
       "languages": {
         "c": 13801,
         "cmake": 5,
@@ -9204,9 +9204,9 @@
         "index_duration_ms": 699444
       },
       "project": "zig-compiler-fresh",
-      "resolution_rate": 95.93,
+      "resolution_rate": 96.18,
       "routes": 0,
-      "symbols": 1711862,
+      "symbols": 1712010,
       "unresolved_by_lang_kind": {
         "c.calls": 86642,
         "c.imports": 209,

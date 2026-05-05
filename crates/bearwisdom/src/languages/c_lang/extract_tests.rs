@@ -1045,6 +1045,87 @@ extern int (*foo)(int x);
         assert_eq!(count, 1, "salvage must not duplicate; got {count} symbols for foo");
     }
 
+    // -------------------------------------------------------------------------
+    // C typedef trailing-ERROR salvage + __builtin_* TypeRef filter
+    // (PR 212 of N — category 2 fix)
+    //
+    // Linux kernel + clang headers use macros tree-sitter doesn't preprocess:
+    //   typedef __u32 __bitwise __le32;
+    //     where __bitwise → __attribute__((bitwise))
+    //   typedef __u32 __attribute__((bitwise)) __le32;
+    //
+    // Both push the parser past the alias name into ERROR recovery. The fix:
+    // when push_typedef sees a trailing ERROR with a single identifier child,
+    // promote that identifier as the alias name. zig-compiler-fresh's vendored
+    // Linux types.h alone has 5K+ refs to __le32/__be32/__le64/__be64 etc.
+    //
+    // Separately, __builtin_va_list and __builtin_* type-IDs were leaking into
+    // unresolved_refs as TypeRef. The is_c_compiler_intrinsic predicate (was
+    // private to calls.rs) is now also wired into sweep_typerefs.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn c_typedef_with_bitwise_macro_emits_alias() {
+        let src = "typedef __u32 __bitwise __le32;";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"__le32"),
+            "expected '__le32' alias from `typedef __u32 __bitwise __le32;`; got: {names:?}"
+        );
+        assert!(
+            !names.contains(&"__bitwise"),
+            "must not emit '__bitwise' as the alias (it's the macro); got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn c_typedef_with_literal_attribute_emits_alias() {
+        let src = "typedef __u32 __attribute__((bitwise)) __le32;";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"__le32"),
+            "expected '__le32' alias from `typedef __u32 __attribute__((bitwise)) __le32;`; got: {names:?}"
+        );
+        assert!(
+            !names.contains(&"__attribute__"),
+            "must not emit '__attribute__' as the alias; got: {names:?}"
+        );
+    }
+
+    #[test]
+    fn c_typedef_without_attribute_still_works() {
+        // Sanity: the new ERROR-salvage path must not break the clean case.
+        let src = "typedef __u32 __le32;";
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(
+            names.contains(&"__le32"),
+            "plain `typedef __u32 __le32;` regressed; got: {names:?}"
+        );
+        let count = names.iter().filter(|n| **n == "__le32").count();
+        assert_eq!(count, 1, "should not emit __le32 twice; got {count}");
+    }
+
+    #[test]
+    fn c_builtin_va_list_typeref_filtered() {
+        let src = r#"
+typedef __builtin_va_list va_list;
+"#;
+        let r = extract::extract(src, "c");
+        let unresolved_typerefs: Vec<&str> = r
+            .refs
+            .iter()
+            .filter(|rf| rf.kind == EdgeKind::TypeRef)
+            .map(|rf| rf.target_name.as_str())
+            .collect();
+        assert!(
+            !unresolved_typerefs.contains(&"__builtin_va_list"),
+            "__builtin_* compiler intrinsics must not emit TypeRef; got {unresolved_typerefs:?}"
+        );
+    }
+
     #[test]
     fn c_function_pointer_salvage_skips_call_sites() {
         // `(*foo)(args)` inside a function body is a CALL, not a declaration.

@@ -78,6 +78,20 @@ pub(super) fn is_system_header(path: &str) -> bool {
     false
 }
 
+/// Compiler-intrinsic names that have no source-level definition.
+///
+/// `__builtin_*` is the GCC/Clang convention for compiler magic (atomic ops,
+/// type introspection, vector intrinsics, type IDs like `__builtin_va_list`).
+/// `__clang_*`, `__sync_*`, `__atomic_*` are the analogous Clang and legacy
+/// GCC families. These appear in source as Calls and TypeRefs but never
+/// resolve to a definition — emit-time filter keeps `unresolved_refs` honest.
+pub(super) fn is_c_compiler_intrinsic(name: &str) -> bool {
+    name.starts_with("__builtin_")
+        || name.starts_with("__clang_")
+        || name.starts_with("__sync_")
+        || name.starts_with("__atomic_")
+}
+
 /// Template parameter names and patterns that should be classified as external
 /// (they're not real symbols in the index, just formal type parameters).
 pub(super) fn is_template_param(name: &str) -> bool {

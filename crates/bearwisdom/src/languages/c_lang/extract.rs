@@ -638,6 +638,7 @@ fn sweep_typerefs<'a>(
                 let name = node_text(child, src);
                 if !name.is_empty()
                     && !predicates::is_c_builtin(&name)
+                    && !predicates::is_c_compiler_intrinsic(&name)
                     && !predicates::is_template_param(&name)
                 {
                     refs.push(ExtractedRef {

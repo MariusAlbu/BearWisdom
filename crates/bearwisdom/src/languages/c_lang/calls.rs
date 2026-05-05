@@ -3,6 +3,7 @@
 // =============================================================================
 
 use super::helpers::{call_target_name, first_type_identifier, node_text};
+use super::predicates::is_c_compiler_intrinsic;
 use super::symbols::emit_typerefs_for_type_descriptor;
 use crate::types::{ChainSegment, EdgeKind, ExtractedRef, MemberChain, SegmentKind};
 use tree_sitter::Node;
@@ -43,22 +44,6 @@ fn unwrap_template<'a>(node: Node<'a>) -> (Node<'a>, Option<Node<'a>>) {
         }
         _ => (node, None),
     }
-}
-
-/// Compiler-intrinsic call names that have no source-level definition.
-///
-/// `__builtin_*` is the GCC/Clang convention for compiler magic (atomic ops,
-/// type introspection, vector intrinsics, etc.). `__clang_*` extends that
-/// for Clang-specific machinery (`__clang_arm_builtin_alias`,
-/// `__clang_call_terminate`). `__sync_*` is the legacy GCC atomic family.
-/// These are never written as functions anywhere in source — the compiler
-/// generates code directly. Filter at extract time to keep
-/// `unresolved_refs` honest.
-fn is_c_compiler_intrinsic(name: &str) -> bool {
-    name.starts_with("__builtin_")
-        || name.starts_with("__clang_")
-        || name.starts_with("__sync_")
-        || name.starts_with("__atomic_")
 }
 
 pub(super) fn extract_calls_from_body(

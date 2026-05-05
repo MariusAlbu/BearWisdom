@@ -44,7 +44,10 @@ fn is_cpp_keyword(name: &str) -> bool {
 /// Emit a single TypeRef edge from `source_idx` to the type named by `name_node`.
 fn push_typeref(name_node: Node, src: &[u8], source_idx: usize, refs: &mut Vec<ExtractedRef>) {
     let name = node_text(name_node, src);
-    if name.is_empty() || is_cpp_keyword(&name) {
+    if name.is_empty()
+        || is_cpp_keyword(&name)
+        || super::predicates::is_c_compiler_intrinsic(&name)
+    {
         return;
     }
     refs.push(ExtractedRef {
@@ -264,6 +267,16 @@ pub(super) fn push_typedef(
     // inline specifier).  If yes, ALL subsequent type_identifier nodes are new
     // aliases.  If no, only the LAST one is the new alias.
     let mut has_specifier_body = false;
+    // Capture trailing ERROR's identifier when tree-sitter recovers from an
+    // unknown macro inside the typedef. Real shapes hit:
+    //   typedef __u32 __bitwise __le32;
+    //     → [type_id __u32, type_id __bitwise, ERROR(__le32)] — ERROR holds the alias.
+    //   typedef __u32 __attribute__((bitwise)) __le32;
+    //     → [type_id __u32, function_declarator __attribute__, ERROR(__le32)].
+    // Without this, the alias name `__le32` was silently dropped and 5K
+    // call/type_ref edges in zig-compiler-fresh's vendored Linux types.h
+    // could never resolve.
+    let mut trailing_error_name: Option<String> = None;
     for child in node.children(&mut cursor) {
         match child.kind() {
             // Inline specifier with body → all following identifiers are aliases
@@ -271,6 +284,8 @@ pub(super) fn push_typedef(
                 if child.child_by_field_name("body").is_some() {
                     has_specifier_body = true;
                 }
+                // Reset error tracking — the body legitimately captures its own state.
+                trailing_error_name = None;
             }
             // Declarator variants that introduce a new alias name. The
             // canonical shape is `type_identifier`; `pointer_declarator`
@@ -287,9 +302,45 @@ pub(super) fn push_typedef(
             | "array_declarator"
             | "parenthesized_declarator" => {
                 declarators.push(child);
+                trailing_error_name = None;
+            }
+            "ERROR" => {
+                // Take the single identifier from inside the ERROR if there is one.
+                let mut ec = child.walk();
+                let idents: Vec<_> = child
+                    .children(&mut ec)
+                    .filter(|n| n.kind() == "identifier" || n.kind() == "type_identifier")
+                    .collect();
+                if idents.len() == 1 {
+                    trailing_error_name = Some(node_text(idents[0], src));
+                }
             }
             _ => {}
         }
+    }
+
+    // If the last meaningful node was an ERROR with one identifier, it almost
+    // certainly holds the alias name — promote it as the last "declarator" and
+    // skip the parsed-but-bogus declarators above it.
+    if let Some(name) = trailing_error_name {
+        let scope = enclosing_scope(scope_tree, node.start_byte(), node.end_byte());
+        let scope_path = scope_tree::scope_path(scope);
+        let qualified_name = scope_tree::qualify(&name, scope);
+        symbols.push(ExtractedSymbol {
+            name: name.clone(),
+            qualified_name,
+            kind: SymbolKind::TypeAlias,
+            visibility: None,
+            start_line: node.start_position().row as u32,
+            end_line: node.end_position().row as u32,
+            start_col: node.start_position().column as u32,
+            end_col: node.end_position().column as u32,
+            signature: Some(format!("typedef {name}")),
+            doc_comment: extract_doc_comment(node, src),
+            scope_path,
+            parent_index,
+        });
+        return;
     }
 
     if declarators.is_empty() {
