@@ -42,7 +42,6 @@ pub mod cargo_build_scripts;
 pub mod cargo_expand_runtime;
 pub mod cabal;
 pub mod bazel_central_registry;
-pub mod bash_completion_synthetics;
 pub mod sdl_synthetics;
 pub mod cargo;
 pub mod clojure_core;
@@ -88,10 +87,6 @@ pub mod pub_pkg;
 pub mod puppet_forge;
 pub mod puppet_stdlib;
 pub mod pypi;
-pub mod robot_builtin_synthetics;
-pub mod robot_seleniumlibrary_synthetics;
-pub mod robot_browser_synthetics;
-pub mod ember_handlebars_helpers;
 pub mod ruby_stdlib;
 pub mod rubygems;
 pub mod rust_stdlib;
@@ -114,7 +109,6 @@ pub use prolog_runtime::PrologRuntimeEcosystem;
 pub use hexo_runtime::HexoRuntimeEcosystem;
 pub use cargo_build_scripts::CargoBuildScriptsEcosystem;
 pub use cargo_expand_runtime::CargoExpandRuntimeEcosystem;
-pub use bash_completion_synthetics::BashCompletionSyntheticsEcosystem;
 pub use sdl_synthetics::SdlSyntheticsEcosystem;
 pub use cabal::CabalEcosystem;
 pub use cargo::CargoEcosystem;
@@ -158,10 +152,6 @@ pub use pub_pkg::PubEcosystem;
 pub use puppet_forge::PuppetForgeEcosystem;
 pub use puppet_stdlib::PuppetStdlibEcosystem;
 pub use pypi::PypiEcosystem;
-pub use robot_builtin_synthetics::RobotBuiltinEcosystem;
-pub use robot_seleniumlibrary_synthetics::RobotSeleniumLibraryEcosystem;
-pub use robot_browser_synthetics::RobotBrowserEcosystem;
-pub use ember_handlebars_helpers::EmberHandlebarsHelpersEcosystem;
 pub use ruby_stdlib::RubyStdlibEcosystem;
 pub use rubygems::RubygemsEcosystem;
 pub use rust_stdlib::RustStdlibEcosystem;
@@ -659,11 +649,6 @@ pub fn default_locator(
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
         "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
-        "bash-completion-synthetics" => Some(Arc::new(BashCompletionSyntheticsEcosystem)),
-        "robot-builtin" => Some(robot_builtin_synthetics::shared_locator()),
-        "robot-seleniumlibrary" => Some(Arc::new(RobotSeleniumLibraryEcosystem)),
-        "robot-browser" => Some(Arc::new(RobotBrowserEcosystem)),
-        "ember-handlebars-helpers" => Some(ember_handlebars_helpers::shared_locator()),
         _ => None,
     }
 }
@@ -775,11 +760,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(NodeBuiltinsEcosystem);
         reg_eco!(ZigStdEcosystem);
         reg_eco!(SdlSyntheticsEcosystem);
-        reg_eco!(BashCompletionSyntheticsEcosystem);
-        reg_eco!(RobotBuiltinEcosystem);
-        reg_eco!(RobotSeleniumLibraryEcosystem);
-        reg_eco!(RobotBrowserEcosystem);
-        reg_eco!(EmberHandlebarsHelpersEcosystem);
         reg
     })
 }
