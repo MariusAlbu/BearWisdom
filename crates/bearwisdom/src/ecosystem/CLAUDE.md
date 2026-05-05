@@ -124,6 +124,20 @@ When several signals could drive an ecosystem, the order is:
 3. **Implicit-toolchain `LanguagePresent`** — only for true substrates (rust-stdlib, cpython-stdlib, posix libc).
 4. **Probe fallback** — last resort, only when zero project config is detectable. Must emit a diagnostic so the user knows the resolution is speculative.
 
+## Known limitation: workspace-flat activation
+
+Activation runs once per project and produces a single workspace-wide `active_ecosystems` set. `ManifestMatch` queries the unioned `ctx.manifests` map; `ManifestFieldContains` walks the entire `project_root`. Per-package activation does not exist.
+
+Consequences for polyglot monorepos and microservice repos:
+
+- An ecosystem activates for the whole workspace when only one package declares it. Indexing happens on packages that don't need it — wasted work, not wrong edges.
+- Two packages that pin different versions of the same SDK collapse: the walker picks one install, and refs in the other package resolve against the wrong version.
+- `ManifestFieldContains` can fire for a field declared in one package and apply across the workspace (a frontend `tsconfig.json` declaring `"DOM"` activates `ts_lib_dom` for an unrelated backend package in the same repo).
+
+`ProjectContext::by_package` exists for the per-package case. Ecosystems that care about per-package precision can do per-package gating inside `locate_roots` — the escape hatch. The activation phase itself does not yet take a `PackageId`.
+
+For the in-flight refactor, treat workspace-flat activation as the contract. Document any per-package precision your `locate_roots` adds. Don't attempt to fix the activation phase locally; that's a separate workstream.
+
 ## Locators only — no synthetics, no predicates
 
 Files in `ecosystem/` discover external dependencies on disk and tell the indexer where to find them. They do NOT:
