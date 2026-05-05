@@ -77,6 +77,7 @@ pub mod nuget;
 pub mod opam;
 pub mod phoenix_stubs;
 pub mod php_stubs;
+pub mod compile_commands;
 pub mod posix_headers;
 pub mod qt_runtime;
 pub mod powershell_cmdlet_types;
@@ -147,6 +148,7 @@ pub use nuget::NugetEcosystem;
 pub use phoenix_stubs::PhoenixStubsEcosystem;
 pub use opam::OpamEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
+pub use compile_commands::CompileCommandsEcosystem;
 pub use posix_headers::{MsvcHeadersEcosystem, PosixHeadersEcosystem, VcpkgHeadersEcosystem};
 pub use qt_runtime::QtRuntimeEcosystem;
 pub use powershell_stdlib::PowerShellStdlibEcosystem;
@@ -620,6 +622,7 @@ pub fn default_locator(
         "posix-headers" => Some(Arc::new(PosixHeadersEcosystem)),
         "msvc-headers" => Some(Arc::new(MsvcHeadersEcosystem)),
         "qt-runtime" => Some(Arc::new(QtRuntimeEcosystem)),
+        "compile-commands" => Some(Arc::new(CompileCommandsEcosystem)),
         "vcpkg-headers" => Some(Arc::new(VcpkgHeadersEcosystem)),
         "dotnet-stdlib" => Some(Arc::new(DotnetStdlibEcosystem)),
         "php-stubs" => Some(Arc::new(PhpStubsEcosystem)),
@@ -738,6 +741,7 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(PosixHeadersEcosystem);
         reg_eco!(MsvcHeadersEcosystem);
         reg_eco!(QtRuntimeEcosystem);
+        reg_eco!(CompileCommandsEcosystem);
         reg_eco!(VcpkgHeadersEcosystem);
         reg_eco!(DotnetStdlibEcosystem);
         reg_eco!(PhpStubsEcosystem);
