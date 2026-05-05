@@ -10,6 +10,7 @@
 
 use super::{calls, decorators, helpers, imports, narrowing, params, symbols, types};
 
+use crate::ecosystem::ecmascript_imports::build_import_map;
 use crate::ecosystem::imports::{resolve_import_refs, ImportEntry, ImportKind};
 use crate::parser::scope_tree::{self, ScopeKind, ScopeTree};
 use crate::types::ExtractionResult;
@@ -1215,104 +1216,8 @@ fn emit_triple_slash_ref(refs: &mut Vec<ExtractedRef>, kind: &str, value: &str, 
 ///   - `import { X as Y } from 'pkg'`      → Named { exported_name=X } keyed under Y
 ///   - `import * as ns from 'pkg'`         → Namespace
 ///   - `import 'pkg'`                      → SideEffect (no local name; not stored)
-fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, ImportEntry> {
-    let mut map: HashMap<String, ImportEntry> = HashMap::new();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        // Import statements may be wrapped in export_statement in some grammars,
-        // but for top-level imports we only need direct import_statement children.
-        if child.kind() != "import_statement" {
-            continue;
-        }
-        let Some(module_node) = child.child_by_field_name("source") else {
-            continue;
-        };
-        let module_path = helpers::node_text(module_node, src)
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string();
-        if module_path.is_empty() {
-            continue;
-        }
-
-        let mut ic = child.walk();
-        for clause in child.children(&mut ic) {
-            if clause.kind() != "import_clause" {
-                continue;
-            }
-            let mut cc = clause.walk();
-            for item in clause.children(&mut cc) {
-                match item.kind() {
-                    // `import Foo from 'pkg'` — default import.
-                    "identifier" => {
-                        let local = helpers::node_text(item, src);
-                        if !local.is_empty() {
-                            map.insert(
-                                local.clone(),
-                                ImportEntry {
-                                    local_name: local,
-                                    module: module_path.clone(),
-                                    kind: ImportKind::Default,
-                                },
-                            );
-                        }
-                    }
-                    // `import { X } from 'pkg'` / `import { X as Y } from 'pkg'`
-                    "named_imports" => {
-                        let mut ni = item.walk();
-                        for spec in item.children(&mut ni) {
-                            if spec.kind() != "import_specifier" {
-                                continue;
-                            }
-                            let exported = spec
-                                .child_by_field_name("name")
-                                .map(|n| helpers::node_text(n, src))
-                                .unwrap_or_default();
-                            let local = spec
-                                .child_by_field_name("alias")
-                                .map(|n| helpers::node_text(n, src))
-                                .filter(|s| !s.is_empty())
-                                .unwrap_or_else(|| exported.clone());
-                            if local.is_empty() || exported.is_empty() {
-                                continue;
-                            }
-                            map.insert(
-                                local.clone(),
-                                ImportEntry {
-                                    local_name: local,
-                                    module: module_path.clone(),
-                                    kind: ImportKind::Named { exported_name: exported },
-                                },
-                            );
-                        }
-                    }
-                    // `import * as ns from 'pkg'`
-                    "namespace_import" => {
-                        let mut nc = item.walk();
-                        for ns_child in item.children(&mut nc) {
-                            if ns_child.kind() == "identifier" {
-                                let local = helpers::node_text(ns_child, src);
-                                if !local.is_empty() {
-                                    map.insert(
-                                        local.clone(),
-                                        ImportEntry {
-                                            local_name: local,
-                                            module: module_path.clone(),
-                                            kind: ImportKind::Namespace,
-                                        },
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    map
-}
+// build_import_map moved to crate::ecosystem::ecmascript_imports — both TS
+// and JS extractors now share that single implementation.
 
 /// Extract re-export refs from an `export_statement` node.
 ///

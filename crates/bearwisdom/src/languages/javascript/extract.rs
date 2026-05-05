@@ -97,7 +97,7 @@ pub fn extract(source: &str) -> super::ExtractionResult {
     let scope_tree = scope_tree::build(root, src_bytes, JS_SCOPE_KINDS);
 
     // Pre-pass: build a local-alias → module-path map from all import statements.
-    let import_map = build_import_map(root, src_bytes);
+    let import_map = crate::ecosystem::ecmascript_imports::build_import_map(root, src_bytes);
 
     let mut symbols: Vec<ExtractedSymbol> = Vec::new();
     let mut refs: Vec<ExtractedRef> = Vec::new();
@@ -991,116 +991,13 @@ fn push_export_refs(node: &Node, src: &[u8], source_symbol_index: usize, refs: &
 }
 
 fn push_import(node: &Node, src: &[u8], current_symbol_count: usize, refs: &mut Vec<Ref>) {
-    let module_path = node.child_by_field_name("source").map(|s| {
-        node_text(s, src)
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string()
-    });
-
-    let line = node.start_position().row as u32;
-
-    // Always emit one Imports ref at the import statement's start line using the
-    // module path. This ensures the coverage budget for `(import_statement, line)`
-    // is satisfied even when all named specifiers appear on subsequent lines.
-    if let Some(mod_path) = &module_path {
-        refs.push(Ref {
-            source_symbol_index: current_symbol_count,
-            target_name: mod_path.clone(),
-            kind: EdgeKind::Imports,
-            line,
-            module: module_path.clone(),
-            chain: None,
-            byte_offset: 0,
-                    namespace_segments: Vec::new(),
-});
-    }
-
-    let initial_ref_count = refs.len();
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if child.kind() == "import_clause" {
-            let mut ic = child.walk();
-            for item in child.children(&mut ic) {
-                match item.kind() {
-                    // `import React from 'react'` — default import
-                    "identifier" => {
-                        refs.push(Ref {
-                            source_symbol_index: current_symbol_count,
-                            target_name: node_text(item, src),
-                            kind: EdgeKind::TypeRef,
-                            line: item.start_position().row as u32,
-                            module: module_path.clone(),
-                            chain: None,
-                            byte_offset: 0,
-                                                    namespace_segments: Vec::new(),
-});
-                    }
-                    // `import { useState, useEffect } from 'react'`
-                    "named_imports" => {
-                        let mut ni = item.walk();
-                        for spec in item.children(&mut ni) {
-                            if spec.kind() == "import_specifier" {
-                                let imported_name = spec
-                                    .child_by_field_name("name")
-                                    .map(|n| node_text(n, src))
-                                    .unwrap_or_else(|| node_text(spec, src));
-                                refs.push(Ref {
-                                    source_symbol_index: current_symbol_count,
-                                    target_name: imported_name,
-                                    kind: EdgeKind::TypeRef,
-                                    line: spec.start_position().row as u32,
-                                    module: module_path.clone(),
-                                    chain: None,
-                                    byte_offset: 0,
-                                                                    namespace_segments: Vec::new(),
-});
-                            }
-                        }
-                    }
-                    // `import * as ns from 'module'` — namespace import
-                    "namespace_import" => {
-                        // The local binding is the identifier after `as`.
-                        let mut nc = item.walk();
-                        for ns_child in item.children(&mut nc) {
-                            if ns_child.kind() == "identifier" {
-                                refs.push(Ref {
-                                    source_symbol_index: current_symbol_count,
-                                    target_name: node_text(ns_child, src),
-                                    kind: EdgeKind::TypeRef,
-                                    line: ns_child.start_position().row as u32,
-                                    module: module_path.clone(),
-                                    chain: None,
-                                    byte_offset: 0,
-                                                                    namespace_segments: Vec::new(),
-});
-                                break;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-
-    // Fallback: side-effect imports like `import './styles.css'` have no import_clause.
-    // Emit an Imports ref using the module path so the line is covered.
-    if refs.len() == initial_ref_count {
-        if let Some(mod_path) = &module_path {
-            refs.push(Ref {
-                source_symbol_index: current_symbol_count,
-                target_name: mod_path.clone(),
-                kind: EdgeKind::Imports,
-                line,
-                module: module_path.clone(),
-                chain: None,
-                byte_offset: 0,
-                            namespace_segments: Vec::new(),
-});
-        }
-    }
+    crate::ecosystem::ecmascript_imports::push_import_refs(
+        node,
+        src,
+        current_symbol_count,
+        refs,
+        crate::ecosystem::ecmascript_imports::PushImportOpts::JAVASCRIPT,
+    );
 }
 
 // ---------------------------------------------------------------------------
@@ -2018,111 +1915,8 @@ fn extract_catch_variable(
 // Import map + call module annotation
 // ---------------------------------------------------------------------------
 
-/// Build a map of `local_alias → module_path` from all top-level import
-/// statements in the JavaScript file.
-///
-/// Walk every top-level `import` statement and return a per-local-name
-/// `ImportEntry`. Drives the shared
-/// `ecosystem::imports::resolve_import_refs` pass, which canonicalizes
-/// every ref against this map. Same shape as the TS extractor's version
-/// — both feed the same downstream resolver.
-fn build_import_map(root: Node, src: &[u8]) -> HashMap<String, crate::ecosystem::imports::ImportEntry> {
-    use crate::ecosystem::imports::{ImportEntry, ImportKind};
-    let mut map: HashMap<String, ImportEntry> = HashMap::new();
-    let mut cursor = root.walk();
-    for child in root.children(&mut cursor) {
-        if child.kind() != "import_statement" {
-            continue;
-        }
-        let Some(module_node) = child.child_by_field_name("source") else {
-            continue;
-        };
-        let module_path = node_text(module_node, src)
-            .trim_matches('"')
-            .trim_matches('\'')
-            .to_string();
-        if module_path.is_empty() {
-            continue;
-        }
-
-        let mut ic = child.walk();
-        for clause in child.children(&mut ic) {
-            if clause.kind() != "import_clause" {
-                continue;
-            }
-            let mut cc = clause.walk();
-            for item in clause.children(&mut cc) {
-                match item.kind() {
-                    // `import Foo from './bar'` — default import
-                    "identifier" => {
-                        let local = node_text(item, src);
-                        if !local.is_empty() {
-                            map.insert(
-                                local.clone(),
-                                ImportEntry {
-                                    local_name: local,
-                                    module: module_path.clone(),
-                                    kind: ImportKind::Default,
-                                },
-                            );
-                        }
-                    }
-                    // `import { Foo, Bar as B } from './bar'`
-                    "named_imports" => {
-                        let mut ni = item.walk();
-                        for spec in item.children(&mut ni) {
-                            if spec.kind() != "import_specifier" {
-                                continue;
-                            }
-                            let exported = spec
-                                .child_by_field_name("name")
-                                .map(|n| node_text(n, src))
-                                .unwrap_or_default();
-                            let local = spec
-                                .child_by_field_name("alias")
-                                .map(|n| node_text(n, src))
-                                .filter(|s| !s.is_empty())
-                                .unwrap_or_else(|| exported.clone());
-                            if local.is_empty() || exported.is_empty() {
-                                continue;
-                            }
-                            map.insert(
-                                local.clone(),
-                                ImportEntry {
-                                    local_name: local,
-                                    module: module_path.clone(),
-                                    kind: ImportKind::Named { exported_name: exported },
-                                },
-                            );
-                        }
-                    }
-                    // `import * as ns from './bar'`
-                    "namespace_import" => {
-                        let mut nc = item.walk();
-                        for ns_child in item.children(&mut nc) {
-                            if ns_child.kind() == "identifier" {
-                                let local = node_text(ns_child, src);
-                                if !local.is_empty() {
-                                    map.insert(
-                                        local.clone(),
-                                        ImportEntry {
-                                            local_name: local,
-                                            module: module_path.clone(),
-                                            kind: ImportKind::Namespace,
-                                        },
-                                    );
-                                }
-                                break;
-                            }
-                        }
-                    }
-                    _ => {}
-                }
-            }
-        }
-    }
-    map
-}
+// build_import_map moved to crate::ecosystem::ecmascript_imports — both TS
+// and JS extractors now share that single implementation.
 
 // ---------------------------------------------------------------------------
 // Post-traversal full-tree type_identifier scanner

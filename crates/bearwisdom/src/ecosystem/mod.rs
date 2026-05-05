@@ -78,6 +78,7 @@ pub mod opam;
 pub mod phoenix_stubs;
 pub mod php_stubs;
 pub mod compile_commands;
+pub mod ecmascript_imports;
 pub mod posix_headers;
 pub mod qt_runtime;
 pub mod powershell_cmdlet_types;
