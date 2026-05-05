@@ -1,6 +1,6 @@
 {
   "captured_at": "2026-05-04T00:00:00Z",
-  "recapture_partial_at": "2026-05-05T09:13:00Z",
+  "recapture_partial_at": "2026-05-05T09:42:00Z",
   "projects": [
     {
       "assertions": {
@@ -580,14 +580,14 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 89
+        "min_resolution_rate": 98
       },
       "code_chunks": 102687,
       "files": 889,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 74082,
-      "internal_unresolved": 8270,
+      "internal_edges": 78511,
+      "internal_unresolved": 1268,
       "languages": {
         "c": 276,
         "cmake": 2,
@@ -613,9 +613,9 @@
         "index_duration_ms": 29489
       },
       "project": "c-redis",
-      "resolution_rate": 89.96,
+      "resolution_rate": 98.41,
       "routes": 0,
-      "symbols": 40115,
+      "symbols": 40511,
       "unresolved_by_lang_kind": {
         "c.calls": 7277,
         "c.imports": 1,
@@ -655,7 +655,7 @@
       "project": "c-tig",
       "resolution_rate": 96.87,
       "routes": 0,
-      "symbols": 6954,
+      "symbols": 6958,
       "unresolved_by_lang_kind": {
         "c.calls": 185,
         "c.type_ref": 40,
@@ -4398,8 +4398,8 @@
       "files": 2065,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 86902,
-      "internal_unresolved": 2720,
+      "internal_edges": 86894,
+      "internal_unresolved": 2704,
       "languages": {
         "c": 958,
         "cmake": 47,
@@ -4421,9 +4421,9 @@
         "index_duration_ms": 34078
       },
       "project": "make-curl",
-      "resolution_rate": 96.97,
+      "resolution_rate": 96.98,
       "routes": 0,
-      "symbols": 77254,
+      "symbols": 77258,
       "unresolved_by_lang_kind": {
         "c.calls": 1586,
         "c.type_ref": 823,
@@ -4443,8 +4443,8 @@
       "files": 243,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 30402,
-      "internal_unresolved": 934,
+      "internal_edges": 30466,
+      "internal_unresolved": 870,
       "languages": {
         "c": 199,
         "markdown": 2,
@@ -4459,9 +4459,9 @@
         "index_duration_ms": 14775
       },
       "project": "make-tmux",
-      "resolution_rate": 97.02,
+      "resolution_rate": 97.22,
       "routes": 0,
-      "symbols": 25398,
+      "symbols": 25409,
       "unresolved_by_lang_kind": {
         "c.calls": 776,
         "c.type_ref": 158
@@ -4562,7 +4562,7 @@
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 76742,
-      "internal_unresolved": 1601,
+      "internal_unresolved": 1599,
       "languages": {
         "c": 395,
         "cpp": 1,
@@ -4583,7 +4583,7 @@
       "project": "nginx-nginx",
       "resolution_rate": 97.96,
       "routes": 0,
-      "symbols": 29923,
+      "symbols": 29926,
       "unresolved_by_lang_kind": {
         "c.calls": 1231,
         "c.type_ref": 358,

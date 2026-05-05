@@ -993,3 +993,74 @@ void f() { auto p = std::make_shared<HttpRequest>(); }
             "expected 'HttpRequest' captured as type_arg on the make_shared chain segment; got {chain_args:?}"
         );
     }
+
+    // -------------------------------------------------------------------------
+    // C function-pointer-table salvage (PR 211 of N — category 3 fix)
+    //
+    // Library API export macros that tree-sitter doesn't preprocess
+    // (REDISMODULE_API, KAPI, __declspec(dllexport)) push function-pointer
+    // declarations into ERROR recovery. The existing tree-sitter path emits
+    // no symbol; the salvage_missed_function_pointer_decls pass scans for
+    // `(*NAME)(` at end-of-line `;` and emits a Function symbol.
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn c_function_pointer_decl_with_unknown_macro_prefix_emits_function() {
+        // The c-redis canonical shape: REDISMODULE_API expands to `extern`,
+        // REDISMODULE_ATTR expands to a GCC __attribute__. Tree-sitter sees
+        // both as raw identifiers and gives up on the line.
+        let src = r#"
+REDISMODULE_API int (*RedisModule_ReplyWithError)(int ctx, const char *err) REDISMODULE_ATTR;
+REDISMODULE_API int (*RedisModule_CreateCommand)(int ctx, const char *name) REDISMODULE_ATTR;
+"#;
+        let r = extract::extract(src, "c");
+        let names: Vec<&str> = r.symbols.iter().map(|s| s.name.as_str()).collect();
+        for required in ["RedisModule_ReplyWithError", "RedisModule_CreateCommand"] {
+            assert!(
+                names.contains(&required),
+                "function-pointer decl through macro prefix MUST emit symbol; missing {required}; got: {names:?}"
+            );
+        }
+        let kinds: Vec<_> = r
+            .symbols
+            .iter()
+            .filter(|s| s.name == "RedisModule_ReplyWithError")
+            .map(|s| s.kind)
+            .collect();
+        assert!(
+            kinds.iter().any(|k| matches!(k, SymbolKind::Function)),
+            "salvaged function-pointer decl must be Function kind; got {kinds:?}"
+        );
+    }
+
+    #[test]
+    fn c_function_pointer_salvage_does_not_duplicate_existing() {
+        // When tree-sitter parses the declaration cleanly (no unknown macros),
+        // the salvage pass must NOT emit a duplicate symbol.
+        let src = r#"
+extern int (*foo)(int x);
+"#;
+        let r = extract::extract(src, "c");
+        let count = r.symbols.iter().filter(|s| s.name == "foo").count();
+        assert_eq!(count, 1, "salvage must not duplicate; got {count} symbols for foo");
+    }
+
+    #[test]
+    fn c_function_pointer_salvage_skips_call_sites() {
+        // `(*foo)(args)` inside a function body is a CALL, not a declaration.
+        // The salvage pass requires line-trailing `;` AND a fresh name not
+        // already in the symbol table — but a free-standing call expression
+        // statement also ends with `;`. The dedup against `existing` is the
+        // primary guard; this test confirms it holds when the function-pointer
+        // type was declared elsewhere.
+        let src = r#"
+typedef int (*Callback)(int);
+Callback foo;
+void run(void) { (*foo)(42); }
+"#;
+        let r = extract::extract(src, "c");
+        // `foo` should appear exactly once — declared as Variable, never
+        // duplicated by the salvage pass picking up the call site.
+        let count = r.symbols.iter().filter(|s| s.name == "foo").count();
+        assert_eq!(count, 1, "expected exactly one `foo` symbol; got {count}");
+    }
