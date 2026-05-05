@@ -54,6 +54,14 @@ pub use crate::ecosystem::pypi::{
 /// resolver, not here. This struct is a dumb data holder.
 #[derive(Debug, Clone, Default)]
 pub struct ProjectContext {
+    /// Project root directory. Populated by the production builders
+    /// (`build_project_context*`); defaults to an empty `PathBuf` for
+    /// `Default`-constructed instances. Used by the activation evaluator
+    /// to scan the project for files when a `ManifestFieldContains` clause
+    /// is encountered, and is available for any other ecosystem code that
+    /// needs the absolute project root.
+    pub project_root: PathBuf,
+
     /// Raw manifest data keyed by ecosystem — the **union** across the whole
     /// project. Used as the fallback for files whose `package_id` is None
     /// (root configs, shared scripts, misc) and for single-project layouts
@@ -195,6 +203,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
     log_manifests(&manifests);
     let gradle_catalog_names = discover_gradle_catalog_names(project_root);
     ProjectContext {
+        project_root: project_root.to_path_buf(),
         manifests,
         by_package: HashMap::new(),
         workspace_pkg_by_declared_name: HashMap::new(),
@@ -293,6 +302,7 @@ pub fn build_project_context_with_packages(
     let gradle_catalog_names = discover_gradle_catalog_names(project_root);
 
     ProjectContext {
+        project_root: project_root.to_path_buf(),
         manifests,
         by_package,
         workspace_pkg_by_declared_name,
@@ -311,12 +321,17 @@ pub fn build_project_context_with_packages(
 // Phase 4 seam — ProjectContext::initialize
 // ---------------------------------------------------------------------------
 
-/// Map from `EcosystemId` to the `ManifestKind`s that ecosystem owns. Used
-/// to translate the legacy manifest-kind-indexed map into ecosystem-indexed
-/// activation input. Ecosystems without any `ManifestKind` coverage
-/// (currently cabal, nimble, cpan) fall back to language-presence-driven
-/// activation — which is what their predicates request anyway.
-#[allow(dead_code)] // wired in when ManifestMatch gains per-ecosystem scope
+/// Map from `EcosystemId` to the `ManifestKind`s that ecosystem owns.
+///
+/// Drives the per-ecosystem `ManifestMatch` activation: an ecosystem's
+/// `ManifestMatch` clause is satisfied iff at least one of its kinds is
+/// present in `ProjectContext::manifests`.
+///
+/// Ecosystems without any `ManifestKind` coverage (cabal, nimble, cpan and
+/// stdlib-shape entries) return an empty slice; their `ManifestMatch`
+/// clause then evaluates to `false` and they must rely on a sibling
+/// `LanguagePresent` / `TransitiveOn` clause inside an `Any(...)`
+/// composite to activate.
 pub(crate) fn manifest_kinds_for_ecosystem(id: EcosystemId) -> &'static [ManifestKind] {
     match id.as_str() {
         "maven" => &[ManifestKind::Maven, ManifestKind::Gradle,
@@ -419,7 +434,7 @@ fn evaluate_active_ecosystems(
         if is_transitive_only(&eco.activation()) {
             continue;
         }
-        if evaluate_activation(&eco.activation(), ctx, &active) {
+        if evaluate_activation(&eco.activation(), eco.id(), ctx, &active) {
             active.push(eco.id());
         }
     }
@@ -430,7 +445,7 @@ fn evaluate_active_ecosystems(
         if active.contains(&eco.id()) {
             continue;
         }
-        if evaluate_activation(&eco.activation(), ctx, &active) {
+        if evaluate_activation(&eco.activation(), eco.id(), ctx, &active) {
             active.push(eco.id());
         }
     }
@@ -443,44 +458,149 @@ fn is_transitive_only(act: &EcosystemActivation) -> bool {
 
 fn evaluate_activation(
     act: &EcosystemActivation,
+    eco_id: EcosystemId,
     ctx: &ProjectContext,
     already_active: &[EcosystemId],
 ) -> bool {
     match act {
         EcosystemActivation::Always => true,
         EcosystemActivation::Never => false,
-        EcosystemActivation::ManifestMatch => ctx_has_manifest_for_current_ecosystem(ctx),
+        EcosystemActivation::ManifestMatch => {
+            ecosystem_manifest_present(eco_id, ctx)
+        }
         EcosystemActivation::LanguagePresent(lang) => {
             ctx.language_presence.contains(*lang)
         }
-        EcosystemActivation::ManifestFieldContains { .. } => {
-            // Not evaluated in Phase 4 — no ecosystem uses this today.
-            false
-        }
+        EcosystemActivation::ManifestFieldContains {
+            manifest_glob,
+            field_path,
+            value,
+        } => manifest_field_contains(&ctx.project_root, manifest_glob, field_path, value),
         EcosystemActivation::AlwaysOnPlatform(plat) => matches_platform(*plat),
         EcosystemActivation::TransitiveOn(id) => already_active.contains(id),
         EcosystemActivation::All(clauses) => clauses
             .iter()
-            .all(|c| evaluate_activation(c, ctx, already_active)),
+            .all(|c| evaluate_activation(c, eco_id, ctx, already_active)),
         EcosystemActivation::Any(clauses) => clauses
             .iter()
-            .any(|c| evaluate_activation(c, ctx, already_active)),
+            .any(|c| evaluate_activation(c, eco_id, ctx, already_active)),
     }
 }
 
-/// Called with a `ManifestMatch` clause. We don't know which ecosystem we're
-/// evaluating here (the activation enum is ecosystem-agnostic by design), so
-/// we conservatively treat `ManifestMatch` as "some manifest was detected"
-/// — unioned across every ecosystem kind. The ecosystem's own
-/// `locate_roots` re-filters at discovery time, and in practice every
-/// ecosystem's `activation` predicate is `Any([ManifestMatch, Language...])`
-/// so the language clause carries the load when a manifest isn't mapped.
+/// `ManifestMatch` evaluation. Returns `true` iff at least one
+/// `ManifestKind` claimed by the ecosystem is present in
+/// `ctx.manifests`. Ecosystems with no claimed kinds (returned empty
+/// from `manifest_kinds_for_ecosystem`) always evaluate to `false`.
+fn ecosystem_manifest_present(eco_id: EcosystemId, ctx: &ProjectContext) -> bool {
+    let kinds = manifest_kinds_for_ecosystem(eco_id);
+    if kinds.is_empty() {
+        return false;
+    }
+    kinds.iter().any(|k| ctx.manifests.contains_key(k))
+}
+
+/// `ManifestFieldContains` evaluation. Walks `project_root` for files
+/// matching `manifest_glob`, parses each as JSON or YAML based on
+/// extension, traverses `field_path` (a `.`-separated chain of keys),
+/// and returns `true` iff any matched file's resolved field contains
+/// `value` — for arrays "contains" means membership, for scalars it
+/// means string equality.
 ///
-/// When Phase 5 adds stdlib ecosystems with pure `ManifestMatch` activations
-/// against a specific manifest glob, this becomes the place to thread the
-/// per-ecosystem manifest spec check through.
-fn ctx_has_manifest_for_current_ecosystem(ctx: &ProjectContext) -> bool {
-    !ctx.manifests.is_empty()
+/// Glob support is intentionally narrow: `**/<basename>` matches a
+/// file with that basename at any depth; a bare `<basename>` matches
+/// only at the project root. Anything else falls through to literal
+/// path equality. This covers every documented use case (tsconfig.json,
+/// pubspec.yaml, project.godot, bicepconfig.json) without pulling in a
+/// full glob crate.
+fn manifest_field_contains(
+    project_root: &Path,
+    manifest_glob: &str,
+    field_path: &str,
+    value: &str,
+) -> bool {
+    if project_root.as_os_str().is_empty() {
+        return false;
+    }
+    for path in find_manifests_matching(project_root, manifest_glob) {
+        if manifest_file_field_contains(&path, field_path, value) {
+            return true;
+        }
+    }
+    false
+}
+
+fn find_manifests_matching(project_root: &Path, glob: &str) -> Vec<PathBuf> {
+    let mut out: Vec<PathBuf> = Vec::new();
+    if let Some(basename) = glob.strip_prefix("**/") {
+        // Walk the project tree; collect every file whose basename matches.
+        // Reuses the same `ignore` walker the rest of the indexer uses so
+        // gitignore + standard exclusions are respected.
+        let walker = ignore::WalkBuilder::new(project_root)
+            .hidden(true)
+            .git_ignore(true)
+            .git_global(true)
+            .git_exclude(true)
+            .follow_links(false)
+            .max_depth(Some(20))
+            .build();
+        for entry in walker.flatten() {
+            if !entry.file_type().is_some_and(|ft| ft.is_file()) {
+                continue;
+            }
+            if entry.file_name().to_str() == Some(basename) {
+                out.push(entry.path().to_path_buf());
+            }
+        }
+    } else {
+        // Bare basename → look at the project root only.
+        let p = project_root.join(glob);
+        if p.is_file() {
+            out.push(p);
+        }
+    }
+    out
+}
+
+fn manifest_file_field_contains(path: &Path, field_path: &str, value: &str) -> bool {
+    let Ok(text) = std::fs::read_to_string(path) else { return false };
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_ascii_lowercase());
+    let parsed: Option<serde_json::Value> = match ext.as_deref() {
+        Some("json") => serde_json::from_str(&text).ok(),
+        Some("yaml") | Some("yml") => serde_yaml::from_str(&text).ok(),
+        // Plain-text manifests (project.godot, .ini-shaped) — fall back to
+        // a substring search keyed on `field_path = value` shape. Good
+        // enough for the simple cases this evaluator targets; ecosystems
+        // needing structured access for INI-shaped manifests should ship
+        // a dedicated reader.
+        _ => return text.contains(value),
+    };
+    let Some(root) = parsed else { return false };
+    let target = traverse_field_path(&root, field_path);
+    field_value_contains(target, value)
+}
+
+fn traverse_field_path<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serde_json::Value> {
+    let mut cur = root;
+    for segment in path.split('.') {
+        cur = cur.get(segment)?;
+    }
+    Some(cur)
+}
+
+fn field_value_contains(value: Option<&serde_json::Value>, needle: &str) -> bool {
+    let Some(v) = value else { return false };
+    match v {
+        serde_json::Value::Array(items) => items.iter().any(|item| match item {
+            serde_json::Value::String(s) => s.eq_ignore_ascii_case(needle),
+            other => other.to_string().contains(needle),
+        }),
+        serde_json::Value::String(s) => s.eq_ignore_ascii_case(needle) || s.contains(needle),
+        serde_json::Value::Object(map) => map.contains_key(needle),
+        other => other.to_string().contains(needle),
+    }
 }
 
 fn matches_platform(plat: Platform) -> bool {

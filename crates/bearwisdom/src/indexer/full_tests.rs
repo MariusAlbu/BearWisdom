@@ -85,6 +85,7 @@ namespace App {
         by_package.insert(2, pkg2_manifests);
 
         let ctx = super::super::project_context::ProjectContext {
+            project_root: std::path::PathBuf::new(),
             manifests: HashMap::new(),
             by_package,
             workspace_pkg_by_declared_name: HashMap::new(),

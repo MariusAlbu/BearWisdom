@@ -257,3 +257,234 @@ mod m2_tests {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Activation-evaluator tests — ManifestMatch + ManifestFieldContains
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod activation_eval_tests {
+    use super::*;
+    use crate::ecosystem::{EcosystemActivation, EcosystemId};
+    use crate::ecosystem::manifest::{ManifestData, ManifestKind};
+    use std::fs;
+
+    fn ctx_with_manifests(kinds: &[ManifestKind]) -> ProjectContext {
+        let mut ctx = ProjectContext::default();
+        for k in kinds {
+            ctx.manifests.insert(*k, ManifestData::default());
+        }
+        ctx
+    }
+
+    fn ctx_with_root(root: &std::path::Path) -> ProjectContext {
+        let mut ctx = ProjectContext::default();
+        ctx.project_root = root.to_path_buf();
+        ctx
+    }
+
+    #[test]
+    fn manifest_match_fires_when_eco_specific_manifest_present() {
+        let ctx = ctx_with_manifests(&[ManifestKind::Cargo]);
+        let cargo_id = EcosystemId::new("cargo");
+        assert!(super::evaluate_activation(
+            &EcosystemActivation::ManifestMatch,
+            cargo_id,
+            &ctx,
+            &[],
+        ));
+    }
+
+    #[test]
+    fn manifest_match_does_not_fire_for_unrelated_manifest() {
+        // Project has Cargo.toml. Asking npm to fire on ManifestMatch must
+        // return false — npm's manifest kind (Npm) isn't present.
+        let ctx = ctx_with_manifests(&[ManifestKind::Cargo]);
+        let npm_id = EcosystemId::new("npm");
+        assert!(!super::evaluate_activation(
+            &EcosystemActivation::ManifestMatch,
+            npm_id,
+            &ctx,
+            &[],
+        ));
+    }
+
+    #[test]
+    fn manifest_match_does_not_fire_for_ecosystem_with_no_kinds() {
+        // Ecosystems not in `manifest_kinds_for_ecosystem` (cabal, nimble,
+        // cpan, all stdlib) must rely on a sibling `LanguagePresent` clause;
+        // pure `ManifestMatch` must evaluate to false.
+        let ctx = ctx_with_manifests(&[ManifestKind::Cargo, ManifestKind::Npm]);
+        let unknown = EcosystemId::new("cabal");
+        assert!(!super::evaluate_activation(
+            &EcosystemActivation::ManifestMatch,
+            unknown,
+            &ctx,
+            &[],
+        ));
+    }
+
+    #[test]
+    fn manifest_match_unions_multiple_kinds() {
+        // The maven ecosystem claims Maven, Gradle, Sbt, Clojure. Any one
+        // satisfies ManifestMatch.
+        let maven = EcosystemId::new("maven");
+        for kind in [ManifestKind::Maven, ManifestKind::Gradle, ManifestKind::Sbt, ManifestKind::Clojure] {
+            let ctx = ctx_with_manifests(&[kind]);
+            assert!(
+                super::evaluate_activation(&EcosystemActivation::ManifestMatch, maven, &ctx, &[]),
+                "maven should fire for {kind:?}",
+            );
+        }
+    }
+
+    #[test]
+    fn field_contains_json_array_membership_case_insensitive() {
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("tsconfig.json"),
+            r#"{ "compilerOptions": { "lib": ["DOM", "ES2022"] } }"#,
+        )
+        .unwrap();
+        let ctx = ctx_with_root(dir.path());
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/tsconfig.json",
+            field_path: "compilerOptions.lib",
+            value: "dom",
+        };
+        assert!(super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_json_misses_when_value_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("tsconfig.json"),
+            r#"{ "compilerOptions": { "lib": ["ES2022"] } }"#,
+        )
+        .unwrap();
+        let ctx = ctx_with_root(dir.path());
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/tsconfig.json",
+            field_path: "compilerOptions.lib",
+            value: "DOM",
+        };
+        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_json_misses_when_field_path_absent() {
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("tsconfig.json"),
+            r#"{ "compilerOptions": { "target": "es2022" } }"#,
+        )
+        .unwrap();
+        let ctx = ctx_with_root(dir.path());
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/tsconfig.json",
+            field_path: "compilerOptions.lib",
+            value: "DOM",
+        };
+        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_yaml_map_key_present() {
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("pubspec.yaml"),
+            "name: my_app\ndependencies:\n  flutter:\n    sdk: flutter\n  http: ^1.0.0\n",
+        )
+        .unwrap();
+        let ctx = ctx_with_root(dir.path());
+        // For YAML maps, "contains" tests key presence — flutter is a key
+        // under dependencies.
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/pubspec.yaml",
+            field_path: "dependencies",
+            value: "flutter",
+        };
+        assert!(super::evaluate_activation(&act, EcosystemId::new("flutter-sdk"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_yaml_misses_unrelated_key() {
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("pubspec.yaml"),
+            "name: pure_dart\ndependencies:\n  http: ^1.0.0\n",
+        )
+        .unwrap();
+        let ctx = ctx_with_root(dir.path());
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/pubspec.yaml",
+            field_path: "dependencies",
+            value: "flutter",
+        };
+        assert!(!super::evaluate_activation(&act, EcosystemId::new("flutter-sdk"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_handles_missing_file() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let ctx = ctx_with_root(dir.path());
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/tsconfig.json",
+            field_path: "compilerOptions.lib",
+            value: "DOM",
+        };
+        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_returns_false_when_project_root_empty() {
+        // ProjectContext::default has empty project_root — must not panic
+        // and must evaluate to false.
+        let ctx = ProjectContext::default();
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/tsconfig.json",
+            field_path: "compilerOptions.lib",
+            value: "DOM",
+        };
+        assert!(!super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_finds_nested_manifest() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let nested = dir.path().join("packages").join("web");
+        fs::create_dir_all(&nested).unwrap();
+        fs::write(
+            nested.join("tsconfig.json"),
+            r#"{ "compilerOptions": { "lib": ["DOM"] } }"#,
+        )
+        .unwrap();
+        let ctx = ctx_with_root(dir.path());
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/tsconfig.json",
+            field_path: "compilerOptions.lib",
+            value: "DOM",
+        };
+        assert!(super::evaluate_activation(&act, EcosystemId::new("ts-lib-dom"), &ctx, &[]));
+    }
+
+    #[test]
+    fn field_contains_plain_text_fallback_for_unknown_extension() {
+        // project.godot is INI-shaped, not JSON/YAML. The fallback does a
+        // substring search on the file content.
+        let dir = tempfile::TempDir::new().unwrap();
+        fs::write(
+            dir.path().join("project.godot"),
+            "[application]\nconfig/name=\"My Game\"\nrun/main_scene=\"res://Main.tscn\"\n",
+        )
+        .unwrap();
+        let ctx = ctx_with_root(dir.path());
+        let act = EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/project.godot",
+            field_path: "application",
+            value: "config/name",
+        };
+        assert!(super::evaluate_activation(&act, EcosystemId::new("godot-api"), &ctx, &[]));
+    }
+}
+
