@@ -14,10 +14,12 @@
 // resolver can turn `Input.is_action_pressed(...)` into a real edge
 // instead of an opaque unresolved ref.
 //
-// Activation: any `.gd` file in the project. If the JSON isn't findable,
-// the ecosystem degrades silently (returns no files) and unresolved rates
-// rise honestly — matching BearWisdom's "toolchains must be installed for
-// full resolution" policy.
+// Activation: any `.gd` file in the project. GDScript is exclusive to
+// Godot, so language presence is a sound substrate signal. The strict
+// project gate sits in locate_roots: a `project.godot` manifest must be
+// present in the workspace tree, otherwise the API JSON probe is skipped
+// (the project is a stray GDScript file, not a Godot project, so the
+// extension API would be irrelevant noise).
 // =============================================================================
 
 use std::path::{Path, PathBuf};
@@ -47,7 +49,15 @@ impl Ecosystem for GodotApiEcosystem {
         EcosystemActivation::LanguagePresent("gdscript")
     }
 
-    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        // Project gate: require a project.godot manifest in the workspace
+        // before probing for the extension API JSON. Stray .gd files in a
+        // non-Godot project (test fixtures, examples) do not trigger SDK
+        // indexing.
+        if !project_has_godot_manifest(ctx.project_root) {
+            debug!("godot-api: no project.godot in workspace; skipping API probe");
+            return Vec::new();
+        }
         match probe_extension_api_json() {
             Some(path) => vec![ExternalDepRoot {
                 module_path: "godot-api".to_string(),
@@ -86,13 +96,52 @@ impl ExternalSourceLocator for GodotApiEcosystem {
         )
     }
 
-    fn parse_metadata_only(&self, _project_root: &Path) -> Option<Vec<ParsedFile>> {
+    fn parse_metadata_only(&self, project_root: &Path) -> Option<Vec<ParsedFile>> {
         // The indexer's legacy metadata-only call passes project_root; for a
         // stdlib ecosystem there's no project-scoped root. Delegate to the
-        // probe.
+        // probe, gated on project.godot presence.
+        if !project_has_godot_manifest(project_root) {
+            return None;
+        }
         let path = probe_extension_api_json()?;
         parse_extension_api_json(&path)
     }
+}
+
+// ---------------------------------------------------------------------------
+// Project gate
+// ---------------------------------------------------------------------------
+
+/// Walk the project tree looking for a `project.godot` manifest. The file
+/// always sits at a Godot project root; we cap recursion at depth 4 because
+/// canonical Godot projects keep it shallow.
+fn project_has_godot_manifest(project_root: &Path) -> bool {
+    walk_for_project_godot(project_root, 0)
+}
+
+fn walk_for_project_godot(dir: &Path, depth: u32) -> bool {
+    if depth >= 4 { return false }
+    let Ok(entries) = std::fs::read_dir(dir) else { return false };
+    for entry in entries.flatten() {
+        let Ok(ft) = entry.file_type() else { continue };
+        let path = entry.path();
+        if ft.is_file()
+            && path.file_name().and_then(|n| n.to_str()) == Some("project.godot")
+        {
+            return true;
+        }
+        if ft.is_dir() {
+            if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
+                if matches!(name, ".git" | ".godot" | "node_modules" | "target" | "build") {
+                    continue;
+                }
+            }
+            if walk_for_project_godot(&path, depth + 1) {
+                return true;
+            }
+        }
+    }
+    false
 }
 
 // ---------------------------------------------------------------------------
@@ -484,3 +533,11 @@ pub fn shared_locator() -> Arc<dyn ExternalSourceLocator> {
     static LOCATOR: OnceLock<Arc<GodotApiEcosystem>> = OnceLock::new();
     LOCATOR.get_or_init(|| Arc::new(GodotApiEcosystem)).clone()
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+#[path = "godot_api_tests.rs"]
+mod tests;

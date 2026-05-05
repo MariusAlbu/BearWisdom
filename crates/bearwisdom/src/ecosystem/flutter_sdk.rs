@@ -44,11 +44,16 @@ impl Ecosystem for FlutterSdkEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
-        // Flutter projects contain .dart files — same signal as Dart itself.
-        // Both ecosystems activate; only one will find roots depending on
-        // what's installed. No false activations: if Flutter SDK isn't found,
-        // locate_roots returns empty.
-        EcosystemActivation::LanguagePresent("dart")
+        // A Dart project is a Flutter project iff its pubspec.yaml lists
+        // a `flutter` dep — usually `flutter: { sdk: flutter }`. Pure
+        // Dart projects (CLI tools, server packages, packages with no
+        // Flutter dep) do not activate this ecosystem; they get
+        // dart_sdk only.
+        EcosystemActivation::ManifestFieldContains {
+            manifest_glob: "**/pubspec.yaml",
+            field_path: "dependencies",
+            value: "flutter",
+        }
     }
 
     fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
@@ -298,67 +303,5 @@ fn walk_sdk_dir(
 // ---------------------------------------------------------------------------
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn ecosystem_identity() {
-        let e = FlutterSdkEcosystem;
-        assert_eq!(e.id(), ID);
-        assert_eq!(Ecosystem::kind(&e), EcosystemKind::Stdlib);
-        assert_eq!(Ecosystem::languages(&e), &["dart"]);
-    }
-
-    #[test]
-    fn activation_is_language_present() {
-        let e = FlutterSdkEcosystem;
-        assert!(matches!(
-            e.activation(),
-            EcosystemActivation::LanguagePresent("dart")
-        ));
-    }
-
-    #[test]
-    fn supports_reachability_and_demand_driven() {
-        let e = FlutterSdkEcosystem;
-        assert!(Ecosystem::supports_reachability(&e));
-        assert!(Ecosystem::uses_demand_driven_parse(&e));
-    }
-
-    #[test]
-    fn locate_roots_empty_on_missing_sdk() {
-        // Must not panic when Flutter SDK is absent.
-        let e = FlutterSdkEcosystem;
-        let _ = Ecosystem::locate_roots(&e, &LocateContext {
-            project_root: std::path::Path::new("."),
-            manifests: &Default::default(),
-            active_ecosystems: &[],
-        });
-    }
-
-    #[test]
-    fn walk_root_empty_on_bogus_dep() {
-        let dep = ExternalDepRoot {
-            module_path: "flutter".to_string(),
-            version: String::new(),
-            root: PathBuf::from("/nonexistent/flutter/packages/flutter/lib"),
-            ecosystem: LEGACY_ECOSYSTEM_TAG,
-            package_id: None,
-            requested_imports: Vec::new(),
-        };
-        let e = FlutterSdkEcosystem;
-        assert!(Ecosystem::walk_root(&e, &dep).is_empty());
-    }
-
-    #[test]
-    fn extra_packages_list_is_nonempty() {
-        assert!(!EXTRA_FLUTTER_PACKAGES.is_empty());
-        assert!(EXTRA_FLUTTER_PACKAGES.contains(&"flutter_test"));
-    }
-
-    #[test]
-    fn flutter_sdk_id_differs_from_dart_sdk() {
-        use super::super::dart_sdk;
-        assert_ne!(ID, dart_sdk::ID);
-    }
-}
+#[path = "flutter_sdk_tests.rs"]
+mod tests;
