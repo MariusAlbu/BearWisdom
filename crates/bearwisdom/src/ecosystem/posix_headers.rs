@@ -73,7 +73,14 @@ impl Ecosystem for PosixHeadersEcosystem {
         ])
     }
 
-    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        // Precedence: when the project has a compile_commands.json the
+        // exact -I paths it lists are ground truth — suppress this
+        // heuristic walker so the wider /usr/include surface doesn't add
+        // noise (false matches against unrelated system headers).
+        if super::compile_commands::project_has_compile_commands_json(ctx.project_root) {
+            return Vec::new();
+        }
         discover_posix_include()
     }
 
@@ -173,7 +180,13 @@ impl Ecosystem for MsvcHeadersEcosystem {
         ])
     }
 
-    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        // Precedence: see PosixHeadersEcosystem::locate_roots — when
+        // compile_commands.json is present we trust its -I paths over
+        // the heuristic Windows SDK probe.
+        if super::compile_commands::project_has_compile_commands_json(ctx.project_root) {
+            return Vec::new();
+        }
         discover_msvc_include()
     }
 
@@ -319,7 +332,12 @@ impl Ecosystem for VcpkgHeadersEcosystem {
         ])
     }
 
-    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        // Precedence: ground truth from compile_commands.json beats vcpkg
+        // discovery — the build will already have the right -I paths.
+        if super::compile_commands::project_has_compile_commands_json(ctx.project_root) {
+            return Vec::new();
+        }
         discover_vcpkg_include()
     }
 

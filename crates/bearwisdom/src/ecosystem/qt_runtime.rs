@@ -58,7 +58,13 @@ impl Ecosystem for QtRuntimeEcosystem {
         ])
     }
 
-    fn locate_roots(&self, _: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+    fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
+        // Precedence: when the project has a compile_commands.json the Qt
+        // -I paths it lists are the ground truth. Suppress the heuristic
+        // SDK probe so we don't double-index Qt from two roots.
+        if super::compile_commands::project_has_compile_commands_json(ctx.project_root) {
+            return Vec::new();
+        }
         discover_qt_include()
     }
 

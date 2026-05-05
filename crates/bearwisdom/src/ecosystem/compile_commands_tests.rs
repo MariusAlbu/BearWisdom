@@ -196,6 +196,92 @@ fn malformed_json_returns_empty_without_panic() {
 }
 
 #[test]
+fn project_has_compile_commands_json_detects_root() {
+    let tmp = TempDir::new().unwrap();
+    assert!(!project_has_compile_commands_json(tmp.path()));
+    fs::write(tmp.path().join("compile_commands.json"), "[]").unwrap();
+    assert!(project_has_compile_commands_json(tmp.path()));
+}
+
+#[test]
+fn project_has_compile_commands_json_detects_build_subdir() {
+    let tmp = TempDir::new().unwrap();
+    fs::create_dir_all(tmp.path().join("build")).unwrap();
+    fs::write(tmp.path().join("build/compile_commands.json"), "[]").unwrap();
+    assert!(project_has_compile_commands_json(tmp.path()));
+}
+
+#[test]
+fn project_has_compile_commands_json_returns_false_when_absent() {
+    let tmp = TempDir::new().unwrap();
+    assert!(!project_has_compile_commands_json(tmp.path()));
+}
+
+#[test]
+fn precedence_qt_walker_suppressed_when_compile_commands_present() {
+    use crate::ecosystem::{Ecosystem, EcosystemId, QtRuntimeEcosystem};
+    use std::collections::HashMap;
+    // Point QT_DIR at a real fixture so the walker WOULD return a root
+    // if the precedence rule weren't gating it.
+    let qt_tmp = TempDir::new().unwrap();
+    let qt_include = qt_tmp.path().join("include");
+    fs::create_dir_all(qt_include.join("QtCore")).unwrap();
+    fs::write(qt_include.join("QtCore/qobject.h"), "class QObject {};\n").unwrap();
+    std::env::set_var("BEARWISDOM_QT_DIR", qt_tmp.path());
+
+    let project_tmp = TempDir::new().unwrap();
+    fs::write(project_tmp.path().join("compile_commands.json"), "[]").unwrap();
+
+    let manifests: HashMap<EcosystemId, Vec<std::path::PathBuf>> = HashMap::new();
+    let active: Vec<EcosystemId> = Vec::new();
+    let ctx = LocateContext {
+        project_root: project_tmp.path(),
+        manifests: &manifests,
+        active_ecosystems: &active,
+    };
+    let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(
+        &QtRuntimeEcosystem,
+        &ctx,
+    );
+    std::env::remove_var("BEARWISDOM_QT_DIR");
+    assert!(
+        roots.is_empty(),
+        "Qt walker must suppress when compile_commands.json is present; got {roots:?}"
+    );
+}
+
+#[test]
+fn precedence_qt_walker_active_without_compile_commands() {
+    use crate::ecosystem::{Ecosystem, EcosystemId, QtRuntimeEcosystem};
+    use std::collections::HashMap;
+    // Same fixture, but no compile_commands.json — Qt walker SHOULD activate.
+    let qt_tmp = TempDir::new().unwrap();
+    let qt_include = qt_tmp.path().join("include");
+    fs::create_dir_all(qt_include.join("QtCore")).unwrap();
+    fs::write(qt_include.join("QtCore/qobject.h"), "class QObject {};\n").unwrap();
+    std::env::set_var("BEARWISDOM_QT_DIR", qt_tmp.path());
+
+    let project_tmp = TempDir::new().unwrap();
+
+    let manifests: HashMap<EcosystemId, Vec<std::path::PathBuf>> = HashMap::new();
+    let active: Vec<EcosystemId> = Vec::new();
+    let ctx = LocateContext {
+        project_root: project_tmp.path(),
+        manifests: &manifests,
+        active_ecosystems: &active,
+    };
+    let roots = <QtRuntimeEcosystem as Ecosystem>::locate_roots(
+        &QtRuntimeEcosystem,
+        &ctx,
+    );
+    std::env::remove_var("BEARWISDOM_QT_DIR");
+    assert!(
+        !roots.is_empty(),
+        "Qt walker must activate when no compile_commands.json — fallback case"
+    );
+}
+
+#[test]
 fn tokenize_command_handles_quoted_paths() {
     // A path with a space in it, double-quoted.
     let argv = tokenize_command(r#"g++ "-IC:/Program Files/Some SDK/include" -c main.cpp"#);

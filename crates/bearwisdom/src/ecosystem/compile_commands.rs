@@ -197,6 +197,15 @@ fn discover_from_compile_commands(project_root: &Path) -> Vec<ExternalDepRoot> {
     roots
 }
 
+/// Returns true if a `compile_commands.json` is present for the project.
+///
+/// Used by heuristic C/C++ header walkers (posix, msvc, vcpkg, qt) to
+/// suppress themselves when the project has a build manifest. Ground
+/// truth wins; heuristics are only the fallback for un-built projects.
+pub(super) fn project_has_compile_commands_json(project_root: &Path) -> bool {
+    locate_compile_commands(project_root).is_some()
+}
+
 /// Find compile_commands.json under the project root. Returns the first
 /// hit from a list of conventional locations.
 fn locate_compile_commands(project_root: &Path) -> Option<PathBuf> {
