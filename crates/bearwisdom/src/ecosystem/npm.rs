@@ -160,76 +160,96 @@ impl Ecosystem for NpmEcosystem {
     fn uses_demand_driven_parse(&self) -> bool { true }
 }
 
-/// Packages whose entry declaration file tends to expose runtime globals via
-/// `declare global { ... }` (test frameworks with `globals: true` / always-on
-/// globals, @types packages for globally-scoped APIs). Demand-driven mode
-/// wouldn't pull these on its own because user code names the globals
-/// without importing the package — the symbol-index lookup is what
-/// classifies the ref, and that lookup needs the symbols already in the
-/// index. Eagerly pre-pulling a handful of per-package entry files closes
-/// the loop without broadening the walk.
+/// Probe whether a package's entry .d.ts contributes runtime globals.
 ///
-/// This list is a priority hint, NOT a special code path — any package
-/// whose `.d.ts` declares globals gets them indexed regardless of whether
-/// it's listed here. Listing just ensures the file is walked even when no
-/// user ref would otherwise demand it.
-pub(crate) const KNOWN_GLOBAL_PACKAGES: &[&str] = &[
-    // Test runners with implicit globals.
-    "vitest",
-    "@vitest/browser",
-    "@vitest/expect",
-    "@vitest/runner",
-    "@vitest/spy",
-    "@jest/globals",
-    "@jest/expect",
-    "jest",
-    "mocha",
-    "jasmine",
-    // Assertion / fake / stub libraries commonly used as globals.
-    "chai",
-    "sinon",
-    "chai-as-promised",
-    // @types packages that declare globals (`@types/jest`, `@types/mocha`,
-    // `@types/node` for `process`/`Buffer`/`global`, etc.).
-    "@types/jest",
-    "@types/mocha",
-    "@types/jasmine",
-    "@types/chai",
-    "@types/sinon",
-    "@types/node",
-    // jQuery exposes `$` / `jQuery` / `JQuery` / `JQueryStatic` as
-    // ambient globals via `declare const $: JQueryStatic;`. AMD /
-    // RequireJS-era projects (SWISH, AngularJS-1 themes) call jQuery
-    // methods (`$.each`, `.hasClass`, `.addClass`, ...) without an
-    // ES `import`, so the demand-driven path needs the explicit
-    // pre-pull to surface the API.
-    "@types/jquery",
-    // CodeMirror — same shape as jQuery in AMD-era apps that load it
-    // via RequireJS / `<script src>` and call `editor.getValue()`,
-    // `editor.setOption(...)`, `cm.isClean()` without an `import`.
-    "@types/codemirror",
-    // Lunr.js — search library used by Jekyll/Hugo themes (Minimal
-    // Mistakes, Just the Docs). `lunr.Builder`, `lunr.Token`,
-    // `lunr.QueryParseError`, etc. are called without ES imports.
-    "@types/lunr",
-];
+/// Returns `true` when the package's main type-declaration file contains
+/// an explicit `declare global { ... }` block or a top-level
+/// `declare namespace ...` declaration. Both constructs add symbols to
+/// the project's global ambient scope without an explicit `import`, so
+/// the indexer needs to walk such packages even when no user code ever
+/// names the package itself.
+///
+/// Catches every package whose author opted into globals via the
+/// canonical TS pattern: `@angular/localize` (`$localize`), test runners
+/// like `vitest` / `jest` / `mocha` / `jasmine` (`describe`, `it`,
+/// `expect`, `beforeEach`), `@types/jquery` (`$`, `jQuery`),
+/// `@types/google.maps` (`google.maps.*`), `@types/chrome`,
+/// `@types/cypress` (`cy`, `Cypress`), and any future library that uses
+/// the same construct.
+///
+/// Reads at most three small files: the package's `package.json`
+/// `types`/`typings` entry, plus standard fallback names (`index.d.ts`,
+/// `types/index.d.ts`). Bounded I/O — typically <30 KB across all
+/// candidates.
+pub(crate) fn package_declares_globals(pkg_root: &Path) -> bool {
+    for entry in candidate_globals_entry_files(pkg_root) {
+        let Ok(content) = std::fs::read_to_string(&entry) else { continue };
+        if file_contributes_globals(&content) {
+            return true;
+        }
+    }
+    false
+}
+
+/// Resolve the candidate `.d.ts` files we should probe for declare-global
+/// content. Reads `package.json`'s `types`/`typings` field if present;
+/// otherwise probes standard entry filenames at the package root.
+fn candidate_globals_entry_files(pkg_root: &Path) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    if let Ok(pkg_text) = std::fs::read_to_string(pkg_root.join("package.json")) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&pkg_text) {
+            for field in ["types", "typings"] {
+                if let Some(p) = json.get(field).and_then(|v| v.as_str()) {
+                    let candidate = pkg_root.join(p);
+                    if candidate.is_file() {
+                        out.push(candidate);
+                    }
+                }
+            }
+        }
+    }
+    for name in ["index.d.ts", "types/index.d.ts"] {
+        let candidate = pkg_root.join(name);
+        if candidate.is_file() {
+            out.push(candidate);
+        }
+    }
+    out
+}
+
+/// True when the file body contains an explicit `declare global { ... }`
+/// block OR a top-level `declare namespace ...` declaration. These are the
+/// two TypeScript constructs that contribute symbols to the global ambient
+/// scope. Cheap substring + line-prefix check — full parsing happens later
+/// in `scan_declare_global_blocks` for actual extraction.
+fn file_contributes_globals(content: &str) -> bool {
+    if content.contains("declare global") {
+        return true;
+    }
+    for line in content.lines() {
+        let t = line.trim_start();
+        if t.starts_with("declare namespace ") {
+            return true;
+        }
+    }
+    false
+}
 
 fn demand_pre_pull_test_globals(dep_roots: &[ExternalDepRoot]) -> Vec<crate::walker::WalkedFile> {
     let mut out = Vec::new();
     for dep in dep_roots {
-        if !KNOWN_GLOBAL_PACKAGES
-            .iter()
-            .any(|p| *p == dep.module_path.as_str())
-        {
+        // Content-based gate: only pre-pull packages whose entry .d.ts
+        // declares globals. See `package_declares_globals`.
+        if !package_declares_globals(&dep.root) {
             continue;
         }
         // Probe a handful of canonical filenames where ambient
         // `declare global { ... }` blocks live, instead of walking the
-        // package tree. `@types/node` ships ~150 .d.ts files; the old
-        // walk-then-filter read every directory entry under each
-        // KNOWN_GLOBAL_PACKAGES dep just to retain a single index.d.ts.
-        // Direct path probing scales with the candidate-list size, not
-        // the package tree size.
+        // package tree. `@types/node` ships ~150 .d.ts files; a
+        // walk-then-filter strategy would read every directory entry
+        // under each globals-providing dep just to retain a single
+        // index.d.ts. Direct path probing scales with the candidate-list
+        // size, not the package tree size.
         out.extend(probe_global_decl_files(dep));
     }
 
@@ -633,13 +653,12 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
     // `import('pkg')` and reduces each to its package portion.
     //
     // Test-runner globals (`describe`, `it`, `expect`) are named bare in
-    // user source without an `import`, so KNOWN_GLOBAL_PACKAGES are kept
+    // user source without an `import`, so any dep whose entry .d.ts
+    // declares globals (probe via `package_declares_globals`) is kept
     // regardless of whether the user wrote `import { describe } from
     // 'vitest'`. The companion `@types/<pkg>` package follows automatically
     // when the runtime package matches a user import.
     let user_imports = collect_ts_user_imports(project_root);
-    let always_keep: std::collections::HashSet<&'static str> =
-        KNOWN_GLOBAL_PACKAGES.iter().copied().collect();
     debug!(
         "User-import gate: {} bare specifiers found in user source",
         user_imports.len()
@@ -661,13 +680,14 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
             debug!("npm: skipping invalid dep name `{dep}` from package.json");
             continue;
         }
-        // Apply the user-import gate. A declared dep is kept iff the user
-        // imports it (directly OR via its companion @types package), or it
-        // belongs to KNOWN_GLOBAL_PACKAGES, or — in the absence of any
-        // user-import data — we fall back to the legacy "keep all"
-        // behavior so projects with no scannable source (manifest-only
-        // checkouts, generators) keep working.
-        if !user_imports.is_empty() && !always_keep.contains(dep.as_str()) {
+        // Apply the user-import gate. A declared dep is kept iff:
+        //   (a) the user imports it directly OR via its companion @types
+        //       package, OR
+        //   (b) its entry .d.ts declares globals (declare-global probe;
+        //       see `package_declares_globals`), OR
+        //   (c) the project has no scannable source (manifest-only
+        //       checkouts, generators) — fall back to "keep all".
+        if !user_imports.is_empty() {
             let companion = dep.strip_prefix("@types/");
             let user_imports_dep = user_imports.contains(dep);
             let user_imports_companion = companion
@@ -682,19 +702,32 @@ fn discover_ts_externals(project_root: &Path) -> Vec<ExternalDepRoot> {
                 })
                 .map(|expanded| user_imports.contains(&expanded))
                 .unwrap_or(false);
-            if !user_imports_dep && !user_imports_companion {
+            let any_install_declares_globals = node_modules_roots.iter().any(|nm| {
+                let primary = nm.join(dep);
+                if primary.is_dir() && package_declares_globals(&primary) { return true; }
+                if !dep.starts_with("@types/") {
+                    if !dep.starts_with('@') {
+                        let types_dir = nm.join("@types").join(dep);
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                    } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
+                        let types_dir = nm.join("@types").join(&escaped);
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                    }
+                }
+                false
+            });
+            if !user_imports_dep && !user_imports_companion && !any_install_declares_globals {
                 continue;
             }
         }
 
         // `@types/foo` deps are normally picked up as companions of `foo`
-        // below, so we used to skip them here. But for packages whose runtime
-        // ships pre-compiled JS without inline types (jasmine, mocha, test
-        // runners, ambient-only modules) the user declares `@types/foo`
-        // directly without a matching `foo`. Those direct declarations must
-        // still get a dep root — especially for KNOWN_GLOBAL_PACKAGES whose
-        // `declare global { ... }` contents are what register `describe`,
-        // `it`, `expect` etc. as global symbols.
+        // below, but for packages whose runtime ships pre-compiled JS
+        // without inline types (jasmine, mocha, test runners, ambient-only
+        // modules) the user declares `@types/foo` directly without a
+        // matching `foo`. Those direct declarations must still get a
+        // dep root so their `declare global { ... }` contents register
+        // `describe`, `it`, `expect` etc. as global symbols.
         let is_types_only = dep.starts_with("@types/");
 
         // Each candidate is the directory plus the canonical npm
@@ -945,9 +978,9 @@ fn extract_bare_reexport_specifiers(src: &str) -> Vec<String> {
 ///
 /// `import_test_files` controls whether we walk `__tests__` / `*.spec.*`
 /// trees. Production code usually doesn't import test fixtures, so the
-/// scan skips test trees by default; the test-globals demand_pre_pull
+/// scan skips test trees by default; the `demand_pre_pull_test_globals`
 /// path covers the symbols those files would have brought in via
-/// `KNOWN_GLOBAL_PACKAGES`.
+/// declare-global blocks in test-runner packages.
 fn collect_ts_user_imports(project_root: &Path) -> std::collections::HashSet<String> {
     let mut imports = std::collections::HashSet::new();
     scan_ts_user_imports_recursive(project_root, &mut imports, 0);
@@ -1160,8 +1193,6 @@ fn discover_ts_externals_scoped(
     // what THIS package consumes — a sibling package's React import
     // doesn't make React relevant here.
     let user_imports = collect_ts_user_imports(package_abs_path);
-    let always_keep: std::collections::HashSet<&'static str> =
-        KNOWN_GLOBAL_PACKAGES.iter().copied().collect();
 
     let builtins = node_builtins();
     let mut roots = Vec::new();
@@ -1172,7 +1203,10 @@ fn discover_ts_externals_scoped(
             debug!("npm: skipping invalid scoped dep name `{dep}` from package.json");
             continue;
         }
-        if !user_imports.is_empty() && !always_keep.contains(dep.as_str()) {
+        // See discover_ts_externals — same gate, content-based fallback for
+        // packages that contribute globals via `declare global` / top-level
+        // `declare namespace`.
+        if !user_imports.is_empty() {
             let companion = dep.strip_prefix("@types/");
             let user_imports_dep = user_imports.contains(dep);
             let user_imports_companion = companion
@@ -1185,7 +1219,21 @@ fn discover_ts_externals_scoped(
                 })
                 .map(|expanded| user_imports.contains(&expanded))
                 .unwrap_or(false);
-            if !user_imports_dep && !user_imports_companion {
+            let any_install_declares_globals = node_modules_roots.iter().any(|nm| {
+                let primary = nm.join(dep);
+                if primary.is_dir() && package_declares_globals(&primary) { return true; }
+                if !dep.starts_with("@types/") {
+                    if !dep.starts_with('@') {
+                        let types_dir = nm.join("@types").join(dep);
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                    } else if let Some(escaped) = definitely_typed_scoped_name(dep) {
+                        let types_dir = nm.join("@types").join(&escaped);
+                        if types_dir.is_dir() && package_declares_globals(&types_dir) { return true; }
+                    }
+                }
+                false
+            });
+            if !user_imports_dep && !user_imports_companion && !any_install_declares_globals {
                 continue;
             }
         }
@@ -2166,15 +2214,13 @@ pub(crate) fn build_npm_symbol_index(dep_roots: &[ExternalDepRoot]) -> SymbolLoc
     // Full-tree walks were the dominant cost of npm externals indexing:
     // material-ui ships ~3 K declaration files, lodash/rxjs/three.js
     // similar — almost all of them unreachable from the user's actual
-    // imports. KNOWN_GLOBAL_PACKAGES (test runners, @types with global
-    // declarations) bypass the entry restriction via the
-    // `demand_pre_pull` path which still walks them fully so ambient
-    // globals like `describe`/`it`/`expect` get indexed.
+    // imports. Globals-declaring packages bypass the entry restriction:
+    // their `declare global { ... }` blocks anywhere in the tree need
+    // to surface as global symbols, so `package_declares_globals` gates
+    // a full walk instead of entry-only.
     let mut work: Vec<(String, WalkedFile)> = Vec::new();
-    let always_full_walk: std::collections::HashSet<&'static str> =
-        KNOWN_GLOBAL_PACKAGES.iter().copied().collect();
     for dep in dep_roots {
-        let walked = if always_full_walk.contains(dep.module_path.as_str()) {
+        let walked = if package_declares_globals(&dep.root) {
             walk_ts_external_root(dep)
         } else {
             walk_ts_dep_entry_only(dep)
@@ -3214,10 +3260,12 @@ mod tests {
     }
 
     #[test]
-    fn discover_ts_externals_keeps_known_global_packages_even_without_import() {
-        // KNOWN_GLOBAL_PACKAGES are kept regardless of whether user code
-        // explicitly imports them — `describe`/`it`/`expect` are typically
-        // referenced as globals without a `from` clause.
+    fn discover_ts_externals_keeps_globals_declaring_packages_even_without_import() {
+        // Packages whose entry .d.ts declares globals are kept regardless
+        // of whether user code explicitly imports them — `describe` /
+        // `it` / `expect` (vitest), `$localize` (@angular/localize), `$`
+        // (jquery), `cy` (cypress), etc. are typically referenced as
+        // globals without a `from` clause.
         let tmp = tempfile::tempdir().expect("tempdir");
         let root = tmp.path();
         std::fs::write(
@@ -3225,20 +3273,44 @@ mod tests {
             r#"{
               "name": "x",
               "dependencies": {
-                "vitest": "1.0.0",
-                "imported-pkg": "1.0.0"
+                "globals-runner": "1.0.0",
+                "imported-pkg": "1.0.0",
+                "module-only-pkg": "1.0.0"
               }
             }"#,
         )
         .unwrap();
-        for pkg in &["vitest", "imported-pkg"] {
-            std::fs::create_dir_all(root.join("node_modules").join(pkg)).unwrap();
-            std::fs::write(
-                root.join("node_modules").join(pkg).join("package.json"),
-                format!(r#"{{"name":"{pkg}","version":"1.0.0"}}"#),
-            )
-            .unwrap();
-        }
+        // globals-runner declares globals — kept by the probe.
+        std::fs::create_dir_all(root.join("node_modules/globals-runner")).unwrap();
+        std::fs::write(
+            root.join("node_modules/globals-runner/package.json"),
+            r#"{"name":"globals-runner","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("node_modules/globals-runner/index.d.ts"),
+            "declare global { const describe: (s: string, fn: () => void) => void; }\nexport {};\n",
+        )
+        .unwrap();
+        // imported-pkg — no globals, but user imports it.
+        std::fs::create_dir_all(root.join("node_modules/imported-pkg")).unwrap();
+        std::fs::write(
+            root.join("node_modules/imported-pkg/package.json"),
+            r#"{"name":"imported-pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        // module-only-pkg — no globals, no user import. Should be gated out.
+        std::fs::create_dir_all(root.join("node_modules/module-only-pkg")).unwrap();
+        std::fs::write(
+            root.join("node_modules/module-only-pkg/package.json"),
+            r#"{"name":"module-only-pkg","version":"1.0.0"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("node_modules/module-only-pkg/index.d.ts"),
+            "export interface Foo { x: number }\n",
+        )
+        .unwrap();
         std::fs::create_dir_all(root.join("src")).unwrap();
         std::fs::write(
             root.join("src/index.ts"),
@@ -3248,8 +3320,15 @@ mod tests {
 
         let roots = discover_ts_externals(root);
         let ids: Vec<&str> = roots.iter().map(|r| r.module_path.as_str()).collect();
-        assert!(ids.contains(&"vitest"), "vitest must survive the gate: {ids:?}");
+        assert!(
+            ids.contains(&"globals-runner"),
+            "globals-declaring package must survive the gate: {ids:?}"
+        );
         assert!(ids.contains(&"imported-pkg"));
+        assert!(
+            !ids.contains(&"module-only-pkg"),
+            "module-only package without an import must be gated out: {ids:?}"
+        );
     }
 
     #[test]
@@ -3408,9 +3487,10 @@ mod tests {
 
     #[test]
     fn demand_pre_pull_test_globals_skips_scss_walk_on_ts_only_project() {
-        // A KNOWN_GLOBAL_PACKAGES dep with NO globals files and NO project-
-        // side .scss → returns empty. Confirms both fixes fire: no full
-        // tree walk for globals, no SCSS walk on a TS-only checkout.
+        // A dep with NO globals-declaring entry .d.ts and NO project-side
+        // .scss → returns empty. Confirms both gates fire: no full tree
+        // walk when the package isn't a globals provider, no SCSS walk
+        // on a TS-only checkout.
         let tmp = tempfile::tempdir().expect("tempdir");
         let project_root = tmp.path();
         std::fs::create_dir_all(project_root.join("src")).unwrap();
@@ -4392,30 +4472,108 @@ declare global {
     }
 
     #[test]
-    fn build_index_full_walks_known_global_packages() {
-        // KNOWN_GLOBAL_PACKAGES (vitest, chai, ...) bypass the entry-only
-        // restriction so ambient `declare global { ... }` blocks anywhere
-        // in the package surface as indexed globals. Use `chai` as the
-        // representative because it's in KNOWN_GLOBAL_PACKAGES and the
-        // fixture file is small.
+    fn build_index_full_walks_packages_that_declare_globals() {
+        // Packages whose entry .d.ts contributes globals (via
+        // `declare global { ... }` or top-level `declare namespace ...`)
+        // bypass the entry-only restriction so ambient declarations
+        // anywhere in the package surface as indexed globals. Gate is
+        // content-based via `package_declares_globals`.
         let tmp = tempfile::TempDir::new().unwrap();
-        let root = tmp.path().join("node_modules").join("chai");
+        let root = tmp.path().join("node_modules").join("globals-pkg");
         std::fs::create_dir_all(root.join("internal")).unwrap();
-        // No package.json `types` entry, no index.d.ts at root — only a
-        // deep file. Entry-only walker would skip it; the full walk keeps
-        // it indexable.
+        // Entry .d.ts opts into globals via declare-global.
         std::fs::write(
-            root.join("internal").join("expect.d.ts"),
-            "export function expect(value: unknown): unknown;\n",
+            root.join("index.d.ts"),
+            "declare global { const $myFn: () => void; }\nexport {};\n",
+        )
+        .unwrap();
+        // Deep file that the entry-only walker would skip — full walk
+        // keeps it indexable.
+        std::fs::write(
+            root.join("internal").join("helper.d.ts"),
+            "export function deepHelper(value: unknown): unknown;\n",
         )
         .unwrap();
 
-        let dep = mkdep(root, "chai");
+        let dep = mkdep(root, "globals-pkg");
         let idx = build_npm_symbol_index(std::slice::from_ref(&dep));
         assert!(
-            idx.locate("chai", "expect").is_some(),
-            "chai's `expect` must be indexed via the full-walk override"
+            idx.locate("globals-pkg", "deepHelper").is_some(),
+            "deep file must be indexed when entry declares globals"
         );
+    }
+
+    #[test]
+    fn package_declares_globals_detects_declare_global_block() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("pkg");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("index.d.ts"),
+            "declare global {\n  const $localize: () => void;\n}\nexport {};\n",
+        )
+        .unwrap();
+        assert!(package_declares_globals(&root));
+    }
+
+    #[test]
+    fn package_declares_globals_detects_top_level_declare_namespace() {
+        // The @types/node / @types/google.maps / @types/jquery shape:
+        // top-level `declare namespace X { ... }` adds X to global ambient.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("pkg");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("index.d.ts"),
+            "declare namespace google.maps {\n  class LatLng {}\n}\n",
+        )
+        .unwrap();
+        assert!(package_declares_globals(&root));
+    }
+
+    #[test]
+    fn package_declares_globals_false_for_module_only_package() {
+        // A regular npm package that exports types but doesn't add globals.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("pkg");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(
+            root.join("index.d.ts"),
+            "export interface Foo { x: number }\nexport function bar(): Foo;\n",
+        )
+        .unwrap();
+        assert!(!package_declares_globals(&root));
+    }
+
+    #[test]
+    fn package_declares_globals_honors_package_json_types_field() {
+        // The entry file isn't index.d.ts but is named in package.json.
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("pkg");
+        std::fs::create_dir_all(root.join("dist")).unwrap();
+        std::fs::write(
+            root.join("package.json"),
+            r#"{"name":"pkg","types":"dist/types.d.ts"}"#,
+        )
+        .unwrap();
+        std::fs::write(
+            root.join("dist").join("types.d.ts"),
+            "declare global { const $: unknown }\nexport {};\n",
+        )
+        .unwrap();
+        assert!(
+            package_declares_globals(&root),
+            "must follow package.json `types` field to find the entry"
+        );
+    }
+
+    #[test]
+    fn package_declares_globals_false_when_no_entry_file_exists() {
+        let tmp = tempfile::TempDir::new().unwrap();
+        let root = tmp.path().join("pkg");
+        std::fs::create_dir_all(&root).unwrap();
+        // No package.json, no index.d.ts — nothing to probe.
+        assert!(!package_declares_globals(&root));
     }
 
     #[test]

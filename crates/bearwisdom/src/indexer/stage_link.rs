@@ -272,6 +272,22 @@ pub(crate) fn parse_external_sources(
         debug!("Walking {} external source files total", walked.len());
     }
 
+    // Compute the ambient-globals package set once: any discovered TS dep
+    // whose entry .d.ts contributes globals via `declare global { ... }`
+    // or top-level `declare namespace ...`. Cheap — bounded I/O over a
+    // small number of entry files.
+    let ambient_globals_packages: HashSet<String> = demand_driven_roots
+        .iter()
+        .filter(|r| crate::ecosystem::npm::package_declares_globals(&r.root))
+        .map(|r| r.module_path.clone())
+        .collect();
+    if !ambient_globals_packages.is_empty() {
+        debug!(
+            "Ambient-globals packages (declare-global probe): {}",
+            ambient_globals_packages.len()
+        );
+    }
+
     // R6: per-file demand lookup. For TS externals the module path lives in
     // the virtual file path (`ext:ts:react/index.d.ts` → `react`). Other
     // ecosystems haven't wired a demand mapping yet — they pass None and
@@ -279,7 +295,11 @@ pub(crate) fn parse_external_sources(
     let results: Vec<Result<ParsedFile>> = walked
         .par_iter()
         .map(|w| {
-            let per_file_demand = lookup_demand_for_walked(&w.relative_path, demand);
+            let per_file_demand = lookup_demand_for_walked(
+                &w.relative_path,
+                demand,
+                &ambient_globals_packages,
+            );
             super::full::parse_file_with_demand(w, registry, per_file_demand)
         })
         .collect();
@@ -737,6 +757,7 @@ pub(crate) fn virtual_path_for_pulled(abs: &Path, language: &str) -> Option<Stri
 fn lookup_demand_for_walked<'a>(
     relative_path: &str,
     demand: &'a DemandSet,
+    ambient_globals_packages: &HashSet<String>,
 ) -> Option<&'a HashSet<String>> {
     // Ambient-global libraries — lib.dom.d.ts, lib.es5.d.ts,
     // lib.webworker.d.ts, @types/node — declare the whole runtime type
@@ -746,7 +767,7 @@ fn lookup_demand_for_walked<'a>(
     // A top-level interface filtered out loses all its child method symbols,
     // which leaves chain walkers nothing to land on. Parse these files
     // fully — they're the type-system floor, not an optimisable surface.
-    if is_ambient_global_external(relative_path) {
+    if is_ambient_global_external(relative_path, ambient_globals_packages) {
         return None;
     }
 
@@ -774,15 +795,14 @@ fn lookup_demand_for_walked<'a>(
 /// Matches:
 ///   * The `ts-lib-dom` synthetic `__ts_lib__` module wrapping
 ///     `typescript/lib/lib.*.d.ts`.
-///   * Every package in `npm::KNOWN_GLOBAL_PACKAGES` — `@types/node`,
-///     `@types/jquery`, `@types/jest`, `vitest`, `chai`, etc. The
-///     ecosystem already pre-pulls a candidate file set for these via
-///     `demand_pre_pull_test_globals`, but until this match was added
-///     `lookup_demand_for_walked` then dropped most of the symbols out
-///     of those parses (e.g. JQuery.d.ts at 394 KB emitted zero
-///     symbols because the user source called `$.each()` without ever
-///     naming `JQuery` or `JQueryStatic`).
-fn is_ambient_global_external(relative_path: &str) -> bool {
+///   * Every package whose entry .d.ts contributes globals via
+///     `declare global { ... }` or top-level `declare namespace ...`.
+///     Set is computed by the caller via `npm::package_declares_globals`
+///     across the discovered dep roots.
+fn is_ambient_global_external(
+    relative_path: &str,
+    ambient_globals_packages: &HashSet<String>,
+) -> bool {
     let normalized = relative_path.replace('\\', "/");
     if normalized.starts_with(&format!(
         "ext:ts:{}/",
@@ -794,7 +814,5 @@ fn is_ambient_global_external(relative_path: &str) -> bool {
     else {
         return false;
     };
-    crate::ecosystem::npm::KNOWN_GLOBAL_PACKAGES
-        .iter()
-        .any(|p| *p == pkg)
+    ambient_globals_packages.contains(pkg)
 }
