@@ -16,9 +16,9 @@ bench-archive/
 bench-results/
 
 # Local / session
-baseline-csharp-huge.json
-baseline-csharp-new.json
-baseline-csharp.json
+# Subset baselines must NOT be created — update baseline-all.json directly.
+baseline-*.json
+!baseline-all.json
 .claude/
 *.ndjson
 .env

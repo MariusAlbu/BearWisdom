@@ -438,15 +438,25 @@ enum Commands {
         top: usize,
     },
 
-    /// Run quality checks against baseline. Indexes each project, compares
-    /// against baseline.json, and reports regressions/improvements across
-    /// the five quality dimensions: language detection, extraction +
-    /// resolution, connector/flow wiring, dead-code trust (transitive via
-    /// resolution_rate), and doc-drift coverage.
+    /// Run quality checks against the corpus baseline. Indexes each project
+    /// listed in baseline-all.json, compares results, and reports
+    /// regressions / improvements across the five quality dimensions:
+    /// language detection, extraction + resolution, connector / flow
+    /// wiring, dead-code trust (transitive via resolution_rate), and
+    /// doc-drift coverage.
     QualityCheck {
-        /// Path to the baseline.json file.
-        #[arg(long, default_value = "baseline.json")]
+        /// Path to the baseline file. The single tracked baseline is
+        /// `baseline-all.json`. Subset baselines must not be created;
+        /// see `--project` to scope a run.
+        #[arg(long, default_value = "baseline-all.json")]
         baseline: String,
+        /// Restrict the run to projects whose `project` field matches one
+        /// of these names. Repeatable. When set, only these projects are
+        /// indexed / compared / recaptured — but the file written is still
+        /// the full baseline-all.json with the matching entries replaced
+        /// in-place.
+        #[arg(long = "project")]
+        only_projects: Vec<String>,
         /// Re-index projects (don't use cached). Slower but catches indexing regressions.
         #[arg(long)]
         reindex: bool,
@@ -676,11 +686,11 @@ fn run(command: Commands, full: bool) -> Result<String> {
         }
         Commands::Reindex { path, force } => cmd_reindex(&path, force),
         Commands::Coverage { project, lang, top } => cmd_coverage(&project, lang.as_deref(), top),
-        Commands::QualityCheck { baseline, reindex, recapture } => {
+        Commands::QualityCheck { baseline, only_projects, reindex, recapture } => {
             if recapture {
-                cmd_quality_recapture(&baseline)
+                cmd_quality_recapture(&baseline, &only_projects)
             } else {
-                cmd_quality_check(&baseline, reindex)
+                cmd_quality_check(&baseline, &only_projects, reindex)
             }
         }
 
@@ -1442,7 +1452,11 @@ fn cmd_reindex(project_path: &str, force: bool) -> Result<String> {
 // Quality check
 // ---------------------------------------------------------------------------
 
-fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
+fn cmd_quality_check(
+    baseline_path: &str,
+    only_projects: &[String],
+    reindex: bool,
+) -> Result<String> {
     let baseline_file = PathBuf::from(baseline_path);
     let content = std::fs::read_to_string(&baseline_file)
         .with_context(|| format!("Failed to read baseline: {}", baseline_file.display()))?;
@@ -1457,8 +1471,14 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
     let mut improvements = 0u32;
     let mut project_results: Vec<serde_json::Value> = Vec::new();
 
+    let project_filter: std::collections::HashSet<&str> =
+        only_projects.iter().map(String::as_str).collect();
+
     for proj in projects {
         let name = proj["project"].as_str().unwrap_or("?");
+        if !project_filter.is_empty() && !project_filter.contains(name) {
+            continue;
+        }
         let proj_path = proj["path"].as_str().unwrap_or("");
         let root = PathBuf::from(proj_path);
 
@@ -1664,7 +1684,10 @@ fn cmd_quality_check(baseline_path: &str, reindex: bool) -> Result<String> {
 /// and wiping entries silently would hide that intent. Assertion thresholds
 /// are auto-updated to the new captured values so future runs compare
 /// apples-to-apples.
-fn cmd_quality_recapture(baseline_path: &str) -> Result<String> {
+fn cmd_quality_recapture(
+    baseline_path: &str,
+    only_projects: &[String],
+) -> Result<String> {
     let baseline_file = PathBuf::from(baseline_path);
     let content = std::fs::read_to_string(&baseline_file)
         .with_context(|| format!("Failed to read baseline: {}", baseline_file.display()))?;
@@ -1680,8 +1703,19 @@ fn cmd_quality_recapture(baseline_path: &str) -> Result<String> {
     let mut skipped_missing = 0u32;
     let mut skipped_ghost = 0u32;
 
+    let project_filter: std::collections::HashSet<&str> =
+        only_projects.iter().map(String::as_str).collect();
+
     for proj in projects {
         let name = proj["project"].as_str().unwrap_or("?").to_string();
+        // Project filter — when set, projects not on the list pass
+        // through unchanged (baseline values preserved). The file is
+        // still rewritten with every project; only the targeted ones
+        // get fresh values.
+        if !project_filter.is_empty() && !project_filter.contains(name.as_str()) {
+            new_projects.push(proj);
+            continue;
+        }
         let proj_path = proj["path"].as_str().unwrap_or("").to_string();
         let root = PathBuf::from(&proj_path);
 
