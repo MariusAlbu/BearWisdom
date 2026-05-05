@@ -524,5 +524,28 @@ fn sanitize_callee_text(raw: &str) -> String {
     let s = s.split('<').next().unwrap_or(s);
     // Member expression — keep the last segment.
     let s = s.rsplit('.').next().unwrap_or(s);
-    s.trim().to_string()
+    let s = s.trim();
+    // Final guard: if the survivor still contains characters that can't
+    // appear in a JS identifier, the source AST shape was something we
+    // don't understand (ternary callee `(cond ? a : b)(...)`, dynamic
+    // `import(...)` as callee, IIFE bodies, etc.). Returning the literal
+    // text leaks garbage like `skip : describe)` into target_name. Reject
+    // and let the caller drop the ref.
+    if s.is_empty() || !is_js_identifier(s) {
+        return String::new();
+    }
+    s.to_string()
+}
+
+/// `true` when `s` is a valid JavaScript identifier — first char is letter,
+/// `_` or `$`; rest are alphanumeric, `_`, or `$`. Conservative: rejects
+/// anything with whitespace, parens, colons, backticks, generics, or
+/// any punctuation that would never resolve to a real symbol.
+fn is_js_identifier(s: &str) -> bool {
+    let mut chars = s.chars();
+    let Some(first) = chars.next() else { return false };
+    if !(first.is_alphabetic() || first == '_' || first == '$') {
+        return false;
+    }
+    chars.all(|c| c.is_alphanumeric() || c == '_' || c == '$')
 }

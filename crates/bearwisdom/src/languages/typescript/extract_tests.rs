@@ -1318,3 +1318,71 @@ fn triple_slash_skips_license_comment_block() {
         .collect();
     assert!(imports.contains(&"JQuery.d.ts"));
 }
+
+// ---------------------------------------------------------------------------
+// Ternary-callee garbage rejection (PR 216 of N — TypeScript push to 99%)
+//
+// Patterns like `(cond ? a : b)(args)` and `import('mod')` were having the
+// extractor's last-resort sanitize_callee_text fall back to using the raw
+// source text of the call's function field. ts-nextjs alone had 556
+// unresolved Calls with target_name = "skip : describe)" (literal source,
+// including spaces and colons and a trailing paren). The fix: require the
+// sanitized result to be a valid JS identifier; if not, return empty so
+// no Calls ref is emitted.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn ternary_callee_does_not_emit_garbage_target() {
+    // Real shape from ts-nextjs test files:
+    //   ;(process.env.TURBOPACK_BUILD ? describe.skip : describe)('case', () => {})
+    let src = r#"
+;(process.env.TURBOPACK_BUILD ? describe.skip : describe)('mode', () => {});
+"#;
+    let calls: Vec<String> = refs(src)
+        .into_iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name)
+        .collect();
+    for t in &calls {
+        assert!(
+            !t.contains(' ') && !t.contains(':') && !t.contains(')'),
+            "ternary callee leaked garbage into target_name: {t:?}"
+        );
+    }
+}
+
+#[test]
+fn dynamic_import_callee_does_not_emit_string_literal_target() {
+    // `typeof import('@hoppscotch/ui')` and `(import('mod'))()` patterns
+    // were leaking the literal `import('@hoppscotch/ui')` string into
+    // target_name.
+    let src = r#"
+const x = (await import('@hoppscotch/ui'))();
+"#;
+    let calls: Vec<String> = refs(src)
+        .into_iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name)
+        .collect();
+    for t in &calls {
+        assert!(
+            !t.contains('(') && !t.contains('\'') && !t.contains('"'),
+            "dynamic import leaked into target_name: {t:?}"
+        );
+    }
+}
+
+#[test]
+fn ordinary_call_target_still_emitted() {
+    // The new identifier guard MUST NOT regress clean call sites.
+    let src = r#"
+function foo() { return 1; }
+foo();
+"#;
+    let calls: Vec<String> = refs(src)
+        .into_iter()
+        .filter(|r| r.kind == EdgeKind::Calls)
+        .map(|r| r.target_name)
+        .collect();
+    assert!(calls.contains(&"foo".to_string()), "regression — clean call dropped: {calls:?}");
+}
