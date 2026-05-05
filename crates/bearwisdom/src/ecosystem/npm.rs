@@ -2015,6 +2015,8 @@ fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile, source: &s
     }
     let existing: std::collections::HashSet<String> =
         pf.symbols.iter().map(|s| s.name.clone()).collect();
+    let existing_qnames: std::collections::HashSet<String> =
+        pf.symbols.iter().map(|s| s.qualified_name.clone()).collect();
     for name in globals {
         // Dotted names (`Express.Multer.File`) are namespace paths whose
         // inner symbols the TS extractor already lifts as proper
@@ -2028,23 +2030,52 @@ fn backfill_declare_global_symbols(pf: &mut crate::types::ParsedFile, source: &s
         if name.contains('.') {
             continue;
         }
-        if existing.contains(&name) {
-            continue;
+        // Primary entry — the symbol the package owns. After
+        // prefix_ts_external_symbols runs, this becomes
+        // `<package>.<name>` so package-qualified lookups
+        // (`@angular/localize.$localize`) match.
+        if !existing.contains(&name) {
+            pf.symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: name.clone(),
+                kind: SymbolKind::Variable,
+                visibility: None,
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: None,
+            });
         }
-        pf.symbols.push(ExtractedSymbol {
-            name: name.clone(),
-            qualified_name: name,
-            kind: SymbolKind::Variable,
-            visibility: None,
-            start_line: 0,
-            end_line: 0,
-            start_col: 0,
-            end_col: 0,
-            signature: None,
-            doc_comment: None,
-            scope_path: None,
-            parent_index: None,
-        });
+        // Shadow entry under the synthetic globals namespace so the
+        // resolver's bare-name fallback (`ts_npm_globals` strategy in
+        // languages/typescript/resolve.rs) can find globals like
+        // `$localize`, `describe`, `it`, `cy`, `expect` that the source
+        // references without an explicit `import`. The shadow is a
+        // separate symbol so the package-prefix pass below leaves its
+        // qname intact (it short-circuits when the qname already starts
+        // with the package prefix; we add a special-case for the globals
+        // namespace right next to that check).
+        let shadow_qname = format!("{NPM_GLOBALS_MODULE}.{name}");
+        if !existing_qnames.contains(&shadow_qname) {
+            pf.symbols.push(ExtractedSymbol {
+                name: name.clone(),
+                qualified_name: shadow_qname,
+                kind: SymbolKind::Variable,
+                visibility: None,
+                start_line: 0,
+                end_line: 0,
+                start_col: 0,
+                end_col: 0,
+                signature: None,
+                doc_comment: None,
+                scope_path: None,
+                parent_index: None,
+            });
+        }
     }
 }
 
@@ -2081,7 +2112,15 @@ pub(crate) fn ts_post_process_external(pf: &mut crate::types::ParsedFile) {
 pub(crate) fn prefix_ts_external_symbols(pf: &mut crate::types::ParsedFile, package: &str) {
     if package.is_empty() { return }
     let prefix = format!("{package}.");
+    let globals_prefix = format!("{NPM_GLOBALS_MODULE}.");
     for sym in &mut pf.symbols {
+        // Shadow symbols pushed by `backfill_declare_global_symbols` carry
+        // the synthetic globals qname so the resolver's bare-name fallback
+        // can find them. Don't tack the package prefix in front — that
+        // would mangle the namespace key the resolver looks up.
+        if sym.qualified_name.starts_with(&globals_prefix) {
+            continue;
+        }
         if !sym.qualified_name.starts_with(&prefix) {
             sym.qualified_name = format!("{prefix}{}", sym.qualified_name);
         }
@@ -2726,8 +2765,15 @@ fn find_matching_brace(bytes: &[u8], open_brace: usize) -> Option<usize> {
 /// wrapper names are pushed too, so a chain ref like `Express.Multer` (one
 /// hop short of a leaf) still finds *something* in the index.
 fn collect_namespace_decls(prefix: &str, block: &str, out: &mut Vec<String>) {
+    // JS/TS identifiers allow `$` and `_` as the leading character (and
+    // anywhere else). `\w` is `[A-Za-z0-9_]` and silently drops anything
+    // starting with `$` — Angular's `$localize`, jQuery's `$`, lodash's
+    // `_` (when not a namespace), Cypress's `cy` (only happens to be \w),
+    // RxJS's `$`-suffix observables. Use the full JS identifier shape so
+    // every globally-declared symbol that downstream projects reference
+    // gets indexed.
     let decl_re = regex::Regex::new(
-        r"(?m)^\s*(?:export\s+)?(?:const|let|var|function|class|abstract\s+class|type|interface|enum)\s+(\w+)",
+        r"(?m)^\s*(?:export\s+)?(?:const|let|var|function|class|abstract\s+class|type|interface|enum)\s+([A-Za-z_$][\w$]*)",
     )
     .expect("namespace decl regex");
     for cap in decl_re.captures_iter(block) {
@@ -3622,6 +3668,41 @@ declare module 'react' {
 "#;
         let names = scan_vue_global_components(src);
         assert!(names.is_empty(), "non-vue module augmentations ignored");
+    }
+
+    #[test]
+    fn declare_global_captures_dollar_prefix_identifiers() {
+        // Real shape from `@angular/localize/types/localize.d.ts`:
+        //   declare global { const $localize: LocalizeFn; }
+        // Also covers jQuery's `declare global { const $: JQueryStatic }`,
+        // RxJS-style `$`-suffix observable globals, lodash's bare `_`.
+        // Before this, the regex used `\w+` which doesn't include `$` —
+        // every dollar-prefixed global declaration was silently dropped.
+        let src = r#"
+declare global {
+  const $localize: LocalizeFn;
+  const $: JQueryStatic;
+  function $$<T>(arg: T): T;
+  class _LodashWrapper {}
+}
+"#;
+        let names = scan_declare_global_blocks(src);
+        assert!(
+            names.iter().any(|n| n == "$localize"),
+            "expected $localize in {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "$"),
+            "expected $ in {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "$$"),
+            "expected $$ in {names:?}"
+        );
+        assert!(
+            names.iter().any(|n| n == "_LodashWrapper"),
+            "expected _LodashWrapper in {names:?}"
+        );
     }
 
     #[test]
