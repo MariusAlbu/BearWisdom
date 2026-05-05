@@ -1,6 +1,5 @@
 {
-  "captured_at": "2026-05-04T00:00:00Z",
-  "recapture_partial_at": "2026-05-05T20:42:00Z",
+  "captured_at": "2026-05-05T00:00:00Z",
   "projects": [
     {
       "assertions": {
@@ -537,15 +536,15 @@
       "assertions": {
         "min_resolution_rate": 98
       },
-      "code_chunks": 17609,
+      "code_chunks": 17610,
       "files": 86,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 10463,
+      "internal_edges": 10467,
       "internal_unresolved": 192,
       "languages": {
-        "c": 47,
-        "cpp": 2,
+        "c": 45,
+        "cpp": 4,
         "css": 1,
         "dockerfile": 1,
         "html": 1,
@@ -560,14 +559,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/c-jq",
       "perf": {
-        "end_ws_mb": 158,
-        "files_per_sec": 6,
-        "index_duration_ms": 14025
+        "end_ws_mb": 82,
+        "files_per_sec": 5,
+        "index_duration_ms": 18243
       },
       "project": "c-jq",
       "resolution_rate": 98.2,
       "routes": 0,
-      "symbols": 5441,
+      "symbols": 5443,
       "unresolved_by_lang_kind": {
         "c.calls": 92,
         "c.type_ref": 61,
@@ -582,15 +581,16 @@
       "assertions": {
         "min_resolution_rate": 98
       },
-      "code_chunks": 102687,
+      "code_chunks": 103097,
       "files": 889,
       "flow_edge_types": {},
       "flow_edges": 0,
       "internal_edges": 78511,
       "internal_unresolved": 1268,
       "languages": {
-        "c": 276,
+        "c": 274,
         "cmake": 2,
+        "cpp": 2,
         "css": 2,
         "gotemplate": 1,
         "html": 5,
@@ -608,19 +608,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/c-redis",
       "perf": {
-        "end_ws_mb": 208,
-        "files_per_sec": 30,
-        "index_duration_ms": 29489
+        "end_ws_mb": 186,
+        "files_per_sec": 29,
+        "index_duration_ms": 30896
       },
       "project": "c-redis",
       "resolution_rate": 98.41,
       "routes": 0,
       "symbols": 40511,
       "unresolved_by_lang_kind": {
-        "c.calls": 7277,
-        "c.imports": 1,
-        "c.type_ref": 952,
+        "c.calls": 945,
+        "c.type_ref": 220,
         "cmake.type_ref": 8,
+        "cpp.imports": 1,
         "lua.calls": 18,
         "python.type_ref": 8,
         "ruby.calls": 12,
@@ -633,14 +633,15 @@
       "assertions": {
         "min_resolution_rate": 96
       },
-      "code_chunks": 10533,
+      "code_chunks": 10527,
       "files": 111,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 7429,
+      "internal_edges": 7430,
       "internal_unresolved": 240,
       "languages": {
-        "c": 92,
+        "c": 89,
+        "cpp": 3,
         "json": 1,
         "markdown": 2,
         "shell": 14,
@@ -648,14 +649,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/c-tig",
       "perf": {
-        "end_ws_mb": 175,
-        "files_per_sec": 8,
-        "index_duration_ms": 14633
+        "end_ws_mb": 103,
+        "files_per_sec": 6,
+        "index_duration_ms": 18024
       },
       "project": "c-tig",
       "resolution_rate": 96.87,
       "routes": 0,
-      "symbols": 6958,
+      "symbols": 6952,
       "unresolved_by_lang_kind": {
         "c.calls": 185,
         "c.type_ref": 40,
@@ -929,15 +930,16 @@
       "assertions": {
         "min_resolution_rate": 94
       },
-      "code_chunks": 32590,
+      "code_chunks": 32596,
       "files": 63,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 35977,
+      "internal_edges": 35967,
       "internal_unresolved": 2221,
       "languages": {
-        "c": 37,
+        "c": 36,
         "cobol": 10,
+        "cpp": 1,
         "markdown": 5,
         "perl": 3,
         "powershell": 1,
@@ -945,14 +947,14 @@
       },
       "path": "F:/Work/Projects/TestProjects/cobol-gnucobol",
       "perf": {
-        "end_ws_mb": 206,
+        "end_ws_mb": 161,
         "files_per_sec": 4,
-        "index_duration_ms": 14009
+        "index_duration_ms": 16217
       },
       "project": "cobol-gnucobol",
-      "resolution_rate": 94.19,
+      "resolution_rate": 94.18,
       "routes": 0,
-      "symbols": 20341,
+      "symbols": 20345,
       "unresolved_by_lang_kind": {
         "c.calls": 1883,
         "c.type_ref": 267,
@@ -990,7 +992,7 @@
       "assertions": {
         "min_resolution_rate": 79
       },
-      "code_chunks": 9921,
+      "code_chunks": 9923,
       "files": 85,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -1011,9 +1013,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/cpp-clay",
       "perf": {
-        "end_ws_mb": 194,
+        "end_ws_mb": 129,
         "files_per_sec": 6,
-        "index_duration_ms": 14004
+        "index_duration_ms": 14620
       },
       "project": "cpp-clay",
       "resolution_rate": 79.51,
@@ -1032,16 +1034,16 @@
       "assertions": {
         "min_resolution_rate": 66
       },
-      "code_chunks": 58916,
+      "code_chunks": 58957,
       "files": 1131,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 76517,
-      "internal_unresolved": 37817,
+      "internal_edges": 76530,
+      "internal_unresolved": 37813,
       "languages": {
-        "c": 408,
+        "c": 20,
         "cmake": 42,
-        "cpp": 384,
+        "cpp": 772,
         "css": 1,
         "go": 1,
         "javascript": 8,
@@ -1055,26 +1057,25 @@
       },
       "path": "F:/Work/Projects/TestProjects/cpp-keepassxc",
       "perf": {
-        "end_ws_mb": 272,
-        "files_per_sec": 28,
-        "index_duration_ms": 39911
+        "end_ws_mb": 232,
+        "files_per_sec": 25,
+        "index_duration_ms": 44488
       },
       "project": "cpp-keepassxc",
-      "resolution_rate": 66.92,
+      "resolution_rate": 66.93,
       "routes": 0,
-      "symbols": 28796,
+      "symbols": 28839,
       "unresolved_by_lang_kind": {
-        "c.calls": 225,
-        "c.imports": 22,
-        "c.inherits": 90,
-        "c.type_ref": 4445,
+        "c.calls": 82,
+        "c.imports": 1,
+        "c.type_ref": 96,
         "cmake.calls": 22,
         "cmake.type_ref": 77,
-        "cpp.calls": 22353,
-        "cpp.imports": 72,
-        "cpp.inherits": 2,
+        "cpp.calls": 21493,
+        "cpp.imports": 93,
+        "cpp.inherits": 92,
         "cpp.instantiates": 240,
-        "cpp.type_ref": 9170,
+        "cpp.type_ref": 15594,
         "python.calls": 20,
         "python.type_ref": 1,
         "shell.calls": 2
@@ -1084,16 +1085,16 @@
       "assertions": {
         "min_resolution_rate": 95
       },
-      "code_chunks": 31245,
+      "code_chunks": 31138,
       "files": 348,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 19423,
-      "internal_unresolved": 991,
+      "internal_edges": 19515,
+      "internal_unresolved": 899,
       "languages": {
-        "c": 207,
+        "c": 128,
         "cmake": 8,
-        "cpp": 72,
+        "cpp": 151,
         "html": 5,
         "markdown": 35,
         "nginx": 1,
@@ -1103,23 +1104,22 @@
       },
       "path": "F:/Work/Projects/TestProjects/cpp-libhv",
       "perf": {
-        "end_ws_mb": 195,
-        "files_per_sec": 17,
-        "index_duration_ms": 20609
+        "end_ws_mb": 142,
+        "files_per_sec": 16,
+        "index_duration_ms": 21573
       },
       "project": "cpp-libhv",
-      "resolution_rate": 95.15,
+      "resolution_rate": 95.6,
       "routes": 0,
-      "symbols": 14816,
+      "symbols": 14601,
       "unresolved_by_lang_kind": {
-        "c.calls": 436,
-        "c.imports": 6,
-        "c.type_ref": 212,
+        "c.calls": 309,
+        "c.type_ref": 102,
         "cmake.calls": 6,
         "cmake.type_ref": 42,
-        "cpp.calls": 287,
-        "cpp.imports": 24,
-        "cpp.type_ref": 95,
+        "cpp.calls": 222,
+        "cpp.imports": 39,
+        "cpp.type_ref": 146,
         "html.calls": 12,
         "shell.calls": 21
       }
@@ -4394,16 +4394,16 @@
       "assertions": {
         "min_resolution_rate": 96
       },
-      "code_chunks": 122665,
+      "code_chunks": 122669,
       "files": 2065,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 86894,
+      "internal_edges": 86891,
       "internal_unresolved": 2704,
       "languages": {
-        "c": 958,
+        "c": 950,
         "cmake": 47,
-        "cpp": 2,
+        "cpp": 10,
         "dockerfile": 1,
         "html": 1,
         "json": 1,
@@ -4416,19 +4416,19 @@
       },
       "path": "F:/Work/Projects/TestProjects/make-curl",
       "perf": {
-        "end_ws_mb": 383,
-        "files_per_sec": 61,
-        "index_duration_ms": 34078
+        "end_ws_mb": 234,
+        "files_per_sec": 54,
+        "index_duration_ms": 38337
       },
       "project": "make-curl",
       "resolution_rate": 96.98,
       "routes": 0,
-      "symbols": 77258,
+      "symbols": 77254,
       "unresolved_by_lang_kind": {
-        "c.calls": 1586,
-        "c.type_ref": 823,
+        "c.calls": 1575,
+        "c.type_ref": 806,
         "cmake.type_ref": 269,
-        "cpp.calls": 8,
+        "cpp.calls": 20,
         "cpp.type_ref": 16,
         "python.calls": 9,
         "python.type_ref": 1,
@@ -4439,7 +4439,7 @@
       "assertions": {
         "min_resolution_rate": 97
       },
-      "code_chunks": 32298,
+      "code_chunks": 32309,
       "files": 243,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -4454,9 +4454,9 @@
       },
       "path": "F:/Work/Projects/TestProjects/make-tmux",
       "perf": {
-        "end_ws_mb": 731,
-        "files_per_sec": 16,
-        "index_duration_ms": 14775
+        "end_ws_mb": 171,
+        "files_per_sec": 13,
+        "index_duration_ms": 19102
       },
       "project": "make-tmux",
       "resolution_rate": 97.22,
@@ -4464,7 +4464,7 @@
       "symbols": 25409,
       "unresolved_by_lang_kind": {
         "c.calls": 776,
-        "c.type_ref": 158
+        "c.type_ref": 94
       }
     },
     {
@@ -4557,7 +4557,7 @@
       "assertions": {
         "min_resolution_rate": 97
       },
-      "code_chunks": 90618,
+      "code_chunks": 90621,
       "files": 417,
       "flow_edge_types": {},
       "flow_edges": 0,
@@ -4576,16 +4576,16 @@
       },
       "path": "F:/Work/Projects/TestProjects/nginx-nginx",
       "perf": {
-        "end_ws_mb": 309,
-        "files_per_sec": 27,
-        "index_duration_ms": 15461
+        "end_ws_mb": 186,
+        "files_per_sec": 20,
+        "index_duration_ms": 20729
       },
       "project": "nginx-nginx",
       "resolution_rate": 97.96,
       "routes": 0,
       "symbols": 29926,
       "unresolved_by_lang_kind": {
-        "c.calls": 1231,
+        "c.calls": 1229,
         "c.type_ref": 358,
         "make.calls": 10,
         "shell.calls": 2
@@ -9176,16 +9176,16 @@
       "assertions": {
         "min_resolution_rate": 96
       },
-      "code_chunks": 2165612,
+      "code_chunks": 2126919,
       "files": 17099,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 1848045,
-      "internal_unresolved": 73359,
+      "internal_edges": 1850357,
+      "internal_unresolved": 73485,
       "languages": {
-        "c": 13801,
+        "c": 11048,
         "cmake": 5,
-        "cpp": 220,
+        "cpp": 2973,
         "css": 2,
         "html": 2,
         "javascript": 2,
@@ -9199,34 +9199,31 @@
       },
       "path": "F:/Work/Projects/TestProjects/zig-compiler-fresh",
       "perf": {
-        "end_ws_mb": 387,
-        "files_per_sec": 24,
-        "index_duration_ms": 699444
+        "end_ws_mb": 287,
+        "files_per_sec": 22,
+        "index_duration_ms": 774437
       },
       "project": "zig-compiler-fresh",
       "resolution_rate": 96.18,
       "routes": 0,
-      "symbols": 1712010,
+      "symbols": 1691458,
       "unresolved_by_lang_kind": {
-        "c.calls": 86642,
-        "c.imports": 209,
-        "c.inherits": 4,
-        "c.instantiates": 21,
-        "c.type_ref": 62849,
+        "c.calls": 4021,
+        "c.type_ref": 8998,
         "cmake.type_ref": 17,
-        "cpp.calls": 1434,
-        "cpp.imports": 27,
-        "cpp.inherits": 2,
-        "cpp.instantiates": 44,
-        "cpp.type_ref": 2543,
+        "cpp.calls": 7662,
+        "cpp.imports": 248,
+        "cpp.inherits": 6,
+        "cpp.instantiates": 59,
+        "cpp.type_ref": 35330,
         "matlab.calls": 2,
         "powershell.calls": 2,
         "python.calls": 330,
         "python.type_ref": 22,
         "shell.calls": 7,
-        "zig.calls": 7494,
+        "zig.calls": 7119,
         "zig.imports": 2723,
-        "zig.type_ref": 6938
+        "zig.type_ref": 6939
       }
     },
     {
@@ -9360,5 +9357,6 @@
         "zig.type_ref": 1692
       }
     }
-  ]
+  ],
+  "recapture_partial_at": "2026-05-05T20:42:00Z"
 }

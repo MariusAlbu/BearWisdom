@@ -43,4 +43,4 @@ pub use types::{
     RestoreStep, RestoreTrigger, ScanOptions, ScannedFile, SdkDescriptor, ShellCommands,
     TfDescriptor,
 };
-pub use walker::walk_files;
+pub use walker::{file_looks_like_cpp, walk_files};

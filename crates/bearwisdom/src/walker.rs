@@ -57,6 +57,11 @@ pub fn walk(project_root: &Path) -> Result<Vec<WalkedFile>> {
 ///   Perl by default (Perl is listed first in the registry); override to
 ///   Prolog when the head shows clear Prolog markers (`:- module(`,
 ///   `:- use_module(`, `:- discontiguous`, etc.).
+/// - `.h` is shared between C and C++ headers. The profile matcher
+///   returns C by default; override to C++ when the head shows
+///   C++-only constructs (templates, namespaces, `class` declarations,
+///   `nullptr`, `extern "C"`, etc.). The C plugin handles both grammars,
+///   but the language tag drives which tree-sitter grammar is used.
 pub fn detect_language(path: &Path) -> Option<&'static str> {
     let lang = profile_detect_language(path).map(|desc| desc.id);
     if lang == Some("puppet") && is_likely_pascal(path) {
@@ -65,7 +70,17 @@ pub fn detect_language(path: &Path) -> Option<&'static str> {
     if lang == Some("perl") && is_likely_prolog(path) {
         return Some("prolog");
     }
+    if lang == Some("c") && is_dot_h(path) && bearwisdom_profile::file_looks_like_cpp(path) {
+        return Some("cpp");
+    }
     lang
+}
+
+fn is_dot_h(path: &Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("h"))
+        .unwrap_or(false)
 }
 
 /// Read the first 512 bytes of a `.pp` file and look for Pascal-source

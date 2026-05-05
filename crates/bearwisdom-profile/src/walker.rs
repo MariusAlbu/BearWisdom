@@ -189,21 +189,35 @@ pub fn walk_files(root: &Path) -> Vec<ScannedFile> {
 }
 
 /// Content-based disambiguation for extensions claimed by multiple
-/// languages. Today this resolves `.pl` (Perl wins by registry order)
-/// to Prolog when the file head shows Prolog markers
-/// (`:- module(...)`, `:- use_module(...)`, `:- discontiguous`, ...,
-/// or rule-shaped clauses). Perl scripts (`#!/usr/bin/perl`,
-/// `use strict;`, `package Foo;`, `sub name { ... }`) keep their
-/// Perl classification.
+/// languages.
+///
+/// Resolves:
+///
+/// - `.pl` (Perl by default) → Prolog when the head shows Prolog
+///   markers (`:- module(...)`, `:- use_module(...)`, `:- discontiguous`,
+///   …, or rule-shaped clauses).
+/// - `.h` (C by default) → C++ when the head shows C++-only constructs
+///   (`template<`, `namespace `, `class ` declarations, `nullptr`,
+///   `extern "C"`, access specifiers, `Q_OBJECT`, `std::`).
 ///
 /// Called from `walk_files` after extension-based detection. Reads at
-/// most 1 KiB from disk; cheap enough to fire on every walked file
+/// most 8 KiB from disk; cheap enough to fire on every walked file
 /// without measurably slowing the walk on real-world projects.
 fn disambiguate_by_content(detected: &'static str, path: &std::path::Path) -> &'static str {
     if detected == "perl" && file_looks_like_prolog(path) {
         return "prolog";
     }
+    if detected == "c" && path_is_dot_h(path) && file_looks_like_cpp(path) {
+        return "cpp";
+    }
     detected
+}
+
+fn path_is_dot_h(path: &std::path::Path) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .map(|e| e.eq_ignore_ascii_case("h"))
+        .unwrap_or(false)
 }
 
 fn file_looks_like_prolog(path: &std::path::Path) -> bool {
@@ -285,6 +299,75 @@ fn file_looks_like_prolog(path: &std::path::Path) -> bool {
         }
     }
     prolog_score >= 2 && prolog_score > perl_score
+}
+
+/// Read the first 8 KiB of a `.h` file and look for constructs that
+/// can only parse under the C++ grammar. The C plugin claims `.h` by
+/// default because that's the conventional pure-C header extension,
+/// but C++ projects use `.h` interchangeably with `.hpp` for headers
+/// that contain templates, classes, namespaces, and other C++-only
+/// constructs that the C grammar can't parse.
+///
+/// The 8 KiB head clears typical license blocks (Qt's LGPL header is
+/// ~2 KiB, MIT/Apache standard headers run ~1 KiB) plus the include
+/// section, so substantive declarations are reached even in heavily
+/// commented files.
+///
+/// The markers checked here are not valid C — finding any one is a
+/// reliable signal that the file must be parsed as C++.
+pub fn file_looks_like_cpp(path: &std::path::Path) -> bool {
+    let Ok(file) = std::fs::File::open(path) else { return false };
+    let mut head = [0u8; 8192];
+    let n = match (&file).take(8192).read(&mut head) {
+        Ok(n) => n,
+        Err(_) => return false,
+    };
+    let text = String::from_utf8_lossy(&head[..n]);
+
+    let cpp_markers = [
+        "template<",
+        "template <",
+        "namespace ",
+        "nullptr",
+        "extern \"C\"",
+        "using namespace ",
+        "std::",
+        "public:",
+        "private:",
+        "protected:",
+        "Q_OBJECT",
+        "Q_GADGET",
+        "Q_DECLARE_METATYPE",
+    ];
+    if cpp_markers.iter().any(|m| text.contains(m)) {
+        return true;
+    }
+
+    // `class Foo {` / `class Foo :` / `class Foo final` — strict shape
+    // because plain `class` is a legal C identifier and could appear in
+    // function signatures or struct fields. Require start-of-line (or
+    // after a space) and an identifier-then-non-paren follow-up so that
+    // `int class_name(...)` doesn't match.
+    for line in text.lines() {
+        let t = line.trim_start();
+        let rest = t.strip_prefix("class ").or_else(|| t.strip_prefix("struct class "));
+        if let Some(rest) = rest {
+            let id_end = rest
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .unwrap_or(rest.len());
+            if id_end == 0 { continue; }
+            let after = rest[id_end..].trim_start();
+            if after.starts_with('{')
+                || after.starts_with(':')
+                || after.starts_with("final")
+                || after.starts_with("override")
+            {
+                return true;
+            }
+        }
+    }
+
+    false
 }
 
 // ---------------------------------------------------------------------------
