@@ -69,7 +69,7 @@ pub fn full_scan(
     project_root: &Path,
     pre_walked: Option<Vec<WalkedFile>>,
 ) -> Result<ChangeSet> {
-    let files = match pre_walked {
+    let mut files = match pre_walked {
         Some(f) => {
             info!("Using pre-walked file list ({} files)", f.len());
             f
@@ -77,6 +77,22 @@ pub fn full_scan(
         None => walker::walk(project_root)
             .with_context(|| format!("Failed to walk {}", project_root.display()))?,
     };
+
+    // Secondary pass: pull files in gitignored directories that the project's
+    // own source explicitly imports from. The canonical case is generated
+    // client code (Prisma, GraphQL codegen, OpenAPI) where the output dir is
+    // gitignored by convention but the project source imports from it.
+    // Source imports are an authoritative signal; without this pass those
+    // imports go unresolved despite the target being one filesystem read away.
+    let extra = super::secondary_scan::pull_gitignored_imports(project_root, &files);
+    if !extra.is_empty() {
+        info!(
+            "FullScan: pulled {} additional file(s) from gitignored paths referenced by source imports",
+            extra.len()
+        );
+        files.extend(extra);
+        files.sort_by(|a, b| a.relative_path.cmp(&b.relative_path));
+    }
 
     info!("FullScan: {} files", files.len());
 

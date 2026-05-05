@@ -1,4 +1,5 @@
 pub mod changeset;
+pub mod secondary_scan;
 pub mod demand;
 pub mod expand;
 pub mod flow;

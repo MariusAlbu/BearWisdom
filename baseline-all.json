@@ -1,6 +1,6 @@
 {
   "captured_at": "2026-05-04T00:00:00Z",
-  "recapture_partial_at": "2026-05-05T17:55:00Z",
+  "recapture_partial_at": "2026-05-05T18:25:00Z",
   "projects": [
     {
       "assertions": {
@@ -5727,13 +5727,13 @@
         "min_resolution_rate": 99
       },
       "code_chunks": 169562,
-      "files": 6832,
+      "files": 8397,
       "flow_edge_types": {
         "http_call": 25
       },
       "flow_edges": 25,
-      "internal_edges": 172445,
-      "internal_unresolved": 1104,
+      "internal_edges": 214357,
+      "internal_unresolved": 1669,
       "languages": {
         "css": 20,
         "dockerfile": 2,
@@ -5759,9 +5759,9 @@
         "index_duration_ms": 59284
       },
       "project": "prisma-calcom",
-      "resolution_rate": 99.36,
-      "routes": 131,
-      "symbols": 101241,
+      "resolution_rate": 99.23,
+      "routes": 140,
+      "symbols": 138181,
       "unresolved_by_lang_kind": {
         "html.calls": 10,
         "mdx.calls": 6,
@@ -8310,13 +8310,13 @@
         "min_resolution_rate": 99
       },
       "code_chunks": 77072,
-      "files": 2225,
+      "files": 2260,
       "flow_edge_types": {
         "http_call": 2
       },
       "flow_edges": 2,
-      "internal_edges": 81275,
-      "internal_unresolved": 441,
+      "internal_edges": 82464,
+      "internal_unresolved": 452,
       "languages": {
         "css": 3,
         "javascript": 7,
@@ -8339,9 +8339,9 @@
         "index_duration_ms": 26806
       },
       "project": "ts-inbox-zero",
-      "resolution_rate": 99.46,
+      "resolution_rate": 99.45,
       "routes": 148,
-      "symbols": 44009,
+      "symbols": 44958,
       "unresolved_by_lang_kind": {
         "mdx.calls": 34,
         "ruby.calls": 14,
@@ -8496,11 +8496,11 @@
         "min_resolution_rate": 98
       },
       "code_chunks": 18219,
-      "files": 1168,
+      "files": 1255,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 15584,
-      "internal_unresolved": 210,
+      "internal_edges": 16686,
+      "internal_unresolved": 250,
       "languages": {
         "css": 4,
         "dockerfile": 1,
@@ -8523,9 +8523,9 @@
         "index_duration_ms": 8981
       },
       "project": "ts-rallly",
-      "resolution_rate": 98.67,
+      "resolution_rate": 98.52,
       "routes": 18,
-      "symbols": 7980,
+      "symbols": 8765,
       "unresolved_by_lang_kind": {
         "mdx.calls": 129,
         "sql.type_ref": 24,
@@ -8539,11 +8539,11 @@
         "min_resolution_rate": 99
       },
       "code_chunks": 53803,
-      "files": 1366,
+      "files": 1697,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 52926,
-      "internal_unresolved": 235,
+      "internal_edges": 65412,
+      "internal_unresolved": 345,
       "languages": {
         "css": 6,
         "html": 2,
@@ -8566,9 +8566,9 @@
         "index_duration_ms": 108894
       },
       "project": "ts-trpc",
-      "resolution_rate": 99.56,
+      "resolution_rate": 99.48,
       "routes": 2,
-      "symbols": 30200,
+      "symbols": 37849,
       "unresolved_by_lang_kind": {
         "mdx.calls": 16,
         "typescript.calls": 87,
@@ -8954,17 +8954,17 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 97
+        "min_resolution_rate": 98
       },
       "code_chunks": 81316,
-      "files": 2116,
+      "files": 2535,
       "flow_edge_types": {
         "ipc_call": 35,
         "service_dependency": 4
       },
       "flow_edges": 39,
-      "internal_edges": 78860,
-      "internal_unresolved": 2135,
+      "internal_edges": 174050,
+      "internal_unresolved": 3362,
       "languages": {
         "css": 2,
         "dockerfile": 3,
@@ -8995,9 +8995,9 @@
         "index_duration_ms": 267084
       },
       "project": "vue-hoppscotch",
-      "resolution_rate": 97.36,
+      "resolution_rate": 98.1,
       "routes": 23,
-      "symbols": 40385,
+      "symbols": 87426,
       "unresolved_by_lang_kind": {
         "go.calls": 1,
         "go.type_ref": 2,
