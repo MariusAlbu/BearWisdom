@@ -1,6 +1,6 @@
 {
   "captured_at": "2026-05-04T00:00:00Z",
-  "recapture_partial_at": "2026-05-05T15:00:00Z",
+  "recapture_partial_at": "2026-05-05T16:43:00Z",
   "projects": [
     {
       "assertions": {
@@ -5732,8 +5732,8 @@
         "http_call": 25
       },
       "flow_edges": 25,
-      "internal_edges": 172291,
-      "internal_unresolved": 1105,
+      "internal_edges": 173663,
+      "internal_unresolved": 1104,
       "languages": {
         "css": 20,
         "dockerfile": 2,
@@ -5759,7 +5759,7 @@
         "index_duration_ms": 59284
       },
       "project": "prisma-calcom",
-      "resolution_rate": 99.36,
+      "resolution_rate": 99.37,
       "routes": 131,
       "symbols": 101241,
       "unresolved_by_lang_kind": {
@@ -5782,7 +5782,7 @@
       "files": 4250,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 69155,
+      "internal_edges": 73792,
       "internal_unresolved": 626,
       "languages": {
         "dockerfile": 4,
@@ -5803,7 +5803,7 @@
         "index_duration_ms": 66044
       },
       "project": "prisma-prisma",
-      "resolution_rate": 99.1,
+      "resolution_rate": 99.16,
       "routes": 0,
       "symbols": 71843,
       "unresolved_by_lang_kind": {
@@ -6346,7 +6346,7 @@
     },
     {
       "assertions": {
-        "min_resolution_rate": 96
+        "min_resolution_rate": 99
       },
       "code_chunks": 60012,
       "files": 967,
@@ -6356,8 +6356,8 @@
         "django_view": 49
       },
       "flow_edges": 74,
-      "internal_edges": 40096,
-      "internal_unresolved": 1432,
+      "internal_edges": 40827,
+      "internal_unresolved": 277,
       "languages": {
         "angular_template": 100,
         "css": 4,
@@ -6382,7 +6382,7 @@
         "index_duration_ms": 69287
       },
       "project": "python-paperless-ngx",
-      "resolution_rate": 96.55,
+      "resolution_rate": 99.33,
       "routes": 29,
       "symbols": 31657,
       "unresolved_by_lang_kind": {
@@ -6512,7 +6512,7 @@
         "http_call": 36
       },
       "flow_edges": 36,
-      "internal_edges": 55557,
+      "internal_edges": 56190,
       "internal_unresolved": 199,
       "languages": {
         "angular_template": 17,
@@ -6535,7 +6535,7 @@
         "index_duration_ms": 168069
       },
       "project": "react-tanstack-query",
-      "resolution_rate": 99.64,
+      "resolution_rate": 99.65,
       "routes": 1,
       "symbols": 27814,
       "unresolved_by_lang_kind": {
@@ -8175,7 +8175,7 @@
         "service_dependency": 5
       },
       "flow_edges": 1512,
-      "internal_edges": 62536,
+      "internal_edges": 62560,
       "internal_unresolved": 1953,
       "languages": {
         "angular_template": 276,
@@ -8438,8 +8438,8 @@
         "ipc_call": 1
       },
       "flow_edges": 37,
-      "internal_edges": 391706,
-      "internal_unresolved": 5589,
+      "internal_edges": 392570,
+      "internal_unresolved": 5525,
       "languages": {
         "c": 1,
         "css": 645,
@@ -8470,7 +8470,7 @@
         "index_duration_ms": 956665
       },
       "project": "ts-nextjs",
-      "resolution_rate": 98.59,
+      "resolution_rate": 98.61,
       "routes": 106,
       "symbols": 209215,
       "unresolved_by_lang_kind": {
@@ -8499,8 +8499,8 @@
       "files": 1168,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 13461,
-      "internal_unresolved": 238,
+      "internal_edges": 13492,
+      "internal_unresolved": 230,
       "languages": {
         "css": 4,
         "dockerfile": 1,
@@ -8523,7 +8523,7 @@
         "index_duration_ms": 8981
       },
       "project": "ts-rallly",
-      "resolution_rate": 98.26,
+      "resolution_rate": 98.32,
       "routes": 18,
       "symbols": 7980,
       "unresolved_by_lang_kind": {
@@ -8542,7 +8542,7 @@
       "files": 1366,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 50993,
+      "internal_edges": 52916,
       "internal_unresolved": 235,
       "languages": {
         "css": 6,
@@ -8566,7 +8566,7 @@
         "index_duration_ms": 108894
       },
       "project": "ts-trpc",
-      "resolution_rate": 99.54,
+      "resolution_rate": 99.56,
       "routes": 2,
       "symbols": 30200,
       "unresolved_by_lang_kind": {
@@ -8963,7 +8963,7 @@
         "service_dependency": 4
       },
       "flow_edges": 39,
-      "internal_edges": 76932,
+      "internal_edges": 79112,
       "internal_unresolved": 2135,
       "languages": {
         "css": 2,
@@ -8995,7 +8995,7 @@
         "index_duration_ms": 267084
       },
       "project": "vue-hoppscotch",
-      "resolution_rate": 97.3,
+      "resolution_rate": 97.37,
       "routes": 23,
       "symbols": 40385,
       "unresolved_by_lang_kind": {
@@ -9024,7 +9024,7 @@
       "files": 1632,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 20515,
+      "internal_edges": 21894,
       "internal_unresolved": 153,
       "languages": {
         "css": 14,
@@ -9048,7 +9048,7 @@
         "index_duration_ms": 52668
       },
       "project": "vue-naive-admin",
-      "resolution_rate": 99.26,
+      "resolution_rate": 99.31,
       "routes": 0,
       "symbols": 14965,
       "unresolved_by_lang_kind": {
@@ -9067,7 +9067,7 @@
       "files": 1621,
       "flow_edge_types": {},
       "flow_edges": 0,
-      "internal_edges": 19545,
+      "internal_edges": 20888,
       "internal_unresolved": 151,
       "languages": {
         "css": 13,
@@ -9091,7 +9091,7 @@
         "index_duration_ms": 48513
       },
       "project": "vue-vben-admin",
-      "resolution_rate": 99.23,
+      "resolution_rate": 99.28,
       "routes": 0,
       "symbols": 14616,
       "unresolved_by_lang_kind": {
