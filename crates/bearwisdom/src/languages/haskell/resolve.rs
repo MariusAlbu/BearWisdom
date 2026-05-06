@@ -81,9 +81,25 @@ impl LanguageResolver for HaskellResolver {
             return None;
         }
 
-        // Haskell Prelude is always in scope and not in the project index.
-        if predicates::is_haskell_builtin(target) {
-            return None;
+        // Bare-name walker lookup. cabal walks Hackage source jars when the
+        // project's *.cabal declares a dep; Prelude / base / containers /
+        // text symbols emit under ext:cabal:base/... Skip when chain
+        // context is present.
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "haskell_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         engine::resolve_common("haskell", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
@@ -91,10 +107,13 @@ impl LanguageResolver for HaskellResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_haskell_builtin)
+        // cabal walker emits real symbols and resolve() above binds them;
+        // names that exhaust resolve() stay unresolved rather than blanket-
+        // classified as `builtin`.
+        None
     }
 }
