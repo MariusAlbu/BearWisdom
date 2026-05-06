@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use rayon::prelude::*;
-use tracing::debug;
+use tracing::{debug, warn};
 use tree_sitter::{Node, Parser};
 
 use super::{
@@ -205,6 +205,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
 
     let mut roots = Vec::new();
     let mut seen: std::collections::HashSet<PathBuf> = std::collections::HashSet::new();
+    let mut missing_sources_jars: Vec<String> = Vec::new();
 
     // --- pom.xml coords (Java + Scala + Kotlin when Maven-built) --------
     let mut pom_paths: Vec<PathBuf> = Vec::new();
@@ -225,6 +226,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
             &user_imports,
             &mut roots,
             &mut seen,
+            &mut missing_sources_jars,
         );
     }
 
@@ -241,6 +243,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
             &user_imports,
             &mut roots,
             &mut seen,
+            &mut missing_sources_jars,
         );
     }
 
@@ -270,6 +273,7 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
                 &user_imports,
                 &mut roots,
                 &mut seen,
+                &mut missing_sources_jars,
             );
             if roots.len() > before {
                 hit = true;
@@ -303,10 +307,37 @@ fn discover_maven_roots(project_root: &Path) -> Vec<ExternalDepRoot> {
             &user_imports,
             &mut roots,
             &mut seen,
+            &mut missing_sources_jars,
         );
     }
 
     debug!("JVM ecosystem: {} total external dep roots", roots.len());
+    if !missing_sources_jars.is_empty() {
+        // Sources jars are an opt-in artifact (`mvn dependency:sources` /
+        // Gradle `idea`/`eclipse` task / sbt `updateClassifiers`). Without
+        // them the binary jar exists but BearWisdom can't index its symbols.
+        // Surface a single summary so users know how to recover resolution
+        // for declared deps that didn't resolve.
+        let preview: Vec<&str> = missing_sources_jars
+            .iter()
+            .take(5)
+            .map(|s| s.as_str())
+            .collect();
+        let suffix = if missing_sources_jars.len() > preview.len() {
+            format!(", … and {} more", missing_sources_jars.len() - preview.len())
+        } else {
+            String::new()
+        };
+        warn!(
+            "Maven: {} declared JVM deps have no -sources.jar in the local caches \
+             ({}{}). Run `mvn dependency:sources` (or sbt `updateClassifiers` / \
+             Gradle `:dependencies --refresh-dependencies` with sources)\
+             to populate them.",
+            missing_sources_jars.len(),
+            preview.join(", "),
+            suffix,
+        );
+    }
     roots
 }
 
@@ -344,6 +375,7 @@ fn resolve_and_push_jvm(
     user_imports: &[String],
     roots: &mut Vec<ExternalDepRoot>,
     seen: &mut std::collections::HashSet<PathBuf>,
+    missing_sources_jars: &mut Vec<String>,
 ) {
     let mut resolved: Option<(String, PathBuf)> = None;
 
@@ -378,6 +410,7 @@ fn resolve_and_push_jvm(
             "JVM sources jar missing for {}:{} (checked Maven + Gradle + Coursier) — skipping",
             coord.group_id, coord.artifact_id
         );
+        missing_sources_jars.push(format!("{}:{}", coord.group_id, coord.artifact_id));
         return;
     };
 
