@@ -492,7 +492,13 @@ impl BearWisdomServer {
     /// pool guard from the corresponding IndexService, and runs the closure.
     /// The closure receives `(&PoolGuard, &Path)` so tools that need the
     /// project root for FS operations don't have to plumb it themselves.
-    fn run_tool<P, F>(&self, tool_name: &str, params: &P, project: Option<&str>, f: F) -> String
+    fn run_tool<P, F>(
+        &self,
+        tool_name: &str,
+        params: &P,
+        project: Option<&str>,
+        f: F,
+    ) -> Result<String, String>
     where
         P: Serialize,
         F: FnOnce(&bearwisdom::PoolGuard, &Path) -> Result<String, String>,
@@ -503,7 +509,7 @@ impl BearWisdomServer {
             Ok(s) => s,
             Err(e) => {
                 self.audit_call(tool_name, &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+                return Err(e);
             }
         };
         // Safety net for missed file-watcher events: opportunistically kick
@@ -515,21 +521,28 @@ impl BearWisdomServer {
             Err(e) => {
                 let msg = error_response("INTERNAL_ERROR", &format!("Pool error: {e}"));
                 self.audit_call(tool_name, &params_json, &msg, t0.elapsed().as_millis() as u64);
-                return msg;
+                return Err(msg);
             }
         };
         let last_indexed = bearwisdom::last_indexed_at_ms(&db);
-        let result = f(&db, service.project_root()).unwrap_or_else(|e| e);
-        let result = Self::with_freshness_header(result, last_indexed);
-        self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+        let inner = f(&db, service.project_root());
+        let was_err = inner.is_err();
+        let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), last_indexed);
+        self.audit_call(tool_name, &params_json, &unified, t0.elapsed().as_millis() as u64);
+        if was_err { Err(unified) } else { Ok(unified) }
     }
 
     /// Shared dispatch helper for tools that do NOT need a db connection (e.g. bw_grep).
     ///
     /// Resolves the project for the freshness header and to give the closure
     /// access to the project root.
-    fn run_tool_no_db<P, F>(&self, tool_name: &str, params: &P, project: Option<&str>, f: F) -> String
+    fn run_tool_no_db<P, F>(
+        &self,
+        tool_name: &str,
+        params: &P,
+        project: Option<&str>,
+        f: F,
+    ) -> Result<String, String>
     where
         P: Serialize,
         F: FnOnce(&Path) -> Result<String, String>,
@@ -540,7 +553,7 @@ impl BearWisdomServer {
             Ok(s) => s,
             Err(e) => {
                 self.audit_call(tool_name, &params_json, &e, t0.elapsed().as_millis() as u64);
-                return e;
+                return Err(e);
             }
         };
         let _ = service.try_spawn_sweep(STALE_SWEEP_THROTTLE_MS);
@@ -550,10 +563,11 @@ impl BearWisdomServer {
             .get()
             .ok()
             .and_then(|db| bearwisdom::last_indexed_at_ms(&db));
-        let result = f(service.project_root()).unwrap_or_else(|e| e);
-        let result = Self::with_freshness_header(result, last_indexed);
-        self.audit_call(tool_name, &params_json, &result, t0.elapsed().as_millis() as u64);
-        result
+        let inner = f(service.project_root());
+        let was_err = inner.is_err();
+        let unified = Self::with_freshness_header(inner.unwrap_or_else(|e| e), last_indexed);
+        self.audit_call(tool_name, &params_json, &unified, t0.elapsed().as_millis() as u64);
+        if was_err { Err(unified) } else { Ok(unified) }
     }
 
     /// Inject an `#index` section after the compact format header so callers
@@ -652,7 +666,7 @@ impl BearWisdomServer {
     /// Search code symbols by keyword. Returns up to 50 results by default with name, kind, file, line.
     /// Pass include_signature: true for full signatures. Use bw_grep for raw text search.
     #[tool(name = "bw_search")]
-    fn search(&self, Parameters(params): Parameters<SearchParams>) -> String {
+    fn search(&self, Parameters(params): Parameters<SearchParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_search", &params, params.project.as_deref(), |db, _| {
             if params.query.trim().is_empty() {
@@ -673,7 +687,7 @@ impl BearWisdomServer {
     /// Lines truncated to 120 chars by default (pass max_line_length: 0 for full lines).
     /// Use bw_search for semantic symbol lookup.
     #[tool(name = "bw_grep")]
-    fn grep(&self, Parameters(params): Parameters<GrepParams>) -> String {
+    fn grep(&self, Parameters(params): Parameters<GrepParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool_no_db("bw_grep", &params, params.project.as_deref(), |root| {
             if params.pattern.is_empty() {
@@ -705,7 +719,7 @@ impl BearWisdomServer {
     /// Get symbol details: location, edge counts, visibility. Returns slim output by default.
     /// Pass include_signature/include_doc/include_children: true for richer data.
     #[tool(name = "bw_symbol_info")]
-    fn symbol_info(&self, Parameters(params): Parameters<SymbolInfoParams>) -> String {
+    fn symbol_info(&self, Parameters(params): Parameters<SymbolInfoParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_symbol_info", &params, params.project.as_deref(), |db, _| {
             if params.name.is_empty() {
@@ -732,7 +746,7 @@ impl BearWisdomServer {
 
     /// Find all references to a symbol. Returns up to 50 results by default with file, line, edge kind.
     #[tool(name = "bw_find_references")]
-    fn find_references(&self, Parameters(params): Parameters<FindReferencesParams>) -> String {
+    fn find_references(&self, Parameters(params): Parameters<FindReferencesParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_find_references", &params, params.project.as_deref(), |db, _| {
             if params.name.is_empty() {
@@ -753,7 +767,7 @@ impl BearWisdomServer {
     /// Show call hierarchy: direction="callers" (alias "in") = who calls this;
     /// direction="callees" (alias "out") = what does this call. Up to 50 results by default.
     #[tool(name = "bw_call_hierarchy")]
-    fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> String {
+    fn call_hierarchy(&self, Parameters(params): Parameters<CallHierarchyParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_call_hierarchy", &params, params.project.as_deref(), |db, _| {
             if params.name.is_empty() {
@@ -775,7 +789,7 @@ impl BearWisdomServer {
 
     /// List symbols in a file. Modes: "names" (minimal), "outline" (default), "full".
     #[tool(name = "bw_file_symbols")]
-    fn file_symbols(&self, Parameters(params): Parameters<FileSymbolsParams>) -> String {
+    fn file_symbols(&self, Parameters(params): Parameters<FileSymbolsParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_file_symbols", &params, params.project.as_deref(), |db, _| {
             if params.file_path.is_empty() {
@@ -792,7 +806,7 @@ impl BearWisdomServer {
 
     /// Blast radius: what breaks if this symbol changes? Default depth 2.
     #[tool(name = "bw_blast_radius")]
-    fn blast_radius(&self, Parameters(params): Parameters<BlastRadiusParams>) -> String {
+    fn blast_radius(&self, Parameters(params): Parameters<BlastRadiusParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_blast_radius", &params, params.project.as_deref(), |db, _| {
             if params.symbol.is_empty() {
@@ -820,7 +834,7 @@ impl BearWisdomServer {
     fn architecture_overview(
         &self,
         Parameters(params): Parameters<ArchitectureParams>,
-    ) -> String {
+    ) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_architecture_overview", &params, params.project.as_deref(), |db, _| {
             bearwisdom::query::architecture::get_overview(db)
@@ -832,7 +846,7 @@ impl BearWisdomServer {
     /// List detected packages with file/symbol/edge counts.
     /// Returns an empty array for single-project repos — no error.
     #[tool(name = "bw_packages")]
-    fn packages(&self, Parameters(params): Parameters<PackagesParams>) -> String {
+    fn packages(&self, Parameters(params): Parameters<PackagesParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_packages", &params, params.project.as_deref(), |db, _| {
             bearwisdom::list_packages(db)
@@ -845,22 +859,20 @@ impl BearWisdomServer {
     /// an existing DB (falling back to hash-diff if git is unavailable) and a
     /// full index on a fresh DB. Pass `force: true` to force a full rebuild.
     #[tool(name = "bw_reindex")]
-    fn reindex(&self, Parameters(params): Parameters<ReindexParams>) -> String {
+    fn reindex(&self, Parameters(params): Parameters<ReindexParams>) -> Result<String, String> {
         let t0 = std::time::Instant::now();
         let params_json = serde_json::to_string(&params).unwrap_or_default();
-        let result = self.run_reindex(params.force.unwrap_or(false), params.project.as_deref());
-        let response = match result {
-            Ok(msg) => msg,
-            Err(e) => e,
-        };
-        self.audit_call("bw_reindex", &params_json, &response, t0.elapsed().as_millis() as u64);
-        response
+        let inner = self.run_reindex(params.force.unwrap_or(false), params.project.as_deref());
+        let was_err = inner.is_err();
+        let unified = inner.unwrap_or_else(|e| e);
+        self.audit_call("bw_reindex", &params_json, &unified, t0.elapsed().as_millis() as u64);
+        if was_err { Err(unified) } else { Ok(unified) }
     }
 
     /// Workspace overview: per-package breakdown + cross-package edge count + shared hotspots.
     /// Returns empty/zero fields for single-project repos — no error.
     #[tool(name = "bw_workspace_overview")]
-    fn workspace_overview(&self, Parameters(params): Parameters<WorkspaceOverviewParams>) -> String {
+    fn workspace_overview(&self, Parameters(params): Parameters<WorkspaceOverviewParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_workspace_overview", &params, params.project.as_deref(), |db, _| {
             bearwisdom::workspace_overview(db)
@@ -873,7 +885,7 @@ impl BearWisdomServer {
     /// code/flow edge counts and a manifest-declared-dependency flag.
     /// Returns an empty array for single-project repos.
     #[tool(name = "bw_workspace_graph")]
-    fn workspace_graph(&self, Parameters(params): Parameters<WorkspaceGraphParams>) -> String {
+    fn workspace_graph(&self, Parameters(params): Parameters<WorkspaceGraphParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_workspace_graph", &params, params.project.as_deref(), |db, _| {
             bearwisdom::workspace_graph(db)
@@ -886,7 +898,7 @@ impl BearWisdomServer {
     /// `file_path` for a single-file report; omit it for a workspace-wide
     /// ranking that surfaces the files with the worst leakage.
     #[tool(name = "bw_diagnostics")]
-    fn diagnostics(&self, Parameters(params): Parameters<DiagnosticsParams>) -> String {
+    fn diagnostics(&self, Parameters(params): Parameters<DiagnosticsParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_diagnostics", &params, params.project.as_deref(), |db, _| {
             let threshold = params.confidence_threshold.unwrap_or(
@@ -912,7 +924,7 @@ impl BearWisdomServer {
     /// Returns symbols ranked by confidence (1.0 = definitely dead, 0.3 = only low-confidence edges).
     /// Excludes: main functions, route handlers, test functions, event handlers, DI-registered services, lifecycle hooks.
     #[tool(name = "bw_dead_code")]
-    fn dead_code(&self, Parameters(params): Parameters<DeadCodeParams>) -> String {
+    fn dead_code(&self, Parameters(params): Parameters<DeadCodeParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_dead_code", &params, params.project.as_deref(), |db, _| {
             let vis = match params.visibility.as_deref() {
@@ -936,7 +948,7 @@ impl BearWisdomServer {
     /// List all entry points in the project: main functions, route handlers, test functions,
     /// event handlers, DI-registered services, and framework lifecycle hooks.
     #[tool(name = "bw_entry_points")]
-    fn entry_points(&self, Parameters(params): Parameters<EntryPointsParams>) -> String {
+    fn entry_points(&self, Parameters(params): Parameters<EntryPointsParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_entry_points", &params, params.project.as_deref(), |db, _| {
             bearwisdom::query::dead_code::find_entry_points(db)
@@ -952,7 +964,7 @@ impl BearWisdomServer {
     /// baseline file required. Use this to find which extractor or
     /// resolver is leaking unresolved refs.
     #[tool(name = "bw_quality_check")]
-    fn quality_check(&self, Parameters(params): Parameters<QualityCheckParams>) -> String {
+    fn quality_check(&self, Parameters(params): Parameters<QualityCheckParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_quality_check", &params, params.project.as_deref(), |db, _| {
             bearwisdom::resolution_breakdown(db)
@@ -967,7 +979,7 @@ impl BearWisdomServer {
     /// patterns, function bodies matching a structural template, etc.
     /// Pattern syntax: tree-sitter S-expression queries with `@captures`.
     #[tool(name = "bw_pattern")]
-    fn pattern(&self, Parameters(params): Parameters<PatternSearchParams>) -> String {
+    fn pattern(&self, Parameters(params): Parameters<PatternSearchParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_pattern", &params, params.project.as_deref(), |db, project_root| {
             if params.query.trim().is_empty() {
@@ -985,7 +997,7 @@ impl BearWisdomServer {
 
     /// Auto-complete symbols at a cursor position. Returns scope-aware candidates ranked by distance and relevance.
     #[tool(name = "bw_complete")]
-    fn complete_at(&self, Parameters(params): Parameters<CompleteAtParams>) -> String {
+    fn complete_at(&self, Parameters(params): Parameters<CompleteAtParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_complete", &params, params.project.as_deref(), |db, _| {
             bearwisdom::query::completion::complete_at(
@@ -1004,7 +1016,7 @@ impl BearWisdomServer {
     /// Build smart context for a task: returns the most relevant symbols, files, and concepts
     /// to include in the LLM context window. Uses semantic search + graph expansion + scoring.
     #[tool(name = "bw_context")]
-    fn smart_context(&self, Parameters(params): Parameters<SmartContextParams>) -> String {
+    fn smart_context(&self, Parameters(params): Parameters<SmartContextParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_context", &params, params.project.as_deref(), |db, _| {
             if params.task.trim().is_empty() {
@@ -1021,7 +1033,7 @@ impl BearWisdomServer {
     /// Deep-dive a symbol in one call: info + callers + callees + blast radius.
     /// Use this instead of calling bw_symbol_info + bw_call_hierarchy + bw_blast_radius separately.
     #[tool(name = "bw_investigate")]
-    fn investigate(&self, Parameters(params): Parameters<InvestigateParams>) -> String {
+    fn investigate(&self, Parameters(params): Parameters<InvestigateParams>) -> Result<String, String> {
         let compact = Self::is_compact(&params.format);
         self.run_tool("bw_investigate", &params, params.project.as_deref(), |db, _| {
             if params.symbol.is_empty() {
