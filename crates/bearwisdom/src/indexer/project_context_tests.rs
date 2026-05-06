@@ -640,4 +640,132 @@ mod per_package_activation_tests {
             "single-project workspace-wide path must still activate ts-lib-dom on root tsconfig"
         );
     }
+
+    /// Phase 5: per-package `LanguagePresent` narrows correctly.
+    /// Polyglot monorepo with one Kotlin package and one Python package.
+    /// Without per-package language presence, kotlin-stdlib activates
+    /// for both packages because workspace-wide language_presence
+    /// contains "kotlin". With per-package language presence, only the
+    /// Kotlin package activates kotlin-stdlib.
+    #[test]
+    fn per_package_language_presence_narrows_kotlin_stdlib() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+
+        // Synthetic on-disk layout: each package has at least one file
+        // in its own language. The activation evaluator only consults
+        // the language map; manifests are absent so manifest-driven
+        // activations don't fire — clean isolation of the language
+        // signal under test.
+        write_file(root, "apps/jvm/Main.kt", "fun main() {}\n");
+        write_file(root, "services/py/app.py", "def main(): pass\n");
+
+        let packages = vec![
+            PackageInfo {
+                id: Some(1),
+                name: "jvm".into(),
+                path: "apps/jvm".into(),
+                kind: Some("kotlin".into()),
+                manifest: None,
+                declared_name: None,
+            },
+            PackageInfo {
+                id: Some(2),
+                name: "py".into(),
+                path: "services/py".into(),
+                kind: Some("python".into()),
+                manifest: None,
+                declared_name: None,
+            },
+        ];
+
+        // Workspace-wide presence (union) carries both languages — what the
+        // legacy code path saw.
+        let workspace_langs = vec!["kotlin".to_string(), "python".to_string()];
+
+        // Per-package map: each package only sees its own language.
+        let mut per_pkg: HashMap<i64, HashSet<String>> = HashMap::new();
+        per_pkg.insert(1, HashSet::from(["kotlin".to_string()]));
+        per_pkg.insert(2, HashSet::from(["python".to_string()]));
+
+        let registry = ecosystem::default_registry();
+        let ctx = ProjectContext::initialize_with_per_package_languages(
+            root,
+            &packages,
+            workspace_langs,
+            per_pkg,
+            registry,
+        );
+
+        let kotlin_stdlib = EcosystemId::new("kotlin-stdlib");
+        let cpython_stdlib = EcosystemId::new("cpython-stdlib");
+
+        assert!(
+            ctx.active_ecosystems_by_package[&1].contains(&kotlin_stdlib),
+            "Kotlin package must activate kotlin-stdlib"
+        );
+        assert!(
+            !ctx.active_ecosystems_by_package[&1].contains(&cpython_stdlib),
+            "Kotlin package must NOT activate cpython-stdlib (no .py files in pkg)"
+        );
+
+        assert!(
+            ctx.active_ecosystems_by_package[&2].contains(&cpython_stdlib),
+            "Python package must activate cpython-stdlib"
+        );
+        assert!(
+            !ctx.active_ecosystems_by_package[&2].contains(&kotlin_stdlib),
+            "Python package must NOT activate kotlin-stdlib (no .kt files in pkg)"
+        );
+
+        // Workspace-wide actives must still be the union (legacy consumers
+        // see both stdlibs; per-package consumers narrow correctly).
+        assert!(ctx.active_ecosystems.contains(&kotlin_stdlib));
+        assert!(ctx.active_ecosystems.contains(&cpython_stdlib));
+    }
+
+    /// Phase 5: when the per-package language map is empty (caller passes
+    /// `HashMap::new()`), the per-package evaluator falls back to
+    /// workspace-wide language presence. Pre-Phase-5 behavior preserved.
+    #[test]
+    fn empty_per_package_language_map_falls_back_to_workspace_wide() {
+        let tmp = TempDir::new().unwrap();
+        let root = tmp.path();
+        write_file(root, "apps/a/dummy.kt", "fun main() {}\n");
+        write_file(root, "apps/b/dummy.kt", "fun main() {}\n");
+
+        let packages = vec![
+            PackageInfo {
+                id: Some(1),
+                name: "a".into(),
+                path: "apps/a".into(),
+                kind: Some("kotlin".into()),
+                manifest: None,
+                declared_name: None,
+            },
+            PackageInfo {
+                id: Some(2),
+                name: "b".into(),
+                path: "apps/b".into(),
+                kind: Some("kotlin".into()),
+                manifest: None,
+                declared_name: None,
+            },
+        ];
+
+        let registry = ecosystem::default_registry();
+        let ctx = ProjectContext::initialize(
+            root,
+            &packages,
+            vec!["kotlin".to_string()],
+            registry,
+        );
+
+        let kotlin_stdlib = EcosystemId::new("kotlin-stdlib");
+        // Both packages activate kotlin-stdlib because workspace-wide
+        // language_presence contains "kotlin" and the per-package map
+        // is empty — legacy fallback behavior.
+        assert!(ctx.active_ecosystems_by_package[&1].contains(&kotlin_stdlib));
+        assert!(ctx.active_ecosystems_by_package[&2].contains(&kotlin_stdlib));
+    }
 }

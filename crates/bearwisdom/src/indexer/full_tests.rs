@@ -93,6 +93,7 @@ namespace App {
             gradle_catalog_names: Vec::new(),
             active_ecosystems: Vec::new(),
             active_ecosystems_by_package: HashMap::new(),
+            language_presence_by_package: HashMap::new(),
             language_presence: Default::default(),
             vue_global_registry: Default::default(),
             robot_library_map: Default::default(),

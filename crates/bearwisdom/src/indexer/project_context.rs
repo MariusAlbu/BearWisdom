@@ -153,6 +153,20 @@ pub struct ProjectContext {
     /// initialization, and is itself a useful signal for diagnostics.
     pub language_presence: HashSet<String>,
 
+    /// Per-package language presence — the languages observed in files
+    /// owned by each workspace package. Populated by
+    /// `ProjectContext::initialize` when the caller buckets the parsed
+    /// file slice by package path. Empty for single-project layouts and
+    /// for callers that don't have parsed files in hand (incremental
+    /// indexer).
+    ///
+    /// When non-empty, the per-package activation evaluator (Phase 5)
+    /// consults this map for `LanguagePresent` clauses instead of
+    /// `language_presence`. A polyglot monorepo with one Kotlin package
+    /// and one Python package no longer activates `kotlin-stdlib` for
+    /// the Python package's locator pass.
+    pub language_presence_by_package: HashMap<i64, HashSet<String>>,
+
     /// Vue-specific: project-wide globally-registered component map, populated
     /// after the file-scan pass in `full_index` (and the incremental equivalent).
     ///
@@ -223,6 +237,7 @@ pub fn build_project_context(project_root: &Path) -> ProjectContext {
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
+        language_presence_by_package: HashMap::new(),
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
         robot_resource_basenames: RobotResourceBasenameMap::default(),
@@ -323,6 +338,7 @@ pub fn build_project_context_with_packages(
         active_ecosystems: Vec::new(),
         active_ecosystems_by_package: HashMap::new(),
         language_presence: HashSet::new(),
+        language_presence_by_package: HashMap::new(),
         vue_global_registry: VueGlobalRegistry::default(),
         robot_library_map: RobotLibraryMap::default(),
         robot_resource_basenames: RobotResourceBasenameMap::default(),
@@ -394,12 +410,38 @@ impl ProjectContext {
     where
         I: IntoIterator<Item = String>,
     {
+        Self::initialize_with_per_package_languages(
+            project_root,
+            packages,
+            language_ids,
+            HashMap::new(),
+            ecosystems,
+        )
+    }
+
+    /// Phase 5 entry point. Same as `initialize` but takes an explicit
+    /// per-package language map so `LanguagePresent` clauses narrow per
+    /// package. Callers without parsed-file context (incremental
+    /// indexer, tests) use the simpler `initialize` overload, which
+    /// passes an empty map and falls back to workspace-wide language
+    /// presence.
+    pub fn initialize_with_per_package_languages<I>(
+        project_root: &Path,
+        packages: &[PackageInfo],
+        language_ids: I,
+        language_presence_by_package: HashMap<i64, HashSet<String>>,
+        ecosystems: &EcosystemRegistry,
+    ) -> Self
+    where
+        I: IntoIterator<Item = String>,
+    {
         let mut ctx = if packages.is_empty() {
             build_project_context(project_root)
         } else {
             build_project_context_with_packages(project_root, packages)
         };
         ctx.language_presence = language_ids.into_iter().collect();
+        ctx.language_presence_by_package = language_presence_by_package;
         if packages.is_empty() {
             ctx.active_ecosystems = evaluate_active_ecosystems(&ctx, ecosystems);
         } else {
@@ -506,14 +548,18 @@ pub(crate) fn evaluate_active_ecosystems_per_package(
     for pkg in packages {
         let Some(pkg_id) = pkg.id else { continue };
         let pkg_abs = ctx.project_root.join(&pkg.path);
+        // Per-package language presence when populated (Phase 5 caller
+        // path), else workspace-wide. The workspace-wide fallback is
+        // conservative and correct: `LanguagePresent` clauses fire on
+        // any language present anywhere, but `eco.languages()` filters
+        // out at query time.
+        let pkg_langs = ctx
+            .language_presence_by_package
+            .get(&pkg_id)
+            .unwrap_or(&ctx.language_presence);
         let scope = ActivationScope {
             manifests: ctx.manifests_for(Some(pkg_id)),
-            // Phase 5 will replace this with per-package language presence.
-            // Today's workspace-wide signal is conservative: a package
-            // typed only in Python won't get kotlin-stdlib's locator
-            // emitting roots because `kotlin-stdlib.languages()` filters
-            // the resolvable set per-language at query time.
-            language_presence: &ctx.language_presence,
+            language_presence: pkg_langs,
             glob_root: &pkg_abs,
         };
         let mut active: Vec<EcosystemId> = Vec::new();

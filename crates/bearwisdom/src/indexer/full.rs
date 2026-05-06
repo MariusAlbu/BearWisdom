@@ -439,12 +439,29 @@ pub fn full_index(
         }
         set.into_iter().collect()
     };
-    let mut project_ctx = super::project_context::ProjectContext::initialize(
-        project_root,
-        &written_packages,
-        distinct_langs,
-        crate::ecosystem::default_registry(),
-    );
+    // Phase 5: bucket parsed files by workspace package so the per-package
+    // activation evaluator can narrow `LanguagePresent` clauses.
+    // `ParsedFile.package_id` is populated upstream during the workspace
+    // package detection pass; files outside any package leave it `None`
+    // and contribute to the workspace-wide set only.
+    let language_presence_by_package: std::collections::HashMap<i64, std::collections::HashSet<String>> = {
+        let mut map: std::collections::HashMap<i64, std::collections::HashSet<String>> =
+            std::collections::HashMap::new();
+        for pf in &parsed {
+            if let Some(pkg_id) = pf.package_id {
+                map.entry(pkg_id).or_default().insert(pf.language.clone());
+            }
+        }
+        map
+    };
+    let mut project_ctx =
+        super::project_context::ProjectContext::initialize_with_per_package_languages(
+            project_root,
+            &written_packages,
+            distinct_langs,
+            language_presence_by_package,
+            crate::ecosystem::default_registry(),
+        );
 
     // --- Step 4b.1: Vue global component registry ---
     // Only run when the project contains Vue files — avoids the filesystem
