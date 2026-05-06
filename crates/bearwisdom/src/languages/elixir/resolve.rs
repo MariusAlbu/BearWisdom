@@ -341,8 +341,11 @@ impl LanguageResolver for ElixirResolver {
                     return Some("Phoenix".to_string());
                 }
                 // Case 3: web wrapper module — `Routes` is injected by the
-                // web module's `quote do` block; we can't see the alias itself.
-                if predicates::is_internal_web_module(mp) {
+                // web module's `quote do` block. Detected by the
+                // conventional `*Web` module-name suffix (Phoenix's
+                // standard project layout).
+                let last = mp.split('.').last().unwrap_or(mp);
+                if last.ends_with("Web") && !last.is_empty() {
                     return Some("Phoenix".to_string());
                 }
             }
@@ -380,31 +383,20 @@ impl LanguageResolver for ElixirResolver {
                 continue;
             }
 
-            // Project-internal Schema modules (e.g. `Changelog.Schema`,
-            // `MyApp.Schema`) commonly inject query-builder helpers via
-            // `defmacro __using__` + `quote do`. BearWisdom can't expand
-            // these macros, so the injected functions never appear as
-            // top-level symbols. Detect by module name convention and apply
-            // the known injection set.
-            if predicates::is_internal_schema_module(module)
-                && predicates::is_schema_using_injected(target)
-            {
-                // Attribute to the module's namespace root as an internal
-                // origin (no external package). Use the full module path as
-                // the namespace so the ref is classified as internal but
-                // resolvable.
-                return Some(module.split('.').next().unwrap_or(module).to_string());
-            }
-
-            // Project-internal `<AppWeb>` controller wrapper modules inject
-            // shared helpers via a `def controller do quote do ... end end`
-            // pattern. Any controller that does `use ChangelogWeb, :controller`
-            // gets these helpers without them appearing as defined symbols.
-            if predicates::is_internal_web_module(module)
-                && predicates::is_web_controller_injected(target)
-            {
-                return Some(module.split('.').next().unwrap_or(module).to_string());
-            }
+            // Project-internal `defmacro __using__` blocks inject helper
+            // names that aren't visible as top-level symbols. Macro
+            // expansion is the architectural fix — until that lands,
+            // names injected by project-internal Schema / AppWeb wrapper
+            // modules go to unresolved rather than being matched against
+            // a hardcoded observation list per project. Removed
+            // is_schema_using_injected, is_internal_schema_module,
+            // is_web_controller_injected, is_internal_web_module
+            // predicates which encoded names from the Changelog test
+            // fixture and a handful of other Phoenix projects.
+            //
+            // The `Routes` alias case above (case 3 web-wrapper) was
+            // narrower in scope and used `is_internal_web_module` as a
+            // generic suffix matcher (`*Web`) — replaced inline.
 
             // Only check modules confirmed as external dependencies.
             let root = module.split('.').next().unwrap_or(module);
