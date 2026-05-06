@@ -52,9 +52,43 @@ impl Ecosystem for QtRuntimeEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
+        // Qt is declared in the C/C++ project's build manifest. Plain
+        // C/C++ projects without a Qt dep shouldn't pay the SDK probe.
+        // Three canonical declaration channels: CMake's find_package(Qt5/
+        // Qt6 ...), vcpkg.json's qtbase/qt5-base/qt6-base dep entries,
+        // and Conan's qt requirement. All three are unique enough that a
+        // plain-text substring match is reliable.
         EcosystemActivation::Any(&[
-            EcosystemActivation::LanguagePresent("c"),
-            EcosystemActivation::LanguagePresent("cpp"),
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/CMakeLists.txt",
+                field_path: "",
+                value: "find_package(Qt",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/vcpkg.json",
+                field_path: "dependencies",
+                value: "qtbase",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/vcpkg.json",
+                field_path: "dependencies",
+                value: "qt5-base",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/vcpkg.json",
+                field_path: "dependencies",
+                value: "qt6-base",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/conanfile.txt",
+                field_path: "",
+                value: "qt/",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/conanfile.py",
+                field_path: "",
+                value: "\"qt/",
+            },
         ])
     }
 

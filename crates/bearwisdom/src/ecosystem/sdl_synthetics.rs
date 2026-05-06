@@ -335,9 +335,37 @@ impl Ecosystem for SdlSyntheticsEcosystem {
     fn languages(&self) -> &'static [&'static str] { LANGUAGES }
 
     fn activation(&self) -> EcosystemActivation {
+        // SDL is declared in the C/C++ project's build manifest. Plain
+        // C/C++ projects without an SDL dep don't pay the synthetic-stub
+        // cost. Three canonical declaration channels: CMake's
+        // find_package(SDL2) / find_package(SDL3), vcpkg.json's sdl2 dep,
+        // and Conan's sdl requirement.
         EcosystemActivation::Any(&[
-            EcosystemActivation::LanguagePresent("c"),
-            EcosystemActivation::LanguagePresent("cpp"),
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/CMakeLists.txt",
+                field_path: "",
+                value: "find_package(SDL",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/vcpkg.json",
+                field_path: "dependencies",
+                value: "sdl2",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/vcpkg.json",
+                field_path: "dependencies",
+                value: "sdl3",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/conanfile.txt",
+                field_path: "",
+                value: "sdl/",
+            },
+            EcosystemActivation::ManifestFieldContains {
+                manifest_glob: "**/conanfile.py",
+                field_path: "",
+                value: "\"sdl/",
+            },
         ])
     }
 
