@@ -69,12 +69,10 @@ pub mod matlab_runtime;
 pub mod matlab_stdlib;
 pub mod maven;
 pub mod nimble;
-pub mod node_builtins;
 pub mod npm;
 pub mod nvim_runtime;
 pub mod nuget;
 pub mod opam;
-pub mod phoenix_stubs;
 pub mod php_stubs;
 pub mod compile_commands;
 pub mod ecmascript_imports;
@@ -137,11 +135,9 @@ pub use matlab_runtime::MatlabRuntimeEcosystem;
 pub use matlab_stdlib::MatlabStdlibEcosystem;
 pub use maven::MavenEcosystem;
 pub use nimble::NimbleEcosystem;
-pub use node_builtins::NodeBuiltinsEcosystem;
 pub use npm::NpmEcosystem;
 pub use nvim_runtime::NvimRuntimeEcosystem;
 pub use nuget::NugetEcosystem;
-pub use phoenix_stubs::PhoenixStubsEcosystem;
 pub use opam::OpamEcosystem;
 pub use php_stubs::PhpStubsEcosystem;
 pub use compile_commands::CompileCommandsEcosystem;
@@ -619,7 +615,6 @@ pub fn default_locator(
         "vcpkg-headers" => Some(Arc::new(VcpkgHeadersEcosystem)),
         "dotnet-stdlib" => Some(Arc::new(DotnetStdlibEcosystem)),
         "php-stubs" => Some(Arc::new(PhpStubsEcosystem)),
-        "phoenix-stubs" => Some(Arc::new(PhoenixStubsEcosystem)),
         "scala-stdlib" => Some(Arc::new(ScalaStdlibEcosystem)),
         "groovy-stdlib" => Some(Arc::new(GroovyStdlibEcosystem)),
         "clojure-core" => Some(Arc::new(ClojureCoreEcosystem)),
@@ -647,7 +642,6 @@ pub fn default_locator(
         "matlab-stdlib" => Some(Arc::new(MatlabStdlibEcosystem)),
         "nvim-runtime" => Some(Arc::new(NvimRuntimeEcosystem)),
         "gleam-stdlib" => Some(Arc::new(GleamStdlibEcosystem)),
-        "node-builtins" => Some(Arc::new(NodeBuiltinsEcosystem)),
         "bazel-central-registry" => Some(Arc::new(BazelCentralRegistryEcosystem)),
         "zig-std" => Some(Arc::new(ZigStdEcosystem)),
         "sdl-synthetics" => Some(Arc::new(SdlSyntheticsEcosystem)),
@@ -733,7 +727,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(VcpkgHeadersEcosystem);
         reg_eco!(DotnetStdlibEcosystem);
         reg_eco!(PhpStubsEcosystem);
-        reg_eco!(PhoenixStubsEcosystem);
         reg_eco!(ScalaStdlibEcosystem);
         reg_eco!(GroovyStdlibEcosystem);
         reg_eco!(ClojureCoreEcosystem);
@@ -759,7 +752,6 @@ pub fn default_registry() -> &'static EcosystemRegistry {
         reg_eco!(MatlabStdlibEcosystem);
         reg_eco!(NvimRuntimeEcosystem);
         reg_eco!(GleamStdlibEcosystem);
-        reg_eco!(NodeBuiltinsEcosystem);
         reg_eco!(ZigStdEcosystem);
         reg_eco!(SdlSyntheticsEcosystem);
         reg

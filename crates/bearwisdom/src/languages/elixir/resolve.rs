@@ -421,10 +421,12 @@ impl LanguageResolver for ElixirResolver {
             if !is_external_module {
                 continue;
             }
-            // Check if this external module injects the target name via `use`.
-            if predicates::is_use_injected(module, target) {
-                return Some(root.to_string());
-            }
+            // Use-macro injection inference happens in
+            // `infer_external_namespace_with_lookup`, where the SymbolLookup
+            // can confirm the external module declares `target` as a public
+            // def/defmacro. The Hex locator walks deps/<dep>/lib and the
+            // Elixir extractor surfaces every defmacro/def as a callable
+            // symbol — no hardcoded list needed.
         }
 
         // Bare-import wildcard fallback. `import Bamboo.Test` brings every
@@ -473,6 +475,69 @@ impl LanguageResolver for ElixirResolver {
                         }
                     }
                 }
+            }
+        }
+
+        None
+    }
+
+    /// Resolve bare calls to definitions injected by `use ExternalModule`
+    /// statements. Phoenix.Controller, Ecto.Schema, GenServer, etc. work
+    /// by injecting public `defmacro` / `def` declarations into the using
+    /// module's scope; the call sites look like bare names with no
+    /// receiver. The Hex locator walks deps/<dep>/lib and the Elixir
+    /// extractor surfaces those defmacros/defs at their fully-qualified
+    /// names — a single by-qname lookup against `<module>.<target>`
+    /// confirms the bare call resolves against the real upstream symbol.
+    ///
+    /// Falls back to `infer_external_namespace` when no `use` injection
+    /// matches, so other resolution paths (manifest deps, internal-schema
+    /// modules, etc.) still apply.
+    fn infer_external_namespace_with_lookup(
+        &self,
+        file_ctx: &FileContext,
+        ref_ctx: &RefContext,
+        project_ctx: Option<&ProjectContext>,
+        lookup: &dyn SymbolLookup,
+    ) -> Option<String> {
+        if let Some(ns) = self.infer_external_namespace(file_ctx, ref_ctx, project_ctx) {
+            return Some(ns);
+        }
+
+        // Use-injection inference: bare Calls only.
+        if ref_ctx.extracted_ref.kind != EdgeKind::Calls {
+            return None;
+        }
+        let target = &ref_ctx.extracted_ref.target_name;
+        if target.is_empty() {
+            return None;
+        }
+
+        for import in &file_ctx.imports {
+            let module = import.module_path.as_deref().unwrap_or("");
+            if module.is_empty() {
+                continue;
+            }
+            let root = module.split('.').next().unwrap_or(module);
+            let is_external_module = if let Some(ctx) = project_ctx {
+                if let Some(manifest) = ctx
+                    .manifests_for(ref_ctx.file_package_id)
+                    .get(&ManifestKind::Mix)
+                {
+                    is_mix_dep_match(root, &manifest.dependencies)
+                } else {
+                    predicates::is_external_elixir_module(module)
+                }
+            } else {
+                predicates::is_external_elixir_module(module)
+            };
+            if !is_external_module {
+                continue;
+            }
+
+            let member_qname = format!("{module}.{target}");
+            if lookup.by_qualified_name(&member_qname).is_some() {
+                return Some(root.to_string());
             }
         }
 
