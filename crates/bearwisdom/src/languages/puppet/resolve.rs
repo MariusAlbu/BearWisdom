@@ -129,11 +129,6 @@ impl LanguageResolver for PuppetResolver {
             }
         }
 
-        // Built-in Puppet resource types never live in the project index.
-        if predicates::is_puppet_builtin(target) {
-            return None;
-        }
-
         // For qualified names with `::`, the extractor stores the full name as
         // `target_name` (e.g. "profile::base"). `resolve_common` step 5 handles
         // `target.contains("::")` via `by_qualified_name`. We additionally try
@@ -183,9 +178,9 @@ impl LanguageResolver for PuppetResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
+        _file_ctx: &FileContext,
         ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
@@ -215,16 +210,6 @@ impl LanguageResolver for PuppetResolver {
                 }
                 return Some(format!("puppet_module::{bare_prefix}"));
             }
-        }
-
-        // Built-in resource types and functions.
-        if let Some(ns) = engine::infer_external_common(
-            file_ctx,
-            ref_ctx,
-            project_ctx,
-            predicates::is_puppet_builtin,
-        ) {
-            return Some(ns);
         }
 
         // Bare-name fall-through: Puppet auto-loads classes, defined types,
