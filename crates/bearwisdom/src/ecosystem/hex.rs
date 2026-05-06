@@ -75,12 +75,11 @@ impl Ecosystem for HexEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("elixir"),
-            EcosystemActivation::LanguagePresent("erlang"),
-            EcosystemActivation::LanguagePresent("gleam"),
-        ])
+        // Project deps via mix.exs / gleam.toml. A bare directory of
+        // `.ex`/`.erl`/`.gleam` files without a manifest can't be
+        // resolved against external Hex coordinates, so dropping the
+        // LanguagePresent shotgun is correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

@@ -54,10 +54,12 @@ impl Ecosystem for SpmEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("swift"),
-        ])
+        // Project deps via Package.swift. A directory of `.swift` files
+        // without Package.swift is either an Xcode-only app target or a
+        // partial source dump — either way SPM can't resolve deps without
+        // the manifest, so dropping the LanguagePresent shotgun is
+        // correct per the trait doc.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {

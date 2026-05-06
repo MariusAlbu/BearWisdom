@@ -92,17 +92,14 @@ impl Ecosystem for MavenEcosystem {
     }
 
     fn activation(&self) -> EcosystemActivation {
-        // Any JVM manifest or any JVM source file triggers activation. In
-        // Phase 4 this becomes the single activation gate; today the legacy
-        // indexer pipeline still calls locate_roots unconditionally.
-        EcosystemActivation::Any(&[
-            EcosystemActivation::ManifestMatch,
-            EcosystemActivation::LanguagePresent("java"),
-            EcosystemActivation::LanguagePresent("kotlin"),
-            EcosystemActivation::LanguagePresent("scala"),
-            EcosystemActivation::LanguagePresent("clojure"),
-            EcosystemActivation::LanguagePresent("groovy"),
-        ])
+        // Project deps activate via ManifestMatch — the project declares
+        // its JVM dep set via pom.xml / build.gradle[.kts] / build.sbt /
+        // deps.edn. A bare directory of `.java` files with no manifest
+        // can't be resolved against external Maven coordinates anyway
+        // (no version, no group:artifact pinning), so dropping the
+        // LanguagePresent shotgun is correct per the trait doc's
+        // project-deps rule.
+        EcosystemActivation::ManifestMatch
     }
 
     fn locate_roots(&self, ctx: &LocateContext<'_>) -> Vec<ExternalDepRoot> {
