@@ -77,9 +77,25 @@ impl LanguageResolver for ErlangResolver {
             return None;
         }
 
-        // Erlang BIFs, stdlib modules, and primitive types are not in the index.
-        if predicates::is_erlang_builtin(target) {
-            return None;
+        // Bare-name walker lookup. erlang_otp emits real symbols for
+        // BIFs (length, hd, tl, spawn) and stdlib modules (lists, gen_server,
+        // gen_statem, supervisor). ext:-only filter so resolve_common's
+        // import / scope / same-file paths still win for project symbols.
+        if !target.contains(':') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "erlang_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Run common resolution first.
@@ -125,10 +141,13 @@ impl LanguageResolver for ErlangResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_erlang_builtin)
+        // erlang_otp walker emits real symbols and resolve() above binds
+        // them. Names that exhaust resolve() stay unresolved rather than
+        // being blanket-classified as `builtin`.
+        None
     }
 }
