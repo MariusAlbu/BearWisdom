@@ -256,27 +256,6 @@ fn test_falls_back_for_unknown() {
 }
 
 #[test]
-fn test_infer_builtin_external() {
-    let file = make_file(
-        "app/models/post.rb",
-        vec![make_symbol("Post", "Post", SymbolKind::Class, None)],
-        vec![make_ref(0, "puts", EdgeKind::Calls)],
-    );
-
-    let resolver = RubyResolver;
-    let file_ctx = resolver.build_file_context(&file, None);
-    let ref_ctx = RefContext {
-        extracted_ref: &file.refs[0],
-        source_symbol: &file.symbols[0],
-        scope_chain: build_scope_chain(file.symbols[0].scope_path.as_deref()),
-    file_package_id: None,
-    };
-
-    let ns = resolver.infer_external_namespace(&file_ctx, &ref_ctx, None);
-    assert_eq!(ns, Some("ruby_core".to_string()));
-}
-
-#[test]
 fn test_require_builds_imports() {
     let file = make_file(
         "app/models/post.rb",

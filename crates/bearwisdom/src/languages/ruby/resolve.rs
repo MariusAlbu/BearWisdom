@@ -166,6 +166,28 @@ impl LanguageResolver for RubyResolver {
             }
         }
 
+        // Bare-name walker lookup for refs without chain context. ruby_stdlib
+        // (probes via `ruby -e 'print RbConfig::CONFIG["rubylibdir"]'`) and
+        // rubygems emit real symbols for Kernel methods (puts, raise, lambda),
+        // Array/Hash/String instance methods, and gemfile deps. ext:-only
+        // filter so scope / same-file paths still win for project symbols.
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains("::") {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "ruby_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
+        }
+
         // Step 1: Scope chain walk (innermost → outermost).
         // e.g., scope_chain = ["MyModule::MyClass::my_method", "MyModule::MyClass", "MyModule"]
         // Try "MyModule::MyClass::my_method::Target", etc.
@@ -356,11 +378,6 @@ impl LanguageResolver for RubyResolver {
                 return Some(require_path.to_string());
             }
             return None;
-        }
-
-        // Ruby built-ins — always external.
-        if predicates::is_ruby_builtin(target) {
-            return Some("ruby_core".to_string());
         }
 
         // Check file's require list for matching external gems.
