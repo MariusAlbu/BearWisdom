@@ -75,9 +75,45 @@ impl LanguageResolver for GDScriptResolver {
             return None;
         }
 
-        // GDScript builtins are never in the index.
-        if predicates::is_gdscript_builtin(target) {
+        // Language-keyword tokens that tree-sitter sometimes emits as ref
+        // targets: `super` is the parent-class access keyword; `$` is the
+        // node-path sugar for `get_node()`. Neither maps to a user symbol.
+        if matches!(target.as_str(), "super" | "$") {
             return None;
+        }
+
+        // Bare-name lookup with synthetic-symbol preference. Built-in
+        // GDScript globals (`print`, `Vector2`, `Node`, ...) live under
+        // `ext:godot-api:` paths emitted by the godot_api walker. Run
+        // before resolve_common so a bare token binds to the real walker
+        // symbol when it exists.
+        if !target.contains('.') && !target.contains('/') {
+            let mut synthetic_match = None;
+            let mut internal_match = None;
+            for sym in lookup.by_name(target) {
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                if sym.file_path.starts_with("ext:") {
+                    synthetic_match = Some(sym);
+                    break;
+                } else if internal_match.is_none() {
+                    internal_match = Some(sym);
+                }
+            }
+            if let Some(sym) = synthetic_match.or(internal_match) {
+                let strategy = if sym.file_path.starts_with("ext:") {
+                    "gdscript_synthetic_global"
+                } else {
+                    "gdscript_internal_global"
+                };
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: if strategy == "gdscript_synthetic_global" { 0.95 } else { 0.9 },
+                    strategy,
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         engine::resolve_common("gdscript", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
@@ -85,10 +121,14 @@ impl LanguageResolver for GDScriptResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_gdscript_builtin)
+        // No predicate-driven classification — godot_api walker emits real
+        // symbols and resolve() above binds them. Bare names that reach this
+        // point exhausted same-file, scope, and walker lookups; leave
+        // unresolved rather than blanket-classifying as `builtin`.
+        None
     }
 }
