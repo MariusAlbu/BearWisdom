@@ -113,9 +113,27 @@ impl LanguageResolver for ElixirResolver {
             return None;
         }
 
-        // Elixir builtins (Kernel functions, ExUnit macros, etc.).
-        if predicates::is_elixir_builtin(target) {
-            return None;
+        // Bare-name walker lookup. elixir_stdlib + erlang_otp + hex (when
+        // mix.exs declares deps) emit real symbols for Kernel functions
+        // (length, hd, tl, abs, ...), ExUnit macros (assert, describe,
+        // setup), Phoenix.ConnTest helpers, etc. Bind to ext: paths only —
+        // internal-name binding is handled by the scope/same-module paths
+        // below.
+        if !target.contains('.') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "elixir_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         // Step 1: Scope chain walk.
@@ -224,11 +242,6 @@ impl LanguageResolver for ElixirResolver {
                 return Some(root.to_string());
             }
             return None;
-        }
-
-        // Elixir builtins (Kernel functions).
-        if predicates::is_elixir_builtin(target) {
-            return Some("Kernel".to_string());
         }
 
         // Check the ref's own module field (e.g., module="Ecto.Changeset"
@@ -365,20 +378,6 @@ impl LanguageResolver for ElixirResolver {
             let module = import.module_path.as_deref().unwrap_or("");
             if module.is_empty() {
                 continue;
-            }
-
-            // Phoenix test-case wrappers (e.g. `ChangelogWeb.ConnCase`) are
-            // internal project modules, so the external-module guard below
-            // would skip them. Handle them first, before that guard.
-            //
-            // These wrappers use `ExUnit.CaseTemplate` + `using do` blocks
-            // that import `Phoenix.ConnTest` and alias `Router.Helpers` as
-            // `Routes`. BearWisdom can't expand macros, so we detect the
-            // wrapper by name convention and apply the ConnTest injection set.
-            if predicates::is_phoenix_test_case_wrapper(module)
-                && predicates::is_conn_case_injected(target)
-            {
-                return Some("Phoenix".to_string());
             }
 
             // Project-internal Schema modules (e.g. `Changelog.Schema`,
