@@ -61,13 +61,10 @@ impl LanguagePlugin for FortranPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "integer", "real", "double", "complex", "logical", "character",
-            "INTEGER", "REAL", "DOUBLE", "COMPLEX", "LOGICAL", "CHARACTER",
-            "DOUBLEPRECISION", "double precision",
-        ]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
+    // Note: Fortran is case-insensitive — KEYWORDS holds lowercase entries
+    // and the resolver below also runs a manual case-folded check before
+    // delegating, so refs like `INTEGER` / `integer` both classify.
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::FortranResolver))

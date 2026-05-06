@@ -21,7 +21,6 @@
 //   3. Provider resource types and built-in functions are external.
 // =============================================================================
 
-use super::predicates;
 use crate::indexer::resolve::engine::{
     self as engine, FileContext, LanguageResolver, RefContext, Resolution, SymbolLookup,
 };
@@ -62,11 +61,6 @@ impl LanguageResolver for HclResolver {
 
         // Import declarations (module source references) are external.
         if edge_kind == EdgeKind::Imports {
-            return None;
-        }
-
-        // Built-in Terraform/HCL functions are never in the project index.
-        if predicates::is_hcl_builtin(target) {
             return None;
         }
 
@@ -136,10 +130,6 @@ impl LanguageResolver for HclResolver {
     ) -> Option<String> {
         let target = &ref_ctx.extracted_ref.target_name;
 
-        if predicates::is_hcl_builtin(target) {
-            return Some("hcl".to_string());
-        }
-
         // Import edges (module source attribute) are always external.
         if ref_ctx.extracted_ref.kind == EdgeKind::Imports {
             return Some("terraform".to_string());
@@ -175,7 +165,10 @@ impl LanguageResolver for HclResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_hcl_builtin)
+        // HCL/Terraform built-in functions are classified by the engine's
+        // keywords() set populated from hcl/keywords.rs.
+        let _ = (file_ctx, ref_ctx, project_ctx);
+        None
     }
 }
 

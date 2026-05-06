@@ -24,13 +24,6 @@ use crate::types::{EdgeKind, ParsedFile};
 /// Fortran language resolver.
 pub struct FortranResolver;
 
-/// Case-insensitive builtin check: `is_fortran_builtin` expects lowercased input,
-/// so normalise here to satisfy the `fn(&str) -> bool` signature required by
-/// `infer_external_common`.
-fn is_fortran_builtin_ci(name: &str) -> bool {
-    predicates::is_fortran_builtin(name) || predicates::is_fortran_builtin(&name.to_lowercase())
-}
-
 impl LanguageResolver for FortranResolver {
     fn language_ids(&self) -> &[&str] {
         &["fortran"]
@@ -78,12 +71,8 @@ impl LanguageResolver for FortranResolver {
             return None;
         }
 
-        // Fortran is case-insensitive; check both as-is and lowercased.
         let target = &ref_ctx.extracted_ref.target_name;
         let target_lower = target.to_lowercase();
-        if predicates::is_fortran_builtin(target) || predicates::is_fortran_builtin(&target_lower) {
-            return None;
-        }
 
         // Fortran is case-insensitive: check same-file with lowercased comparison
         // before delegating to resolve_common (which is case-sensitive).
@@ -105,10 +94,14 @@ impl LanguageResolver for FortranResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, is_fortran_builtin_ci)
+        // Fortran intrinsics + type specifiers + control-flow keywords
+        // are classified by the engine's keywords() set (case-sensitive
+        // match — KEYWORDS holds the lowercase forms; refs are normalised
+        // upstream).
+        None
     }
 }

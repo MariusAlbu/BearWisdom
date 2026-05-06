@@ -74,20 +74,18 @@ impl LanguageResolver for CobolResolver {
             return None;
         }
 
-        // COBOL standard verbs / intrinsics are never in the index.
-        if predicates::is_cobol_builtin(target) {
-            return None;
-        }
-
         engine::resolve_common("cobol", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_cobol_builtin)
+        // COBOL verbs and intrinsics are classified by the engine's
+        // keywords() set populated from cobol/keywords.rs. Names that
+        // exhaust resolve() stay unresolved.
+        None
     }
 }

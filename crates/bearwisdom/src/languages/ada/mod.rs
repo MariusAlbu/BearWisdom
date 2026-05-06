@@ -63,15 +63,7 @@ impl LanguagePlugin for AdaPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "Integer", "Natural", "Positive", "Long_Integer", "Short_Integer",
-            "Float", "Long_Float", "Short_Float",
-            "Character", "Wide_Character", "String", "Wide_String",
-            "Boolean", "Duration",
-            "Standard",
-        ]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::AdaResolver))

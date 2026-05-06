@@ -80,10 +80,6 @@ impl LanguageResolver for AdaResolver {
             return None;
         }
 
-        if predicates::is_ada_builtin(target) {
-            return None;
-        }
-
         // Ada identifiers are case-insensitive; check same-file with case folding
         // before delegating to the common resolver (which uses exact matching).
         let simple = target.split('.').last().unwrap_or(target);
@@ -120,6 +116,10 @@ impl LanguageResolver for AdaResolver {
             // Non-stdlib imports: fall through to common handler.
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_ada_builtin)
+        // Bare names are classified by the engine's keywords() set
+        // populated from ada/keywords.rs. The Ada.* / System.* / GNAT.*
+        // import-classification above handles the namespace cases.
+        let _ = (file_ctx, ref_ctx, project_ctx);
+        None
     }
 }

@@ -5,7 +5,6 @@ pub mod embedded;
 pub mod keywords;
 pub mod extract;
 pub mod resolve;
-pub(crate) mod predicates;
 pub(crate) mod type_checker;
 
 #[cfg(test)]
@@ -68,9 +67,7 @@ impl LanguagePlugin for HclPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::HclResolver))
