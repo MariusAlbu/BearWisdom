@@ -221,11 +221,6 @@ impl LanguageResolver for RustResolver {
             }
         }
 
-        // Rust stdlib builtins are never in our index — fast exit.
-        if predicates::is_rust_builtin(target) {
-            return None;
-        }
-
         // Chain-aware resolution: dispatch to RustChecker.
         if let Some(chain_val) = &ref_ctx.extracted_ref.chain {
             if let Some(res) = RustChecker.resolve_chain(
@@ -730,9 +725,7 @@ fn infer_external_inner(
 
         // Bare `::`-paths without a matching `use` import (e.g. inline
         // `anyhow::anyhow!()` or `tracing::info!()`): consult Cargo.toml.
-        // The manifest is authoritative — replaces the hardcoded extern-crate
-        // list that previously lived in `predicates::is_rust_builtin` and
-        // misattributed every match to namespace `"std"`.
+        // The manifest is authoritative for crate attribution.
         if target.contains("::") {
             let first = target.split("::").next().unwrap_or("");
             if !first.is_empty() && !matches!(first, "crate" | "self" | "super") {
@@ -745,11 +738,6 @@ fn infer_external_inner(
                     }
                 }
             }
-        }
-
-        // Builtin calls / stdlib items — always external.
-        if predicates::is_rust_builtin(target) {
-            return Some("std".to_string());
         }
 
         // For non-import refs, check if the target came from an external import.
