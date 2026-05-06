@@ -73,19 +73,7 @@ impl LanguagePlugin for OdinPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "bool", "b8", "b16", "b32", "b64",
-            "int", "i8", "i16", "i32", "i64", "i128",
-            "uint", "u8", "u16", "u32", "u64", "u128",
-            "uintptr", "rawptr",
-            "f16", "f32", "f64",
-            "complex32", "complex64", "complex128",
-            "quaternion64", "quaternion128", "quaternion256",
-            "string", "cstring", "rune", "byte",
-            "typeid", "any", "void",
-        ]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::OdinResolver))

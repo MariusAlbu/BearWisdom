@@ -88,11 +88,6 @@ impl LanguageResolver for OdinResolver {
             return None;
         }
 
-        // Skip Odin built-in types.
-        if predicates::is_odin_builtin(target) {
-            return None;
-        }
-
         // Try resolve_common first (scope chain, same-file, import-based).
         if let Some(res) = engine::resolve_common("odin", file_ctx, ref_ctx, lookup, predicates::kind_compatible) {
             return Some(res);
@@ -136,6 +131,9 @@ impl LanguageResolver for OdinResolver {
             }
         }
 
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_odin_builtin)
+        // Odin built-ins / stdlib procedures classify via the engine's
+        // keywords() set populated from odin/keywords.rs.
+        let _ = (file_ctx, ref_ctx, project_ctx);
+        None
     }
 }

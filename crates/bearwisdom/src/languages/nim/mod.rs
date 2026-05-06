@@ -83,15 +83,7 @@ impl LanguagePlugin for NimPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "int", "int8", "int16", "int32", "int64",
-            "uint", "uint8", "uint16", "uint32", "uint64",
-            "float", "float32", "float64",
-            "string", "bool", "char", "void",
-            "seq", "openArray", "Natural", "Positive",
-        ]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::NimResolver))

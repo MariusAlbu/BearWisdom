@@ -75,19 +75,17 @@ impl LanguageResolver for NimResolver {
             return None;
         }
 
-        if predicates::is_nim_builtin(target) {
-            return None;
-        }
-
         engine::resolve_common("nim", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
     }
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_nim_builtin)
+        // Nim built-ins / stdlib procs classify via the engine's keywords()
+        // set populated from nim/keywords.rs.
+        None
     }
 }

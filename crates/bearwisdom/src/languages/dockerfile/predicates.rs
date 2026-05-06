@@ -12,28 +12,3 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
-/// Dockerfile instructions are syntax keywords — never project symbols.
-/// Returns true when the name is a Dockerfile instruction keyword.
-pub(super) fn is_dockerfile_builtin(name: &str) -> bool {
-    matches!(
-        name.to_uppercase().as_str(),
-        "FROM"
-            | "RUN"
-            | "CMD"
-            | "ENTRYPOINT"
-            | "COPY"
-            | "ADD"
-            | "ENV"
-            | "ARG"
-            | "EXPOSE"
-            | "VOLUME"
-            | "WORKDIR"
-            | "USER"
-            | "LABEL"
-            | "STOPSIGNAL"
-            | "HEALTHCHECK"
-            | "SHELL"
-            | "ONBUILD"
-            | "MAINTAINER"
-    )
-}

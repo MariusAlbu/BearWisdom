@@ -94,10 +94,10 @@ impl LanguageResolver for DockerfileResolver {
             return Some("docker".to_string());
         }
 
-        // Any other edge kind — defer to the common handler (handles builtins
-        // and module-qualified references).
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_dockerfile_builtin)
-            .map(|_| "docker".to_string())
+        // Dockerfile instructions / shell built-ins classify via the
+        // engine's keywords() set populated from dockerfile/keywords.rs.
+        let _ = (file_ctx, ref_ctx, project_ctx);
+        None
     }
 }
 

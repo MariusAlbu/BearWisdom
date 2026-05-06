@@ -22,39 +22,3 @@ pub(super) fn kind_compatible(edge_kind: EdgeKind, sym_kind: &str) -> bool {
     }
 }
 
-/// Nim builtin functions and types always in scope.
-pub(super) fn is_nim_builtin(name: &str) -> bool {
-    matches!(
-        name,
-        "echo"
-            | "debugEcho"
-            | "len"
-            | "high"
-            | "low"
-            | "inc"
-            | "dec"
-            | "add"
-            | "del"
-            | "contains"
-            | "assert"
-            | "doAssert"
-            | "newSeq"
-            | "newString"
-            | "repr"
-            | "quit"
-            | "ord"
-            | "chr"
-            | "parseInt"
-            | "parseFloat"
-            | "split"
-            | "join"
-            | "strip"
-            | "find"
-            | "replace"
-            | "startsWith"
-            | "endsWith"
-            | "toUpper"
-            | "toLower"
-            | "isNil"
-    )
-}
