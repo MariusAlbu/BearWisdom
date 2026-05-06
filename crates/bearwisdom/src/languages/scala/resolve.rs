@@ -102,8 +102,9 @@ impl LanguageResolver for ScalaResolver {
         // jars) emit real symbols for the Scala stdlib (List, Option, Either,
         // Try), JVM types, and declared deps. ext:-only filter so chain
         // walker / scope / wildcard-import paths still win for project
-        // symbols.
-        if !target.contains('.') {
+        // symbols. Skip when the ref has a chain so the chain walker's
+        // receiver-type context wins.
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
                     continue;

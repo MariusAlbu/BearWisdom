@@ -109,8 +109,10 @@ impl LanguageResolver for CLangResolver {
         // sdl_synthetics emit real symbols for stdlib types and functions
         // (FILE, jmp_buf, malloc, fopen, std::string, QObject, SDL_Init).
         // ext:-only filter so the chain walker / scope / namespace paths
-        // still win for project symbols.
-        if !target.contains("::") && !target.contains('.') && !target.contains("->") {
+        // still win for project symbols. Skip when the ref has a chain so
+        // the chain walker's receiver-type context wins.
+        if ref_ctx.extracted_ref.chain.is_none()
+            && !target.contains("::") && !target.contains('.') && !target.contains("->") {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
                     continue;

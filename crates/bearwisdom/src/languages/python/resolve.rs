@@ -107,8 +107,11 @@ impl LanguageResolver for PythonResolver {
         // `print`, `len`, `dict`, exception types, str/list/dict methods,
         // etc. under `ext:cpython-stdlib:`. Only bind to walker symbols
         // here — internal-name binding is handled more precisely by the
-        // import-prefix and same-file paths below.
-        if !target.contains('.') && !target.contains("::") {
+        // import-prefix and same-file paths below. Skip when the ref has
+        // a chain — the chain walker's receiver-type context is more
+        // precise than a bare-leaf lookup.
+        if ref_ctx.extracted_ref.chain.is_none()
+            && !target.contains('.') && !target.contains("::") {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
                     continue;

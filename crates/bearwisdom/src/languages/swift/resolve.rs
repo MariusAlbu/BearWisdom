@@ -85,8 +85,10 @@ impl LanguageResolver for SwiftResolver {
         // (.build/checkouts/) emit real symbols for Swift stdlib (Array,
         // Dictionary, Optional, Result), Foundation (URL, Data, Date),
         // and Package.swift DSL types. ext:-only filter so chain walker /
-        // scope / import paths still win for project symbols.
-        if !target.contains('.') {
+        // scope / import paths still win for project symbols. Skip when
+        // the ref has a chain so the chain walker's receiver-type context
+        // wins.
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
                     continue;

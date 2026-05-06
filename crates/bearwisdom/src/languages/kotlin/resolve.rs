@@ -103,8 +103,10 @@ impl LanguageResolver for KotlinResolver {
         // (apply, let, listOf, ...), JVM types, Android SDK types, and
         // declared Maven/Gradle deps including the Compose test DSL.
         // Bind to ext:-prefixed paths only — internal-name binding is
-        // handled by the chain walker and same-file paths below.
-        if !target.contains('.') {
+        // handled by the chain walker and same-file paths below. Skip
+        // when the ref has a chain so the chain walker's receiver-type
+        // context wins over bare-leaf lookup.
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
                     continue;

@@ -117,8 +117,9 @@ impl LanguageResolver for JavaResolver {
         // symbols for java.lang types (String, Integer, Object), exception
         // hierarchy, Object methods, Stream / Collection / List APIs, etc.
         // ext:-only filter so chain walker / scope / same-package paths
-        // still win for project symbols.
-        if !target.contains('.') {
+        // still win for project symbols. Skip when the ref has a chain so
+        // the chain walker's receiver-type context wins.
+        if ref_ctx.extracted_ref.chain.is_none() && !target.contains('.') {
             for sym in lookup.by_name(target) {
                 if !sym.file_path.starts_with("ext:") {
                     continue;
