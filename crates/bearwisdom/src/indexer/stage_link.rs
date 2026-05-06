@@ -70,6 +70,11 @@ pub(crate) fn parse_external_sources(
     // Resolve every active ecosystem to its legacy locator adapter. The
     // legacy trait still carries the per-package attribution overrides
     // (`locate_roots_for_package`) and the post-parse hook.
+    //
+    // The workspace-wide `locators` set is still needed downstream by the
+    // metadata-only pass, the locator-by-tag dedup map, and the symbol
+    // index build. Per-package gating only changes which locators run
+    // during root discovery (Step 1) below.
     let mut locators: Vec<(
         crate::ecosystem::EcosystemId,
         Arc<dyn ExternalSourceLocator>,
@@ -80,9 +85,32 @@ pub(crate) fn parse_external_sources(
         }
     }
 
+    // Phase 2: per-package locator subsets, derived from
+    // `ctx.active_ecosystems_by_package` (populated by Phase 1's per-package
+    // activation evaluator). When non-empty, root discovery iterates only
+    // each package's own active set — closing the workspace-flat gap where a
+    // frontend `tsconfig.json` declaring DOM previously activated `ts-lib-dom`
+    // for unrelated backend packages in the same monorepo.
+    let per_package_locators: HashMap<
+        i64,
+        Vec<(crate::ecosystem::EcosystemId, Arc<dyn ExternalSourceLocator>)>,
+    > = ctx
+        .active_ecosystems_by_package
+        .iter()
+        .map(|(&pkg_id, ids)| {
+            let locs: Vec<_> = ids
+                .iter()
+                .filter_map(|&id| default_locator(id).map(|l| (id, l)))
+                .collect();
+            (pkg_id, locs)
+        })
+        .collect();
+    let use_per_package = !per_package_locators.is_empty();
+
     // Step 1 — discover roots. Either single-project (one locate_roots call
     // at project_root) or per-package (one locate_roots_for_package per
-    // (locator, package) pair).
+    // (locator, package) pair, with locator selection narrowed to that
+    // package's per-package active set when available).
     let mut all_roots: Vec<ExternalDepRoot> = Vec::new();
     if packages.is_empty() {
         for (id, locator) in &locators {
@@ -100,7 +128,18 @@ pub(crate) fn parse_external_sources(
         for pkg in packages {
             let Some(pkg_id) = pkg.id else { continue };
             let pkg_abs_path = project_root.join(&pkg.path);
-            for (id, locator) in &locators {
+            let pkg_locators: &[(
+                crate::ecosystem::EcosystemId,
+                Arc<dyn ExternalSourceLocator>,
+            )] = if use_per_package {
+                per_package_locators
+                    .get(&pkg_id)
+                    .map(|v| v.as_slice())
+                    .unwrap_or(&[])
+            } else {
+                locators.as_slice()
+            };
+            for (id, locator) in pkg_locators {
                 let roots =
                     locator.locate_roots_for_package(project_root, &pkg_abs_path, pkg_id);
                 if !roots.is_empty() {
