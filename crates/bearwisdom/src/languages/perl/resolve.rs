@@ -71,9 +71,26 @@ impl LanguageResolver for PerlResolver {
             return None;
         }
 
-        // Perl builtins are never in the index.
-        if predicates::is_perl_builtin(target) {
-            return None;
+        // Bare-name walker lookup. perl_stdlib walks <perl_root>/lib/<ver>/
+        // for core modules (Carp, Data::Dumper, File::Path, IO::File, ...).
+        // Interpreter built-ins (print, chomp, map, ...) are handled by the
+        // engine's primitive set populated from `keywords()` — they
+        // classify as `"primitive"` namespace via classify_external_name.
+        if !target.contains("::") {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "perl_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         engine::resolve_common("perl", file_ctx, ref_ctx, lookup, predicates::kind_compatible)
@@ -81,10 +98,14 @@ impl LanguageResolver for PerlResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_perl_builtin)
+        // perl_stdlib walker emits real symbols; interpreter built-ins
+        // are handled by the engine's keywords() primitive set. Names
+        // that exhaust resolve() stay unresolved rather than being
+        // blanket-classified.
+        None
     }
 }

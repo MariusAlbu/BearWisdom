@@ -1,54 +1,57 @@
 // =============================================================================
-// perl/keywords.rs — Perl primitive and built-in types
+// perl/keywords.rs — Perl language keywords + interpreter built-ins
+//
+// Names that are ALWAYS in scope without a `use` statement and are
+// implemented inside the perl interpreter (C source, not walkable as
+// Perl source). Core *modules* (Carp, Data::Dumper, File::Path, ...)
+// are handled by the perl_stdlib walker — they live as .pm text files
+// under <perl_root>/lib/<ver>/ and emit real symbols.
 // =============================================================================
 
-/// Primitive and built-in type/function names for Perl.
 pub(crate) const KEYWORDS: &[&str] = &[
-    // I/O
-    "print", "say", "warn", "die",
-    // string
+    // I/O built-ins (interpreter ops)
+    "print", "say", "printf", "warn", "die",
+    // string built-ins
     "chomp", "chop", "split", "join", "length", "substr", "index", "rindex",
     "lc", "uc", "lcfirst", "ucfirst", "hex", "oct", "ord", "chr",
-    "sprintf", "printf", "pos", "quotemeta",
-    // array
-    "push", "pop", "shift", "unshift", "reverse", "sort", "grep", "map",
-    // hash
+    "sprintf", "pos", "quotemeta", "reverse", "study",
+    "pack", "unpack",
+    // array / list built-ins
+    "push", "pop", "shift", "unshift", "splice", "sort", "grep", "map",
+    // hash built-ins
     "keys", "values", "each", "exists", "delete", "defined",
-    // references / OO
-    "undef", "ref", "bless", "tie", "untie",
-    // eval / exec
-    "eval", "local",
-    // declarations
-    "my", "our", "use", "require", "no", "sub", "return",
-    // flow
-    "last", "next", "redo",
+    // references / OO built-ins
+    "undef", "ref", "bless", "tie", "untie", "tied", "scalar", "wantarray",
+    // declaration keywords
+    "my", "our", "local", "state", "use", "no", "require", "sub", "return",
+    "package",
+    // flow keywords
     "if", "elsif", "else", "unless", "while", "until",
     "for", "foreach", "do", "given", "when", "default",
-    // file I/O
+    "last", "next", "redo",
+    // eval / exception built-ins
+    "eval", "die", "warn", "caller",
+    // I/O file-handle built-ins
     "open", "close", "read", "write", "seek", "tell", "eof",
-    "binmode", "truncate", "stat", "lstat",
-    "rename", "unlink", "mkdir", "rmdir", "chdir",
+    "binmode", "truncate", "fileno", "select",
+    // filesystem built-ins
+    "stat", "lstat", "rename", "unlink", "mkdir", "rmdir", "chdir",
     "opendir", "readdir", "closedir", "glob",
-    "chmod", "chown",
-    // misc
-    "scalar", "wantarray", "caller",
-    "abs", "int", "sqrt", "sin", "cos", "atan2", "exp", "log",
-    "rand", "srand", "time", "localtime", "gmtime",
-    "sleep", "alarm", "system", "exec",
-    "fork", "wait", "waitpid", "kill",
+    "chmod", "chown", "chroot", "link",
+    // process built-ins
+    "fork", "exec", "system", "kill", "wait", "waitpid", "alarm", "sleep",
+    "exit", "import",
+    // network built-ins
     "pipe", "socket", "connect", "bind", "listen", "accept",
-    "shutdown", "send", "recv", "fileno", "select",
-    // special variables / handles
-    "STDIN", "STDOUT", "STDERR", "ARGV", "ENV", "INC", "SIG",
-    "@_", "$_", "$!", "$@", "$$", "$0", "$1", "$2", "$&",
-    // common modules
-    "Carp", "Scalar::Util", "List::Util",
-    "File::Spec", "File::Path", "File::Basename", "File::Find",
-    "Getopt::Long", "Data::Dumper", "Storable",
-    "JSON", "YAML", "DBI", "LWP", "HTTP::Tiny", "URI", "Encode",
-    "POSIX", "IO::File", "IO::Socket",
-    "MIME::Base64", "Digest::MD5", "Digest::SHA",
-    "Test::More", "Test::Deep",
+    "shutdown", "send", "recv",
+    // numeric / math built-ins
+    "abs", "int", "sqrt", "sin", "cos", "atan2", "exp", "log",
+    "rand", "srand",
+    // time built-ins
+    "time", "localtime", "gmtime",
+    // pragmas (recognized at parse time, not walker-covered)
     "constant", "strict", "warnings", "utf8", "feature",
-    "Exporter", "Moo", "Moose", "Type::Tiny",
+    // special variables / handles (extractor sometimes emits these as refs)
+    "STDIN", "STDOUT", "STDERR", "ARGV", "ENV", "INC", "SIG",
+    "@_", "$_", "$!", "$@", "$$", "$0",
 ];
