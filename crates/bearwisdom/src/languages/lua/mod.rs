@@ -55,12 +55,7 @@ impl LanguagePlugin for LuaPlugin {
         ]
     }
 
-    fn keywords(&self) -> &'static [&'static str] {
-        &[
-            "string", "number", "boolean", "nil", "table", "function",
-            "thread", "userdata", "integer", "float",
-        ]
-    }
+    fn keywords(&self) -> &'static [&'static str] { keywords::KEYWORDS }
 
     fn resolver(&self) -> Option<std::sync::Arc<dyn crate::indexer::resolve::engine::LanguageResolver>> {
         Some(std::sync::Arc::new(resolve::LuaResolver))

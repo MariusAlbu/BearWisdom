@@ -1,26 +1,45 @@
 // =============================================================================
-// lua/keywords.rs — Lua primitive and built-in types
+// lua/keywords.rs — Lua language keywords + interpreter built-ins
+//
+// Names that are ALWAYS in scope and are implemented inside the Lua
+// interpreter (C source — not walkable as Lua source). Neovim API
+// (vim.*) is handled by the nvim_runtime walker. Test frameworks
+// (busted's `describe`, `it`, ...) come from luarocks-walked packages
+// when declared in *.rockspec.
 // =============================================================================
 
-/// Primitive and built-in type/function names for Lua.
 pub(crate) const KEYWORDS: &[&str] = &[
-    // Lua globals
-    "assert", "collectgarbage", "dofile", "error", "getfenv",
-    "getmetatable", "ipairs", "load", "loadfile", "loadstring",
+    // Primitive type names
+    "string", "number", "boolean", "nil", "table", "function",
+    "thread", "userdata", "integer", "float",
+    // Special globals
+    "_G", "_VERSION", "_ENV", "self",
+    // Language keywords / control flow
+    "if", "elseif", "else", "end", "then",
+    "for", "while", "repeat", "until", "do", "in",
+    "break", "return", "goto",
+    "local", "function", "and", "or", "not",
+    "true", "false",
+    // Global built-in functions (interpreter ops in C)
+    "assert", "collectgarbage", "dofile", "error",
+    "getfenv", "getmetatable",
+    "ipairs", "load", "loadfile", "loadstring",
     "module", "next", "pairs", "pcall", "print",
     "rawequal", "rawget", "rawlen", "rawset", "require",
-    "select", "setfenv", "setmetatable", "tonumber", "tostring",
-    "type", "unpack", "xpcall",
-    "_G", "_VERSION", "_ENV", "self",
-    // string library
-    "string.byte", "string.char", "string.dump", "string.find",
-    "string.format", "string.gmatch", "string.gsub", "string.len",
-    "string.lower", "string.match", "string.rep", "string.reverse",
-    "string.sub", "string.upper",
-    // table library
+    "select", "setfenv", "setmetatable",
+    "tonumber", "tostring", "type", "unpack", "xpcall",
+    // Standard library tables (always-in-scope roots)
+    "table", "math", "io", "os", "coroutine", "debug", "package", "utf8",
+    // table.* (interpreter primitives)
     "table.concat", "table.insert", "table.maxn", "table.move",
     "table.pack", "table.remove", "table.sort", "table.unpack",
-    // math library
+    // string.* (interpreter primitives)
+    "string.byte", "string.char", "string.dump", "string.find",
+    "string.format", "string.gmatch", "string.gsub", "string.len",
+    "string.lower", "string.match", "string.pack", "string.packsize",
+    "string.rep", "string.reverse", "string.sub", "string.unpack",
+    "string.upper",
+    // math.* (interpreter primitives)
     "math.abs", "math.acos", "math.asin", "math.atan",
     "math.ceil", "math.cos", "math.deg", "math.exp",
     "math.floor", "math.fmod", "math.huge",
@@ -28,44 +47,30 @@ pub(crate) const KEYWORDS: &[&str] = &[
     "math.min", "math.mininteger", "math.modf",
     "math.pi", "math.rad", "math.random", "math.randomseed",
     "math.sin", "math.sqrt", "math.tan",
-    "math.tointeger", "math.type",
-    // io library
+    "math.tointeger", "math.type", "math.ult",
+    // io.* (interpreter primitives)
     "io.close", "io.flush", "io.input", "io.lines", "io.open",
     "io.output", "io.popen", "io.read", "io.stderr",
     "io.stdin", "io.stdout", "io.tmpfile", "io.type", "io.write",
-    // os library
+    // os.* (interpreter primitives)
     "os.clock", "os.date", "os.difftime", "os.execute",
     "os.exit", "os.getenv", "os.remove", "os.rename",
     "os.setlocale", "os.time", "os.tmpname",
-    // debug library
+    // debug.* (interpreter primitives)
     "debug.debug", "debug.gethook", "debug.getinfo", "debug.getlocal",
     "debug.getmetatable", "debug.getregistry", "debug.getupvalue",
     "debug.getuservalue", "debug.sethook", "debug.setlocal",
     "debug.setmetatable", "debug.setupvalue", "debug.setuservalue",
     "debug.traceback", "debug.upvalueid", "debug.upvaluejoin",
-    // coroutine library
+    // coroutine.* (interpreter primitives)
     "coroutine.create", "coroutine.isyieldable", "coroutine.resume",
     "coroutine.running", "coroutine.status", "coroutine.wrap", "coroutine.yield",
-    // package library
+    "coroutine.close",
+    // package.* (interpreter primitives)
     "package.config", "package.cpath", "package.loaded",
     "package.loadlib", "package.path", "package.preload",
     "package.searchers", "package.searchpath",
-    // string methods (via colon syntax)
-    "byte", "char", "find", "format", "gmatch", "gsub",
-    "len", "lower", "match", "rep", "reverse", "sub", "upper",
-    // Neovim API
-    "vim.api", "vim.fn", "vim.cmd", "vim.keymap", "vim.opt",
-    "vim.g", "vim.b", "vim.w", "vim.o", "vim.bo", "vim.wo", "vim.env",
-    "vim.lsp", "vim.diagnostic", "vim.treesitter",
-    "vim.ui", "vim.loop", "vim.schedule", "vim.defer_fn", "vim.notify",
-    "vim.tbl_deep_extend", "vim.tbl_extend", "vim.tbl_contains",
-    "vim.tbl_map", "vim.tbl_filter", "vim.tbl_keys", "vim.tbl_values",
-    "vim.tbl_isempty", "vim.tbl_count",
-    "vim.list_extend", "vim.split", "vim.trim",
-    "vim.startswith", "vim.endswith",
-    "vim.inspect", "vim.validate", "vim.is_callable", "vim.deepcopy",
-    "vim.log", "vim.log.levels",
-    // busted test framework
-    "describe", "it", "before_each", "after_each", "pending",
-    "spy", "stub", "mock", "if_nil",
+    // utf8.* (interpreter primitives)
+    "utf8.char", "utf8.charpattern", "utf8.codepoint",
+    "utf8.codes", "utf8.len", "utf8.offset",
 ];

@@ -73,9 +73,27 @@ impl LanguageResolver for LuaResolver {
             return None;
         }
 
-        // Lua builtins are never in the index.
-        if predicates::is_lua_builtin(target) {
-            return None;
+        // Bare-name walker lookup. nvim_runtime walker covers vim.* API
+        // when LanguagePresent("lua") + a Neovim install is probed;
+        // luarocks walker covers declared *.rockspec deps. Interpreter
+        // built-ins (print, pairs, ipairs, table.insert, ...) are
+        // handled by the engine's keywords() set. ext:-only filter so
+        // resolve_common's standard paths still win for project symbols.
+        if !target.contains('.') && !target.contains(':') {
+            for sym in lookup.by_name(target) {
+                if !sym.file_path.starts_with("ext:") {
+                    continue;
+                }
+                if !predicates::kind_compatible(edge_kind, &sym.kind) {
+                    continue;
+                }
+                return Some(Resolution {
+                    target_symbol_id: sym.id,
+                    confidence: 0.95,
+                    strategy: "lua_synthetic_global",
+                    resolved_yield_type: None,
+                });
+            }
         }
 
         if let Some(res) = engine::resolve_common(
@@ -118,10 +136,12 @@ impl LanguageResolver for LuaResolver {
 
     fn infer_external_namespace(
         &self,
-        file_ctx: &FileContext,
-        ref_ctx: &RefContext,
-        project_ctx: Option<&ProjectContext>,
+        _file_ctx: &FileContext,
+        _ref_ctx: &RefContext,
+        _project_ctx: Option<&ProjectContext>,
     ) -> Option<String> {
-        engine::infer_external_common(file_ctx, ref_ctx, project_ctx, predicates::is_lua_builtin)
+        // Walkers + keywords() handle classification. Names that exhaust
+        // resolve() stay unresolved rather than being blanket-classified.
+        None
     }
 }
